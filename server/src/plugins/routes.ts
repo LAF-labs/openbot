@@ -163,6 +163,30 @@ export function createPluginRoutes(
   });
 
   /** Ask a server what it offers now. Reported rather than thrown, so the page can say what broke. */
+  /**
+   * A person reviewed a changed tool definition and consents to it as it now
+   * is. Until this is pressed the tool refuses to run — the pause is the
+   * feature, so only an administrator may end it.
+   */
+  routes.post(
+    "/servers/:id/tools/:name/approve",
+    requireUser,
+    async (context) => {
+      const forbidden = requireAdmin(context);
+      if (forbidden) {
+        return forbidden;
+      }
+      const approved = await store.approveToolDefinition(
+        context.req.param("id"),
+        context.req.param("name"),
+        context.var.actor.id,
+      );
+      return approved
+        ? context.json({ ok: true })
+        : context.json({ error: "No such tool" }, 404);
+    },
+  );
+
   routes.post("/servers/:id/refresh", requireUser, async (context) => {
     const forbidden = requireAdmin(context);
     if (forbidden) return forbidden;

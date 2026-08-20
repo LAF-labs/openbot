@@ -5,7 +5,6 @@ import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
-import { TEST_POOL } from "./support/database";
 import {
   agents,
   auditEvents,
@@ -18,6 +17,7 @@ import {
   PluginNeedsApprovalError,
   PluginRefusedError,
 } from "../src/plugins/store";
+import { TEST_POOL } from "./support/database";
 
 /**
  * The two questions a tool call has to pass, and the row each answer leaves behind.

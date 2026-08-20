@@ -3,6 +3,6 @@
 export * from "./components";
 export * from "./computer";
 export * from "./core";
-export * from "./plugins";
 export * from "./coworker";
 export * from "./laf";
+export * from "./plugins";

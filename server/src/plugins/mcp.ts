@@ -32,6 +32,8 @@ export type McpTool = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Standard MCP annotations as declared, null when the server declared none. */
+  annotations: Record<string, unknown> | null;
 };
 
 export class McpServerError extends Error {
@@ -91,6 +93,10 @@ export async function listTools(connection: Connection): Promise<McpTool[]> {
       name: tool.name,
       description: tool.description ?? "",
       inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
+      annotations:
+        tool.annotations && Object.keys(tool.annotations).length > 0
+          ? (tool.annotations as Record<string, unknown>)
+          : null,
     }));
   });
 }

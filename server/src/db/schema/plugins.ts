@@ -91,6 +91,17 @@ export const mcpTools = pgTable(
     description: text("description").notNull().default(""),
     /** The tool's own JSON Schema, passed to the model unchanged. */
     inputSchema: jsonb("input_schema").notNull().default({}),
+    /** MCP standard annotations as the server declared them; null when it declared none. */
+    annotations: jsonb("annotations"),
+    /**
+     * Hash over (name, description, inputSchema, annotations) as they stood when a person
+     * last consented to this tool. A refresh that finds a different definition does not get
+     * to keep the old consent: the tool is paused for review instead. Quietly lowering an
+     * annotation is a privilege escalation, and this column is what makes it loud.
+     */
+    definitionHash: text("definition_hash"),
+    needsReview: boolean("needs_review").notNull().default(false),
+    reviewReason: text("review_reason"),
     createdAt: createdAt(),
   },
   (table) => [primaryKey({ columns: [table.serverId, table.name] })],

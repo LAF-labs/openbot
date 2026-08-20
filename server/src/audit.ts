@@ -57,6 +57,11 @@ export const auditEventTypes = [
   "agent.stream_stalled",
   "mcp.call_succeeded",
   "mcp.call_rejected",
+  // A tool's definition — schema, description or annotations — changed after a
+  // person consented to it, and the moment it was consented to again. The pair
+  // is what makes a quiet downgrade a visible pause instead of an escalation.
+  "mcp.tool_definition_changed",
+  "mcp.tool_definition_approved",
   // Every action a Bot takes on its computer, allowed or refused. Both, always: a trail that records
   // only what was permitted cannot answer whether the Bot tried.
   "computer.action_allowed",

@@ -29,6 +29,13 @@ import {
   customUrlRefusal,
   resolveServerUrl,
 } from "./catalogue";
+import {
+  classifyDeclaredTool,
+  definitionHashOf,
+  guardQuestion,
+  type LafGuard,
+  type ToolAnnotations,
+} from "./laf-contract";
 import { callTool as callRemoteTool, listTools, McpServerError } from "./mcp";
 
 /**
@@ -52,6 +59,11 @@ export type ToolRecord = {
   ref: string;
   effect: "read" | "write";
   grantedTo: string[];
+  /** True when the definition changed after consent; the tool is paused until reviewed. */
+  needsReview: boolean;
+  reviewReason: string | null;
+  /** Set on custom servers whose declaration stops every call for a person. */
+  guard: LafGuard | null;
 };
 
 export type ServerRecord = {
@@ -458,6 +470,34 @@ export function createPluginStore(options: PluginStoreOptions) {
       return added;
     },
 
+    /**
+     * A person looked at the changed definition and consented to it as it now
+     * is. The current hash becomes the consented one; nothing else moves.
+     */
+    async approveToolDefinition(
+      serverId: string,
+      toolName: string,
+      by: string,
+    ): Promise<boolean> {
+      const updated = await database
+        .update(mcpTools)
+        .set({ needsReview: false, reviewReason: null })
+        .where(
+          and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)),
+        )
+        .returning({ name: mcpTools.name });
+      if (updated.length === 0) {
+        return false;
+      }
+      await recordAuditEvent(auditStore, {
+        eventType: "mcp.tool_definition_approved",
+        targetType: "mcp_tool",
+        targetId: `${serverId}/${toolName}`,
+        payload: { actor: by, server: serverId, tool: toolName },
+      });
+      return true;
+    },
+
     async removeServer(serverId: string, by: string): Promise<void> {
       await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
       await recordAuditEvent(auditStore, {
@@ -474,23 +514,121 @@ export function createPluginStore(options: PluginStoreOptions) {
      * Replaced wholesale, never merged. A tool a vendor withdrew has to stop being offered, and a
      * merge would leave it in the list forever as a name the model will happily call.
      */
-    async refreshTools(serverId: string): Promise<{ tools: number }> {
+    async refreshTools(
+      serverId: string,
+    ): Promise<{ tools: number; paused?: number }> {
       const { row } = await requireServer(serverId);
 
       try {
         const token = await tokenFor(row.credentialId);
         const tools = await listTools({ url: row.url, token });
 
-        await database.delete(mcpTools).where(eq(mcpTools.serverId, serverId));
-        if (tools.length > 0) {
-          await database.insert(mcpTools).values(
-            tools.map((tool) => ({
+        /*
+         * Consent-preserving sync, not delete-and-reinsert.
+         *
+         * The first sync is the registration a person is consenting to, so
+         * everything lands approved. After that, a tool whose definition hash
+         * changed — schema, description or annotations — is paused for review
+         * instead of silently inheriting the old consent, and a tool that
+         * appears later is a new capability nobody approved yet. A vanished
+         * tool is simply removed; there is nothing to consent to.
+         */
+        const existing = await database
+          .select()
+          .from(mcpTools)
+          .where(eq(mcpTools.serverId, serverId));
+        const existingByName = new Map(
+          existing.map((tool) => [tool.name, tool]),
+        );
+        const firstSync =
+          existing.length === 0 && row.toolsRefreshedAt === null;
+        const fetchedNames = new Set(tools.map((tool) => tool.name));
+        let paused = 0;
+
+        for (const tool of tools) {
+          const hash = await definitionHashOf({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            annotations: tool.annotations,
+          });
+          const known = existingByName.get(tool.name);
+          if (!known) {
+            const needsReview = !firstSync;
+            if (needsReview) {
+              paused += 1;
+            }
+            await database.insert(mcpTools).values({
               serverId,
               name: tool.name,
               description: tool.description,
               inputSchema: tool.inputSchema,
-            })),
-          );
+              annotations: tool.annotations,
+              definitionHash: hash,
+              needsReview,
+              reviewReason: needsReview ? "appeared after registration" : null,
+            });
+            if (needsReview) {
+              await recordAuditEvent(auditStore, {
+                eventType: "mcp.tool_definition_changed",
+                targetType: "mcp_tool",
+                targetId: `${serverId}/${tool.name}`,
+                payload: {
+                  server: serverId,
+                  tool: tool.name,
+                  change: "appeared",
+                },
+              });
+            }
+            continue;
+          }
+          if (known.definitionHash === hash && !known.needsReview) {
+            continue;
+          }
+          const changed = known.definitionHash !== hash;
+          if (changed) {
+            paused += 1;
+            await recordAuditEvent(auditStore, {
+              eventType: "mcp.tool_definition_changed",
+              targetType: "mcp_tool",
+              targetId: `${serverId}/${tool.name}`,
+              payload: {
+                server: serverId,
+                tool: tool.name,
+                change: "definition",
+              },
+            });
+          }
+          await database
+            .update(mcpTools)
+            .set({
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              annotations: tool.annotations,
+              definitionHash: hash,
+              ...(changed
+                ? { needsReview: true, reviewReason: "definition changed" }
+                : {}),
+            })
+            .where(
+              and(
+                eq(mcpTools.serverId, serverId),
+                eq(mcpTools.name, tool.name),
+              ),
+            );
+        }
+
+        for (const known of existing) {
+          if (!fetchedNames.has(known.name)) {
+            await database
+              .delete(mcpTools)
+              .where(
+                and(
+                  eq(mcpTools.serverId, serverId),
+                  eq(mcpTools.name, known.name),
+                ),
+              );
+          }
         }
 
         await database
@@ -502,7 +640,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           })
           .where(eq(mcpServers.id, serverId));
 
-        return { tools: tools.length };
+        return { tools: tools.length, paused };
       } catch (error) {
         const message =
           error instanceof McpServerError || error instanceof Error
@@ -561,14 +699,28 @@ export function createPluginStore(options: PluginStoreOptions) {
             .filter((tool) => tool.serverId === row.id)
             .map((tool) => {
               const ref = `${tool.serverId}/${tool.name}`;
+              const declared =
+                entry === null
+                  ? classifyDeclaredTool(tool.annotations as ToolAnnotations)
+                  : null;
               return {
                 serverId: tool.serverId,
                 name: tool.name,
                 description: tool.description,
                 inputSchema: tool.inputSchema as Record<string, unknown>,
                 ref,
-                effect: classifyTool(entry, tool.name, true),
+                effect: declared
+                  ? declared.effect
+                  : classifyTool(entry, tool.name, true),
                 grantedTo: grants.get(ref) ?? [],
+                needsReview: tool.needsReview,
+                reviewReason: tool.reviewReason,
+                guard:
+                  entry !== null
+                    ? null
+                    : declared
+                      ? declared.guard
+                      : "unannotated",
               };
             }),
         };
@@ -881,14 +1033,61 @@ export function createPluginStore(options: PluginStoreOptions) {
       const { row, entry } = await requireServer(serverId);
 
       const advertised = await database
-        .select({ name: mcpTools.name, inputSchema: mcpTools.inputSchema })
+        .select({
+          name: mcpTools.name,
+          inputSchema: mcpTools.inputSchema,
+          annotations: mcpTools.annotations,
+          needsReview: mcpTools.needsReview,
+        })
         .from(mcpTools)
         .where(
           and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)),
         )
         .limit(1);
 
-      const effect = classifyTool(entry, toolName, advertised.length > 0);
+      /*
+       * A definition that changed after consent does not get to run on the old
+       * consent. Refused before the policy is even asked, because no rule an
+       * operator wrote was written about the tool as it now is.
+       */
+      if (advertised[0]?.needsReview) {
+        await recordAuditEvent(auditStore, {
+          eventType: "mcp.call_rejected",
+          targetType: "mcp_tool",
+          targetId: input.ref,
+          payload: {
+            actor: input.actorId,
+            bot: input.botId,
+            server: serverId,
+            tool: toolName,
+            refusal: "needs_review",
+          },
+        });
+        throw new PluginRefusedError(
+          `'${toolName}' changed its definition since it was approved. Review it under Plugins before it runs again.`,
+          null,
+        );
+      }
+
+      /*
+       * Custom servers are classified by their own declaration (the LAF
+       * contract), because the definition the declaration lives in is pinned
+       * by hash above. Curated servers keep the reviewed catalogue's word.
+       * The guard is the contract's floor: for money, external, destructive
+       * and undeclared tools, a person answers for the exact call, every
+       * time, whatever the written policy says short of deny.
+       */
+      const declared =
+        entry === null && advertised.length > 0
+          ? classifyDeclaredTool(advertised[0]?.annotations as ToolAnnotations)
+          : null;
+      const effect = declared
+        ? declared.effect
+        : classifyTool(entry, toolName, advertised.length > 0);
+      // Three-way on purpose: a declared guard of null means "no floor", which
+      // `??` would silently promote to the harshest floor there is.
+      const guard: LafGuard | null =
+        entry !== null ? null : declared ? declared.guard : "unannotated";
 
       const args = withoutEmptyOptionals(
         input.args,
@@ -950,8 +1149,12 @@ export function createPluginStore(options: PluginStoreOptions) {
        * question and stop. Nothing is recorded as succeeded or rejected in the second case, because
        * neither happened yet.
        */
+      const policyAsks = verdict.source === "ask" && !verdict.forward;
+      // The contract floor: the policy allowed it, and a person still answers.
+      // A deny stays a deny — the floor never softens the written boundary.
+      const floorAsks = guard !== null && verdict.forward;
       const approved =
-        verdict.source === "ask" && !verdict.forward
+        policyAsks || floorAsks
           ? await askAbout({
               approvalId: input.approvalId,
               botId: input.botId,
@@ -961,15 +1164,18 @@ export function createPluginStore(options: PluginStoreOptions) {
               toolName,
               effect,
               args,
-              rule: verdict.matched ?? "",
-              question: verdict.reason,
+              rule: policyAsks ? (verdict.matched ?? "") : `laf:${guard}`,
+              question: policyAsks
+                ? verdict.reason
+                : guardQuestion(guard as LafGuard, toolName),
             })
           : undefined;
 
       // What the boundary settled on once a person's answer is folded in. The source stays `ask`, so
       // the row reads as "allowed, because somebody was asked and said yes" rather than as an
       // ordinary permission nobody ever questioned.
-      const carriedOut = verdict.forward || approved !== undefined;
+      const carriedOut =
+        policyAsks || floorAsks ? approved !== undefined : verdict.forward;
 
       await recordAuditEvent(auditStore, {
         eventType: carriedOut ? "mcp.call_succeeded" : "mcp.call_rejected",
