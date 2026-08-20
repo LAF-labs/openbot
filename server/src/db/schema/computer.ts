@@ -123,7 +123,13 @@ export const computerRepeatCalls = pgTable(
     fingerprint: text("fingerprint").notNull(),
     at: timestamp("at", { withTimezone: true }).notNull(),
   },
-  (table) => [index("computer_repeat_calls_lookup").on(table.botId, table.fingerprint, table.at)],
+  (table) => [
+    index("computer_repeat_calls_lookup").on(
+      table.botId,
+      table.fingerprint,
+      table.at,
+    ),
+  ],
 );
 
 /**

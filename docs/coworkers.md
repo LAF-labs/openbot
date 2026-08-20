@@ -97,3 +97,20 @@ A coworker's role does not grant capabilities. Capabilities are governed separat
 - deployment skills are managed by administrators.
 
 See [architecture.md](architecture.md).
+
+## The account's computer, and coworkers asking each other
+
+An account gets **one virtual computer**, and up to **five** coworkers share it
+(`server/src/computer/assignment.ts`). The sixth coworker fails to be created
+with a clear reason, rather than existing and failing to reach a computer.
+What stays per-coworker is governance: policy identity, approvals, repetition
+counts, credentials and the audit trail are all keyed on the Bot, so sharing
+the desk shares the browser and its logins — deliberately — without sharing
+anybody's permissions.
+
+Coworkers can brief each other. `ask_coworker` is a frontend tool available in
+every run; the asked coworker answers **server-side, with no tools in the
+room**, which is what makes the interaction one hop by construction — a
+coworker answering a question has no `ask_coworker` of its own to call. Every
+exchange writes a `coworker.asked` audit row, whichever way it went. The
+endpoint is `POST /api/agents/:agentId/ask` with `{ from, message }`.

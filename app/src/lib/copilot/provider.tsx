@@ -2,6 +2,7 @@ import { CopilotKitProvider } from "@copilotkit/react-core/v2";
 import type { ReactNode } from "react";
 import { ActiveBotProvider } from "./active-bot";
 import { ComputerTools } from "./computer-tools";
+import { CoworkerTools } from "./coworker-tools";
 import { GalleryTools } from "./gallery-tools";
 import { PluginTools } from "./plugin-tools";
 import { SandboxedTools } from "./sandboxed-tools";
@@ -26,6 +27,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       {/* Computer tools target the Bot declared by the mounted surface. */}
       <ActiveBotProvider>
         <ComputerTools />
+        {/* Coworkers can brief each other; the answer comes from the server, toolless. */}
+        <CoworkerTools />
         {/* Gallery tools are registered once; their handlers re-read the active Bot to avoid shadowing renderers. */}
         <GalleryTools />
         {/* MCP tools share the same active-Bot context and server-side grant checks. */}

@@ -162,6 +162,13 @@ export const auditEventTypes = [
    * there was, and it is not a control, nothing here is enforced by it.
    */
   "bot.declined",
+  /**
+   * One Bot asked another and got an answer, or did not.
+   *
+   * Recorded whichever way it went, because a roster where Bots brief each other is a roster where
+   * "who told the risk Bot that" has to be answerable from the trail, not from memory.
+   */
+  "coworker.asked",
 
   /*
    * What a Bot may answer with, decided per Bot and recorded like anything else it is trusted with.

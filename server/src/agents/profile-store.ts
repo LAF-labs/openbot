@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or } from "drizzle-orm";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -7,6 +7,7 @@ import {
   agents,
   deploymentPackages,
 } from "../db/schema";
+import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
 import { authFromConfiguration, storeAgentAuth } from "./auth-header";
 import { canManageAgent } from "./profile-policy";
 import type {
@@ -60,6 +61,23 @@ export class AgentNotManageableError extends Error {
   constructor(id: string) {
     super(`Agent ${id} cannot be managed by this actor.`);
     this.name = "AgentNotManageableError";
+  }
+}
+
+/**
+ * The account's computer seats five Bots, and every seat is taken.
+ *
+ * The cap is a fact about the computer, not about the roster table: an account gets one virtual
+ * computer and up to five Bots share it (assignment.ts). It is enforced here, where a Bot comes to
+ * exist, because a sixth Bot must fail to be created — not get created and then fail to reach a
+ * computer, which would look like an outage instead of a limit.
+ */
+export class RosterFullError extends Error {
+  constructor() {
+    super(
+      "This account's computer seats five Bots, and all five seats are taken.",
+    );
+    this.name = "RosterFullError";
   }
 }
 
@@ -235,6 +253,16 @@ export function createAgentProfileStore(
 
     create(actor, input) {
       return database.transaction(async (transaction) => {
+        // Seats are counted inside the transaction, so two creates racing for the last seat
+        // serialize here rather than both finding four and both inserting a fifth and sixth.
+        const [seated] = await transaction
+          .select({ count: count() })
+          .from(agents)
+          .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+          .where(isNull(agentProfiles.deletedAt));
+        if (Number(seated?.count ?? 0) >= MAX_BOTS_PER_COMPUTER) {
+          throw new RosterFullError();
+        }
         const id = newAgentId();
         await transaction.insert(agents).values({
           id,
@@ -345,6 +373,17 @@ export function createAgentProfileStore(
       return database.transaction(async (transaction) => {
         const source = await findAccessibleProfile(transaction, actor, id);
         if (!source) throw new AgentNotFoundError(id);
+
+        // Seats are counted inside the transaction, so two creates racing for the last seat
+        // serialize here rather than both finding four and both inserting a fifth and sixth.
+        const [seated] = await transaction
+          .select({ count: count() })
+          .from(agents)
+          .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+          .where(isNull(agentProfiles.deletedAt));
+        if (Number(seated?.count ?? 0) >= MAX_BOTS_PER_COMPUTER) {
+          throw new RosterFullError();
+        }
 
         const duplicateId = newAgentId();
         await transaction.insert(agents).values({

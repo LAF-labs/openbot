@@ -33,6 +33,7 @@ import type { PluginStore } from "./plugins/store";
 import type { PackageStatusReader } from "./tenant-package";
 import type { DigestService } from "./watch/digest-service";
 import type { WatchService } from "./watch/poller";
+import type { CoworkerCall } from "./agents/coworker-call";
 import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(
@@ -113,6 +114,8 @@ export function createApp(
   watchService?: WatchService,
   /** The morning card; optional so the watch surface works without it. */
   digestService?: DigestService,
+  /** One Bot asking another. Absent means the ask route answers 501 and everything else stands. */
+  coworkerCall?: CoworkerCall,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -348,6 +351,7 @@ export function createApp(
         config.computer?.allowPrivateHosts ?? false,
         // A Bot's own refusal goes in the same trail as everything else it does.
         auditStore,
+        coworkerCall,
       ),
     );
   }

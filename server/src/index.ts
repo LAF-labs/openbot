@@ -19,6 +19,7 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
 import {
@@ -33,6 +34,7 @@ import {
   type IdentifyActor,
   type IdentifyUser,
   mountCopilotRuntime,
+  resolveRuntimeAgents,
 } from "./copilot";
 import {
   createCredentialAdminService,
@@ -41,6 +43,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
+import { createCoworkerCall } from "./agents/coworker-call";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import {
   createPackageStatusReader,
@@ -180,8 +183,13 @@ const computerClient = config.computer
       baseUrl: config.computer.baseUrl,
       allowPrivateHosts: config.computer.allowPrivateHosts,
       ...(config.computer.token ? { token: config.computer.token } : {}),
+      // The account's computer, not the Bot's: every Bot of an account shares one container, and
+      // the mapping lives in assignment.ts so the day accounts arrive there is one place to teach.
       ...(supervisor
-        ? { resolveBaseUrl: (botId: string) => supervisor.locate(botId) }
+        ? {
+            resolveBaseUrl: (botId: string) =>
+              supervisor.locate(accountComputerKey(botId)),
+          }
         : {}),
     })
   : undefined;
@@ -339,6 +347,26 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
+// One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
+// a revoked key or a deleted coworker takes effect on the next question rather than on restart.
+const coworkerCall = createCoworkerCall({
+  resolveAgents: (actor) =>
+    resolveRuntimeAgents(
+      () => loadAgentsForActor(actor),
+      tenantPackage.model,
+      () =>
+        resolveModelApiKey({
+          encryptionKey: config.keyEncryptionKey,
+          reader: credentialStore,
+          provider: tenantPackage.model.provider,
+          keyId: tenantPackage.model.credentialSecretRef,
+          environment: process.env,
+        }),
+      stallGuard,
+    ),
+  auditStore: bootAuditStore,
+});
+
 const app = createApp(
   config,
   auth,
@@ -423,6 +451,8 @@ const app = createApp(
   // The laf.watch poller; the surface mounts only when it exists.
   watchService,
   digestService,
+  // One Bot asking another, over the same loader and keys the runtime itself uses.
+  coworkerCall,
 );
 
 /**
@@ -473,6 +503,15 @@ const asChannelSocket = (ws: { data: SocketData }) =>
 
 serve<SocketData>({
   port,
+  /*
+   * Bun's default cuts a connection that has been quiet for ten seconds, which is shorter than a
+   * model thinking. A Bot's run streams over SSE and a coworker being asked answers over one long
+   * POST; both sit silent while the model works, and the default was killing them mid-thought —
+   * the browser saw a spinner that never resolved and the trail saw nothing at all. Four minutes
+   * comfortably clears the coworker answer timeout (90s) and the stall guard, which are the layers
+   * that are actually supposed to decide when a run has died.
+   */
+  idleTimeout: 240,
   async fetch(request, server) {
     const url = new URL(request.url);
     const streamBotId = streamPathBotId(url.pathname);

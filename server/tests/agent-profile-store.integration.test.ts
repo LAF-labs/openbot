@@ -1,12 +1,13 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   AgentNotFoundError,
   AgentNotManageableError,
   type AgentProfileStore,
   createAgentProfileStore,
   ProtectedAgentError,
+  RosterFullError,
 } from "../src/agents/profile-store";
 import type {
   AgentActor,
@@ -655,5 +656,47 @@ describe("agent profile store integration", () => {
       configuration: { endpoint: managedAgentAgUiUrl.toString() },
       packageId: null,
     });
+  });
+});
+
+/**
+ * The computer seats five.
+ *
+ * An account gets one virtual computer and up to five Bots share it (computer/assignment.ts), so
+ * the sixth Bot must fail to be created — not exist and then fail to reach a computer. The seat
+ * count is whatever the deployment already holds plus what this test seeds, because the shipped
+ * package Bots sit at the same desk as everybody else.
+ */
+describe("the five-seat cap", () => {
+  test("refuses the Bot that would need a sixth seat, and seats one after a deletion", async () => {
+    const owner = await createUser();
+    const [{ occupied }] = (await database
+      .select({ occupied: sql<number>`count(*)::int` })
+      .from(agents)
+      .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+      .where(isNull(agentProfiles.deletedAt))) as [{ occupied: number }];
+
+    const seeded: string[] = [];
+    for (let seat = occupied; seat < 5; seat += 1) {
+      seeded.push(
+        (await createProfileFixture({ owner, visibility: "private" })).agentId,
+      );
+    }
+
+    const input = {
+      name: `Sixth ${randomUUID()}`,
+      title: "One Too Many",
+      roleDescription: "Should never come to exist.",
+      visibility: "private" as const,
+    };
+    await expect(store.create(owner, input)).rejects.toThrow(RosterFullError);
+
+    // A freed seat is a usable seat: soft-delete one and the same create goes through.
+    const [freed] = seeded;
+    if (!freed) throw new Error("the deployment already held five seats");
+    await store.softDelete(owner, freed);
+    const created = await store.create(owner, input);
+    createdAgentIds.push(created.id);
+    expect(created.name).toBe(input.name);
   });
 });

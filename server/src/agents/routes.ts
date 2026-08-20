@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditStore } from "../audit";
+import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { testAgentConnection } from "./connection-test";
@@ -8,6 +9,7 @@ import { checkAgentEndpoint } from "./endpoint";
 import { canManageAgent } from "./profile-policy";
 import {
   AgentNotFoundError,
+  RosterFullError,
   AgentNotManageableError,
   type AgentProfileStore,
   ProtectedAgentError,
@@ -155,6 +157,8 @@ export function createAgentRoutes(
   allowPrivateHosts = false,
   /** Where a Bot's own refusal is recorded. Absent in tests that do not care about the trail. */
   auditStore?: AuditStore,
+  /** One Bot asking another. Absent when the deployment has no runtime to run the coworker on. */
+  coworkerCall?: CoworkerCall,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -295,6 +299,45 @@ export function createAgentRoutes(
     }
   });
 
+  /**
+   * One Bot asks another, and waits for the answer.
+   *
+   * `from` names the calling Bot for the trail and the self-call check; it is not authorisation —
+   * the person driving the caller is the actor, and requireUser already named them. The coworker
+   * runs server-side with no tools, so this cannot chain (see coworker-call.ts).
+   */
+  routes.post("/:agentId/ask", requireUser, async (context) => {
+    if (!coworkerCall) {
+      return context.json(
+        { error: "This deployment cannot run coworkers server-side." },
+        501,
+      );
+    }
+    const body = (await context.req.json().catch(() => null)) as {
+      message?: unknown;
+      from?: unknown;
+    } | null;
+    const message = typeof body?.message === "string" ? body.message : "";
+    const from = typeof body?.from === "string" ? body.from : "";
+    if (!from) {
+      return context.json({ error: "Say which Bot is asking." }, 400);
+    }
+    try {
+      const answer = await coworkerCall.ask(
+        context.var.actor,
+        from,
+        context.req.param("agentId"),
+        message,
+      );
+      return context.json({ answer });
+    } catch (error) {
+      if (error instanceof CoworkerCallError) {
+        return context.json({ error: error.message }, error.status);
+      }
+      throw error;
+    }
+  });
+
   routes.post("/:agentId/duplicate", requireUser, async (context) => {
     try {
       const agent = await store.duplicate(
@@ -391,6 +434,10 @@ function mapStoreError(context: Context, error: unknown): Response {
   }
   if (error instanceof ProtectedAgentError) {
     return context.json({ error: "System-owned agents are protected." }, 403);
+  }
+  if (error instanceof RosterFullError) {
+    // 409 rather than 400: the request was well-formed, the account is simply full.
+    return context.json({ error: error.message }, 409);
   }
   throw error;
 }

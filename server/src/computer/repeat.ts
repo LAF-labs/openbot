@@ -373,9 +373,9 @@ export function createDatabaseRepeatDetector(
   options: RepeatDetectorOptions = {},
 ): RepeatDetector {
   const windowMs = options.windowMs ?? DEFAULT_REPEAT_WINDOW_MS;
-  const thresholds = [...(options.thresholds ?? DEFAULT_REPEAT_THRESHOLDS)].sort(
-    (a, b) => a - b,
-  );
+  const thresholds = [
+    ...(options.thresholds ?? DEFAULT_REPEAT_THRESHOLDS),
+  ].sort((a, b) => a - b);
   const clock = options.now ?? Date.now;
 
   return {
