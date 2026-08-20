@@ -1,5 +1,6 @@
 /** 한국어 사전 — 영어 원문이 키다. 항목이 없으면 영어로 그대로 나온다. */
 export const ko: Record<string, string> = {
+  "1 item in the workspace": "작업 공간에 항목 1개",
   "A reason, if you want to give one": "이유 (선택)",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
@@ -9,6 +10,7 @@ export const ko: Record<string, string> = {
   Account: "계정",
   "Add a server by URL": "URL로 서버 추가",
   "Add credential": "자격증명 추가",
+  "Added to file": "파일에 추가함",
   "Add rule": "규칙 추가",
   "Add server": "서버 추가",
   Admin: "관리",
@@ -172,6 +174,7 @@ export const ko: Record<string, string> = {
   "No coworker by that name.": "그 이름의 봇이 없습니다.",
   "Nothing here is named “{query}”, and nobody has said it recently either.":
     "“{query}”라는 이름의 채널도, 최근 그런 말이 오간 채널도 없어요.",
+  "nothing saved yet": "아직 저장된 것 없음",
   "No credentials are configured.": "등록된 자격증명이 없습니다.",
   "No events match this filter yet.":
     "이 필터와 일치하는 기록이 아직 없습니다.",
@@ -226,7 +229,10 @@ export const ko: Record<string, string> = {
   Role: "역할",
   "Sample arguments": "예시 인자",
   "Save draft": "초안 저장",
+  "Saved file": "파일 저장",
   "Saved here": "여기 저장됨",
+  "Scroll to end": "끝으로 스크롤",
+  "Scroll to start": "처음으로 스크롤",
   Scrolled: "스크롤함",
   "Search channels": "채널 검색",
   "Search...": "검색...",
@@ -326,5 +332,6 @@ export const ko: Record<string, string> = {
   "Definition changed — paused until reviewed":
     "정의가 바뀜 — 검토 전까지 정지",
   "Approve as it now is": "지금 상태로 승인",
+  "{count} items in the workspace": "작업 공간에 항목 {count}개",
   "{name}'s screen": "{name}의 화면",
 };

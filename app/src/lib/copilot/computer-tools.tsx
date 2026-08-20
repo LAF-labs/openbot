@@ -711,8 +711,12 @@ export function ComputerTools() {
             outcome.refused === true || didNotWork(outcome)
               ? String(outcome.reason ?? "")
               : entries.length
-                ? `${entries.length} item${entries.length === 1 ? "" : "s"} in the workspace`
-                : "nothing saved yet"
+                ? entries.length === 1
+                  ? t("1 item in the workspace")
+                  : t("{count} items in the workspace", {
+                      count: entries.length,
+                    })
+                : t("nothing saved yet")
           }
           refused={outcome.refused === true}
           failed={didNotWork(outcome)}
@@ -806,7 +810,7 @@ export function ComputerTools() {
         <ActionLine
           toolCallId={toolCallId}
           running={status !== "complete"}
-          label={args?.append === true ? "Added to file" : "Saved file"}
+          label={args?.append === true ? t("Added to file") : t("Saved file")}
           // Show the path, never file contents.
           detail={
             outcome.refused === true
