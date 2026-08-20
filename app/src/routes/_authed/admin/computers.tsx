@@ -210,11 +210,14 @@ function ComputersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Reset {confirming ? nameFor(confirming) : ""}'s computer?
+              {t("Reset {name}'s computer?", {
+                name: confirming ? nameFor(confirming) : "",
+              })}
             </DialogTitle>
             <DialogDescription>
-              Its profile is deleted, so the Bot is signed out of every service
-              it had logged into and starts clean. This cannot be undone.
+              {t(
+                "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -233,7 +236,7 @@ function ComputersPage() {
               size="sm"
               variant="destructive"
             >
-              {busy === confirming ? "Resetting…" : "Reset it"}
+              {busy === confirming ? t("Resetting…") : t("Reset it")}
             </Button>
           </DialogFooter>
         </DialogContent>

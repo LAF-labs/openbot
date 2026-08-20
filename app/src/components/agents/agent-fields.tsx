@@ -183,7 +183,12 @@ export function AgentFields({
                 value={field.state.value}
               >
                 <SelectTrigger id={field.name}>
-                  <SelectValue />
+                  {/* Explicit children: the bare fallback renders the raw enum value ("private"). */}
+                  <SelectValue>
+                    {field.state.value === "private"
+                      ? t("Private, only you can see it")
+                      : t("Public, everybody can see it")}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -232,7 +237,7 @@ export function AgentFields({
                     type="button"
                     variant="outline"
                   >
-                    {testing ? "Testing…" : "Test"}
+                    {testing ? t("Testing…") : t("Test")}
                   </Button>
                 </div>
                 {isInvalid ? (
@@ -244,14 +249,16 @@ export function AgentFields({
                     role="status"
                   >
                     {connection.ok
-                      ? `It answered: ${connection.events.join(", ")}`
+                      ? t("It answered: {events}", {
+                          events: connection.events.join(", "),
+                        })
                       : connection.reason}
                   </p>
                 ) : (
                   <p className="text-muted-foreground text-sm">
-                    Leave empty to use the built-in Bot. Anything that speaks
-                    AG-UI works. This server dials your agent, so an agent on
-                    your own machine has to be reachable from here.
+                    {t(
+                      "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.",
+                    )}
                   </p>
                 )}
               </Field>
@@ -272,7 +279,7 @@ export function AgentFields({
                 onChange={(event) => field.handleChange(event.target.value)}
                 placeholder={
                   hasAuth
-                    ? "A key is set. Type a new one to replace it."
+                    ? t("A key is set. Type a new one to replace it.")
                     : "Bearer …"
                 }
                 // Never repopulated; `hasAuth` communicates that a key exists without exposing it.
@@ -280,9 +287,11 @@ export function AgentFields({
                 value={field.state.value}
               />
               <p className="text-muted-foreground text-sm">
-                Sent as an <code>{t("Authorization")}</code> header on every
-                run, and kept in the credential vault. Leave empty to keep the
-                current key.
+                {/* "Authorization" is the literal HTTP header name — plumbing, never translated. */}
+                {t(
+                  "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.",
+                  { header: "Authorization" },
+                )}
               </p>
             </Field>
           )}

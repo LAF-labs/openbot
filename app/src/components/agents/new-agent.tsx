@@ -15,8 +15,9 @@ export function NewAgent() {
       <header>
         <h1 className="text-2xl font-semibold">{t("New coworker")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          The role you write here applies in every channel this coworker works
-          in.
+          {t(
+            "The role you write here applies in every channel this coworker works in.",
+          )}
         </p>
       </header>
 
@@ -29,7 +30,7 @@ export function NewAgent() {
           const agent = await createAgent.mutateAsync(agentInputFrom(values));
           await navigate({ search: { agent: agent.id }, to: "/agents" });
         }}
-        submitLabel="Create coworker"
+        submitLabel={t("Create coworker")}
       />
     </div>
   );

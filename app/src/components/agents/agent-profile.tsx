@@ -166,7 +166,9 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </div>
 
         <div className="flex flex-wrap justify-center gap-1.5">
-          <Tag>{profile.visibility === "private" ? "Private" : "Public"}</Tag>
+          <Tag>
+            {profile.visibility === "private" ? t("Private") : t("Public")}
+          </Tag>
           {profile.systemOwned ? <Tag>{t("System owned")}</Tag> : null}
         </div>
       </header>
@@ -234,7 +236,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             }}
             variant="outline"
           >
-            {duplicateAgent.isPending ? "Duplicating…" : "Duplicate"}
+            {duplicateAgent.isPending ? t("Duplicating…") : t("Duplicate")}
           </Button>
 
           <Button
@@ -252,17 +254,18 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           >
             {setHidden.isPending
               ? profile.hidden
-                ? "Unhiding…"
-                : "Hiding…"
+                ? t("Unhiding…")
+                : t("Hiding…")
               : profile.hidden
-                ? "Unhide"
-                : "Hide"}
+                ? t("Unhide")
+                : t("Hide")}
           </Button>
 
           {profile.hidden ? (
             <p className="-mt-1 text-xs text-muted-foreground">
-              Hidden from your agents list. This changes nothing for anyone
-              else.
+              {t(
+                "Hidden from your agents list. This changes nothing for anyone else.",
+              )}
             </p>
           ) : null}
 
@@ -283,8 +286,9 @@ export function AgentProfile({ agentId }: { agentId: string }) {
               {isConfirmingDelete ? (
                 <div className="flex flex-col gap-2">
                   <p className="text-sm">
-                    Delete <span className="font-medium">{profile.name}</span>?
-                    This cannot be undone.
+                    {t("Delete {name}? This cannot be undone.", {
+                      name: profile.name,
+                    })}
                   </p>
                   {/* Cancel remains closest to the original Delete button position. */}
                   <Button
@@ -303,7 +307,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                     }}
                     variant="destructive"
                   >
-                    {deleteAgent.isPending ? "Deleting…" : "Delete"}
+                    {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
                   </Button>
                 </div>
               ) : (

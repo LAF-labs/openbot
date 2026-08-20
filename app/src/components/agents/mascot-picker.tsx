@@ -2,6 +2,7 @@ import { MASCOT_TILES, Mascot, mascotIdFor } from "@/components/agents/mascot";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -35,12 +36,16 @@ export function MascotPicker({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("Pick a face")}</DialogTitle>
+          {/* Says out loud what the missing Save button implies. */}
+          <DialogDescription>
+            {t("A click applies it right away.")}
+          </DialogDescription>
         </DialogHeader>
         <div
           className="grid grid-cols-7 gap-2"
           aria-busy={pending ? "true" : undefined}
         >
-          {MASCOT_TILES.map((tile) => {
+          {MASCOT_TILES.map((tile, index) => {
             const chosen = tile.id === currentId;
             return (
               <button
@@ -49,11 +54,14 @@ export function MascotPicker({
                 disabled={pending}
                 onClick={() => onSelect(tile.id)}
                 aria-pressed={chosen}
-                aria-label={tile.id}
+                // The tile id is a grid coordinate — plumbing, not a name to read out.
+                aria-label={t("Face {number}", { number: index + 1 })}
                 className={
-                  "overflow-hidden rounded-xl ring-offset-2 ring-offset-background transition disabled:opacity-50" +
+                  // ring-primary, matching the home roster's selection ring: chosen is the one
+                  // selection state in the app, and blue is its one color.
+                  "overflow-hidden rounded-xl ring-offset-2 ring-offset-background transition hover:scale-105 disabled:opacity-50" +
                   (chosen
-                    ? " ring-2 ring-foreground"
+                    ? " ring-2 ring-primary"
                     : " hover:ring-2 hover:ring-muted-foreground/40")
                 }
                 style={{ background: tile.background }}

@@ -1,6 +1,9 @@
 /** 한국어 사전 — 영어 원문이 키다. 항목이 없으면 영어로 그대로 나온다. */
 export const ko: Record<string, string> = {
   "1 item in the workspace": "작업 공간에 항목 1개",
+  "A click applies it right away.": "클릭하면 바로 적용됩니다.",
+  "A key is set. Type a new one to replace it.":
+    "키가 설정되어 있습니다. 바꾸려면 새로 입력하세요.",
   "A reason, if you want to give one": "이유 (선택)",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
@@ -28,7 +31,6 @@ export const ko: Record<string, string> = {
   "Asked because of this rule. Allowing covers this one action.":
     "이 규칙 때문에 묻습니다. 허용은 이 행동 한 번에만 적용됩니다.",
   Audit: "감사 기록",
-  Authorization: "인증",
   Available: "사용 가능",
   "Available integrations are defined by this deployment’s knowledge sources.":
     "사용 가능한 연동은 이 배포의 지식 소스가 정합니다.",
@@ -60,6 +62,7 @@ export const ko: Record<string, string> = {
     "Google Drive 연결을 저장하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
+  "Create coworker": "봇 만들기",
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
@@ -67,15 +70,22 @@ export const ko: Record<string, string> = {
   Decision: "결정",
   Delete: "삭제",
   "Delete it": "삭제",
+  "Delete {name}? This cannot be undone.":
+    "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
+  "Deleting…": "삭제 중…",
   Deny: "거부",
   "Draft description": "설명 초안",
   "Draft not published": "초안 — 미게시",
   Drawing: "그리는 중",
+  Duplicate: "복제",
+  "Duplicating…": "복제 중…",
   "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.":
     "각 봇의 브라우저와 그 프로필. 프로필이 있어서 봇이 내일도 로그인 상태로 남습니다 — 초기화하면 모든 곳에서 로그아웃됩니다.",
   Edit: "수정",
   "Edit description": "설명 수정",
   "Edit skill": "스킬 수정",
+  "Enter a web address starting with http:// or https://.":
+    "http:// 또는 https://로 시작하는 웹 주소를 입력하세요.",
   "Every Bot is sharing one computer.":
     "모든 봇이 컴퓨터 한 대를 공유하고 있습니다.",
   "Every action a Bot took, and every one this deployment's policy refused.":
@@ -83,9 +93,40 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
+  "Face {number}": "얼굴 {number}",
   Channel: "채널",
+  "Hidden from your agents list. This changes nothing for anyone else.":
+    "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
+  Hide: "숨기기",
+  "Hiding…": "숨기는 중…",
+  "It answered: {events}": "응답함: {events}",
+  "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.":
+    "프로필이 삭제되어, 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
+  "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
+    "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 에이전트면 무엇이든 됩니다. 서버가 에이전트 쪽으로 접속하므로, 내 컴퓨터에서 도는 에이전트는 여기서 접근할 수 있어야 합니다.",
+  "Name is required.": "이름을 입력하세요.",
+  "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
+  Private: "비공개",
+  Public: "공개",
+  "Reset it": "초기화",
+  "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
+  "Resetting…": "초기화 중…",
+  "Role description is required.": "역할 설명을 입력하세요.",
+  "Role description must be 1000 characters or fewer.":
+    "역할 설명은 1000자 이하여야 합니다.",
+  "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
+    "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
+  Test: "연결 확인",
+  "Testing…": "확인 중…",
+  "The role you write here applies in every channel this coworker works in.":
+    "여기 적는 역할은 이 봇이 일하는 모든 채널에 적용됩니다.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
+  "Title is required.": "제목을 입력하세요.",
+  "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
+  "Toggle Sidebar": "사이드바 여닫기",
+  Unhide: "숨김 해제",
+  "Unhiding…": "해제 중…",
   "Watch this Bot's screen": "이 봇의 화면 보기",
   "Asking {name}": "{name}에게 물어보는 중",
   "Asked {name}": "{name}에게 물었습니다",
