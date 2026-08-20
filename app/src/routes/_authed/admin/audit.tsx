@@ -113,7 +113,7 @@ function AuditPage() {
           ))}
         </div>
 
-        {events.isPending ? (
+        {events.isPending && rows.length === 0 ? (
           <PageEmpty>{t("Loading the trail…")}</PageEmpty>
         ) : events.isError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
@@ -122,7 +122,10 @@ function AuditPage() {
         ) : rows.length === 0 ? (
           <PageEmpty>{t("No events match this filter yet.")}</PageEmpty>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
+          <div
+            className="mt-4 overflow-x-auto rounded-lg border border-border bg-card transition-opacity data-[fetching=true]:opacity-60"
+            data-fetching={events.isFetching}
+          >
             <table className="w-full text-left text-sm">
               <thead className="text-muted-foreground text-xs uppercase">
                 <tr className="border-border border-b">
@@ -249,8 +252,11 @@ function Row({
                 : "text-muted-foreground"
           }
         >
-          {DECISIONS[event.eventType] ??
-            (refused ? "Blocked" : failed ? "Did not happen" : "Allowed")}
+          {/* The map is data; it is translated where it is drawn, English as the key. */}
+          {t(
+            DECISIONS[event.eventType] ??
+              (refused ? "Blocked" : failed ? "Did not happen" : "Allowed"),
+          )}
         </span>
         {/* Refusal reasons mirror the conversation-facing reason. */}
         {(event.eventType === "component.refused" ||

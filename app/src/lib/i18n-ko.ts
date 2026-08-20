@@ -10,6 +10,11 @@ export const ko: Record<string, string> = {
     "/로 불러내는, 이름 붙은 지시입니다. 내가 소유한 봇에 붙고, 다른 사람에게는 보이지 않습니다.",
   "A password box the page labels something else is not covered, the rule matches the label.":
     "페이지가 다른 이름을 붙인 비밀번호 칸은 잡히지 않습니다. 규칙은 라벨을 봅니다.",
+  "A person allowed it": "사람이 허용함",
+  "A person declined it": "사람이 거절함",
+  "A person pressed stop": "사람이 정지를 누름",
+  "A person supplied a secret": "사람이 비밀값을 입력함",
+  "A person took the wheel": "사람이 제어를 가져감",
   "A reason, if you want to give one": "이유 (선택)",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
@@ -33,6 +38,7 @@ export const ko: Record<string, string> = {
   "Agent endpoint (optional)": "에이전트 엔드포인트 (선택)",
   Agents: "에이전트",
   Allow: "허용",
+  Allowed: "허용됨",
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
     "다른 용도의 Enter도 함께 막힙니다. 폼은 어느 입력칸에서든 Enter로 제출되기 때문입니다.",
   Answered: "응답함",
@@ -65,10 +71,12 @@ export const ko: Record<string, string> = {
   Blocked: "차단됨",
   Bot: "봇",
   Boundaries: "경계",
+  "Boundary at start-up": "시작 시 경계 적용",
   "Browser Bot": "브라우저 봇",
   Bunny: "토끼",
   Cactus: "선인장",
   "Cactus in a hat": "모자 쓴 선인장",
+  "Called on this Bot's behalf": "이 봇을 대신해 호출됨",
   Cancel: "취소",
   "Capabilities and interface pieces available across Bots.":
     "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
@@ -87,6 +95,7 @@ export const ko: Record<string, string> = {
   "Computer actions": "컴퓨터 행동",
   Computers: "컴퓨터",
   "Computers in this deployment": "이 배포의 컴퓨터",
+  "Configuration changed": "설정이 바뀜",
   "Configured credentials": "등록된 자격증명",
   "Connect an organization service account with domain-wide delegation.":
     "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
@@ -96,6 +105,7 @@ export const ko: Record<string, string> = {
   Conversations: "대화 목록",
   Copied: "복사됨",
   "Copy this reply": "이 답장 복사",
+  "Could not be read": "읽지 못함",
   "Could not load connectors.": "커넥터를 불러오지 못했습니다.",
   "Could not load credentials.": "자격증명을 불러오지 못했습니다.",
   "Could not load this channel.": "채널을 불러오지 못했습니다.",
@@ -108,6 +118,7 @@ export const ko: Record<string, string> = {
   "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
   "Create coworker": "봇 만들기",
   "Creating…": "만드는 중…",
+  "Credential saved": "자격증명 저장됨",
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
@@ -130,6 +141,7 @@ export const ko: Record<string, string> = {
   Dolphin: "돌고래",
   "Draft description": "설명 초안",
   "Draft not published": "초안 — 미게시",
+  "Draft saved, not yet published": "초안 저장됨 — 아직 게시 전",
   Drawing: "그리는 중",
   Duplicate: "복제",
   "Duplicating…": "복제 중…",
@@ -164,6 +176,7 @@ export const ko: Record<string, string> = {
   Ghost: "유령",
   "Going in circles": "같은 일 반복",
   Gorilla: "고릴라",
+  "Granted to this Bot": "이 봇에게 부여됨",
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
@@ -172,6 +185,7 @@ export const ko: Record<string, string> = {
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
   "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.":
     "“{mode}”에서는 아무것도 멈추지 않습니다. 해당하면 물어봤을 질문으로 기록만 됩니다.",
+  "Isolation at start-up": "시작 시 격리 적용",
   "It answered: {events}": "응답함: {events}",
   "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.":
     "이 배포에서 제거됩니다. 그리던 봇들도 더 이상 그릴 수 없으며, 되돌릴 수 없습니다.",
@@ -190,6 +204,8 @@ export const ko: Record<string, string> = {
     "하나 만들면 여기에서 바로 부를 수 있어요.",
   "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
     "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
+  "May no longer read this": "더 이상 읽을 수 없음",
+  "May read this": "읽을 수 있음",
   Messages: "메시지",
   Monkey: "원숭이",
   Mushroom: "버섯",
@@ -217,10 +233,13 @@ export const ko: Record<string, string> = {
     "Esc를 누르면 제어를 돌려주고 닫습니다",
   Private: "비공개",
   Public: "공개",
+  "Published, so every Bot may use it": "게시됨 — 모든 봇이 쓸 수 있음",
   "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
     "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
   Rabbit: "토끼",
+  "Read real data": "실제 데이터를 읽음",
   "Refreshing…": "새로고침 중…",
+  Refused: "거부됨",
   "Reply: {text}": "답장: {text}",
   "Reset it": "초기화",
   "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
@@ -251,6 +270,7 @@ export const ko: Record<string, string> = {
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
   "Stop browser": "브라우저 정지",
   "Stop the action": "행동을 멈춤",
+  "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
   Test: "연결 확인",
   "Testing…": "확인 중…",
@@ -264,15 +284,22 @@ export const ko: Record<string, string> = {
   "The assistant's screen, live": "어시스턴트의 화면 — 실시간",
   "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
     "어시스턴트의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
+  "The Bot asked for a secret": "봇이 비밀값을 요청함",
+  "The Bot asked for help": "봇이 도움을 요청함",
+  "The Bot declined": "봇이 거절함",
   "The Bot is stopped and told which rule refused it.":
     "봇이 멈추고, 어떤 규칙이 막았는지 전달받습니다.",
+  "The Bot repeated itself": "봇이 같은 일을 반복함",
+  "The Bot stopped responding": "봇이 응답을 멈춤",
   "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.":
     "여기 해당하면 봇이 멈춰 기다리고, 누군가 허용하면 같은 행동을 이어갑니다. 위 규칙 다음, 아래 규칙 앞에서 검사되므로 이미 금지한 것은 금지된 채로 남고 질문으로 제시되지 않습니다.",
+  "The boundary asked a person": "경계가 사람에게 물음",
   "The boundary could not be reached.": "경계 설정에 닿지 못했습니다.",
   "The boundary could not be saved.": "경계를 저장하지 못했습니다.",
   "The browser could not be stopped.": "브라우저를 정지하지 못했습니다.",
   "The computer could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The computer could not be reset.": "컴퓨터를 초기화하지 못했습니다.",
+  "The computer was reset": "컴퓨터를 초기화함",
   "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했습니다.",
   "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":
@@ -288,10 +315,12 @@ export const ko: Record<string, string> = {
   "The schedule stops and its run history goes with it. This cannot be undone.":
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
   "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
+  "The server did not answer": "서버가 응답하지 않음",
   "The services Bots can read from, and who connected them.":
     "봇이 읽을 수 있는 서비스와, 누가 연결했는지.",
   "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
     "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
+  "The wheel was handed back": "제어를 돌려줌",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They are still there. This was a problem reaching us.":
     "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",
@@ -312,6 +341,7 @@ export const ko: Record<string, string> = {
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 실제로 거부하기 전에 '기록만' 상태로 먼저 시험해 보세요.",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
+  "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
   "Waiting for your answer": "답변을 기다리는 중",
   "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",
   "Watch this Bot's screen": "이 봇의 화면 보기",
