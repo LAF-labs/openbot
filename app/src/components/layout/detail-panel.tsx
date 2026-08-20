@@ -68,11 +68,20 @@ export function DetailPanel({
   }, [open, onClose]);
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <div className="flex flex-1 min-w-0 flex-col">{children}</div>
       <motion.div
         animate={{ width: open ? detailWidth : 0 }}
-        className="shrink-0 overflow-hidden"
+        /*
+         * AN OVERLAY UNTIL THERE IS ROOM FOR A COLUMN.
+         *
+         * The pane is a fixed 400px, and the app shell already spends 340px on the rail — so at a
+         * 900px window a profile or a Bot's screen left about 160px of conversation beside it, which
+         * is not a conversation. Below `lg` it lays over the main column instead; the card inside it
+         * already carries its own background and a left hairline, which is exactly how an overlay
+         * should read.
+         */
+        className="absolute inset-y-0 right-0 z-20 shrink-0 overflow-hidden lg:static lg:z-auto"
         // No entry animation on first paint: URL-opened panels should appear as initial state.
         initial={false}
         transition={{

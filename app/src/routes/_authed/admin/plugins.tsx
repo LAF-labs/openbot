@@ -504,7 +504,12 @@ function Yours({
                   </span>
                 ) : null}
               </div>
-              <div className="font-mono text-muted-foreground text-xs">
+              {/*
+                * `break-all`: `body { word-break: keep-all }` makes a URL one unbreakable token, so
+                * a long server address widened the row past the page and dragged the whole admin
+                * document into horizontal scroll.
+                */}
+              <div className="break-all font-mono text-muted-foreground text-xs">
                 {server.url}
               </div>
               {server.lastError ? (
