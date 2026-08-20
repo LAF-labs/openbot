@@ -134,3 +134,65 @@ export const lafDigestLog = pgTable("laf_digest_log", {
   body: text("body").notNull(),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A routine: one instruction, one Bot, run on a clock instead of on a keystroke.
+ *
+ * The Grok Bot field review (2026-08) put routines as the one capability their community leans on
+ * that this product lacked. Ours is a sentence, deliberately: "check the smartstore reviews and
+ * summarize the new ones" is a routine somebody can write, read back, and edit, where a recorded
+ * screen session is a routine only its recorder understands. The Bot runs it server-side with no
+ * tools in the room (coworker-call.ts), so a routine can think and write, and cannot yet click —
+ * the browser-driving version arrives when tool execution moves off the browser (pivot P2).
+ *
+ * `nextRunAt` is the whole scheduler. A tick claims a due routine by advancing `nextRunAt` in one
+ * conditional UPDATE, so two server processes ticking over the same table cannot both run it: one
+ * moves the clock and wins, the other finds nothing due. The claim happens before the run, which
+ * means a crash mid-run costs one execution rather than repeating one — for a digest, the right
+ * side to fail on.
+ *
+ * The creator is snapshotted (`createdById`, `createdByRole`) because the run needs an actor long
+ * after the request that made the routine is gone: the Bot roster is loaded with the creator's own
+ * visibility, so a routine cannot see a private coworker its author could not.
+ */
+export const lafRoutines = pgTable("laf_routines", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  name: text("name").notNull(),
+  /** What to do, in words. Sent to the Bot verbatim as the run's one user message. */
+  instruction: text("instruction").notNull(),
+  /** `interval` runs every N minutes; `daily` runs once a day at `dailyUtc`. */
+  scheduleKind: text("schedule_kind").notNull(),
+  intervalMinutes: integer("interval_minutes"),
+  /** "HH:MM", UTC. Stored as text because it is a time-of-day, not a moment. */
+  dailyUtc: text("daily_utc"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdById: text("created_by_id").notNull(),
+  createdByRole: text("created_by_role").notNull(),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * What happened the last twenty times a routine ran.
+ *
+ * Twenty, pruned on write, matching what an operator actually reads: "is it working, and what did
+ * it say this morning". The full history of record is `audit_events` — every run files a
+ * `routine.ran` row there — so pruning here loses convenience, never evidence.
+ */
+export const lafRoutineRuns = pgTable("laf_routine_runs", {
+  id: text("id").primaryKey(),
+  routineId: text("routine_id").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  ok: boolean("ok"),
+  /** The Bot's answer, which for a digest-shaped routine IS the product. */
+  answer: text("answer"),
+  error: text("error"),
+});

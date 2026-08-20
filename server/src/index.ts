@@ -44,6 +44,7 @@ import {
 import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
 import { createCoworkerCall } from "./agents/coworker-call";
+import { createRoutineService } from "./routines/service";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import {
   createPackageStatusReader,
@@ -367,6 +368,26 @@ const coworkerCall = createCoworkerCall({
   auditStore: bootAuditStore,
 });
 
+// Instructions on a clock, running through the same server-side path a coworker answer does.
+const routineService = createRoutineService({
+  database,
+  resolveAgents: (actor) =>
+    resolveRuntimeAgents(
+      () => loadAgentsForActor(actor),
+      tenantPackage.model,
+      () =>
+        resolveModelApiKey({
+          encryptionKey: config.keyEncryptionKey,
+          reader: credentialStore,
+          provider: tenantPackage.model.provider,
+          keyId: tenantPackage.model.credentialSecretRef,
+          environment: process.env,
+        }),
+      stallGuard,
+    ),
+  auditStore: bootAuditStore,
+});
+
 const app = createApp(
   config,
   auth,
@@ -453,6 +474,7 @@ const app = createApp(
   digestService,
   // One Bot asking another, over the same loader and keys the runtime itself uses.
   coworkerCall,
+  routineService,
 );
 
 /**
@@ -615,3 +637,5 @@ const watchTickMs = Number.parseInt(
 );
 watchService.start(watchTickMs);
 digestService.start(watchTickMs);
+// Routines share the watch's clock resolution; a routine is never due at finer grain than a tick.
+routineService.start(watchTickMs);

@@ -169,6 +169,8 @@ export const auditEventTypes = [
    * "who told the risk Bot that" has to be answerable from the trail, not from memory.
    */
   "coworker.asked",
+  /** A routine fired, and how it went. The run record prunes; this row is the history of record. */
+  "routine.ran",
 
   /*
    * What a Bot may answer with, decided per Bot and recorded like anything else it is trusted with.

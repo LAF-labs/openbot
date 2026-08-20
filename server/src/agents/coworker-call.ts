@@ -38,6 +38,41 @@ export class CoworkerCallError extends Error {
  */
 export const COWORKER_ANSWER_TIMEOUT_MS = 90_000;
 
+/**
+ * One server-side run: the message in, the assistant's text out, or a timeout.
+ *
+ * Shared by a coworker being asked and a routine firing, because they are the same act — a Bot
+ * running once from a fresh instance with no tools in the room — differing only in who wanted it
+ * and what gets recorded, which stays with the callers.
+ */
+export async function runAgentOnce(
+  target: AbstractAgent,
+  message: string,
+  timeoutMs: number,
+): Promise<string> {
+  target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
+
+  const outcome = await Promise.race([
+    target.runAgent(),
+    new Promise<never>((_, reject) => {
+      setTimeout(
+        () =>
+          reject(
+            new CoworkerCallError("The coworker did not answer in time.", 504),
+          ),
+        timeoutMs,
+      ).unref?.();
+    }),
+  ]);
+
+  return outcome.newMessages
+    .filter((entry) => entry.role === "assistant")
+    .map((entry) => (typeof entry.content === "string" ? entry.content : ""))
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
 export type CoworkerCallOptions = {
   /**
    * Fresh instances per call, keys resolved per load, exactly as the runtime builds them — and
@@ -98,27 +133,9 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         );
       }
 
-      target.setMessages([
-        { id: randomUUID(), role: "user", content: question },
-      ]);
-
-      let outcome: Awaited<ReturnType<AbstractAgent["runAgent"]>>;
+      let answer: string;
       try {
-        outcome = await Promise.race([
-          target.runAgent(),
-          new Promise<never>((_, reject) => {
-            setTimeout(
-              () =>
-                reject(
-                  new CoworkerCallError(
-                    "The coworker did not answer in time.",
-                    504,
-                  ),
-                ),
-              timeoutMs,
-            ).unref?.();
-          }),
-        ]);
+        answer = await runAgentOnce(target, question, timeoutMs);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         await record(callerId, targetId, { ok: false, reason });
@@ -127,15 +144,6 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         // the roster and could not answer, which is the upstream's failure, not the request's.
         throw new CoworkerCallError(reason, 502);
       }
-
-      const answer = outcome.newMessages
-        .filter((entry) => entry.role === "assistant")
-        .map((entry) =>
-          typeof entry.content === "string" ? entry.content : "",
-        )
-        .filter(Boolean)
-        .join("\n\n")
-        .trim();
 
       await record(callerId, targetId, {
         ok: true,

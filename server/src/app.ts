@@ -34,6 +34,8 @@ import type { PackageStatusReader } from "./tenant-package";
 import type { DigestService } from "./watch/digest-service";
 import type { WatchService } from "./watch/poller";
 import type { CoworkerCall } from "./agents/coworker-call";
+import { createRoutineRoutes } from "./routines/routes";
+import type { RoutineService } from "./routines/service";
 import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(
@@ -116,6 +118,8 @@ export function createApp(
   digestService?: DigestService,
   /** One Bot asking another. Absent means the ask route answers 501 and everything else stands. */
   coworkerCall?: CoworkerCall,
+  /** Instructions on a clock. Absent leaves the surface unmounted, exactly like the watch. */
+  routineService?: RoutineService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -383,6 +387,13 @@ export function createApp(
 
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));
+
+    if (routineService) {
+      app.route(
+        "/api/routines",
+        createRoutineRoutes(routineService, requireUser),
+      );
+    }
 
     if (watchService) {
       app.route(

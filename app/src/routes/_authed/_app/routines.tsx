@@ -1,0 +1,366 @@
+import { IconClockPlay, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { Mascot } from "@/components/agents/mascot";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { agentListQueryOptions } from "@/lib/agents/queries";
+import { t } from "@/lib/i18n";
+
+/**
+ * Routines: an instruction, a Bot, and a clock.
+ *
+ * A routine here is a sentence, on purpose — something its owner can read back and edit — and the
+ * page is built accordingly: the instruction is the biggest field on it, and a routine's row leads
+ * with what it says, not with its schedule.
+ */
+
+type Routine = {
+  id: string;
+  agentId: string;
+  name: string;
+  instruction: string;
+  scheduleKind: "interval" | "daily";
+  intervalMinutes: number | null;
+  dailyUtc: string | null;
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string;
+};
+
+type RoutineRun = {
+  id: string;
+  startedAt: string;
+  ok: boolean | null;
+  answer: string | null;
+  error: string | null;
+};
+
+async function routineRequest(path: string, init?: RequestInit) {
+  const response = await fetch(path, {
+    credentials: "include",
+    headers: init?.body ? { "content-type": "application/json" } : {},
+    ...init,
+  });
+  const body = (await response.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  if (!response.ok) {
+    throw new Error(String(body?.error ?? response.statusText));
+  }
+  return body;
+}
+
+function scheduleLabel(routine: Routine): string {
+  return routine.scheduleKind === "daily"
+    ? t("Daily at {time} UTC").replace("{time}", routine.dailyUtc ?? "")
+    : t("Every {minutes} minutes").replace(
+        "{minutes}",
+        String(routine.intervalMinutes ?? 60),
+      );
+}
+
+function RunHistory({ routineId }: { routineId: string }) {
+  const runs = useQuery({
+    queryKey: ["routine-runs", routineId],
+    queryFn: async () =>
+      (await routineRequest(`/api/routines/${routineId}/runs`))
+        ?.runs as RoutineRun[],
+  });
+
+  if (!runs.data?.length) {
+    return (
+      <p className="py-2 text-[12px] text-muted-foreground">
+        {t("This routine has not run yet.")}
+      </p>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-2 py-2">
+      {runs.data.map((run) => (
+        <li
+          key={run.id}
+          className="rounded-lg border border-border bg-card p-3"
+        >
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>{new Date(run.startedAt).toLocaleString()}</span>
+            <span className={run.ok ? "" : "text-destructive"}>
+              {run.ok ? t("Ran") : t("Failed")}
+            </span>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed">
+            {run.ok ? run.answer : run.error}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RoutineRow({ routine }: { routine: Routine }) {
+  const queryClient = useQueryClient();
+  const agents = useQuery(agentListQueryOptions());
+  const [showRuns, setShowRuns] = useState(false);
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["routines"] });
+
+  const toggle = useMutation({
+    mutationFn: async (enabled: boolean) =>
+      routineRequest(`/api/routines/${routine.id}/enabled`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: invalidate,
+  });
+  const runNow = useMutation({
+    mutationFn: async () =>
+      routineRequest(`/api/routines/${routine.id}/run`, { method: "POST" }),
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({
+        queryKey: ["routine-runs", routine.id],
+      });
+      setShowRuns(true);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: async () =>
+      routineRequest(`/api/routines/${routine.id}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+
+  const bot = agents.data?.find((agent) => agent.id === routine.agentId);
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-3 p-4">
+        <span className="inline-flex size-9 shrink-0 overflow-hidden rounded-full">
+          <Mascot
+            className="size-full object-cover"
+            seed={bot?.avatarSeed ?? routine.agentId}
+            size={36}
+          />
+        </span>
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          onClick={() => setShowRuns((open) => !open)}
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="truncate font-medium text-[13px]">
+              {routine.name}
+            </span>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {bot?.name ?? routine.agentId} · {scheduleLabel(routine)}
+            </span>
+          </div>
+          <p className="truncate text-[12px] text-muted-foreground">
+            {routine.instruction}
+          </p>
+        </button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={runNow.isPending}
+          onClick={() => runNow.mutate()}
+          aria-label={t("Run now")}
+        >
+          <IconClockPlay className="size-4" />
+        </Button>
+        <Switch
+          checked={routine.enabled}
+          onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
+          aria-label={t("Enabled")}
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => remove.mutate()}
+          aria-label={t("Delete")}
+        >
+          <IconTrash className="size-4 text-muted-foreground" />
+        </Button>
+      </div>
+      {showRuns ? (
+        <div className="border-border border-t px-4">
+          <RunHistory routineId={routine.id} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function NewRoutine({ onDone }: { onDone: () => void }) {
+  const agents = useQuery(agentListQueryOptions());
+  const [agentId, setAgentId] = useState("");
+  const [name, setName] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [kind, setKind] = useState<"interval" | "daily">("daily");
+  const [minutes, setMinutes] = useState("60");
+  const [timeUtc, setTimeUtc] = useState("22:30");
+
+  const create = useMutation({
+    mutationFn: async () =>
+      routineRequest("/api/routines", {
+        method: "POST",
+        body: JSON.stringify({
+          agentId,
+          name,
+          instruction,
+          schedule:
+            kind === "daily"
+              ? { kind, timeUtc }
+              : { kind, minutes: Number(minutes) },
+        }),
+      }),
+    onSuccess: onDone,
+  });
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex gap-3">
+        <Select
+          value={agentId}
+          onValueChange={(value) => setAgentId(value ?? "")}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder={t("Which Bot")} />
+          </SelectTrigger>
+          <SelectContent>
+            {(agents.data ?? []).map((agent) => (
+              <SelectItem key={agent.id} value={agent.id}>
+                {agent.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          className="flex-1"
+          placeholder={t("Name, e.g. Morning review digest")}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </div>
+      <Textarea
+        placeholder={t(
+          "What should it do? e.g. Check the store reviews and summarize the new ones.",
+        )}
+        rows={3}
+        value={instruction}
+        onChange={(event) => setInstruction(event.target.value)}
+      />
+      <div className="flex items-center gap-3">
+        <Select
+          value={kind}
+          onValueChange={(value) =>
+            setKind(value === "interval" ? "interval" : "daily")
+          }
+        >
+          <SelectTrigger className="w-40">
+            {/* The value is a code; the person reads the label. */}
+            <SelectValue>
+              {kind === "daily" ? t("Daily") : t("Every N minutes")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="daily">{t("Daily")}</SelectItem>
+            <SelectItem value="interval">{t("Every N minutes")}</SelectItem>
+          </SelectContent>
+        </Select>
+        {kind === "daily" ? (
+          <Input
+            className="w-28"
+            value={timeUtc}
+            onChange={(event) => setTimeUtc(event.target.value)}
+            aria-label={t("Time (UTC)")}
+          />
+        ) : (
+          <Input
+            className="w-28"
+            type="number"
+            min={5}
+            value={minutes}
+            onChange={(event) => setMinutes(event.target.value)}
+            aria-label={t("Minutes")}
+          />
+        )}
+        <div className="flex-1" />
+        <Button
+          disabled={
+            !agentId || !name.trim() || !instruction.trim() || create.isPending
+          }
+          onClick={() => create.mutate()}
+        >
+          {t("Create routine")}
+        </Button>
+      </div>
+      {create.error ? (
+        <p className="text-[12px] text-destructive">{create.error.message}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function RoutinesPage() {
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const routines = useQuery({
+    queryKey: ["routines"],
+    queryFn: async () =>
+      (await routineRequest("/api/routines"))?.routines as Routine[],
+  });
+
+  return (
+    <PageShell
+      title={t("Routines")}
+      description={t(
+        "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.",
+      )}
+      action={
+        <Button size="sm" onClick={() => setCreating((open) => !open)}>
+          <IconPlus className="size-4" />
+          {t("New routine")}
+        </Button>
+      }
+    >
+      {creating ? (
+        <div className="mt-6">
+          <NewRoutine
+            onDone={() => {
+              setCreating(false);
+              void queryClient.invalidateQueries({ queryKey: ["routines"] });
+            }}
+          />
+        </div>
+      ) : null}
+      <PageSection>
+        <div className="flex flex-col gap-3">
+          {(routines.data ?? []).map((routine) => (
+            <RoutineRow key={routine.id} routine={routine} />
+          ))}
+          {routines.data?.length === 0 && !creating ? (
+            <p className="py-8 text-center text-[13px] text-muted-foreground">
+              {t("No routines yet. Give a Bot something to do every morning.")}
+            </p>
+          ) : null}
+        </div>
+      </PageSection>
+    </PageShell>
+  );
+}
+
+export const Route = createFileRoute("/_authed/_app/routines")({
+  component: RoutinesPage,
+});
