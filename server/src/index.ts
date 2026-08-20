@@ -47,6 +47,7 @@ import {
   loadTenantPackage,
   synchronizeTenantPackage,
 } from "./tenant-package";
+import { createWatchService } from "./watch/poller";
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -112,6 +113,8 @@ const database = createDatabase(config.databaseUrl);
 // The durable runner behind local mode. Built before the app because construction
 // is a read: it rehydrates every thread snapshot so restarts do not lose history.
 const lafRunner = await LafPostgresRunner.create(database);
+// The laf.watch poller: pure code on a clock, a model only on change (see watch/poller.ts).
+const watchService = createWatchService(database, { port });
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -394,6 +397,8 @@ const app = createApp(
   threadIdentity,
   // Where a person answers what the boundary stopped to ask, whichever half of the product asked.
   approvals,
+  // The laf.watch poller; the surface mounts only when it exists.
+  watchService,
 );
 
 /**
@@ -540,3 +545,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 console.info(`OpenBot server listening on http://localhost:${port}`);
+// Zero disables the clock; sources can still be polled by hand from the surface.
+const watchTickMs = Number.parseInt(
+  process.env.LAF_WATCH_TICK_MS ?? "60000",
+  10,
+);
+watchService.start(watchTickMs);

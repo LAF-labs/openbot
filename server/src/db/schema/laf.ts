@@ -1,4 +1,11 @@
-import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 /**
  * Durable conversation history, kept here instead of in CopilotKit Intelligence.
@@ -44,4 +51,53 @@ export const lafThreadRuns = pgTable("laf_thread_runs", {
     .notNull()
     .defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+/**
+ * What the watcher polls: a `laf.watch` endpoint and how often.
+ *
+ * The watcher is pure code by design — the cost rule of an always-on product is that
+ * nothing wakes a model on a schedule. A source is polled, its signals are normalized
+ * and diffed against `lastSignals`, and only a *transition* becomes an event (and, when
+ * `wakeAgentId` is set, a run). A value wobbling inside the same status is not news.
+ */
+export const lafWatchSources = pgTable("laf_watch_sources", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** `http` fetches the URL and expects `{signals:[…]}`; `mcp` calls the `laf.watch` tool. */
+  kind: text("kind").notNull(),
+  url: text("url").notNull(),
+  intervalSeconds: integer("interval_seconds").notNull().default(60),
+  enabled: boolean("enabled").notNull().default(true),
+  /** When set, a detected change also runs this agent with a change report. */
+  wakeAgentId: text("wake_agent_id"),
+  /** Normalized signal list from the last poll — the diff's left-hand side. */
+  lastSignals: jsonb("last_signals"),
+  lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** One row per signal transition — what the digest reads and the wake delivers. */
+export const lafWatchEvents = pgTable("laf_watch_events", {
+  id: text("id").primaryKey(),
+  sourceId: text("source_id")
+    .notNull()
+    .references(() => lafWatchSources.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  /** Null when the signal appeared for the first time. */
+  prevStatus: text("prev_status"),
+  /** Null when the signal disappeared. */
+  nextStatus: text("next_status"),
+  detail: text("detail"),
+  observedAt: timestamp("observed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  /** Set when a wake run carried this event to a bot. */
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
 });

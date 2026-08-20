@@ -31,6 +31,8 @@ import type { CredentialAdminService, CredentialInput } from "./credentials";
 import { createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import type { PackageStatusReader } from "./tenant-package";
+import type { WatchService } from "./watch/poller";
+import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(
   config: DeploymentConfig,
@@ -106,6 +108,8 @@ export function createApp(
    * ten minutes and then reports that nobody answered.
    */
   approvals?: ApprovalRegistry,
+  /** The laf.watch poller; absent leaves the surface unmounted. */
+  watchService?: WatchService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -372,6 +376,10 @@ export function createApp(
 
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));
+
+    if (watchService) {
+      app.route("/api/watch", createWatchRoutes(watchService, requireUser));
+    }
   }
 
   return app;
