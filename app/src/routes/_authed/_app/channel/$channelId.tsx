@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { ComputerView } from "@/components/computer/computer-view";
@@ -63,6 +64,8 @@ function RouteComponent() {
   const isWatching = watch === true;
   /** Channel routing currently supports one coworker. */
   const agentId = channel.data?.agentIds[0];
+  const roster = useQuery(agentListQueryOptions());
+  const headerAgent = roster.data?.find((agent) => agent.id === agentId);
   /** Needs-you state is rendered by the screen when the screen is already open. */
   const needsYou = useNeedsYou(agentId, !isWatching);
 
@@ -134,7 +137,7 @@ function RouteComponent() {
             >
               <ChannelAvatar
                 participantIds={channel.data?.agentIds ?? []}
-                size={22}
+                size={28}
               />
             </motion.div>
             <motion.span
@@ -155,15 +158,25 @@ function RouteComponent() {
                 ease: EASE_OUT,
               }}
             >
-              {channel.data?.name ?? "Channel"}
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate text-[13px] tracking-tight">
+                  {channel.data?.name ?? t("Channel")}
+                </span>
+                {/* The standing role, so the header says who this is, not only what it is called. */}
+                {headerAgent?.title ? (
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {headerAgent.title}
+                  </span>
+                ) : null}
+              </span>
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
             <Button
               aria-label={
                 needsYou
-                  ? "This Bot is waiting for you. Open its screen"
-                  : "Watch this Bot's screen"
+                  ? t("This Bot is waiting for you. Open its screen")
+                  : t("Watch this Bot's screen")
               }
               aria-pressed={isWatching}
               className={`relative ${isWatching ? "bg-foreground/5" : ""}`}

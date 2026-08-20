@@ -80,6 +80,10 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
+  Channel: "채널",
+  "This Bot is waiting for you. Open its screen":
+    "봇이 당신을 기다립니다. 화면을 여세요",
+  "Watch this Bot's screen": "이 봇의 화면 보기",
   "Asking {name}": "{name}에게 물어보는 중",
   "Asked {name}": "{name}에게 물었습니다",
   "Asking a coworker": "코워커에게 물어보는 중",

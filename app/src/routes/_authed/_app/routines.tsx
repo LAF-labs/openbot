@@ -402,9 +402,21 @@ function RoutinesPage() {
             <RoutineRow key={routine.id} routine={routine} />
           ))}
           {routines.data?.length === 0 && !creating ? (
-            <p className="py-8 text-center text-[13px] text-muted-foreground">
-              {t("No routines yet. Give a Bot something to do every morning.")}
-            </p>
+            <div className="flex flex-col items-center gap-3 py-10">
+              <span className="inline-flex size-14 overflow-hidden rounded-full opacity-80">
+                {/* The snail. Nothing in the set says "on a schedule, unhurried" better. */}
+                <Mascot
+                  className="size-full object-cover"
+                  seed="r2c4"
+                  size={56}
+                />
+              </span>
+              <p className="text-center text-[13px] text-muted-foreground">
+                {t(
+                  "No routines yet. Give a Bot something to do every morning.",
+                )}
+              </p>
+            </div>
           ) : null}
         </div>
       </PageSection>

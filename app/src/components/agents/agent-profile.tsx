@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { Mascot, mascotBackground } from "@/components/agents/mascot";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
@@ -88,8 +88,23 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const actionError =
     duplicateAgent.error ?? setHidden.error ?? deleteAgent.error;
 
+  const banner = (
+    <span
+      aria-hidden="true"
+      className="flex h-[132px] w-full items-end justify-center overflow-hidden"
+      style={{ background: mascotBackground(profile.avatarSeed) }}
+    >
+      {/* The face at tile scale, on its own ground — the character, not an icon of it. */}
+      <Mascot
+        className="translate-y-1 transition-transform duration-200 group-hover:scale-[1.03]"
+        seed={profile.avatarSeed}
+        size={128}
+      />
+    </span>
+  );
+
   return (
-    <div className="flex w-full flex-col gap-6 p-8">
+    <div className="flex w-full flex-col gap-6 p-8 pt-6">
       <header className="flex flex-col items-center gap-3 text-center">
         {/*
          * The face is the control, where there is one to press. A pencil beside it would be a second
@@ -103,21 +118,15 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           <button
             type="button"
             aria-label={t("Pick a face")}
-            className="rounded-full ring-offset-2 ring-offset-background transition hover:ring-2 hover:ring-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-foreground"
+            className="group w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 focus-visible:ring-2 focus-visible:ring-foreground"
             onClick={() => setPickingFace(true)}
           >
-            <AbstractAvatar
-              name={profile.name}
-              seed={profile.avatarSeed}
-              size={80}
-            />
+            {banner}
           </button>
         ) : (
-          <AbstractAvatar
-            name={profile.name}
-            seed={profile.avatarSeed}
-            size={80}
-          />
+          <span className="group w-full overflow-hidden rounded-2xl border border-border">
+            {banner}
+          </span>
         )}
         <MascotPicker
           open={pickingFace}
