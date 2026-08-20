@@ -1,21 +1,15 @@
 import type { CommandOption } from "./draft";
 
 /**
- * Placeholder slash commands.
+ * No slash commands by default.
  *
- * Channels can carry seeded suggested prompts, but nothing serves them to the browser
- * yet, `AgentChannel` currently stops at `agentIds`. These stand in so `/` is exercisable, and
- * `commands` is a plain prop on `<Composer>`, so replacing them is a call site change.
+ * This used to hold one fabricated `/summarize` that pasted an English sentence — "Summarize what we
+ * covered in this channel so far." — into the box. Home inherited it, where there is no channel to
+ * summarise and the sentence is not in the reader's language. A menu that offers something the
+ * product cannot do is worse than an empty one, and every call site now passes the Bot's real
+ * granted skills through `useSkillCommands`.
  *
- * Agents are deliberately not placeheld: `agentListQueryOptions` already returns the real roster,
- * so the `@` source is wired to it at the call sites.
+ * Kept as a named export rather than deleted: `commands` is an optional prop, and this is the
+ * documented default for a caller that has no agent to ask about yet.
  */
-export const PLACEHOLDER_COMMANDS: CommandOption[] = [
-  {
-    id: "summarize",
-    name: "summarize",
-    description: "Summarize this conversation",
-    kind: "prompt",
-    prompt: "Summarize what we covered in this channel so far.",
-  },
-];
+export const PLACEHOLDER_COMMANDS: CommandOption[] = [];

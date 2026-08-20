@@ -1,8 +1,4 @@
-import {
-  IconArrowUp,
-  IconPlayerStopFilled,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconArrowUp, IconPlayerStopFilled } from "@tabler/icons-react";
 import { PromptArea, type PromptAreaHandle } from "prompt-area";
 import type { Segment } from "prompt-area/helpers";
 import {
@@ -256,21 +252,18 @@ export function Composer({
            * COMPACT_MAX_HEIGHT_PX: padding inside that box would scroll away with the text, so the
            * first visible line would still touch the top edge on a long message.
            */
-          "flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-card px-3 py-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+          // `pl-4` replaces the inset the removed `+` button used to provide.
+          "flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-card py-3 pr-3 pl-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
           className,
         )}
         onSubmit={handleFormSubmit}
       >
-        <Button
-          aria-label={t("More message options unavailable")}
-          className="disabled:opacity-100"
-          disabled
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <IconPlus className="size-5" />
-        </Button>
+        {/*
+         * THE `+` IS GONE. It was permanently disabled and drawn at full strength
+         * (`disabled:opacity-100`), so it read as a working control that ignored every click, and it
+         * announced itself as "More message options unavailable" to anybody using a screen reader.
+         * A control that can never do anything is not a promise worth keeping on screen.
+         */}
         <PromptArea
           aria-label={t("Message")}
           className="chat-prose min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none"
@@ -291,6 +284,7 @@ export function Composer({
             data-testid="composer-stop"
             onClick={onStop}
             size="icon"
+            title={t("Stop the Bot")}
             type="button"
           >
             <IconPlayerStopFilled className="size-3" />
@@ -301,6 +295,7 @@ export function Composer({
             className="size-8 rounded-full p-0"
             disabled={!canSend}
             size="icon"
+            title={sendLabel}
             type="submit"
           >
             <IconArrowUp className="size-3.5" />
@@ -317,8 +312,11 @@ export function Composer({
         className="overflow-hidden rounded-2xl border border-border bg-card"
         onSubmit={handleFormSubmit}
       >
-        <input className="sr-only" multiple onChange={() => {}} type="file" />
-
+        {/*
+         * A dead `<input type="file">` used to sit here: unnamed, in the tab order of the landing
+         * screen, opening a file picker whose result went to `() => {}`. Attachments are not a
+         * feature yet, and a control that discards what you give it is worse than none.
+         */}
         <div className="grow px-3 pt-3 pb-2">
           <PromptArea
             aria-label={t("Message")}
@@ -339,12 +337,18 @@ export function Composer({
           <div />
 
           <div>
+            {/*
+             * size-8, the same button as the compact composer's. It was size-7 here, so the send
+             * button was a pixel-and-a-bit smaller on Home than in a channel — two sizes for one
+             * control, on the two screens a person switches between constantly.
+             */}
             {canStop ? (
               <Button
                 aria-label={t("Stop the Bot")}
-                className="size-7 rounded-full bg-primary p-0"
+                className="size-8 rounded-full p-0"
                 data-testid="composer-stop"
                 onClick={onStop}
+                title={t("Stop the Bot")}
                 type="button"
               >
                 <IconPlayerStopFilled className="size-3" />
@@ -352,11 +356,12 @@ export function Composer({
             ) : (
               <Button
                 aria-label={sendLabel}
-                className="size-7 rounded-full bg-primary p-0 disabled:cursor-not-allowed disabled:opacity-50"
+                className="size-8 rounded-full p-0 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canSend}
+                title={sendLabel}
                 type="submit"
               >
-                <IconArrowUp className="size-3.5 fill-primary" />
+                <IconArrowUp className="size-3.5" />
               </Button>
             )}
           </div>

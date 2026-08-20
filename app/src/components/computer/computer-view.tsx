@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/lib/i18n";
 import { LiveScreen } from "./live-screen";
@@ -81,16 +81,27 @@ export function ComputerView({
   const [secret, setSecret] = useState("");
   const [secretProblem, setSecretProblem] = useState<string | null>(null);
   const [sendingSecret, setSendingSecret] = useState(false);
+  /*
+   * A UNIQUE ID PER MOUNT. This component renders twice at once — the card in the transcript
+   * and the pane beside it — so a hardcoded `id` put two masked fields on the page under one
+   * name, and the label pointed at whichever the browser found first. Typing a password into
+   * the wrong one of two identical boxes is not a mistake anybody can see themselves make.
+   */
+  const secretFieldId = useId();
   const driving = control?.holder === "human";
   /** Read by the polling loop without restarting it on control changes. */
   const drivingRef = useRef(false);
   drivingRef.current = driving;
 
-  /** Release control; the Bot's waiting tool call resumes from this state change. */
-  const handBack = async () => {
+  /**
+   * Release control; the Bot's waiting tool call resumes from this state change.
+   *
+   * Stable, because the Escape handler below depends on it and must not re-bind every render.
+   */
+  const handBack = useCallback(async () => {
     const state = await releaseControl(computerId);
     if (state) setControl(state);
-  };
+  }, [computerId]);
   /** Secret prompts keep the screen live even though the human does not hold the wheel. */
   const secretPending = Boolean(control?.secretWanted);
   const secretPendingRef = useRef(false);
@@ -134,7 +145,9 @@ export function ComputerView({
           const body = (await response.json().catch(() => null)) as {
             error?: string;
           } | null;
-          setProblem(body?.error ?? "The screen is not available right now.");
+          setProblem(
+            body?.error ?? t("The screen is not available right now."),
+          );
         } else {
           const next = (await response.json()) as Screenshot;
           // Exact byte comparison is the settling signal.
@@ -148,7 +161,7 @@ export function ComputerView({
         }
       } catch {
         if (generation.current !== mine) return;
-        setProblem("The screen is not available right now.");
+        setProblem(t("The screen is not available right now."));
       } finally {
         if (generation.current === mine && shouldContinue()) {
           timer = setTimeout(tick, intervalMs);
@@ -189,11 +202,21 @@ export function ComputerView({
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key !== "Escape") return;
+      /*
+       * HANDS BACK BEFORE IT CLOSES. Escape used to shut the overlay while leaving the person still
+       * holding the wheel — the Bot stayed blocked on a takeover nobody could see they still had.
+       *
+       * `preventDefault` is load-bearing now that DetailPanel also listens for Escape and respects
+       * `defaultPrevented`: without it, one press would close this overlay and the pane behind it.
+       */
+      if (driving) void handBack();
+      setExpanded(false);
+      event.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded]);
+  }, [expanded, driving, handBack]);
 
   // Sized from the ratio, never from the payload, so the frame is identical in all three states.
   const frameStyle = { aspectRatio, minWidth, minHeight };
@@ -281,13 +304,13 @@ export function ComputerView({
               if (state) setControl(state);
             }}
           >
-            <label className="block" htmlFor="openbot-secret">
+            <label className="block" htmlFor={secretFieldId}>
               <span className="font-medium">{t("The assistant needs")} </span>
               <span>{control.secretWanted}</span>
             </label>
             <div className="mt-1.5 flex gap-2">
               <input
-                id="openbot-secret"
+                id={secretFieldId}
                 type="password"
                 value={secret}
                 onChange={(event) => setSecret(event.target.value)}
@@ -435,8 +458,9 @@ export function ComputerView({
                     </button>
                   )}
                   <span className="pointer-events-none text-white/70">
+                    {/* Escape hands the wheel back on the way out; say so, since it is not obvious. */}
                     {driving
-                      ? t("Press Escape to close")
+                      ? t("Press Escape to hand back and close")
                       : t("Click anywhere or press Escape to close")}
                   </span>
                 </span>

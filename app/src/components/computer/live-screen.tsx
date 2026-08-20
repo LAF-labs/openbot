@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "@/lib/i18n";
 import { pageCoordinates } from "./take-the-wheel";
 
 /**
@@ -175,63 +176,76 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   );
 
   /**
-   * Keystrokes, forwarded while driving.
+   * The canvas takes focus when control is handed over.
    *
-   * Listen on window because canvas cannot hold focus. `preventDefault` keeps Tab and typing directed
-   * at the remote page while takeover is active.
+   * It has to: the keystroke handlers below moved off `window` and onto this element, and until it
+   * holds focus there is nothing for them to fire on.
    */
   useEffect(() => {
     if (!driving) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") return; // Escape still closes the view.
-      event.preventDefault();
-      send({
-        type: "key",
-        event: "down",
-        key: event.key,
-        code: event.code,
-        // Only a printable character carries text. Sending text for Backspace makes Chrome insert a
-        // character instead of deleting one.
-        ...(event.key.length === 1 ? { text: event.key } : {}),
-        modifiers: modifierBits(event),
-      });
-    };
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "Escape") return;
-      event.preventDefault();
-      send({
-        type: "key",
-        event: "up",
-        key: event.key,
-        code: event.code,
-        modifiers: modifierBits(event),
-      });
-    };
-    /** Paste arrives as one block; CDP inserts it as text rather than key events. */
-    const onPaste = (event: ClipboardEvent) => {
-      const text = event.clipboardData?.getData("text");
-      if (!text) return;
-      event.preventDefault();
-      send({ type: "text", text });
-    };
+    canvasRef.current?.focus();
+  }, [driving]);
 
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("paste", onPaste);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("paste", onPaste);
-    };
-  }, [driving, send]);
+  /**
+   * Keystrokes, forwarded while driving.
+   *
+   * ON THE CANVAS, NOT ON THE WINDOW — this was a keyboard trap in the WCAG 2.1.2 sense. Window
+   * listeners with an unconditional `preventDefault` swallowed Tab for the whole page, so once a
+   * person took control there was no key that could move focus anywhere: "Hand back" was two
+   * centimetres away and unreachable without a mouse. A focusable canvas keeps Tab and typing
+   * directed at the remote page while the canvas holds focus, and returns the keyboard to the app
+   * the moment it does not.
+   *
+   * The old comment claimed a canvas cannot hold focus. With `tabIndex` it can.
+   */
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    // Escape leaves, and Tab is how somebody gets back out to Hand back.
+    if (event.key === "Escape" || event.key === "Tab") return;
+    event.preventDefault();
+    send({
+      type: "key",
+      event: "down",
+      key: event.key,
+      code: event.code,
+      // Only a printable character carries text. Sending text for Backspace makes Chrome insert a
+      // character instead of deleting one.
+      ...(event.key.length === 1 ? { text: event.key } : {}),
+      modifiers: modifierBits(event),
+    });
+  };
+  const handleKeyUp = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (event.key === "Escape" || event.key === "Tab") return;
+    event.preventDefault();
+    send({
+      type: "key",
+      event: "up",
+      key: event.key,
+      code: event.code,
+      modifiers: modifierBits(event),
+    });
+  };
+  /** Paste arrives as one block; CDP inserts it as text rather than key events. */
+  const handlePaste = (event: React.ClipboardEvent<HTMLCanvasElement>) => {
+    const text = event.clipboardData?.getData("text");
+    if (!text) return;
+    event.preventDefault();
+    send({ type: "text", text });
+  };
 
   return (
     <canvas
       ref={canvasRef}
-      className={`block h-auto w-full ${driving ? "cursor-crosshair" : ""}`}
+      // max-h/max-w rather than h-auto w-full: the expanded screen used to overflow a short window
+      // and scroll, with the bottom of the Bot's page below the fold.
+      className={`block max-h-full max-w-full outline-none focus-visible:ring-2 focus-visible:ring-ring ${driving ? "cursor-crosshair" : ""}`}
+      role={driving ? "application" : undefined}
+      tabIndex={driving ? 0 : undefined}
       // Only forward input during takeover.
       {...(driving
         ? {
+            onKeyDown: handleKeyDown,
+            onKeyUp: handleKeyUp,
+            onPaste: handlePaste,
             onMouseDown: onMouse("pressed"),
             onMouseUp: onMouse("released"),
             onMouseMove: onMouse("moved"),
@@ -252,8 +266,10 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         : {})}
       aria-label={
         driving
-          ? "The assistant's screen. You have control: click and type here."
-          : "The assistant's screen, live"
+          ? t(
+              "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.",
+            )
+          : t("The assistant's screen, live")
       }
       data-connected={connected}
     />

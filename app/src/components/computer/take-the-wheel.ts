@@ -1,6 +1,7 @@
 /**
  * Computer control API helpers and screenshot-to-page coordinate conversion.
  */
+import { t } from "@/lib/i18n";
 
 export type ControlState = {
   holder: "bot" | "human";
@@ -71,7 +72,10 @@ export async function supplySecret(
     const body = (await response.json().catch(() => null)) as {
       error?: string;
     } | null;
-    return { ok: false, error: body?.error ?? "That could not be entered." };
+    return {
+      ok: false,
+      error: body?.error ?? t("That could not be sent to the page. Try again."),
+    };
   } catch {
     return {
       ok: false,

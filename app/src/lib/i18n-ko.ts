@@ -126,6 +126,8 @@ export const ko: Record<string, string> = {
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
+  "Press Escape to hand back and close":
+    "Esc를 누르면 제어를 돌려주고 닫습니다",
   Private: "비공개",
   Public: "공개",
   "Reset it": "초기화",
@@ -141,8 +143,13 @@ export const ko: Record<string, string> = {
   "Something went wrong.": "문제가 생겼습니다.",
   Test: "연결 확인",
   "Testing…": "확인 중…",
+  "That could not be sent to the page. Try again.":
+    "페이지로 전달하지 못했습니다. 다시 시도하세요.",
   "The assistant may still be working. An administrator can check whether its computer is running.":
     "어시스턴트는 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
+  "The assistant's screen, live": "어시스턴트의 화면 — 실시간",
+  "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
+    "어시스턴트의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
   "The page you asked for does not exist, or no longer does.":
     "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
   "The role you write here applies in every channel this coworker works in.":
@@ -150,6 +157,7 @@ export const ko: Record<string, string> = {
   "The run history could not be loaded.": "실행 기록을 불러오지 못했습니다.",
   "The schedule stops and its run history goes with it. This cannot be undone.":
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
+  "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They are still there. This was a problem reaching us.":
     "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",

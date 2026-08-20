@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { t } from "@/lib/i18n";
+import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: RouteComponent,
@@ -48,6 +49,7 @@ function RouteComponent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = roster.find((agent) => agent.id === selectedId) ?? roster[0];
+  const skillCommands = useSkillCommands(selected?.id ?? "");
 
   return (
     <div className="mt-8 flex w-full flex-1 flex-col items-center justify-center p-4">
@@ -175,6 +177,9 @@ function RouteComponent() {
         <Composer
           agents={toAgentOptions(agents)}
           className="w-full max-w-2xl"
+          // The chosen Bot's real granted skills, the way a channel does it. Home used to inherit
+          // the placeholder list, so `/` here offered a command no Bot had.
+          commands={skillCommands}
           disabled={!selected}
           onSubmit={async (draft) => {
             // A channel is pinned to one coworker for the life of its thread.
