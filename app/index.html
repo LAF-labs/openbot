@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LAF Agent</title>
+    <!--
+      THE THEME CLASS GOES ON BEFORE ANYTHING PAINTS.
+
+      React applies it too, but React runs after the first paint, so a dark-theme user saw a white
+      page flash on every load and every reload. This is the same three-state rule as lib/theme.ts —
+      an unset choice follows the machine — kept deliberately tiny and duplicated rather than
+      imported, because a module script is deferred and would land on the wrong side of that paint.
+    -->
+    <script>
+      (() => {
+        let stored = null;
+        try {
+          stored = window.localStorage.getItem("openbot-theme");
+        } catch {
+          // Private browsing throws on read; an unreadable store means no choice was made.
+        }
+        const dark =
+          stored === "dark" ||
+          (stored !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
