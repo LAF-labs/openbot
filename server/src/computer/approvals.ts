@@ -23,6 +23,9 @@
  * the surface a person answers on decides which half of a Bot's work they can see.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { and, eq, isNull, lte } from "drizzle-orm";
+import type { Database } from "../db/client";
+import { computerApprovals } from "../db/schema/computer";
 
 /**
  * How long a question stays open.
@@ -205,14 +208,14 @@ export type ApprovalRegistry = {
     question: string;
     fingerprint: string;
     target: { type: string; id: string };
-  }) => PendingApproval;
+  }) => Promise<PendingApproval>;
   /**
    * The open questions for one Bot, newest last, expired ones already gone.
    *
    * Includes answered-but-unspent ones, because the waiting caller learns the answer by finding its
    * own id in this list. The surface shows only the unanswered ones.
    */
-  pending: (botId: string) => PendingApproval[];
+  pending: (botId: string) => Promise<PendingApproval[]>;
   /**
    * Answer one question, on the Bot it was asked about.
    *
@@ -229,9 +232,9 @@ export type ApprovalRegistry = {
     botId: string,
     actor: string,
     granted: boolean,
-  ) => ApprovalAnswer;
+  ) => Promise<ApprovalAnswer>;
   /** Spend an approval on one action. Single use: a successful consumption removes it. */
-  consume: (id: string, fingerprint: string) => ApprovalConsumption;
+  consume: (id: string, fingerprint: string) => Promise<ApprovalConsumption>;
 };
 
 export function createApprovalRegistry(
@@ -260,7 +263,7 @@ export function createApprovalRegistry(
   };
 
   return {
-    request: (input) => {
+    request: async (input) => {
       sweep();
       const at = now();
       const approval: PendingApproval = {
@@ -278,12 +281,12 @@ export function createApprovalRegistry(
       return approval;
     },
 
-    pending: (botId) => {
+    pending: async (botId) => {
       sweep();
       return [...open.values()].filter((approval) => approval.botId === botId);
     },
 
-    answer: (id, botId, actor, granted) => {
+    answer: async (id, botId, actor, granted) => {
       sweep();
       const approval = open.get(id);
       // An answered question is not answerable again, whichever way it went. Otherwise a second
@@ -308,7 +311,7 @@ export function createApprovalRegistry(
       return { ok: true, approval: answered };
     },
 
-    consume: (id, fingerprint) => {
+    consume: async (id, fingerprint) => {
       sweep();
       const approval = open.get(id);
       if (!approval) return { ok: false, reason: "unknown" };
@@ -327,6 +330,137 @@ export function createApprovalRegistry(
       // button thinks they are agreeing to.
       open.delete(id);
       return { ok: true, approval };
+    },
+  };
+}
+
+/**
+ * The same registry, kept where every process can see it.
+ *
+ * The Map above is correct on one machine and wrong on two, which is the deployment this is for:
+ * several servers behind a load balancer, and a person who answers on whichever one the balancer
+ * picked. A question raised on one process and answered on another is reported by the Map as "no
+ * longer open" — indistinguishable from an expiry — and the Bot waits out its ten minutes for an
+ * answer it was already given. Nothing logs a failure, because from inside each process nothing
+ * failed. That is the shape this module exists to avoid.
+ *
+ * What kept the Map honest survives the move: an approval still runs out in ten minutes and is still
+ * bound to one action by fingerprint, so the worst a row can buy is the action a person approved,
+ * within minutes of approving it. The two races the Map decided by arriving first are now decided by
+ * the database: answering is `UPDATE ... WHERE granted IS NULL` and spending is `DELETE ... RETURNING`,
+ * so a second tab cannot overturn a decision and two processes cannot both spend one grant.
+ */
+export function createDatabaseApprovalRegistry(
+  database: Database,
+  options: { now?: () => number; ttlMs?: number } = {},
+): ApprovalRegistry {
+  const now = options.now ?? (() => Date.now());
+  const ttlMs = options.ttlMs ?? APPROVAL_TTL_MS;
+
+  /** Drop what has run out, on every read, exactly as the in-memory registry does. */
+  const sweep = async () => {
+    await database
+      .delete(computerApprovals)
+      .where(lte(computerApprovals.expiresAt, new Date(now())));
+  };
+
+  const asApproval = (row: typeof computerApprovals.$inferSelect) => {
+    const approval: PendingApproval = {
+      id: row.id,
+      botId: row.botId,
+      actor: row.actor,
+      rule: row.rule ?? "",
+      question: row.question,
+      fingerprint: row.fingerprint,
+      target: { type: row.targetType, id: row.targetId },
+      requestedAt: row.requestedAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+      ...(row.granted === null ? {} : { granted: row.granted }),
+      ...(row.answeredBy === null ? {} : { answeredBy: row.answeredBy }),
+    };
+    return approval;
+  };
+
+  return {
+    request: async (input) => {
+      await sweep();
+      const at = now();
+      const [row] = await database
+        .insert(computerApprovals)
+        .values({
+          id: randomUUID(),
+          botId: input.botId,
+          actor: input.actor,
+          rule: input.rule,
+          question: input.question,
+          fingerprint: input.fingerprint,
+          targetType: input.target.type,
+          targetId: input.target.id,
+          requestedAt: new Date(at),
+          expiresAt: new Date(at + ttlMs),
+        })
+        .returning();
+      if (!row) throw new Error("the approval could not be opened");
+      return asApproval(row);
+    },
+
+    pending: async (botId) => {
+      await sweep();
+      const rows = await database
+        .select()
+        .from(computerApprovals)
+        .where(eq(computerApprovals.botId, botId))
+        .orderBy(computerApprovals.requestedAt);
+      return rows.map(asApproval);
+    },
+
+    answer: async (id, botId, actor, granted) => {
+      await sweep();
+      // `granted IS NULL` is the whole guard. Two people, or one person in two tabs, race here and
+      // exactly one row comes back; the loser is told the question is no longer open, which is true.
+      const [row] = await database
+        .update(computerApprovals)
+        .set({ granted, answeredBy: actor })
+        .where(
+          and(
+            eq(computerApprovals.id, id),
+            eq(computerApprovals.botId, botId),
+            isNull(computerApprovals.granted),
+          ),
+        )
+        .returning();
+      if (!row) return { ok: false, reason: "no longer open" };
+      return { ok: true, approval: asApproval(row) };
+    },
+
+    consume: async (id, fingerprint) => {
+      await sweep();
+      const [found] = await database
+        .select()
+        .from(computerApprovals)
+        .where(eq(computerApprovals.id, id));
+      if (!found) return { ok: false, reason: "unknown" };
+      if (found.granted === null) return { ok: false, reason: "unanswered" };
+      if (found.granted === false) return { ok: false, reason: "declined" };
+      if (found.fingerprint !== fingerprint) {
+        // Left in place rather than burned, as in the Map: a mismatch is the replay this exists to
+        // stop, and destroying the row would take the person's grant away from the action they meant.
+        return { ok: false, reason: "a different action" };
+      }
+      // Single use, decided by the delete rather than by the read above. Two processes can both pass
+      // the checks; only one gets a row back, and the other is told the same thing a spent approval
+      // has always told it.
+      const [spent] = await database
+        .delete(computerApprovals)
+        .where(
+          and(
+            eq(computerApprovals.id, id),
+            eq(computerApprovals.granted, true),
+          ),
+        )
+        .returning();
+      if (!spent) return { ok: false, reason: "unknown" };
+      return { ok: true, approval: asApproval(spent) };
     },
   };
 }

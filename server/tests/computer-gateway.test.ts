@@ -467,7 +467,7 @@ describe("the gateway when the boundary asks a person", () => {
       .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
-    approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
     await gateway.click(
       "default",
       "bot-1",
@@ -504,7 +504,7 @@ describe("the gateway when the boundary asks a person", () => {
     const asked = (await gateway
       .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
-    approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
 
     await expect(
       gateway.click(
@@ -525,7 +525,7 @@ describe("the gateway when the boundary asks a person", () => {
       .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
-    approvals.answer(asked.approvalId, "bot-1", MANAGER.id, false);
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, false);
     await expect(
       gateway.click(
         "default",
@@ -585,7 +585,7 @@ describe("the gateway when the boundary asks a person", () => {
         text: "SW1A 1AA",
       })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
-    approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
 
     await expect(
       gateway.type(
@@ -606,12 +606,12 @@ describe("the gateway when the boundary asks a person", () => {
       .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
-    const waiting = approvals.pending("bot-1");
+    const waiting = await approvals.pending("bot-1");
     expect(waiting).toHaveLength(1);
     expect(waiting[0]?.id).toBe(asked.approvalId);
     expect(waiting[0]?.question).toContain("Submit order");
     // Another Bot's screen must not offer somebody a question about this one's computer.
-    expect(approvals.pending("bot-2")).toEqual([]);
+    expect(await approvals.pending("bot-2")).toEqual([]);
   });
 
   test("dry-run records the question and lets the action through", async () => {
@@ -886,5 +886,94 @@ describe("a Bot going in circles", () => {
       "computer_write_file file=notes.md",
     );
     expect(repeated?.payload.page).toBeUndefined();
+  });
+});
+
+/**
+ * What a second server process may decide.
+ *
+ * The snapshot cache lives in the process that took it. A deployment behind a load balancer routes
+ * the next call to a process that has never seen the window, and the fields a rule reads arrive
+ * blank. `element` is safe by accident — CEL throws on an identifier that is not in the context and
+ * the gateway treats a thrown deny as a refusal — but `page` is always present as `{url:"",host:""}`,
+ * so a rule about the host simply stops matching and the action goes through. These tests pin the
+ * refusal, and pin that a deployment which never mentions the page loses nothing to it.
+ */
+describe("a process holding no snapshot", () => {
+  /** Deliberately never snapshots, unlike `gatewayWith`. */
+  function blindGateway(policy: ActionPolicy) {
+    const { client, calls } = fakeClient();
+    const { store, rows } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => policy,
+      approvals: createApprovalRegistry(),
+    });
+    return { gateway, calls, rows };
+  }
+
+  test("refuses an action a page rule was written against", async () => {
+    const { gateway, calls } = blindGateway({
+      ...PERMISSIVE,
+      deny: ['page.host == "example.com"'],
+    });
+
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(calls).toEqual([]);
+  });
+
+  test("says the screen was not seen, rather than naming a rule", async () => {
+    const { gateway, rows } = blindGateway({
+      ...PERMISSIVE,
+      deny: ['page.host == "example.com"'],
+    });
+
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(/has not seen the computer's screen/);
+    expect(rows[0]?.eventType).toBe("computer.action_refused");
+  });
+
+  test("lets a deployment that never mentions the page carry on", async () => {
+    const { gateway, calls } = blindGateway(PERMISSIVE);
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    expect(calls).toEqual(["click"]);
+  });
+
+  test("still decides a navigation, which carries its own destination", async () => {
+    const { gateway, calls } = blindGateway({
+      ...PERMISSIVE,
+      deny: ['page.host == "blocked.example"'],
+    });
+
+    await gateway.navigate("default", "bot-1", ACTOR, "https://example.com/");
+    expect(calls).toEqual(["navigate"]);
+
+    await expect(
+      gateway.navigate("default", "bot-1", ACTOR, "https://blocked.example/"),
+    ).rejects.toThrow(ActionRefusedError);
+  });
+
+  test("dry-run changes nothing, here as everywhere else", async () => {
+    const { gateway, calls } = blindGateway({
+      ...PERMISSIVE,
+      mode: "dry-run",
+      deny: ['page.host == "example.com"'],
+    });
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    expect(calls).toEqual(["click"]);
   });
 });

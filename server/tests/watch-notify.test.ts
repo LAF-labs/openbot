@@ -26,10 +26,10 @@ describe("approval notifications", () => {
       const registry = withApprovalNotifications(createApprovalRegistry(), {
         webhookUrl: `http://127.0.0.1:${server.port}/hook`,
       });
-      const pending = ask(registry);
-      expect(registry.pending("bot-1").map((entry) => entry.id)).toContain(
-        pending.id,
-      );
+      const pending = await ask(registry);
+      expect(
+        (await registry.pending("bot-1")).map((entry) => entry.id),
+      ).toContain(pending.id);
       // Fire-and-forget: give the frame one beat to arrive.
       await new Promise((resolve) => setTimeout(resolve, 150));
       expect(frames).toHaveLength(1);
@@ -46,13 +46,13 @@ describe("approval notifications", () => {
     const registry = withApprovalNotifications(createApprovalRegistry(), {
       webhookUrl: "http://127.0.0.1:1/hook",
     });
-    const pending = ask(registry);
+    const pending = await ask(registry);
     expect(pending.id).toBeTruthy();
-    expect(registry.pending("bot-1")).toHaveLength(1);
+    expect(await registry.pending("bot-1")).toHaveLength(1);
   });
 
-  test("no webhook configured is a log line, not a crash", () => {
+  test("no webhook configured is a log line, not a crash", async () => {
     const registry = withApprovalNotifications(createApprovalRegistry(), {});
-    expect(ask(registry).id).toBeTruthy();
+    expect((await ask(registry)).id).toBeTruthy();
   });
 });

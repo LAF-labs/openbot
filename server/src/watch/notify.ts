@@ -67,8 +67,8 @@ export function withApprovalNotifications(
 
   return {
     ...registry,
-    request(input) {
-      const pending = registry.request(input);
+    async request(input) {
+      const pending = await registry.request(input);
       notify({
         id: pending.id,
         botId: input.botId,

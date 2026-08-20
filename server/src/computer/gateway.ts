@@ -29,6 +29,7 @@ import {
   type ActionPolicy,
   evaluateActionPolicy,
   type PolicyContext,
+  policyDecidesOnSnapshot,
   type PolicyDecision,
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
@@ -243,7 +244,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * Reading a page never reaches this function, so nothing counts a Bot looking at the same screen
      * over and over. That is the cheapest thing it does and the one nobody minds.
      */
-    const repetition = repeat.observe(botId, {
+    const repetition = await repeat.observe(botId, {
       tool: toolName,
       ref,
       key: subject.key,
@@ -313,7 +314,36 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       }
     }
 
-    const decision = evaluateActionPolicy(options.policy(), context);
+    /*
+     * A snapshot this process never took is an unknown page, not an empty one.
+     *
+     * `cached` is read from the per-process map above. Behind a load balancer the click lands on a
+     * process that never snapshotted the window, so `page` and `element` are blank and every rule
+     * written against them silently stops matching. Refusing is the only answer consistent with the
+     * rest of this boundary, where an absent policy denies and a broken deny expression still denies:
+     * a rule that cannot be evaluated must not be read as a rule that did not fire.
+     *
+     * A navigation carries its destination on the request, so it is decidable without a snapshot and
+     * passes this guard. So does a deployment whose refusing rules never mention either field, which
+     * is why the policy is consulted rather than the snapshot alone — a boundary that says nothing
+     * about pages loses nothing by not having one.
+     */
+    const policy = options.policy();
+    const blind = !cached && subject.targetUrl === undefined;
+    const decision =
+      blind && policyDecidesOnSnapshot(policy)
+        ? ({
+            allowed: false,
+            mode: policy?.mode ?? "enforce",
+            matched: null,
+            source: "deny",
+            // dry-run changes nothing, here as everywhere else in this boundary.
+            forward: (policy?.mode ?? "enforce") === "dry-run",
+            reason:
+              "This server has not seen the computer's screen, so a rule about the page or the " +
+              "element could not be decided. Take a snapshot and try the action again.",
+          } satisfies PolicyDecision)
+        : evaluateActionPolicy(policy, context);
 
     /**
      * A decision that wants a person, resolved before anything is recorded as having happened.
@@ -339,7 +369,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         pageUrl,
       });
       const presented = subject.approvalId
-        ? approvals.consume(subject.approvalId, fingerprint)
+        ? await approvals.consume(subject.approvalId, fingerprint)
         : undefined;
 
       if (presented?.ok && presented.approval.answeredBy) {
@@ -354,7 +384,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         // answer always records who gave it and an unanswered approval cannot be spent, and it asks
         // again rather than falling back to the person whose turn raised the question: crediting
         // consent to whoever was driving the Bot is the one thing this record must never do.
-        const pending = approvals.request({
+        const pending = await approvals.request({
           botId,
           actor: actor.id,
           rule: decision.matched ?? "",

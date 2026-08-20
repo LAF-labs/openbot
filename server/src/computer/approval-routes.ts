@@ -45,11 +45,11 @@ export function createApprovalRoutes(
    * A read, so no audit row, exactly like asking who holds the wheel. The interesting rows are the
    * one written when the question was raised and the one written when somebody answered it.
    */
-  routes.get("/:botId", requireUser, (context) =>
+  routes.get("/:botId", requireUser, async (context) =>
     context.json({
-      approvals: approvals
-        .pending(context.req.param("botId") ?? "")
-        .map(presentable),
+      approvals: (
+        await approvals.pending(context.req.param("botId") ?? "")
+      ).map(presentable),
     }),
   );
 
@@ -80,7 +80,7 @@ export function createApprovalRoutes(
 
     const botId = context.req.param("botId") ?? "";
     const record = context.var.actor;
-    const answered = approvals.answer(
+    const answered = await approvals.answer(
       context.req.param("approvalId") ?? "",
       botId,
       record.id,

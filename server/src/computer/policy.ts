@@ -275,6 +275,30 @@ function matches(
 }
 
 /**
+ * Does any rule that can refuse read the page or the element?
+ *
+ * `page` and `element` reach a rule from the snapshot the gateway took, which the gateway holds in
+ * the process that took it. A deployment running a second server process routes the next call to a
+ * process that never snapshotted that window, and both fields arrive blank: `page.host == "admin"`
+ * compares against "" and never fires. The rule stops refusing, the audit row says the action was
+ * permitted, and nothing anywhere says the boundary went quiet — the failure this file is otherwise
+ * written to avoid, where an absent policy denies and a broken deny expression still denies.
+ *
+ * The gateway asks this so it can refuse instead of deciding on a page it cannot see.
+ *
+ * `allow` is deliberately not consulted. An allow rule that cannot be evaluated fails to permit, and
+ * the floor below it already denies, so a blank context can only ever make `allow` stricter.
+ */
+export function policyDecidesOnSnapshot(
+  policy: ActionPolicy | null | undefined,
+): boolean {
+  const refusing = [...(policy?.deny ?? []), ...(policy?.ask ?? [])];
+  return refusing.some((expression) =>
+    /\b(?:page|element)\s*\./.test(expression),
+  );
+}
+
+/**
  * Decide whether this action may run.
  *
  * An absent policy denies. An unconfigured deployment is one that has not said what its Bots may do,

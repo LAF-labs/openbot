@@ -145,7 +145,7 @@ describe("answering a question", () => {
         asBystander,
       ),
     );
-    const pending = approvals.request({
+    const pending = await approvals.request({
       botId: "bot-1",
       actor: DRIVER.id,
       rule: "r",
@@ -312,7 +312,7 @@ describe("answering a question", () => {
     const asked = await ask("bot-1");
     await answer(app)("bot-1", asked.approvalId, true);
 
-    const elsewhere = approvals.consume(
+    const elsewhere = await approvals.consume(
       asked.approvalId,
       fingerprintOf({
         botId: "bot-1",

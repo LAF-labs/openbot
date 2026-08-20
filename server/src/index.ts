@@ -18,14 +18,14 @@ import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
-import { createApprovalRegistry } from "./computer/approvals";
+import { createDatabaseApprovalRegistry } from "./computer/approvals";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
 import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
-import { createRepeatDetector } from "./computer/repeat";
+import { createDatabaseRepeatDetector } from "./computer/repeat";
 import { createSupervisorClient } from "./computer/supervisor";
 import { loadConfig } from "./config";
 import { createConnectorAdminService } from "./connectors";
@@ -226,11 +226,17 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
  */
 // The buzz on "blocked on you": a webhook today, AlimTalk once that channel
 // clears review. Absent both, the question still waits on the surface.
-const approvals = withApprovalNotifications(createApprovalRegistry(), {
-  ...(process.env.LAF_NOTIFY_WEBHOOK_URL
-    ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
-    : {}),
-});
+// Backed by the database, not by a Map in this process: several servers behind a
+// load balancer must see one another's open questions, or an answer given on one
+// reads as an expiry on the next. See createDatabaseApprovalRegistry.
+const approvals = withApprovalNotifications(
+  createDatabaseApprovalRegistry(database),
+  {
+    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
+      ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
+      : {}),
+  },
+);
 
 const pluginStore = createPluginStore({
   database,
@@ -384,15 +390,16 @@ const app = createApp(
         approvals,
         // Stop, reset and the listing act on containers when there are containers to act on.
         ...(supervisor ? { supervisor } : {}),
-        // Only when a deployment has said its Bots retry on a slower rhythm than the built-in window
-        // assumes. Otherwise the gateway makes its own and nobody has to know it exists.
-        ...(config.computer?.repeatWindowMs
-          ? {
-              repeat: createRepeatDetector({
-                windowMs: config.computer.repeatWindowMs,
-              }),
-            }
-          : {}),
+        // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
+        // a deployment with a second process would then split every Bot's count between them and
+        // never reach a threshold. The window is still only passed when a deployment has said its
+        // Bots retry on a slower rhythm than the built-in one assumes.
+        repeat: createDatabaseRepeatDetector(
+          database,
+          config.computer?.repeatWindowMs
+            ? { windowMs: config.computer.repeatWindowMs }
+            : {},
+        ),
       })
     : undefined,
   policyStore,

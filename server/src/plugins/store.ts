@@ -297,7 +297,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       arguments: question.args,
     });
     const presented = question.approvalId
-      ? options.approvals.consume(question.approvalId, fingerprint)
+      ? await options.approvals.consume(question.approvalId, fingerprint)
       : undefined;
     // An approval with nobody's name on it asks again rather than being credited to whoever was
     // driving the Bot, which is the one attribution this record must never make.
@@ -305,7 +305,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       return presented.approval.answeredBy;
     }
 
-    const pending = options.approvals.request({
+    const pending = await options.approvals.request({
       botId: question.botId,
       actor: question.actorId,
       rule: question.rule,
