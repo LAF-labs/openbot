@@ -54,6 +54,21 @@ const settingsLinkOptions = { to: "/settings" } satisfies LinkOptions;
 
 const userMenuItemClassName = "gap-2 px-2 py-1.5";
 
+/**
+ * One rhythm for the footer nav. The stacked active+hover variant outranks the
+ * plain hover by specificity, so hovering the row you are on does not dip it
+ * back to the lighter hover fill.
+ */
+const footerRowClassName =
+  "h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8";
+
+const footerLinks = [
+  { to: "/routines", icon: IconClock, label: "Routines" },
+  // Beside Agents rather than inside Admin: writing a skill is something anybody does.
+  { to: "/skills", icon: IconBox, label: "Skills" },
+  { to: "/agents", icon: IconBolt, label: "Agents" },
+] as const;
+
 function UserAvatar() {
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const initials =
@@ -65,7 +80,7 @@ function UserAvatar() {
       .join("") ?? currentUser?.email.slice(0, 2).toUpperCase();
 
   return (
-    <div className="size-[28px] bg-muted-foreground/10 text-foreground/70 rounded-full flex items-center justify-center text-xs overflow-hidden">
+    <div className="size-8 bg-muted-foreground/10 text-foreground/70 rounded-full flex items-center justify-center text-xs overflow-hidden">
       {initials}
     </div>
   );
@@ -195,7 +210,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {...props}
                   to="/channel/new"
                   activeProps={{
-                    className: "bg-foreground/5",
+                    className: "bg-foreground/8",
                   }}
                 />
               )}
@@ -228,33 +243,38 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
              * the box has to say so and quote it back — told "you don't have channels yet" while
              * holding a typo, a person reads their conversations as gone.
              */}
+            {/*
+             * Quiet text, not a dashed box: a 248px sidebar has no room for furniture, and an
+             * outlined panel reads as a broken widget rather than an absence.
+             */}
             {searching && visibleChannels.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {t("No channels match your search")}
-                    </EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      Nothing here is named “{search.trim()}”, and nobody has
-                      said it recently either.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
+              <Empty className="py-12">
+                <EmptyHeader className="gap-1">
+                  <EmptyTitle className="text-[13px]">
+                    {t("No channels match your search")}
+                  </EmptyTitle>
+                  <EmptyDescription className="text-[12px]/relaxed text-pretty">
+                    {t(
+                      "Nothing here is named “{query}”, and nobody has said it recently either.",
+                      { query: search.trim() },
+                    )}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : null}
             {!searching && channels.data?.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>{t("You don't have channels yet")}</EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      Start talking to agents and your channels will appear
-                      here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
+              <Empty className="py-12">
+                <EmptyHeader className="gap-1">
+                  <EmptyTitle className="text-[13px]">
+                    {t("You don't have channels yet")}
+                  </EmptyTitle>
+                  <EmptyDescription className="text-[12px]/relaxed text-pretty">
+                    {t(
+                      "Start talking to agents and your channels will appear here.",
+                    )}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : null}
             <AnimatePresence initial={false}>
               {visibleChannels.map((channel) => (
@@ -270,64 +290,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu className="gap-px">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/routines"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconClock />
-              </div>
-              <span className="text-sm trackint-tight">{t("Routines")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/skills"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBox />
-              </div>
-              <span className="text-sm trackint-tight">{t("Skills")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/agents"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBolt />
-              </div>
-              <span className="text-sm trackint-tight">{t("Agents")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {footerLinks.map(({ to, icon: Icon, label }) => (
+            <SidebarMenuItem key={to}>
+              <SidebarMenuButton
+                className={footerRowClassName}
+                render={(props) => <Link {...props} to={to} />}
+              >
+                {/* size-8 matches the roster avatar column, so labels share one left edge. */}
+                <div className="size-8 flex items-center justify-center text-muted-foreground group-data-[status=active]/menu-button:text-foreground">
+                  <Icon />
+                </div>
+                <span className="text-sm tracking-tight">{t(label)}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -336,7 +312,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 }
               >
                 <UserAvatar />
-                <span className="text-sm trackint-tight">
+                <span className="text-sm tracking-tight">
                   {currentUser?.name || currentUser?.email}
                 </span>
               </DropdownMenuTrigger>

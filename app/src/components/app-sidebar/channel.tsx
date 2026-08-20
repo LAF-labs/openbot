@@ -23,19 +23,17 @@ export const Channel = memo(function Channel({
     <Link
       to="/channel/$channelId"
       params={{ channelId }}
-      type="button"
-      className="flex flex-row py-2 px-2 gap-2 items-center w-full hover:bg-foreground/5 rounded-lg [contain-intrinsic-size:auto_3.25rem] [content-visibility:auto]"
-      activeProps={{
-        className: "bg-foreground/5",
-      }}
+      // The stacked active+hover variant outranks the plain hover by specificity, so hovering the
+      // active row does not dip it back to the lighter hover fill.
+      className="flex flex-row py-2 px-2 gap-2 items-center w-full rounded-lg hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8 [contain-intrinsic-size:auto_3.25rem] [content-visibility:auto]"
     >
-      <div className="">
+      <div className="shrink-0">
         <ChannelAvatar participantIds={participantIds} size={32} />
       </div>
       <div className="flex-col min-w-0 flex-1">
         <div className="flex flex-row items-center justify-between gap-2">
           <span className="text-[14px] tracking-[-1%] truncate">{name}</span>
-          <div className="text-[12px] text-muted-foreground/70">
+          <div className="shrink-0 text-[12px] text-muted-foreground/70 tabular-nums">
             {lastMessageAt}
           </div>
         </div>

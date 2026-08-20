@@ -169,6 +169,8 @@ export const ko: Record<string, string> = {
   "No connectors. They come from this deployment's knowledge sources.":
     "커넥터가 없습니다. 이 배포의 지식 소스에서 옵니다.",
   "No coworker by that name.": "그 이름의 봇이 없습니다.",
+  "Nothing here is named “{query}”, and nobody has said it recently either.":
+    "“{query}”라는 이름의 채널도, 최근 그런 말이 오간 채널도 없어요.",
   "No credentials are configured.": "등록된 자격증명이 없습니다.",
   "No events match this filter yet.":
     "이 필터와 일치하는 기록이 아직 없습니다.",
@@ -239,6 +241,8 @@ export const ko: Record<string, string> = {
   Slug: "슬러그",
   "Start a new channel": "새 채널 시작",
   "Start channel": "채널 시작",
+  "Start talking to agents and your channels will appear here.":
+    "에이전트와 대화를 시작하면 채널이 여기에 나타나요.",
   Stop: "정지",
   "Stop the Bot": "봇 정지",
   "Summarise what I did yesterday from the channel, then list what is left.":
