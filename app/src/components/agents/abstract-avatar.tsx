@@ -1,4 +1,5 @@
 import Avatar from "boring-avatars";
+import { hasMascot, Mascot } from "@/components/agents/mascot";
 
 export function AbstractAvatar({
   name,
@@ -18,7 +19,11 @@ export function AbstractAvatar({
     >
       {/* The drawing carries its own role; hidden so the coworker is announced once, by name. */}
       <span aria-hidden="true" className="contents">
-        <Avatar name={seed} size={size} />
+        {hasMascot(seed) ? (
+          <Mascot mascotKey={seed} size={size} />
+        ) : (
+          <Avatar name={seed} size={size} />
+        )}
       </span>
     </span>
   );

@@ -1,5 +1,6 @@
 import Avatar from "boring-avatars";
 import { memo } from "react";
+import { hasMascot, Mascot } from "@/components/agents/mascot";
 
 /**
  * Memoized roster avatar. Row updates usually change preview/timestamp only, and
@@ -18,9 +19,18 @@ export const ChannelAvatar = memo(function ChannelAvatar({
   const channelSize = participantIds?.length;
 
   if (channelSize === 1) {
+    const only = participantIds[0] ?? "";
     return (
       <div className="" style={{ height: size, width: size }}>
-        <Avatar className="size-full" name={participantIds[0]} size={size} />
+        {hasMascot(only) ? (
+          <Mascot
+            className="size-full rounded-full"
+            mascotKey={only}
+            size={size}
+          />
+        ) : (
+          <Avatar className="size-full" name={only} size={size} />
+        )}
       </div>
     );
   }
@@ -43,11 +53,19 @@ export const ChannelAvatar = memo(function ChannelAvatar({
               transform: `translateX(${i * -75}%)`,
             }}
           >
-            <Avatar
-              className="size-full"
-              name={c}
-              size={size / (firstThree.length / 2)}
-            />
+            {hasMascot(c) ? (
+              <Mascot
+                className="size-full rounded-full"
+                mascotKey={c}
+                size={size / (firstThree.length / 2)}
+              />
+            ) : (
+              <Avatar
+                className="size-full"
+                name={c}
+                size={size / (firstThree.length / 2)}
+              />
+            )}
           </div>
         );
       })}
