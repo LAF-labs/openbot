@@ -151,7 +151,8 @@ function ChannelRow({
   const shouldReduceMotion = useReducedMotion();
   const still = !animateRows || shouldReduceMotion;
   return (
-    <motion.div
+    // `li`, because this is one row of the roster's list. See the <ul> that wraps it.
+    <motion.li
       animate={{ opacity: 1, transform: "translateY(0px)" }}
       initial={
         animateRows
@@ -178,7 +179,7 @@ function ChannelRow({
             : undefined
         }
       />
-    </motion.div>
+    </motion.li>
   );
 }
 
@@ -350,16 +351,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </EmptyHeader>
               </Empty>
             ) : null}
-            <AnimatePresence initial={false}>
-              {visibleChannels.map((channel) => (
-                <ChannelRow
-                  key={channel.id}
-                  animateOrder={animateOrder}
-                  animateRows={!searching}
-                  channel={channel}
-                />
-              ))}
-            </AnimatePresence>
+            {/*
+             * A LIST, NAMED, AND SAID TO BE ONE. The roster was a stack of divs, so a screen reader
+             * announced a run of links with no count and no boundary — no way to know how many
+             * conversations there are or where the list ends. The rows are `<li>` (see ChannelRow)
+             * and the skeleton, empty and error blocks stay outside, because none of them is a row.
+             */}
+            <nav aria-label={t("Conversations")}>
+              <ul className="flex flex-col gap-px">
+                <AnimatePresence initial={false}>
+                  {visibleChannels.map((channel) => (
+                    <ChannelRow
+                      key={channel.id}
+                      animateOrder={animateOrder}
+                      animateRows={!searching}
+                      channel={channel}
+                    />
+                  ))}
+                </AnimatePresence>
+              </ul>
+            </nav>
           </SidebarGroup>
         </SidebarMenu>
       </SidebarContent>

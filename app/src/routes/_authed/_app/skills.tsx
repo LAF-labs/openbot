@@ -181,7 +181,18 @@ function SkillsPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button variant="ghost" size="icon-sm">
+                            <Button
+                              /*
+                               * Named for its row. Every skill drew the same unnamed dots button, so
+                               * a person reading by name alone was offered N identical menus and
+                               * only learned which one they had opened from the item inside it.
+                               */
+                              aria-label={t("Actions for /{slug}", {
+                                slug: skill.slug,
+                              })}
+                              variant="ghost"
+                              size="icon-sm"
+                            >
                               <IconDots />
                             </Button>
                           }

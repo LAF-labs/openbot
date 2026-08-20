@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
+import { t } from "@/lib/i18n";
 import {
   SidebarProvider,
   SidebarTrigger,
@@ -46,8 +47,26 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
+      {/*
+       * THE COMPOSER IS ABOUT THIRTY-FIVE TABS DEEP.
+       *
+       * The roster is not virtualised, so every channel in the rail is a tab stop between the top of
+       * the page and the box a person came here to type in. This is the standard way out, and it is
+       * the first thing in the tab order: invisible until focused, then a real button in the corner.
+       */}
+      <a
+        className="sr-only z-50 rounded-lg bg-popover px-3 py-2 text-sm shadow-lg focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+        href="#main"
+      >
+        {t("Skip to the conversation")}
+      </a>
       <AppSidebar />
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <main
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
+        id="main"
+        // Focusable only as a skip-link target, never as a tab stop of its own.
+        tabIndex={-1}
+      >
         <SidebarReturn />
         <Outlet />
       </main>

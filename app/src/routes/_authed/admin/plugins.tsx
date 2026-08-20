@@ -590,6 +590,8 @@ function Yours({
                           onClick={() => onGrant(tool.ref, bot.id, held)}
                           size="sm"
                           type="button"
+                          // The grant is conveyed by fill alone otherwise; the role needs the state.
+                          aria-pressed={held}
                           variant={held ? "default" : "outline"}
                         >
                           {bot.name}
@@ -787,6 +789,8 @@ function Skills({
                         onClick={() => onGrant(skill.slug, bot.id, held)}
                         size="sm"
                         type="button"
+                        // The grant is conveyed by fill alone otherwise; the role needs the state.
+                        aria-pressed={held}
                         variant={held ? "default" : "outline"}
                       >
                         {bot.name}

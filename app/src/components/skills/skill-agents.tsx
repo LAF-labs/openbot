@@ -78,6 +78,11 @@ export function SkillAgents({
                    * carries a small mark reads as a list of choices rather than as a set of
                    * switches, and which are on has to survive a glance.
                    */
+                  /*
+                   * The fill is the whole state for anybody who can see it, and nothing at all for
+                   * anybody who cannot: the button announced only its name either way.
+                   */
+                  aria-pressed={on}
                   variant={on ? "default" : "outline"}
                 >
                   {agent.name}
@@ -86,7 +91,7 @@ export function SkillAgents({
             })}
           </div>
           <p className="text-muted-foreground text-xs">
-            An Agent carrying this offers <code>/{slug}</code> in its composer.
+            {t("A Bot carrying this offers /{slug} in its composer.", { slug })}
           </p>
         </>
       )}

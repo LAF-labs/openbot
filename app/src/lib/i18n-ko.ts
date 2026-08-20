@@ -1,6 +1,8 @@
 /** 한국어 사전 — 영어 원문이 키다. 항목이 없으면 영어로 그대로 나온다. */
 export const ko: Record<string, string> = {
   "1 item in the workspace": "작업 공간에 항목 1개",
+  "A Bot carrying this offers /{slug} in its composer.":
+    "이 스킬을 가진 봇은 입력창에서 /{slug}를 제공합니다.",
   "A click applies it right away.": "클릭하면 바로 적용됩니다.",
   "A key is set. Type a new one to replace it.":
     "키가 설정되어 있습니다. 바꾸려면 새로 입력하세요.",
@@ -17,6 +19,7 @@ export const ko: Record<string, string> = {
   "Access token for this server": "이 서버의 액세스 토큰",
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
   Account: "계정",
+  "Actions for /{slug}": "/{slug} 작업",
   "Add a server by URL": "URL로 서버 추가",
   "Add credential": "자격증명 추가",
   "Added to file": "파일에 추가함",
@@ -71,6 +74,7 @@ export const ko: Record<string, string> = {
     "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
   Connector: "커넥터",
   Connectors: "커넥터",
+  Conversations: "대화 목록",
   Copied: "복사됨",
   "Copy this reply": "이 답장 복사",
   "Could not load connectors.": "커넥터를 불러오지 못했습니다.",
@@ -178,6 +182,7 @@ export const ko: Record<string, string> = {
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   "Sign in to {product}": "{product} 로그인",
+  "Skip to the conversation": "대화로 건너뛰기",
   "Something went wrong.": "문제가 생겼습니다.",
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",

@@ -88,6 +88,8 @@ function RouteComponent() {
           value={chosen ?? null}
         >
           <ComboboxInput
+            // The control that decides who the conversation goes to announced as "combobox, blank".
+            aria-label={t("Choose a coworker")}
             placeholder={t("Choose a coworker…")}
             // InputGroup owns focus rings via `has-[…:focus-visible]`; disable that wrapper ring here.
             className="border-none w-full bg-transparent! text-sm has-[[data-slot=input-group-control]:focus-visible]:ring-0"
