@@ -47,9 +47,16 @@ const ASKING: ActionPolicy = {
 /** The person whose turn raised the question. Not the person who answers it. */
 const DRIVER = { id: "dev-local-user" };
 
+/** Answering is the owner's: in this build that means an administrator. */
 const MANAGER = {
   id: "manager-user",
   email: "manager@openbot.test",
+  role: "admin",
+} as const;
+
+const BYSTANDER = {
+  id: "bystander-user",
+  email: "bystander@openbot.test",
   role: "user",
 } as const;
 
@@ -119,6 +126,41 @@ const answer =
     });
 
 describe("answering a question", () => {
+  test("somebody who is not the owner cannot spend an approval", async () => {
+    const rowsSink: AuditEventInput[] = [];
+    const approvals = createApprovalRegistry();
+    const asBystander: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", BYSTANDER);
+      await next();
+    };
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createApprovalRoutes(
+        approvals,
+        { insert: async (event) => void rowsSink.push(event) },
+        asBystander,
+      ),
+    );
+    const pending = approvals.request({
+      botId: "bot-1",
+      actor: DRIVER.id,
+      rule: "r",
+      question: "q",
+      fingerprint: "f",
+      target: { type: "computer", id: "bot-1" },
+    });
+    const response = await app.request(`/bot-1/${pending.id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ granted: true }),
+    });
+    expect(response.status).toBe(403);
+  });
+
   test("records the answer under the person who gave it and lets the action run", async () => {
     const { app, ask, rows, gateway, calls } = await surface();
     const asked = await ask("bot-1");
