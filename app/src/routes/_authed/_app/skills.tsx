@@ -1,8 +1,8 @@
+import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { IconPlus } from "@tabler/icons-react";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
   PageRows,
@@ -13,15 +13,6 @@ import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
 import { Button } from "@/components/ui/button";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +20,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { IconDots } from "@tabler/icons-react";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { t } from "@/lib/i18n";
+import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
  * Personal `/` skills. They are instructions, not capabilities, and can only be granted to Bots the
@@ -114,7 +114,7 @@ function SkillsPage() {
             Bot follows. Yours are yours alone, and go on the Bots you own.
           </>
         }
-        title="Agent Skills"
+        title={t("Agent Skills")}
       >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
@@ -132,10 +132,10 @@ function SkillsPage() {
               variant="ghost"
             >
               <IconPlus />
-              New skill
+              {t("New skill")}
             </Button>
           }
-          title="Your skills"
+          title={t("Your skills")}
         >
           {!!mine?.length && (
             <PageRows>
@@ -175,7 +175,7 @@ function SkillsPage() {
                                 navigate({ search: { edit: skill.slug } })
                               }
                             >
-                              Edit
+                              {t("Edit")}
                             </DropdownMenuItem>
                             {/*
                              * Deleting is immediate and there is no undo. It is behind a menu rather
@@ -223,8 +223,10 @@ function SkillsPage() {
          */}
         {deployment.length > 0 ? (
           <PageSection
-            description="Written for everyone by an administrator. Which Bots carry them is decided in Admin."
-            title="Workspace skills"
+            description={t(
+              "Written for everyone by an administrator. Which Bots carry them is decided in Admin.",
+            )}
+            title={t("Workspace skills")}
           >
             <PageRows>
               {deployment.map((skill, index) => (

@@ -21,20 +21,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
-import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item";
 import {
   Select,
   SelectContent,
@@ -43,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   type CredentialFormValues,
   credentialFormSchema,
@@ -52,6 +52,8 @@ import {
   revokeCredentialMutationOptions,
 } from "@/lib/credentials/mutations";
 import { credentialListQueryOptions } from "@/lib/credentials/queries";
+import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/admin/credentials")({
   component: CredentialsPage,
@@ -88,11 +90,14 @@ function CredentialsPage() {
       action={
         <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
           <IconPlus />
-          Add credential
+          {t("Add credential")}
         </Button>
       }
-      description="Credentials are write-only. OpenBot never displays their secret values."
-      title="Credentials"
+      description={t(
+        "Credentials are write-only. {product} never displays their secret values.",
+        { product: appConfig.brand.productName },
+      )}
+      title={t("Credentials")}
     >
       {/*
        * THE FORM IS NOT ON THE PAGE. A credential is added once and then lived with, so a permanent
@@ -109,9 +114,11 @@ function CredentialsPage() {
             }}
           >
             <DialogHeader>
-              <DialogTitle>Add credential</DialogTitle>
+              <DialogTitle>{t("Add credential")}</DialogTitle>
               <DialogDescription>
-                Held for this deployment and never shown again once saved.
+                {t(
+                  "Held for this deployment and never shown again once saved.",
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="mt-4">
@@ -122,7 +129,9 @@ function CredentialsPage() {
                       field.state.meta.isTouched && !field.state.meta.isValid;
                     return (
                       <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>Type</FieldLabel>
+                        <FieldLabel htmlFor={field.name}>
+                          {t("Type")}
+                        </FieldLabel>
                         <Select
                           onValueChange={(value) =>
                             field.handleChange(value as "model" | "connector")
@@ -137,9 +146,11 @@ function CredentialsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectGroup>
-                              <SelectItem value="model">Model</SelectItem>
+                              <SelectItem value="model">
+                                {t("Model")}
+                              </SelectItem>
                               <SelectItem value="connector">
-                                Connector
+                                {t("Connector")}
                               </SelectItem>
                             </SelectGroup>
                           </SelectContent>
@@ -157,7 +168,9 @@ function CredentialsPage() {
                       field.state.meta.isTouched && !field.state.meta.isValid;
                     return (
                       <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>Provider</FieldLabel>
+                        <FieldLabel htmlFor={field.name}>
+                          {t("Provider")}
+                        </FieldLabel>
                         <Input
                           aria-invalid={isInvalid}
                           id={field.name}
@@ -166,7 +179,7 @@ function CredentialsPage() {
                           onChange={(event) =>
                             field.handleChange(event.target.value)
                           }
-                          placeholder="OpenAI"
+                          placeholder={t("OpenAI")}
                           value={field.state.value}
                         />
                         {isInvalid ? (
@@ -182,7 +195,9 @@ function CredentialsPage() {
                       field.state.meta.isTouched && !field.state.meta.isValid;
                     return (
                       <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>Key ID</FieldLabel>
+                        <FieldLabel htmlFor={field.name}>
+                          {t("Key ID")}
+                        </FieldLabel>
                         <Input
                           aria-invalid={isInvalid}
                           id={field.name}
@@ -207,7 +222,9 @@ function CredentialsPage() {
                       field.state.meta.isTouched && !field.state.meta.isValid;
                     return (
                       <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>Secret</FieldLabel>
+                        <FieldLabel htmlFor={field.name}>
+                          {t("Secret")}
+                        </FieldLabel>
                         <Input
                           aria-invalid={isInvalid}
                           autoComplete="off"
@@ -230,7 +247,7 @@ function CredentialsPage() {
               </FieldGroup>
               {createCredential.error ? (
                 <p className="text-destructive text-sm" role="alert">
-                  Could not save the credential. Try again.
+                  {t("Could not save the credential. Try again.")}
                 </p>
               ) : null}
             </DialogBody>
@@ -241,7 +258,7 @@ function CredentialsPage() {
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("Cancel")}
               </Button>
               <form.Subscribe
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
@@ -265,15 +282,15 @@ function CredentialsPage() {
         </DialogContent>
       </Dialog>
 
-      <PageSection title="Configured credentials">
+      <PageSection title={t("Configured credentials")}>
         {credentials.isPending ? (
-          <PageEmpty>Loading credentials…</PageEmpty>
+          <PageEmpty>{t("Loading credentials…")}</PageEmpty>
         ) : credentials.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not load credentials.
+            {t("Could not load credentials.")}
           </p>
         ) : credentials.data?.length === 0 ? (
-          <PageEmpty>No credentials are configured.</PageEmpty>
+          <PageEmpty>{t("No credentials are configured.")}</PageEmpty>
         ) : (
           <PageRows>
             {credentials.data?.map((credential, index) => (
@@ -296,7 +313,7 @@ function CredentialsPage() {
                       size="sm"
                       variant="outline"
                     >
-                      Revoke
+                      {t("Revoke")}
                     </Button>
                   </ItemActions>
                 </Item>

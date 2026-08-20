@@ -28,6 +28,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/admin/")({
   component: RouteComponent,
@@ -121,8 +122,10 @@ const SECTIONS: {
 function RouteComponent() {
   return (
     <PageShell
-      description="Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences."
-      title="Admin"
+      description={t(
+        "Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences.",
+      )}
+      title={t("Admin")}
     >
       {SECTIONS.map((section) => (
         <PageSection

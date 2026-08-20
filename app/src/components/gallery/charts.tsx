@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -34,7 +35,7 @@ function formatNumber(value: number): string {
 function Empty() {
   return (
     <p className="py-10 text-center text-sm text-muted-foreground">
-      There is no data to chart.
+      {t("There is no data to chart.")}
     </p>
   );
 }

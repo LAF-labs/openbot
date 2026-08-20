@@ -8,6 +8,7 @@ import {
   readControl,
 } from "@/components/computer/take-the-wheel";
 import { closeQuestion, openQuestion, waitForApproval } from "@/lib/approvals";
+import { t } from "@/lib/i18n";
 import { useActiveBotHolder } from "./active-bot";
 import { reportComputerActivity } from "./computer-activity";
 
@@ -370,7 +371,7 @@ export function ComputerTools() {
       return (
         <ActionLine
           running={status !== "complete"}
-          label="Read the page"
+          label={t("Read the page")}
           detail={
             elements.length
               ? `${elements.length} thing${elements.length === 1 ? "" : "s"} it can act on`
@@ -421,7 +422,7 @@ export function ComputerTools() {
       <ActionLine
         toolCallId={toolCallId}
         running={status !== "complete"}
-        label="Filled in"
+        label={t("Filled in")}
         detail={
           // Never show typed values; identify only the target field.
           labelOf(result) ??
@@ -466,7 +467,7 @@ export function ComputerTools() {
         <ActionLine
           toolCallId={toolCallId}
           running={status !== "complete"}
-          label="Clicked"
+          label={t("Clicked")}
           detail={
             // Show refusal reason instead of an internal element ref.
             outcome.refused === true
@@ -516,7 +517,7 @@ export function ComputerTools() {
       <ActionLine
         toolCallId={toolCallId}
         running={status !== "complete"}
-        label="Pressed"
+        label={t("Pressed")}
         detail={typeof args?.key === "string" ? args.key : undefined}
         refused={outcomeOf(result).refused === true}
         failed={didNotWork(outcomeOf(result))}
@@ -705,7 +706,7 @@ export function ComputerTools() {
         <ActionLine
           toolCallId={toolCallId}
           running={status !== "complete"}
-          label="Listed files"
+          label={t("Listed files")}
           detail={
             outcome.refused === true || didNotWork(outcome)
               ? String(outcome.reason ?? "")
@@ -748,7 +749,7 @@ export function ComputerTools() {
         <ActionLine
           toolCallId={toolCallId}
           running={status !== "complete"}
-          label="Read file"
+          label={t("Read file")}
           detail={
             outcome.refused === true
               ? String(outcome.reason ?? "")
@@ -846,7 +847,7 @@ export function ComputerTools() {
       <ActionLine
         toolCallId={toolCallId}
         running={status !== "complete"}
-        label="Scrolled"
+        label={t("Scrolled")}
         refused={outcomeOf(result).refused === true}
         failed={didNotWork(outcomeOf(result))}
       />

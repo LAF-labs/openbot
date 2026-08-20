@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { t } from "@/lib/i18n";
 import {
   type PluginServer,
   type PluginSkill,
@@ -105,8 +106,10 @@ function PluginsPage() {
 
   return (
     <PageShell
-      description="What this deployment can reach, and which Bots may reach it. Adding is account-wide; enabling is per Bot."
-      title="Plugins"
+      description={t(
+        "What this deployment can reach, and which Bots may reach it. Adding is account-wide; enabling is per Bot.",
+      )}
+      title={t("Plugins")}
     >
       <PageSection>
         <div className="flex flex-wrap gap-2">
@@ -137,10 +140,10 @@ function PluginsPage() {
 
         <div className="mt-6">
           {isPending ? (
-            <PageEmpty>Loading plugins…</PageEmpty>
+            <PageEmpty>{t("Loading plugins…")}</PageEmpty>
           ) : isError || !data ? (
             <p className="mt-4 text-destructive text-sm" role="alert">
-              Plugins could not be loaded.
+              {t("Plugins could not be loaded.")}
             </p>
           ) : tab === "catalogue" ? (
             <Catalogue
@@ -313,7 +316,7 @@ function Catalogue({
                     [item.key]: event.target.value,
                   }))
                 }
-                placeholder="Access token for this server"
+                placeholder={t("Access token for this server")}
                 type="password"
                 value={token[item.key] ?? ""}
               />
@@ -324,7 +327,7 @@ function Catalogue({
               rel="noreferrer"
               target="_blank"
             >
-              Vendor documentation
+              {t("Vendor documentation")}
             </a>
           </div>
         ))}
@@ -333,14 +336,14 @@ function Catalogue({
       <div className="flex justify-start">
         <Button onClick={() => setAddingCustom(true)} size="sm" variant="ghost">
           <IconPlus />
-          Add a server by URL
+          {t("Add a server by URL")}
         </Button>
       </div>
 
       <Dialog onOpenChange={setAddingCustom} open={addingCustom}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add a server by URL</DialogTitle>
+            <DialogTitle>{t("Add a server by URL")}</DialogTitle>
             <DialogDescription>
               For a server that is not in the catalogue. Nobody has reviewed it,
               so every tool it offers is treated as one that changes something,
@@ -350,7 +353,7 @@ function Catalogue({
           <DialogBody className="mt-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="custom-id">Name</FieldLabel>
+                <FieldLabel htmlFor="custom-id">{t("Name")}</FieldLabel>
                 <Input
                   id="custom-id"
                   onChange={(event) =>
@@ -364,7 +367,7 @@ function Catalogue({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="custom-title">Title</FieldLabel>
+                <FieldLabel htmlFor="custom-title">{t("Title")}</FieldLabel>
                 <Input
                   id="custom-title"
                   onChange={(event) =>
@@ -373,12 +376,12 @@ function Catalogue({
                       title: event.target.value,
                     }))
                   }
-                  placeholder="Title"
+                  placeholder={t("Title")}
                   value={custom.title}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="custom-url">URL</FieldLabel>
+                <FieldLabel htmlFor="custom-url">{t("URL")}</FieldLabel>
                 <Input
                   id="custom-url"
                   onChange={(event) =>
@@ -393,7 +396,7 @@ function Catalogue({
               </Field>
               <Field>
                 <FieldLabel htmlFor="custom-token">
-                  Access token, if it needs one
+                  {t("Access token, if it needs one")}
                 </FieldLabel>
                 <Input
                   id="custom-token"
@@ -415,7 +418,7 @@ function Catalogue({
               size="sm"
               variant="ghost"
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               disabled={!(custom.id && custom.title && custom.url)}
@@ -426,7 +429,7 @@ function Catalogue({
               }}
               size="sm"
             >
-              Add server
+              {t("Add server")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -452,7 +455,7 @@ function Yours({
   if (servers.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No servers added yet. The Catalogue tab is where they come from.
+        {t("No servers added yet. The Catalogue tab is where they come from.")}
       </p>
     );
   }
@@ -490,7 +493,7 @@ function Yours({
                 type="button"
                 variant="outline"
               >
-                Refresh tools
+                {t("Refresh tools")}
               </Button>
               <Button
                 onClick={() => onRemove(server.id)}
@@ -498,7 +501,7 @@ function Yours({
                 type="button"
                 variant="ghost"
               >
-                Remove
+                {t("Remove")}
               </Button>
             </div>
           </div>
@@ -512,7 +515,7 @@ function Yours({
            */}
           {server.tools.length === 0 ? (
             <p className="px-4 py-3 text-muted-foreground text-sm">
-              No tools listed. Refresh to ask the server again.
+              {t("No tools listed. Refresh to ask the server again.")}
             </p>
           ) : (
             <div className="divide-y divide-border">
@@ -591,14 +594,14 @@ function Skills({
       <div className="flex justify-start">
         <Button onClick={() => setWriting(true)} size="sm" variant="ghost">
           <IconPlus />
-          Write a skill
+          {t("Write a skill")}
         </Button>
       </div>
 
       <Dialog onOpenChange={setWriting} open={writing}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Write a skill for the deployment</DialogTitle>
+            <DialogTitle>{t("Write a skill for the deployment")}</DialogTitle>
             <DialogDescription>
               The slug is what a person types after a slash, and the
               instructions are added to the run when they do. Everybody here can
@@ -609,7 +612,7 @@ function Skills({
           <DialogBody className="mt-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="skill-slug">Slug</FieldLabel>
+                <FieldLabel htmlFor="skill-slug">{t("Slug")}</FieldLabel>
                 <Input
                   id="skill-slug"
                   onChange={(event) =>
@@ -623,7 +626,7 @@ function Skills({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="skill-title">Title</FieldLabel>
+                <FieldLabel htmlFor="skill-title">{t("Title")}</FieldLabel>
                 <Input
                   id="skill-title"
                   onChange={(event) =>
@@ -632,12 +635,12 @@ function Skills({
                       title: event.target.value,
                     }))
                   }
-                  placeholder="Title"
+                  placeholder={t("Title")}
                   value={draft.title}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="skill-summary">Summary</FieldLabel>
+                <FieldLabel htmlFor="skill-summary">{t("Summary")}</FieldLabel>
                 <Input
                   id="skill-summary"
                   onChange={(event) =>
@@ -646,13 +649,13 @@ function Skills({
                       summary: event.target.value,
                     }))
                   }
-                  placeholder="One line"
+                  placeholder={t("One line")}
                   value={draft.summary}
                 />
               </Field>
               <Field>
                 <FieldLabel htmlFor="skill-instructions">
-                  Instructions
+                  {t("Instructions")}
                 </FieldLabel>
                 <Textarea
                   className="h-28 font-mono text-sm"
@@ -663,7 +666,9 @@ function Skills({
                       instructions: event.target.value,
                     }))
                   }
-                  placeholder="What the Bot should do when this skill is used."
+                  placeholder={t(
+                    "What the Bot should do when this skill is used.",
+                  )}
                   value={draft.instructions}
                 />
               </Field>
@@ -671,7 +676,7 @@ function Skills({
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button onClick={() => setWriting(false)} size="sm" variant="ghost">
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               disabled={!(draft.slug && draft.title && draft.instructions)}
@@ -687,7 +692,7 @@ function Skills({
               }}
               size="sm"
             >
-              Install skill
+              {t("Install skill")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -695,7 +700,7 @@ function Skills({
 
       {skills.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No skills installed yet.
+          {t("No skills installed yet.")}
         </p>
       ) : (
         /* Rows, for the same reason the tool grants are rows: a column per Bot does not scale. */
@@ -721,7 +726,7 @@ function Skills({
                     type="button"
                     variant="ghost"
                   >
-                    Remove
+                    {t("Remove")}
                   </Button>
                 </div>
                 {skill.summary ? (

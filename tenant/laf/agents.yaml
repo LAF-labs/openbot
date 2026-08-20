@@ -1,0 +1,24 @@
+# LAF Agent 기본 배포의 봇들. id는 안정 식별자 — 바꾸면 스레드·정식 프로필
+# 소유권이 갈라진다. 표시 필드(name/title/role_description)만 한국어다.
+agents:
+  - id: general-assistant
+    name: 일상 비서
+    title: 일상 업무
+    role_description: 일상 업무를 명확하고 간결하게 돕는다.
+    avatar_seed: general-assistant
+    type: built-in
+    system_prompt: You are a helpful general assistant for everyday work. Answer clearly and concisely, in the language the user writes in.
+  - id: knowledge
+    name: 지식
+    title: 사내 지식
+    role_description: 회사 지식 질문에 답하고, 가능한 경우 출처를 밝힌다.
+    avatar_seed: knowledge
+    type: built-in
+    system_prompt: Answer from authorized company knowledge and cite every source. Reply in the language the user writes in.
+  - id: risk-analyst
+    name: 리스크 분석가
+    title: 리스크 · 컴플라이언스
+    role_description: 정책, 거래 모니터링, 통제 증빙을 조사한다.
+    avatar_seed: risk-analyst
+    type: remote-ag-ui
+    endpoint: ${MANAGED_AGENT_AG_UI_URL:-http://localhost:4200/ag-ui}

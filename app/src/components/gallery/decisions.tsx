@@ -2,6 +2,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 import { Badge, GalleryFrame } from "./frame";
 
 /**
@@ -57,7 +58,9 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
   if (status === "inProgress") {
     return (
       <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
-        <p className="text-sm text-muted-foreground">Preparing the request…</p>
+        <p className="text-sm text-muted-foreground">
+          {t("Preparing the request…")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -73,7 +76,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
             {decided === "approved" ? "Approved" : "Declined"}
           </Badge>
         ) : (
-          <Badge tone="caution">Waiting on you</Badge>
+          <Badge tone="caution">{t("Waiting on you")}</Badge>
         )
       }
       title={args.title}
@@ -94,11 +97,11 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
       {decided ? null : (
         <div className="mt-4 space-y-2">
           <input
-            aria-label="A reason, if you want to give one"
+            aria-label={t("A reason, if you want to give one")}
             className="w-full rounded-md border border-border bg-transparent px-3 py-1.5 text-sm"
             disabled={Boolean(sending)}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="A reason, if you want to give one"
+            placeholder={t("A reason, if you want to give one")}
             value={note}
           />
           <div className="flex gap-2">
@@ -156,7 +159,9 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
   if (status === "inProgress") {
     return (
       <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
-        <p className="text-sm text-muted-foreground">Preparing the question…</p>
+        <p className="text-sm text-muted-foreground">
+          {t("Preparing the question…")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -167,9 +172,9 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
     <GalleryFrame
       action={
         chosen ? (
-          <Badge tone="positive">Answered</Badge>
+          <Badge tone="positive">{t("Answered")}</Badge>
         ) : (
-          <Badge tone="caution">Waiting on you</Badge>
+          <Badge tone="caution">{t("Waiting on you")}</Badge>
         )
       }
       caption={args.summary}

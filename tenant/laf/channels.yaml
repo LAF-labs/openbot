@@ -1,0 +1,16 @@
+channels:
+  - id: general-assistant
+    name: 일상 비서
+    description: 일상 업무를 무엇이든 부탁하세요.
+    permitted_agents: [general-assistant]
+    allowed_groups: [all]
+  - id: risk-and-compliance
+    name: 리스크 · 컴플라이언스
+    description: 정책, 거래 모니터링, 통제 증빙을 조사합니다.
+    permitted_agents: [knowledge, risk-analyst]
+    allowed_groups: [risk, compliance]
+  - id: company-knowledge
+    name: 사내 지식
+    description: 회사 문서에서 승인된 답을 찾습니다.
+    permitted_agents: [knowledge]
+    allowed_groups: [all]

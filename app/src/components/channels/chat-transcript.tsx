@@ -1,11 +1,9 @@
 import type { Message } from "@ag-ui/core";
-import { IconBox } from "@tabler/icons-react";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
+import { IconBox } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { Streamdown } from "streamdown";
-import { markdownComponents } from "@/lib/markdown";
-import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   MessageContent,
@@ -21,10 +19,13 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from "@/components/ui/message-scroller";
+import { t } from "@/lib/i18n";
+import { markdownComponents } from "@/lib/markdown";
+import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
-import { ToolLine } from "./tool-line";
 import { ToolRenderBoundary } from "./tool-boundary";
+import { ToolLine } from "./tool-line";
 
 type ChatTranscriptProps = {
   busy?: boolean;
@@ -94,7 +95,7 @@ function Thinking() {
       // is doing. The text says it, so a screen reader is told the same thing the shimmer implies.
       role="status"
     >
-      Thinking
+      {t("Thinking")}
     </p>
   );
 }
@@ -158,7 +159,7 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span role="status">Queued</span>
+          <span role="status">{t("Queued")}</span>
           {onRemove ? (
             <button
               /*
@@ -172,7 +173,7 @@ function Queued({
               onClick={onRemove}
               type="button"
             >
-              Remove
+              {t("Remove")}
             </button>
           ) : null}
         </MessageFooter>

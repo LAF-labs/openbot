@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
+import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import type { SkillFormValues } from "@/lib/skills/form";
 
@@ -66,7 +67,7 @@ export function EditSkill({ slug }: { slug: string }) {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold">Edit skill</h1>
+        <h1 className="text-2xl font-semibold">{t("Edit skill")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Changes apply the next time <code>/{skill.slug}</code> is used. Agents
           already carrying it keep it.

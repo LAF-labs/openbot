@@ -28,6 +28,7 @@ import {
   dataFunctionsQueryOptions,
 } from "@/lib/components/queries";
 import { RENDERABLE_NAMES } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 
 /**
  * Runtime governance for compiled gallery components: publication, per-Bot grants, model-facing
@@ -147,8 +148,10 @@ function RouteComponent() {
 
   return (
     <PageShell
-      description="What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit."
-      title="Components"
+      description={t(
+        "What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit.",
+      )}
+      title={t("Components")}
     >
       {/*
        * ONE CARD EACH, RATHER THAN A ROW EACH. Every other list in admin is `Item` rows, and these
@@ -157,11 +160,11 @@ function RouteComponent() {
        * hiding it behind a menu, and which Bots hold a component is the thing this page exists to
        * answer at a glance.
        */}
-      <PageSection title="Published components">
-        {isLoading ? <PageEmpty>Loading…</PageEmpty> : null}
+      <PageSection title={t("Published components")}>
+        {isLoading ? <PageEmpty>{t("Loading…")}</PageEmpty> : null}
 
         {components?.length === 0 && !isLoading ? (
-          <PageEmpty>This deployment ships no components.</PageEmpty>
+          <PageEmpty>{t("This deployment ships no components.")}</PageEmpty>
         ) : null}
 
         <div className="mt-4 flex flex-col gap-3">
@@ -233,17 +236,17 @@ function ComponentRow({
             </code>
             {RENDERABLE_NAMES.has(component.name) ? null : (
               <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                Not in this build, nothing can draw it
+                {t("Not in this build, nothing can draw it")}
               </span>
             )}
             {component.published ? null : (
               <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                Unpublished, no Bot may use it
+                {t("Unpublished, no Bot may use it")}
               </span>
             )}
             {component.hasUnpublishedChanges ? (
               <span className="rounded-md bg-foreground/5 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-                Draft not published
+                {t("Draft not published")}
               </span>
             ) : null}
           </div>
@@ -263,7 +266,7 @@ function ComponentRow({
             size="sm"
             variant="outline"
           >
-            Edit description
+            {t("Edit description")}
           </Button>
           <Button
             data-testid={`publish-${component.name}`}
@@ -288,7 +291,7 @@ function ComponentRow({
           <DialogBody className="mt-4">
             <Field>
               <FieldLabel htmlFor={`draft-${component.name}`}>
-                Draft description
+                {t("Draft description")}
               </FieldLabel>
               <Textarea
                 id={`draft-${component.name}`}
@@ -300,7 +303,7 @@ function ComponentRow({
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button onClick={() => setEditing(false)} size="sm" variant="ghost">
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -310,7 +313,7 @@ function ComponentRow({
               size="sm"
               variant="outline"
             >
-              Save draft
+              {t("Save draft")}
             </Button>
             <Button
               onClick={() => {
@@ -320,7 +323,7 @@ function ComponentRow({
               }}
               size="sm"
             >
-              Publish
+              {t("Publish")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -329,7 +332,7 @@ function ComponentRow({
       <div className="flex flex-wrap gap-2 px-4 py-3">
         {bots.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            There are no Bots yet.
+            {t("There are no Bots yet.")}
           </p>
         ) : null}
         {bots.map((bot) => {
@@ -353,7 +356,9 @@ function ComponentRow({
       {/* Data-function grants are separate from Bot component grants. */}
       {dataFunctions.length > 0 ? (
         <div className="border-t border-border px-4 py-3">
-          <p className="text-xs font-medium text-muted-foreground">May read</p>
+          <p className="text-xs font-medium text-muted-foreground">
+            {t("May read")}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {dataFunctions.map((fn) => {
               const has = heldFunctions.has(fn.name);

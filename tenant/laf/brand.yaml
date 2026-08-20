@@ -1,0 +1,6 @@
+# LAF Agent 배포 패키지. tenant.id는 아직 'openbot'이다 — id는 스레드
+# 지문과 정식 에이전트 소유권에 박혀 있어, 바꾸는 것은 데이터 마이그레이션
+# 작업이지 브랜딩 작업이 아니다 (docs/m1-execution.md 참조).
+tenant:
+  id: openbot
+  product_name: LAF Agent

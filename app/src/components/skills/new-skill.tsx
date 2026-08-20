@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { SkillFields } from "@/components/skills/skill-fields";
+import { t } from "@/lib/i18n";
 import { pluginKeys } from "@/lib/plugins/queries";
 import { emptySkillForm, type SkillFormValues } from "@/lib/skills/form";
 
@@ -42,7 +43,7 @@ export function NewSkill() {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold">New skill</h1>
+        <h1 className="text-2xl font-semibold">{t("New skill")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           A named instruction you invoke with <code>/</code>. It goes on the
           Bots you own, and nobody else sees it.

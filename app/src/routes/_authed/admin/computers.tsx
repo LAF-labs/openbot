@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
+import { t } from "@/lib/i18n";
 
 type ComputerProfile = {
   botId: string;
@@ -108,8 +109,10 @@ function ComputersPage() {
 
   return (
     <PageShell
-      description="Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything."
-      title="Computers"
+      description={t(
+        "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.",
+      )}
+      title={t("Computers")}
     >
       {problem ? (
         <p
@@ -123,11 +126,11 @@ function ComputersPage() {
       {isolation === "shared" ? (
         <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
           <span className="font-medium">
-            Every Bot is sharing one computer.
+            {t("Every Bot is sharing one computer.")}
           </span>{" "}
           They share its logins, its files and its session, so a Bot can reach
-          what another signed into. Set <code>COMPUTER_SUPERVISOR_URL</code> to
-          give each Bot its own.
+          what another signed into. Set{" "}
+          <code>{t("COMPUTER_SUPERVISOR_URL")}</code> to give each Bot its own.
         </p>
       ) : isolation === "per-bot" ? (
         <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
@@ -136,14 +139,16 @@ function ComputersPage() {
         </p>
       ) : null}
 
-      <PageSection title="Computers in this deployment">
+      <PageSection title={t("Computers in this deployment")}>
         {computers === null && problem ? (
-          <PageEmpty>The list could not be loaded.</PageEmpty>
+          <PageEmpty>{t("The list could not be loaded.")}</PageEmpty>
         ) : computers === null ? (
-          <PageEmpty>Loading…</PageEmpty>
+          <PageEmpty>{t("Loading…")}</PageEmpty>
         ) : computers.length === 0 ? (
           <PageEmpty>
-            No computers yet. One appears the first time a Bot opens a page.
+            {t(
+              "No computers yet. One appears the first time a Bot opens a page.",
+            )}
           </PageEmpty>
         ) : (
           <PageRows>
@@ -179,7 +184,7 @@ function ComputersPage() {
                       size="sm"
                       variant="outline"
                     >
-                      Reset
+                      {t("Reset")}
                     </Button>
                   </ItemActions>
                 </Item>
@@ -218,7 +223,7 @@ function ComputersPage() {
               size="sm"
               variant="ghost"
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               disabled={busy === confirming}
@@ -235,12 +240,12 @@ function ComputersPage() {
       </Dialog>
 
       <p className="mt-4 text-muted-foreground text-sm">
-        <strong>Stop</strong> closes the browser and keeps its logins: the next
-        thing the Bot does starts it again where it left off.{" "}
-        <strong>Reset</strong> deletes the profile, so the Bot is signed out of
-        everything and starts clean. Both are recorded in{" "}
+        <strong>{t("Stop")}</strong> closes the browser and keeps its logins:
+        the next thing the Bot does starts it again where it left off.{" "}
+        <strong>{t("Reset")}</strong> deletes the profile, so the Bot is signed
+        out of everything and starts clean. Both are recorded in{" "}
         <Link className="underline" to="/admin/audit">
-          Audit
+          {t("Audit")}
         </Link>
         .
       </p>

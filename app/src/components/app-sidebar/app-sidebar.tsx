@@ -1,11 +1,11 @@
 import {
   IconBolt,
+  IconBox,
   IconLogout,
   IconPlus,
   IconSearch,
   IconSettings,
   IconShieldLock,
-  IconBox,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, type LinkOptions, useNavigate } from "@tanstack/react-router";
@@ -42,6 +42,7 @@ import {
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
@@ -209,9 +210,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <InputGroup className="bg-background text-sm rounded-lg h-9">
                 <InputGroupInput
-                  aria-label="Search channels"
+                  aria-label={t("Search channels")}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search..."
+                  placeholder={t("Search...")}
                   value={search}
                 />
                 <InputGroupAddon>
@@ -230,7 +231,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="py-4">
                 <Empty className="border border-dashed min-h-[40dvh]">
                   <EmptyHeader>
-                    <EmptyTitle>No channels match your search</EmptyTitle>
+                    <EmptyTitle>
+                      {t("No channels match your search")}
+                    </EmptyTitle>
                     <EmptyDescription className="text-pretty">
                       Nothing here is named “{search.trim()}”, and nobody has
                       said it recently either.
@@ -243,7 +246,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="py-4">
                 <Empty className="border border-dashed min-h-[40dvh]">
                   <EmptyHeader>
-                    <EmptyTitle>You don't have channels yet</EmptyTitle>
+                    <EmptyTitle>{t("You don't have channels yet")}</EmptyTitle>
                     <EmptyDescription className="text-pretty">
                       Start talking to agents and your channels will appear
                       here.
@@ -283,7 +286,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="size-[28px] flex items-center justify-center">
                 <IconBox />
               </div>
-              <span className="text-sm trackint-tight">Skills</span>
+              <span className="text-sm trackint-tight">{t("Skills")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -302,7 +305,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="size-[28px] flex items-center justify-center">
                 <IconBolt />
               </div>
-              <span className="text-sm trackint-tight">Agents</span>
+              <span className="text-sm trackint-tight">{t("Agents")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -330,7 +333,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     render={<Link {...adminLinkOptions} />}
                   >
                     <IconShieldLock />
-                    Admin
+                    {t("Admin")}
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem
@@ -338,7 +341,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   render={<Link {...settingsLinkOptions} />}
                 >
                   <IconSettings />
-                  Settings
+                  {t("Settings")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className={userMenuItemClassName}
@@ -347,7 +350,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   variant="destructive"
                 >
                   <IconLogout />
-                  Log out
+                  {t("Log out")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

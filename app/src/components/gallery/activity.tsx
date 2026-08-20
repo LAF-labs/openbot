@@ -5,6 +5,7 @@ import { callComponentFunction } from "@/lib/components/queries";
 import { useActiveBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -93,8 +94,10 @@ export function ActivityReportCard({
 
   if (!report) {
     return (
-      <GalleryFrame title="Report">
-        <p className="text-sm text-muted-foreground">Choosing a report…</p>
+      <GalleryFrame title={t("Report")}>
+        <p className="text-sm text-muted-foreground">
+          {t("Choosing a report…")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -105,7 +108,7 @@ export function ActivityReportCard({
         caption="Reading from this deployment"
         title={title ?? "Report"}
       >
-        <p className="text-sm text-muted-foreground">Reading…</p>
+        <p className="text-sm text-muted-foreground">{t("Reading…")}</p>
       </GalleryFrame>
     );
   }
@@ -113,7 +116,7 @@ export function ActivityReportCard({
   if (state.status === "refused") {
     return (
       <GalleryFrame title={title ?? "Report"}>
-        <p className="text-sm text-destructive">Not shown</p>
+        <p className="text-sm text-destructive">{t("Not shown")}</p>
         <p className="mt-1 text-sm text-foreground/80">{state.reason}</p>
       </GalleryFrame>
     );
@@ -170,7 +173,7 @@ function ActivityChart({
             size="sm"
             variant="outline"
           >
-            Ask about the busiest
+            {t("Ask about the busiest")}
           </Button>
         ) : undefined
       }
@@ -217,7 +220,7 @@ function RefusalList({
     return (
       <GalleryFrame title={title ?? "Recent refusals"}>
         <p className="text-sm text-muted-foreground">
-          This deployment has refused nothing.
+          {t("This deployment has refused nothing.")}
         </p>
       </GalleryFrame>
     );
@@ -236,7 +239,7 @@ function RefusalList({
             size="sm"
             variant="outline"
           >
-            Explain the latest
+            {t("Explain the latest")}
           </Button>
         ) : undefined
       }

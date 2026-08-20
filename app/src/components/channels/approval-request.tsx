@@ -6,6 +6,7 @@ import {
   questionOn,
   watchQuestions,
 } from "@/lib/approvals";
+import { t } from "@/lib/i18n";
 
 /**
  * A transcript line that grew two buttons, for the one action a boundary wanted a person to see.
@@ -75,7 +76,7 @@ export function ApprovalRequest({
           onClick={() => void answer(true)}
           size="sm"
         >
-          Allow
+          {t("Allow")}
         </Button>
         <Button
           disabled={answering}
@@ -83,10 +84,10 @@ export function ApprovalRequest({
           size="sm"
           variant="outline"
         >
-          Deny
+          {t("Deny")}
         </Button>
         <span className="text-muted-foreground text-xs">
-          Asked because of this rule. Allowing covers this one action.
+          {t("Asked because of this rule. Allowing covers this one action.")}
         </span>
       </div>
       {problem ? (

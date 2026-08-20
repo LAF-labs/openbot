@@ -22,6 +22,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { t } from "@/lib/i18n";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
@@ -42,55 +43,55 @@ const GROUPS: {
   }[];
 }[] = [
   {
-    label: "What Bots can reach",
+    label: t("What Bots can reach"),
     items: [
       {
-        title: "Connectors",
+        title: t("Connectors"),
         icon: IconPlugConnected,
         linkOptions: { to: "/admin/connectors" },
       },
       {
-        title: "Credentials",
+        title: t("Credentials"),
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
       },
       {
-        title: "Boundaries",
+        title: t("Boundaries"),
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
       },
       {
-        title: "Computers",
+        title: t("Computers"),
         icon: IconDeviceDesktop,
         linkOptions: { to: "/admin/computers" },
       },
     ],
   },
   {
-    label: "What Bots can do",
+    label: t("What Bots can do"),
     items: [
       {
-        title: "Plugins",
+        title: t("Plugins"),
         icon: IconPuzzle,
         linkOptions: { to: "/admin/plugins" },
       },
       {
-        title: "Components",
+        title: t("Components"),
         icon: IconLayoutGrid,
         linkOptions: { to: "/admin/components" },
       },
       {
-        title: "Playground",
+        title: t("Playground"),
         icon: IconCode,
         linkOptions: { to: "/admin/playground" },
       },
     ],
   },
   {
-    label: "What happened",
+    label: t("What happened"),
     items: [
       {
-        title: "Audit",
+        title: t("Audit"),
         icon: IconListDetails,
         linkOptions: { to: "/admin/audit" },
       },
@@ -111,7 +112,7 @@ export function AdminSidebar({
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Back to app
+                  {t("Back to app")}
                 </Link>
               )}
             />
@@ -134,7 +135,7 @@ export function AdminSidebar({
                     activeProps={{ className: "bg-foreground/5" }}
                     {...props}
                   >
-                    Overview
+                    {t("Overview")}
                   </Link>
                 )}
               />

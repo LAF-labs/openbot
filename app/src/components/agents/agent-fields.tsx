@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type AgentFormValues, agentFormSchema } from "@/lib/agents/form";
+import { t } from "@/lib/i18n";
 
 /** What the server said when it tried the endpoint. */
 type ConnectionVerdict =
@@ -105,14 +106,14 @@ export function AgentFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Name</FieldLabel>
+                <FieldLabel htmlFor={field.name}>{t("Name")}</FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Expense Manager"
+                  placeholder={t("Expense Manager")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -128,14 +129,14 @@ export function AgentFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Title</FieldLabel>
+                <FieldLabel htmlFor={field.name}>{t("Title")}</FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Finance Operations"
+                  placeholder={t("Finance Operations")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -151,14 +152,16 @@ export function AgentFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Role</FieldLabel>
+                <FieldLabel htmlFor={field.name}>{t("Role")}</FieldLabel>
                 <Textarea
                   aria-invalid={isInvalid}
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
+                  placeholder={t(
+                    "Review receipts, categorize expenses, and prepare reimbursement reports.",
+                  )}
                   rows={4}
                   value={field.state.value}
                 />
@@ -172,7 +175,7 @@ export function AgentFields({
         <form.Field name="visibility">
           {(field) => (
             <Field>
-              <FieldLabel htmlFor={field.name}>Visibility</FieldLabel>
+              <FieldLabel htmlFor={field.name}>{t("Visibility")}</FieldLabel>
               <Select
                 onValueChange={(value) =>
                   field.handleChange(value as AgentFormValues["visibility"])
@@ -185,10 +188,10 @@ export function AgentFields({
                 <SelectContent>
                   <SelectGroup>
                     <SelectItem value="private">
-                      Private, only you can see it
+                      {t("Private, only you can see it")}
                     </SelectItem>
                     <SelectItem value="public">
-                      Public, everybody can see it
+                      {t("Public, everybody can see it")}
                     </SelectItem>
                   </SelectGroup>
                 </SelectContent>
@@ -203,7 +206,7 @@ export function AgentFields({
             return (
               <Field data-invalid={isInvalid}>
                 <FieldLabel htmlFor={field.name}>
-                  Agent endpoint (optional)
+                  {t("Agent endpoint (optional)")}
                 </FieldLabel>
                 <div className="flex gap-2">
                   <Input
@@ -259,7 +262,7 @@ export function AgentFields({
           {(field) => (
             <Field>
               <FieldLabel htmlFor={field.name}>
-                Key for that agent (optional)
+                {t("Key for that agent (optional)")}
               </FieldLabel>
               <Input
                 autoComplete="off"
@@ -277,9 +280,9 @@ export function AgentFields({
                 value={field.state.value}
               />
               <p className="text-muted-foreground text-sm">
-                Sent as an <code>Authorization</code> header on every run, and
-                kept in the credential vault. Leave empty to keep the current
-                key.
+                Sent as an <code>{t("Authorization")}</code> header on every
+                run, and kept in the credential vault. Leave empty to keep the
+                current key.
               </p>
             </Field>
           )}
@@ -304,7 +307,7 @@ export function AgentFields({
         </form.Subscribe>
         {onCancel ? (
           <Button onClick={onCancel} type="button" variant="outline">
-            Cancel
+            {t("Cancel")}
           </Button>
         ) : null}
       </div>

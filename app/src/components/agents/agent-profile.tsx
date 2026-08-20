@@ -14,6 +14,7 @@ import {
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
 import { agentQueryOptions } from "@/lib/agents/queries";
+import { t } from "@/lib/i18n";
 
 function Tag({ children }: { children: ReactNode }) {
   return (
@@ -76,7 +77,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   if (agent.error || !agent.data) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        Could not load this coworker.
+        {t("Could not load this coworker.")}
       </p>
     );
   }
@@ -104,7 +105,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
 
         <div className="flex flex-wrap justify-center gap-1.5">
           <Tag>{profile.visibility === "private" ? "Private" : "Public"}</Tag>
-          {profile.systemOwned ? <Tag>System owned</Tag> : null}
+          {profile.systemOwned ? <Tag>{t("System owned")}</Tag> : null}
         </div>
       </header>
 
@@ -134,7 +135,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
       ) : (
         <section className="grid gap-2">
           <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Role
+            {t("Role")}
           </h2>
           <p className="text-sm whitespace-pre-wrap text-pretty">
             {profile.roleDescription}
@@ -159,7 +160,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
               });
             }}
           >
-            Start channel
+            {t("Start channel")}
           </Button>
 
           <Button
@@ -209,7 +210,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
               onClick={() => setEditingId(agentId)}
               variant="outline"
             >
-              Edit
+              {t("Edit")}
             </Button>
           ) : null}
 
@@ -229,7 +230,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                     onClick={() => setConfirmingDeleteId(null)}
                     variant="outline"
                   >
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   <Button
                     className="w-full text-sm!"
@@ -249,7 +250,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                   onClick={() => setConfirmingDeleteId(agentId)}
                   variant="destructive"
                 >
-                  Delete
+                  {t("Delete")}
                 </Button>
               )}
             </>

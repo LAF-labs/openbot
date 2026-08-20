@@ -1,3 +1,4 @@
+import "@/lib/i18n";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -10,7 +11,7 @@ import "./styles.css";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("OpenBot could not find the application root element.");
+  throw new Error("LAF Agent could not find the application root element.");
 }
 
 createRoot(rootElement).render(

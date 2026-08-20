@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotThread } from "@/lib/copilot/bot-thread";
 import { useStoppedTurn } from "@/lib/copilot/stopped-turn";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/_app/bot")({
   component: RouteComponent,
@@ -31,9 +32,9 @@ function RouteComponent() {
   return (
     <div className="flex h-screen flex-col">
       <header className="border-b px-6 py-3">
-        <h1 className="text-lg font-semibold">Browser Bot</h1>
+        <h1 className="text-lg font-semibold">{t("Browser Bot")}</h1>
         <p className="text-sm text-muted-foreground">
-          Ask it to open a page and watch it work.
+          {t("Ask it to open a page and watch it work.")}
         </p>
       </header>
       {/*

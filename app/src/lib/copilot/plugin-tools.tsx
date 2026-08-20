@@ -2,11 +2,11 @@ import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Streamdown } from "streamdown";
+import * as z from "zod";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
-import { markdownComponents } from "@/lib/markdown";
-import * as z from "zod";
 import { useActiveBotId } from "@/lib/copilot/active-bot";
+import { markdownComponents } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
   callPluginTool,

@@ -3,13 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
-import { StaggerItem } from "@/components/layout/stagger";
 import { AgentProfile as AgentProfileDetail } from "@/components/agents/agent-profile";
 import { NewAgent } from "@/components/agents/new-agent";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { t } from "@/lib/i18n";
 
 /**
  * Creating and inspecting a coworker are search-parameter states so the roster remains mounted and
@@ -52,7 +53,7 @@ function AgentsScreen() {
       <div className="max-w-2xl px-4 w-full mx-auto">
         <div className="mt-12 w-full max-w-2xl">
           <div className="flex flex-row w-full items-center justify-between">
-            <h2 className="font-bold text-lg">Your agents</h2>
+            <h2 className="font-bold text-lg">{t("Your agents")}</h2>
             <Button
               variant="ghost"
               size="sm"
@@ -61,7 +62,7 @@ function AgentsScreen() {
               )}
             >
               <IconPlus />
-              New agent
+              {t("New agent")}
             </Button>
           </div>
           <div className="flex flex-row mt-4">
@@ -82,7 +83,7 @@ function AgentsScreen() {
               <Empty className="border border-dashed h-[180px]">
                 <EmptyHeader>
                   <EmptyTitle className="text-muted-foreground">
-                    You don't have any agents created.
+                    {t("You don't have any agents created.")}
                   </EmptyTitle>
                 </EmptyHeader>
               </Empty>
@@ -90,7 +91,7 @@ function AgentsScreen() {
           </div>
         </div>
         <div className="mt-8 w-full max-w-2xl">
-          <h2 className="font-bold text-lg">Explore agents</h2>
+          <h2 className="font-bold text-lg">{t("Explore agents")}</h2>
           <div className="grid grid-cols-4 gap-4 mt-4">
             {!!explore?.length &&
               explore.map((agent, index) => {

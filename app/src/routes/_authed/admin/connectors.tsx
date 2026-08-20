@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { connectorListQueryOptions } from "@/lib/connectors/queries";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/admin/connectors")({
   component: ConnectorsPage,
@@ -28,19 +29,23 @@ function ConnectorsPage() {
   const connectors = useQuery(connectorListQueryOptions());
   return (
     <PageShell
-      description="Available integrations are defined by this deployment’s knowledge sources."
-      title="Connectors"
+      description={t(
+        "Available integrations are defined by this deployment’s knowledge sources.",
+      )}
+      title={t("Connectors")}
     >
-      <PageSection title="Available">
+      <PageSection title={t("Available")}>
         {connectors.isPending ? (
-          <PageEmpty>Loading connectors…</PageEmpty>
+          <PageEmpty>{t("Loading connectors…")}</PageEmpty>
         ) : connectors.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not load connectors.
+            {t("Could not load connectors.")}
           </p>
         ) : connectors.data?.length === 0 ? (
           <PageEmpty>
-            No connectors. They come from this deployment's knowledge sources.
+            {t(
+              "No connectors. They come from this deployment's knowledge sources.",
+            )}
           </PageEmpty>
         ) : (
           <PageRows>
@@ -68,12 +73,12 @@ function ConnectorsPage() {
                         size="sm"
                         variant="outline"
                       >
-                        Set up
+                        {t("Set up")}
                       </Button>
                     ) : (
                       // Said rather than left blank, which would read as a control yet to arrive.
                       <span className="text-muted-foreground text-sm">
-                        No setup screen yet
+                        {t("No setup screen yet")}
                       </span>
                     )}
                   </ItemActions>

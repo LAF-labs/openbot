@@ -1,11 +1,12 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
+import AgentOrb from "@/components/agents/orb/agent-orb";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
 import { currentUserQueryOptions } from "../lib/auth/queries";
-import AgentOrb from "@/components/agents/orb/agent-orb";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
@@ -96,7 +97,7 @@ function SignScreen() {
             </Button>
           ) : (
             <p className="text-center text-sm text-muted-foreground">
-              No auth providers are configured.
+              {t("No auth providers are configured.")}
             </p>
           )}
           {error ? (

@@ -13,6 +13,7 @@ import { DetailPanel } from "@/components/layout/detail-panel";
 import { Button } from "@/components/ui/button";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
+import { t } from "@/lib/i18n";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
@@ -178,7 +179,7 @@ function RouteComponent() {
               ) : null}
             </Button>
             <Button
-              aria-label="Channel coworker"
+              aria-label={t("Channel coworker")}
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
@@ -215,13 +216,15 @@ function ChannelBody({
 }) {
   if (isPending) {
     return (
-      <p className="p-8 text-sm text-muted-foreground">Loading channel…</p>
+      <p className="p-8 text-sm text-muted-foreground">
+        {t("Loading channel…")}
+      </p>
     );
   }
   if (hasError || !channel) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        Could not load this channel.
+        {t("Could not load this channel.")}
       </p>
     );
   }
@@ -231,7 +234,9 @@ function ChannelBody({
   if (!runtimeAgentId) {
     return (
       <p className="p-8 text-sm text-muted-foreground">
-        This channel has more than one coworker, which is not supported yet.
+        {t(
+          "This channel has more than one coworker, which is not supported yet.",
+        )}
       </p>
     );
   }

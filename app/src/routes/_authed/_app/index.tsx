@@ -6,6 +6,7 @@ import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: RouteComponent,
@@ -27,7 +28,7 @@ function RouteComponent() {
           {appConfig.brand.productName}
         </h2>
         <h1 className="text-2xl font-bold tracking-tight mt-1.5 text-center">
-          Start a new channel
+          {t("Start a new channel")}
         </h1>
       </div>
       <div className="mt-8 w-full flex flex-col items-center">
@@ -58,7 +59,8 @@ function RouteComponent() {
           // Said out loud: a message that silently reaches somebody you did not choose is the
           // kind of surprise that costs trust the first time it happens.
           <p className="mt-2 w-full max-w-2xl text-xs text-muted-foreground text-center">
-            Goes to {fallback.name}. Type <code>@</code> to reach somebody else.
+            {t("Goes to {name}.", { name: fallback.name })}{" "}
+            {t("Type @ to reach somebody else.")}
           </p>
         ) : null}
         {error ? (
@@ -71,7 +73,7 @@ function RouteComponent() {
         ) : null}
       </div>
       <div className="mt-10 w-full max-w-2xl">
-        <h2 className="font-bold text-lg">Explore agents</h2>
+        <h2 className="font-bold text-lg">{t("Explore agents")}</h2>
         <div className="flex flex-row gap-4 mt-4">
           {!!explore?.length &&
             explore.map((agent) => (

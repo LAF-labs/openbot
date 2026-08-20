@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { t } from "@/lib/i18n";
 
 /**
  * CEL computer-action boundary editor. Rules are shown as the gateway evaluates them, and denied
@@ -133,7 +134,7 @@ function BoundariesPage() {
 
   if (problem && !policy) {
     return (
-      <PageShell title="Boundaries">
+      <PageShell title={t("Boundaries")}>
         <p className="mt-4 text-destructive text-sm" role="alert">
           {problem}
         </p>
@@ -143,9 +144,9 @@ function BoundariesPage() {
 
   if (!policy) {
     return (
-      <PageShell title="Boundaries">
+      <PageShell title={t("Boundaries")}>
         <p className="mt-4 text-muted-foreground text-sm">
-          Loading the boundary…
+          {t("Loading the boundary…")}
         </p>
       </PageShell>
     );
@@ -179,14 +180,14 @@ function BoundariesPage() {
           What every Bot may and may not do with its computer. Rules are checked
           on every action before it happens, and a refusal is recorded in{" "}
           <Link className="underline" to="/admin/audit">
-            Audit
+            {t("Audit")}
           </Link>{" "}
           with the rule that refused it.
         </>
       }
-      title="Boundaries"
+      title={t("Boundaries")}
     >
-      <PageSection title="When a rule matches">
+      <PageSection title={t("When a rule matches")}>
         <div className="mt-2 flex gap-2">
           {(["enforce", "dry-run"] as PolicyMode[]).map((mode) => (
             <Button
@@ -211,10 +212,10 @@ function BoundariesPage() {
         </p>
       </PageSection>
 
-      <PageSection title="It may never">
+      <PageSection title={t("It may never")}>
         {policy.deny.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
-            No rules. Every action is allowed and recorded.
+            {t("No rules. Every action is allowed and recorded.")}
           </p>
         ) : (
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
@@ -237,7 +238,7 @@ function BoundariesPage() {
                   size="sm"
                   variant="ghost"
                 >
-                  Remove
+                  {t("Remove")}
                 </Button>
               </li>
             ))}
@@ -246,7 +247,7 @@ function BoundariesPage() {
 
         <div className="mt-3 flex gap-2">
           <Input
-            aria-label="A rule, written in CEL"
+            aria-label={t("A rule, written in CEL")}
             className="min-w-0 flex-1 font-mono text-xs"
             onChange={(event) => {
               setDraft(event.target.value);
@@ -263,7 +264,7 @@ function BoundariesPage() {
             onClick={() => addRule(draft)}
             size="sm"
           >
-            Add rule
+            {t("Add rule")}
           </Button>
         </div>
 
@@ -289,10 +290,10 @@ function BoundariesPage() {
         </ul>
       </PageSection>
 
-      <PageSection title="Ask me first">
+      <PageSection title={t("Ask me first")}>
         {policy.ask.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
-            No rules. Nothing stops to ask.
+            {t("No rules. Nothing stops to ask.")}
           </p>
         ) : (
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
@@ -315,7 +316,7 @@ function BoundariesPage() {
                   size="sm"
                   variant="ghost"
                 >
-                  Remove
+                  {t("Remove")}
                 </Button>
               </li>
             ))}
@@ -324,7 +325,7 @@ function BoundariesPage() {
 
         <div className="mt-3 flex gap-2">
           <Input
-            aria-label="A rule that asks a person first, written in CEL"
+            aria-label={t("A rule that asks a person first, written in CEL")}
             className="min-w-0 flex-1 font-mono text-xs"
             onChange={(event) => {
               setAskDraft(event.target.value);
@@ -341,7 +342,7 @@ function BoundariesPage() {
             onClick={() => addAskRule(askDraft)}
             size="sm"
           >
-            Add rule
+            {t("Add rule")}
           </Button>
         </div>
 
@@ -371,12 +372,13 @@ function BoundariesPage() {
           with the same action if somebody allows it. Checked after the rules
           above and before the ones below, so something you have forbidden stays
           forbidden and is never offered as a question. In{" "}
-          <span className="font-medium">Record it and allow it</span> nothing
-          stops: a match is recorded as a question that would have been asked.
+          <span className="font-medium">{t("Record it and allow it")}</span>{" "}
+          nothing stops: a match is recorded as a question that would have been
+          asked.
         </p>
       </PageSection>
 
-      <PageSection title="Otherwise it may">
+      <PageSection title={t("Otherwise it may")}>
         <ul className="mt-2 space-y-1">
           {policy.allow.map((rule) => (
             <li className="font-mono text-xs text-muted-foreground" key={rule}>

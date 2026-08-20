@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { silenceOf } from "@/lib/audit/silence";
+import { t } from "@/lib/i18n";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -81,11 +82,13 @@ function AuditPage() {
       action={
         <Button onClick={() => events.refetch()} size="sm" variant="ghost">
           <IconRefresh />
-          Refresh
+          {t("Refresh")}
         </Button>
       }
-      description="Every action a Bot took, and every one this deployment's policy refused."
-      title="Audit"
+      description={t(
+        "Every action a Bot took, and every one this deployment's policy refused.",
+      )}
+      title={t("Audit")}
       width="wide"
     >
       <PageSection>
@@ -105,23 +108,23 @@ function AuditPage() {
         </div>
 
         {events.isPending ? (
-          <PageEmpty>Loading the trail…</PageEmpty>
+          <PageEmpty>{t("Loading the trail…")}</PageEmpty>
         ) : events.isError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            The audit trail could not be loaded.
+            {t("The audit trail could not be loaded.")}
           </p>
         ) : rows.length === 0 ? (
-          <PageEmpty>No events match this filter yet.</PageEmpty>
+          <PageEmpty>{t("No events match this filter yet.")}</PageEmpty>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
             <table className="w-full text-left text-sm">
               <thead className="text-muted-foreground text-xs uppercase">
                 <tr className="border-border border-b">
-                  <th className="px-4 py-2 font-medium">When</th>
-                  <th className="px-4 py-2 font-medium">What</th>
-                  <th className="px-4 py-2 font-medium">On</th>
-                  <th className="px-4 py-2 font-medium">Bot</th>
-                  <th className="px-4 py-2 font-medium">Decision</th>
+                  <th className="px-4 py-2 font-medium">{t("When")}</th>
+                  <th className="px-4 py-2 font-medium">{t("What")}</th>
+                  <th className="px-4 py-2 font-medium">{t("On")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Bot")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Decision")}</th>
                 </tr>
               </thead>
               <tbody>

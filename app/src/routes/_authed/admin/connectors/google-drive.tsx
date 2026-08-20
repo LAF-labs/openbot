@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { connectorKeys } from "@/lib/connectors/queries";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/admin/connectors/google-drive")({
   component: GoogleDriveConnectorPage,
@@ -70,8 +71,10 @@ function GoogleDriveConnectorPage() {
      * page whose only content immediately covers itself up.
      */
     <PageShell
-      description="Connect an organization service account with domain-wide delegation."
-      title="Google Drive"
+      description={t(
+        "Connect an organization service account with domain-wide delegation.",
+      )}
+      title={t("Google Drive")}
     >
       <form
         className="mt-8"
@@ -90,7 +93,7 @@ function GoogleDriveConnectorPage() {
                 }
               >
                 <FieldLabel htmlFor={field.name}>
-                  Service account JSON key
+                  {t("Service account JSON key")}
                 </FieldLabel>
                 <Textarea
                   className="min-h-40 font-mono text-xs"
@@ -113,7 +116,7 @@ function GoogleDriveConnectorPage() {
                 }
               >
                 <FieldLabel htmlFor={field.name}>
-                  Impersonation subject
+                  {t("Impersonation subject")}
                 </FieldLabel>
                 <Input
                   id={field.name}
@@ -131,7 +134,7 @@ function GoogleDriveConnectorPage() {
         </FieldGroup>
         {setup.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not save the Google Drive connection.
+            {t("Could not save the Google Drive connection.")}
           </p>
         ) : null}
         <Button className="mt-4" disabled={setup.isPending} type="submit">
