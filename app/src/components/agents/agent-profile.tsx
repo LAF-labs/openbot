@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentFields } from "@/components/agents/agent-fields";
+import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,6 +58,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const navigate = useNavigate();
   // State is keyed by coworker id because this panel can remain open while its target changes.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [pickingFace, setPickingFace] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
@@ -89,10 +91,61 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   return (
     <div className="flex w-full flex-col gap-6 p-8">
       <header className="flex flex-col items-center gap-3 text-center">
-        <AbstractAvatar
-          name={profile.name}
+        {/*
+         * The face is the control, where there is one to press. A pencil beside it would be a second
+         * thing to find, and the only edit anybody wants to make to a picture is to change it.
+         *
+         * A Bot the deployment shipped is not editable here at all — the server refuses, because its
+         * row has to keep agreeing with the tenant package it came from. Its face is chosen in that
+         * package, so this offers nothing it cannot deliver.
+         */}
+        {profile.canManage ? (
+          <button
+            type="button"
+            aria-label={t("Pick a face")}
+            className="rounded-full ring-offset-2 ring-offset-background transition hover:ring-2 hover:ring-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-foreground"
+            onClick={() => setPickingFace(true)}
+          >
+            <AbstractAvatar
+              name={profile.name}
+              seed={profile.avatarSeed}
+              size={80}
+            />
+          </button>
+        ) : (
+          <AbstractAvatar
+            name={profile.name}
+            seed={profile.avatarSeed}
+            size={80}
+          />
+        )}
+        <MascotPicker
+          open={pickingFace}
+          onOpenChange={setPickingFace}
           seed={profile.avatarSeed}
-          size={80}
+          pending={updateAgent.isPending}
+          onSelect={async (avatarSeed) => {
+            /*
+             * A PATCH replaces the fields it carries, so the ones the parser requires go back
+             * unchanged: picking a face must not quietly rename a Bot or make a private one public.
+             *
+             * `endpoint` is deliberately absent. It is optional, an absent one leaves the stored
+             * configuration alone, and sending the current one back would fail validation on any
+             * deployment that forbids private hosts — the address is already saved and already
+             * working, but it is re-checked as if it had just been typed.
+             */
+            await updateAgent.mutateAsync({
+              agentId,
+              input: {
+                name: profile.name,
+                title: profile.title,
+                roleDescription: profile.roleDescription,
+                visibility: profile.visibility,
+                avatarSeed,
+              },
+            });
+            setPickingFace(false);
+          }}
         />
         <div className="flex w-full flex-col items-center gap-0.5">
           <h1 className="w-full text-balance text-2xl font-semibold leading-tight tracking-tight">

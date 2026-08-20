@@ -325,6 +325,10 @@ export function createAgentProfileStore(
               title: input.title,
               roleDescription: input.roleDescription,
               visibility: input.visibility,
+              // Absent leaves the face alone. See CreateAgentInput.avatarSeed.
+              ...(input.avatarSeed === undefined
+                ? {}
+                : { avatarSeed: input.avatarSeed }),
               updatedAt,
             })
             .where(eq(agentProfiles.agentId, id));

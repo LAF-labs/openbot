@@ -28,6 +28,7 @@ type AgentInputObject = {
   roleDescription?: unknown;
   visibility?: unknown;
   endpoint?: unknown;
+  avatarSeed?: unknown;
   auth?: unknown;
 };
 
@@ -85,6 +86,23 @@ export function parseAgentInput(
     endpoint = verdict.url;
   }
 
+  // Optional, and only ever a name from a set the client already has. Bounded and pattern-checked
+  // rather than trusted, because it is written to a row and read back into every roster; a seed is
+  // not a URL and must not be able to become one.
+  let avatarSeed: string | undefined;
+  if (input.avatarSeed !== undefined) {
+    const supplied =
+      typeof input.avatarSeed === "string" ? input.avatarSeed.trim() : "";
+    if (
+      !supplied ||
+      supplied.length > 64 ||
+      !/^[A-Za-z0-9._:-]+$/.test(supplied)
+    ) {
+      return { ok: false, error: "That is not a valid avatar." };
+    }
+    avatarSeed = supplied;
+  }
+
   // The key is optional and write-only. An absent field leaves an existing key alone; sending one
   // replaces it. There is no way to read one back, here or anywhere.
   let auth: { header: string; value: string } | undefined;
@@ -106,7 +124,15 @@ export function parseAgentInput(
 
   return {
     ok: true,
-    value: { name, title, roleDescription, visibility, endpoint, auth },
+    value: {
+      name,
+      title,
+      roleDescription,
+      visibility,
+      endpoint,
+      auth,
+      ...(avatarSeed === undefined ? {} : { avatarSeed }),
+    },
   };
 }
 

@@ -34,6 +34,15 @@ export type CreateAgentInput = Pick<
    */
   endpoint?: string;
   /**
+   * Which face this Bot wears, when somebody picked one.
+   *
+   * Absent means "leave it alone", the same as `auth`: an edit form that saves a name must not also
+   * silently reset a face, and a Bot created before anybody could choose keeps the seed it was made
+   * with. The client sends the id of a tile; anything else is hashed into one at render, so an
+   * unknown value degrades to a face rather than to nothing.
+   */
+  avatarSeed?: string;
+  /**
    * A key this agent sits behind, if any.
    *
    * Write-only. It goes to the vault and is never read back to a person: the edit form shows that a

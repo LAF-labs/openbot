@@ -80,6 +80,7 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
+  "Pick a face": "얼굴 고르기",
   "Filled in": "입력함",
   "Finance Operations": "재무 운영",
   General: "일반",

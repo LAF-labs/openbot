@@ -288,12 +288,14 @@ describe("agent profile store integration", () => {
       roleDescription: "Updated role description.",
       visibility: "public",
       id: "forged-id",
-      // The endpoint IS editable, and is the one field in this hostile payload that lands. A service
-      // moves host, and the alternative is deleting the coworker and losing its conversations. It
-      // reaches here already validated by the same check that guards creation.
+      // The endpoint IS editable. A service moves host, and the alternative is deleting the
+      // coworker and losing its conversations. It reaches here already validated by the same check
+      // that guards creation.
       endpoint: "https://moved.example.test/ag-ui",
+      // So is the face, for the same reason the name above it is: it is what somebody sees, not a
+      // fact about who owns the Bot. Everything left in this payload is still forged.
+      avatarSeed: "r2c6",
       ownerUserId: "forged-owner",
-      avatarSeed: "forged-avatar",
       packageId: deploymentPackage.id,
       deletedAt: new Date(),
     } as unknown as CreateAgentInput);
@@ -305,7 +307,7 @@ describe("agent profile store integration", () => {
       roleDescription: "Updated role description.",
       visibility: "public",
       ownerUserId: owner.id,
-      avatarSeed: source.avatarSeed,
+      avatarSeed: "r2c6",
       systemOwned: false,
       deletedAt: null,
     });
@@ -328,7 +330,7 @@ describe("agent profile store integration", () => {
       ownerUserId: owner.id,
       title: "Updated Title",
       roleDescription: "Updated role description.",
-      avatarSeed: source.avatarSeed,
+      avatarSeed: "r2c6",
       visibility: "public",
       deletedAt: null,
     });

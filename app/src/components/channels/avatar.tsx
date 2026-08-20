@@ -1,6 +1,7 @@
-import Avatar from "boring-avatars";
+import { useQuery } from "@tanstack/react-query";
 import { memo } from "react";
-import { hasMascot, Mascot } from "@/components/agents/mascot";
+import { Mascot } from "@/components/agents/mascot";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 
 /**
  * Memoized roster avatar. Row updates usually change preview/timestamp only, and
@@ -9,6 +10,21 @@ import { hasMascot, Mascot } from "@/components/agents/mascot";
  * `size-full` opts the generated SVG out of ancestor icon selectors such as
  * `[&_svg:not([class*='size-'])]:size-4`.
  */
+/**
+ * An agent id, resolved to the face that agent actually wears.
+ *
+ * A channel row knows who is in it and nothing else about them, so hashing the id straight to a tile
+ * would give the same Bot one face in the sidebar and another on its profile — the same Bot, twice,
+ * and no way for anybody to know which one is the real one. The roster is already loaded and cached
+ * for the page this appears on, so the seed comes from there; before it arrives, or for an id that is
+ * not a Bot, the id hashes as it always did and the face settles a moment later.
+ */
+function useSeeds(): (agentId: string) => string {
+  const agents = useQuery(agentListQueryOptions());
+  return (agentId) =>
+    agents.data?.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId;
+}
+
 export const ChannelAvatar = memo(function ChannelAvatar({
   participantIds,
   size = 32,
@@ -16,21 +32,17 @@ export const ChannelAvatar = memo(function ChannelAvatar({
   participantIds: string[];
   size?: number;
 }) {
+  const seedOf = useSeeds();
   const channelSize = participantIds?.length;
 
   if (channelSize === 1) {
-    const only = participantIds[0] ?? "";
     return (
       <div className="" style={{ height: size, width: size }}>
-        {hasMascot(only) ? (
-          <Mascot
-            className="size-full rounded-full"
-            mascotKey={only}
-            size={size}
-          />
-        ) : (
-          <Avatar className="size-full" name={only} size={size} />
-        )}
+        <Mascot
+          className="size-full rounded-full object-cover"
+          seed={seedOf(participantIds[0] ?? "")}
+          size={size}
+        />
       </div>
     );
   }
@@ -53,19 +65,11 @@ export const ChannelAvatar = memo(function ChannelAvatar({
               transform: `translateX(${i * -75}%)`,
             }}
           >
-            {hasMascot(c) ? (
-              <Mascot
-                className="size-full rounded-full"
-                mascotKey={c}
-                size={size / (firstThree.length / 2)}
-              />
-            ) : (
-              <Avatar
-                className="size-full"
-                name={c}
-                size={size / (firstThree.length / 2)}
-              />
-            )}
+            <Mascot
+              className="size-full rounded-full object-cover"
+              seed={seedOf(c)}
+              size={size / (firstThree.length / 2)}
+            />
           </div>
         );
       })}

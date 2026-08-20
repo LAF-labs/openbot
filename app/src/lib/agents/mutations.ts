@@ -10,6 +10,8 @@ export type AgentInput = {
   endpoint?: string;
   /** Write-only auth value; omitted when the user leaves the key field empty. */
   auth?: { header: string; value: string };
+  /** The face somebody picked. Omitted leaves whatever the Bot already wears. */
+  avatarSeed?: string;
 };
 
 async function agentRequest(

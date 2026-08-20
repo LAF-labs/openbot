@@ -192,12 +192,14 @@ describe("agent input parser", () => {
         visibility: " private ",
         id: "forged-agent",
         ownerUserId: "attacker",
-        avatarSeed: "forged-avatar",
         deletedAt: "now",
         systemOwned: true,
         // `endpoint` is a real field for BYO-agent; validation protects it rather than refusing it
         // as a forged field. See agent-endpoint.test.ts.
         endpoint: "https://agents.example.com/ag-ui",
+        // So is `avatarSeed`. A face is a display value like the name beside it, not a fact about
+        // who owns the Bot, and the person looking at it is the person who gets to choose it.
+        avatarSeed: "  r2c6  ",
       }),
     ).toEqual({
       ok: true,
@@ -207,6 +209,7 @@ describe("agent input parser", () => {
         roleDescription: "Reviews receipts.",
         visibility: "private",
         endpoint: "https://agents.example.com/ag-ui",
+        avatarSeed: "r2c6",
       },
     });
   });
@@ -416,11 +419,11 @@ describe("agent lifecycle routes", () => {
       visibility: " private ",
       id: "forged-agent",
       ownerUserId: "attacker",
-      avatarSeed: "forged-avatar",
       deletedAt: "now",
       systemOwned: true,
-      // A real field now, not a forged one; the rest of this list still is.
+      // Real fields now, not forged ones; the rest of this list still is.
       endpoint: "https://agents.example.com/ag-ui",
+      avatarSeed: "r2c6",
     };
 
     for (const [path, method] of [
@@ -435,10 +438,12 @@ describe("agent lifecycle routes", () => {
       expect(response.status).toBe(method === "POST" ? 201 : 200);
     }
 
-    // The endpoint reaches the store because it is a real field; everything else forged does not.
+    // The endpoint and the face reach the store because they are real fields; everything else
+    // forged does not.
     const expected = {
       ...validInput,
       endpoint: "https://agents.example.com/ag-ui",
+      avatarSeed: "r2c6",
     };
     expect(store.calls).toEqual([
       ["create", actor, expected],
