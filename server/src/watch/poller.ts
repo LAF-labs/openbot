@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { lafWatchEvents, lafWatchSources } from "../db/schema";
+import { lafThreadRuns, lafWatchEvents, lafWatchSources } from "../db/schema";
 import { callTool } from "../plugins/mcp";
 import {
   describeChanges,
@@ -131,6 +131,25 @@ export function createWatchService(
     if (!source.wakeAgentId || changes.length === 0) {
       return;
     }
+    /*
+     * The dedupe key is the first event's id: a wake exists to deliver those
+     * events, and a second run keyed to the same events is the double-send
+     * this exists to prevent — a re-poll racing a slow wake, a restart
+     * replaying a tick. Checked at the sender because the sender is where
+     * machines enter the run queue; the unique column is the backstop.
+     */
+    const dedupeKey = `wake-${eventIds[0] ?? randomUUID()}`;
+    const [duplicate] = await database
+      .select({ runId: lafThreadRuns.runId })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.dedupeKey, dedupeKey))
+      .limit(1);
+    if (duplicate) {
+      console.info(
+        `[watch] wake for source '${source.name}' skipped: already ran as ${duplicate.runId}`,
+      );
+      return;
+    }
     const report = [
       `[laf.watch] Source "${source.name}" changed:`,
       describeChanges(changes),
@@ -158,7 +177,7 @@ export function createWatchService(
           ],
           tools: [],
           context: [],
-          forwardedProps: {},
+          forwardedProps: { lafOrigin: "wake", lafDedupeKey: dedupeKey },
         }),
       },
     );

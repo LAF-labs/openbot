@@ -119,6 +119,22 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
 
   /** Async because construction is a read: boot rehydrates every snapshot. */
   static async create(database: Database): Promise<LafPostgresRunner> {
+    /*
+     * Boot reconciliation: a run still `running` now cannot still be running,
+     * because the process that ran it is the one that just died. Marked
+     * `unknown` rather than `error` — nothing is known about how it ended,
+     * and the digest names these as what they are: crash suspects.
+     */
+    const reconciled = await database
+      .update(lafThreadRuns)
+      .set({ status: "unknown", finishedAt: new Date() })
+      .where(eq(lafThreadRuns.status, "running"))
+      .returning({ runId: lafThreadRuns.runId });
+    if (reconciled.length > 0) {
+      console.info(
+        `[laf-runner] ${reconciled.length} run(s) had no ending; reconciled to unknown`,
+      );
+    }
     const rows = await database.select().from(lafThreadSnapshots);
     const restored = new Map<string, RestoredThread>(
       rows.map((row) => [
@@ -139,7 +155,25 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         : randomUUID();
     const agentId = request.agent.agentId ?? null;
     const inputMessages = [...(request.input.messages ?? [])] as Message[];
-    void this.beginRun(runId, request.threadId, agentId, inputMessages);
+    const forwarded = (request.input.forwardedProps ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const origin =
+      typeof forwarded.lafOrigin === "string" ? forwarded.lafOrigin : "chat";
+    const dedupeKey =
+      typeof forwarded.lafDedupeKey === "string" &&
+      forwarded.lafDedupeKey.length > 0
+        ? forwarded.lafDedupeKey
+        : null;
+    void this.beginRun(
+      runId,
+      request.threadId,
+      agentId,
+      inputMessages,
+      origin,
+      dedupeKey,
+    );
     const events = super.run(request);
     const collected: BaseEvent[] = [];
     events.subscribe({
@@ -193,6 +227,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     threadId: string,
     agentId: string | null,
     messages: Message[],
+    origin = "chat",
+    dedupeKey: string | null = null,
   ): Promise<void> {
     try {
       await this.database.insert(lafThreadRuns).values({
@@ -200,6 +236,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         threadId,
         agentId,
         status: "running",
+        origin,
+        dedupeKey,
       });
       await this.saveSnapshot(threadId, agentId, messages);
     } catch (error) {

@@ -43,8 +43,22 @@ export const lafThreadRuns = pgTable("laf_thread_runs", {
   runId: text("run_id").primaryKey(),
   threadId: text("thread_id").notNull(),
   agentId: text("agent_id"),
-  /** `running` | `done` | `error` — a run found `running` after a restart is a crash. */
+  /**
+   * `running` | `done` | `error` | `unknown`. A run still `running` when a new
+   * process boots cannot still be running — this build is one process — so
+   * boot reconciles it to `unknown`: the crash suspect the digest names.
+   */
   status: text("status").notNull(),
+  /** What started it: `chat` for a person's turn, `wake` for the watcher. */
+  origin: text("origin").notNull().default("chat"),
+  /**
+   * Machine-initiated runs carry one; a second run with the same key must not
+   * happen. Webhook redeliveries and watcher re-polls are the reason — a
+   * duplicate wake that sends a message twice is the bug this column exists
+   * to make impossible. Null for human turns: a person repeating themselves
+   * is not a duplicate.
+   */
+  dedupeKey: text("dedupe_key").unique(),
   error: text("error"),
   eventCount: integer("event_count").notNull().default(0),
   startedAt: timestamp("started_at", { withTimezone: true })

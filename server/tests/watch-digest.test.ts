@@ -64,7 +64,7 @@ describe("buildDigest", () => {
       events: [],
       runs: [
         {
-          status: "running",
+          status: "unknown",
           agentId: "risk-analyst",
           startedAt: at("2026-08-20T01:00:00Z"),
           error: null,
@@ -72,6 +72,7 @@ describe("buildDigest", () => {
       ],
     });
     expect(digest.body).toContain("결말 없는 런 1건");
+    expect(digest.body).toContain("크래시로 판정됨");
     expect(digest.quiet).toBe(false);
   });
 
