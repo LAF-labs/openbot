@@ -52,33 +52,35 @@ describe("deployment configuration", () => {
     expect(config.auth).toBeUndefined();
   });
 
-  // The product does not have a mode without Intelligence, so each of these is a refusal to boot
-  // rather than a degraded capability. Named individually because a deployment that sets three of
-  // four is the likeliest real mistake, and the message has to say which one is missing.
+  // This fork has a mode without Intelligence — local, durable in our own
+  // Postgres — so all four variables absent is a decision, not an accident.
+  // A PARTIAL set is still the likeliest real mistake (somebody meant to
+  // configure Intelligence and got it wrong), so each of these remains a
+  // refusal to boot, and the message has to say which one is missing.
   test.each([
     "INTELLIGENCE_API_URL",
     "INTELLIGENCE_GATEWAY_WS_URL",
     "INTELLIGENCE_API_KEY",
     "COPILOTKIT_LICENSE_TOKEN",
-  ])("refuses to start when %s is missing", (name) => {
+  ])("refuses to start when only %s is missing", (name) => {
     const environment: Record<string, string | undefined> = {
       ...baseEnvironment,
     };
     delete environment[name];
 
     expect(() => loadConfig(environment)).toThrow(
-      `CopilotKit Intelligence is required and is not configured. Missing: ${name}`,
+      `CopilotKit Intelligence is partially configured. Missing: ${name}`,
     );
   });
 
-  test("refuses to start when Intelligence is absent entirely, rather than degrading", () => {
-    expect(() =>
-      loadConfig({
-        DATABASE_URL: baseEnvironment.DATABASE_URL,
-        KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
-        MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
-      }),
-    ).toThrow("CopilotKit Intelligence is required and is not configured");
+  test("runs in local mode when Intelligence is absent entirely", () => {
+    const config = loadConfig({
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+    });
+    expect(config.runtime.mode).toBe("local");
+    expect(config.runtime.durableHistory).toBe(true);
   });
 
   test("rejects incomplete OAuth client configuration", () => {
