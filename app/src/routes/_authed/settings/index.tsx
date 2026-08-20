@@ -1,10 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
 import { useTheme } from "@/components/theme-provider";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -20,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { signOutMutationOptions } from "@/lib/auth/mutations";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import { type Locale, localeSetting, setLocaleSetting, t } from "@/lib/i18n";
 
@@ -29,6 +33,15 @@ export const Route = createFileRoute("/_authed/settings/")({
 
 function RouteComponent() {
   const { dark, setDark } = useTheme();
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const signOut = useMutation(signOutMutationOptions(queryClient));
+
+  const handleSignOut = async () => {
+    await signOut.mutateAsync();
+    await navigate({ to: "/sign" });
+  };
 
   /*
    * The measurements that used to be written out here now live in `PageShell`, which Skills, Admin
@@ -43,6 +56,35 @@ function RouteComponent() {
       )}
       title={t("Preferences")}
     >
+      {/*
+       * Who these preferences belong to. The description above promises "your account alone", and
+       * this is the row that makes the promise concrete — plus the way out, which otherwise hides
+       * behind the avatar menu.
+       */}
+      <PageSection title={t("Account")}>
+        <PageRows>
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>
+                {currentUser?.name || currentUser?.email}
+              </ItemTitle>
+              {/* The email repeats nothing: it only renders when a name is on the line above. */}
+              {currentUser?.name ? (
+                <ItemDescription>{currentUser.email}</ItemDescription>
+              ) : null}
+            </ItemContent>
+            <ItemActions>
+              <Button
+                disabled={signOut.isPending}
+                onClick={handleSignOut}
+                variant="outline"
+              >
+                {t("Log out")}
+              </Button>
+            </ItemActions>
+          </Item>
+        </PageRows>
+      </PageSection>
       <PageSection title={t("General")}>
         <PageRows>
           <Item size="sm">

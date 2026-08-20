@@ -48,15 +48,12 @@ export function SettingsSidebar({
             {ITEMS.map((option) => {
               return (
                 <SidebarMenuItem key={option.title}>
+                  {/* The same active grammar as the app sidebar: the stacked active+hover variant
+                      outranks plain hover, so the row you are on never dips to the hover fill. */}
                   <SidebarMenuButton
+                    className="hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
-                      <Link
-                        {...option.linkOptions}
-                        activeProps={{
-                          className: "bg-foreground/5",
-                        }}
-                        {...props}
-                      >
+                      <Link {...option.linkOptions} {...props}>
                         {option.title}
                       </Link>
                     )}

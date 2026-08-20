@@ -6,6 +6,7 @@ export const ko: Record<string, string> = {
   "A rule, written in CEL": "규칙 — CEL로 작성",
   "Access token for this server": "이 서버의 액세스 토큰",
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
+  Account: "계정",
   "Add a server by URL": "URL로 서버 추가",
   "Add credential": "자격증명 추가",
   "Add rule": "규칙 추가",
@@ -325,4 +326,5 @@ export const ko: Record<string, string> = {
   "Definition changed — paused until reviewed":
     "정의가 바뀜 — 검토 전까지 정지",
   "Approve as it now is": "지금 상태로 승인",
+  "{name}'s screen": "{name}의 화면",
 };

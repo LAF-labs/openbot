@@ -47,7 +47,7 @@ function ComputerViewPanel({
       <div className="p-4">
         <ComputerView active computerId={agentId} />
         <span className="flex items-center justify-center w-full text-center text-muted-foreground mt-4 text-sm">
-          {name || "Agent"}'s screen
+          {name ? t("{name}'s screen", { name }) : t("The assistant's screen")}
         </span>
       </div>
     </div>
