@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
-import { and, count, desc, eq, lte, notInArray } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lte, notInArray } from "drizzle-orm";
 import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
@@ -27,6 +27,23 @@ export const ROUTINE_RUN_TIMEOUT_MS = 180_000;
 
 /** How many run records each routine keeps. The history of record is audit_events. */
 const KEPT_RUNS = 20;
+
+/**
+ * The shortest gap between two triggered runs of one routine.
+ *
+ * Webhooks are delivered at least once, and a sender that retries or a source that fires in bursts
+ * must not turn one event into five model runs. Thirty seconds is a debounce, not a schedule: the
+ * second delivery inside it is acknowledged and dropped, which is what an at-least-once sender
+ * expects a receiver to do.
+ */
+export const TRIGGER_DEBOUNCE_MS = 30_000;
+
+/** How much of a trigger payload reaches the Bot. Enough for an event, too little for a novel. */
+const TRIGGER_PAYLOAD_LIMIT = 4_000;
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 export class RoutineError extends Error {
   constructor(
@@ -229,10 +246,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
           );
         }
         const at = now();
+        // Shown once, in the create response, and kept only as a hash. See the schema note.
+        const triggerToken = randomBytes(24).toString("base64url");
         const [row] = await transaction
           .insert(lafRoutines)
           .values({
             id: `routine_${randomUUID()}`,
+            triggerTokenHash: hashToken(triggerToken),
             agentId: input.agentId,
             name,
             instruction,
@@ -248,7 +268,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
             updatedAt: at,
           })
           .returning();
-        return row;
+        if (!row)
+          throw new RoutineError("The routine could not be created.", 409);
+        return { ...row, triggerToken };
       });
     },
 
@@ -322,6 +344,63 @@ export function createRoutineService(options: RoutineServiceOptions) {
         .where(eq(lafRoutines.id, id))
         .returning();
       if (claimed) await execute(claimed);
+    },
+
+    /**
+     * A webhook firing the routine, authenticated by its token alone.
+     *
+     * No session, because the caller is a machine. The payload, if the sender attached one, rides
+     * into the run appended to the instruction — "summarize what just happened" needs the what —
+     * bounded so a firehose sender cannot buy a novel-length prompt with one POST.
+     */
+    async trigger(id: string, token: string, payload?: string) {
+      const [row] = await database
+        .select()
+        .from(lafRoutines)
+        .where(eq(lafRoutines.id, id));
+      // One answer for a missing routine and a wrong token: a prober must not be able to tell
+      // which of the two it guessed.
+      if (!row?.triggerTokenHash || hashToken(token) !== row.triggerTokenHash) {
+        throw new RoutineError("There is no such trigger.", 404);
+      }
+      if (!row.enabled) return { ran: false, reason: "disabled" as const };
+
+      const at = now();
+      if (
+        row.lastRunAt &&
+        at.getTime() - row.lastRunAt.getTime() < TRIGGER_DEBOUNCE_MS
+      ) {
+        return { ran: false, reason: "debounced" as const };
+      }
+
+      const next = nextRunAt(scheduleOf(row), at);
+      const [claimed] = await database
+        .update(lafRoutines)
+        .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
+        .where(
+          and(
+            eq(lafRoutines.id, row.id),
+            eq(lafRoutines.enabled, true),
+            // The same fence the tick uses: whoever moves lastRunAt first wins, so a webhook burst
+            // racing itself, or racing the clock, still buys one run.
+            row.lastRunAt
+              ? eq(lafRoutines.lastRunAt, row.lastRunAt)
+              : isNull(lafRoutines.lastRunAt),
+          ),
+        )
+        .returning();
+      if (!claimed) return { ran: false, reason: "debounced" as const };
+
+      const trimmed = payload?.slice(0, TRIGGER_PAYLOAD_LIMIT).trim();
+      await execute(
+        trimmed
+          ? {
+              ...claimed,
+              instruction: `${claimed.instruction}\n\n[Trigger payload]\n${trimmed}`,
+            }
+          : claimed,
+      );
+      return { ran: true as const };
     },
 
     tick,

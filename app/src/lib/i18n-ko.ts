@@ -80,6 +80,18 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
+  "Click and type on the page as you normally would.":
+    "평소처럼 페이지를 클릭하고 입력하세요.",
+  "The assistant's screen, updating live": "어시스턴트의 화면 — 실시간 갱신 중",
+  "Take control — the assistant asked for you":
+    "제어 잡기 — 어시스턴트가 도움을 요청했어요",
+  "Press Escape to close": "Esc를 누르면 닫힙니다",
+  "Click anywhere or press Escape to close":
+    "아무 곳이나 클릭하거나 Esc를 누르면 닫힙니다",
+  "Webhook trigger — shown only once": "웹훅 트리거 — 지금 한 번만 표시됩니다",
+  "Any system that POSTs this fires the routine (at most once per 30 seconds). The request body, if any, is handed to the Bot.":
+    "이 주소로 POST하면 루틴이 실행됩니다(30초당 최대 1회). 요청 본문이 있으면 봇에게 전달됩니다.",
+  Done: "완료",
   Routines: "루틴",
   "New routine": "새 루틴",
   "Create routine": "루틴 만들기",

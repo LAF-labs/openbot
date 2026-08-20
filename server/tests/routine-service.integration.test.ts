@@ -225,3 +225,66 @@ describe("a routine on the clock", () => {
     expect(row?.nextRunAt?.toISOString()).toBe("2026-08-20T07:30:00.000Z");
   });
 });
+
+describe("a webhook firing a routine", () => {
+  async function armed(clock: () => Date, reply = "fired") {
+    const { agents, asked } = fakeAgents(reply);
+    const { service } = serviceWith(agents, clock);
+    const routine = await service.create(ACTOR, {
+      agentId: "morning-bot",
+      name: "on event",
+      instruction: "summarize the event",
+      schedule: { kind: "interval", minutes: 60 },
+    });
+    if (!routine?.triggerToken) throw new Error("no token came back");
+    return { service, routine, asked };
+  }
+
+  test("the token fires it, and the payload rides into the run", async () => {
+    const clock = new Date("2026-08-20T07:00:00Z");
+    const { service, routine, asked } = await armed(() => clock);
+
+    const outcome = await service.trigger(
+      routine.id,
+      routine.triggerToken,
+      '{"review":"별점 1점"}',
+    );
+    expect(outcome).toEqual({ ran: true });
+    expect(asked[0]).toContain("summarize the event");
+    expect(asked[0]).toContain("별점 1점");
+  });
+
+  test("a wrong token reads exactly like a missing routine", async () => {
+    const clock = new Date("2026-08-20T07:00:00Z");
+    const { service, routine } = await armed(() => clock);
+
+    await expect(
+      service.trigger(routine.id, "not-the-token"),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.trigger("routine_missing", routine.triggerToken),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("a burst buys one run", async () => {
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { service, routine, asked } = await armed(() => clock);
+
+    await service.trigger(routine.id, routine.triggerToken);
+    clock = new Date("2026-08-20T07:00:10Z");
+    const second = await service.trigger(routine.id, routine.triggerToken);
+
+    expect(second).toEqual({ ran: false, reason: "debounced" });
+    expect(asked).toHaveLength(1);
+  });
+
+  test("a disabled routine acknowledges and does nothing", async () => {
+    const clock = new Date("2026-08-20T07:00:00Z");
+    const { service, routine, asked } = await armed(() => clock);
+    await service.setEnabled(routine.id, false);
+
+    const outcome = await service.trigger(routine.id, routine.triggerToken);
+    expect(outcome).toEqual({ ran: false, reason: "disabled" });
+    expect(asked).toHaveLength(0);
+  });
+});

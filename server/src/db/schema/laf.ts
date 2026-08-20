@@ -169,6 +169,14 @@ export const lafRoutines = pgTable("laf_routines", {
   enabled: boolean("enabled").notNull().default(true),
   createdById: text("created_by_id").notNull(),
   createdByRole: text("created_by_role").notNull(),
+  /**
+   * SHA-256 of the trigger token, for the webhook path.
+   *
+   * The token itself is shown once, at creation, and kept nowhere: a webhook URL is a capability,
+   * and a table that holds capabilities in the clear is a table one SELECT away from handing out
+   * every routine in the deployment. Hashing costs one line and removes the shelf.
+   */
+  triggerTokenHash: text("trigger_token_hash"),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })

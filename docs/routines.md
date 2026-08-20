@@ -35,3 +35,14 @@ two requests racing for the last slot serialize.
 `/routines` in the app: create, enable/disable (re-enabling re-arms from now —
 a routine paused for a week must not fire a backlog), run now, delete, and the
 recent runs inline. API under `/api/routines`.
+
+## Triggers
+
+Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the
+token in an `x-trigger-token` header — a header, never the URL, because URLs
+land in logs. The token is shown once at creation and stored only as a hash.
+A request body, if the sender attaches one, rides into the run appended to the
+instruction (bounded at 4 KB). Deliveries are debounced to one run per thirty
+seconds, which is what an at-least-once sender expects a receiver to do; a
+wrong token and a missing routine are the same 404, so a prober learns
+nothing.

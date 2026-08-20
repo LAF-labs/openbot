@@ -387,11 +387,13 @@ export function ComputerView({
                       <strong className="font-medium">
                         {t("You have control.")}
                       </strong>{" "}
-                      Click and type on the page as you normally would.
+                      {t("Click and type on the page as you normally would.")}
                       {control?.reason ? ` ${control.reason}` : null}
                     </>
+                  ) : active ? (
+                    t("The assistant's screen, updating live")
                   ) : (
-                    <>The assistant's screen{active ? ", updating live" : ""}</>
+                    t("The assistant's screen")
                   )}
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
@@ -406,22 +408,36 @@ export function ComputerView({
                     >
                       {t("Hand back to the assistant")}
                     </button>
-                  ) : control?.requested ? (
+                  ) : (
+                    /*
+                     * Always offered, not only when the Bot asks. This is the person's own
+                     * computer, and the login handoff that matters most is the one the Bot did
+                     * not know to request — somebody watching it stall on a password field takes
+                     * the wheel, signs in, hands back. The Bot asking merely makes the same
+                     * button urgent.
+                     */
                     <button
                       type="button"
                       onClick={async () => {
                         const state = await takeControl(computerId);
                         if (state) setControl(state);
                       }}
-                      className="rounded-md bg-white px-3 py-1 text-xs font-medium text-black"
+                      className={
+                        "rounded-md px-3 py-1 text-xs font-medium " +
+                        (control?.requested
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-white text-black")
+                      }
                     >
-                      {t("Take control")}
+                      {control?.requested
+                        ? t("Take control — the assistant asked for you")
+                        : t("Take control")}
                     </button>
-                  ) : null}
+                  )}
                   <span className="pointer-events-none text-white/70">
                     {driving
-                      ? "Press Escape to close"
-                      : "Click anywhere or press Escape to close"}
+                      ? t("Press Escape to close")
+                      : t("Click anywhere or press Escape to close")}
                   </span>
                 </span>
               </div>

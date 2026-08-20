@@ -1,0 +1,1 @@
+ALTER TABLE "laf_routines" ADD COLUMN "trigger_token_hash" text;

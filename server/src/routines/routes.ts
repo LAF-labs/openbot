@@ -50,6 +50,31 @@ export function createRoutineRoutes(
     }
   });
 
+  /**
+   * The webhook. Deliberately NOT behind requireUser: the caller is a machine holding the token
+   * that was shown once at creation. The token rides a header, never the URL — URLs land in access
+   * logs, referrers and browser history, and a capability that gets logged is a capability shared
+   * with everyone who can read the log.
+   */
+  routes.post("/:id/trigger", async (context) => {
+    const token = context.req.header("x-trigger-token") ?? "";
+    if (!token) {
+      return context.json({ error: "The trigger token is missing." }, 401);
+    }
+    const payload = await context.req.text().catch(() => "");
+    try {
+      const outcome = await service.trigger(
+        context.req.param("id"),
+        token,
+        payload,
+      );
+      return context.json(outcome);
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
+
   routes.get("/:id/runs", requireUser, async (context) =>
     context.json({ runs: await service.runs(context.req.param("id")) }),
   );

@@ -202,6 +202,29 @@ function RoutineRow({ routine }: { routine: Routine }) {
   );
 }
 
+function TriggerReveal({
+  routineId,
+  token,
+}: {
+  routineId: string;
+  token: string;
+}) {
+  const command = `curl -X POST ${window.location.origin}/api/routines/${routineId}/trigger -H "x-trigger-token: ${token}"`;
+  return (
+    <div className="rounded-lg border border-border bg-muted/60 p-3 text-[12px]">
+      <p className="font-medium">{t("Webhook trigger — shown only once")}</p>
+      <p className="mt-1 text-muted-foreground">
+        {t(
+          "Any system that POSTs this fires the routine (at most once per 30 seconds). The request body, if any, is handed to the Bot.",
+        )}
+      </p>
+      <code className="mt-2 block select-all break-all rounded bg-background p-2 font-mono text-[11px]">
+        {command}
+      </code>
+    </div>
+  );
+}
+
 function NewRoutine({ onDone }: { onDone: () => void }) {
   const agents = useQuery(agentListQueryOptions());
   const [agentId, setAgentId] = useState("");
@@ -211,6 +234,10 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
   const [minutes, setMinutes] = useState("60");
   const [timeUtc, setTimeUtc] = useState("22:30");
 
+  const [trigger, setTrigger] = useState<{
+    routineId: string;
+    token: string;
+  } | null>(null);
   const create = useMutation({
     mutationFn: async () =>
       routineRequest("/api/routines", {
@@ -225,8 +252,32 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
               : { kind, minutes: Number(minutes) },
         }),
       }),
-    onSuccess: onDone,
+    onSuccess: (body) => {
+      const routine = body?.routine as
+        | { id: string; triggerToken?: string }
+        | undefined;
+      // The token exists only in this response; once this card is dismissed it is gone for good,
+      // which is the point of hashing it server-side.
+      if (routine?.triggerToken) {
+        setTrigger({ routineId: routine.id, token: routine.triggerToken });
+      } else {
+        onDone();
+      }
+    },
   });
+
+  if (trigger) {
+    return (
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+        <TriggerReveal routineId={trigger.routineId} token={trigger.token} />
+        <div className="flex justify-end">
+          <Button size="sm" onClick={onDone}>
+            {t("Done")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
