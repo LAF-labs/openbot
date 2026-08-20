@@ -29,7 +29,9 @@ function useSeeds(): (agentId: string) => string | undefined {
      * briefly, is worse than showing none.
      */
     if (!agents.data) return undefined;
-    return agents.data.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId;
+    return (
+      agents.data.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId
+    );
   };
 }
 

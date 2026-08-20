@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import { ChannelAvatar, useAgentNames } from "../channels/avatar";
 
 /**
@@ -49,8 +49,26 @@ export const Channel = memo(function Channel({
     participantIds[0] ? nameOf(participantIds[0]) : undefined,
   );
 
+  /*
+   * BROUGHT INTO VIEW ONCE, ON THE FIRST PAINT OF THE ROSTER.
+   *
+   * The active row was always marked; it was simply somewhere else. Open a channel by link or
+   * reload the page and the rail scrolled to the top, so the one row that says which conversation
+   * you are in sat several screens down and the sidebar looked like nothing was selected.
+   *
+   * Only on mount, and only for the row that is already active: scrolling on every activation would
+   * yank the list under somebody who just clicked a row they could see.
+   */
+  const rowRef = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    const row = rowRef.current;
+    if (row?.dataset.status !== "active") return;
+    row.scrollIntoView({ block: "center", behavior: "auto" });
+  }, []);
+
   return (
     <Link
+      ref={rowRef}
       to="/channel/$channelId"
       params={{ channelId }}
       // The stacked active+hover variant outranks the plain hover by specificity, so hovering the

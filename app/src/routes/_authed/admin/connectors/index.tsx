@@ -21,7 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { connectorListQueryOptions } from "@/lib/connectors/queries";
 import { t } from "@/lib/i18n";
 
-export const Route = createFileRoute("/_authed/admin/connectors")({
+export const Route = createFileRoute("/_authed/admin/connectors/")({
   component: ConnectorsPage,
 });
 

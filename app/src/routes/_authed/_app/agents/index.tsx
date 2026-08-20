@@ -7,6 +7,7 @@ import { Mascot } from "@/components/agents/mascot";
 import { AgentProfile as AgentProfileDetail } from "@/components/agents/agent-profile";
 import { NewAgent } from "@/components/agents/new-agent";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -57,22 +58,28 @@ function AgentsScreen() {
         ) : null
       }
     >
-      <div className="max-w-2xl px-4 w-full mx-auto">
-        <div className="mt-12 w-full max-w-2xl">
-          <div className="flex flex-row w-full items-center justify-between">
-            <h2 className="font-semibold text-[15px]">{t("Your agents")}</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              render={(props) => (
-                <Link to="/agents" search={{ new: true }} {...props} />
-              )}
-            >
-              <IconPlus />
-              {t("New agent")}
-            </Button>
-          </div>
-          <div className="flex flex-row mt-4">
+      {/*
+       * ON THE SHELL EVERY OTHER NAV DESTINATION USES. Hand-written measurements meant this screen
+       * had no page title at all, section gaps that did not match its peers, and — because the shell
+       * is where the scroller lives — no way to reach anything below the fold.
+       */}
+      <PageShell
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            render={(props) => (
+              <Link to="/agents" search={{ new: true }} {...props} />
+            )}
+          >
+            <IconPlus />
+            {t("New agent")}
+          </Button>
+        }
+        title={t("Agents")}
+      >
+        <PageSection title={t("Your agents")}>
+          <div className="flex flex-row">
             {!!mine?.length && (
               /*
                * Columns sized by the card, not counted out in advance: this column narrows by 400px
@@ -136,11 +143,10 @@ function AgentsScreen() {
               </Empty>
             )}
           </div>
-        </div>
+        </PageSection>
         {/* Hidden entirely on error: the page-level line above already said what went wrong once. */}
         {isError ? null : (
-          <div className="mt-8 w-full max-w-2xl">
-            <h2 className="font-semibold text-[15px]">{t("Explore agents")}</h2>
+          <PageSection title={t("Explore agents")}>
             <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
               {isPending
                 ? [0, 1, 2].map((slot) => (
@@ -159,9 +165,9 @@ function AgentsScreen() {
                 {t("No public agents to explore yet.")}
               </p>
             ) : null}
-          </div>
+          </PageSection>
         )}
-      </div>
+      </PageShell>
     </DetailPanel>
   );
 }

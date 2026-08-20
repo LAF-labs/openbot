@@ -50,25 +50,40 @@ export function PageShell({
   width?: ShellWidth;
 }) {
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full flex-col px-4 py-12",
-        WIDTHS[width],
-        className,
-      )}
-    >
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-row items-center justify-between gap-4">
-          <h1 className="font-semibold text-2xl">{title}</h1>
-          {action}
-        </div>
-        {description ? (
-          <p className="max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
-            {description}
-          </p>
-        ) : null}
-      </header>
-      {children}
+    /*
+     * THE SCROLLER LIVES HERE, AND IT HAS TO LIVE SOMEWHERE.
+     *
+     * The app shell is one non-scrolling viewport on purpose — the transcript's own scroller sizes
+     * against it — so `main` is `overflow-hidden` and the document never scrolls. Nothing then
+     * scrolled these pages either: Routines, Skills, Settings and every Admin screen simply CLIPPED
+     * whatever did not fit, and on a short window the bottom of the page was unreachable by any
+     * means. Putting it in the shell rather than on each page means the next screen somebody writes
+     * inherits it instead of rediscovering this.
+     *
+     * The outer element owns the scrolling and the inner one keeps the measure, because a scroll
+     * container that is also the max-width column puts its scrollbar in the middle of the page.
+     */
+    <div className="min-h-0 w-full flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          "mx-auto flex w-full flex-col px-4 py-12",
+          WIDTHS[width],
+          className,
+        )}
+      >
+        <header className="flex flex-col gap-2">
+          <div className="flex flex-row items-center justify-between gap-4">
+            <h1 className="font-semibold text-2xl">{title}</h1>
+            {action}
+          </div>
+          {description ? (
+            <p className="max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
+              {description}
+            </p>
+          ) : null}
+        </header>
+        {children}
+      </div>
     </div>
   );
 }

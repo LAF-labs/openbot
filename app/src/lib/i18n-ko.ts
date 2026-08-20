@@ -47,6 +47,7 @@ export const ko: Record<string, string> = {
   "Choose a coworker…": "봇 선택…",
   "Choosing a report…": "보고서 선택 중…",
   Clicked: "클릭함",
+  Close: "닫기",
   "Close the assistant's screen": "어시스턴트 화면 닫기",
   Command: "명령",
   Components: "컴포넌트",

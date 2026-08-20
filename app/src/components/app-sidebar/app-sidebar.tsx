@@ -234,6 +234,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               )}
             />
             <Button
+              // An icon with no text needs a name, or it announces itself as "link".
+              aria-label={t("Start a new channel")}
               size="icon"
               variant="ghost"
               render={(props) => (
@@ -251,23 +253,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+      {/*
+       * The box stays with the rail, not with the list it filters. Inside the scroller it left the
+       * screen as soon as anybody scrolled — so clearing a search, on the roster that a search had
+       * just made long, meant scrolling back up to find the control that caused it.
+       */}
+      <div className="shrink-0 px-2 pb-2">
+        <InputGroup className="bg-background text-sm rounded-lg h-9">
+          <InputGroupInput
+            aria-label={t("Search channels")}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("Search...")}
+            value={search}
+          />
+          <InputGroupAddon>
+            <IconSearch />
+          </InputGroupAddon>
+        </InputGroup>
+      </div>
       <SidebarContent className="scroll-fade-b">
         <SidebarMenu>
-          <SidebarGroup className="gap-px">
-            <SidebarMenuItem>
-              <InputGroup className="bg-background text-sm rounded-lg h-9">
-                <InputGroupInput
-                  aria-label={t("Search channels")}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={t("Search...")}
-                  value={search}
-                />
-                <InputGroupAddon>
-                  <IconSearch />
-                </InputGroupAddon>
-              </InputGroup>
-            </SidebarMenuItem>
-            <div className="w-full h-2" />
+          <SidebarGroup className="gap-px pt-0">
             {/*
              * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
              * used yet needs telling how to start. A roster that simply does not match what is in

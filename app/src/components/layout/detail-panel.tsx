@@ -1,7 +1,8 @@
 import { IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 /**
  * A main pane with a detail pane that slides in beside it.
@@ -48,6 +49,24 @@ export function DetailPanel({
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
 
+  /*
+   * ESCAPE CLOSES IT. Every dialog in the app does; this pane, which is where a profile, a form and
+   * a Bot's live screen all open, could only be dismissed by finding its close button with a mouse.
+   *
+   * `defaultPrevented` is respected so a combobox or dialog inside the pane still gets first refusal
+   * on the key — closing the whole panel because somebody dismissed a dropdown inside it would be
+   * its own bug.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <div className="flex h-full min-h-0">
       <div className="flex flex-1 min-w-0 flex-col">{children}</div>
@@ -65,13 +84,26 @@ export function DetailPanel({
           className="flex h-full flex-col bg-sidebar border-l border-border"
           style={{ width: detailWidth }}
         >
-          {/* Rendered for the whole animation, so the way out is available immediately. */}
-          <div className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2">
+          {/*
+           * Rendered for the whole animation, so the way out is available immediately — but `inert`
+           * while closed. The pane collapses to zero width and keeps its markup, so the close button
+           * stayed in the tab order: tabbing across a screen with no visible panel landed on an
+           * invisible control that closed something already closed.
+           */}
+          <div
+            className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2"
+            inert={!open}
+          >
             <div className="flex min-w-0 w-full items-center gap-1.5">
               {title}
             </div>
             <div className="flex flex-row gap-1.5">
-              <Button onClick={onClose} variant="ghost" size="icon">
+              <Button
+                aria-label={t("Close")}
+                onClick={onClose}
+                variant="ghost"
+                size="icon"
+              >
                 <IconX className="size-4.5" />
               </Button>
             </div>

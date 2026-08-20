@@ -66,7 +66,10 @@ function RouteComponent() {
        * sees every time they open the app.
        */}
       {isPending ? (
-        <div className="mt-7 flex items-start gap-1" aria-hidden>
+        <div
+          className="mt-7 flex max-w-2xl flex-wrap items-start justify-center gap-1"
+          aria-hidden
+        >
           {[0, 1, 2, 3].map((slot) => (
             <div
               key={slot}
@@ -91,7 +94,8 @@ function RouteComponent() {
       ) : null}
 
       {roster.length > 0 ? (
-        <div className="mt-7 flex items-start gap-1">
+        // Wraps within the composer's measure: a team of a dozen ran off the right of the screen.
+        <div className="mt-7 flex max-w-2xl flex-wrap items-start justify-center gap-1">
           {roster.map((agent) => {
             const chosen = agent.id === selected?.id;
             return (
@@ -125,8 +129,10 @@ function RouteComponent() {
               </button>
             );
           })}
+          {/* `new: true` — the tile is labelled "New agent" and so it opens the form, not the list. */}
           <Link
             to="/agents"
+            search={{ new: true }}
             className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
           >
             <span className="inline-flex size-12 items-center justify-center rounded-full border border-border border-dashed text-[20px] text-muted-foreground transition-transform duration-150 group-hover:scale-105">
@@ -154,7 +160,9 @@ function RouteComponent() {
             {t("No Bots on your team yet.")}
           </p>
           <Button
-            render={(props) => <Link to="/agents" {...props} />}
+            render={(props) => (
+              <Link to="/agents" search={{ new: true }} {...props} />
+            )}
             size="sm"
             variant="outline"
           >
