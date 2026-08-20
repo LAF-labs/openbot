@@ -17,6 +17,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import { requireAdmin } from "../auth/guards";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -52,7 +53,18 @@ export function createApprovalRoutes(
     }),
   );
 
+  /**
+   * Answering is deciding for the deployment, so it is the owner's alone: in
+   * this build every administrator is the owner, and nobody else's yes can
+   * spend a Bot's approval. Routing a question to a named approver other than
+   * the owner is a later, multi-person feature — until then the narrow rule is
+   * the honest one.
+   */
   routes.post("/:botId/:approvalId", requireUser, async (context) => {
+    const denied = requireAdmin(context);
+    if (denied) {
+      return denied;
+    }
     const body = (await context.req.json().catch(() => null)) as Record<
       string,
       unknown
