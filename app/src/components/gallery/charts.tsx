@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -26,7 +26,7 @@ const HEIGHT = 180;
 
 function formatNumber(value: number): string {
   if (Math.abs(value) >= 1000) {
-    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return value.toLocaleString(activeLocale, { maximumFractionDigits: 0 });
   }
   return String(Math.round(value * 100) / 100);
 }

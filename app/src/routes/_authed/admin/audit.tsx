@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { silenceOf } from "@/lib/audit/silence";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -108,7 +108,7 @@ function AuditPage() {
               /* The fill is the state, as on every other set of switches in the app. */
               variant={search === filter.search ? "default" : "outline"}
             >
-              {filter.label}
+              {t(filter.label)}
             </Button>
           ))}
         </div>
@@ -184,7 +184,7 @@ function Row({
   return (
     <tr className="border-border border-t align-top">
       <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
-        {new Date(event.createdAt).toLocaleTimeString()}
+        {new Date(event.createdAt).toLocaleTimeString(activeLocale)}
       </td>
       <td className="px-4 py-2 font-medium">
         {/* Strip the internal computer tool namespace for display. */}

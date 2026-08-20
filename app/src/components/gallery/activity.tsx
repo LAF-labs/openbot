@@ -5,7 +5,7 @@ import { callComponentFunction } from "@/lib/components/queries";
 import { useActiveBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -255,7 +255,7 @@ function RefusalList({
                 <span className="text-xs text-muted-foreground">{row.bot}</span>
               ) : null}
               <span className="ml-auto text-xs text-muted-foreground">
-                {new Date(row.at).toLocaleString()}
+                {new Date(row.at).toLocaleString(activeLocale)}
               </span>
             </div>
             {row.reason ? (

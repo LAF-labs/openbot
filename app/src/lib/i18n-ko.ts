@@ -45,6 +45,7 @@ export const ko: Record<string, string> = {
   "Ask it to open a page and watch it work.":
     "페이지를 열어 달라고 하고, 일하는 모습을 지켜보세요.",
   "Ask me first": "먼저 묻기",
+  "Asked a person": "사람에게 물음",
   "Asked because of this rule. Allowing covers this one action.":
     "이 규칙 때문에 묻습니다. 허용은 이 행동 한 번에만 적용됩니다.",
   "Asks about every Enter the Bot presses, because a form submits from Enter in any of its fields. Expect to be asked while it is filling one in, not only at the end.":
@@ -54,10 +55,13 @@ export const ko: Record<string, string> = {
   "Available integrations are defined by this deployment’s knowledge sources.":
     "사용 가능한 연동은 이 배포의 지식 소스가 정합니다.",
   "Back to app": "앱으로 돌아가기",
+  Blocked: "차단됨",
   Bot: "봇",
   Boundaries: "경계",
   "Browser Bot": "브라우저 봇",
   Cancel: "취소",
+  "Capabilities and interface pieces available across Bots.":
+    "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
   "Channel coworker": "채널의 봇",
   "Choose a coworker": "봇 선택",
   "Choose a coworker…": "봇 선택…",
@@ -68,6 +72,7 @@ export const ko: Record<string, string> = {
   Command: "명령",
   Components: "컴포넌트",
   "Components could not be loaded.": "컴포넌트를 불러오지 못했습니다.",
+  "Computer actions": "컴퓨터 행동",
   Computers: "컴퓨터",
   "Computers in this deployment": "이 배포의 컴퓨터",
   "Configured credentials": "등록된 자격증명",
@@ -93,6 +98,8 @@ export const ko: Record<string, string> = {
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
+  "Custom pieces a Bot can draw in a conversation.":
+    "봇이 대화 중에 그릴 수 있는 사용자 정의 조각.",
   Dark: "다크",
   "Dark theme": "다크 테마",
   Decision: "결정",
@@ -104,6 +111,7 @@ export const ko: Record<string, string> = {
     "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
   "Deleting…": "삭제 중…",
   Deny: "거부",
+  "Did not happen": "실행되지 않음",
   "Draft description": "설명 초안",
   "Draft not published": "초안 — 미게시",
   Drawing: "그리는 중",
@@ -118,10 +126,15 @@ export const ko: Record<string, string> = {
   "Edit skill": "스킬 수정",
   "Enter a web address starting with http:// or https://.":
     "http:// 또는 https://로 시작하는 웹 주소를 입력하세요.",
+  "Every action taken in this deployment, and by whom.":
+    "이 배포에서 일어난 모든 행동과 그 주체.",
   "Every Bot is sharing one computer.":
     "모든 봇이 컴퓨터 한 대를 공유하고 있습니다.",
   "Every action a Bot took, and every one this deployment's policy refused.":
     "봇이 한 모든 행동과, 이 배포의 정책이 거부한 모든 행동.",
+  Everything: "전체",
+  "Everything a Bot can touch outside this app, and the limits on it.":
+    "봇이 이 앱 밖에서 건드릴 수 있는 모든 것과 그 한계.",
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
@@ -129,6 +142,7 @@ export const ko: Record<string, string> = {
   Channel: "채널",
   "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
     "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
+  "Going in circles": "같은 일 반복",
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
@@ -142,6 +156,7 @@ export const ko: Record<string, string> = {
     "이 배포에서 제거됩니다. 그리던 봇들도 더 이상 그릴 수 없으며, 되돌릴 수 없습니다.",
   "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.":
     "프로필이 삭제되어, 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
+  "Keys and tokens held for this deployment.": "이 배포가 보관 중인 키와 토큰.",
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
     "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 에이전트면 무엇이든 됩니다. 서버가 에이전트 쪽으로 접속하므로, 내 컴퓨터에서 도는 에이전트는 여기서 접근할 수 있어야 합니다.",
   Light: "라이트",
@@ -181,12 +196,16 @@ export const ko: Record<string, string> = {
   "Role description is required.": "역할 설명을 입력하세요.",
   "Role description must be 1000 characters or fewer.":
     "역할 설명은 1000자 이하여야 합니다.",
+  "Rules that decide what a Bot may never do.":
+    "봇이 절대 하면 안 되는 일을 정하는 규칙.",
   "Running…": "실행 중…",
   "Save changes": "변경 저장",
   "Save skill": "스킬 저장",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   "Sign in to {product}": "{product} 로그인",
+  "Skills and tools installed for the whole workspace.":
+    "작업 공간 전체에 설치된 스킬과 도구.",
   "Skip to the conversation": "대화로 건너뛰기",
   "Something went wrong.": "문제가 생겼습니다.",
   "Stay off social media": "소셜미디어 접근 안 하기",
@@ -218,6 +237,7 @@ export const ko: Record<string, string> = {
   "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":
     "초안 설명은 모델이 이 컴포넌트를 부를지 판단할 때 읽는 글입니다. 게시하기 전까지는 아무것도 바뀌지 않습니다.",
+  "The machines Bots run their tools on.": "봇이 도구를 실행하는 컴퓨터.",
   "The page you asked for does not exist, or no longer does.":
     "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
   "The role you write here applies in every channel this coworker works in.":
@@ -228,6 +248,8 @@ export const ko: Record<string, string> = {
   "The schedule stops and its run history goes with it. This cannot be undone.":
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
   "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
+  "The services Bots can read from, and who connected them.":
+    "봇이 읽을 수 있는 서비스와, 누가 연결했는지.",
   "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
     "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
@@ -465,6 +487,8 @@ export const ko: Record<string, string> = {
   "When a rule matches": "규칙이 일치하면",
   "Working…": "처리 중…",
   "Workspace skills": "워크스페이스 스킬",
+  "Write a component and watch it render as you type.":
+    "컴포넌트를 작성하면서 그려지는 모습을 바로 확인합니다.",
   "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.":
     "여기서 컴포넌트를 작성하고 배포 없이 게시할 수 있습니다. 편집 중인 것은 초안이며, 대화에는 게시된 것만 그려집니다.",
   "Write a skill": "스킬 작성",

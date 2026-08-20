@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -124,7 +124,7 @@ function RunHistory({ routineId }: { routineId: string }) {
           className="rounded-lg border border-border bg-card p-3"
         >
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>{new Date(run.startedAt).toLocaleString()}</span>
+            <span>{new Date(run.startedAt).toLocaleString(activeLocale)}</span>
             <span className={run.ok ? "" : "text-destructive"}>
               {run.ok ? t("Ran") : t("Failed")}
             </span>

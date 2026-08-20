@@ -129,9 +129,10 @@ function RouteComponent() {
     >
       {SECTIONS.map((section) => (
         <PageSection
-          description={section.description || undefined}
+          description={section.description ? t(section.description) : undefined}
           key={section.title}
-          title={section.title}
+          // The catalogue is data; it is translated where it is drawn, English as the key.
+          title={t(section.title)}
         >
           <PageRows>
             {section.items.map((item, index) => (
@@ -148,8 +149,10 @@ function RouteComponent() {
                     <item.icon className="size-4 text-muted-foreground" />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{item.title}</ItemTitle>
-                    <ItemDescription>{item.description}</ItemDescription>
+                    <ItemTitle>{t(item.title)}</ItemTitle>
+                    <ItemDescription>
+                      {item.description ? t(item.description) : ""}
+                    </ItemDescription>
                   </ItemContent>
                   <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </Item>

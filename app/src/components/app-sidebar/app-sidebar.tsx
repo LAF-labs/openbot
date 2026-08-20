@@ -43,7 +43,7 @@ import {
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { appConfig } from "@/lib/generated/application-config";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Skeleton } from "../ui/skeleton";
@@ -467,7 +467,14 @@ const RELATIVE_UNITS = [
   { limit: Number.POSITIVE_INFINITY, divisor: 604_800_000, unit: "week" },
 ] as const;
 
-const relativeFormat = new Intl.RelativeTimeFormat(undefined, {
+/*
+ * THE APP'S LANGUAGE, NOT THE BROWSER'S.
+ *
+ * `RelativeTimeFormat` emits words — "2 hours ago" — so a sidebar somebody set to Korean said it in
+ * English on every row if their browser was English. The locale is resolved once per page load and
+ * changing it reloads, so reading it at module scope is safe.
+ */
+const relativeFormat = new Intl.RelativeTimeFormat(activeLocale, {
   numeric: "auto",
 });
 
