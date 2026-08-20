@@ -5,7 +5,16 @@ import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -80,6 +89,26 @@ function RunHistory({ routineId }: { routineId: string }) {
         ?.runs as RoutineRun[],
   });
 
+  // "Never run" is a claim about the past. It must not be made while the past is still arriving.
+  if (runs.isPending) {
+    return (
+      <p className="py-2 text-[12px] text-muted-foreground">
+        {t("Loading runs…")}
+      </p>
+    );
+  }
+  if (runs.isError) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <p className="text-[12px] text-destructive" role="alert">
+          {t("The run history could not be loaded.")}
+        </p>
+        <Button onClick={() => void runs.refetch()} size="sm" variant="ghost">
+          {t("Try again")}
+        </Button>
+      </div>
+    );
+  }
   if (!runs.data?.length) {
     return (
       <p className="py-2 text-[12px] text-muted-foreground">
@@ -113,16 +142,36 @@ function RoutineRow({ routine }: { routine: Routine }) {
   const queryClient = useQueryClient();
   const agents = useQuery(agentListQueryOptions());
   const [showRuns, setShowRuns] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["routines"] });
 
+  /*
+   * THE SWITCH MOVES WHEN IT IS CLICKED. It was driven straight off server state, so nothing
+   * happened until the round trip landed — a control that ignores you for half a second reads as
+   * broken, and people click it twice. The optimistic write is rolled back on failure, which is the
+   * only honest way to show a switch that did not take.
+   */
   const toggle = useMutation({
     mutationFn: async (enabled: boolean) =>
       routineRequest(`/api/routines/${routine.id}/enabled`, {
         method: "POST",
         body: JSON.stringify({ enabled }),
       }),
-    onSuccess: invalidate,
+    onMutate: async (enabled: boolean) => {
+      await queryClient.cancelQueries({ queryKey: ["routines"] });
+      const previous = queryClient.getQueryData<Routine[]>(["routines"]);
+      queryClient.setQueryData<Routine[]>(["routines"], (rows) =>
+        rows?.map((row) => (row.id === routine.id ? { ...row, enabled } : row)),
+      );
+      return { previous };
+    },
+    onError: (_error, _enabled, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["routines"], context.previous);
+      }
+    },
+    onSettled: invalidate,
   });
   const runNow = useMutation({
     mutationFn: async () =>
@@ -132,13 +181,15 @@ function RoutineRow({ routine }: { routine: Routine }) {
       void queryClient.invalidateQueries({
         queryKey: ["routine-runs", routine.id],
       });
-      setShowRuns(true);
     },
   });
   const remove = useMutation({
     mutationFn: async () =>
       routineRequest(`/api/routines/${routine.id}`, { method: "DELETE" }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setConfirmingDelete(false);
+      invalidate();
+    },
   });
 
   const bot = agents.data?.find((agent) => agent.id === routine.agentId);
@@ -174,8 +225,13 @@ function RoutineRow({ routine }: { routine: Routine }) {
           size="sm"
           variant="ghost"
           disabled={runNow.isPending}
-          onClick={() => runNow.mutate()}
-          aria-label={t("Run now")}
+          // Opened here rather than in onSuccess: the panel the answer lands in should already be
+          // open while the Bot is working, or the click looks like it did nothing for a minute.
+          onClick={() => {
+            setShowRuns(true);
+            runNow.mutate();
+          }}
+          aria-label={runNow.isPending ? t("Running…") : t("Run now")}
         >
           <IconClockPlay className="size-4" />
         </Button>
@@ -187,12 +243,57 @@ function RoutineRow({ routine }: { routine: Routine }) {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => remove.mutate()}
+          onClick={() => setConfirmingDelete(true)}
           aria-label={t("Delete")}
         >
           <IconTrash className="size-4 text-muted-foreground" />
         </Button>
       </div>
+      {/*
+       * A routine and every run it ever made, gone on one click of a small grey icon next to a
+       * switch. It is the only irreversible thing on this page and it asked nothing.
+       */}
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) setConfirmingDelete(false);
+        }}
+        open={confirmingDelete}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("Delete {name}?", { name: routine.name })}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                "The schedule stops and its run history goes with it. This cannot be undone.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {remove.error ? (
+            <p className="text-destructive text-sm" role="alert">
+              {remove.error.message}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              onClick={() => setConfirmingDelete(false)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              disabled={remove.isPending}
+              onClick={() => remove.mutate()}
+              size="sm"
+              variant="destructive"
+            >
+              {remove.isPending ? t("Deleting…") : t("Delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {showRuns ? (
         <div className="border-border border-t px-4">
           <RunHistory routineId={routine.id} />
@@ -398,6 +499,26 @@ function RoutinesPage() {
       ) : null}
       <PageSection>
         <div className="flex flex-col gap-3">
+          {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
+          {routines.isPending
+            ? [0, 1, 2].map((slot) => (
+                <Skeleton className="h-[74px] rounded-xl" key={slot} />
+              ))
+            : null}
+          {routines.isError ? (
+            <div className="flex flex-col items-start gap-2 py-6">
+              <p className="text-[13px] text-destructive" role="alert">
+                {t("Your routines could not be loaded.")}
+              </p>
+              <Button
+                onClick={() => void routines.refetch()}
+                size="sm"
+                variant="outline"
+              >
+                {t("Try again")}
+              </Button>
+            </div>
+          ) : null}
           {(routines.data ?? []).map((routine) => (
             <RoutineRow key={routine.id} routine={routine} />
           ))}

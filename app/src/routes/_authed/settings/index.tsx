@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   PageRows,
   PageSection,
@@ -38,8 +39,19 @@ function RouteComponent() {
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
 
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  /* A sign-out that failed silently leaves somebody believing they signed out. It has to say so. */
   const handleSignOut = async () => {
-    await signOut.mutateAsync();
+    setSignOutError(null);
+    try {
+      await signOut.mutateAsync();
+    } catch (caught) {
+      setSignOutError(
+        caught instanceof Error ? caught.message : t("Could not log out."),
+      );
+      return;
+    }
     await navigate({ to: "/sign" });
   };
 
@@ -77,10 +89,15 @@ function RouteComponent() {
                 onClick={handleSignOut}
                 variant="outline"
               >
-                {t("Log out")}
+                {signOut.isPending ? t("Logging out…") : t("Log out")}
               </Button>
             </ItemActions>
           </Item>
+          {signOutError ? (
+            <p className="px-1 text-destructive text-sm" role="alert">
+              {signOutError}
+            </p>
+          ) : null}
         </PageRows>
       </PageSection>
       <PageSection title={t("General")}>

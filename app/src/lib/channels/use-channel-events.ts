@@ -57,9 +57,7 @@ export function useChannelEvents() {
         // The list cache is patched below, but the open channel's header reads the detail query;
         // a retitle has to reach it too, and invalidation is cheaper than mirroring the patch.
         const before = queryClient
-          .getQueryData<
-            ChannelSummary[]
-          >(channelKeys.list())
+          .getQueryData<ChannelSummary[]>(channelKeys.list())
           ?.find((channel) => channel.id === activity.channelId);
         if (before && activity.name && before.name !== activity.name) {
           void queryClient.invalidateQueries({

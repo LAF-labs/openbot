@@ -3,6 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { t } from "@/lib/i18n";
@@ -34,7 +36,12 @@ function greeting(): string {
  * somebody you did not choose is the kind of surprise that costs trust the first time it happens.
  */
 function RouteComponent() {
-  const { data: agents } = useQuery(agentListQueryOptions());
+  const {
+    data: agents,
+    isPending,
+    isError,
+    refetch,
+  } = useQuery(agentListQueryOptions());
   const roster = agents ?? [];
   const { start, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +59,36 @@ function RouteComponent() {
           {t("What should the team take off your hands?")}
         </p>
       </div>
+
+      {/*
+       * THE ROW HOLDS ITS PLACE WHILE THE TEAM LOADS. Rendering nothing until the roster arrives
+       * dropped the composer up the screen and then shoved it back down, on the one screen a person
+       * sees every time they open the app.
+       */}
+      {isPending ? (
+        <div className="mt-7 flex items-start gap-1" aria-hidden>
+          {[0, 1, 2, 3].map((slot) => (
+            <div
+              key={slot}
+              className="flex w-[76px] flex-col items-center gap-1.5 p-2"
+            >
+              <Skeleton className="size-12 rounded-full" />
+              <Skeleton className="h-3 w-12" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {isError ? (
+        <div className="mt-7 flex flex-col items-center gap-2">
+          <p className="text-[13px] text-destructive" role="alert">
+            {t("Your team could not be loaded.")}
+          </p>
+          <Button onClick={() => void refetch()} size="sm" variant="outline">
+            {t("Try again")}
+          </Button>
+        </div>
+      ) : null}
 
       {roster.length > 0 ? (
         <div className="mt-7 flex items-start gap-1">
@@ -99,6 +136,30 @@ function RouteComponent() {
               {t("New agent")}
             </span>
           </Link>
+        </div>
+      ) : null}
+
+      {/*
+       * A DEAD END OTHERWISE. With no Bots the row did not render, so neither did the "new agent"
+       * tile inside it, and the composer below is disabled with nothing to aim at: the first screen
+       * of an empty account was a box that would not take a message and no way onward.
+       */}
+      {!isPending && !isError && roster.length === 0 ? (
+        <div className="mt-7 flex flex-col items-center gap-3">
+          <span className="inline-flex size-12 overflow-hidden rounded-full opacity-80">
+            {/* The axolotl again: the one that has not grown up yet. */}
+            <Mascot className="size-full object-cover" seed="r4c5" size={48} />
+          </span>
+          <p className="text-center text-[13px] text-muted-foreground">
+            {t("No Bots on your team yet.")}
+          </p>
+          <Button
+            render={(props) => <Link to="/agents" {...props} />}
+            size="sm"
+            variant="outline"
+          >
+            {t("New agent")}
+          </Button>
         </div>
       ) : null}
 

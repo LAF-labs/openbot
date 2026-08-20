@@ -39,7 +39,9 @@ function RouteComponent() {
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { start, pending } = useStartChannel();
-  const { data: profiles } = useQuery(agentListQueryOptions());
+  const { data: profiles, isPending: rosterPending } = useQuery(
+    agentListQueryOptions(),
+  );
 
   const [error, setError] = useState<string | null>(null);
   // Optimistic seed shown before the first channel record exists.
@@ -92,7 +94,10 @@ function RouteComponent() {
           />
           {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
           <ComboboxContent className="min-w-0 max-w-lg" sideOffset={12}>
-            <ComboboxEmpty>{t("No agents found.")}</ComboboxEmpty>
+            {/* This popup opens on mount, so it met people with "none" before the roster landed. */}
+            <ComboboxEmpty>
+              {rosterPending ? t("Loading coworkers…") : t("No agents found.")}
+            </ComboboxEmpty>
             <ComboboxList>
               {(item: AgentProfile) => (
                 <ComboboxItem key={item.id} value={item} className="h-10">

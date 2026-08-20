@@ -61,6 +61,7 @@ export const ko: Record<string, string> = {
   "Could not load credentials.": "자격증명을 불러오지 못했습니다.",
   "Could not load this channel.": "채널을 불러오지 못했습니다.",
   "Could not load this coworker.": "봇을 불러오지 못했습니다.",
+  "Could not log out.": "로그아웃하지 못했습니다.",
   "Could not save the Google Drive connection.":
     "Google Drive 연결을 저장하지 못했습니다.",
   "Could not save the credential. Try again.":
@@ -75,6 +76,7 @@ export const ko: Record<string, string> = {
   Delete: "삭제",
   "Delete it": "삭제",
   "Delete {command}": "{command} 삭제",
+  "Delete {name}?": "'{name}'을(를) 삭제할까요?",
   "Delete {name}? This cannot be undone.":
     "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
   "Deleting…": "삭제 중…",
@@ -112,10 +114,17 @@ export const ko: Record<string, string> = {
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
     "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 에이전트면 무엇이든 됩니다. 서버가 에이전트 쪽으로 접속하므로, 내 컴퓨터에서 도는 에이전트는 여기서 접근할 수 있어야 합니다.",
   Light: "라이트",
+  "Loading coworkers…": "봇 불러오는 중…",
+  "Loading runs…": "실행 기록 불러오는 중…",
+  "Logging out…": "로그아웃 중…",
   "Name is required.": "이름을 입력하세요.",
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
+  "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
+  "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
+  "Nothing was lost. Trying again is usually enough.":
+    "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
   Private: "비공개",
   Public: "공개",
   "Reset it": "초기화",
@@ -124,17 +133,28 @@ export const ko: Record<string, string> = {
   "Role description is required.": "역할 설명을 입력하세요.",
   "Role description must be 1000 characters or fewer.":
     "역할 설명은 1000자 이하여야 합니다.",
+  "Running…": "실행 중…",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
+  "Something went wrong.": "문제가 생겼습니다.",
   Test: "연결 확인",
   "Testing…": "확인 중…",
+  "The page you asked for does not exist, or no longer does.":
+    "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
   "The role you write here applies in every channel this coworker works in.":
     "여기 적는 역할은 이 봇이 일하는 모든 채널에 적용됩니다.",
+  "The run history could not be loaded.": "실행 기록을 불러오지 못했습니다.",
+  "The schedule stops and its run history goes with it. This cannot be undone.":
+    "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
+  "There is nothing here.": "여기에는 아무것도 없습니다.",
+  "They are still there. This was a problem reaching us.":
+    "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
   "Toggle Sidebar": "사이드바 여닫기",
+  "Try again": "다시 시도",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
   "Watch this Bot's screen": "이 봇의 화면 보기",
@@ -361,6 +381,9 @@ export const ko: Record<string, string> = {
     "이 브라우저는 당신이 제어하고 있습니다.",
   "You have control.": "제어 중입니다.",
   "Your agents": "내 에이전트",
+  "Your agents could not be loaded.": "에이전트를 불러오지 못했습니다.",
+  "Your channels could not be loaded.": "채널을 불러오지 못했습니다.",
+  "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
   "Typed here, never shown to the assistant":
     "여기 입력한 값은 어시스턴트에게 절대 보이지 않습니다",
@@ -383,6 +406,7 @@ export const ko: Record<string, string> = {
   "Definition changed — paused until reviewed":
     "정의가 바뀜 — 검토 전까지 정지",
   "Approve as it now is": "지금 상태로 승인",
+  "Your team could not be loaded.": "팀을 불러오지 못했습니다.",
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
   "{name}'s screen": "{name}의 화면",
 };

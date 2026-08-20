@@ -46,6 +46,7 @@ import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Skeleton } from "../ui/skeleton";
 import { Channel } from "./channel";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
@@ -173,6 +174,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
   const [search, setSearch] = useState("");
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const searching = search.trim().length > 0;
   const visibleChannels = matchingChannels(channels.data, search);
   /*
@@ -184,8 +186,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const animateOrder =
     !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
 
+  /*
+   * A FAILED SIGN-OUT MUST SAY SO. It was an unhandled rejection: the menu closed, the session
+   * stayed open, and somebody who signed out on a shared machine walked away believing they had.
+   */
   const handleSignOut = async () => {
-    await signOut.mutateAsync();
+    setSignOutError(null);
+    try {
+      await signOut.mutateAsync();
+    } catch (caught) {
+      setSignOutError(
+        caught instanceof Error ? caught.message : t("Could not log out."),
+      );
+      return;
+    }
     await navigate({ to: "/sign" });
   };
 
@@ -261,6 +275,43 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
+            ) : null}
+            {/*
+             * A FAILED FETCH IS NOT AN EMPTY ROSTER, AND SAYING SO IS ALARMING. The list rendered
+             * nothing at all when /api/channels failed, so a person whose network blinked watched
+             * every conversation they have ever had disappear from the rail with no explanation.
+             */}
+            {channels.isError ? (
+              <Empty className="gap-2 py-12">
+                <EmptyHeader className="gap-1">
+                  <EmptyTitle className="text-[13px]">
+                    {t("Your channels could not be loaded.")}
+                  </EmptyTitle>
+                  <EmptyDescription className="text-[12px]/relaxed text-pretty">
+                    {t("They are still there. This was a problem reaching us.")}
+                  </EmptyDescription>
+                </EmptyHeader>
+                <Button
+                  onClick={() => void channels.refetch()}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("Try again")}
+                </Button>
+              </Empty>
+            ) : null}
+            {channels.isPending ? (
+              <div className="flex flex-col gap-px py-1" aria-hidden>
+                {[0, 1, 2, 3, 4].map((slot) => (
+                  <div className="flex items-center gap-2 px-2 py-2" key={slot}>
+                    <Skeleton className="size-8 shrink-0 rounded-full" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-2.5 w-5/6" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : null}
             {!searching && channels.data?.length === 0 ? (
               <Empty className="py-12">
@@ -346,11 +397,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   variant="destructive"
                 >
                   <IconLogout />
-                  {t("Log out")}
+                  {signOut.isPending ? t("Logging out…") : t("Log out")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
+          {/*
+           * Outside the menu, which closes on click: an error rendered inside it would be destroyed
+           * by the very interaction that produced it.
+           */}
+          {signOutError ? (
+            <SidebarMenuItem>
+              <p
+                className="px-2 py-1 text-[11px] text-destructive"
+                role="alert"
+              >
+                {signOutError}
+              </p>
+            </SidebarMenuItem>
+          ) : null}
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
