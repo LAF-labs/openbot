@@ -44,6 +44,13 @@ export function toVisibleChatItems(
         });
       }
       for (const toolCall of message.toolCalls ?? []) {
+        // A call streams in pieces: the id arrives before the function, the function before its
+        // arguments. An entry that has no function yet is a call still being spoken, not a call —
+        // rendering it would mean reading fields that are not there, and one interrupted run in a
+        // thread's replay would crash the whole transcript for good. It appears on the render after
+        // the stream completes it; an entry a dead run left permanently half-built never does,
+        // which is the right way to remember a sentence nobody finished.
+        if (!toolCall.function?.name) continue;
         items.push({
           kind: "tool",
           // One assistant message can carry multiple tool calls.
