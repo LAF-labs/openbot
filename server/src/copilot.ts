@@ -1,5 +1,8 @@
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
+import type {
+  AgentRunner,
+  BuiltInAgentConfiguration,
+} from "@copilotkit/runtime/v2";
 import {
   BuiltInAgent,
   CopilotKitIntelligence,
@@ -11,17 +14,18 @@ import type { StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 
 /**
- * The CopilotKit runtime, always in Intelligence mode.
+ * The CopilotKit runtime, in one of two modes.
  *
  * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots are
  * reached over AG-UI as `HttpAgent` instances, so anything that speaks the protocol remains a Bot
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
  * server.
  *
- * There is no SSE branch. Intelligence is a requirement of the product, not a tier: it owns
- * durable threads, memory and learning, and a deployment without it silently forgets every
- * conversation. config.ts refuses to boot without the full contract, so by the time this runs the
- * settings are present and this file has one mode.
+ * Upstream had no SSE branch: Intelligence owned durable threads, and a deployment without it
+ * silently forgot every conversation. This fork's default is the SSE branch with a runner that
+ * does not forget — LafPostgresRunner keeps every thread in our own Postgres — so the hosted
+ * service is an option a deployment may configure, never a requirement (config.ts decides which
+ * mode this file gets).
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -352,8 +356,26 @@ export function mountCopilotRuntime(
    * there is no reason for a caller to have to say `undefined` here to reach `basePath`.
    */
   stallGuard: StallGuard,
+  /** The durable runner local mode runs on; unused when Intelligence is configured. */
+  localRunner: AgentRunner,
   basePath = "/api/copilotkit",
 ) {
+  const agents = createRequestAgents(
+    identifyActor,
+    loadAgents,
+    model,
+    resolveModelApiKey,
+    stallGuard,
+  );
+
+  if (config.runtime.mode === "local") {
+    const runtime = new CopilotRuntime({
+      runner: localRunner,
+      agents: agents as never,
+    });
+    return createCopilotHonoHandler({ runtime, basePath });
+  }
+
   const { intelligence } = config.runtime;
 
   const runtime = new CopilotRuntime({
@@ -371,13 +393,7 @@ export function mountCopilotRuntime(
     licenseToken: intelligence.licenseToken,
     // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
     // one resolver decides both whose threads these are and whose coworkers exist.
-    agents: createRequestAgents(
-      identifyActor,
-      loadAgents,
-      model,
-      resolveModelApiKey,
-      stallGuard,
-    ) as never,
+    agents: agents as never,
   });
 
   return createCopilotHonoHandler({ runtime, basePath });

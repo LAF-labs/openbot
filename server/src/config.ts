@@ -1,17 +1,27 @@
 /**
- * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
- * for durable threads and memory. Configuration the product cannot function without belongs at the
- * boot boundary.
+ * What the runtime can do.
+ *
+ * Upstream has exactly one answer — Intelligence — because that service holds its durable
+ * threads and memory. This fork's rule is that the only external dependencies are the model
+ * API and the machines it runs on, so `local` is the default: durable history lives in our
+ * own Postgres (see runner/laf-runner.ts), and Intelligence remains available only where a
+ * deployment explicitly configures it.
  */
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 
-export type RuntimeCapabilities = {
-  mode: "intelligence";
-  durableHistory: true;
-  intelligence: IntelligenceSettings;
-};
+export type RuntimeCapabilities =
+  | {
+      mode: "intelligence";
+      durableHistory: true;
+      intelligence: IntelligenceSettings;
+    }
+  | {
+      /** Durable threads in our own Postgres; no hosted service in the path. */
+      mode: "local";
+      durableHistory: true;
+    };
 
 /** The Intelligence contract. Every field is required; see runtimeCapabilities. */
 export type IntelligenceSettings = {
@@ -258,9 +268,16 @@ function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
     .filter(([, value]) => !value)
     .map(([name]) => name);
 
+  // All four absent is a decision — the fork's default, local mode. A partial set is
+  // still the dangerous shape: somebody meant to configure Intelligence and got it
+  // wrong, and silently falling back to local would hide that from them.
+  if (missing.length === 4) {
+    return { mode: "local", durableHistory: true };
+  }
+
   if (missing.length > 0) {
     throw new Error(
-      `CopilotKit Intelligence is required and is not configured. Missing: ${missing.join(", ")}`,
+      `CopilotKit Intelligence is partially configured. Missing: ${missing.join(", ")}. Remove all four variables to run in local mode, or provide the full set.`,
     );
   }
 

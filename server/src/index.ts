@@ -1,3 +1,4 @@
+import "./telemetry-off";
 import { serve } from "bun";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -12,9 +13,9 @@ import {
   startChannelActivityListener,
 } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
+import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
-import { websocket as channelSocket } from "./channels/socket";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
@@ -40,6 +41,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
+import { LafPostgresRunner } from "./runner/laf-runner";
 import {
   createPackageStatusReader,
   loadTenantPackage,
@@ -107,6 +109,9 @@ const identifyActor: IdentifyActor = async (request) => {
 const config = loadConfig();
 const port = Number.parseInt(process.env.PORT ?? "3001", 10);
 const database = createDatabase(config.databaseUrl);
+// The durable runner behind local mode. Built before the app because construction
+// is a read: it rehydrates every thread snapshot so restarts do not lose history.
+const lafRunner = await LafPostgresRunner.create(database);
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -346,6 +351,7 @@ const app = createApp(
     identifyUser,
     identifyActor,
     stallGuard,
+    lafRunner,
   ),
   computerClient,
   // The only path to an acting call.
