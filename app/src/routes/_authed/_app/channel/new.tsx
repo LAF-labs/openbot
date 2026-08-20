@@ -2,6 +2,7 @@ import type { Message } from "@ag-ui/core";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { Mascot } from "@/components/agents/mascot";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { canSend, type Recipient } from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -109,6 +110,32 @@ function RouteComponent() {
       <ConversationView
         // Commands must be loaded before the first channel message is sent.
         commands={skillCommands}
+        emptyState={
+          chosen ? (
+            <div className="flex flex-col items-center gap-3 px-6 text-center">
+              <span className="inline-flex size-20 overflow-hidden rounded-full">
+                <Mascot
+                  className="size-full object-cover"
+                  seed={chosen.avatarSeed}
+                  size={80}
+                />
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-semibold text-[15px]">{chosen.name}</span>
+                {chosen.title ? (
+                  <span className="text-[12px] text-muted-foreground">
+                    {chosen.title}
+                  </span>
+                ) : null}
+              </div>
+              {chosen.roleDescription ? (
+                <p className="max-w-sm text-[13px] text-muted-foreground leading-relaxed">
+                  {chosen.roleDescription}
+                </p>
+              ) : null}
+            </div>
+          ) : undefined
+        }
         disabled={recipients.length === 0}
         messages={sent ? [sent] : []}
         notice={

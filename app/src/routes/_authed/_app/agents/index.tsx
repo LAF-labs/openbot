@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
+import { Mascot } from "@/components/agents/mascot";
 import { AgentProfile as AgentProfileDetail } from "@/components/agents/agent-profile";
 import { NewAgent } from "@/components/agents/new-agent";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -82,6 +83,14 @@ function AgentsScreen() {
             {!mine?.length && (
               <Empty className="border border-dashed h-[180px]">
                 <EmptyHeader>
+                  {/* The axolotl: the one that has not grown up yet, waiting to be made. */}
+                  <span className="mx-auto mb-2 inline-flex size-12 overflow-hidden rounded-full opacity-80">
+                    <Mascot
+                      className="size-full object-cover"
+                      seed="r4c5"
+                      size={48}
+                    />
+                  </span>
                   <EmptyTitle className="text-muted-foreground">
                     {t("You don't have any agents created.")}
                   </EmptyTitle>
