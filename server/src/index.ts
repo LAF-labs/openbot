@@ -48,6 +48,7 @@ import {
   synchronizeTenantPackage,
 } from "./tenant-package";
 import { createDigestService } from "./watch/digest-service";
+import { withApprovalNotifications } from "./watch/notify";
 import { createWatchService } from "./watch/poller";
 
 /**
@@ -223,7 +224,13 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
  * one on a tool call are the same interruption to the same person, and a registry per subsystem
  * would mean the surface somebody happens to be looking at decides which of them they can answer.
  */
-const approvals = createApprovalRegistry();
+// The buzz on "blocked on you": a webhook today, AlimTalk once that channel
+// clears review. Absent both, the question still waits on the surface.
+const approvals = withApprovalNotifications(createApprovalRegistry(), {
+  ...(process.env.LAF_NOTIFY_WEBHOOK_URL
+    ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
+    : {}),
+});
 
 const pluginStore = createPluginStore({
   database,
