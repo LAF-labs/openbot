@@ -8,6 +8,8 @@ export const ko: Record<string, string> = {
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",
+  "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.":
+    "스킬은 /로 불러내면 봇이 그대로 따르는, 이름 붙은 지시입니다. 내가 만든 스킬은 나만의 것이고, 내가 소유한 봇에 붙습니다.",
   "Access token for this server": "이 서버의 액세스 토큰",
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
   Account: "계정",
@@ -22,6 +24,7 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Answered: "응답함",
+  Appearance: "화면 모드",
   "Arguments (JSON Schema)": "인자 (JSON Schema)",
   "Ask about the busiest": "가장 바쁜 항목 물어보기",
   "Ask anything": "무엇이든 물어보세요",
@@ -66,10 +69,12 @@ export const ko: Record<string, string> = {
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
+  Dark: "다크",
   "Dark theme": "다크 테마",
   Decision: "결정",
   Delete: "삭제",
   "Delete it": "삭제",
+  "Delete {command}": "{command} 삭제",
   "Delete {name}? This cannot be undone.":
     "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
   "Deleting…": "삭제 중…",
@@ -99,13 +104,18 @@ export const ko: Record<string, string> = {
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
   "Hiding…": "숨기는 중…",
+  "How {product} looks. Following the system flips with it.":
+    "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
   "It answered: {events}": "응답함: {events}",
   "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.":
     "프로필이 삭제되어, 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
     "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 에이전트면 무엇이든 됩니다. 서버가 에이전트 쪽으로 접속하므로, 내 컴퓨터에서 도는 에이전트는 여기서 접근할 수 있어야 합니다.",
+  Light: "라이트",
   "Name is required.": "이름을 입력하세요.",
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
+  "No skills yet. Write one and any Bot you own can run it.":
+    "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
   Private: "비공개",
   Public: "공개",
   "Reset it": "초기화",

@@ -11,13 +11,19 @@ import type { AgentProfile } from "@/lib/agents/queries";
  */
 export function AgentCard({ agent }: { agent: AgentProfile }) {
   return (
-    <div className="group w-[144px] overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
+    /*
+     * FULL WIDTH, NOT 144px. The card used to set its own width, which held as long as its grid gave
+     * every column at least that much — and the roster's grid is a fixed four columns, so opening
+     * the profile panel beside it took each column below 144px and the cards grew out of their cells
+     * and over each other. The grid now sizes its columns and the card fills the one it is given.
+     */
+    <div className="group w-full overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
       <div
-        className="flex items-center justify-center overflow-hidden"
+        className="flex aspect-square items-center justify-center overflow-hidden"
         style={{ background: mascotBackground(agent.avatarSeed) }}
       >
         <Mascot
-          className="w-full transition-transform duration-200 group-hover:scale-[1.04]"
+          className="size-full transition-transform duration-200 group-hover:scale-[1.04]"
           seed={agent.avatarSeed}
           size={144}
         />

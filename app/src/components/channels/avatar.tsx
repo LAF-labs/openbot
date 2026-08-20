@@ -25,6 +25,18 @@ function useSeeds(): (agentId: string) => string {
     agents.data?.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId;
 }
 
+/**
+ * An agent id, resolved to what that agent is called.
+ *
+ * Same roster, same cache, same reason as the seed above: a row holds ids, and a person reads names.
+ * Undefined until the roster lands, and for an id that is no longer a Bot — callers are expected to
+ * have something to say in that case rather than showing a raw id.
+ */
+export function useAgentNames(): (agentId: string) => string | undefined {
+  const agents = useQuery(agentListQueryOptions());
+  return (agentId) => agents.data?.find((agent) => agent.id === agentId)?.name;
+}
+
 export const ChannelAvatar = memo(function ChannelAvatar({
   participantIds,
   size = 32,

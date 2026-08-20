@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { Mascot } from "@/components/agents/mascot";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
   PageRows,
@@ -61,7 +62,7 @@ function SkillsPage() {
   // roster uses when `new` and `agent` arrive together.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingSlug !== undefined;
-  const { data } = useQuery(pluginsPageQueryOptions());
+  const { data, isPending } = useQuery(pluginsPageQueryOptions());
   const { data: me } = useQuery(currentUserQueryOptions());
   const [error, setError] = useState<string | null>(null);
 
@@ -108,12 +109,9 @@ function SkillsPage() {
       open={showCreate || showEdit}
     >
       <PageShell
-        description={
-          <>
-            A skill is a named instruction you invoke with <code>/</code> and a
-            Bot follows. Yours are yours alone, and go on the Bots you own.
-          </>
-        }
+        description={t(
+          "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.",
+        )}
         title={t("Agent Skills")}
       >
         {error ? (
@@ -137,6 +135,26 @@ function SkillsPage() {
           }
           title={t("Your skills")}
         >
+          {/*
+           * A section title over nothing at all reads as a screen that failed to load. Routines and
+           * the agents roster both answer this with a face and a sentence; this is that, so the
+           * three of them say "none yet" the same way.
+           */}
+          {!isPending && !mine?.length ? (
+            <div className="flex flex-col items-center gap-3 py-10">
+              <span className="inline-flex size-14 overflow-hidden rounded-full opacity-80">
+                {/* The plainest face in the set: a skill is a note, not a character. */}
+                <Mascot
+                  className="size-full object-cover"
+                  seed="r2c0"
+                  size={56}
+                />
+              </span>
+              <p className="text-center text-[13px] text-muted-foreground">
+                {t("No skills yet. Write one and any Bot you own can run it.")}
+              </p>
+            </div>
+          ) : null}
           {!!mine?.length && (
             <PageRows>
               {mine.map((skill, index) => (
@@ -197,7 +215,9 @@ function SkillsPage() {
                               }
                               variant="destructive"
                             >
-                              Delete /{skill.slug}
+                              {t("Delete {command}", {
+                                command: `/${skill.slug}`,
+                              })}
                             </DropdownMenuItem>
                           </DropdownMenuGroup>
                         </DropdownMenuContent>
