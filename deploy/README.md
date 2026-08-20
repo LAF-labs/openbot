@@ -19,15 +19,25 @@ ssh -N -L 3010:127.0.0.1:3010 -L 3001:127.0.0.1:3001 ubuntu@<VM-IP>
 
 ## 사람이 하는 일 (1회)
 
-1. **OCI 계정 생성** — cloud.oracle.com, 홈 리전 **South Korea (Seoul 또는
-   Chuncheon)** 선택. 가입 후 **Pay As You Go 업그레이드 권장**(카드 등록;
-   Always Free 한도는 유지되고, 유휴 인스턴스 회수 정책에서 벗어난다).
+1. **OCI 계정 생성** — cloud.oracle.com. **홈 리전은 가입 시 한 번 정하면
+   못 바꾼다.** 춘천(ap-chuncheon-1)은 Always Free A1을 만들 수 없는 유일한
+   리전이니 절대 고르지 말 것. 서울(ap-seoul-1)이 1순위, 목록에 없으면
+   오사카/도쿄(한국에서 RTT ~30ms, 파일럿에 무해).
+   가입 후 **Pay As You Go 업그레이드는 사실상 필수**다 — 카드를 등록해도
+   Always Free 한도 안은 그대로 무료이고, 인스턴스 기동 우선순위가 올라가
+   "Out of capacity"를 훨씬 덜 만난다.
+   *(2026-08-20 실제 파일럿: 홈 리전 오사카 ap-osaka-1, PAYG 전환 완료.)*
 2. **인스턴스 생성** — Compute → Instances → Create:
-   - Shape: **VM.Standard.A1.Flex, 4 OCPU / 24GB** (Always Free 한도)
+   - Shape: **VM.Standard.A1.Flex, 2 OCPU / 12GB** — 2026-06-15부터 Always
+     Free A1 한도가 4/24에서 반토막 났다. PAYG면 4/24를 계속 무료로 준다는
+     서포트 답변이 돌지만 문서화된 적이 없으니, 2/12로 잡고 시작한다.
+     (러너·Postgres·프론트 모두 I/O 바운드고 추론은 외부 API로 나가므로
+     파일럿엔 2/12로 충분하다.)
    - Image: **Ubuntu 24.04 (aarch64)**
    - Boot volume: 100GB
    - SSH 키: 본인 키 등록 (배포 맡길 키의 공개키를 추가로 등록)
-   - "Out of capacity" 오류가 나면 가용 도메인을 바꾸거나 시간을 두고 재시도
+   - "Out of capacity"가 나면 시간을 두고 재시도한다. 서울·오사카는 단일 AD
+     리전이라 바꿔 볼 가용 도메인이 없다
 3. VM의 공인 IP와 SSH 접근을 전달한다.
 
 ## 스크립트가 하는 일

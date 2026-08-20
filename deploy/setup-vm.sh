@@ -12,8 +12,11 @@ log() { printf '\n== %s\n' "$*"; }
 # ── 1. 시스템 ────────────────────────────────────────────────────────────
 log "apt 기본"
 sudo apt-get update -y
+# openssl(KEK 생성)과 cron(야간 백업)은 Ubuntu Minimal 이미지에 없다 —
+# aarch64 24.04는 Minimal판만 제공되므로 명시적으로 깐다.
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  ca-certificates curl git ufw fail2ban unattended-upgrades unzip
+  ca-certificates curl git ufw fail2ban unattended-upgrades unzip \
+  openssl cron
 
 log "스왑 4G (없으면)"
 if ! swapon --show | grep -q '/swapfile'; then
