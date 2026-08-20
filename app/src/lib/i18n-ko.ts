@@ -4,6 +4,10 @@ export const ko: Record<string, string> = {
   "A click applies it right away.": "클릭하면 바로 적용됩니다.",
   "A key is set. Type a new one to replace it.":
     "키가 설정되어 있습니다. 바꾸려면 새로 입력하세요.",
+  "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.":
+    "/로 불러내는, 이름 붙은 지시입니다. 내가 소유한 봇에 붙고, 다른 사람에게는 보이지 않습니다.",
+  "A password box the page labels something else is not covered, the rule matches the label.":
+    "페이지가 다른 이름을 붙인 비밀번호 칸은 잡히지 않습니다. 규칙은 라벨을 봅니다.",
   "A reason, if you want to give one": "이유 (선택)",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
@@ -18,21 +22,30 @@ export const ko: Record<string, string> = {
   "Added to file": "파일에 추가함",
   "Add rule": "규칙 추가",
   "Add server": "서버 추가",
+  "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.":
+    "명령을 쓰면 실행에 더해집니다. 봇에게 내리는 지시문으로 쓰세요 — 지시문에 대한 설명이 아니라.",
   Admin: "관리",
   "Agent Skills": "에이전트 스킬",
   "Agent endpoint (optional)": "에이전트 엔드포인트 (선택)",
   Agents: "에이전트",
   Allow: "허용",
+  "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
+    "다른 용도의 Enter도 함께 막힙니다. 폼은 어느 입력칸에서든 Enter로 제출되기 때문입니다.",
   Answered: "응답함",
   Appearance: "화면 모드",
   "Arguments (JSON Schema)": "인자 (JSON Schema)",
   "Ask about the busiest": "가장 바쁜 항목 물어보기",
   "Ask anything": "무엇이든 물어보세요",
+  "Ask before submitting a form": "폼 제출 전에 묻기",
+  "Ask before writing a file outside notes/":
+    "notes/ 밖에 파일을 쓰기 전에 묻기",
   "Ask it to open a page and watch it work.":
     "페이지를 열어 달라고 하고, 일하는 모습을 지켜보세요.",
   "Ask me first": "먼저 묻기",
   "Asked because of this rule. Allowing covers this one action.":
     "이 규칙 때문에 묻습니다. 허용은 이 행동 한 번에만 적용됩니다.",
+  "Asks about every Enter the Bot presses, because a form submits from Enter in any of its fields. Expect to be asked while it is filling one in, not only at the end.":
+    "봇이 누르는 모든 Enter마다 묻습니다. 폼은 어느 칸에서든 Enter로 제출되기 때문입니다. 마지막에만이 아니라 작성 중에도 물어올 수 있습니다.",
   Audit: "감사 기록",
   Available: "사용 가능",
   "Available integrations are defined by this deployment’s knowledge sources.":
@@ -89,6 +102,8 @@ export const ko: Record<string, string> = {
   Drawing: "그리는 중",
   Duplicate: "복제",
   "Duplicating…": "복제 중…",
+  "Each Bot has a computer of its own: its own container, its own files and its own browser profile.":
+    "각 봇이 자기 컴퓨터를 가집니다 — 자기 컨테이너, 자기 파일, 자기 브라우저 프로필.",
   "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.":
     "각 봇의 브라우저와 그 프로필. 프로필이 있어서 봇이 내일도 로그인 상태로 남습니다 — 초기화하면 모든 곳에서 로그아웃됩니다.",
   Edit: "수정",
@@ -105,13 +120,19 @@ export const ko: Record<string, string> = {
   "Explore agents": "에이전트 둘러보기",
   "Face {number}": "얼굴 {number}",
   Channel: "채널",
+  "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
+    "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
   "Hiding…": "숨기는 중…",
   "How {product} looks. Following the system flips with it.":
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
+  "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.":
+    "“{mode}”에서는 아무것도 멈추지 않습니다. 해당하면 물어봤을 질문으로 기록만 됩니다.",
   "It answered: {events}": "응답함: {events}",
+  "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.":
+    "이 배포에서 제거됩니다. 그리던 봇들도 더 이상 그릴 수 없으며, 되돌릴 수 없습니다.",
   "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.":
     "프로필이 삭제되어, 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
@@ -120,19 +141,30 @@ export const ko: Record<string, string> = {
   "Loading coworkers…": "봇 불러오는 중…",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
+  "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
+    "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
   Messages: "메시지",
   "Name is required.": "이름을 입력하세요.",
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
+  "Never submit a form": "폼은 절대 제출하지 않기",
+  "Never type into a password field": "비밀번호 칸에는 절대 입력하지 않기",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
+  "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on.":
+    "아무것도 멈추지 않습니다. 규칙에 걸리는 행동은 거부됐을 것으로 기록만 됩니다 — 규칙을 켜기 전에 시험해 보는 방법입니다.",
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
+  "Only the two hosts named. A link that redirects there from somewhere else is allowed.":
+    "명시한 두 호스트만 해당합니다. 다른 곳에서 리다이렉트로 도착하는 링크는 허용됩니다.",
+  "Open the audit trail": "감사 기록 열기",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
   Private: "비공개",
   Public: "공개",
+  "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
+    "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
   "Reply: {text}": "답장: {text}",
   "Reset it": "초기화",
   "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
@@ -145,6 +177,9 @@ export const ko: Record<string, string> = {
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   "Sign in to {product}": "{product} 로그인",
   "Something went wrong.": "문제가 생겼습니다.",
+  "Stay off social media": "소셜미디어 접근 안 하기",
+  "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
+  "Stop the action": "행동을 멈춤",
   Test: "연결 확인",
   "Testing…": "확인 중…",
   "That could not be sent to the page. Try again.":
@@ -154,23 +189,41 @@ export const ko: Record<string, string> = {
   "The assistant's screen, live": "어시스턴트의 화면 — 실시간",
   "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
     "어시스턴트의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
+  "The Bot is stopped and told which rule refused it.":
+    "봇이 멈추고, 어떤 규칙이 막았는지 전달받습니다.",
+  "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.":
+    "여기 해당하면 봇이 멈춰 기다리고, 누군가 허용하면 같은 행동을 이어갑니다. 위 규칙 다음, 아래 규칙 앞에서 검사되므로 이미 금지한 것은 금지된 채로 남고 질문으로 제시되지 않습니다.",
+  "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":
+    "초안 설명은 모델이 이 컴포넌트를 부를지 판단할 때 읽는 글입니다. 게시하기 전까지는 아무것도 바뀌지 않습니다.",
   "The page you asked for does not exist, or no longer does.":
     "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
   "The role you write here applies in every channel this coworker works in.":
     "여기 적는 역할은 이 봇이 일하는 모든 채널에 적용됩니다.",
   "The run history could not be loaded.": "실행 기록을 불러오지 못했습니다.",
+  "The sample arguments are not valid JSON, so there is nothing to draw with.":
+    "샘플 인자가 올바른 JSON이 아니어서 그릴 것이 없습니다.",
   "The schedule stops and its run history goes with it. This cannot be undone.":
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
   "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
+  "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
+    "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They are still there. This was a problem reaching us.":
     "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",
+  "They share its logins, its files and its session, so a Bot can reach what another signed into. Set {variable} to give each Bot its own.":
+    "로그인, 파일, 세션을 공유하므로 한 봇이 다른 봇이 로그인한 곳에 접근할 수 있습니다. 각 봇에게 따로 주려면 {variable}을 설정하세요.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
+  "This coworker has been deleted. The conversation stays readable, but it can no longer reply.":
+    "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
+  "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
+    "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 어시스턴트도 받지 않습니다.",
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
   "Toggle Sidebar": "사이드바 여닫기",
   "Try again": "다시 시도",
+  "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. Worth adding while a match is recorded and allowed, before it starts refusing anybody's work.":
+    "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 실제로 거부하기 전에 '기록만' 상태로 먼저 시험해 보세요.",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
   "Watch this Bot's screen": "이 봇의 화면 보기",
@@ -178,6 +231,8 @@ export const ko: Record<string, string> = {
   "Asked {name}": "{name}에게 물었습니다",
   "Asking a coworker": "코워커에게 물어보는 중",
   "Asked a coworker": "코워커에게 물었습니다",
+  "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
+    "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",
   "Working late?": "늦게까지 고생이 많으세요",
   "Good morning": "좋은 아침이에요",
   "Good afternoon": "좋은 오후예요",
@@ -384,6 +439,8 @@ export const ko: Record<string, string> = {
   When: "언제",
   "When a rule matches": "규칙이 일치하면",
   "Workspace skills": "워크스페이스 스킬",
+  "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.":
+    "여기서 컴포넌트를 작성하고 배포 없이 게시할 수 있습니다. 편집 중인 것은 초안이며, 대화에는 게시된 것만 그려집니다.",
   "Write a skill": "스킬 작성",
   "Write a skill for the deployment": "배포 전체용 스킬 작성",
   "Written for everyone by an administrator. Which Bots carry them is decided in Admin.":
@@ -423,6 +480,8 @@ export const ko: Record<string, string> = {
     "정의가 바뀜 — 검토 전까지 정지",
   "Approve as it now is": "지금 상태로 승인",
   "Your team could not be loaded.": "팀을 불러오지 못했습니다.",
+  "{action}, blocked": "{action} — 차단됨",
+  "{action}, didn't work": "{action} — 실패",
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
   "{name}'s screen": "{name}의 화면",
 };

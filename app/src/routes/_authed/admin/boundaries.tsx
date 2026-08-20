@@ -177,12 +177,18 @@ function BoundariesPage() {
     <PageShell
       description={
         <>
-          What every Bot may and may not do with its computer. Rules are checked
-          on every action before it happens, and a refusal is recorded in{" "}
+          {/*
+           * One translatable sentence and one linked one, rather than a sentence with a link
+           * sewn into the middle of it: t() returns a string, so an embedded element can only be
+           * done by splitting the prose into fragments no translator can reorder — and Korean puts
+           * that clause somewhere else entirely.
+           */}
+          {t(
+            "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.",
+          )}{" "}
           <Link className="underline" to="/admin/audit">
-            {t("Audit")}
-          </Link>{" "}
-          with the rule that refused it.
+            {t("Open the audit trail")}
+          </Link>
         </>
       }
       title={t("Boundaries")}
@@ -200,15 +206,17 @@ function BoundariesPage() {
               variant="outline"
             >
               {mode === "enforce"
-                ? "Stop the action"
-                : "Record it and allow it"}
+                ? t("Stop the action")
+                : t("Record it and allow it")}
             </Button>
           ))}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           {policy.mode === "enforce"
-            ? "The Bot is stopped and told which rule refused it."
-            : "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on."}
+            ? t("The Bot is stopped and told which rule refused it.")
+            : t(
+                "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on.",
+              )}
         </p>
       </PageSection>
 
@@ -278,11 +286,11 @@ function BoundariesPage() {
                 size="sm"
                 variant="outline"
               >
-                {preset.label}
+                {t(preset.label)}
               </Button>
               {preset.cost ? (
                 <span className="pt-1 text-xs text-muted-foreground">
-                  {preset.cost}
+                  {t(preset.cost)}
                 </span>
               ) : null}
             </li>
@@ -356,11 +364,11 @@ function BoundariesPage() {
                 size="sm"
                 variant="outline"
               >
-                {preset.label}
+                {t(preset.label)}
               </Button>
               {preset.cost ? (
                 <span className="pt-1 text-xs text-muted-foreground">
-                  {preset.cost}
+                  {t(preset.cost)}
                 </span>
               ) : null}
             </li>
@@ -368,13 +376,13 @@ function BoundariesPage() {
         </ul>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          The Bot stops and waits where one of these matches, and carries on
-          with the same action if somebody allows it. Checked after the rules
-          above and before the ones below, so something you have forbidden stays
-          forbidden and is never offered as a question. In{" "}
-          <span className="font-medium">{t("Record it and allow it")}</span>{" "}
-          nothing stops: a match is recorded as a question that would have been
-          asked.
+          {t(
+            "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.",
+          )}{" "}
+          {t(
+            "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.",
+            { mode: t("Record it and allow it") },
+          )}
         </p>
       </PageSection>
 

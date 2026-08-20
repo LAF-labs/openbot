@@ -284,8 +284,9 @@ function ComponentRow({
           <DialogHeader>
             <DialogTitle>{component.title}</DialogTitle>
             <DialogDescription>
-              The draft description is what the model reads when deciding to
-              call this. It changes nothing until it is published.
+              {t(
+                "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">

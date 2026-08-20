@@ -128,14 +128,16 @@ function ComputersPage() {
           <span className="font-medium">
             {t("Every Bot is sharing one computer.")}
           </span>{" "}
-          They share its logins, its files and its session, so a Bot can reach
-          what another signed into. Set{" "}
-          <code>{t("COMPUTER_SUPERVISOR_URL")}</code> to give each Bot its own.
+          {t(
+            "They share its logins, its files and its session, so a Bot can reach what another signed into. Set {variable} to give each Bot its own.",
+            { variable: "COMPUTER_SUPERVISOR_URL" },
+          )}
         </p>
       ) : isolation === "per-bot" ? (
         <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
-          Each Bot has a computer of its own: its own container, its own files
-          and its own browser profile.
+          {t(
+            "Each Bot has a computer of its own: its own container, its own files and its own browser profile.",
+          )}
         </p>
       ) : null}
 

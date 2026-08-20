@@ -356,9 +356,9 @@ function Catalogue({
           <DialogHeader>
             <DialogTitle>{t("Add a server by URL")}</DialogTitle>
             <DialogDescription>
-              For a server that is not in the catalogue. Nobody has reviewed it,
-              so every tool it offers is treated as one that changes something,
-              and the server is recorded as custom wherever it appears.
+              {t(
+                "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
@@ -648,10 +648,9 @@ function Skills({
           <DialogHeader>
             <DialogTitle>{t("Write a skill for the deployment")}</DialogTitle>
             <DialogDescription>
-              The slug is what a person types after a slash, and the
-              instructions are added to the run when they do. Everybody here can
-              use it, and you decide which Bots have it. People write their own
-              on the Skills page.
+              {t(
+                "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">

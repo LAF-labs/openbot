@@ -63,7 +63,7 @@ export function ApprovalRequest({
   if (!asking) return null;
 
   return (
-    <div className="my-1.5 rounded-md border border-border bg-card px-3 py-2">
+    <div className="rounded-md border border-border bg-card px-3 py-2">
       <p className="text-sm">{asking.question}</p>
       {asking.rule ? (
         <p className="mt-1 break-all font-mono text-muted-foreground text-xs">

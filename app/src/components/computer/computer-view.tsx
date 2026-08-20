@@ -329,8 +329,9 @@ export function ComputerView({
               </button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              This goes straight to the page. It is not shown in the
-              conversation and the assistant never receives it.
+              {t(
+                "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.",
+              )}
             </p>
             {secretProblem ? (
               <p className="mt-1 text-xs text-destructive">{secretProblem}</p>

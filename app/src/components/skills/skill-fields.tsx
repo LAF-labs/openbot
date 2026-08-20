@@ -187,8 +187,9 @@ export function SkillFields({
                   <FieldError errors={field.state.meta.errors} />
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    Added to the run when the command is used. Write it as
-                    instructions to the Bot, not as a description of them.
+                    {t(
+                      "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.",
+                    )}
                   </p>
                 )}
               </Field>

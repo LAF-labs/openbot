@@ -141,8 +141,9 @@ function PlaygroundPage() {
         <div>
           <h1 className="font-bold text-2xl">{t("Playground")}</h1>
           <p className="mt-1 max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
-            Write a component here and publish it without a deployment. What you
-            edit is a draft; a conversation only ever draws what is published.
+            {t(
+              "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.",
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -228,8 +229,9 @@ function PlaygroundPage() {
             <div className="mb-2 text-sm font-medium">{t("Preview")}</div>
             {sample === null ? (
               <p className="text-sm text-destructive">
-                The sample arguments are not valid JSON, so there is nothing to
-                draw with.
+                {t(
+                  "The sample arguments are not valid JSON, so there is nothing to draw with.",
+                )}
               </p>
             ) : (
               <OpenGenerativeUIActivityRenderer
@@ -300,9 +302,9 @@ function PlaygroundPage() {
               </ul>
             )}
             <p className="border-border border-t px-4 py-2 text-muted-foreground text-xs">
-              Publishing makes it available to every Bot. Switch it off for a
-              particular Bot on the Components page, the same as for a component
-              this build ships.
+              {t(
+                "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.",
+              )}
             </p>
           </div>
         </div>
@@ -320,10 +322,13 @@ function PlaygroundPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {deleting}?</DialogTitle>
+            <DialogTitle>
+              {t("Delete {name}?", { name: deleting ?? "" })}
+            </DialogTitle>
             <DialogDescription>
-              It is removed from this deployment. Any Bot that could draw it no
-              longer can, and this cannot be undone.
+              {t(
+                "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

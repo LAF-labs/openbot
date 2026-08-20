@@ -45,8 +45,9 @@ export function NewSkill() {
       <header>
         <h1 className="text-2xl font-semibold">{t("New skill")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A named instruction you invoke with <code>/</code>. It goes on the
-          Bots you own, and nobody else sees it.
+          {t(
+            "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.",
+          )}
         </p>
       </header>
 

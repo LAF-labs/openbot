@@ -20,6 +20,7 @@ import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import { stoppedReason } from "@/lib/copilot/stopped-turn";
+import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
 /**
@@ -338,8 +339,9 @@ export function ChannelChat({
         notice={
           channel.active ? null : (
             <p className="pb-2 text-sm text-muted-foreground" role="status">
-              This coworker has been deleted. The conversation stays readable,
-              but it can no longer reply.
+              {t(
+                "This coworker has been deleted. The conversation stays readable, but it can no longer reply.",
+              )}
             </p>
           )
         }

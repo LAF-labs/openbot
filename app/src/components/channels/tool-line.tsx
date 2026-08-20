@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { t } from "@/lib/i18n";
 
 /**
  * One line for one thing a Bot did.
@@ -42,17 +43,31 @@ export function ToolLine({
         running ? "tool-line-running" : ""
       }`}
     >
+      {/*
+       * THE OUTCOME, IN THE READER'S LANGUAGE. "Blocked" and ", didn't work" were English literals
+       * in the middle of an otherwise Korean transcript — and "Blocked" threw the label away, so a
+       * refused line said only that something had been stopped, not what.
+       *
+       * Whole sentences as keys, because Korean does not append a clause to a noun the way English
+       * does; the translator needs the shape of the finished line, not two halves to glue.
+       */}
       <span className="shrink-0">
-        {refused ? "Blocked" : failed ? `${label}, didn't work` : label}
+        {refused
+          ? t("{action}, blocked", { action: label })
+          : failed
+            ? t("{action}, didn't work", { action: label })
+            : label}
       </span>
-      {detail ? <span className="truncate opacity-70">{detail}</span> : null}
+      {/* No `opacity-70`: the object of the call measured 2.77:1 in light, and it is the payload. */}
+      {detail ? <span className="truncate">{detail}</span> : null}
     </span>
   );
 
-  if (!children) return <div className="my-1.5">{text}</div>;
+  // No margin: the transcript column is a `gap-6` flex, and a child's own margin adds to that gap.
+  if (!children) return <div>{text}</div>;
 
   return (
-    <details className="tool-line my-1.5 min-w-0">
+    <details className="tool-line min-w-0">
       {/*
        * Native <details> owns expansion because SDK tool renderers can be re-invoked independently
        * of this component's React state.
