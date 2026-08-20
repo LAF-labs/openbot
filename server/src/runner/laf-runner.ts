@@ -27,7 +27,7 @@ import {
   InMemoryAgentRunner,
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafThreadRuns, lafThreadSnapshots } from "../db/schema";
 
@@ -37,6 +37,22 @@ type RestoredThread = {
   record: InMemoryThread;
   messages: Message[];
 };
+
+/** Reads heal the double-encoded rows written before saveSnapshot cast to jsonb. */
+function parseMessages(stored: unknown): Message[] {
+  if (Array.isArray(stored)) {
+    return stored as Message[];
+  }
+  if (typeof stored === "string") {
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? (parsed as Message[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 function recordFromRow(row: SnapshotRow): InMemoryThread {
   return {
@@ -109,7 +125,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         row.threadId,
         {
           record: recordFromRow(row),
-          messages: (row.messages as Message[]) ?? [],
+          messages: parseMessages(row.messages),
         },
       ]),
     );
@@ -222,12 +238,19 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     messages: Message[],
   ): Promise<void> {
     const updatedAt = new Date();
+    // `::text::jsonb`, measured, not guessed. A top-level JS array must not reach
+    // the driver as itself (postgres-js reads it as a Postgres array) nor as a
+    // parameter cast straight to jsonb (the jsonb serializer stringifies the
+    // already-stringified value — a jsonb *string*, opaque to every SQL-side
+    // consumer). Typing the parameter as text first is the one form of the three
+    // that lands as a real jsonb array; see laf_thread_runs in the M0 notes.
+    const messagesJson = sql`${JSON.stringify(messages)}::text::jsonb`;
     await this.database
       .insert(lafThreadSnapshots)
-      .values({ threadId, agentId, messages, updatedAt })
+      .values({ threadId, agentId, messages: messagesJson, updatedAt })
       .onConflictDoUpdate({
         target: lafThreadSnapshots.threadId,
-        set: { agentId, messages, updatedAt },
+        set: { agentId, messages: messagesJson, updatedAt },
       });
     const existing = this.restored.get(threadId);
     this.restored.set(threadId, {
