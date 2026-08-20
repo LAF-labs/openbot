@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import {
   answerApproval,
@@ -36,6 +36,8 @@ export function ApprovalRequest({
   );
   const [answering, setAnswering] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /** Names the group, so the buttons announce what they are answering. */
+  const questionId = useId();
 
   const answer = useCallback(
     async (granted: boolean) => {
@@ -63,8 +65,24 @@ export function ApprovalRequest({
   if (!asking) return null;
 
   return (
+    /*
+     * A GROUP, NAMED BY THE QUESTION, WITH A POLITE ANNOUNCER.
+     *
+     * A Bot asking permission is the one thing in the transcript that is waiting on the reader, and
+     * it arrived without a sound: two buttons appeared and nothing said they had. `role="alert"`
+     * would be the reflex, and it is wrong here — assertive interrupts whatever is being read, and
+     * the comment at the top of this file rejects interrupting on purpose. Polite says it at the
+     * next natural break, which is what a question in a conversation deserves.
+     */
     <div className="rounded-md border border-border bg-card px-3 py-2">
-      <p className="text-sm">{asking.question}</p>
+      <div aria-atomic="true" aria-live="polite" className="sr-only">
+        {t("Waiting for your answer: {question}", {
+          question: asking.question,
+        })}
+      </div>
+      <p className="text-sm" id={questionId}>
+        {asking.question}
+      </p>
       {asking.rule ? (
         <p className="mt-1 break-all font-mono text-muted-foreground text-xs">
           {asking.rule}
@@ -72,6 +90,9 @@ export function ApprovalRequest({
       ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Button
+          // Described by the question rather than wrapped in a group role: "Allow" on its own says
+          // nothing about what is being allowed.
+          aria-describedby={questionId}
           disabled={answering}
           onClick={() => void answer(true)}
           size="sm"
@@ -79,6 +100,7 @@ export function ApprovalRequest({
           {t("Allow")}
         </Button>
         <Button
+          aria-describedby={questionId}
           disabled={answering}
           onClick={() => void answer(false)}
           size="sm"

@@ -156,10 +156,7 @@ export function AdminSidebar({
                     // dip back to the hover fill when the row you are on is hovered.
                     className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
-                      <Link
-                        {...item.linkOptions}
-                        {...props}
-                      >
+                      <Link {...item.linkOptions} {...props}>
                         <item.icon />
                         {item.title}
                       </Link>

@@ -2,7 +2,14 @@ import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import { IconBox, IconCheck, IconCopy } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -23,6 +30,7 @@ import {
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
+import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -571,6 +579,9 @@ export function ChatTranscript({
    * So: the turn is in flight AND the last thing in the conversation is still the person's own
    * message. A tool call that is running shimmers on its own line and needs nothing from here.
    */
+  /** Any tool call in this tab waiting on a person. Subscribed, so it clears the moment it does. */
+  const awaitingAnswer = useSyncExternalStore(watchQuestions, anyQuestionOpen);
+
   const lastItem = items.at(-1);
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
@@ -679,7 +690,16 @@ export function ChatTranscript({
              * One or the other, never both: a turn that ended has stopped being in flight, and a
              * shimmering "Thinking" under a line saying the Bot stopped would contradict it.
              */}
-            {stopped ? (
+            {/*
+             * A pending question outranks both. The card is a row in the list, so scrolling up past
+             * it takes the only sign a Bot is blocked with it — and a Bot waiting on permission
+             * looks exactly like a Bot that has stalled.
+             */}
+            {awaitingAnswer ? (
+              <p className="text-muted-foreground text-sm" role="status">
+                {t("Waiting for your answer")}
+              </p>
+            ) : stopped ? (
               <Stopped reason={stopped} />
             ) : waitingOnFirstToken ? (
               <Thinking />

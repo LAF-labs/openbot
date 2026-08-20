@@ -246,6 +246,8 @@ export const ko: Record<string, string> = {
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 실제로 거부하기 전에 '기록만' 상태로 먼저 시험해 보세요.",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
+  "Waiting for your answer": "답변을 기다리는 중",
+  "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",
   "Watch this Bot's screen": "이 봇의 화면 보기",
   "Asking {name}": "{name}에게 물어보는 중",
   "Asked {name}": "{name}에게 물었습니다",

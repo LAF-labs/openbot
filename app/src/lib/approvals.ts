@@ -73,6 +73,17 @@ export function questionOn(toolCallId: string): OpenQuestion | undefined {
   return open.get(toolCallId);
 }
 
+/**
+ * Whether anything at all is waiting on an answer.
+ *
+ * The card itself is a transcript row, so scrolling up past it takes the only sign that a Bot is
+ * blocked off the screen — and a Bot that has stopped to ask looks exactly like a Bot that has
+ * stopped. The transcript's status slot uses this to keep saying so wherever the reader is.
+ */
+export function anyQuestionOpen(): boolean {
+  return open.size > 0;
+}
+
 export function watchQuestions(listener: () => void): () => void {
   watchers.add(listener);
   return () => {
