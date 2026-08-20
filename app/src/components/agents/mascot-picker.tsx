@@ -45,7 +45,7 @@ export function MascotPicker({
           className="grid grid-cols-7 gap-2"
           aria-busy={pending ? "true" : undefined}
         >
-          {MASCOT_TILES.map((tile, index) => {
+          {MASCOT_TILES.map((tile) => {
             const chosen = tile.id === currentId;
             return (
               <button
@@ -54,8 +54,8 @@ export function MascotPicker({
                 disabled={pending}
                 onClick={() => onSelect(tile.id)}
                 aria-pressed={chosen}
-                // The tile id is a grid coordinate — plumbing, not a name to read out.
-                aria-label={t("Face {number}", { number: index + 1 })}
+                // What the drawing is, not where it sits in the grid.
+                aria-label={t(tile.name)}
                 className={
                   // ring-primary, matching the home roster's selection ring: chosen is the one
                   // selection state in the app, and blue is its one color.

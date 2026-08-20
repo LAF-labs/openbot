@@ -15,6 +15,14 @@
  */
 
 type MascotArt = {
+  /**
+   * What the drawing is, in a word or two.
+   *
+   * The picker labelled its tiles "Face 1" … "Face 35", which is a grid coordinate wearing a
+   * different number: somebody choosing a face by ear was told nothing about any of them. These are
+   * read off the rendered tiles one by one, and they are the only part of this file a person hears.
+   */
+  name: string;
   /** The ground the character sits on, for surfaces that carry the colour themselves. */
   background: string;
   /** Inner SVG markup for a 0 0 96 96 viewBox. */
@@ -23,6 +31,7 @@ type MascotArt = {
 
 export const MASCOT_ART: Record<string, MascotArt> = {
   r0c0: {
+    name: "Rabbit",
     background: "#A6543E",
     markup: `<rect width="96" height="96" fill="#A6543E"/>
 <path d="M14 52 Q6 18 18 14 Q28 12 34 34 Z" fill="#F3E7CC"/>
@@ -33,6 +42,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="40" cy="84" rx="8.5" ry="6.5" fill="#39302A"/>`,
   },
   r0c1: {
+    name: "Bear",
     background: "#1050E7",
     markup: `<rect width="96" height="96" fill="#1050E7"/>
 <path d="M4 34 Q2 20 14 18 Q28 16 28 32 L26 56 Q24 66 14 62 Q2 56 4 34 Z" fill="#FFFFFF"/>
@@ -43,6 +53,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="49" cy="74" rx="8" ry="6.5" fill="#17181A"/>`,
   },
   r0c2: {
+    name: "Robot",
     background: "#026DBF",
     markup: `<rect width="96" height="96" fill="#026DBF"/>
 <path d="M50 26 Q44 8 54 5 Q64 3 64 14 Q64 22 56 26 Z" fill="#EFE9D9"/>
@@ -54,6 +65,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M34 74 q6 5 12 0" stroke="#EFE9D9" stroke-width="4" fill="none" stroke-linecap="round"/>`,
   },
   r0c3: {
+    name: "Elephant",
     background: "#C3BEEF",
     markup: `<rect width="96" height="96" fill="#C3BEEF"/>
 <path d="M2 62 Q-6 30 18 26 Q34 24 36 42 L34 66 Q30 78 16 76 Q4 74 2 62 Z" fill="#4C4B55"/>
@@ -65,6 +77,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="60" y="58" width="4.5" height="12" rx="2.2" fill="#DCD9F4"/>`,
   },
   r0c4: {
+    name: "Acorn cat",
     background: "#734A6C",
     markup: `<rect width="96" height="96" fill="#734A6C"/>
 <rect x="46" y="6" width="13" height="16" rx="6" fill="#E8D2A4"/>
@@ -74,6 +87,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M34 82 q9 9 19 0" stroke="#2E2620" stroke-width="5" fill="none" stroke-linecap="round"/>`,
   },
   r0c5: {
+    name: "Cat",
     background: "#050505",
     markup: `<rect width="96" height="96" fill="#050505"/>
 <circle cx="26" cy="34" r="9" fill="#FCFCFC"/><circle cx="72" cy="36" r="9" fill="#FCFCFC"/>
@@ -84,6 +98,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M47 75 v6" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`,
   },
   r0c6: {
+    name: "Ghost",
     background: "#33756C",
     markup: `<rect width="96" height="96" fill="#33756C"/>
 <path d="M-14 96 L-14 30 Q-8 -4 36 -2 Q72 0 78 34 Q84 66 62 84 Q40 100 10 96 Z" fill="#D9E4E8"/>
@@ -91,6 +106,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M16 72 q20 12 42 -2" stroke="#1E3238" stroke-width="5.5" fill="none" stroke-linecap="round"/>`,
   },
   r1c0: {
+    name: "Cactus",
     background: "#B1523C",
     markup: `<rect width="96" height="96" fill="#B1523C"/>
 <path d="M58 62 L58 34 Q58 22 68 22 Q78 22 78 34 L78 48 Q78 60 68 62 Z" fill="#EDDDBB"/>
@@ -101,6 +117,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="29" y="58" width="8" height="4" rx="2" fill="#2C2620"/>`,
   },
   r1c1: {
+    name: "Panda",
     background: "#000000",
     markup: `<rect width="96" height="96" fill="#000000"/>
 <circle cx="22" cy="26" r="12" fill="#F5F5F5"/><circle cx="22" cy="26" r="5" fill="#111"/>
@@ -111,6 +128,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="48" cy="76" rx="12" ry="9" fill="#111"/>`,
   },
   r1c2: {
+    name: "Bird",
     background: "#605393",
     markup: `<rect width="96" height="96" fill="#605393"/>
 <ellipse cx="24" cy="86" rx="22" ry="18" fill="#EFE3C4"/>
@@ -119,6 +137,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="52" y="62" width="14" height="5.5" rx="2.7" fill="#22242B" transform="rotate(8 59 65)"/>`,
   },
   r1c3: {
+    name: "Mushroom",
     background: "#2B3F56",
     markup: `<rect width="96" height="96" fill="#2B3F56"/>
 <path d="M44 96 L46 72 Q48 60 63 60 Q80 60 82 74 L82 96 Z" fill="#EDE2C6"/>
@@ -128,6 +147,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="62" y="86" width="9" height="4.5" rx="2.2" fill="#20242C"/>`,
   },
   r1c4: {
+    name: "Seal",
     background: "#3E4147",
     markup: `<rect width="96" height="96" fill="#3E4147"/>
 <ellipse cx="18" cy="34" rx="34" ry="38" fill="#FBFBFB"/>
@@ -137,6 +157,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M30 78 Q34 68 48 70 Q70 62 76 74 Q78 84 64 86 Q40 88 30 78 Z" fill="#5A5D63"/>`,
   },
   r1c5: {
+    name: "Cactus in a hat",
     background: "#F0EEE6",
     markup: `<rect width="96" height="96" fill="#F0EEE6"/>
 <path d="M2 58 Q0 44 10 44 Q20 44 20 56 L20 68 Q20 76 28 78 L28 96 L2 96 Z" fill="#1A72D8"/>
@@ -148,6 +169,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M42 57 q6 6 12 0" stroke="#17181B" stroke-width="3.6" fill="none" stroke-linecap="round"/>`,
   },
   r1c6: {
+    name: "Teddy bear",
     background: "#5674D6",
     markup: `<rect width="96" height="96" fill="#5674D6"/>
 <circle cx="32" cy="44" r="13" fill="#F5A302"/><circle cx="32" cy="44" r="6" fill="#6B4A0A"/>
@@ -157,6 +179,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M42 82 Q53 92 64 82 Q58 79 53 79 Q47 79 42 82 Z" fill="#332413"/>`,
   },
   r2c0: {
+    name: "Egg",
     background: "#B1523C",
     markup: `<rect width="96" height="96" fill="#B1523C"/>
 <path d="M96 10 Q40 14 22 52 Q10 78 28 96 L96 96 Z" fill="#D6E2E8"/>
@@ -164,6 +187,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M32 76 q20 14 42 0" stroke="#16262E" stroke-width="6" fill="none" stroke-linecap="round"/>`,
   },
   r2c1: {
+    name: "Sheep",
     background: "#B48730",
     markup: `<rect width="96" height="96" fill="#B48730"/>
 <circle cx="20" cy="44" r="15" fill="#F4E3B2"/><circle cx="50" cy="32" r="17" fill="#F4E3B2"/>
@@ -177,6 +201,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M49 82 v4" stroke="#231C12" stroke-width="3" stroke-linecap="round"/>`,
   },
   r2c2: {
+    name: "Monkey",
     background: "#FAF9D0",
     markup: `<rect width="96" height="96" fill="#FAF9D0"/>
 <ellipse cx="58" cy="66" rx="44" ry="46" fill="#2F3130"/>
@@ -186,6 +211,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M48 70 q5 5 11 0" stroke="#26221E" stroke-width="3.6" fill="none" stroke-linecap="round"/>`,
   },
   r2c3: {
+    name: "Whale",
     background: "#2B5840",
     markup: `<rect width="96" height="96" fill="#2B5840"/>
 <path d="M-8 96 L-8 40 Q0 18 22 18 Q44 18 50 34 Q58 30 62 40 Q74 52 70 70 Q68 88 52 96 Z" fill="#CFCCC4"/>
@@ -193,6 +219,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="52" y="66" width="13" height="5.5" rx="2.7" fill="#242424" transform="rotate(-10 58 69)"/>`,
   },
   r2c4: {
+    name: "Snail",
     background: "#356699",
     markup: `<rect width="96" height="96" fill="#356699"/>
 <circle cx="28" cy="56" r="46" fill="#EFD9AC"/>
@@ -203,6 +230,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="85" cy="36" rx="2.8" ry="3.8" fill="#222"/>`,
   },
   r2c5: {
+    name: "Cloud",
     background: "#204C83",
     markup: `<rect width="96" height="96" fill="#204C83"/>
 <circle cx="38" cy="60" r="22" fill="#F5EBCB"/>
@@ -214,6 +242,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M55 82 q6 5 12 0" stroke="#20242C" stroke-width="4" fill="none" stroke-linecap="round"/>`,
   },
   r2c6: {
+    name: "Frog",
     background: "#8FA68A",
     markup: `<rect width="96" height="96" fill="#8FA68A"/>
 <circle cx="26" cy="40" r="15" fill="#3B423B"/>
@@ -224,6 +253,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M30 72 q22 10 44 -4" stroke="#20241F" stroke-width="4.5" fill="none" stroke-linecap="round"/>`,
   },
   r3c0: {
+    name: "Beetle",
     background: "#F0633C",
     markup: `<rect width="96" height="96" fill="#F0633C"/>
 <path d="M-10 44 Q6 16 34 16 Q44 16 46 24 Q52 18 60 22 Q90 34 100 62 L100 100 L20 100 Q-8 76 -10 44 Z" fill="#25292E"/>
@@ -233,6 +263,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M26 48 q7 1 11 6 M24 58 q7 1 11 6 M36 44 q7 1 11 6" stroke="#25292E" stroke-width="2.6" fill="none" stroke-linecap="round"/>`,
   },
   r3c1: {
+    name: "Polar bear",
     background: "#6E7967",
     markup: `<rect width="96" height="96" fill="#6E7967"/>
 <circle cx="20" cy="34" r="13" fill="#EFE9D4"/>
@@ -243,6 +274,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="45" cy="82" rx="9" ry="7" fill="#33322E"/>`,
   },
   r3c2: {
+    name: "Toast",
     background: "#E6FBA7",
     markup: `<rect width="96" height="96" fill="#E6FBA7"/>
 <path d="M26 96 L26 90 Q18 88 18 80 L18 40 Q18 22 40 22 L74 22 Q92 22 92 42 L92 96 Z" fill="#EE7429"/>
@@ -254,6 +286,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M46 66 Q55 76 64 66 Q59 62 55 62 Q50 62 46 66 Z" fill="#4A2812"/>`,
   },
   r3c3: {
+    name: "Dolphin",
     background: "#63778D",
     markup: `<rect width="96" height="96" fill="#63778D"/>
 <path d="M-8 96 L-8 52 Q-2 20 34 18 Q66 16 76 40 Q92 48 90 62 Q88 74 72 74 Q60 92 34 92 Z" fill="#F2ECDC"/>
@@ -261,6 +294,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="32" cy="50" rx="3.6" ry="4.6" fill="#1D2226"/>`,
   },
   r3c4: {
+    name: "Doll",
     background: "#393F3B",
     markup: `<rect width="96" height="96" fill="#393F3B"/>
 <path d="M20 62 L8 54 Q2 48 8 42 Q14 38 18 46 L26 56 Z" fill="#E96A45"/>
@@ -273,6 +307,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M44 86 q5 4 11 0" stroke="#B4472A" stroke-width="3.2" fill="none" stroke-linecap="round"/>`,
   },
   r3c5: {
+    name: "White cat",
     background: "#050505",
     markup: `<rect width="96" height="96" fill="#050505"/>
 <path d="M14 48 Q10 24 18 20 Q25 17 30 28 Q38 24 48 24 Q58 24 64 28 Q70 17 77 21 Q84 25 80 48 Q84 56 84 64 Q84 88 48 88 Q12 88 12 64 Q12 55 14 48 Z" fill="#FBFBF7"/>
@@ -281,6 +316,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="50" cy="76" rx="4.2" ry="3.4" fill="#111"/>`,
   },
   r3c6: {
+    name: "Little ghost",
     background: "#6D4C6E",
     markup: `<rect width="96" height="96" fill="#6D4C6E"/>
 <path d="M18 96 Q14 34 48 22 Q68 16 78 34 Q90 56 88 96 L74 88 L60 96 L44 88 L30 96 Z" fill="#EFE3CD"/>
@@ -288,6 +324,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <ellipse cx="68" cy="50" rx="7" ry="9" fill="#3C2B3C" transform="rotate(8 68 50)"/>`,
   },
   r4c0: {
+    name: "Jellyfish",
     background: "#363C35",
     markup: `<rect width="96" height="96" fill="#363C35"/>
 <circle cx="48" cy="11" r="6" fill="none" stroke="#7C90D8" stroke-width="4.5"/>
@@ -304,6 +341,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M43 60 q5 4 10 0" stroke="#2C3140" stroke-width="3.2" fill="none" stroke-linecap="round"/>`,
   },
   r4c1: {
+    name: "Octopus",
     background: "#011A6D",
     markup: `<rect width="96" height="96" fill="#011A6D"/>
 <path d="M12 96 Q6 84 14 78 Q8 40 34 26 Q58 14 74 34 Q88 52 84 78 Q92 84 84 92 L74 86 L62 94 L50 86 L38 96 L26 86 Z" fill="#F2E3BC"/>
@@ -312,6 +350,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M46 68 Q46 62 52 62 Q59 62 57 69 Q55 75 50 73 Q46 71 46 68 Z" fill="#F06414"/>`,
   },
   r4c2: {
+    name: "Black cat",
     background: "#000000",
     markup: `<rect width="96" height="96" fill="#000000"/>
 <path d="M28 60 Q30 44 40 42 Q46 40 48 46 Q58 42 68 46 Q72 40 78 42 Q86 46 84 58 Q92 66 90 76 Q88 96 60 96 L34 96 Q26 84 28 60 Z" fill="#FCFCFA"/>
@@ -319,6 +358,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M60 80 l4 3 l4 -3" stroke="#111" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   },
   r4c3: {
+    name: "Gorilla",
     background: "#6F3CED",
     markup: `<rect width="96" height="96" fill="#6F3CED"/>
 <ellipse cx="32" cy="74" rx="46" ry="48" fill="#F7F5F2"/>
@@ -328,6 +368,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <rect x="28" y="74" width="13" height="7" rx="3.5" fill="#F7F5F2"/>`,
   },
   r4c4: {
+    name: "Bunny",
     background: "#764750",
     markup: `<rect width="96" height="96" fill="#764750"/>
 <path d="M22 52 Q8 20 20 12 Q30 6 36 30 L40 50 Z" fill="#F2E8D4"/>
@@ -339,6 +380,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M40 86 v5" stroke="#26221E" stroke-width="3" stroke-linecap="round"/>`,
   },
   r4c5: {
+    name: "Axolotl",
     background: "#5C76D4",
     markup: `<rect width="96" height="96" fill="#5C76D4"/>
 <path d="M20 32 Q4 28 6 40 Q8 50 22 46 Z M18 52 Q2 52 6 62 Q10 70 24 62 Z M24 68 Q12 74 18 82 Q24 88 32 78 Z" fill="#333A45"/>
@@ -349,6 +391,7 @@ export const MASCOT_ART: Record<string, MascotArt> = {
 <path d="M50 60 q6 3 11 -2" stroke="#17181B" stroke-width="3.4" fill="none" stroke-linecap="round"/>`,
   },
   r4c6: {
+    name: "Bear cub",
     background: "#050505",
     markup: `<rect width="96" height="96" fill="#050505"/>
 <ellipse cx="34" cy="72" rx="38" ry="38" fill="#FCFCFA"/>

@@ -15,13 +15,14 @@ import { MASCOT_ART } from "@/components/agents/mascot-art";
  * before the set existed still comes up with a face.
  */
 
-export type MascotTile = { id: string; background: string };
+export type MascotTile = { id: string; name: string; background: string };
 
 /** Sorted, so the picker's order and the hash below do not depend on declaration order. */
 export const MASCOT_TILES: MascotTile[] = Object.keys(MASCOT_ART)
   .sort()
   .map((id) => ({
     id,
+    name: MASCOT_ART[id]?.name ?? id,
     background: MASCOT_ART[id]?.background ?? "#2B2B2B",
   }));
 
