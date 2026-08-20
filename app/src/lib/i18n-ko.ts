@@ -80,6 +80,11 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
+  "Working late?": "늦게까지 고생이 많으세요",
+  "Good morning": "좋은 아침이에요",
+  "Good afternoon": "좋은 오후예요",
+  "Good evening": "좋은 저녁이에요",
+  "What should the team take off your hands?": "팀에게 무엇을 맡기시겠어요?",
   "Click and type on the page as you normally would.":
     "평소처럼 페이지를 클릭하고 입력하세요.",
   "The assistant's screen, updating live": "어시스턴트의 화면 — 실시간 갱신 중",
