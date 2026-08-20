@@ -15,18 +15,39 @@ const ENTRANCE_STAGGER_SECONDS = 0.08;
 const ENTRANCE_OFFSET = "translateY(12px)";
 
 export const Route = createFileRoute("/sign")({
-  beforeLoad: async ({ context }) => {
+  /** `.catch({})` so a malformed `?redirect=` is ignored rather than destroying the route. */
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
+    typeof search.redirect === "string" ? { redirect: search.redirect } : {},
+  beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
     );
     if (user) {
-      throw redirect({ to: "/" });
+      throw redirect({ to: safeRedirect(search.redirect) });
     }
   },
   component: SignScreen,
 });
 
+/**
+ * A path inside this app, or Home.
+ *
+ * Resolved against our own origin and read back as pathname + search, so an absolute URL somebody
+ * appended to the link cannot turn the sign-in screen into an open redirect.
+ */
+function safeRedirect(target: string | undefined): string {
+  if (!target) return "/";
+  try {
+    const url = new URL(target, window.location.origin);
+    if (url.origin !== window.location.origin) return "/";
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return "/";
+  }
+}
+
 function SignScreen() {
+  const { redirect: wanted } = Route.useSearch();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,12 +56,12 @@ function SignScreen() {
     setIsPending(true);
 
     try {
-      await signInWithGoogle();
+      await signInWithGoogle(safeRedirect(wanted));
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Could not start Google sign-in.",
+          : t("Could not start Google sign-in."),
       );
       setIsPending(false);
     }
@@ -113,7 +134,7 @@ function SignScreen() {
               onClick={handleGoogleSignIn}
               size="lg"
             >
-              {isPending ? "Opening Google…" : "Continue with Google"}
+              {isPending ? t("Opening Google…") : t("Continue with Google")}
             </Button>
           ) : (
             <p className="text-center text-sm text-muted-foreground">

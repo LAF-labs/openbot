@@ -16,11 +16,15 @@ import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
 import { t } from "@/lib/i18n";
 
-const chatSearchSchema = z.object({
-  settings: z.boolean().optional(),
-  /** Opens the Bot's screen in the shared detail pane. */
-  watch: z.boolean().optional(),
-});
+const chatSearchSchema = z
+  .object({
+    settings: z.boolean().optional(),
+    /** Opens the Bot's screen in the shared detail pane. */
+    watch: z.boolean().optional(),
+  })
+  /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
+   * validateSearch and taking the whole route down with it. */
+  .catch({});
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 

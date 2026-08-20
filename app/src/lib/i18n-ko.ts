@@ -75,6 +75,7 @@ export const ko: Record<string, string> = {
     "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
   Connector: "커넥터",
   Connectors: "커넥터",
+  "Continue with Google": "Google로 계속하기",
   Conversations: "대화 목록",
   Copied: "복사됨",
   "Copy this reply": "이 답장 복사",
@@ -87,6 +88,7 @@ export const ko: Record<string, string> = {
     "Google Drive 연결을 저장하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
+  "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
   "Create coworker": "봇 만들기",
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
@@ -164,6 +166,7 @@ export const ko: Record<string, string> = {
   "Only the two hosts named. A link that redirects there from somewhere else is allowed.":
     "명시한 두 호스트만 해당합니다. 다른 곳에서 리다이렉트로 도착하는 링크는 허용됩니다.",
   "Open the audit trail": "감사 기록 열기",
+  "Opening Google…": "Google 여는 중…",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
   Private: "비공개",

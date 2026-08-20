@@ -19,10 +19,14 @@ import { t } from "@/lib/i18n";
  * Creating and inspecting a coworker are search-parameter states so the roster remains mounted and
  * Back closes the detail pane.
  */
-const agentsSearchSchema = z.object({
-  new: z.boolean().optional(),
-  agent: z.string().optional(),
-});
+const agentsSearchSchema = z
+  .object({
+    new: z.boolean().optional(),
+    agent: z.string().optional(),
+  })
+  /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
+   * validateSearch and taking the whole route down with it. */
+  .catch({});
 
 export const Route = createFileRoute("/_authed/_app/agents/")({
   validateSearch: agentsSearchSchema,

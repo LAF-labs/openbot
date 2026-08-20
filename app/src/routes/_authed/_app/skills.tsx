@@ -43,11 +43,15 @@ import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * panel and the form is linkable, reloadable, and closed by Back — the same contract the agents
  * roster makes.
  */
-const skillsSearchSchema = z.object({
-  new: z.boolean().optional(),
-  /** The slug being edited. Absent means nothing is. */
-  edit: z.string().optional(),
-});
+const skillsSearchSchema = z
+  .object({
+    new: z.boolean().optional(),
+    /** The slug being edited. Absent means nothing is. */
+    edit: z.string().optional(),
+  })
+  /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
+   * validateSearch and taking the whole route down with it. */
+  .catch({});
 
 export const Route = createFileRoute("/_authed/_app/skills")({
   validateSearch: skillsSearchSchema,
