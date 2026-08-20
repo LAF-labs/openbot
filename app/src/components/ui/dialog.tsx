@@ -123,7 +123,11 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-heading font-medium text-base text-foreground", className)}
+      // 19px/600 — the scale's dialog title. See the @theme block in styles.css.
+      className={cn(
+        "font-heading font-semibold text-xl text-foreground",
+        className,
+      )}
       {...props}
     />
   );

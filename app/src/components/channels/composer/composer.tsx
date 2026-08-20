@@ -28,10 +28,14 @@ import { type AgentOption, buildTriggers } from "./triggers";
 
 const MAX_HEIGHT_PX = 220;
 /**
- * Tracks the compact `text-sm` line box so PromptArea stays vertically centered in one row.
+ * Tracks the compact line box so PromptArea stays vertically centered in one row.
+ *
+ * The composer types at the chat measure (--chat-font-size, 16px/1.65), so one line is 26px, not
+ * the 19px the old `text-sm` box gave. A min-height under the real line box lets the first line sit
+ * high in the row instead of centred in it.
  */
-const COMPACT_MIN_HEIGHT_PX = 19;
-const COMPACT_MAX_HEIGHT_PX = 96;
+const COMPACT_MIN_HEIGHT_PX = 26;
+const COMPACT_MAX_HEIGHT_PX = 104;
 
 export type ComposerProps = {
   className?: string;
@@ -269,7 +273,7 @@ export function Composer({
         </Button>
         <PromptArea
           aria-label={t("Message")}
-          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm shadow-none"
+          className="chat-prose min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none"
           disabled={disabled}
           maxHeight={COMPACT_MAX_HEIGHT_PX}
           minHeight={COMPACT_MIN_HEIGHT_PX}
@@ -319,7 +323,7 @@ export function Composer({
           <PromptArea
             aria-label={t("Message")}
             autoGrow
-            className="w-full border-0 bg-transparent p-0 text-sm shadow-none"
+            className="chat-prose w-full border-0 bg-transparent p-0 shadow-none"
             disabled={disabled}
             maxHeight={MAX_HEIGHT_PX}
             onChange={handleChange}

@@ -148,7 +148,7 @@ function Queued({
   return (
     <MessageRow align="end">
       <MessageContent>
-        <Bubble align="end" className="opacity-60" variant="muted">
+        <Bubble align="end" className="chat-prose opacity-60" variant="muted">
           <BubbleContent>
             {/* Shown exactly as typed, for the same reason a sent message is. */}
             <span className="whitespace-pre-wrap">{text}</span>
@@ -371,7 +371,12 @@ const TranscriptMessage = memo(function TranscriptMessage({
     <MessageRow align={align}>
       <MessageContent>
         <Arriving delay={delay}>
-          <Bubble align={align} variant={isUser ? "muted" : "ghost"}>
+          {/* The chat measure: what a Bot says and what a person typed read at one size. */}
+          <Bubble
+            align={align}
+            className="chat-prose"
+            variant={isUser ? "muted" : "ghost"}
+          >
             <BubbleContent>
               {isUser ? (
                 // A person's own message is shown exactly as they typed it. Rendering it as markdown

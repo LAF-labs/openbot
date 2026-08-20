@@ -59,7 +59,7 @@ export function PageShell({
     >
       <header className="flex flex-col gap-2">
         <div className="flex flex-row items-center justify-between gap-4">
-          <h1 className="font-bold text-2xl">{title}</h1>
+          <h1 className="font-semibold text-2xl">{title}</h1>
           {action}
         </div>
         {description ? (
@@ -97,7 +97,8 @@ export function PageSection({
     <section className={cn("mt-12", className)}>
       {title ? (
         <div className="flex min-h-8 flex-row items-center justify-between gap-4">
-          <h2 className="font-bold text-lg">{title}</h2>
+          {/* 15px/600 — the scale's section title. See the @theme block in styles.css. */}
+          <h2 className="font-semibold text-lg">{title}</h2>
           {action}
         </div>
       ) : null}
