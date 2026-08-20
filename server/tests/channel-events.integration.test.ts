@@ -24,6 +24,7 @@ function event(overrides: Partial<ChannelActivityEvent> = {}) {
   return {
     channelId: "channel_1",
     memberIds: ["user-1"],
+    name: "Expense questions",
     lastMessage: "Said something.",
     lastMessageAt: "2026-08-15T10:00:00.000Z",
     lastMessageAgentId: null,

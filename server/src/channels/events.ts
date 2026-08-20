@@ -19,6 +19,12 @@ export type ChannelActivityEvent = {
   channelId: string;
   /** Who may receive it. Resolved by the writer, which already had to check membership. */
   memberIds: string[];
+  /**
+   * The channel's name as of this activity. Usually unchanged, but the first thing a person says
+   * in a channel becomes its title, and the roster hears about that the same way it hears about
+   * the message itself.
+   */
+  name: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
   lastMessageAgentId: string | null;

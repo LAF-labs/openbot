@@ -11,6 +11,8 @@ import { type ChannelSummary, channelKeys } from "./queries";
 
 type ChannelActivityEvent = {
   channelId: string;
+  /** The channel's current name — a first message retitles the channel it lands in. */
+  name: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
   lastMessageAgentId: string | null;
@@ -50,6 +52,19 @@ export function useChannelEvents() {
           activity = JSON.parse(message.data as string);
         } catch {
           return;
+        }
+
+        // The list cache is patched below, but the open channel's header reads the detail query;
+        // a retitle has to reach it too, and invalidation is cheaper than mirroring the patch.
+        const before = queryClient
+          .getQueryData<
+            ChannelSummary[]
+          >(channelKeys.list())
+          ?.find((channel) => channel.id === activity.channelId);
+        if (before && activity.name && before.name !== activity.name) {
+          void queryClient.invalidateQueries({
+            queryKey: channelKeys.detail(activity.channelId),
+          });
         }
 
         queryClient.setQueryData(

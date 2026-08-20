@@ -85,6 +85,26 @@ function channelName(names: string[]) {
   return `${codePoints.slice(0, MAX_CHANNEL_NAME_CODE_POINTS - 1).join("")}…`;
 }
 
+/**
+ * A channel title has to read like a title: long enough to carry the topic, short enough that the
+ * sidebar row and the header do not owe it a second line.
+ */
+const MAX_TITLE_CODE_POINTS = 60;
+
+/**
+ * The first thing a person says, reduced to a title.
+ *
+ * Returns null when nothing legible survives — a message that is all whitespace or control
+ * characters names nothing, and the channel keeps whatever it was called.
+ */
+function channelTitle(text: string) {
+  const flattened = previewOf(text);
+  if (!flattened) return null;
+  const codePoints = Array.from(flattened);
+  if (codePoints.length <= MAX_TITLE_CODE_POINTS) return flattened;
+  return `${codePoints.slice(0, MAX_TITLE_CODE_POINTS - 1).join("")}…`;
+}
+
 export function createChannelStore(
   database: Database,
   profileStore: AgentProfileStore,
@@ -290,6 +310,27 @@ export function createChannelStore(
             if (!linked) throw new AgentNotFoundError(activity.agentId);
           }
 
+          // THE FACE SAYS WHO; THE TITLE SHOULD SAY WHAT. A channel is born carrying its agent's
+          // name, and a roster of five conversations with the same agent is five identical rows.
+          // The first thing the person says becomes the title — once, guarded by "nothing has been
+          // said yet" rather than a schema flag, because lastMessageAt IS NULL is exactly that fact.
+          // An agent that somehow speaks first keeps the agent-name title, which is the right
+          // fallback anyway.
+          if (activity.agentId === null) {
+            const title = channelTitle(activity.text);
+            if (title) {
+              await transaction
+                .update(channels)
+                .set({ name: title })
+                .where(
+                  and(
+                    eq(channels.id, channelId),
+                    isNull(channels.lastMessageAt),
+                  ),
+                );
+            }
+          }
+
           // A person's message and the agent's reply are reported separately, so they can arrive out
           // of order. Only ever move forwards.
           const lastMessage = previewOf(activity.text);
@@ -310,9 +351,10 @@ export function createChannelStore(
                 ),
               ),
             )
-            .returning({ id: channels.id });
+            .returning({ id: channels.id, name: channels.name });
           // Nothing changed, so there is nothing to announce: a stale report is not news.
-          if (applied.length === 0) return;
+          const [appliedRow] = applied;
+          if (!appliedRow) return;
 
           const members = await transaction
             .select({ userId: channelMemberships.userId })
@@ -325,6 +367,9 @@ export function createChannelStore(
           const event: ChannelActivityEvent = {
             channelId,
             memberIds: members.map((member) => member.userId),
+            // The post-rename name, so a first message retitles every member's roster in the same
+            // event that carries it.
+            name: appliedRow.name,
             lastMessage,
             lastMessageAt: activity.at.toISOString(),
             lastMessageAgentId: activity.agentId,

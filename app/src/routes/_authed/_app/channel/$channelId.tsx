@@ -114,8 +114,13 @@ function RouteComponent() {
       detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
       detail={
         agentId === undefined ? null : isWatching ? (
-          // Manual watch remains active even when there is no current browser action.
-          <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
+          // Manual watch remains active even when there is no current browser action. Named after
+          // the coworker, not the channel: once the first message titles the channel, "«that whole
+          // sentence»'s screen" is nobody's screen.
+          <ComputerViewPanel
+            agentId={agentId}
+            name={headerAgent?.name ?? channel?.data?.name}
+          />
         ) : (
           <AgentProfile agentId={agentId} />
         )
@@ -162,10 +167,15 @@ function RouteComponent() {
                 <span className="truncate text-[13px] tracking-tight">
                   {channel.data?.name ?? t("Channel")}
                 </span>
-                {/* The standing role, so the header says who this is, not only what it is called. */}
-                {headerAgent?.title ? (
+                {/*
+                 * Who this is. The top line carries the topic once the channel is titled by its
+                 * first message, so the coworker's name moves down here beside the standing role.
+                 */}
+                {headerAgent ? (
                   <span className="truncate text-[11px] text-muted-foreground">
-                    {headerAgent.title}
+                    {headerAgent.title
+                      ? `${headerAgent.name} · ${headerAgent.title}`
+                      : headerAgent.name}
                   </span>
                 ) : null}
               </span>

@@ -119,6 +119,94 @@ describe("channel activity", () => {
     ]);
   });
 
+  test("the first thing a person says becomes the channel's title", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(),
+      text: "Sort last month's receipts by project",
+    });
+
+    expect((await store.list(owner))[0]?.name).toBe(
+      "Sort last month's receipts by project",
+    );
+  });
+
+  test("a channel is titled once; later messages do not retitle it", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+    const first = new Date();
+
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: first,
+      text: "The topic",
+    });
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(first.getTime() + 1_000),
+      text: "A follow-up question",
+    });
+
+    expect((await store.list(owner))[0]?.name).toBe("The topic");
+  });
+
+  test("an agent speaking first leaves the agent-name title in place", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+    const first = new Date();
+
+    await store.recordActivity(owner, channel.id, {
+      agentId,
+      at: first,
+      text: "Here is the report you asked for.",
+    });
+    // No longer the first thing said, so it does not name the channel.
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(first.getTime() + 1_000),
+      text: "Thanks!",
+    });
+
+    expect((await store.list(owner))[0]?.name).toBe("Expense Manager");
+  });
+
+  test("a first message with nothing legible in it names nothing", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(),
+      // Control characters and whitespace only: nothing survives previewOf.
+      text: " \u001b\u0007 \n ",
+    });
+
+    expect((await store.list(owner))[0]?.name).toBe("Expense Manager");
+  });
+
+  test("a long first message is cut to a title, not a paragraph", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(),
+      text: "x".repeat(400),
+    });
+
+    const name = (await store.list(owner))[0]?.name ?? "";
+    expect(Array.from(name).length).toBeLessThanOrEqual(60);
+    expect(name.endsWith("…")).toBe(true);
+  });
+
   test("keeps a person's roster to the channels they belong to", async () => {
     const owner = await createUser();
     const otherUser = await createUser();
