@@ -1,10 +1,11 @@
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
-import { IconBox } from "@tabler/icons-react";
+import { IconBox, IconCheck, IconCopy } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageFooter,
@@ -416,11 +417,65 @@ const TranscriptMessage = memo(function TranscriptMessage({
               )}
             </BubbleContent>
           </Bubble>
+          {/*
+           * COPYING A REPLY WAS SELECT-AND-DRAG, OR NOTHING.
+           *
+           * A Bot's answer is the artefact — a summary, a list, an address it looked up — and the
+           * only way to take it anywhere was to select it by hand across a markdown block. On the
+           * assistant's side only: a person already has what they typed.
+           *
+           * Revealed on hover and on focus, so it is reachable by keyboard and does not sit over
+           * the transcript the rest of the time.
+           */}
+          {isUser ? null : <CopyReply text={text} />}
         </Arriving>
       </MessageContent>
     </MessageRow>
   );
 });
+
+/** The one control on a reply. Silent when the clipboard is unavailable, which is not an error. */
+function CopyReply({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const handleCopy = async () => {
+    try {
+      // Undefined on an insecure origin, and rejects if the document is not focused.
+      await navigator.clipboard?.writeText(text);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <Button
+      aria-label={copied ? t("Copied") : t("Copy this reply")}
+      className="mt-1 h-7 w-7 self-start p-0 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100"
+      onClick={handleCopy}
+      size="icon"
+      title={copied ? t("Copied") : t("Copy this reply")}
+      type="button"
+      variant="ghost"
+    >
+      {copied ? (
+        <IconCheck className="size-3.5" />
+      ) : (
+        <IconCopy className="size-3.5" />
+      )}
+    </Button>
+  );
+}
 
 /**
  * One drawn tool call, memoised on the same terms.
@@ -521,6 +576,34 @@ export function ChatTranscript({
     busy && lastItem?.kind === "text" && lastItem.role === "user";
 
   /*
+   * A REPLY THAT ARRIVED WAS NEVER ANNOUNCED.
+   *
+   * `aria-busy` said a turn had started and nothing said it had ended, so somebody using a screen
+   * reader pressed send and then had to go looking for an answer that may or may not have arrived.
+   *
+   * The live region holds the finished reply, set on the busy true→false edge only. It cannot go on
+   * the message list itself: that streams, and every chunk would re-announce the whole answer.
+   * `hasStreamed` keeps a restored history from being read out on mount.
+   */
+  const [announcement, setAnnouncement] = useState("");
+  const hasStreamed = useRef(false);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (busy) {
+      hasStreamed.current = true;
+      wasBusy.current = true;
+      setAnnouncement("");
+      return;
+    }
+    if (!wasBusy.current || !hasStreamed.current) return;
+    wasBusy.current = false;
+    const last = items.at(-1);
+    if (last?.kind === "text" && last.role === "assistant") {
+      setAnnouncement(t("Reply: {text}", { text: last.text.slice(0, 240) }));
+    }
+  }, [busy, items]);
+
+  /*
    * One decider per mounted transcript, so opening a different channel starts the cascade over and
    * a message never inherits a delay from a conversation it was not in.
    */
@@ -552,6 +635,10 @@ export function ChatTranscript({
             aria-busy={busy}
             className="mx-auto w-full max-w-2xl px-4 py-6"
           >
+            {/* The finished reply, once, for a reader who cannot see it arrive. */}
+            <div aria-atomic="true" aria-live="polite" className="sr-only">
+              {announcement}
+            </div>
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
              * reads the scroller's context, so it re-renders whenever the scroll state moves and

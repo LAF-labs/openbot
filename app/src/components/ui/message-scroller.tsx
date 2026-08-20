@@ -35,13 +35,22 @@ function MessageScroller({
 
 function MessageScrollerViewport({
   className,
+  "aria-label": ariaLabel,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Viewport>) {
   return (
     <MessageScrollerPrimitive.Viewport
       data-slot="message-scroller-viewport"
+      // A scrollable region is a tab stop and a landmark, so it needs a name in the reader's
+      // language. The vendored primitive supplies none.
+      aria-label={ariaLabel ?? t("Messages")}
       className={cn(
-        "size-full min-h-0 min-w-0 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content data-autoscrolling:scrollbar-thumb-transparent data-autoscrolling:scrollbar-track-transparent",
+        /*
+         * NO `data-autoscrolling` SCROLLBAR HIDING. That flag is set for the whole time a reply is
+         * streaming, so the thumb — the only thing telling a person how much answer there is and
+         * where in it they are — was invisible for exactly as long as the answer took to arrive.
+         */
+        "size-full min-h-0 min-w-0 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content",
         className
       )}
       {...props}
