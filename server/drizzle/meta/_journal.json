@@ -29,6 +29,13 @@
       "when": 1787193993534,
       "tag": "0003_giant_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787195567565,
+      "tag": "0004_loud_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

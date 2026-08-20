@@ -12,6 +12,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AppVariables, requireAdmin } from "../auth/guards";
+import type { DigestService } from "./digest-service";
 import type { NewWatchSource, WatchService } from "./poller";
 
 const MAX_NAME = 200;
@@ -56,6 +57,7 @@ function parseNewSource(body: unknown): NewWatchSource | string {
 export function createWatchRoutes(
   service: WatchService,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  digest?: DigestService,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use(requireUser);
@@ -98,6 +100,23 @@ export function createWatchRoutes(
     }
     return context.json(outcome);
   });
+
+  if (digest) {
+    routes.post("/digest/preview", async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      return context.json(await digest.preview());
+    });
+    routes.post("/digest/send", async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      return context.json(await digest.sendNow());
+    });
+  }
 
   return routes;
 }

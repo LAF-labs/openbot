@@ -47,6 +47,7 @@ import {
   loadTenantPackage,
   synchronizeTenantPackage,
 } from "./tenant-package";
+import { createDigestService } from "./watch/digest-service";
 import { createWatchService } from "./watch/poller";
 
 /**
@@ -115,6 +116,14 @@ const database = createDatabase(config.databaseUrl);
 const lafRunner = await LafPostgresRunner.create(database);
 // The laf.watch poller: pure code on a clock, a model only on change (see watch/poller.ts).
 const watchService = createWatchService(database, { port });
+// The morning card. Hour and timezone are wall-clock, read at every check.
+const digestService = createDigestService(database, {
+  hour: Number.parseInt(process.env.LAF_DIGEST_HOUR ?? "8", 10),
+  timezone: process.env.LAF_DIGEST_TZ ?? "Asia/Seoul",
+  ...(process.env.LAF_DIGEST_WEBHOOK_URL
+    ? { webhookUrl: process.env.LAF_DIGEST_WEBHOOK_URL }
+    : {}),
+});
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -399,6 +408,7 @@ const app = createApp(
   approvals,
   // The laf.watch poller; the surface mounts only when it exists.
   watchService,
+  digestService,
 );
 
 /**
@@ -551,3 +561,4 @@ const watchTickMs = Number.parseInt(
   10,
 );
 watchService.start(watchTickMs);
+digestService.start(watchTickMs);

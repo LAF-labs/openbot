@@ -31,6 +31,7 @@ import type { CredentialAdminService, CredentialInput } from "./credentials";
 import { createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import type { PackageStatusReader } from "./tenant-package";
+import type { DigestService } from "./watch/digest-service";
 import type { WatchService } from "./watch/poller";
 import { createWatchRoutes } from "./watch/routes";
 
@@ -110,6 +111,8 @@ export function createApp(
   approvals?: ApprovalRegistry,
   /** The laf.watch poller; absent leaves the surface unmounted. */
   watchService?: WatchService,
+  /** The morning card; optional so the watch surface works without it. */
+  digestService?: DigestService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -378,7 +381,10 @@ export function createApp(
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));
 
     if (watchService) {
-      app.route("/api/watch", createWatchRoutes(watchService, requireUser));
+      app.route(
+        "/api/watch",
+        createWatchRoutes(watchService, requireUser, digestService),
+      );
     }
   }
 

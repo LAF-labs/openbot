@@ -101,3 +101,22 @@ export const lafWatchEvents = pgTable("laf_watch_events", {
   /** Set when a wake run carried this event to a bot. */
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
 });
+
+/**
+ * One row per digest actually composed — the "we were watching" receipt.
+ *
+ * `forDate` is the day in the deployment's reporting timezone, and the pair
+ * (forDate, ok) is what the scheduler checks so a restart at 09:00 does not
+ * send a second morning card. The body is kept because a digest is a claim
+ * about what happened overnight; a claim you cannot re-read is not evidence.
+ */
+export const lafDigestLog = pgTable("laf_digest_log", {
+  id: text("id").primaryKey(),
+  forDate: text("for_date").notNull(),
+  channel: text("channel").notNull(),
+  ok: boolean("ok").notNull(),
+  error: text("error"),
+  headline: text("headline").notNull(),
+  body: text("body").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+});
