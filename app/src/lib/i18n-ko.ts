@@ -107,6 +107,7 @@ export const ko: Record<string, string> = {
   Delete: "삭제",
   "Delete it": "삭제",
   "Delete {command}": "{command} 삭제",
+  "Delete {name}": "'{name}' 삭제",
   "Delete {name}?": "'{name}'을(를) 삭제할까요?",
   "Delete {name}? This cannot be undone.":
     "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
@@ -203,6 +204,8 @@ export const ko: Record<string, string> = {
   "Routine name": "루틴 이름",
   "Rules that decide what a Bot may never do.":
     "봇이 절대 하면 안 되는 일을 정하는 규칙.",
+  "Run {name} now": "'{name}' 지금 실행",
+  "Running {name}…": "'{name}' 실행 중…",
   "Running…": "실행 중…",
   "Save changes": "변경 저장",
   "Save skill": "스킬 저장",
@@ -542,5 +545,6 @@ export const ko: Record<string, string> = {
   "{action}, blocked": "{action} — 차단됨",
   "{action}, didn't work": "{action} — 실패",
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
+  "{name} is on": "'{name}' 켜짐",
   "{name}'s screen": "{name}의 화면",
 };

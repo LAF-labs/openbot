@@ -67,7 +67,11 @@ async function routineRequest(path: string, init?: RequestInit) {
     unknown
   > | null;
   if (!response.ok) {
-    throw new Error(String(body?.error ?? response.statusText));
+    // The server's sentence when there is one. `statusText` is "Internal Server Error", which
+    // tells a person nothing they can act on.
+    throw new Error(
+      String(body?.error ?? t("That did not go through. Try again.")),
+    );
   }
   return body;
 }
@@ -205,16 +209,18 @@ function RoutineRow({ routine }: { routine: Routine }) {
           />
         </span>
         <button
-          type="button"
+          aria-expanded={showRuns}
           className="min-w-0 flex-1 text-left"
           onClick={() => setShowRuns((open) => !open)}
+          type="button"
         >
           <div className="flex items-baseline gap-2">
             <span className="truncate font-medium text-[13px]">
               {routine.name}
             </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {bot?.name ?? routine.agentId} · {scheduleLabel(routine)}
+            <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+              {bot?.name ? `${bot.name} · ` : ""}
+              {scheduleLabel(routine)}
             </span>
           </div>
           <p className="truncate text-[12px] text-muted-foreground">
@@ -231,20 +237,25 @@ function RoutineRow({ routine }: { routine: Routine }) {
             setShowRuns(true);
             runNow.mutate();
           }}
-          aria-label={runNow.isPending ? t("Running…") : t("Run now")}
+          // Named for its routine: N routines gave N identical triplets of actions.
+          aria-label={
+            runNow.isPending
+              ? t("Running {name}…", { name: routine.name })
+              : t("Run {name} now", { name: routine.name })
+          }
         >
           <IconClockPlay className="size-4" />
         </Button>
         <Switch
+          aria-label={t("{name} is on", { name: routine.name })}
           checked={routine.enabled}
           onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
-          aria-label={t("Enabled")}
         />
         <Button
           size="sm"
           variant="ghost"
           onClick={() => setConfirmingDelete(true)}
-          aria-label={t("Delete")}
+          aria-label={t("Delete {name}", { name: routine.name })}
         >
           <IconTrash className="size-4 text-muted-foreground" />
         </Button>
