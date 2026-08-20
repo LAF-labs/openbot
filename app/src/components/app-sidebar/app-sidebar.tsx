@@ -134,21 +134,38 @@ function matchingChannels(
 function ChannelRow({
   channel,
   animateOrder,
+  animateRows,
 }: {
   channel: ChannelSummary;
   animateOrder: boolean;
+  /**
+   * Whether a row appearing or disappearing is worth animating.
+   *
+   * FALSE WHILE SEARCHING, AND THE FLAG ABOVE WAS NOT ENOUGH. `animateOrder` only ever governed
+   * `layout`, so filtering still ran the full fade-and-drop entrance on every keystroke: the list
+   * thrashed under somebody who was still typing, and the moving target was the very thing they
+   * were trying to read.
+   */
+  animateRows: boolean;
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const still = !animateRows || shouldReduceMotion;
   return (
     <motion.div
       animate={{ opacity: 1, transform: "translateY(0px)" }}
-      initial={{
-        opacity: 0,
-        transform: shouldReduceMotion ? "none" : "translateY(-8px)",
-      }}
-      exit={{ opacity: 0 }}
+      initial={
+        animateRows
+          ? {
+              opacity: 0,
+              transform: shouldReduceMotion ? "none" : "translateY(-8px)",
+            }
+          : false
+      }
+      exit={still ? { opacity: 1 } : { opacity: 0 }}
       layout={animateOrder && !shouldReduceMotion ? "position" : false}
-      transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
+      transition={
+        still ? { duration: 0 } : { duration: ENTRANCE_SECONDS, ease: EASE_OUT }
+      }
     >
       <Channel
         channelId={channel.id}
@@ -332,6 +349,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <ChannelRow
                   key={channel.id}
                   animateOrder={animateOrder}
+                  animateRows={!searching}
                   channel={channel}
                 />
               ))}

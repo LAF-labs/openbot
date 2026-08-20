@@ -276,12 +276,43 @@ body {
   }
 }
 
-/* Preserve running-state text without shimmer for reduced-motion users. */
+/*
+ * REDUCED MOTION, ACROSS THE WHOLE SHEET AND NOT JUST THE SIX PLACES THAT REMEMBERED.
+ *
+ * Every motion/react site in the app asks `useReducedMotion` and behaves. Nothing in CSS did: the
+ * dialog and dropdown enter/exit animations, the skeleton pulse, the tool-line shimmer and every
+ * `transition-*` utility ran at full strength for somebody who had asked the operating system for
+ * less movement — which for a vestibular disorder is not a preference.
+ *
+ * Transitions are collapsed rather than removed: at 1ms a hover still lands instantly and nothing
+ * depends on a transitionend that never fires.
+ */
 @media (prefers-reduced-motion: reduce) {
   .tool-line-running {
     animation: none;
     background-image: none;
     color: inherit;
+  }
+
+  /*
+   * These three sit outside every `@layer`, which is what lets them win: an unlayered rule outranks
+   * a layered one whatever the specificity, and Tailwind's utilities are all layered. No
+   * `!important` is needed, and none is used — see the Preflight note further up this file for the
+   * mechanism, which bit this project once already.
+   */
+  .animate-in,
+  .animate-out,
+  .fade-in-0,
+  .fade-out-0,
+  .zoom-in-95,
+  .zoom-out-95 {
+    animation: none;
+  }
+
+  /* Kept visible, just still: a skeleton that neither pulses nor shows is a hole in the page. */
+  .animate-pulse {
+    animation: none;
+    opacity: 0.65;
   }
 }
 

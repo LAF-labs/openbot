@@ -25,11 +25,18 @@ function Tag({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The shape of the profile, not a generic one.
+ *
+ * It still drew the round 80px avatar this panel stopped using when the mascot banner landed, so
+ * the placeholder and the thing it stood in for disagreed about the whole top of the screen: a
+ * circle became a full-width band, and everything under it moved.
+ */
 function ProfileSkeleton() {
   return (
-    <div className="flex w-full flex-col gap-6 p-8">
+    <div className="flex w-full flex-col gap-6 p-8 pt-6">
       <header className="flex flex-col items-center gap-3">
-        <Skeleton className="size-20 shrink-0 rounded-full" />
+        <Skeleton className="h-[132px] w-full rounded-2xl" />
         <div className="flex w-full flex-col items-center gap-1.5">
           <Skeleton className="h-7 w-44" />
           <Skeleton className="h-4 w-28" />

@@ -19,10 +19,18 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
  * for the page this appears on, so the seed comes from there; before it arrives, or for an id that is
  * not a Bot, the id hashes as it always did and the face settles a moment later.
  */
-function useSeeds(): (agentId: string) => string {
+function useSeeds(): (agentId: string) => string | undefined {
   const agents = useQuery(agentListQueryOptions());
-  return (agentId) =>
-    agents.data?.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId;
+  return (agentId) => {
+    /*
+     * UNDEFINED WHILE THE ROSTER IS IN FLIGHT, NOT A GUESS. Falling back to hashing the id gave a
+     * real, wrong face — every avatar in the app drew somebody else's character for a moment and
+     * then swapped. A Bot's face is how people recognise it here; showing the wrong one, however
+     * briefly, is worse than showing none.
+     */
+    if (!agents.data) return undefined;
+    return agents.data.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId;
+  };
 }
 
 /**
@@ -48,13 +56,19 @@ export const ChannelAvatar = memo(function ChannelAvatar({
   const channelSize = participantIds?.length;
 
   if (channelSize === 1) {
+    const seed = seedOf(participantIds[0] ?? "");
     return (
-      <div className="" style={{ height: size, width: size }}>
-        <Mascot
-          className="size-full rounded-full object-cover"
-          seed={seedOf(participantIds[0] ?? "")}
-          size={size}
-        />
+      <div style={{ height: size, width: size }}>
+        {seed === undefined ? (
+          // A neutral disc holds the space until the roster says whose face belongs here.
+          <div className="size-full rounded-full bg-muted" />
+        ) : (
+          <Mascot
+            className="size-full rounded-full object-cover"
+            seed={seed}
+            size={size}
+          />
+        )}
       </div>
     );
   }
@@ -67,21 +81,27 @@ export const ChannelAvatar = memo(function ChannelAvatar({
       style={{ height: size, width: size }}
     >
       {firstThree.map((c, i) => {
+        const seed = seedOf(c);
+        const tile = size / (firstThree.length / 2);
         return (
           <div
             key={c}
             className="shrink-0 border-2 border-sidebar rounded-full flex items-center justify-center"
             style={{
-              height: size / (firstThree.length / 2),
-              width: size / (firstThree.length / 2),
+              height: tile,
+              width: tile,
               transform: `translateX(${i * -75}%)`,
             }}
           >
-            <Mascot
-              className="size-full rounded-full object-cover"
-              seed={seedOf(c)}
-              size={size / (firstThree.length / 2)}
-            />
+            {seed === undefined ? (
+              <div className="size-full rounded-full bg-muted" />
+            ) : (
+              <Mascot
+                className="size-full rounded-full object-cover"
+                seed={seed}
+                size={tile}
+              />
+            )}
           </div>
         );
       })}

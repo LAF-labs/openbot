@@ -1,5 +1,5 @@
 import { IconX } from "@tabler/icons-react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -77,27 +77,36 @@ export function DetailPanel({
             </div>
           </div>
           {/*
-           * Unmount while closed so dismissed form state and detail queries do not remain active.
+           * Unmount while closed so dismissed form state and detail queries do not remain active —
+           * but not on the first frame of closing. The content used to vanish the instant `open`
+           * went false while the pane spent 300ms collapsing behind it, so a close read as the
+           * panel emptying and then folding an empty strip. AnimatePresence holds it for a fade
+           * that finishes well inside that collapse, and the unmount still happens.
            */}
-          {open ? (
-            <motion.div
-              animate={{ opacity: 1, transform: "translateY(0px)" }}
-              className="flex-1 min-h-0 overflow-y-auto"
-              initial={{
-                opacity: 0,
-                transform: shouldReduceMotion
-                  ? "none"
-                  : CONTENT_ENTRANCE_OFFSET,
-              }}
-              transition={{
-                delay: shouldReduceMotion ? 0 : CONTENT_ENTRANCE_DELAY_SECONDS,
-                duration: CONTENT_ENTRANCE_SECONDS,
-                ease: EASE_OUT,
-              }}
-            >
-              {detail}
-            </motion.div>
-          ) : null}
+          <AnimatePresence>
+            {open ? (
+              <motion.div
+                animate={{ opacity: 1, transform: "translateY(0px)" }}
+                className="flex-1 min-h-0 overflow-y-auto"
+                exit={{ opacity: 0 }}
+                initial={{
+                  opacity: 0,
+                  transform: shouldReduceMotion
+                    ? "none"
+                    : CONTENT_ENTRANCE_OFFSET,
+                }}
+                transition={{
+                  delay: shouldReduceMotion
+                    ? 0
+                    : CONTENT_ENTRANCE_DELAY_SECONDS,
+                  duration: CONTENT_ENTRANCE_SECONDS,
+                  ease: EASE_OUT,
+                }}
+              >
+                {detail}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </motion.div>
     </div>
