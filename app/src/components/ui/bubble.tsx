@@ -72,7 +72,14 @@ function BubbleContent({
     props: mergeProps<"div">(
       {
         className: cn(
-          "w-fit max-w-full min-w-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 text-sm leading-relaxed wrap-break-word group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50",
+          /*
+           * NO SIZE OR LEADING HERE. The transcript puts `.chat-prose` (16px/1.65) on the Bubble,
+           * and a `text-sm` on this child beat it — so a Bot's reply rendered at 13px, a step DOWN
+           * from the 14px UI root and three pixels smaller than the box it was typed into, while
+           * the element around it correctly reported 16. Bubble has exactly one consumer, so the
+           * measure belongs to that consumer.
+           */
+          "w-fit max-w-full min-w-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 wrap-break-word group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50",
           className
         ),
       },

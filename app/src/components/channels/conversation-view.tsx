@@ -228,7 +228,9 @@ export function ConversationView({
           {...(stopped ? { stopped } : {})}
         />
       </div>
-      <div className="max-w-2xl mx-auto w-full px-0 pb-4 shrink-0">
+      {/* `px-4`, matching the transcript column above: below 672px the composer's border ran into
+          the pane edge while every message above it kept a 16px inset. */}
+      <div className="max-w-2xl mx-auto w-full px-4 pb-4 shrink-0">
         {notice}
         <Composer
           agents={agents}

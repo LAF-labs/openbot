@@ -111,7 +111,7 @@ export function AdminSidebar({
               size="lg"
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
-                  <IconArrowLeft className="mr-2 h-4 w-4" />
+                  <IconArrowLeft />
                   {t("Back to app")}
                 </Link>
               )}
@@ -128,6 +128,9 @@ export function AdminSidebar({
                * would otherwise light up on all of them.
                */}
               <SidebarMenuButton
+                // One rhythm with the app sidebar: h-10 rows, and an active state that does not
+                // dip back to the hover fill when the row you are on is hovered.
+                className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                 render={(props) => (
                   <Link
                     {...adminLinkOptions}
@@ -149,13 +152,15 @@ export function AdminSidebar({
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
+                    // One rhythm with the app sidebar: h-10 rows, and an active state that does not
+                    // dip back to the hover fill when the row you are on is hovered.
+                    className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
                       <Link
                         {...item.linkOptions}
-                        activeProps={{ className: "bg-foreground/5" }}
                         {...props}
                       >
-                        <item.icon className="mr-2 h-4 w-4" />
+                        <item.icon />
                         {item.title}
                       </Link>
                     )}

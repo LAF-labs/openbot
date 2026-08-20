@@ -34,7 +34,7 @@ export function SettingsSidebar({
               size="lg"
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
-                  <IconArrowLeft className="mr-2 h-4 w-4" />
+                  <IconArrowLeft />
                   {t("Back to app")}
                 </Link>
               )}
@@ -51,7 +51,7 @@ export function SettingsSidebar({
                   {/* The same active grammar as the app sidebar: the stacked active+hover variant
                       outranks plain hover, so the row you are on never dips to the hover fill. */}
                   <SidebarMenuButton
-                    className="hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                    className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
                       <Link {...option.linkOptions} {...props}>
                         {option.title}

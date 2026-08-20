@@ -382,8 +382,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 className={footerRowClassName}
                 render={(props) => <Link {...props} to={to} />}
               >
-                {/* size-8 matches the roster avatar column, so labels share one left edge. */}
-                <div className="size-8 flex items-center justify-center text-muted-foreground group-data-[status=active]/menu-button:text-foreground">
+                {/* 32px wide, matching the roster's avatar column, so labels share one left edge.
+                    Width only: the row is h-10 and a square would fight it. */}
+                <div className="flex w-[32px] items-center justify-center text-muted-foreground group-data-[status=active]/menu-button:text-foreground">
                   <Icon />
                 </div>
                 <span className="text-sm tracking-tight">{t(label)}</span>
