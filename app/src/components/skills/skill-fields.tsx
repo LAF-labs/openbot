@@ -71,8 +71,16 @@ export function SkillFields({
                 <FieldLabel htmlFor={field.name}>{t("Command")}</FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
-                  disabled={slugLocked}
+                  // `readOnly`, not `disabled`: the comment beside this field explains why the
+                  // command cannot change, and `disabled` takes the field out of the tab order, so
+                  // the explanation was never reached — and the command itself was uncopyable.
+                  className={
+                    slugLocked
+                      ? "read-only:bg-input/50 read-only:text-muted-foreground"
+                      : undefined
+                  }
                   id={field.name}
+                  readOnly={slugLocked}
                   name={field.name}
                   onBlur={field.handleBlur}
                   /*

@@ -104,9 +104,26 @@ function CredentialsPage() {
        * four-field form sat above the list somebody actually came to read, and the secret field
        * invited a password manager to fill it on every visit.
        */}
-      <Dialog onOpenChange={setAdding} open={adding}>
+      {/*
+       * CLOSING CLEARS IT, INCLUDING THE SECRET.
+       *
+       * Cancelling left every field loaded — the provider, the key id, and the secret itself, sitting
+       * in a masked input for the rest of the session and reappearing the next time anybody opened
+       * this dialog. A secret a person decided not to save should not survive the decision.
+       */}
+      <Dialog
+        onOpenChange={(open) => {
+          setAdding(open);
+          if (!open) {
+            form.reset();
+            createCredential.reset();
+          }
+        }}
+        open={adding}
+      >
         <DialogContent>
           <form
+            className="flex min-h-0 flex-1 flex-col gap-4"
             noValidate
             onSubmit={(event) => {
               event.preventDefault();

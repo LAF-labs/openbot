@@ -93,7 +93,7 @@ export function EditSkill({ slug }: { slug: string }) {
           await navigate({ search: {}, to: "/skills" });
         }}
         slugLocked
-        submitLabel="Save changes"
+        submitLabel={t("Save changes")}
       />
     </div>
   );

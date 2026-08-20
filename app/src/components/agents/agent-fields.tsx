@@ -109,6 +109,9 @@ export function AgentFields({
                 <FieldLabel htmlFor={field.name}>{t("Name")}</FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
+                  // The panel opens with nothing focused, so the first thing anybody does is reach
+                  // for the mouse to click a field they were already looking at.
+                  autoFocus
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
@@ -276,7 +279,11 @@ export function AgentFields({
                 id={field.name}
                 name={field.name}
                 onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
+                onChange={(event) => {
+                  // The verdict below was made with the old key; it is not about this one.
+                  setConnection(null);
+                  field.handleChange(event.target.value);
+                }}
                 placeholder={
                   hasAuth
                     ? t("A key is set. Type a new one to replace it.")

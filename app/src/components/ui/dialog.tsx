@@ -104,7 +104,13 @@ function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-body"
-      className={cn("-mx-1 flex min-h-0 flex-1 flex-col gap-4 px-1", className)}
+      // `overflow-y-auto`: the comment above and on DialogContent both say the body scrolls, and it
+      // had no overflow property at all — a long form painted out of the rounded card while the
+      // overlay held the page still, so the fields past the fold were unreachable.
+      className={cn(
+        "-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-1",
+        className,
+      )}
       {...props}
     />
   );

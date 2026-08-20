@@ -173,6 +173,8 @@ export const ko: Record<string, string> = {
   "Role description must be 1000 characters or fewer.":
     "역할 설명은 1000자 이하여야 합니다.",
   "Running…": "실행 중…",
+  "Save changes": "변경 저장",
+  "Save skill": "스킬 저장",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   "Sign in to {product}": "{product} 로그인",
@@ -445,6 +447,8 @@ export const ko: Record<string, string> = {
   "Write a skill for the deployment": "배포 전체용 스킬 작성",
   "Written for everyone by an administrator. Which Bots carry them is decided in Admin.":
     "관리자가 모두를 위해 작성했습니다. 어느 봇이 지니는지는 관리에서 정합니다.",
+  "You already have a skill called /{slug}. Saving would replace it — open it from the list to edit it instead.":
+    "이미 /{slug} 스킬이 있습니다. 저장하면 덮어씁니다 — 목록에서 열어 수정하세요.",
   "You cannot see the screen right now": "지금은 화면을 볼 수 없습니다",
   "You do not own an Agent to put this on yet.":
     "이것을 붙일 내 에이전트가 아직 없습니다.",

@@ -201,7 +201,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             });
             setEditingId(null);
           }}
-          submitLabel="Save changes"
+          submitLabel={t("Save changes")}
         />
       ) : (
         <section className="grid gap-2">
