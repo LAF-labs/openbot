@@ -169,8 +169,12 @@ export function ComputerView({
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      const state = await readControl(computerId);
+      const { state, absent } = await readControl(computerId);
       if (!live) return;
+      // No computer is configured, so there is nothing this loop could ever learn: a deployment
+      // that gains one restarts the app process anyway. Without this, the loop 404s once a second
+      // for the life of the tab and reads as an outage in every network log.
+      if (absent) return;
       if (state) setControl(state);
       timer = setTimeout(tick, 1000);
     };
@@ -273,7 +277,7 @@ export function ComputerView({
               // Clear even on failure so plaintext is not left in the DOM.
               setSecret("");
               setSecretProblem(result.ok ? null : (result.error ?? null));
-              const state = await readControl(computerId);
+              const { state } = await readControl(computerId);
               if (state) setControl(state);
             }}
           >

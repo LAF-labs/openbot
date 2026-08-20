@@ -18,15 +18,22 @@ export function useNeedsYou(botId: string | undefined, when: boolean): boolean {
 
     let live = true;
     const check = async () => {
-      const state = await readControl(botId).catch(() => null);
+      const read = await readControl(botId).catch(() => null);
       if (!live) return;
+      // A deployment with no computer has no wheel to need anybody at. Stop asking.
+      if (read?.absent) {
+        clearInterval(timer);
+        setNeeded(false);
+        return;
+      }
+      const state = read?.state ?? null;
       setNeeded(
         Boolean(state && (state.requested || state.secretWanted !== undefined)),
       );
     };
 
-    void check();
     const timer = setInterval(() => void check(), INTERVAL_MS);
+    void check();
     return () => {
       live = false;
       clearInterval(timer);

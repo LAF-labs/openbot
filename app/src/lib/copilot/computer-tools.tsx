@@ -48,8 +48,8 @@ async function waitForPerson(
   while (Date.now() < deadline) {
     // Stop must actually stop, including out of a wait. The SDK aborts this when a person presses it.
     if (signal?.aborted) return "cancelled";
-    const state = await readControl(botId).catch(() => null);
-    if (state && done(state)) return "answered";
+    const read = await readControl(botId).catch(() => null);
+    if (read?.state && done(read.state)) return "answered";
     await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
   }
   return "gave up";

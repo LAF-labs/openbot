@@ -24,8 +24,25 @@ async function callControl(
   return (await response.json()) as ControlState;
 }
 
-export function readControl(computerId: string) {
-  return callControl(computerId, "/control");
+/**
+ * The control state, or the fact that there is no control surface at all.
+ *
+ * A deployment without a computer does not mount these routes, so every read is a 404 — a different
+ * fact from a transient failure, and one the caller should stop asking about rather than retry every
+ * second forever. `absent` says so; `state: null` alone still means "try again shortly".
+ */
+export async function readControl(
+  computerId: string,
+): Promise<{ state: ControlState | null; absent: boolean }> {
+  const response = await fetch(`/api/computers/${computerId}/control`, {
+    credentials: "include",
+  });
+  if (response.status === 404) return { state: null, absent: true };
+  if (!response.ok) return { state: null, absent: false };
+  return {
+    state: (await response.json()) as ControlState,
+    absent: false,
+  };
 }
 
 export function takeControl(computerId: string) {
