@@ -11,7 +11,7 @@ import { type ChannelSummary, channelKeys } from "./queries";
 
 type ChannelActivityEvent = {
   channelId: string;
-  /** The channel's current name — a first message retitles the channel it lands in. */
+  /** The channel's current name. Carried so a patched row cannot drop it. */
   name: string;
   lastMessage: string | null;
   lastMessageAt: string | null;

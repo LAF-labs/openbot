@@ -339,6 +339,23 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
     routineId: string;
     token: string;
   } | null>(null);
+
+  /*
+   * The schedule is checked here rather than by the server.
+   *
+   * A daily routine is a wall-clock time in UTC and an interval one is a number of minutes with a
+   * floor of five. Both were accepted as typed and refused after the round trip, which puts the
+   * explanation under a form that has already lost the person's attention.
+   */
+  const scheduleReady =
+    kind === "daily"
+      ? /^([01]\d|2[0-3]):[0-5]\d$/.test(timeUtc.trim())
+      : Number(minutes) >= 5;
+  const canCreate =
+    Boolean(agentId) &&
+    name.trim().length > 0 &&
+    instruction.trim().length > 0 &&
+    scheduleReady;
   const create = useMutation({
     mutationFn: async () =>
       routineRequest("/api/routines", {
@@ -381,14 +398,29 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+    /*
+     * A FORM, NOT A CARD OF CONTROLS. Enter did nothing anywhere in it, and the only way out was the
+     * button that had opened it — a person who changed their mind had to scroll up and find it.
+     */
+    <form
+      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canCreate || create.isPending) return;
+        create.mutate();
+      }}
+    >
       <div className="flex gap-3">
         <Select
           value={agentId}
           onValueChange={(value) => setAgentId(value ?? "")}
         >
           <SelectTrigger className="w-44">
-            <SelectValue placeholder={t("Which Bot")} />
+            {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
+            <SelectValue placeholder={t("Which Bot")}>
+              {agents.data?.find((agent) => agent.id === agentId)?.name ??
+                t("Which Bot")}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {(agents.data ?? []).map((agent) => (
@@ -399,6 +431,8 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
           </SelectContent>
         </Select>
         <Input
+          aria-label={t("Routine name")}
+          autoFocus
           className="flex-1"
           placeholder={t("Name, e.g. Morning review digest")}
           value={name}
@@ -406,6 +440,7 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
         />
       </div>
       <Textarea
+        aria-label={t("What should it do?")}
         placeholder={t(
           "What should it do? e.g. Check the store reviews and summarize the new ones.",
         )}
@@ -449,19 +484,19 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
           />
         )}
         <div className="flex-1" />
-        <Button
-          disabled={
-            !agentId || !name.trim() || !instruction.trim() || create.isPending
-          }
-          onClick={() => create.mutate()}
-        >
-          {t("Create routine")}
+        <Button onClick={onDone} size="sm" type="button" variant="ghost">
+          {t("Cancel")}
+        </Button>
+        <Button disabled={!canCreate || create.isPending} type="submit">
+          {create.isPending ? t("Creating…") : t("Create routine")}
         </Button>
       </div>
       {create.error ? (
-        <p className="text-[12px] text-destructive">{create.error.message}</p>
+        <p className="text-[12px] text-destructive" role="alert">
+          {create.error.message}
+        </p>
       ) : null}
-    </div>
+    </form>
   );
 }
 

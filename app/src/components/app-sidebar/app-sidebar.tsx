@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/sidebar";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type ChannelSummary,
   channelListQueryOptions,
@@ -47,7 +48,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Skeleton } from "../ui/skeleton";
-import { Channel } from "./channel";
+import { BotRow } from "./bot-row";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
@@ -95,30 +96,79 @@ const MAX_ANIMATED_ROWS = 60;
 const ENTRANCE_SECONDS = 0.2;
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
+/** One Bot as the rail draws it: the colleague, plus whatever was last said to them. */
+type RosterEntry = {
+  agentId: string;
+  avatarSeed: string;
+  name: string;
+  channelId: string | undefined;
+  subtitle: string | undefined;
+  lastMessageAt: string | undefined;
+  /** For ordering, and nothing else. Absent for a Bot nobody has spoken to. */
+  sortAt: number;
+};
+
+/**
+ * The roster: one row per Bot, ordered by who spoke most recently.
+ *
+ * THE RAIL IS THE TEAM, NOT A LIST OF SESSIONS. A Bot has one conversation — the server decides
+ * that, see `create` in channels/routes.ts — so a Bot and its conversation are the same row here.
+ * Bots nobody has spoken to are included and sort last: a colleague you have not messaged yet is
+ * still on the team, and their row is how you start.
+ *
+ * A channel holding more than one Bot is a group and has no place on a roster of individuals; it
+ * stays reachable by its URL and by search.
+ */
+function buildRoster(
+  agents: AgentProfile[] | undefined,
+  channels: ChannelSummary[] | undefined,
+): RosterEntry[] {
+  if (!agents) return [];
+  const byAgent = new Map<string, ChannelSummary>();
+  for (const channel of channels ?? []) {
+    if (channel.agentIds.length !== 1) continue;
+    const agentId = channel.agentIds[0];
+    if (!agentId) continue;
+    const held = byAgent.get(agentId);
+    // The list arrives most-recent-first, so the first one seen is the one to show.
+    if (!held) byAgent.set(agentId, channel);
+  }
+
+  return agents
+    .map((agent) => {
+      const channel = byAgent.get(agent.id);
+      const preview = channel?.lastMessage?.trim();
+      return {
+        agentId: agent.id,
+        avatarSeed: agent.avatarSeed,
+        name: agent.name,
+        channelId: channel?.id,
+        // Before anybody has said anything, the standing role is the truest thing about the row.
+        subtitle: preview || agent.title || undefined,
+        lastMessageAt: channel?.lastMessageAt
+          ? relativeTime(channel.lastMessageAt)
+          : undefined,
+        sortAt: channel?.lastMessageAt
+          ? new Date(channel.lastMessageAt).getTime()
+          : 0,
+      };
+    })
+    .sort((left, right) => right.sortAt - left.sortAt);
+}
+
 /**
  * The roster, narrowed to what the person typed.
  *
- * Matches the channel's name and the last thing said in it, because those are the two things the
- * row actually shows — searching against something invisible returns results a person cannot
- * account for. Message history beyond the last line is not here to search: it lives in the thread
- * store, and reaching for it is a server endpoint rather than a filter.
- *
- * An empty query returns the input array unchanged rather than a copy, so typing and clearing does
- * not hand `AnimatePresence` a new array identity and restage the whole list.
+ * Matches the Bot's name and the last thing said to them, because those are the two things the row
+ * actually shows — searching against something invisible returns results a person cannot account
+ * for. Message history beyond the last line is not here to search: it lives in the thread store,
+ * and reaching for it is a server endpoint rather than a filter.
  */
-function matchingChannels(
-  channels: ChannelSummary[] | undefined,
-  query: string,
-): ChannelSummary[] {
-  if (!channels) {
-    return [];
-  }
+function matchingBots(roster: RosterEntry[], query: string): RosterEntry[] {
   const needle = query.trim().toLowerCase();
-  if (!needle) {
-    return channels;
-  }
-  return channels.filter((channel) =>
-    [channel.name, channel.lastMessage].some((field) =>
+  if (!needle) return roster;
+  return roster.filter((entry) =>
+    [entry.name, entry.subtitle].some((field) =>
       field?.toLowerCase().includes(needle),
     ),
   );
@@ -127,16 +177,16 @@ function matchingChannels(
 /**
  * A roster row that can animate.
  *
- * Two movements only: a channel that did not exist fades in, and a channel that was just spoken in
- * moves to the top. Nothing else animates, a roster that reacts to being read is a roster that
- * moves under the cursor.
+ * Two movements only: a Bot that did not exist fades in, and a Bot that was just spoken to moves to
+ * the top. Nothing else animates — a roster that reacts to being read is a roster that moves under
+ * the cursor.
  */
-function ChannelRow({
-  channel,
+function RosterRow({
+  entry,
   animateOrder,
   animateRows,
 }: {
-  channel: ChannelSummary;
+  entry: RosterEntry;
   animateOrder: boolean;
   /**
    * Whether a row appearing or disappearing is worth animating.
@@ -168,16 +218,13 @@ function ChannelRow({
         still ? { duration: 0 } : { duration: ENTRANCE_SECONDS, ease: EASE_OUT }
       }
     >
-      <Channel
-        channelId={channel.id}
-        participantIds={channel.agentIds}
-        name={channel.name}
-        lastMessage={channel.lastMessage ?? undefined}
-        lastMessageAt={
-          channel.lastMessageAt
-            ? relativeTime(channel.lastMessageAt)
-            : undefined
-        }
+      <BotRow
+        agentId={entry.agentId}
+        avatarSeed={entry.avatarSeed}
+        channelId={entry.channelId}
+        lastMessageAt={entry.lastMessageAt}
+        name={entry.name}
+        subtitle={entry.subtitle}
       />
     </motion.li>
   );
@@ -188,21 +235,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
+  const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
   const [search, setSearch] = useState("");
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const searching = search.trim().length > 0;
-  const visibleChannels = matchingChannels(channels.data, search);
+  const roster = buildRoster(agents.data, channels.data);
+  const visibleBots = matchingBots(roster, search);
   /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
    * list thrashing under somebody who is still typing — and the moving target is the very thing
    * they are trying to read. Order animation is for a channel that was just spoken in, which is
    * occasional; this is not.
    */
-  const animateOrder =
-    !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
+  const animateOrder = !searching && roster.length <= MAX_ANIMATED_ROWS;
 
   /*
    * A FAILED SIGN-OUT MUST SAY SO. It was an unhandled rejection: the menu closed, the session
@@ -285,11 +333,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
              * Quiet text, not a dashed box: a 248px sidebar has no room for furniture, and an
              * outlined panel reads as a broken widget rather than an absence.
              */}
-            {searching && visibleChannels.length === 0 ? (
+            {searching && visibleBots.length === 0 ? (
               <Empty className="py-12">
                 <EmptyHeader className="gap-1">
                   <EmptyTitle className="text-[13px]">
-                    {t("No channels match your search")}
+                    {t("No Bots match your search")}
                   </EmptyTitle>
                   <EmptyDescription className="text-[12px]/relaxed text-pretty">
                     {t(
@@ -305,18 +353,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
              * nothing at all when /api/channels failed, so a person whose network blinked watched
              * every conversation they have ever had disappear from the rail with no explanation.
              */}
-            {channels.isError ? (
+            {agents.isError ? (
               <Empty className="gap-2 py-12">
                 <EmptyHeader className="gap-1">
                   <EmptyTitle className="text-[13px]">
-                    {t("Your channels could not be loaded.")}
+                    {t("Your team could not be loaded.")}
                   </EmptyTitle>
                   <EmptyDescription className="text-[12px]/relaxed text-pretty">
                     {t("They are still there. This was a problem reaching us.")}
                   </EmptyDescription>
                 </EmptyHeader>
                 <Button
-                  onClick={() => void channels.refetch()}
+                  onClick={() => void agents.refetch()}
                   size="sm"
                   variant="ghost"
                 >
@@ -324,7 +372,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Button>
               </Empty>
             ) : null}
-            {channels.isPending ? (
+            {agents.isPending ? (
               <div className="flex flex-col gap-px py-1" aria-hidden>
                 {[0, 1, 2, 3, 4].map((slot) => (
                   <div className="flex items-center gap-2 px-2 py-2" key={slot}>
@@ -337,16 +385,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 ))}
               </div>
             ) : null}
-            {!searching && channels.data?.length === 0 ? (
+            {!searching && !agents.isPending && roster.length === 0 ? (
               <Empty className="py-12">
                 <EmptyHeader className="gap-1">
                   <EmptyTitle className="text-[13px]">
-                    {t("You don't have channels yet")}
+                    {t("No Bots on your team yet.")}
                   </EmptyTitle>
                   <EmptyDescription className="text-[12px]/relaxed text-pretty">
-                    {t(
-                      "Start talking to agents and your channels will appear here.",
-                    )}
+                    {t("Make one and it will be here, ready to be asked.")}
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
@@ -354,18 +400,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             {/*
              * A LIST, NAMED, AND SAID TO BE ONE. The roster was a stack of divs, so a screen reader
              * announced a run of links with no count and no boundary — no way to know how many
-             * conversations there are or where the list ends. The rows are `<li>` (see ChannelRow)
-             * and the skeleton, empty and error blocks stay outside, because none of them is a row.
+             * colleagues there are or where the list ends. The rows are `<li>` (see RosterRow) and
+             * the skeleton, empty and error blocks stay outside, because none of them is a row.
              */}
-            <nav aria-label={t("Conversations")}>
+            <nav aria-label={t("Your team")}>
               <ul className="flex flex-col gap-px">
                 <AnimatePresence initial={false}>
-                  {visibleChannels.map((channel) => (
-                    <ChannelRow
-                      key={channel.id}
+                  {visibleBots.map((entry) => (
+                    <RosterRow
+                      key={entry.agentId}
                       animateOrder={animateOrder}
                       animateRows={!searching}
-                      channel={channel}
+                      entry={entry}
                     />
                   ))}
                 </AnimatePresence>

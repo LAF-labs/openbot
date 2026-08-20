@@ -604,7 +604,7 @@ describe("channel store integration", () => {
     expect(await persistentStore.get(actor, created.id)).toBeNull();
   });
 
-  test("creates independent persisted channels for repeated agent selections", async () => {
+  test("returns the Bot's one conversation, persisted once, when asked again", async () => {
     const actor = await createPersistentUser();
     const agentId = await createPersistentAgent({
       name: "Solo Agent",
@@ -613,54 +613,49 @@ describe("channel store integration", () => {
 
     const first = await persistentStore.create(actor, [agentId]);
     createdChannelIds.push(first.id);
+    /*
+     * The same request, twice. This used to mint a second channel, which is what filled the roster
+     * with the same colleague over and over; a Bot has one conversation now, and asking for it
+     * again returns the one that already holds the history.
+     */
     const second = await persistentStore.create(actor, [agentId]);
-    createdChannelIds.push(second.id);
 
     expect(first).toMatchObject({
       name: "Solo Agent",
       agentIds: [agentId],
       active: true,
     });
-    expect(second).toMatchObject({
-      name: "Solo Agent",
-      agentIds: [agentId],
-      active: true,
-    });
     expect(first.id).toMatch(/^channel_[0-9a-f-]{36}$/);
-    expect(second.id).toMatch(/^channel_[0-9a-f-]{36}$/);
-    expect(first.id).not.toBe(second.id);
     expect(first.threadId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(second.threadId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(first.threadId).not.toBe(second.threadId);
+    expect(second).toEqual(first);
 
-    for (const created of [first, second]) {
-      const persisted = await persistedChannel(created.id);
-      expect(persisted.channelRow).toMatchObject({
-        id: created.id,
-        name: "Solo Agent",
-        description: "Private agent channel.",
-        suggestedPrompts: [],
-        allowedGroups: [],
-        packageId: null,
-        override: null,
-      });
-      expect(persisted.memberships).toHaveLength(1);
-      expect(persisted.memberships[0]).toMatchObject({
-        channelId: created.id,
-        userId: actor.id,
-      });
-      expect(persisted.linkedAgents).toHaveLength(1);
-      expect(persisted.linkedAgents[0]).toMatchObject({
-        channelId: created.id,
-        agentId,
-      });
-      expect(persisted.mappings).toHaveLength(1);
-      expect(persisted.mappings[0]).toMatchObject({
-        userId: actor.id,
-        channelId: created.id,
-        threadId: created.threadId,
-      });
-    }
+    // Nothing was written the second time: one channel, one membership, one thread mapping.
+    const persisted = await persistedChannel(first.id);
+    expect(persisted.channelRow).toMatchObject({
+      id: first.id,
+      name: "Solo Agent",
+      description: "Private agent channel.",
+      suggestedPrompts: [],
+      allowedGroups: [],
+      packageId: null,
+      override: null,
+    });
+    expect(persisted.memberships).toHaveLength(1);
+    expect(persisted.memberships[0]).toMatchObject({
+      channelId: first.id,
+      userId: actor.id,
+    });
+    expect(persisted.linkedAgents).toHaveLength(1);
+    expect(persisted.linkedAgents[0]).toMatchObject({
+      channelId: first.id,
+      agentId,
+    });
+    expect(persisted.mappings).toHaveLength(1);
+    expect(persisted.mappings[0]).toMatchObject({
+      userId: actor.id,
+      channelId: first.id,
+      threadId: first.threadId,
+    });
   });
 
   test("persists every canonical agent and derives its name in canonical order", async () => {

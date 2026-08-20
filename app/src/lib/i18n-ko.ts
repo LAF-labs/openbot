@@ -95,6 +95,7 @@ export const ko: Record<string, string> = {
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
   "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
   "Create coworker": "봇 만들기",
+  "Creating…": "만드는 중…",
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
@@ -163,6 +164,8 @@ export const ko: Record<string, string> = {
   "Loading coworkers…": "봇 불러오는 중…",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
+  "Make one and it will be here, ready to be asked.":
+    "하나 만들면 여기에서 바로 부를 수 있어요.",
   "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
     "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
   Messages: "메시지",
@@ -170,6 +173,7 @@ export const ko: Record<string, string> = {
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
   "Never submit a form": "폼은 절대 제출하지 않기",
   "Never type into a password field": "비밀번호 칸에는 절대 입력하지 않기",
+  "No Bots match your search": "검색과 일치하는 봇이 없습니다",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
@@ -196,6 +200,7 @@ export const ko: Record<string, string> = {
   "Role description is required.": "역할 설명을 입력하세요.",
   "Role description must be 1000 characters or fewer.":
     "역할 설명은 1000자 이하여야 합니다.",
+  "Routine name": "루틴 이름",
   "Rules that decide what a Bot may never do.":
     "봇이 절대 하면 안 되는 일을 정하는 규칙.",
   "Running…": "실행 중…",
@@ -280,6 +285,7 @@ export const ko: Record<string, string> = {
   "Asked a coworker": "코워커에게 물었습니다",
   "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
     "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",
+  "What should it do?": "무엇을 할까요?",
   "Working late?": "늦게까지 고생이 많으세요",
   "Good morning": "좋은 아침이에요",
   "Good afternoon": "좋은 오후예요",
@@ -531,6 +537,7 @@ export const ko: Record<string, string> = {
   "Definition changed — paused until reviewed":
     "정의가 바뀜 — 검토 전까지 정지",
   "Approve as it now is": "지금 상태로 승인",
+  "Your team": "내 팀",
   "Your team could not be loaded.": "팀을 불러오지 못했습니다.",
   "{action}, blocked": "{action} — 차단됨",
   "{action}, didn't work": "{action} — 실패",

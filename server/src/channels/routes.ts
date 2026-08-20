@@ -85,26 +85,6 @@ function channelName(names: string[]) {
   return `${codePoints.slice(0, MAX_CHANNEL_NAME_CODE_POINTS - 1).join("")}…`;
 }
 
-/**
- * A channel title has to read like a title: long enough to carry the topic, short enough that the
- * sidebar row and the header do not owe it a second line.
- */
-const MAX_TITLE_CODE_POINTS = 60;
-
-/**
- * The first thing a person says, reduced to a title.
- *
- * Returns null when nothing legible survives — a message that is all whitespace or control
- * characters names nothing, and the channel keeps whatever it was called.
- */
-function channelTitle(text: string) {
-  const flattened = previewOf(text);
-  if (!flattened) return null;
-  const codePoints = Array.from(flattened);
-  if (codePoints.length <= MAX_TITLE_CODE_POINTS) return flattened;
-  return `${codePoints.slice(0, MAX_TITLE_CODE_POINTS - 1).join("")}…`;
-}
-
 export function createChannelStore(
   database: Database,
   profileStore: AgentProfileStore,
@@ -129,6 +109,72 @@ export function createChannelStore(
             );
             if (!profile) throw new AgentNotFoundError(agentId);
             profilesById.set(agentId, profile);
+          }
+
+          /*
+           * ONE CONVERSATION PER BOT, AND THIS IS WHERE THAT IS DECIDED.
+           *
+           * A Bot here is a colleague with a face, a standing role, its own routines and its own
+           * seat at the account's computer — and every other table in this server is keyed on it:
+           * policy identity, approvals, repetition counts, credentials, the audit trail. The
+           * conversation was the one thing that was not, so every message from Home minted a fresh
+           * channel and the roster filled up with the same colleague over and over. Three Bots had
+           * thirteen channels between them, nine of them the same Bot.
+           *
+           * So a request for a single Bot resolves to that Bot's conversation if it has one. Inside
+           * the transaction, after the profile lock above, so two sends racing from two tabs cannot
+           * each decide there is no channel and make one.
+           *
+           * Only for one Bot. A group of several is a different conversation every time it is
+           * assembled, and nothing in the product returns to one yet.
+           */
+          const soleAgentId = agentIds.length === 1 ? agentIds[0] : undefined;
+          if (soleAgentId) {
+            const [existing] = await transaction
+              .select({
+                id: channels.id,
+                name: channels.name,
+                threadId: intelligenceChannelMappings.threadId,
+              })
+              .from(channels)
+              .innerJoin(
+                channelMemberships,
+                and(
+                  eq(channelMemberships.channelId, channels.id),
+                  eq(channelMemberships.userId, actor.id),
+                ),
+              )
+              .innerJoin(
+                intelligenceChannelMappings,
+                and(
+                  eq(intelligenceChannelMappings.channelId, channels.id),
+                  eq(intelligenceChannelMappings.userId, actor.id),
+                ),
+              )
+              .innerJoin(
+                channelAgents,
+                and(
+                  eq(channelAgents.channelId, channels.id),
+                  eq(channelAgents.agentId, soleAgentId),
+                ),
+              )
+              // A channel that also holds somebody else is a group, not this Bot's conversation.
+              .where(
+                sql`(select count(*) from ${channelAgents} where ${channelAgents.channelId} = ${channels.id}) = 1`,
+              )
+              // The oldest is the one with the history in it, which is the point of returning here.
+              .orderBy(asc(channels.createdAt), asc(channels.id))
+              .limit(1);
+
+            if (existing) {
+              return {
+                id: existing.id,
+                name: existing.name,
+                agentIds,
+                threadId: existing.threadId,
+                active: true,
+              };
+            }
           }
 
           const id = `channel_${crypto.randomUUID()}`;
@@ -310,26 +356,13 @@ export function createChannelStore(
             if (!linked) throw new AgentNotFoundError(activity.agentId);
           }
 
-          // THE FACE SAYS WHO; THE TITLE SHOULD SAY WHAT. A channel is born carrying its agent's
-          // name, and a roster of five conversations with the same agent is five identical rows.
-          // The first thing the person says becomes the title — once, guarded by "nothing has been
-          // said yet" rather than a schema flag, because lastMessageAt IS NULL is exactly that fact.
-          // An agent that somehow speaks first keeps the agent-name title, which is the right
-          // fallback anyway.
-          if (activity.agentId === null) {
-            const title = channelTitle(activity.text);
-            if (title) {
-              await transaction
-                .update(channels)
-                .set({ name: title })
-                .where(
-                  and(
-                    eq(channels.id, channelId),
-                    isNull(channels.lastMessageAt),
-                  ),
-                );
-            }
-          }
+          /*
+           * NO RETITLING. A channel used to take its name from the first thing said in it, because
+           * a roster of five conversations with the same Bot was five identical rows — and that is
+           * fixed at the root now: a Bot has one conversation, and a channel is named after its
+           * participants the way a messaging thread is. Naming a Bot's one room after whatever was
+           * typed into it first would freeze a stale sentence over a colleague's name forever.
+           */
 
           // A person's message and the agent's reply are reported separately, so they can arrive out
           // of order. Only ever move forwards.

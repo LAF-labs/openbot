@@ -187,30 +187,30 @@ function RouteComponent() {
                   ? { opacity: 0 }
                   : { opacity: 0, transform: HEADING_ENTRANCE_OFFSET }
               }
-              key={`name:${channel.data?.name ?? channelId}`}
+              key={`name:${headerAgent?.id ?? channel.data?.name ?? channelId}`}
               transition={{
                 duration: HEADING_ENTRANCE_SECONDS,
                 ease: EASE_OUT,
               }}
             >
+              {/*
+               * THE COLLEAGUE, THE WAY A MESSAGING APP NAMES A THREAD.
+               *
+               * A Bot has one conversation now, so the room IS the Bot and the header is their name
+               * over their standing role — the same two lines the roster row shows, which is what
+               * makes the rail and the screen it opens read as one thing. It used to lead with a
+               * title taken from the first message, which was right while every task minted its own
+               * channel and is now just the Bot's name said twice.
+               *
+               * The role line is always rendered, empty until the roster lands: mounting it late
+               * made the name above jump half a line on every open.
+               */}
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate text-[13px] tracking-tight">
-                  {channel.data?.name ?? t("Channel")}
+                  {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
                 </span>
-                {/*
-                 * Who this is. The top line carries the topic once the channel is titled by its
-                 * first message, so the coworker's name moves down here beside the standing role.
-                 *
-                 * ALWAYS RENDERED, EMPTY UNTIL THE ROSTER LANDS: conditionally mounting it made the
-                 * title above jump up half a line and back down a moment later, on every channel
-                 * open.
-                 */}
                 <span className="h-[16px] truncate text-[11px] text-muted-foreground">
-                  {headerAgent
-                    ? headerAgent.title
-                      ? `${headerAgent.name} · ${headerAgent.title}`
-                      : headerAgent.name
-                    : null}
+                  {headerAgent?.title ?? null}
                 </span>
               </span>
             </motion.span>

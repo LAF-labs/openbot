@@ -119,93 +119,15 @@ describe("channel activity", () => {
     ]);
   });
 
-  test("the first thing a person says becomes the channel's title", async () => {
-    const owner = await createUser();
-    const agentId = await createAgent(owner);
-    const channel = await createChannel(owner, [agentId]);
-
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: new Date(),
-      text: "Sort last month's receipts by project",
-    });
-
-    expect((await store.list(owner))[0]?.name).toBe(
-      "Sort last month's receipts by project",
-    );
-  });
-
-  test("a channel is titled once; later messages do not retitle it", async () => {
-    const owner = await createUser();
-    const agentId = await createAgent(owner);
-    const channel = await createChannel(owner, [agentId]);
-    const first = new Date();
-
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: first,
-      text: "The topic",
-    });
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: new Date(first.getTime() + 1_000),
-      text: "A follow-up question",
-    });
-
-    expect((await store.list(owner))[0]?.name).toBe("The topic");
-  });
-
-  test("an agent speaking first leaves the agent-name title in place", async () => {
-    const owner = await createUser();
-    const agentId = await createAgent(owner);
-    const channel = await createChannel(owner, [agentId]);
-    const first = new Date();
-
-    await store.recordActivity(owner, channel.id, {
-      agentId,
-      at: first,
-      text: "Here is the report you asked for.",
-    });
-    // No longer the first thing said, so it does not name the channel.
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: new Date(first.getTime() + 1_000),
-      text: "Thanks!",
-    });
-
-    expect((await store.list(owner))[0]?.name).toBe("Expense Manager");
-  });
-
-  test("a first message with nothing legible in it names nothing", async () => {
-    const owner = await createUser();
-    const agentId = await createAgent(owner);
-    const channel = await createChannel(owner, [agentId]);
-
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: new Date(),
-      // Control characters and whitespace only: nothing survives previewOf.
-      text: " \u001b\u0007 \n ",
-    });
-
-    expect((await store.list(owner))[0]?.name).toBe("Expense Manager");
-  });
-
-  test("a long first message is cut to a title, not a paragraph", async () => {
-    const owner = await createUser();
-    const agentId = await createAgent(owner);
-    const channel = await createChannel(owner, [agentId]);
-
-    await store.recordActivity(owner, channel.id, {
-      agentId: null,
-      at: new Date(),
-      text: "x".repeat(400),
-    });
-
-    const name = (await store.list(owner))[0]?.name ?? "";
-    expect(Array.from(name).length).toBeLessThanOrEqual(60);
-    expect(name.endsWith("…")).toBe(true);
-  });
+  /*
+   * THE FIVE TITLING TESTS THAT WERE HERE ARE GONE WITH THE FEATURE THEY GUARDED.
+   *
+   * A channel used to take its name from the first thing said in it, because a roster of five
+   * conversations with the same Bot was five identical rows. That is fixed at the root now — a Bot
+   * has one conversation, so a channel is named after its participants — and naming a colleague's
+   * one room after whatever was typed into it first would freeze a stale sentence over their name.
+   * See "a Bot has one conversation" in channel-conversation-identity.integration.test.ts.
+   */
 
   test("keeps a person's roster to the channels they belong to", async () => {
     const owner = await createUser();
@@ -282,7 +204,10 @@ describe("channel activity", () => {
 
   test("puts a channel just created above one that has already been used", async () => {
     const owner = await createUser();
+    // Two Bots, because two conversations means two colleagues now: asking for the same Bot twice
+    // returns its one conversation. See channel-conversation-identity.integration.test.ts.
     const agentId = await createAgent(owner);
+    const otherAgentId = await createAgent(owner, "Knowledge");
     const used = await createChannel(owner, [agentId]);
     await store.recordActivity(owner, used.id, {
       agentId,
@@ -295,7 +220,7 @@ describe("channel activity", () => {
 
     // Starting a conversation is the most recent thing this person did, and it is the one they are
     // about to type in. Sorting it under every channel that has a message would bury it.
-    const fresh = await createChannel(owner, [agentId]);
+    const fresh = await createChannel(owner, [otherAgentId]);
 
     expect((await store.list(owner)).map((channel) => channel.id)).toEqual([
       fresh.id,
@@ -306,7 +231,8 @@ describe("channel activity", () => {
   test("sorts by recency and leaves silent channels below, not absent", async () => {
     const owner = await createUser();
     const agentId = await createAgent(owner);
-    const quiet = await createChannel(owner, [agentId]);
+    const quietAgentId = await createAgent(owner, "Knowledge");
+    const quiet = await createChannel(owner, [quietAgentId]);
     const busy = await createChannel(owner, [agentId]);
 
     await store.recordActivity(owner, busy.id, {
