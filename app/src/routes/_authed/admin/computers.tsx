@@ -61,7 +61,7 @@ function ComputersPage() {
         const body = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
-        setProblem(body?.error ?? "The computers could not be listed.");
+        setProblem(body?.error ?? t("The computers could not be listed."));
         return;
       }
       const body = (await response.json()) as {
@@ -72,7 +72,7 @@ function ComputersPage() {
       setIsolation(body.isolation ?? null);
       setProblem(null);
     } catch {
-      setProblem("The computers could not be reached.");
+      setProblem(t("The computers could not be reached."));
     }
   }, []);
 
@@ -93,12 +93,22 @@ function ComputersPage() {
           const body = (await response.json().catch(() => null)) as {
             error?: string;
           } | null;
-          setProblem(body?.error ?? `The computer could not be ${action}.`);
+          /*
+           * Two sentences, not one template. `The computer could not be ${action}.` produced "The
+           * computer could not be stop." — a string built by concatenating a verb into a sentence
+           * that needed its past participle, and untranslatable either way.
+           */
+          setProblem(
+            body?.error ??
+              (action === "stop"
+                ? t("The browser could not be stopped.")
+                : t("The computer could not be reset.")),
+          );
         } else {
           setProblem(null);
         }
       } catch {
-        setProblem("The computer could not be reached.");
+        setProblem(t("The computer could not be reached."));
       } finally {
         setBusy(null);
         await load();
@@ -178,7 +188,9 @@ function ComputersPage() {
                       size="sm"
                       variant="outline"
                     >
-                      {busy === computer.botId ? "Working…" : "Stop browser"}
+                      {busy === computer.botId
+                        ? t("Working…")
+                        : t("Stop browser")}
                     </Button>
                     <Button
                       disabled={busy === computer.botId}

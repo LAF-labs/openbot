@@ -67,6 +67,7 @@ export const ko: Record<string, string> = {
   "Close the assistant's screen": "어시스턴트 화면 닫기",
   Command: "명령",
   Components: "컴포넌트",
+  "Components could not be loaded.": "컴포넌트를 불러오지 못했습니다.",
   Computers: "컴퓨터",
   "Computers in this deployment": "이 배포의 컴퓨터",
   "Configured credentials": "등록된 자격증명",
@@ -169,6 +170,7 @@ export const ko: Record<string, string> = {
   Public: "공개",
   "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
     "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
+  "Refreshing…": "새로고침 중…",
   "Reply: {text}": "답장: {text}",
   "Reset it": "초기화",
   "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
@@ -186,11 +188,15 @@ export const ko: Record<string, string> = {
   "Something went wrong.": "문제가 생겼습니다.",
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
+  "Stop browser": "브라우저 정지",
   "Stop the action": "행동을 멈춤",
   Test: "연결 확인",
   "Testing…": "확인 중…",
   "That could not be sent to the page. Try again.":
     "페이지로 전달하지 못했습니다. 다시 시도하세요.",
+  "That did not go through. Try again.":
+    "전달되지 않았습니다. 다시 시도하세요.",
+  "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
   "The assistant may still be working. An administrator can check whether its computer is running.":
     "어시스턴트는 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
   "The assistant's screen, live": "어시스턴트의 화면 — 실시간",
@@ -200,6 +206,13 @@ export const ko: Record<string, string> = {
     "봇이 멈추고, 어떤 규칙이 막았는지 전달받습니다.",
   "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.":
     "여기 해당하면 봇이 멈춰 기다리고, 누군가 허용하면 같은 행동을 이어갑니다. 위 규칙 다음, 아래 규칙 앞에서 검사되므로 이미 금지한 것은 금지된 채로 남고 질문으로 제시되지 않습니다.",
+  "The boundary could not be reached.": "경계 설정에 닿지 못했습니다.",
+  "The boundary could not be saved.": "경계를 저장하지 못했습니다.",
+  "The browser could not be stopped.": "브라우저를 정지하지 못했습니다.",
+  "The computer could not be reached.": "컴퓨터에 닿지 못했습니다.",
+  "The computer could not be reset.": "컴퓨터를 초기화하지 못했습니다.",
+  "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했습니다.",
+  "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":
     "초안 설명은 모델이 이 컴포넌트를 부를지 판단할 때 읽는 글입니다. 게시하기 전까지는 아무것도 바뀌지 않습니다.",
   "The page you asked for does not exist, or no longer does.":
@@ -445,6 +458,7 @@ export const ko: Record<string, string> = {
     "이 배포가 닿을 수 있는 곳과, 어느 봇이 닿아도 되는지. 추가는 계정 단위, 부여는 봇 단위입니다.",
   When: "언제",
   "When a rule matches": "규칙이 일치하면",
+  "Working…": "처리 중…",
   "Workspace skills": "워크스페이스 스킬",
   "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.":
     "여기서 컴포넌트를 작성하고 배포 없이 게시할 수 있습니다. 편집 중인 것은 초안이며, 대화에는 게시된 것만 그려집니다.",

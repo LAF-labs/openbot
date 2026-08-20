@@ -50,6 +50,30 @@ function PluginsPage() {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: pluginKeys.all });
 
+  /*
+   * A DELETE THAT REPORTS SUCCESS ON A 403.
+   *
+   * The four revocations below handed a bare `fetch(...)` to `mutate.mutate(() => action())`, and
+   * fetch resolves for every status a server can return. A refused grant revocation therefore ran
+   * `onSuccess`, the list refetched, the grant was still there — and nothing said why. This is the
+   * same shape as `post` below, which has always checked.
+   */
+  const del = async (path: string) => {
+    setError(null);
+    const response = await fetch(`/api/plugins${path}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const detail = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        detail?.error ?? t("That did not go through. Try again."),
+      );
+    }
+  };
+
   const post = async (path: string, body: unknown) => {
     setError(null);
     const response = await fetch(`/api/plugins${path}`, {
@@ -62,7 +86,9 @@ function PluginsPage() {
       const detail = (await response.json().catch(() => null)) as {
         error?: string;
       } | null;
-      throw new Error(detail?.error ?? "That did not work.");
+      throw new Error(
+        detail?.error ?? t("That did not go through. Try again."),
+      );
     }
     return response.json();
   };
@@ -179,9 +205,8 @@ function PluginsPage() {
               onGrant={(ref, agentId, held) =>
                 mutate.mutate(() =>
                   held
-                    ? fetch(
-                        `/api/plugins/grants?kind=mcp&ref=${encodeURIComponent(ref)}&agentId=${encodeURIComponent(agentId)}`,
-                        { method: "DELETE", credentials: "include" },
+                    ? del(
+                        `/grants?kind=mcp&ref=${encodeURIComponent(ref)}&agentId=${encodeURIComponent(agentId)}`,
                       )
                     : post("/grants", { kind: "mcp", ref, agentId }),
                 )
@@ -190,12 +215,7 @@ function PluginsPage() {
                 mutate.mutate(() => post(`/servers/${id}/refresh`, {}))
               }
               onRemove={(id) =>
-                mutate.mutate(() =>
-                  fetch(`/api/plugins/servers/${encodeURIComponent(id)}`, {
-                    method: "DELETE",
-                    credentials: "include",
-                  }),
-                )
+                mutate.mutate(() => del(`/servers/${encodeURIComponent(id)}`))
               }
               servers={data.servers}
             />
@@ -205,9 +225,8 @@ function PluginsPage() {
               onGrant={(slug, agentId, held) =>
                 mutate.mutate(() =>
                   held
-                    ? fetch(
-                        `/api/plugins/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(agentId)}`,
-                        { method: "DELETE", credentials: "include" },
+                    ? del(
+                        `/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(agentId)}`,
                       )
                     : post("/grants", { kind: "skill", ref: slug, agentId }),
                 )
@@ -217,12 +236,7 @@ function PluginsPage() {
                 mutate.mutate(() => post("/skills", { ...input, global: true }))
               }
               onUninstall={(slug) =>
-                mutate.mutate(() =>
-                  fetch(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
-                    method: "DELETE",
-                    credentials: "include",
-                  }),
-                )
+                mutate.mutate(() => del(`/skills/${encodeURIComponent(slug)}`))
               }
               skills={data.skills}
             />

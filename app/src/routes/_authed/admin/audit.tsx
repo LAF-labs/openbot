@@ -80,9 +80,15 @@ function AuditPage() {
      */
     <PageShell
       action={
-        <Button onClick={() => events.refetch()} size="sm" variant="ghost">
+        <Button
+          // A refresh that takes a second looked ignored: nothing moved until the answer landed.
+          disabled={events.isFetching}
+          onClick={() => events.refetch()}
+          size="sm"
+          variant="ghost"
+        >
           <IconRefresh />
-          {t("Refresh")}
+          {events.isFetching ? t("Refreshing…") : t("Refresh")}
         </Button>
       }
       description={t(

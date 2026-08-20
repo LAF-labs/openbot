@@ -40,7 +40,21 @@ export const Route = createFileRoute("/_authed/admin/components")({
 
 function RouteComponent() {
   const queryClient = useQueryClient();
-  const { data: components, isLoading } = useQuery(componentListQueryOptions());
+  const {
+    data: components,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery(componentListQueryOptions());
+  /*
+   * EVERY TOGGLE ON THIS PAGE FAILED IN SILENCE.
+   *
+   * Four mutations, all of them `onSuccess: invalidate` and no `onError` anywhere: a refused grant,
+   * a publish the server rejected, a draft that did not save — each one refetched the list, put the
+   * control back where it started, and said nothing. A toggle that springs back with no explanation
+   * is indistinguishable from one that never registered the click.
+   */
+  const [error, setError] = useState<string | null>(null);
   const { data: agents } = useQuery(agentListQueryOptions());
   const { data: dataFunctions } = useQuery(dataFunctionsQueryOptions());
 
@@ -71,7 +85,11 @@ function RouteComponent() {
           );
       if (!response.ok) throw new Error("That change could not be saved.");
     },
-    onSuccess: invalidate,
+    onError: (thrown: Error) => setError(thrown.message),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
   });
 
   const setFunction = useMutation({
@@ -97,7 +115,11 @@ function RouteComponent() {
           );
       if (!response.ok) throw new Error("That change could not be saved.");
     },
-    onSuccess: invalidate,
+    onError: (thrown: Error) => setError(thrown.message),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
   });
 
   const setPublished = useMutation({
@@ -119,7 +141,11 @@ function RouteComponent() {
       );
       if (!response.ok) throw new Error("That change could not be saved.");
     },
-    onSuccess: invalidate,
+    onError: (thrown: Error) => setError(thrown.message),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
   });
 
   const saveDraft = useMutation({
@@ -141,7 +167,11 @@ function RouteComponent() {
       );
       if (!response.ok) throw new Error("That draft could not be saved.");
     },
-    onSuccess: invalidate,
+    onError: (thrown: Error) => setError(thrown.message),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
   });
 
   const bots = agents ?? [];
@@ -160,10 +190,28 @@ function RouteComponent() {
        * hiding it behind a menu, and which Bots hold a component is the thing this page exists to
        * answer at a glance.
        */}
+      {error ? (
+        <p className="mt-4 text-destructive text-sm" role="alert">
+          {error}
+        </p>
+      ) : null}
+
       <PageSection title={t("Published components")}>
         {isLoading ? <PageEmpty>{t("Loading…")}</PageEmpty> : null}
 
-        {components?.length === 0 && !isLoading ? (
+        {/* A heading over an empty div was the whole answer when the list failed to load. */}
+        {isError ? (
+          <div className="mt-4 flex flex-col items-start gap-2">
+            <p className="text-destructive text-sm" role="alert">
+              {t("Components could not be loaded.")}
+            </p>
+            <Button onClick={() => void refetch()} size="sm" variant="outline">
+              {t("Try again")}
+            </Button>
+          </div>
+        ) : null}
+
+        {components?.length === 0 && !isLoading && !isError ? (
           <PageEmpty>{t("This deployment ships no components.")}</PageEmpty>
         ) : null}
 

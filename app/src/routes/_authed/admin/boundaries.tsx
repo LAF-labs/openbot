@@ -79,6 +79,8 @@ function BoundariesPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /** Said beside the box that produced it, not four sections below the fold. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [askDraft, setAskDraft] = useState("");
 
@@ -103,7 +105,15 @@ function BoundariesPage() {
     void load();
   }, [load]);
 
-  const save = useCallback(async (next: ActionPolicy) => {
+  /**
+   * Returns whether it saved.
+   *
+   * IT USED TO RETURN NOTHING, AND THE CALLERS CLEARED THE BOX REGARDLESS. A refused PUT therefore
+   * deleted the CEL expression somebody had just written by hand and put the reason four sections
+   * further down the page, well below the fold — so the rule was gone, and the explanation was
+   * somewhere they were not looking.
+   */
+  const save = useCallback(async (next: ActionPolicy): Promise<boolean> => {
     setSaving(true);
     setSaved(false);
     try {
@@ -118,15 +128,17 @@ function BoundariesPage() {
         error?: string;
       } | null;
       if (!response.ok) {
-        setProblem(body?.error ?? "The boundary could not be saved.");
-        return;
+        setProblem(body?.error ?? t("The boundary could not be saved."));
+        return false;
       }
       // Display the persisted policy in case the server normalized it.
       if (body?.policy) setPolicy(body.policy);
       setProblem(null);
       setSaved(true);
+      return true;
     } catch {
-      setProblem("The boundary could not be reached.");
+      setProblem(t("The boundary could not be reached."));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -152,11 +164,18 @@ function BoundariesPage() {
     );
   }
 
-  const addRule = (rule: string) => {
+  const addRule = async (rule: string) => {
     const trimmed = rule.trim();
-    if (!trimmed || policy.deny.includes(trimmed)) return;
-    void save({ ...policy, deny: [...policy.deny, trimmed] });
-    setDraft("");
+    if (!trimmed) return;
+    // A rule already in the list was a dead click: nothing happened and nothing said why.
+    if (policy.deny.includes(trimmed)) {
+      setNotice(t("That rule is already in this list."));
+      return;
+    }
+    setNotice(null);
+    if (await save({ ...policy, deny: [...policy.deny, trimmed] })) {
+      setDraft("");
+    }
   };
 
   /**
@@ -166,11 +185,17 @@ function BoundariesPage() {
    * that state, and refusing to save it would look like a bug. What it means is stated under the
    * list instead, since the gateway decides deny first and an ask alongside it never fires.
    */
-  const addAskRule = (rule: string) => {
+  const addAskRule = async (rule: string) => {
     const trimmed = rule.trim();
-    if (!trimmed || policy.ask.includes(trimmed)) return;
-    void save({ ...policy, ask: [...policy.ask, trimmed] });
-    setAskDraft("");
+    if (!trimmed) return;
+    if (policy.ask.includes(trimmed)) {
+      setNotice(t("That rule is already in this list."));
+      return;
+    }
+    setNotice(null);
+    if (await save({ ...policy, ask: [...policy.ask, trimmed] })) {
+      setAskDraft("");
+    }
   };
 
   return (
@@ -262,19 +287,25 @@ function BoundariesPage() {
               setSaved(false);
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter") addRule(draft);
+              if (event.key === "Enter") void addRule(draft);
             }}
             placeholder='tool.name == "computer_click" && contains(element.name, "submit")'
             value={draft}
           />
           <Button
             disabled={saving || draft.trim().length === 0}
-            onClick={() => addRule(draft)}
+            onClick={() => void addRule(draft)}
             size="sm"
           >
             {t("Add rule")}
           </Button>
         </div>
+        {/* Under the box that produced it. `problem` also renders far below, for a failed save. */}
+        {notice || problem ? (
+          <p className="mt-2 text-destructive text-xs" role="alert">
+            {notice ?? problem}
+          </p>
+        ) : null}
 
         <ul className="mt-3 space-y-2">
           {PRESETS.map((preset) => (
@@ -282,7 +313,7 @@ function BoundariesPage() {
               <Button
                 className="shrink-0"
                 disabled={saving || policy.deny.includes(preset.rule)}
-                onClick={() => addRule(preset.rule)}
+                onClick={() => void addRule(preset.rule)}
                 size="sm"
                 variant="outline"
               >
@@ -340,19 +371,25 @@ function BoundariesPage() {
               setSaved(false);
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter") addAskRule(askDraft);
+              if (event.key === "Enter") void addAskRule(askDraft);
             }}
             placeholder='intent == "write_file" && !matches(file.path, "^notes/")'
             value={askDraft}
           />
           <Button
             disabled={saving || askDraft.trim().length === 0}
-            onClick={() => addAskRule(askDraft)}
+            onClick={() => void addAskRule(askDraft)}
             size="sm"
           >
             {t("Add rule")}
           </Button>
         </div>
+        {/* Under the box that produced it. `problem` also renders far below, for a failed save. */}
+        {notice || problem ? (
+          <p className="mt-2 text-destructive text-xs" role="alert">
+            {notice ?? problem}
+          </p>
+        ) : null}
 
         <ul className="mt-3 space-y-2">
           {ASK_PRESETS.map((preset) => (
@@ -360,7 +397,7 @@ function BoundariesPage() {
               <Button
                 className="shrink-0"
                 disabled={saving || policy.ask.includes(preset.rule)}
-                onClick={() => addAskRule(preset.rule)}
+                onClick={() => void addAskRule(preset.rule)}
                 size="sm"
                 variant="outline"
               >
