@@ -73,7 +73,7 @@ function RouteComponent() {
         ) : null}
       </div>
       <div className="mt-10 w-full max-w-2xl">
-        <h2 className="font-bold text-lg">{t("Explore agents")}</h2>
+        <h2 className="font-semibold text-[15px]">{t("Explore agents")}</h2>
         <div className="flex flex-row gap-4 mt-4">
           {!!explore?.length &&
             explore.map((agent) => (

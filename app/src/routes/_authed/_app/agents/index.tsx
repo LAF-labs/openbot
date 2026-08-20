@@ -53,7 +53,7 @@ function AgentsScreen() {
       <div className="max-w-2xl px-4 w-full mx-auto">
         <div className="mt-12 w-full max-w-2xl">
           <div className="flex flex-row w-full items-center justify-between">
-            <h2 className="font-bold text-lg">{t("Your agents")}</h2>
+            <h2 className="font-semibold text-[15px]">{t("Your agents")}</h2>
             <Button
               variant="ghost"
               size="sm"
@@ -91,7 +91,7 @@ function AgentsScreen() {
           </div>
         </div>
         <div className="mt-8 w-full max-w-2xl">
-          <h2 className="font-bold text-lg">{t("Explore agents")}</h2>
+          <h2 className="font-semibold text-[15px]">{t("Explore agents")}</h2>
           <div className="grid grid-cols-4 gap-4 mt-4">
             {!!explore?.length &&
               explore.map((agent, index) => {

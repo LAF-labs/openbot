@@ -1,4 +1,4 @@
-import { MASCOT_TILES, mascotFor } from "@/components/agents/mascot";
+import { MASCOT_TILES, Mascot, mascotIdFor } from "@/components/agents/mascot";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ export function MascotPicker({
   onSelect: (id: string) => void;
   pending?: boolean;
 }) {
-  const current = mascotFor(seed);
+  const currentId = mascotIdFor(seed);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -41,7 +41,7 @@ export function MascotPicker({
           aria-busy={pending ? "true" : undefined}
         >
           {MASCOT_TILES.map((tile) => {
-            const chosen = tile.id === current.id;
+            const chosen = tile.id === currentId;
             return (
               <button
                 key={tile.id}
@@ -58,13 +58,7 @@ export function MascotPicker({
                 }
                 style={{ background: tile.background }}
               >
-                <img
-                  alt=""
-                  aria-hidden="true"
-                  className="size-full"
-                  draggable={false}
-                  src={tile.url}
-                />
+                <Mascot className="size-full" seed={tile.id} size={64} />
               </button>
             );
           })}

@@ -1,32 +1,32 @@
-import { Mascot, mascotFor } from "@/components/agents/mascot";
+import { Mascot, mascotBackground } from "@/components/agents/mascot";
 import type { AgentProfile } from "@/lib/agents/queries";
 
 /**
- * A Bot as a tile.
+ * A Bot as a card: the face above, the words below, nothing on top of either.
  *
- * The face is the tile, at full strength. The earlier card blew a generated avatar up to 250 and
- * washed it out to 40% behind the words, which is the right treatment for a gradient nobody chose and
- * the wrong one for a drawing: it would be hiding the only thing on the card worth looking at. The
- * words go in a band beneath it instead.
+ * The earlier tile laid the name over the character on a black wash, which put the two things a
+ * person came to read in each other's way. This is the desktop app's grammar instead — a card
+ * surface, a hairline, depth from the background step rather than a shadow — with the face's own
+ * ground carrying the only colour on the card.
  */
 export function AgentCard({ agent }: { agent: AgentProfile }) {
-  const tile = mascotFor(agent.avatarSeed);
-
   return (
-    <div
-      className="relative h-[180px] w-[144px] overflow-hidden rounded-2xl"
-      style={{ background: tile.background }}
-    >
-      <Mascot
-        className="absolute top-0 left-0 w-full"
-        seed={agent.avatarSeed}
-        size={144}
-      />
-      <div className="absolute inset-x-0 bottom-0 flex h-[68px] flex-col gap-1 bg-black/40 p-3">
-        <span className="line-clamp-1 font-medium text-sm text-white">
+    <div className="group w-[144px] overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
+      <div
+        className="flex items-center justify-center overflow-hidden"
+        style={{ background: mascotBackground(agent.avatarSeed) }}
+      >
+        <Mascot
+          className="w-full transition-transform duration-200 group-hover:scale-[1.04]"
+          seed={agent.avatarSeed}
+          size={144}
+        />
+      </div>
+      <div className="flex flex-col gap-0.5 p-3">
+        <span className="line-clamp-1 font-medium text-[13px]">
           {agent.name}
         </span>
-        <span className="line-clamp-2 text-white/80 text-xs leading-snug">
+        <span className="line-clamp-2 text-[12px] text-muted-foreground leading-snug">
           {agent.roleDescription}
         </span>
       </div>

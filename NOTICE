@@ -3,9 +3,10 @@ This product includes work from third parties, under the terms below.
 --------------------------------------------------------------------------------
 Bot avatars — app/src/assets/mascots/*.webp
 
-The thirty-five character tiles are the showcase wall published with the
-ip-as-logo skill, cut back into its individual tiles and re-encoded as WebP.
-No tile has been altered.
+The thirty-five Bot avatars are the characters from the showcase wall
+published with the ip-as-logo skill, redrawn as SVG against the original
+tiles (app/src/components/agents/mascot-art.ts). They are derivative works
+of that art and carry its licence.
 
     ip-as-logo-skill
     https://github.com/s1dashu/ip-as-logo-skill
