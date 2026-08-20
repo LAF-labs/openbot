@@ -137,9 +137,12 @@ export const ko: Record<string, string> = {
   "Running…": "실행 중…",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
+  "Sign in to {product}": "{product} 로그인",
   "Something went wrong.": "문제가 생겼습니다.",
   Test: "연결 확인",
   "Testing…": "확인 중…",
+  "The assistant may still be working. An administrator can check whether its computer is running.":
+    "어시스턴트는 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
   "The page you asked for does not exist, or no longer does.":
     "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
   "The role you write here applies in every channel this coworker works in.":

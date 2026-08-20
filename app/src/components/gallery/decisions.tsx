@@ -188,7 +188,7 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
               <button
                 className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                   picked
-                    ? "border-emerald-500/40 bg-emerald-500/10"
+                    ? "border-success/40 bg-success/10"
                     : chosen
                       ? "border-border opacity-50"
                       : "border-border hover:bg-foreground/5"

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/lib/i18n";
 import { LiveScreen } from "./live-screen";
-import { ComputerPlaceholder } from "./placeholder";
 import {
   type ControlState,
   readControl,
@@ -20,7 +19,7 @@ type Screenshot = {
   url?: string;
 };
 
-/** Explicit blank-browser URLs use placeholder artwork; missing URL fields are treated as real pages. */
+/** Explicit blank-browser URLs say so in words; missing URL fields are treated as real pages. */
 function isBlankBrowser(shot: Screenshot): boolean {
   if (shot.url === undefined) return false;
   const url = shot.url.trim();
@@ -228,27 +227,28 @@ export function ComputerView({
         >
           {polledScreen}
 
-          {blankBrowser ? (
-            <ComputerPlaceholder className="absolute inset-0 h-full w-full" />
-          ) : null}
-
+          {/*
+           * NO ARTWORK BEHIND THE WAITING STATE.
+           *
+           * A blank browser used to be covered by a full-bleed pink-to-mint-to-chartreuse gradient
+           * illustration on a hardcoded white base — a visual language from no part of this product,
+           * which then forced the message on top of it into a black scrim and white text that
+           * ignored the theme in both directions. The frame is a themed surface now, and the
+           * sentence sits on it in the ordinary muted colour, which is what the rest of the app does
+           * when it has nothing to show.
+           */}
           {showScreen ? null : (
-            <span
-              className={`absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-sm ${
-                blankBrowser
-                  ? "bg-black/25 text-white"
-                  : "text-muted-foreground"
-              }`}
-            >
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
               {problem ? (
                 <>
-                  <span className="font-medium">
+                  <span className="font-medium text-foreground">
                     {t("You cannot see the screen right now")}
                   </span>
                   <span>{problem}</span>
-                  <span className={blankBrowser ? "text-white/80" : undefined}>
-                    The assistant may still be working. An administrator can
-                    check whether its computer is running.
+                  <span>
+                    {t(
+                      "The assistant may still be working. An administrator can check whether its computer is running.",
+                    )}
                   </span>
                 </>
               ) : blankBrowser ? (
@@ -338,7 +338,7 @@ export function ComputerView({
         ) : null}
 
         {control?.requested && !driving ? (
-          <div className="flex items-start justify-between gap-3 border-t bg-amber-500/10 px-3 py-2 text-sm">
+          <div className="flex items-start justify-between gap-3 border-t bg-warning/10 px-3 py-2 text-sm">
             <span>
               <strong className="font-medium">
                 {t("The assistant needs you.")}

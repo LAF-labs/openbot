@@ -485,7 +485,7 @@ function Yours({
               <div className="flex items-center gap-2 font-medium">
                 {server.title}
                 {server.provenance === "custom" ? (
-                  <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-500">
+                  <span className="rounded bg-warning/15 px-1.5 py-0.5 text-xs text-warning">
                     custom
                   </span>
                 ) : null}
@@ -539,7 +539,7 @@ function Yours({
                     <span
                       className={
                         tool.effect === "write"
-                          ? "text-amber-600 text-xs dark:text-amber-500"
+                          ? "text-warning text-xs dark:text-warning"
                           : "text-muted-foreground text-xs"
                       }
                     >
@@ -561,7 +561,7 @@ function Yours({
                      * rather than a working boundary.
                      */
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className="text-amber-600 text-xs dark:text-amber-500">
+                      <span className="text-warning text-xs dark:text-warning">
                         {tool.reviewReason === "appeared after registration"
                           ? t("New since registration — paused until reviewed")
                           : t("Definition changed — paused until reviewed")}

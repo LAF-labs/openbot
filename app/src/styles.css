@@ -75,6 +75,16 @@ html {
   --popover-foreground: #1f1f1f;
   --primary: #1e90ff;
   --primary-foreground: #ffffff;
+  /*
+   * THE SAME BLUE, ONE STEP DOWN, FOR WHITE TEXT TO SIT ON.
+   *
+   * `--primary` is the identity: rings, selection, the dot that says a Bot needs you. It is not a
+   * text background — white on #1e90ff measures 3.24:1, and every filled button in the product was
+   * failing AA on its label. This is that hue at a value white can be read on (4.9:1), used only
+   * where a filled surface carries text. Splitting the two is what keeps the accent recognisable
+   * instead of darkening the whole product to satisfy one control.
+   */
+  --primary-strong: #0b6fd9;
   --secondary: #f0f0f0;
   --secondary-foreground: #1f1f1f;
   --muted: #f0f0f0;
@@ -82,6 +92,17 @@ html {
   --accent: #ededed;
   --accent-foreground: #1f1f1f;
   --destructive: #dc2626;
+  /*
+   * STATUS, NEVER DECORATION — the two semantic colours the desktop system names beside
+   * --destructive, and which this app was missing. Eight files had reached for Tailwind's raw
+   * amber/emerald instead, which is how the same "asks a person first" state ended up amber-500,
+   * amber-600 and amber-700 on three different screens, none of them themed.
+   *
+   * Each is picked for text on that theme's own ground: dark enough to read on white here, light
+   * enough to read on #262626 in the block below.
+   */
+  --success: #15803d;
+  --warning: #b45309;
   --border: #e6e6e6;
   --input: #e6e6e6;
   --ring: #1e90ff;
@@ -110,6 +131,8 @@ html {
   --popover-foreground: #ececec;
   --primary: #1e90ff;
   --primary-foreground: #ffffff;
+  /* Same reason, same value: contrast is a property of the pair, not of what is behind them. */
+  --primary-strong: #0b6fd9;
   --secondary: #3a3a3a;
   --secondary-foreground: #ececec;
   --muted: #333333;
@@ -117,6 +140,8 @@ html {
   --accent: #3a3a3a;
   --accent-foreground: #ececec;
   --destructive: #ef4444;
+  --success: #4ade80;
+  --warning: #fbbf24;
   --border: rgba(255, 255, 255, 0.1);
   --input: rgba(255, 255, 255, 0.12);
   --ring: #1e90ff;
@@ -188,6 +213,8 @@ body {
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -196,6 +223,7 @@ body {
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);

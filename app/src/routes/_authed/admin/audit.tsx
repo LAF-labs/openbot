@@ -239,7 +239,7 @@ function Row({
             refused
               ? "font-medium text-destructive"
               : failed
-                ? "font-medium text-amber-600 dark:text-amber-500"
+                ? "font-medium text-warning"
                 : "text-muted-foreground"
           }
         >

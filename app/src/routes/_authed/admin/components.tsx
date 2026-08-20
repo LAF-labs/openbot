@@ -235,12 +235,12 @@ function ComponentRow({
               {component.name}
             </code>
             {RENDERABLE_NAMES.has(component.name) ? null : (
-              <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
                 {t("Not in this build, nothing can draw it")}
               </span>
             )}
             {component.published ? null : (
-              <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
                 {t("Unpublished, no Bot may use it")}
               </span>
             )}

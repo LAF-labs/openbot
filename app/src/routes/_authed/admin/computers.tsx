@@ -124,7 +124,7 @@ function ComputersPage() {
       ) : null}
 
       {isolation === "shared" ? (
-        <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+        <p className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span className="font-medium">
             {t("Every Bot is sharing one computer.")}
           </span>{" "}

@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import AgentOrb from "@/components/agents/orb/agent-orb";
+import { Mascot } from "@/components/agents/mascot";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
@@ -67,19 +67,39 @@ function SignScreen() {
           shown: { transition: { staggerChildren: ENTRANCE_STAGGER_SECONDS } },
         }}
       >
+        {/*
+         * THE FACES, NOT AN ORB.
+         *
+         * The only brand mark on the way into this product was a generic pink-violet-magenta mesh
+         * gradient — four hues from no palette this app has, on the one screen that sets a first
+         * impression, in a product whose whole identity is a roster of drawn characters. These are
+         * the three Bots a new account is given, at the size they appear on Home, which is the next
+         * thing the person sees once they are through this screen.
+         */}
         <motion.div
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
-          className="flex items-center justify-center"
+          className="-space-x-3 flex items-center justify-center"
         >
-          <AgentOrb size="56px" />
+          {["r0c4", "r0c1", "r4c2"].map((seed) => (
+            <span
+              className="inline-flex size-12 overflow-hidden rounded-full ring-2 ring-background"
+              key={seed}
+            >
+              <Mascot
+                className="size-full object-cover"
+                seed={seed}
+                size={48}
+              />
+            </span>
+          ))}
         </motion.div>
         <motion.h1
           className="text-2xl font-medium tracking-tight text-center mt-8"
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          Sign in to {appConfig.brand.productName}
+          {t("Sign in to {product}", { product: appConfig.brand.productName })}
         </motion.h1>
         <motion.div
           className="mt-8 w-full"
