@@ -165,6 +165,17 @@ function PluginsPage() {
           ) : tab === "yours" ? (
             <Yours
               bots={bots}
+              onApproveDefinition={(serverId, toolName) =>
+                mutate.mutate(async () => {
+                  const response = await fetch(
+                    `/api/plugins/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(toolName)}/approve`,
+                    { method: "POST", credentials: "include" },
+                  );
+                  if (!response.ok) {
+                    throw new Error("The definition could not be approved.");
+                  }
+                })
+              }
               onGrant={(ref, agentId, held) =>
                 mutate.mutate(() =>
                   held
@@ -445,12 +456,14 @@ function Yours({
   onGrant,
   onRefresh,
   onRemove,
+  onApproveDefinition,
 }: {
   servers: PluginServer[];
   bots: { id: string; name: string }[];
   onGrant: (ref: string, agentId: string, held: boolean) => void;
   onRefresh: (id: string) => void;
   onRemove: (id: string) => void;
+  onApproveDefinition: (serverId: string, toolName: string) => void;
 }) {
   if (servers.length === 0) {
     return (
@@ -530,9 +543,41 @@ function Yours({
                           : "text-muted-foreground text-xs"
                       }
                     >
-                      {tool.effect === "write" ? "changes things" : "reads"}
+                      {tool.effect === "write"
+                        ? t("changes things")
+                        : t("reads")}
                     </span>
+                    {tool.guard ? (
+                      <span className="text-muted-foreground text-xs">
+                        {t("asks a person every time")}
+                      </span>
+                    ) : null}
                   </div>
+                  {tool.needsReview ? (
+                    /*
+                     * The pause the consent pin creates, made visible where it
+                     * ends. The tool refuses to run until this button is
+                     * pressed, so hiding the state would read as a broken tool
+                     * rather than a working boundary.
+                     */
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-amber-600 text-xs dark:text-amber-500">
+                        {tool.reviewReason === "appeared after registration"
+                          ? t("New since registration — paused until reviewed")
+                          : t("Definition changed — paused until reviewed")}
+                      </span>
+                      <Button
+                        onClick={() =>
+                          onApproveDefinition(server.id, tool.name)
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {t("Approve as it now is")}
+                      </Button>
+                    </div>
+                  ) : null}
                   <p className="mt-0.5 text-muted-foreground text-xs">
                     {tool.description}
                   </p>

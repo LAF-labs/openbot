@@ -265,4 +265,12 @@ export const ko: Record<string, string> = {
   "What happened": "무슨 일이 있었나",
   "Goes to {name}.": "{name}에게 전달됩니다.",
   "Type @ to reach somebody else.": "@를 입력하면 다른 봇을 부를 수 있습니다.",
+  "changes things": "변경함",
+  reads: "읽기 전용",
+  "asks a person every time": "매번 사람에게 물음",
+  "New since registration — paused until reviewed":
+    "등록 후 새로 생김 — 검토 전까지 정지",
+  "Definition changed — paused until reviewed":
+    "정의가 바뀜 — 검토 전까지 정지",
+  "Approve as it now is": "지금 상태로 승인",
 };

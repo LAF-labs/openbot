@@ -12,6 +12,11 @@ export type PluginTool = {
   /** Whether it changes something. Anything not positively known to be a read is a write. */
   effect: "read" | "write";
   grantedTo: string[];
+  /** True when the definition changed after consent; refused until approved. */
+  needsReview: boolean;
+  reviewReason: string | null;
+  /** Non-null when the declaration stops every call for a person. */
+  guard: "money" | "external" | "destructive" | "unannotated" | null;
 };
 
 export type PluginServer = {
