@@ -223,7 +223,12 @@ describe("channel activity", () => {
 
     await store.recordActivity(owner, busy.id, {
       agentId,
-      at: new Date(),
+      // A minute forward, not `now`, for the reason the sibling test above gives
+      // a minute back: the activity time comes from this process and `created_at`
+      // comes from Postgres, and a Docker VM's clock drifts far enough (measured
+      // +123ms on a laptop after sleep) to reorder two "same instant" writes.
+      // The property under test is the ordering rule, not the tie-break.
+      at: new Date(Date.now() + 60_000),
       text: "Said something.",
     });
 
