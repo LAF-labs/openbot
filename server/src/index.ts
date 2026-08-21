@@ -47,6 +47,8 @@ import { createCoworkerCall } from "./agents/coworker-call";
 import { createRoutineService } from "./routines/service";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
+import { createRunLedger } from "./runner/run-ledger";
+import { createWorkingReader } from "./runner/working";
 import {
   createPackageStatusReader,
   loadTenantPackage,
@@ -367,6 +369,8 @@ const coworkerCall = createCoworkerCall({
       stallGuard,
     ),
   auditStore: bootAuditStore,
+  // Scheduled work is in the same ledger a chat turn is, so the roster can show it in flight.
+  ledger: createRunLedger(database),
 });
 
 // Instructions on a clock, running through the same server-side path a coworker answer does.
@@ -387,6 +391,8 @@ const routineService = createRoutineService({
       stallGuard,
     ),
   auditStore: bootAuditStore,
+  // Scheduled work is in the same ledger a chat turn is, so the roster can show it in flight.
+  ledger: createRunLedger(database),
 });
 
 const app = createApp(
@@ -478,6 +484,8 @@ const app = createApp(
   routineService,
   // When each message was first seen. Read from the snapshot column directly — see message-times.
   createMessageTimeReader(database),
+  // What is running for a person right now, from the same ledger chat and routines both write.
+  createWorkingReader(database),
 );
 
 /**

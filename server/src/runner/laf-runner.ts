@@ -29,7 +29,11 @@ import {
 } from "@copilotkit/runtime/v2";
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { lafThreadRuns, lafThreadSnapshots } from "../db/schema";
+import {
+  intelligenceChannelMappings,
+  lafThreadRuns,
+  lafThreadSnapshots,
+} from "../db/schema";
 
 type SnapshotRow = typeof lafThreadSnapshots.$inferSelect;
 
@@ -312,10 +316,27 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     dedupeKey: string | null = null,
   ): Promise<void> {
     try {
+      /*
+       * WHOSE RUN IT IS, LOOKED UP RATHER THAN ACCEPTED.
+       *
+       * The roster asks "what is running for me", so a run needs an owner. The obvious route is
+       * `forwardedProps` — it is the one field AG-UI does not strip — and it is the wrong one: a
+       * client that can name the owner of a run can light up somebody else's roster, or hide its
+       * own work in theirs. The thread already knows. `intelligence_channel_mappings` is unique on
+       * `thread_id`, so this is one indexed read of a fact the server itself wrote.
+       */
+      const [owner] = await this.database
+        .select({ userId: intelligenceChannelMappings.userId })
+        .from(intelligenceChannelMappings)
+        .where(eq(intelligenceChannelMappings.threadId, threadId))
+        .limit(1);
+
       await this.database.insert(lafThreadRuns).values({
         runId,
         threadId,
         agentId,
+        // The same ledger the routine service writes — see runner/run-ledger.ts.
+        userId: owner?.userId ?? null,
         status: "running",
         origin,
         dedupeKey,

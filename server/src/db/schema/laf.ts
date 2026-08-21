@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -39,10 +41,29 @@ export const lafThreadSnapshots = pgTable("laf_thread_snapshots", {
  * (states like `claimed` and `unknown`, budgets, approvals) will grow on; until then it
  * answers the operational question a restart raises: which runs never finished.
  */
-export const lafThreadRuns = pgTable("laf_thread_runs", {
+export const lafThreadRuns = pgTable(
+  "laf_thread_runs",
+  {
   runId: text("run_id").primaryKey(),
-  threadId: text("thread_id").notNull(),
+  /**
+   * Nullable, because not every run belongs to a conversation.
+   *
+   * A routine firing at 6am is a run with no thread: nobody typed it, and its answer goes to the
+   * routine's own history rather than into a transcript. It was `notNull` while chat was the only
+   * writer, and that is exactly why scheduled work — the case where "is this Bot busy?" matters
+   * most — had no in-flight record anywhere.
+   */
+  threadId: text("thread_id"),
   agentId: text("agent_id"),
+  /**
+   * Whose run it is, so "which of my Bots are working" is one indexed read.
+   *
+   * Nullable for runs that predate this column and for anything the system starts on nobody's
+   * behalf; a run with no owner is simply invisible to the roster rather than visible to everyone.
+   */
+  userId: text("user_id"),
+  /** What it is doing, in the person's own words where there are any — a routine's name. */
+  label: text("label"),
   /**
    * `running` | `done` | `error` | `unknown`. A run still `running` when a new
    * process boots cannot still be running — this build is one process — so
@@ -65,7 +86,19 @@ export const lafThreadRuns = pgTable("laf_thread_runs", {
     .notNull()
     .defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
-});
+  },
+  (table) => [
+    /*
+     * The roster asks "what is running for me" on a timer, so it gets an index rather than a scan
+     * of every run this deployment has ever recorded. Partial on the one status that is ever
+     * queried: finished runs outnumber live ones by orders of magnitude within a day, and there is
+     * no question anybody asks that wants them in this index.
+     */
+    index("laf_thread_runs_live_idx")
+      .on(table.userId, table.startedAt)
+      .where(sql`${table.status} = 'running'`),
+  ],
+);
 
 /**
  * What the watcher polls: a `laf.watch` endpoint and how often.

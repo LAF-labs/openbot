@@ -160,6 +160,18 @@ export function createAgentRoutes(
   auditStore?: AuditStore,
   /** One Bot asking another. Absent when the deployment has no runtime to run the coworker on. */
   coworkerCall?: CoworkerCall,
+  /**
+   * Which of a person's Bots are mid-run. Absent answers "none", which is the right degraded
+   * behaviour: a roster that cannot reach the ledger should look calm, not broken.
+   */
+  readWorking?: (userId: string) => Promise<
+    Array<{
+      agentId: string;
+      origin: string;
+      label: string | null;
+      startedAt: string;
+    }>
+  >,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -217,6 +229,24 @@ export function createAgentRoutes(
       const agents = await store.list(context.var.actor, hidden);
       return context.json({
         agents: agents.map((agent) => agentDto(context.var.actor, agent)),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /*
+   * BEFORE `/:agentId`, or "working" is read as an agent id — which is exactly what happened:
+   * the route answered 404 "Agent not found." for a request that never named an agent.
+   *
+   * A list rather than a flag per Bot: the answer is usually empty, and a roster of forty Bots
+   * should not pay forty fields to be told nothing is happening.
+   */
+  routes.get("/working", requireUser, async (context) => {
+    if (!readWorking) return context.json({ working: [] });
+    try {
+      return context.json({
+        working: await readWorking(context.var.actor.id),
       });
     } catch (error) {
       return mapStoreError(context, error);

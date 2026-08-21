@@ -180,6 +180,7 @@ export const ko: Record<string, string> = {
   "Face {number}": "얼굴 {number}",
   Channel: "채널",
   "Finance operations": "재무 운영",
+  "Following something up": "확인하는 중",
   "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
     "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
   Frog: "개구리",
@@ -190,10 +191,13 @@ export const ko: Record<string, string> = {
   "Going in circles": "같은 일 반복",
   Gorilla: "고릴라",
   "Granted to this Bot": "이 봇에게 부여됨",
+  "Helping another Bot": "다른 봇을 돕는 중",
+  "Hidden": "숨김",
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
   "Hide from sidebar": "사이드바에서 숨기기",
+  "Hide hidden Bots": "숨긴 봇 감추기",
   "Hiding…": "숨기는 중…",
   "How {product} looks. Following the system flips with it.":
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
@@ -280,6 +284,7 @@ export const ko: Record<string, string> = {
   "Rules that decide what a Bot may never do.":
     "봇이 절대 하면 안 되는 일을 정하는 규칙.",
   "Run {name} now": "'{name}' 지금 실행",
+  "Running a routine": "루틴 실행 중",
   "Running {name}…": "'{name}' 실행 중…",
   "Running…": "실행 중…",
   "Save changes": "변경 저장",
@@ -290,6 +295,7 @@ export const ko: Record<string, string> = {
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   Sheep: "양",
+  "Show hidden Bots": "숨긴 봇 보기",
   "Sign in to {product}": "{product} 로그인",
   "Skills and tools installed for the whole workspace.":
     "작업 공간 전체에 설치된 스킬과 도구.",

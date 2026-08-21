@@ -6,6 +6,7 @@ import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafRoutines } from "../db/schema";
+import type { RunLedger } from "../runner/run-ledger";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -121,6 +122,13 @@ export type RoutineServiceOptions = {
   /** The same loader the runtime and the coworker call use, scoped to the routine's creator. */
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
   auditStore?: AuditStore;
+  /**
+   * The run ledger, so scheduled work is visible while it happens.
+   *
+   * Optional, and every call is `.catch`ed: a routine that ran and answered must not be reported as
+   * failed because a bookkeeping row could not be written.
+   */
+  ledger?: RunLedger;
   now?: () => Date;
   runTimeoutMs?: number;
 };
@@ -137,6 +145,21 @@ export function createRoutineService(options: RoutineServiceOptions) {
     let ok = false;
     let answer = "";
     let failure = "";
+    /*
+     * OPEN THE LEDGER FIRST, so the Bot reads as busy for the whole time it is busy.
+     *
+     * `laf_routine_runs` below is written once, at the end, with both timestamps — a receipt, not a
+     * record. While a routine ran there was nothing anywhere saying so, which is why the roster
+     * could not show scheduled work in progress. This row exists from here to the `finally`.
+     */
+    const ledgerRunId = await options.ledger
+      ?.begin({
+        agentId: row.agentId,
+        userId: row.createdById,
+        origin: "routine",
+        label: row.name,
+      })
+      .catch(() => null);
     try {
       const agents = await options.resolveAgents({
         id: row.createdById,
@@ -150,6 +173,14 @@ export function createRoutineService(options: RoutineServiceOptions) {
       ok = true;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
+    }
+
+    if (ledgerRunId) {
+      // Closed before anything else, so a failure writing the routine's own history cannot leave
+      // the Bot looking busy forever.
+      await options.ledger
+        ?.finish(ledgerRunId, ok ? null : failure)
+        .catch(() => {});
     }
 
     await database.insert(lafRoutineRuns).values({

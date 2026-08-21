@@ -128,6 +128,15 @@ export function createApp(
    * degraded behaviour: a conversation with no times is still a readable conversation.
    */
   messageTimeReader?: (threadId: string) => Promise<Record<string, string>>,
+  /** Which of a person's Bots are mid-run, for the roster. Absent answers "none". */
+  readWorking?: (userId: string) => Promise<
+    Array<{
+      agentId: string;
+      origin: string;
+      label: string | null;
+      startedAt: string;
+    }>
+  >,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -364,6 +373,8 @@ export function createApp(
         // A Bot's own refusal goes in the same trail as everything else it does.
         auditStore,
         coworkerCall,
+        // What the roster shows as busy, read from the one ledger every run path writes.
+        readWorking,
       ),
     );
   }

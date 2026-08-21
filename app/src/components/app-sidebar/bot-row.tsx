@@ -26,6 +26,7 @@ export const BotRow = memo(function BotRow({
   subtitle,
   lastMessageAt,
   unread = false,
+  working,
 }: {
   agentId: string;
   avatarSeed: string;
@@ -34,6 +35,13 @@ export const BotRow = memo(function BotRow({
   pinned?: boolean;
   /** The Bot has said something since this person last opened the room. */
   unread?: boolean;
+  /**
+   * What this Bot is doing right now, or undefined when it is idle.
+   *
+   * A sentence rather than a flag, because the interesting half is WHICH work. "Nightly receipts"
+   * at 6am is the difference between a Bot that is busy and a Bot you asked to be busy.
+   */
+  working?: string;
   /** The Bot's conversation, once it has one. */
   channelId: string | undefined;
   /** The last thing said, or the Bot's standing role before anything has been. */
@@ -74,8 +82,14 @@ export const BotRow = memo(function BotRow({
 
   const body = (
     <>
-      {/* A dot and a weight are not announced. This is. */}
-      {unread ? <span className="sr-only">{t("Unread")}</span> : null}
+      {/* A dot, a spinner and a weight are not announced. These are. */}
+      {working ? (
+        <span className="sr-only" role="status">
+          {working}
+        </span>
+      ) : unread ? (
+        <span className="sr-only">{t("Unread")}</span>
+      ) : null}
       {/*
        * `relative` and NOT `overflow-hidden` on the outer span: the dot overhangs the face by
        * design, and clipping the wrapper would slice it in half. The face keeps its own rounding.
@@ -91,7 +105,17 @@ export const BotRow = memo(function BotRow({
          * is the row's own background so the dot reads as sitting on top of the face rather than
          * punched into it.
          */}
-        {unread ? (
+        {/*
+         * Working outranks unread on the corner: they are both true of a Bot that is answering
+         * you right now, and "it is doing something" is the more urgent of the two to see. The
+         * unread dot comes back the moment the run ends.
+         */}
+        {working ? (
+          <span
+            aria-hidden="true"
+            className="absolute right-0 bottom-0 size-3.5 animate-spin rounded-full border-2 border-[var(--sand-fill-success)] border-r-transparent bg-sidebar"
+          />
+        ) : unread ? (
           <span
             aria-hidden="true"
             className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-[var(--sand-fill-accent)] ring-2 ring-sidebar"
@@ -136,15 +160,37 @@ export const BotRow = memo(function BotRow({
          * The preview darkens too. The dot says "something happened here" from across the room; the
          * weight is what tells you WHICH of two dotted rows you have not read yet once you look.
          */}
-        <span
-          className={
-            unread
-              ? "min-h-[18px] min-w-0 shrink truncate text-foreground text-sm"
-              : "min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm"
-          }
-        >
-          {subtitle}
-        </span>
+        {/*
+         * While a Bot works, the preview line says what it is doing instead of what it last said.
+         * The last thing it said is still there when it finishes, and a row that keeps showing
+         * yesterday's sentence through a live run is a row that never looks like anything happens.
+         */}
+        {/*
+         * SOLID TEXT, NOT THE SHIMMER.
+         *
+         * The tool line's shimmer paints its glyphs with `background-clip: text` over a
+         * transparent colour, so the words exist only while the animation is being drawn. On a
+         * backgrounded tab — or anywhere `background-clip: text` is not honoured — the label
+         * measured `rgba(0, 0, 0, 0)` and the row simply had a blank second line. That is an
+         * acceptable trade for a decorative tool line and not for the roster, which is the most
+         * read surface in the product. The spinner beside the face carries "live"; the words stay
+         * legible whatever the compositor is doing.
+         */}
+        {working ? (
+          <span className="min-h-[18px] min-w-0 shrink truncate text-foreground text-sm">
+            {working}
+          </span>
+        ) : (
+          <span
+            className={
+              unread
+                ? "min-h-[18px] min-w-0 shrink truncate text-foreground text-sm"
+                : "min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm"
+            }
+          >
+            {subtitle}
+          </span>
+        )}
       </span>
     </>
   );

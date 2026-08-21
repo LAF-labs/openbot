@@ -3,6 +3,7 @@ import {
   IconBox,
   IconClock,
   IconCopy,
+  IconEye,
   IconEyeOff,
   IconLogout,
   IconMailOpened,
@@ -48,6 +49,7 @@ import {
   setAgentPreferencesMutationOptions,
 } from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
@@ -188,11 +190,11 @@ function BotRowMenu({
 
         <ContextMenuItem
           onClick={() => {
-            setHidden.mutate({ agentId: agent.id, hidden: true });
+            setHidden.mutate({ agentId: agent.id, hidden: !agent.hidden });
           }}
         >
-          <IconEyeOff />
-          {t("Hide from sidebar")}
+          {agent.hidden ? <IconEye /> : <IconEyeOff />}
+          {agent.hidden ? t("Unhide") : t("Hide from sidebar")}
         </ContextMenuItem>
 
         {/*
@@ -225,6 +227,14 @@ export function BotSidebar() {
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  /*
+   * Hiding a Bot took it out of the roster with no way back from the roster — the only route to
+   * unhide was the Agents page, which is a different screen for a thing you did here. Hermes' Bot
+   * Mode answers this with an eye that only appears once something is hidden; so does this.
+   */
+  const [showingHidden, setShowingHidden] = useState(false);
+  const hidden = useQuery(agentListQueryOptions(true));
+  const working = useQuery(workingQueryOptions());
   const searchId = useId();
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
@@ -292,6 +302,15 @@ export function BotSidebar() {
         unread: channel.unread,
       }));
   }, [channels.data, query]);
+
+  /** Bot id to what it is doing, so a row is one map lookup rather than a scan per render. */
+  const workingByAgent = useMemo(() => {
+    const byAgent = new Map<string, string>();
+    for (const run of working.data ?? []) {
+      byAgent.set(run.agentId, workingLabel(run));
+    }
+    return byAgent;
+  }, [working.data]);
 
   const rows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -362,7 +381,37 @@ export function BotSidebar() {
        * The title row is the height of the window chrome it sits under, so the desktop build's
        * traffic lights land in it instead of on top of the search field.
        */}
-      <div className="flex h-[var(--sand-titlebar-block)] shrink-0 items-center justify-end px-2.5">
+      <div className="flex h-[var(--sand-titlebar-block)] shrink-0 items-center justify-end gap-0.5 px-2.5">
+        {/* Only once there is something to reveal: an eye over an empty set is a control that
+         * teaches nothing and never does anything. */}
+        {(hidden.data ?? []).length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  aria-label={
+                    showingHidden
+                      ? t("Hide hidden Bots")
+                      : t("Show hidden Bots")
+                  }
+                  aria-pressed={showingHidden}
+                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground aria-pressed:bg-[var(--sand-fill-ghost-selected)] aria-pressed:text-foreground"
+                  onClick={() => setShowingHidden((on) => !on)}
+                  type="button"
+                />
+              }
+            >
+              {showingHidden ? (
+                <IconEyeOff className="size-4" />
+              ) : (
+                <IconEye className="size-4" />
+              )}
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {showingHidden ? t("Hide hidden Bots") : t("Show hidden Bots")}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -418,10 +467,33 @@ export function BotSidebar() {
                     pinned={agent.pinnedAt !== null}
                     subtitle={subtitle}
                     unread={channel?.unread ?? false}
+                    {...(workingByAgent.has(agent.id)
+                      ? { working: workingByAgent.get(agent.id) }
+                      : {})}
                   />
                 </BotRowMenu>
               </li>
             ))}
+        {showingHidden
+          ? (hidden.data ?? []).map((agent) => (
+              <li className="opacity-50" key={`hidden:${agent.id}`}>
+                <BotRowMenu
+                  agent={agent}
+                  channelId={channelFor.get(agent.id)?.id}
+                >
+                  <BotRow
+                    agentId={agent.id}
+                    avatarSeed={agent.avatarSeed}
+                    channelId={channelFor.get(agent.id)?.id}
+                    lastMessageAt={t("Hidden")}
+                    name={agent.name}
+                    subtitle={agent.title}
+                  />
+                </BotRowMenu>
+              </li>
+            ))
+          : null}
+
         {groups.map(({ channel, subtitle, at, unread }) => (
           <li key={channel.id}>
             <GroupRow

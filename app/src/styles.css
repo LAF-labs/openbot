@@ -329,19 +329,26 @@ body {
   letter-spacing: 0;
 }
 
-.tool-line-running {
-  background-image: linear-gradient(
-    100deg,
-    currentColor 40%,
-    color-mix(in oklab, currentColor 25%, transparent) 50%,
-    currentColor 60%
-  );
-  background-size: 250% 100%;
-  background-position: 100% 0;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: tool-line-sweep 1.6s linear infinite;
+/*
+ * The shimmer only works where `background-clip: text` does. Where it does not, the declarations
+ * below still apply `color: transparent` and the words vanish — so the whole effect is behind a
+ * support query, and the fallback is ordinary readable text.
+ */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .tool-line-running {
+    background-image: linear-gradient(
+      100deg,
+      currentColor 40%,
+      color-mix(in oklab, currentColor 25%, transparent) 50%,
+      currentColor 60%
+    );
+    background-size: 250% 100%;
+    background-position: 100% 0;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: tool-line-sweep 1.6s linear infinite;
+  }
 }
 
 @keyframes tool-line-sweep {

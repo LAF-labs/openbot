@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AuditStore } from "../audit";
+import type { RunLedger } from "../runner/run-ledger";
 import type { AgentActor } from "./profile-types";
 
 /**
@@ -81,6 +82,13 @@ export type CoworkerCallOptions = {
    */
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
   auditStore?: AuditStore;
+  /**
+   * The run ledger, so a Bot answering another Bot reads as busy while it does.
+   *
+   * The audit row below records that the exchange HAPPENED; this records that it is happening. A
+   * handoff can take a minute and a half, and for that minute and a half the roster was silent.
+   */
+  ledger?: RunLedger;
   timeoutMs?: number;
 };
 
@@ -133,11 +141,22 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         );
       }
 
+      // Opened before the run and closed in both exits below; never allowed to fail the exchange.
+      const runId = await options.ledger
+        ?.begin({
+          agentId: targetId,
+          userId: actor.id,
+          origin: "handoff",
+          label: null,
+        })
+        .catch(() => null);
+
       let answer: string;
       try {
         answer = await runAgentOnce(target, question, timeoutMs);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (runId) await options.ledger?.finish(runId, reason).catch(() => {});
         await record(callerId, targetId, { ok: false, reason });
         if (error instanceof CoworkerCallError) throw error;
         // An UnavailableAgent's refusal and a dead endpoint both land here: the coworker exists in
@@ -145,6 +164,7 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         throw new CoworkerCallError(reason, 502);
       }
 
+      if (runId) await options.ledger?.finish(runId).catch(() => {});
       await record(callerId, targetId, {
         ok: true,
         answered: answer.length > 0,
