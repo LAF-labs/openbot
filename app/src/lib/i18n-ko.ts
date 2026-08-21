@@ -66,6 +66,8 @@ export const ko: Record<string, string> = {
   Bear: "곰",
   "Bear cub": "아기 곰",
   Beetle: "딱정벌레",
+  "Before each meeting, gather what I need: who is coming, what we said last time, and any document that has changed since. One page, no longer.":
+    "회의 전에 필요한 걸 모아줘 — 누가 오는지, 지난번에 무슨 얘기를 했는지, 그 뒤로 바뀐 문서. 한 장 넘기지 말고.",
   Bird: "새",
   "Black cat": "검은 고양이",
   Blocked: "차단됨",
@@ -76,6 +78,7 @@ export const ko: Record<string, string> = {
   Bunny: "토끼",
   Cactus: "선인장",
   "Cactus in a hat": "모자 쓴 선인장",
+  Calendar: "캘린더",
   "Called on this Bot's behalf": "이 봇을 대신해 호출됨",
   Cancel: "취소",
   "Capabilities and interface pieces available across Bots.":
@@ -154,6 +157,7 @@ export const ko: Record<string, string> = {
   "Edit skill": "스킬 수정",
   Egg: "달걀",
   Elephant: "코끼리",
+  Email: "메일",
   "Enter a web address starting with http:// or https://.":
     "http:// 또는 https://로 시작하는 웹 주소를 입력하세요.",
   "Every action taken in this deployment, and by whom.":
@@ -170,9 +174,11 @@ export const ko: Record<string, string> = {
   "Explore agents": "에이전트 둘러보기",
   "Face {number}": "얼굴 {number}",
   Channel: "채널",
+  "Finance operations": "재무 운영",
   "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
     "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
   Frog: "개구리",
+  "Get started": "시작하기",
   Ghost: "유령",
   "Give this Bot something to do on a schedule.":
     "이 봇에게 시간표대로 할 일을 하나 맡겨보세요.",
@@ -187,6 +193,7 @@ export const ko: Record<string, string> = {
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
   "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.":
     "“{mode}”에서는 아무것도 멈추지 않습니다. 해당하면 물어봤을 질문으로 기록만 됩니다.",
+  "Inbox Triage": "메일 분류",
   "Isolation at start-up": "시작 시 격리 적용",
   "It answered: {events}": "응답함: {events}",
   "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.":
@@ -208,6 +215,7 @@ export const ko: Record<string, string> = {
     "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
   "May no longer read this": "더 이상 읽을 수 없음",
   "May read this": "읽을 수 있음",
+  "Meeting Prep": "회의 준비",
   Messages: "메시지",
   Monkey: "원숭이",
   Mushroom: "버섯",
@@ -215,6 +223,7 @@ export const ko: Record<string, string> = {
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
   "Never submit a form": "폼은 절대 제출하지 않기",
   "Never type into a password field": "비밀번호 칸에는 절대 입력하지 않기",
+  "Night Shift": "야간 근무",
   "No Bots match your search": "검색과 일치하는 봇이 없습니다",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
@@ -229,6 +238,7 @@ export const ko: Record<string, string> = {
     "명시한 두 호스트만 해당합니다. 다른 곳에서 리다이렉트로 도착하는 링크는 허용됩니다.",
   "Open the audit trail": "감사 기록 열기",
   "Opening Google…": "Google 여는 중…",
+  "Overnight prep": "야간 준비",
   Panda: "판다",
   Paused: "일시정지",
   "Polar bear": "북극곰",
@@ -247,6 +257,8 @@ export const ko: Record<string, string> = {
   "Reset it": "초기화",
   "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
   "Resetting…": "초기화 중…",
+  "Review receipts, categorise expenses and prepare reimbursement reports. Flag anything that looks duplicated or out of policy rather than filing it.":
+    "영수증을 검토하고 지출을 분류해 정산 보고서를 준비해줘. 중복이거나 규정에 안 맞아 보이면 그냥 처리하지 말고 표시해줘.",
   Robot: "로봇",
   "Role description is required.": "역할 설명을 입력하세요.",
   "Role description must be 1000 characters or fewer.":
@@ -269,10 +281,13 @@ export const ko: Record<string, string> = {
   "Skip to the conversation": "대화로 건너뛰기",
   Snail: "달팽이",
   "Something went wrong.": "문제가 생겼습니다.",
+  "Sort my email into what needs me, what can wait, and what is noise. Draft replies in my voice for the ones that need one, and never send without asking.":
+    "메일을 내가 봐야 할 것, 미뤄도 될 것, 잡음으로 분류해줘. 답장이 필요한 건 내 말투로 초안을 써두되, 묻지 않고 보내지는 마.",
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
   "Stop browser": "브라우저 정지",
   "Stop the action": "행동을 멈춤",
+  Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
   Test: "연결 확인",
@@ -358,6 +373,8 @@ export const ko: Record<string, string> = {
   "What should it do?": "무엇을 할까요?",
   "White cat": "흰 고양이",
   "Who is this for?": "누구에게 보낼까요?",
+  "Work overnight and have a digest ready by morning: what arrived, what changed, and the two or three things worth my attention first.":
+    "밤사이 일하고 아침에 다이제스트를 준비해줘 — 무엇이 도착했고, 무엇이 바뀌었고, 내가 먼저 볼 만한 두세 가지.",
   "Working late?": "늦게까지 고생이 많으세요",
   "Good morning": "좋은 아침이에요",
   "Good afternoon": "좋은 오후예요",

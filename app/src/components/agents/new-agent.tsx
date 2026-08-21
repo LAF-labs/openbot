@@ -1,37 +1,206 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AgentFields } from "@/components/agents/agent-fields";
+import { useState } from "react";
+import {
+  Mascot,
+  MASCOT_TILES,
+  mascotBackground,
+} from "@/components/agents/mascot";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
+import { AGENT_PRESETS, type AgentPreset } from "@/lib/agents/presets";
 import { t } from "@/lib/i18n";
 
+/**
+ * Making a colleague.
+ *
+ * IT USED TO BE THE EDIT FORM WITH A DIFFERENT TITLE — six fields including an AG-UI endpoint and a
+ * bearer token, presented to somebody who has not yet seen a Bot answer anything. Two of those
+ * fields are for connecting a Bot you host yourself, which is a thing almost nobody does and never
+ * on the first one.
+ *
+ * So: a face, a name, and what the job is. The face is picked inline rather than behind a dialog,
+ * because choosing it is the fun part and it is what makes the roster yours. The presets underneath
+ * fill all three at once, for anybody who would rather start from a job that already exists than
+ * invent one.
+ *
+ * Connecting your own endpoint has not gone anywhere — it is on the Bot's profile, where it belongs:
+ * an existing colleague being pointed somewhere else.
+ */
 export function NewAgent() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
 
+  const [avatarSeed, setAvatarSeed] = useState(MASCOT_TILES[0]?.id ?? "r0c1");
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [role, setRole] = useState("");
+
+  const ready = name.trim() && title.trim() && role.trim();
+
+  /*
+   * The translated text, not the English source. A preset is a starting point for a Bot's own name,
+   * title and standing instruction — the words a person will read on the roster for as long as the
+   * Bot exists, and the words the model is given. Filling the form with the key rather than the
+   * translation would show a Korean card that produces an English colleague.
+   */
+  const applyPreset = (preset: AgentPreset) => {
+    setAvatarSeed(preset.avatarSeed);
+    setName(t(preset.name));
+    setTitle(t(preset.title));
+    setRole(t(preset.roleDescription));
+  };
+
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
-      <header>
-        <h1 className="text-2xl font-semibold">{t("New coworker")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <form
+      className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!ready || createAgent.isPending) return;
+        const agent = await createAgent.mutateAsync({
+          // `agentInputFrom` shapes the edit form, which has an endpoint and a key this screen
+          // deliberately does not ask for. The face is the one field it adds.
+          ...agentInputFrom({
+            ...emptyAgentForm,
+            name: name.trim(),
+            title: title.trim(),
+            roleDescription: role.trim(),
+          }),
+          avatarSeed,
+        });
+        // The panel swaps to the new colleague's profile; the roster behind it has the new card.
+        await navigate({ search: { agent: agent.id }, to: "/agents" });
+      }}
+    >
+      {/* The face, big, on its own ground — the same way it will appear everywhere else. */}
+      <div className="flex flex-col items-center gap-4">
+        <span
+          className="inline-flex size-20 items-end justify-center overflow-hidden rounded-full ring-1 ring-border"
+          style={{ background: mascotBackground(avatarSeed) }}
+        >
+          <Mascot
+            className="size-full object-cover"
+            seed={avatarSeed}
+            size={80}
+          />
+        </span>
+
+        {/* `aria-pressed` toggles, matching the picker dialog: one selection state, one grammar. */}
+        <fieldset className="flex max-w-md flex-wrap justify-center gap-1.5">
+          <legend className="sr-only">{t("Pick a face")}</legend>
+          {MASCOT_TILES.map((tile) => (
+            <button
+              aria-label={t(tile.name)}
+              aria-pressed={tile.id === avatarSeed}
+              className={
+                "size-8 overflow-hidden rounded-lg ring-offset-2 ring-offset-background transition hover:scale-110" +
+                (tile.id === avatarSeed
+                  ? " ring-2 ring-primary"
+                  : " ring-1 ring-border")
+              }
+              key={tile.id}
+              onClick={() => setAvatarSeed(tile.id)}
+              style={{ background: tile.background }}
+              type="button"
+            >
+              <Mascot className="size-full" seed={tile.id} size={32} />
+            </button>
+          ))}
+        </fieldset>
+      </div>
+
+      <Field>
+        <FieldLabel htmlFor="new-bot-name">{t("Name")}</FieldLabel>
+        <Input
+          autoFocus
+          id="new-bot-name"
+          onChange={(event) => setName(event.target.value)}
+          placeholder={t("Expense Manager")}
+          value={name}
+        />
+      </Field>
+
+      <Field>
+        <FieldLabel htmlFor="new-bot-title">{t("Title")}</FieldLabel>
+        <Input
+          id="new-bot-title"
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder={t("Finance Operations")}
+          value={title}
+        />
+      </Field>
+
+      <Field>
+        <FieldLabel htmlFor="new-bot-role">{t("Role")}</FieldLabel>
+        <Textarea
+          id="new-bot-role"
+          onChange={(event) => setRole(event.target.value)}
+          placeholder={t(
+            "Review receipts, categorize expenses, and prepare reimbursement reports.",
+          )}
+          rows={3}
+          value={role}
+        />
+        <p className="text-muted-foreground text-sm">
           {t(
             "The role you write here applies in every channel this coworker works in.",
           )}
         </p>
-      </header>
+      </Field>
 
-      <AgentFields
-        defaultValues={emptyAgentForm}
-        error={createAgent.error}
-        onSubmit={async (values) => {
-          // The panel swaps from the form to the new coworker's profile, and the roster behind it
-          // picks up the new card: the next thing to do is start a channel with it.
-          const agent = await createAgent.mutateAsync(agentInputFrom(values));
-          await navigate({ search: { agent: agent.id }, to: "/agents" });
-        }}
-        submitLabel={t("Create coworker")}
-      />
-    </div>
+      {createAgent.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {createAgent.error.message}
+        </p>
+      ) : null}
+
+      <Button
+        className="w-full"
+        disabled={!ready || createAgent.isPending}
+        type="submit"
+      >
+        {createAgent.isPending ? t("Creating…") : t("Get started")}
+      </Button>
+
+      <section className="flex flex-col gap-3 border-border border-t pt-6">
+        <h2 className="font-medium text-muted-foreground text-xs">
+          {t("Suggestions")}
+        </h2>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+          {AGENT_PRESETS.map((preset) => (
+            <button
+              className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-ring/40"
+              key={preset.id}
+              onClick={() => applyPreset(preset)}
+              type="button"
+            >
+              <span
+                className="inline-flex size-8 shrink-0 overflow-hidden rounded-lg"
+                style={{ background: mascotBackground(preset.avatarSeed) }}
+              >
+                <Mascot
+                  className="size-full"
+                  seed={preset.avatarSeed}
+                  size={32}
+                />
+              </span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate font-medium text-[13px]">
+                  {t(preset.name)}
+                </span>
+                <span className="line-clamp-2 text-[12px] text-muted-foreground leading-snug">
+                  {t(preset.roleDescription)}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </form>
   );
 }
