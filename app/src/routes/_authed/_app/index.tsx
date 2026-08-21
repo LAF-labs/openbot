@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
+import { RosterStrip } from "@/components/agents/roster-strip";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -96,54 +97,12 @@ function RouteComponent() {
       ) : null}
 
       {roster.length > 0 ? (
-        // Wraps within the composer's measure: a team of a dozen ran off the right of the screen.
-        <div className="mt-7 flex max-w-2xl flex-wrap items-start justify-center gap-1">
-          {roster.map((agent) => {
-            const chosen = agent.id === selected?.id;
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                onClick={() => setSelectedId(agent.id)}
-                aria-pressed={chosen}
-                className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
-              >
-                <span
-                  className={
-                    "inline-flex size-12 overflow-hidden rounded-full ring-offset-2 ring-offset-background transition-all duration-150 group-hover:scale-105" +
-                    (chosen ? " ring-2 ring-primary" : " ring-0")
-                  }
-                >
-                  <Mascot
-                    className="size-full object-cover"
-                    seed={agent.avatarSeed}
-                    size={48}
-                  />
-                </span>
-                <span
-                  className={
-                    "max-w-full truncate text-[11px] leading-tight" +
-                    (chosen ? " font-medium" : " text-muted-foreground")
-                  }
-                >
-                  {agent.name}
-                </span>
-              </button>
-            );
-          })}
-          {/* `new: true` — the tile is labelled "New agent" and so it opens the form, not the list. */}
-          <Link
-            to="/agents"
-            search={{ new: true }}
-            className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
-          >
-            <span className="inline-flex size-12 items-center justify-center rounded-full border border-border border-dashed text-[20px] text-muted-foreground transition-transform duration-150 group-hover:scale-105">
-              +
-            </span>
-            <span className="max-w-full truncate text-[11px] text-muted-foreground leading-tight">
-              {t("New agent")}
-            </span>
-          </Link>
+        <div className="mt-7">
+          <RosterStrip
+            onSelect={setSelectedId}
+            roster={roster}
+            selectedId={selected?.id}
+          />
         </div>
       ) : null}
 

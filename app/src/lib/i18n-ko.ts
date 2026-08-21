@@ -354,6 +354,7 @@ export const ko: Record<string, string> = {
     "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",
   "What should it do?": "무엇을 할까요?",
   "White cat": "흰 고양이",
+  "Who is this for?": "누구에게 보낼까요?",
   "Working late?": "늦게까지 고생이 많으세요",
   "Good morning": "좋은 아침이에요",
   "Good afternoon": "좋은 오후예요",

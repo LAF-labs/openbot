@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
+import { RosterStrip } from "@/components/agents/roster-strip";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { canSend, type Recipient } from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -66,11 +67,22 @@ function RouteComponent() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="h-12 border-b border-border sticky top-0 flex flex-row px-2 items-center">
-        <span className="text-sm text-muted-foreground">{t("To:")}</span>
+      {/*
+       * WHO THIS IS FOR, AS A FIELD THAT LOOKS LIKE ONE.
+       *
+       * This row used to be a bare label beside a borderless full-width combobox, so the only thing
+       * a person could see was the word "To:" — squeezed to two lines, because nothing stopped the
+       * flex row from shrinking it — and a chevron nine hundred pixels away at the edge of the
+       * screen, attached to nothing. The field is bounded now, it has an edge, and its chevron is
+       * inside it where a chevron belongs.
+       */}
+      <div className="sticky top-0 flex h-12 shrink-0 flex-row items-center gap-2 border-border border-b px-3">
+        <span className="shrink-0 text-muted-foreground text-sm">
+          {t("To:")}
+        </span>
         <Combobox
           // Do not auto-open when the recipient came from the URL; the field is already answered.
-          defaultOpen={!agent}
+          defaultOpen={false}
           autoHighlight
           items={profiles ?? []}
           isItemEqualToValue={(item: AgentProfile, value: AgentProfile) =>
@@ -90,13 +102,10 @@ function RouteComponent() {
           <ComboboxInput
             // The control that decides who the conversation goes to announced as "combobox, blank".
             aria-label={t("Choose a coworker")}
+            className="h-8 w-full max-w-xs text-sm"
             placeholder={t("Choose a coworker…")}
-            // InputGroup owns focus rings via `has-[…:focus-visible]`; disable that wrapper ring here.
-            className="border-none w-full bg-transparent! text-sm has-[[data-slot=input-group-control]:focus-visible]:ring-0"
           />
-          {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
-          <ComboboxContent className="min-w-0 max-w-lg" sideOffset={12}>
-            {/* This popup opens on mount, so it met people with "none" before the roster landed. */}
+          <ComboboxContent className="min-w-0 max-w-lg" sideOffset={8}>
             <ComboboxEmpty>
               {rosterPending ? t("Loading coworkers…") : t("No agents found.")}
             </ComboboxEmpty>
@@ -120,7 +129,7 @@ function RouteComponent() {
         emptyState={
           chosen ? (
             <div className="flex flex-col items-center gap-3 px-6 text-center">
-              <span className="inline-flex size-20 overflow-hidden rounded-full">
+              <span className="inline-flex size-20 overflow-hidden rounded-full ring-1 ring-border">
                 <Mascot
                   className="size-full object-cover"
                   seed={chosen.avatarSeed}
@@ -141,7 +150,27 @@ function RouteComponent() {
                 </p>
               ) : null}
             </div>
-          ) : undefined
+          ) : (
+            /*
+             * NOT A VOID. With nobody chosen this screen was six hundred pixels of white between a
+             * combobox and a composer, and the one question it exists to ask — which colleague is
+             * this for — was answerable only by typing into a field that did not look like one. The
+             * team is a handful of drawn characters; pointing at one is faster than naming it, and
+             * it is the same control Home uses for the same question.
+             */
+            <div className="pointer-events-auto flex flex-col items-center gap-4 px-6">
+              <p className="text-[13px] text-muted-foreground">
+                {t("Who is this for?")}
+              </p>
+              <RosterStrip
+                onSelect={(agentId) =>
+                  void navigate({ replace: true, search: { agent: agentId } })
+                }
+                roster={profiles ?? []}
+                selectedId={undefined}
+              />
+            </div>
+          )
         }
         disabled={recipients.length === 0}
         messages={sent ? [sent] : []}

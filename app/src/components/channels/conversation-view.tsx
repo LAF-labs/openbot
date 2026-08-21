@@ -203,7 +203,12 @@ export function ConversationView({
     <div className="flex flex-col flex-1 min-h-0">
       <div className="relative flex flex-1 min-h-0">
         {emptyState && messages.length === 0 && queued.length === 0 ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          /*
+           * `z-10`, because the transcript is a later sibling and was painting over this. The
+           * overlay itself stays click-through so it never sits between somebody and the composer;
+           * an empty state with a control in it opts back in on its own element.
+           */
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
             {emptyState}
           </div>
         ) : null}
