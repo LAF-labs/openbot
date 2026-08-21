@@ -16,6 +16,8 @@ export const ko: Record<string, string> = {
   "A person supplied a secret": "사람이 비밀값을 입력함",
   "A person took the wheel": "사람이 제어를 가져감",
   "A reason, if you want to give one": "이유 (선택)",
+  "A routine is work this Bot repeats on a schedule.":
+    "루틴은 이 봇이 일정에 따라 반복하는 작업이에요.",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",
@@ -119,6 +121,7 @@ export const ko: Record<string, string> = {
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
   "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
+  "Create a routine": "루틴 만들기",
   "Create coworker": "봇 만들기",
   "Creating…": "만드는 중…",
   "Credential saved": "자격증명 저장됨",

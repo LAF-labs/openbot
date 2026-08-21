@@ -136,6 +136,15 @@ function RouteComponent() {
         <Composer
           agents={toAgentOptions(agents)}
           className="w-full max-w-2xl"
+          /*
+           * THE SAME PILL AS IN A CONVERSATION.
+           *
+           * This was the tall variant: a box that opened at four lines and held ninety pixels of
+           * empty space under a one-line placeholder, on the screen a person sees every time they
+           * open the app. One composer, one shape — the box you start a conversation in should not
+           * be a different object from the box you continue it in.
+           */
+          compact
           // The chosen Bot's real granted skills, the way a channel does it. Home used to inherit
           // the placeholder list, so `/` here offered a command no Bot had.
           commands={skillCommands}

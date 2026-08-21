@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { Mascot, mascotBackground } from "@/components/agents/mascot";
+import { Mascot } from "@/components/agents/mascot";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
@@ -95,18 +95,30 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const actionError =
     duplicateAgent.error ?? setHidden.error ?? deleteAgent.error;
 
+  /*
+   * A NEUTRAL TILE, WITH THE COLOUR IN THE CHARACTER.
+   *
+   * This was a full-bleed band in the Bot's own colour, 132px of saturation across the top of a
+   * pane that is otherwise text and controls — the loudest thing on any screen in the product, on
+   * the screen with the least to say. The face already carries its ground; painting the tile the
+   * same colour behind it just spread one Bot's hue over the panel.
+   *
+   * Grok stands its bot mark on `bg/subtle` and lets the mark be the only colour, which is also
+   * what makes two Bots' profiles look like the same product rather than like two themes.
+   */
   const banner = (
     <span
       aria-hidden="true"
-      className="flex h-[132px] w-full items-end justify-center overflow-hidden"
-      style={{ background: mascotBackground(profile.avatarSeed) }}
+      className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)]"
     >
-      {/* The face at tile scale, on its own ground — the character, not an icon of it. */}
-      <Mascot
-        className="translate-y-1 transition-transform duration-200 group-hover:scale-[1.03]"
-        seed={profile.avatarSeed}
-        size={128}
-      />
+      {/*
+       * Clipped to a squircle, because the art carries its own square ground. Standing it on a
+       * neutral tile without this traded a full-bleed colour band for a hard colour block — the
+       * same problem at a smaller size. Every other place the face appears already clips it.
+       */}
+      <span className="inline-flex overflow-hidden rounded-[32px] transition-transform duration-200 group-hover:scale-[1.03]">
+        <Mascot seed={profile.avatarSeed} size={128} />
+      </span>
     </span>
   );
 

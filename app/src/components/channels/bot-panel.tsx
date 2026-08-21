@@ -2,6 +2,7 @@ import { IconClock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ComputerView } from "@/components/computer/computer-view";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { t } from "@/lib/i18n";
 import { routineListQueryOptions, scheduleLabel } from "@/lib/routines/queries";
@@ -33,7 +34,12 @@ export function BotPanel({
   return (
     <div className="flex flex-col gap-6 px-4 pt-2 pb-6">
       <section className="flex flex-col gap-2">
-        <ComputerView active computerId={agentId} />
+        {/*
+         * `minWidth` 0: the view's own 320px floor is wider than the 288px this pane leaves inside
+         * its padding, so the thumbnail pushed the pane out to 400px from the inside. It scales to
+         * whatever it is given; the floor exists for the full-size view, not for a preview.
+         */}
+        <ComputerView active computerId={agentId} minWidth={0} />
         <p className="text-center text-muted-foreground text-xs">
           {name ? t("{name}'s screen", { name }) : t("The assistant's screen")}
         </p>
@@ -58,13 +64,23 @@ export function BotPanel({
         ) : null}
 
         {!routines.isPending && !routines.isError && mine.length === 0 ? (
-          /* A Bot with no standing work is the normal case, and the way to give it some is here. */
-          <Link
-            className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
-            to="/routines"
-          >
-            {t("Give this Bot something to do on a schedule.")}
-          </Link>
+          /*
+           * A Bot with no standing work is the normal case, so this is an empty state and not an
+           * error: a sentence saying what a routine IS, then the button that makes one. It was an
+           * underlined link the size of a footnote — the only way onward on this pane, drawn as
+           * fine print.
+           */
+          <div className="flex flex-col items-center gap-3 px-2 py-4 text-center">
+            <p className="text-muted-foreground text-sm">
+              {t("A routine is work this Bot repeats on a schedule.")}
+            </p>
+            <Button
+              render={(props) => <Link to="/routines" {...props} />}
+              variant="secondary"
+            >
+              {t("Create a routine")}
+            </Button>
+          </div>
         ) : null}
 
         <ul className="flex flex-col gap-1">

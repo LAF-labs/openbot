@@ -15,7 +15,13 @@ import { t } from "@/lib/i18n";
  */
 
 const ANIMATION_DURATION_SECONDS = 0.3;
-const DEFAULT_DETAIL_WIDTH = 400;
+/*
+ * 320px — Grok's `--sand-info-pane-width`, and 80px narrower than what was here.
+ *
+ * The pane holds a screen thumbnail and a list of routines, neither of which needs 400px; what
+ * needed it was the conversation next door, which is where a person is actually reading.
+ */
+const DEFAULT_DETAIL_WIDTH = 320;
 
 /** Strong ease-out. The browser's built-in curve is too weak to read as deliberate. */
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;

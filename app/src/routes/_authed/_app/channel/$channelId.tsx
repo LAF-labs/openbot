@@ -32,7 +32,14 @@ const HEADING_ENTRANCE_SECONDS = 0.18;
 const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
 /** Shared detail pane width for the live screen view. */
-const SCREEN_PANEL_WIDTH = 400;
+/*
+ * 320px, the same as the pane's resting width — see DEFAULT_DETAIL_WIDTH.
+ *
+ * Watching used to widen the pane to 400px, which took 80px off the conversation every time
+ * somebody glanced at the screen and gave it back when they looked away. The thumbnail is a
+ * thumbnail; full size is a click on it.
+ */
+const SCREEN_PANEL_WIDTH = 320;
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
