@@ -157,6 +157,7 @@ export const ko: Record<string, string> = {
     "각 봇의 브라우저와 그 프로필. 프로필이 있어서 봇이 내일도 로그인 상태로 남습니다 — 초기화하면 모든 곳에서 로그아웃됩니다.",
   Edit: "수정",
   "Edit description": "설명 수정",
+  "Edit profile": "프로필 편집",
   "Edit skill": "스킬 수정",
   Egg: "달걀",
   Elephant: "코끼리",
@@ -191,6 +192,7 @@ export const ko: Record<string, string> = {
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
+  "Hide from sidebar": "사이드바에서 숨기기",
   "Hiding…": "숨기는 중…",
   "How {product} looks. Following the system flips with it.":
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
@@ -238,6 +240,7 @@ export const ko: Record<string, string> = {
     "아무것도 멈추지 않습니다. 규칙에 걸리는 행동은 거부됐을 것으로 기록만 됩니다 — 규칙을 켜기 전에 시험해 보는 방법입니다.",
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
+  Notifications: "알림",
   Octopus: "문어",
   "Only the two hosts named. A link that redirects there from somewhere else is allowed.":
     "명시한 두 호스트만 해당합니다. 다른 곳에서 리다이렉트로 도착하는 링크는 허용됩니다.",
@@ -246,6 +249,8 @@ export const ko: Record<string, string> = {
   "Overnight prep": "야간 준비",
   Panda: "판다",
   Paused: "일시정지",
+  Pin: "고정",
+  Pinned: "고정됨",
   "Polar bear": "북극곰",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
@@ -297,6 +302,8 @@ export const ko: Record<string, string> = {
   Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
+  "Tell me when {name} finishes or needs me.":
+    "{name}이(가) 작업을 마치거나 내 입력이 필요할 때 알려주세요.",
   Test: "연결 확인",
   "Testing…": "확인 중…",
   "That could not be sent to the page. Try again.":
@@ -353,6 +360,7 @@ export const ko: Record<string, string> = {
     "로그인, 파일, 세션을 공유하므로 한 봇이 다른 봇이 로그인한 곳에 접근할 수 있습니다. 각 봇에게 따로 주려면 {variable}을 설정하세요.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
+  "This channel has no coworker in it.": "이 채널에는 봇이 없습니다.",
   "This coworker has been deleted. The conversation stays readable, but it can no longer reply.":
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
   "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
@@ -367,6 +375,7 @@ export const ko: Record<string, string> = {
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 실제로 거부하기 전에 '기록만' 상태로 먼저 시험해 보세요.",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
+  Unpin: "고정 해제",
   "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
   "Waiting for your answer": "답변을 기다리는 중",
   "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",

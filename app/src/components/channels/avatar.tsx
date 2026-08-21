@@ -29,9 +29,16 @@ function useSeeds(): (agentId: string) => string | undefined {
      * briefly, is worse than showing none.
      */
     if (!agents.data) return undefined;
-    return (
-      agents.data.find((agent) => agent.id === agentId)?.avatarSeed ?? agentId
-    );
+    /*
+     * AND UNDEFINED FOR AN ID THE ROSTER DOES NOT HOLD, for the same reason.
+     *
+     * This used to fall back to hashing the raw id, which produces a real, stable, WRONG face — the
+     * seed a Bot actually wears is not its id, so the character drawn belonged to nobody. It never
+     * showed on a single-Bot row, where the id always resolves; it showed on group rows, whose
+     * members can be hidden, private or deleted and therefore missing from this roster. Exactly the
+     * failure the paragraph above says was removed, still living in the multi-agent path.
+     */
+    return agents.data.find((agent) => agent.id === agentId)?.avatarSeed;
   };
 }
 

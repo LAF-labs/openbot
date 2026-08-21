@@ -1,17 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { type ReactNode, useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
+import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { agentInputFrom } from "@/lib/agents/form";
 import {
   deleteAgentMutationOptions,
   duplicateAgentMutationOptions,
   setAgentHiddenMutationOptions,
+  setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
 import { agentQueryOptions } from "@/lib/agents/queries";
@@ -64,12 +66,10 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   // State is keyed by coworker id because this panel can remain open while its target changes.
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [pickingFace, setPickingFace] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
-  const isEditing = editingId === agentId;
   const isConfirmingDelete = confirmingDeleteId === agentId;
 
   const agent = useQuery(agentQueryOptions(agentId));
@@ -192,7 +192,18 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </div>
       </header>
 
-      {isEditing ? (
+      {/*
+       * THE PANE IS THE FORM, not a card with an Edit button in front of it.
+       *
+       * Editing a colleague was a mode: read the role, press Edit, watch the whole pane swap for a
+       * form, save, watch it swap back. Grok's settings pane is just the fields — the name you can
+       * see is the name you can type in — and for a panel whose entire job is "what is this Bot
+       * for", a mode between looking and changing is a step that exists only to be dismissed.
+       *
+       * A Bot the deployment shipped keeps the read-only view: the server refuses those edits, and
+       * a form that cannot save is worse than a sentence that never offered.
+       */}
+      {profile.canManage ? (
         <AgentFields
           defaultValues={{
             name: profile.name,
@@ -205,13 +216,12 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           }}
           hasAuth={profile.hasAuth}
           error={updateAgent.error}
-          onCancel={() => setEditingId(null)}
+          // No Cancel: there is nothing to cancel back to when the form is the pane.
           onSubmit={async (values) => {
             await updateAgent.mutateAsync({
               agentId,
               input: agentInputFrom(values),
             });
-            setEditingId(null);
           }}
           submitLabel={t("Save changes")}
         />
@@ -232,116 +242,160 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </p>
       ) : null}
 
-      {isEditing ? null : (
-        <div className="flex flex-col gap-2 w-full mt-6">
-          <Button
-            className="w-full text-sm!"
-            onClick={async () => {
-              await navigate({
-                search: { agent: agentId },
-                to: "/channel/new",
-              });
-            }}
-          >
-            {t("Start channel")}
-          </Button>
+      <NotifyCard
+        agentId={agentId}
+        name={profile.name}
+        notify={profile.notify}
+      />
 
-          <Button
-            className="w-full text-sm!"
-            disabled={duplicateAgent.isPending}
-            onClick={async () => {
-              const copy = await duplicateAgent.mutateAsync(agentId);
-              await navigate({ search: { agent: copy.id }, to: "/agents" });
-            }}
-            variant="outline"
-          >
-            {duplicateAgent.isPending ? t("Duplicating…") : t("Duplicate")}
-          </Button>
+      <div className="flex flex-col gap-2 w-full mt-6">
+        <Button
+          className="w-full text-sm!"
+          onClick={async () => {
+            await navigate({
+              search: { agent: agentId },
+              to: "/channel/new",
+            });
+          }}
+        >
+          {t("Start channel")}
+        </Button>
 
-          <Button
-            className="w-full text-sm!"
-            disabled={setHidden.isPending}
-            onClick={async () => {
-              await setHidden.mutateAsync({
-                agentId,
-                hidden: !profile.hidden,
-              });
-              if (!profile.hidden)
-                await navigate({ search: {}, to: "/agents" });
-            }}
-            variant="outline"
-          >
-            {setHidden.isPending
-              ? profile.hidden
-                ? t("Unhiding…")
-                : t("Hiding…")
-              : profile.hidden
-                ? t("Unhide")
-                : t("Hide")}
-          </Button>
+        <Button
+          className="w-full text-sm!"
+          disabled={duplicateAgent.isPending}
+          onClick={async () => {
+            const copy = await duplicateAgent.mutateAsync(agentId);
+            await navigate({ search: { agent: copy.id }, to: "/agents" });
+          }}
+          variant="outline"
+        >
+          {duplicateAgent.isPending ? t("Duplicating…") : t("Duplicate")}
+        </Button>
 
-          {profile.hidden ? (
-            <p className="-mt-1 text-xs text-muted-foreground">
-              {t(
-                "Hidden from your agents list. This changes nothing for anyone else.",
-              )}
-            </p>
-          ) : null}
+        <Button
+          className="w-full text-sm!"
+          disabled={setHidden.isPending}
+          onClick={async () => {
+            await setHidden.mutateAsync({
+              agentId,
+              hidden: !profile.hidden,
+            });
+            if (!profile.hidden) await navigate({ search: {}, to: "/agents" });
+          }}
+          variant="outline"
+        >
+          {setHidden.isPending
+            ? profile.hidden
+              ? t("Unhiding…")
+              : t("Hiding…")
+            : profile.hidden
+              ? t("Unhide")
+              : t("Hide")}
+        </Button>
 
-          {profile.canManage ? (
-            <Button
-              className="w-full text-sm!"
-              onClick={() => setEditingId(agentId)}
-              variant="outline"
-            >
-              {t("Edit")}
-            </Button>
-          ) : null}
+        {profile.hidden ? (
+          <p className="-mt-1 text-xs text-muted-foreground">
+            {t(
+              "Hidden from your agents list. This changes nothing for anyone else.",
+            )}
+          </p>
+        ) : null}
 
-          {profile.canManage ? (
-            <>
-              <Separator className="my-1" />
+        {profile.canManage ? (
+          <>
+            <Separator className="my-1" />
 
-              {isConfirmingDelete ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm">
-                    {t("Delete {name}? This cannot be undone.", {
-                      name: profile.name,
-                    })}
-                  </p>
-                  {/* Cancel remains closest to the original Delete button position. */}
-                  <Button
-                    className="w-full text-sm!"
-                    onClick={() => setConfirmingDeleteId(null)}
-                    variant="outline"
-                  >
-                    {t("Cancel")}
-                  </Button>
-                  <Button
-                    className="w-full text-sm!"
-                    disabled={deleteAgent.isPending}
-                    onClick={async () => {
-                      await deleteAgent.mutateAsync(agentId);
-                      await navigate({ search: {}, to: "/agents" });
-                    }}
-                    variant="destructive"
-                  >
-                    {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
-                  </Button>
-                </div>
-              ) : (
+            {isConfirmingDelete ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm">
+                  {t("Delete {name}? This cannot be undone.", {
+                    name: profile.name,
+                  })}
+                </p>
+                {/* Cancel remains closest to the original Delete button position. */}
                 <Button
                   className="w-full text-sm!"
-                  onClick={() => setConfirmingDeleteId(agentId)}
+                  onClick={() => setConfirmingDeleteId(null)}
+                  variant="outline"
+                >
+                  {t("Cancel")}
+                </Button>
+                <Button
+                  className="w-full text-sm!"
+                  disabled={deleteAgent.isPending}
+                  onClick={async () => {
+                    await deleteAgent.mutateAsync(agentId);
+                    await navigate({ search: {}, to: "/agents" });
+                  }}
                   variant="destructive"
                 >
-                  {t("Delete")}
+                  {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
                 </Button>
-              )}
-            </>
-          ) : null}
-        </div>
-      )}
+              </div>
+            ) : (
+              <Button
+                className="w-full text-sm!"
+                onClick={() => setConfirmingDeleteId(agentId)}
+                variant="destructive"
+              >
+                {t("Delete")}
+              </Button>
+            )}
+          </>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Whether this Bot is allowed to interrupt you.
+ *
+ * Its own card, and available to everybody — not only to whoever can edit the Bot. Muting is a
+ * fact about the reader: two people sharing a public coworker decide it separately, and one of
+ * them wanting quiet must not silence the other. That is also why it saves on the switch rather
+ * than waiting for the form's Save: it is not one of the Bot's fields.
+ */
+function NotifyCard({
+  agentId,
+  name,
+  notify,
+}: {
+  agentId: string;
+  name: string;
+  notify: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const preferences = useMutation(
+    setAgentPreferencesMutationOptions(queryClient),
+  );
+  const labelId = useId();
+
+  return (
+    <section className="flex items-start gap-3 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h2 className="font-medium text-base" id={labelId}>
+          {t("Notifications")}
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          {t("Tell me when {name} finishes or needs me.", { name })}
+        </p>
+        {preferences.error ? (
+          <p className="pt-1 text-destructive text-sm" role="alert">
+            {preferences.error.message}
+          </p>
+        ) : null}
+      </div>
+      <Switch
+        aria-labelledby={labelId}
+        checked={notify}
+        className="mt-1 shrink-0"
+        disabled={preferences.isPending}
+        onCheckedChange={(next) => {
+          preferences.mutate({ agentId, patch: { notify: next } });
+        }}
+      />
+    </section>
   );
 }

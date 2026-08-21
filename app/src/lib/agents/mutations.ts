@@ -14,9 +14,16 @@ export type AgentInput = {
   avatarSeed?: string;
 };
 
+/** Which of this person's preferences for a Bot to change. Absent means "leave it alone". */
+export type AgentPreferencePatch = {
+  hidden?: boolean;
+  pinned?: boolean;
+  notify?: boolean;
+};
+
 async function agentRequest(
   path: string,
-  init: { method: string; body?: AgentInput },
+  init: { method: string; body?: AgentInput | AgentPreferencePatch },
 ): Promise<Response> {
   const response = await fetch(path, {
     method: init.method,
@@ -86,6 +93,28 @@ export function setAgentHiddenMutationOptions(queryClient: QueryClient) {
         `/api/agents/${variables.agentId}/${variables.hidden ? "hide" : "unhide"}`,
         { method: "POST" },
       );
+    },
+    onSuccess: () => invalidateAgents(queryClient),
+  });
+}
+
+/**
+ * Pin, mute, hide — one call, and it is NOT gated on being able to manage the Bot.
+ *
+ * These are facts about the reader, not about the coworker: somebody who can only see a shared Bot
+ * still gets to decide whether it sits at the top of their roster and whether it interrupts them,
+ * and neither choice is visible to anybody else.
+ */
+export function setAgentPreferencesMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (variables: {
+      agentId: string;
+      patch: AgentPreferencePatch;
+    }) => {
+      await agentRequest(`/api/agents/${variables.agentId}/preferences`, {
+        method: "POST",
+        body: variables.patch,
+      });
     },
     onSuccess: () => invalidateAgents(queryClient),
   });

@@ -1,6 +1,8 @@
+import { IconPin } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { memo, useEffect, useRef } from "react";
 import { Mascot } from "@/components/agents/mascot";
+import { t } from "@/lib/i18n";
 
 /**
  * One Bot in the rail: its face, its name, and the last thing said to it.
@@ -20,12 +22,15 @@ export const BotRow = memo(function BotRow({
   avatarSeed,
   name,
   channelId,
+  pinned = false,
   subtitle,
   lastMessageAt,
 }: {
   agentId: string;
   avatarSeed: string;
   name: string;
+  /** Kept at the top of the roster by this person. Marked, or the order looks arbitrary. */
+  pinned?: boolean;
   /** The Bot's conversation, once it has one. */
   channelId: string | undefined;
   /** The last thing said, or the Bot's standing role before anything has been. */
@@ -82,6 +87,17 @@ export const BotRow = memo(function BotRow({
            * for it.
            */}
           <span className="min-w-0 shrink truncate text-base">{name}</span>
+          {/*
+           * A pin that moves a row without saying so reads as a list that shuffles itself. The
+           * glyph is the only thing on the row explaining why this one is above a Bot that spoke
+           * more recently.
+           */}
+          {pinned ? (
+            <IconPin
+              aria-label={t("Pinned")}
+              className="size-3 shrink-0 text-muted-foreground"
+            />
+          ) : null}
           <span className="ms-auto shrink-0 text-muted-foreground/80 text-xs tabular-nums">
             {lastMessageAt}
           </span>

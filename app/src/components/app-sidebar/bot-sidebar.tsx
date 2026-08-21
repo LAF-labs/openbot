@@ -2,17 +2,31 @@ import {
   IconBolt,
   IconBox,
   IconClock,
+  IconCopy,
+  IconEyeOff,
   IconLogout,
+  IconPencil,
+  IconPin,
+  IconPinnedOff,
   IconPlus,
   IconSearch,
   IconSettings,
   IconShieldLock,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useMemo, useState } from "react";
 import { BotRow } from "@/components/app-sidebar/bot-row";
+import { GroupRow } from "@/components/app-sidebar/group-row";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +40,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import {
+  deleteAgentMutationOptions,
+  duplicateAgentMutationOptions,
+  setAgentHiddenMutationOptions,
+  setAgentPreferencesMutationOptions,
+} from "@/lib/agents/mutations";
+import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
@@ -80,6 +100,104 @@ function rosterTime(iso: string | null): string | undefined {
   return at.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
 }
 
+/**
+ * The right-click menu on a roster row.
+ *
+ * Every item here is something the product could already do and had buried: pin lives on the new
+ * per-person preference, and hide, duplicate and delete were three buttons stacked at the bottom of
+ * a side panel you had to open the Bot to reach. A roster is a list of things you act on, and the
+ * gesture for acting on a row in a list is a right-click.
+ *
+ * "Mark unread" and "Move to section" are deliberately absent rather than disabled: neither has any
+ * state behind it — there is no read tracking and there are no sections — and a menu item that
+ * cannot do anything is a promise the product does not keep.
+ */
+function BotRowMenu({
+  agent,
+  channelId,
+  children,
+}: {
+  agent: AgentProfile;
+  channelId: string | undefined;
+  children: React.ReactNode;
+}) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const preferences = useMutation(
+    setAgentPreferencesMutationOptions(queryClient),
+  );
+  const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
+  const duplicate = useMutation(duplicateAgentMutationOptions(queryClient));
+  const remove = useMutation(deleteAgentMutationOptions(queryClient));
+  const pinned = agent.pinnedAt !== null;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<div />}>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          onClick={() => {
+            preferences.mutate({
+              agentId: agent.id,
+              patch: { pinned: !pinned },
+            });
+          }}
+        >
+          {pinned ? <IconPinnedOff /> : <IconPin />}
+          {pinned ? t("Unpin") : t("Pin")}
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          onClick={() => {
+            void navigate({ search: { agent: agent.id }, to: "/agents" });
+          }}
+        >
+          <IconPencil />
+          {t("Edit profile")}
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          onClick={async () => {
+            const copy = await duplicate.mutateAsync(agent.id);
+            await navigate({ search: { agent: copy.id }, to: "/agents" });
+          }}
+        >
+          <IconCopy />
+          {t("Duplicate")}
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem
+          onClick={() => {
+            setHidden.mutate({ agentId: agent.id, hidden: true });
+          }}
+        >
+          <IconEyeOff />
+          {t("Hide from sidebar")}
+        </ContextMenuItem>
+
+        {/*
+         * Only for a Bot this person can actually manage. The server refuses the rest, and offering
+         * Delete on a coworker the deployment shipped is a menu item whose only outcome is an error.
+         */}
+        {agent.canManage ? (
+          <ContextMenuItem
+            onClick={async () => {
+              await remove.mutateAsync(agent.id);
+              if (channelId) await navigate({ to: "/" });
+            }}
+            variant="destructive"
+          >
+            <IconTrash />
+            {t("Delete")}
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 export function BotSidebar() {
   const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
@@ -119,6 +237,37 @@ export function BotSidebar() {
    * is a list of what is happening. The search is a plain substring over the name, the role and the
    * last message — the three things visible in a row, so nothing is filtered on that cannot be seen.
    */
+  /**
+   * The rooms with more than one Bot in them.
+   *
+   * They cannot be rows on the Bot list above, because that list is keyed on the Bot and a group
+   * has no single Bot to belong to — which is why they were skipped entirely rather than filtered
+   * out: there was no slot to put one in. The server has created, named and listed them all along.
+   */
+  const groups = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return (channels.data ?? [])
+      .filter((channel) => channel.agentIds.length > 1)
+      .filter((channel) =>
+        needle
+          ? `${channel.name} ${channel.lastMessage ?? ""}`
+              .toLocaleLowerCase()
+              .includes(needle)
+          : true,
+      )
+      .map((channel) => ({
+        channel,
+        // A channel is named after its members, and until somebody speaks the last message is the
+        // first one — so the preview would repeat the title back in a smaller size.
+        subtitle:
+          channel.lastMessage &&
+          !channel.name.startsWith(channel.lastMessage.trim())
+            ? channel.lastMessage
+            : undefined,
+        at: channel.lastMessageAt ?? channel.createdAt,
+      }));
+  }, [channels.data, query]);
+
   const rows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return (agents.data ?? [])
@@ -139,6 +288,17 @@ export function BotSidebar() {
           : true,
       )
       .sort((a, b) => {
+        /*
+         * Pinned first, and pinned Bots hold their own order by WHEN they were pinned — not by
+         * activity like everything else. Sorting the pinned group by recency would re-shuffle it
+         * on every message, which is the one thing a pin exists to stop.
+         */
+        const pinA = a.agent.pinnedAt;
+        const pinB = b.agent.pinnedAt;
+        if (pinA && pinB) return pinA.localeCompare(pinB);
+        if (pinA) return -1;
+        if (pinB) return 1;
+
         if (a.at && b.at) return b.at.localeCompare(a.at);
         if (a.at) return -1;
         if (b.at) return 1;
@@ -223,18 +383,33 @@ export function BotSidebar() {
             ))
           : rows.map(({ agent, channel, subtitle, at }) => (
               <li key={agent.id}>
-                <BotRow
-                  agentId={agent.id}
-                  avatarSeed={agent.avatarSeed}
-                  channelId={channel?.id}
-                  lastMessageAt={rosterTime(at)}
-                  name={agent.name}
-                  subtitle={subtitle}
-                />
+                <BotRowMenu agent={agent} channelId={channel?.id}>
+                  <BotRow
+                    agentId={agent.id}
+                    avatarSeed={agent.avatarSeed}
+                    channelId={channel?.id}
+                    lastMessageAt={rosterTime(at)}
+                    name={agent.name}
+                    pinned={agent.pinnedAt !== null}
+                    subtitle={subtitle}
+                  />
+                </BotRowMenu>
               </li>
             ))}
+        {groups.map(({ channel, subtitle, at }) => (
+          <li key={channel.id}>
+            <GroupRow
+              channelId={channel.id}
+              lastMessageAt={rosterTime(at)}
+              name={channel.name}
+              participantIds={channel.agentIds}
+              subtitle={subtitle}
+            />
+          </li>
+        ))}
+
         {/* A roster that filtered to nothing is not an empty roster, and must not read as one. */}
-        {!agents.isPending && rows.length === 0 ? (
+        {!agents.isPending && rows.length === 0 && groups.length === 0 ? (
           <li className="px-2 py-6 text-center text-muted-foreground text-sm">
             {query.trim() ? t("Nobody matches that.") : t("No Bots yet.")}
           </li>

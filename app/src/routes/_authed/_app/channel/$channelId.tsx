@@ -54,8 +54,16 @@ function RouteComponent() {
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
   const isWatching = watch === true;
-  /** Channel routing currently supports one coworker. */
+  /**
+   * Whose profile the settings pane edits, and — for a room with one Bot — whose name titles it.
+   *
+   * A room with several is titled by the ROOM: the sidebar row says "일상 비서, 지식" and a header
+   * that answered "일상 비서" would name one member of a conversation the list just named three
+   * people for. The pane still edits the Bot that speaks for the room, because there is no such
+   * thing as a group's profile.
+   */
   const agentId = channel.data?.agentIds[0];
+  const isGroup = (channel.data?.agentIds.length ?? 0) > 1;
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
   /*
@@ -198,7 +206,9 @@ function RouteComponent() {
                * tall to say nothing new.
                */}
               <span className="truncate font-semibold text-base">
-                {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
+                {isGroup
+                  ? (channel.data?.name ?? t("Channel"))
+                  : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))}
               </span>
             </motion.span>
           </div>
@@ -278,14 +288,24 @@ function ChannelBody({
     );
   }
 
-  const runtimeAgentId =
-    channel.agentIds.length === 1 ? channel.agentIds[0] : undefined;
+  /*
+   * A ROOM WITH SEVERAL BOTS OPENS, AND THE FIRST MEMBER ANSWERS.
+   *
+   * This used to be a dead end — a sentence saying multi-coworker channels were not supported, on a
+   * channel the server had happily created, named and listed. The transcript is the same
+   * transcript; what a group actually needs is a rule for whose turn it is, and the smallest honest
+   * one is that the room has a Bot who speaks for it. `agentIds` comes back in a stable order, so
+   * the same Bot answers every time rather than a different one per reload.
+   *
+   * Addressing a specific member with `@` is the obvious next rule and is deliberately NOT claimed
+   * here: the composer already collects `draft.agentId` and nothing routes on it yet, so a mention
+   * would look like it chose somebody and quietly not.
+   */
+  const runtimeAgentId = channel.agentIds[0];
   if (!runtimeAgentId) {
     return (
-      <p className="p-8 text-sm text-muted-foreground">
-        {t(
-          "This channel has more than one coworker, which is not supported yet.",
-        )}
+      <p className="p-8 text-muted-foreground text-sm">
+        {t("This channel has no coworker in it.")}
       </p>
     );
   }

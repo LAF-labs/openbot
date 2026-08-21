@@ -35,9 +35,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type ChannelSummary,
   channelListQueryOptions,
