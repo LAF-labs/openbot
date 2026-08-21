@@ -156,7 +156,7 @@ function RouteComponent() {
 
             setError(null);
             try {
-              await start(agentId, draft.text);
+              await start([agentId], draft.text);
             } catch (caught) {
               setError(
                 caught instanceof Error

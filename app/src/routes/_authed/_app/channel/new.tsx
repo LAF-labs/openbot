@@ -1,11 +1,18 @@
 import type { Message } from "@ag-ui/core";
+import { IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { ChannelAvatar } from "@/components/channels/avatar";
-import { canSend, type Recipient } from "@/components/channels/compose-state";
+import {
+  addRecipient,
+  canSend,
+  MAX_RECIPIENTS,
+  type Recipient,
+  removeRecipient,
+} from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import {
@@ -60,10 +67,21 @@ function RouteComponent() {
     retry: false,
   });
   const chosen = listed ?? (fetched?.id === agent ? fetched : undefined);
-  const recipients: Recipient[] = chosen
+  /*
+   * STATE, NOT A READING OF THE URL.
+   *
+   * This was derived straight from `?agent=`, so the recipient field's chips and its remove buttons
+   * were decoration — nothing they did could change what the screen would send. A room holds
+   * several Bots now, so the field has to be the source of truth; the URL seeds it and then stops
+   * being consulted.
+   */
+  const [picked, setPicked] = useState<Recipient[] | null>(null);
+  const seeded: Recipient[] = chosen
     ? [{ id: chosen.id, name: chosen.name }]
     : [];
-  const skillCommands = useSkillCommands(chosen?.id ?? "");
+  const recipients = picked ?? seeded;
+  // Skills are the first member's; a room's `/` menu cannot offer four Bots' commands at once.
+  const skillCommands = useSkillCommands(recipients[0]?.id ?? "");
 
   return (
     <div className="flex h-full flex-col">
@@ -80,30 +98,64 @@ function RouteComponent() {
         <span className="shrink-0 text-muted-foreground text-sm">
           {t("To:")}
         </span>
+        {/*
+         * WHO IS IN THE ROOM, AS CHIPS YOU CAN TAKE BACK OUT.
+         *
+         * The field held one value and the combobox replaced it, so building a room of three was
+         * impossible from this screen even after the server and the transcript both supported one.
+         * Each pick is added; each chip removes itself.
+         */}
+        {recipients.map((recipient) => (
+          <span
+            className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--sand-fill-secondary)] py-0.5 ps-1 pe-1 text-sm"
+            key={recipient.id}
+          >
+            <ChannelAvatar participantIds={[recipient.id]} size={20} />
+            <span className="max-w-32 truncate">{recipient.name}</span>
+            <button
+              aria-label={t("Remove {name}", { name: recipient.name })}
+              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-selected)] hover:text-foreground"
+              onClick={() =>
+                setPicked(removeRecipient(recipients, recipient.id))
+              }
+              type="button"
+            >
+              <IconX className="size-3" />
+            </button>
+          </span>
+        ))}
         <Combobox
           // Do not auto-open when the recipient came from the URL; the field is already answered.
           defaultOpen={false}
           autoHighlight
-          items={profiles ?? []}
+          items={(profiles ?? []).filter(
+            (profile) =>
+              !recipients.some((recipient) => recipient.id === profile.id),
+          )}
           isItemEqualToValue={(item: AgentProfile, value: AgentProfile) =>
             item.id === value.id
           }
           itemToStringLabel={(item: AgentProfile) => item.name}
           itemToStringValue={(item: AgentProfile) => item.id}
           onValueChange={(next) => {
-            // Recipient changes are not separate navigation history entries.
-            void navigate({
-              replace: true,
-              search: next ? { agent: next.id } : {},
-            });
+            if (!next) return;
+            setPicked(
+              addRecipient(recipients, { id: next.id, name: next.name }),
+            );
           }}
-          value={chosen ?? null}
+          // Always empty: this control ADDS to the room, and the room is drawn as chips beside it.
+          value={null}
         >
           <ComboboxInput
             // The control that decides who the conversation goes to announced as "combobox, blank".
             aria-label={t("Choose a coworker")}
             className="h-8 w-full max-w-xs text-sm"
-            placeholder={t("Choose a coworker…")}
+            disabled={recipients.length >= MAX_RECIPIENTS}
+            placeholder={
+              recipients.length === 0
+                ? t("Choose a coworker…")
+                : t("Add another…")
+            }
           />
           <ComboboxContent className="min-w-0 max-w-lg" sideOffset={8}>
             <ComboboxEmpty>
@@ -182,14 +234,16 @@ function RouteComponent() {
           ) : null
         }
         onSubmit={async (draft) => {
-          const recipient = recipients[0];
-          if (!recipient || !canSend(recipients, draft.text)) return;
+          if (!canSend(recipients, draft.text)) return;
 
           setError(null);
           setSent(seedMessage(draft.text, crypto.randomUUID()));
 
           try {
-            await start(recipient.id, draft.text);
+            await start(
+              recipients.map((recipient) => recipient.id),
+              draft.text,
+            );
           } catch (caught) {
             // Preserve the unsent draft when channel creation fails.
             setSent(null);

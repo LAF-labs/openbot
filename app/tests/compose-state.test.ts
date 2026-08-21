@@ -14,9 +14,20 @@ describe("addRecipient", () => {
     expect(addRecipient([], KNOWLEDGE)).toEqual([KNOWLEDGE]);
   });
 
-  test("replaces rather than appends once the cap is reached", () => {
-    // One coworker per channel today; a second pick replaces the first.
-    expect(addRecipient([KNOWLEDGE], RISK)).toEqual([RISK]);
+  test("appends a second coworker rather than replacing the first", () => {
+    // A room holds several now; picking another adds them to it.
+    expect(addRecipient([KNOWLEDGE], RISK)).toEqual([KNOWLEDGE, RISK]);
+  });
+
+  test("drops the oldest once the room is full", () => {
+    const full = Array.from({ length: MAX_RECIPIENTS }, (_, index) => ({
+      id: `bot-${index}`,
+      name: `Bot ${index}`,
+    }));
+    const after = addRecipient(full, RISK);
+    expect(after).toHaveLength(MAX_RECIPIENTS);
+    expect(after.at(-1)).toEqual(RISK);
+    expect(after.at(0)).toEqual(full[1]);
   });
 
   test("adding the coworker already chosen is a no-op", () => {
@@ -35,8 +46,9 @@ describe("removeRecipient", () => {
 });
 
 describe("canSend", () => {
-  test("needs exactly one recipient and some text", () => {
+  test("needs at least one recipient and some text", () => {
     expect(canSend([KNOWLEDGE], "hello")).toBe(true);
+    expect(canSend([KNOWLEDGE, RISK], "hello")).toBe(true);
   });
 
   test("refuses with no recipient", () => {
@@ -47,7 +59,13 @@ describe("canSend", () => {
     expect(canSend([KNOWLEDGE], "   ")).toBe(false);
   });
 
-  test("cap is one", () => {
-    expect(MAX_RECIPIENTS).toBe(1);
+  /*
+   * The cap is asserted, not because the number is sacred, but because `canSend` used to read
+   * `length === MAX_RECIPIENTS`: raising the cap with that test in place would have made the
+   * composer refuse every draft until the room was full, and nothing else would have failed.
+   */
+  test("a room holds several, and a draft does not have to fill it", () => {
+    expect(MAX_RECIPIENTS).toBeGreaterThan(1);
+    expect(canSend([KNOWLEDGE], "hello")).toBe(true);
   });
 });

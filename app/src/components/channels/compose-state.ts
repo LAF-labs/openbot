@@ -10,11 +10,14 @@ export type Recipient = {
 };
 
 /**
- * One coworker per channel.
+ * How many Bots one room can hold.
  *
- * Matches the chat screen's current one-coworker render contract.
+ * It was 1, matching a chat screen that refused to render anything else. That screen renders a room
+ * now, so the cap is a product decision rather than a technical one: a handful of colleagues is a
+ * meeting, and a list of twenty is a mailing list nobody reads. Eight is generous for the first
+ * and short of the second.
  */
-export const MAX_RECIPIENTS = 1;
+export const MAX_RECIPIENTS = 8;
 
 /** Add a coworker, replacing the oldest once the channel recipient cap is reached. */
 export function addRecipient(
@@ -34,10 +37,15 @@ export function removeRecipient(
   return current.filter((recipient) => recipient.id !== id);
 }
 
-/** Whether this draft can start a channel. */
+/**
+ * Whether this draft can start a channel: at least one coworker, and something to say.
+ *
+ * `>= 1`, not `=== MAX_RECIPIENTS`. Those were the same test while the cap was one, and raising it
+ * would have quietly made the composer refuse every draft until eight Bots were picked.
+ */
 export function canSend(
   recipients: readonly Recipient[],
   text: string,
 ): boolean {
-  return recipients.length === MAX_RECIPIENTS && text.trim().length > 0;
+  return recipients.length >= 1 && text.trim().length > 0;
 }
