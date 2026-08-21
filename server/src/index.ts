@@ -47,6 +47,7 @@ import { createCoworkerCall } from "./agents/coworker-call";
 import { createRoutineService } from "./routines/service";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
+import { createRoutineDelivery } from "./routines/deliver";
 import { createRunLedger } from "./runner/run-ledger";
 import { createWorkingReader } from "./runner/working";
 import {
@@ -393,6 +394,10 @@ const routineService = createRoutineService({
   auditStore: bootAuditStore,
   // Scheduled work is in the same ledger a chat turn is, so the roster can show it in flight.
   ledger: createRunLedger(database),
+  // And the answer lands in the Bot's own conversation, where a person already reads.
+  deliver: createRoutineDelivery(database, (threadId, messages) =>
+    lafRunner.adoptSnapshot(threadId, messages as never),
+  ),
 });
 
 const app = createApp(

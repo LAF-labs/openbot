@@ -13,6 +13,7 @@ import {
   wallClockAt,
 } from "./zoned-clock";
 import type { RunLedger } from "../runner/run-ledger";
+import type { DeliverRoutineAnswer } from "./deliver";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -189,6 +190,13 @@ export type RoutineServiceOptions = {
    * failed because a bookkeeping row could not be written.
    */
   ledger?: RunLedger;
+  /**
+   * Where a routine's answer goes so a person finds it without going to look.
+   *
+   * Optional and caught, like the ledger: the run happened, and a delivery that fails must not turn
+   * a successful morning routine into a reported failure.
+   */
+  deliver?: DeliverRoutineAnswer;
   now?: () => Date;
   runTimeoutMs?: number;
 };
@@ -233,6 +241,20 @@ export function createRoutineService(options: RoutineServiceOptions) {
       ok = true;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
+    }
+
+    if (ok && answer.trim().length > 0) {
+      try {
+        await options.deliver?.({
+          agentId: row.agentId,
+          userId: row.createdById,
+          routineName: row.name,
+          answer,
+          at: now(),
+        });
+      } catch (error) {
+        console.error("[routines] delivering the answer failed:", error);
+      }
     }
 
     if (ledgerRunId) {

@@ -300,10 +300,37 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
 
   override getThreadMessages(threadId: string): Message[] {
     const live = super.getThreadMessages(threadId);
-    if (live.length > 0) {
-      return live;
-    }
-    return this.restored.get(threadId)?.messages ?? [];
+    const stored = this.restored.get(threadId)?.messages ?? [];
+    if (live.length === 0) return stored;
+
+    /*
+     * PREFER THE STORE WHEN IT STRICTLY CONTAINS THE LIVE THREAD.
+     *
+     * The live copy belongs to the vendored runner and only ever grows through a run. Something
+     * else can add to a conversation without running it — a routine's answer being written into the
+     * Bot's own chat is the case that exists today — and that lands in Postgres and in `restored`,
+     * where the live copy cannot see it. Blindly preferring live meant the roster showed the answer
+     * and the transcript did not.
+     *
+     * The superset test is what keeps this safe in the other direction: mid-run the live copy holds
+     * messages the snapshot has not been written for yet, and then live is the newer of the two.
+     */
+    const liveIds = new Set(live.map((message) => message.id));
+    const storedIds = new Set(stored.map((message) => message.id));
+    const storedHasAllLive = [...liveIds].every((id) => storedIds.has(id));
+    return storedHasAllLive && stored.length > live.length ? stored : live;
+  }
+
+  /**
+   * Take on a thread's messages written by something other than a run.
+   *
+   * Keeps the rehydrated copy in step with Postgres when a writer outside this class appends —
+   * see `getThreadMessages` for why the two can disagree and which one wins.
+   */
+  adoptSnapshot(threadId: string, messages: Message[]): void {
+    const existing = this.restored.get(threadId);
+    if (!existing) return;
+    this.restored.set(threadId, { ...existing, messages });
   }
 
   /** The user's side, written the moment a run starts: a crash mid-turn keeps it. */

@@ -66,11 +66,19 @@ renders, and the next turn fails with
 Agent execution failed: error: Unable to connect. Is the computer able to access the url?
 ```
 
-which reads as a network problem and is a process that is no longer there. Kill by port:
+which reads as a network problem and is a process that is no longer there.
+
+Kill the **listener**, and only the listener:
 
 ```sh
-lsof -ti tcp:3001 | xargs kill
+lsof -ti tcp:3001 -sTCP:LISTEN | xargs kill
 ```
+
+`-sTCP:LISTEN` is not optional either. Without it, `lsof -ti tcp:3001` lists every process holding
+*any* socket on that port — including clients **connected** to it. Vite proxies `/api` to 3001, so
+it is one of them, and the "safe" kill-by-port takes the app dev server down with the API server.
+Same failure shape as the `pkill` above: the thing you aimed at restarts, something else silently
+does not.
 
 Check what is actually listening:
 
