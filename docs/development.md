@@ -45,6 +45,39 @@ Use `bun run dev` only when you want the app and API server without starting the
 
 `start.sh` leaves existing matching services alone and reports when a port is held by another process.
 
+### Starting one service by hand
+
+`agent-bot` needs its port passed in. It reads `PORT` from the shared `../.env`, where the value is
+`3001` — the API server's port — so without the override it exits with `EADDRINUSE` against a server
+that is already running, and the error names the wrong process:
+
+```sh
+cd agent-bot && PORT=4200 bun --env-file=../.env src/index.ts
+```
+
+### Do not `pkill -f "bun --env-file=../.env src/index.ts"`
+
+The API server and `agent-bot` have **identical command lines** — same runner, same env file, same
+entry path, different directories. That pattern matches both, so restarting the server silently
+takes the runtime with it, and nothing says so: the server comes back, the app loads, the roster
+renders, and the next turn fails with
+
+```
+Agent execution failed: error: Unable to connect. Is the computer able to access the url?
+```
+
+which reads as a network problem and is a process that is no longer there. Kill by port:
+
+```sh
+lsof -ti tcp:3001 | xargs kill
+```
+
+Check what is actually listening:
+
+```sh
+lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(3001|3010|4200|55432)'
+```
+
 ## Migrations
 
 After changing the Drizzle schema:

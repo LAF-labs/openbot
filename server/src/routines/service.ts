@@ -6,6 +6,12 @@ import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafRoutines } from "../db/schema";
+import {
+  dayAfter,
+  instantOf,
+  isKnownTimeZone,
+  wallClockAt,
+} from "./zoned-clock";
 import type { RunLedger } from "../runner/run-ledger";
 
 /**
@@ -58,7 +64,20 @@ export class RoutineError extends Error {
 
 export type RoutineSchedule =
   | { kind: "interval"; minutes: number }
-  | { kind: "daily"; timeUtc: string };
+  | {
+      kind: "daily";
+      /** HH:MM on the wall clock of `timeZone`, not UTC. */
+      time: string;
+      /** IANA zone the time is written in. Absent means UTC, which is how old rows read. */
+      timeZone?: string;
+      /**
+       * Which weekdays it may run on, 0 = Sunday. Absent or empty means every day.
+       *
+       * Without this a "Monday morning open-up" routine also fires on Sunday, and a routine that
+       * goes off on a day off is a routine somebody switches off.
+       */
+      days?: number[];
+    };
 
 export type RoutineInput = {
   agentId: string;
@@ -77,14 +96,35 @@ export function nextRunAt(schedule: RoutineSchedule, from: Date): Date {
   if (schedule.kind === "interval") {
     return new Date(from.getTime() + schedule.minutes * 60_000);
   }
-  const match = /^(\d{2}):(\d{2})$/.exec(schedule.timeUtc);
+  const match = /^(\d{2}):(\d{2})$/.exec(schedule.time);
   if (!match) throw new RoutineError("Time must be HH:MM.", 400);
-  const next = new Date(from);
-  next.setUTCHours(Number(match[1]), Number(match[2]), 0, 0);
-  if (next.getTime() <= from.getTime()) {
-    next.setUTCDate(next.getUTCDate() + 1);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const timeZone = schedule.timeZone ?? "UTC";
+  const days = schedule.days ?? [];
+
+  /*
+   * Walk the LOCAL calendar forward, not the instant.
+   *
+   * Eight days rather than seven: the first candidate is today, which has usually already passed
+   * by the time this is asked, so a weekly routine restricted to one weekday needs one more step
+   * to reach it. Stepping local dates also means a daylight-saving transition cannot make the loop
+   * skip or repeat a day, which adding 86,400,000ms to an instant would.
+   */
+  for (let offset = 0; offset <= 8; offset += 1) {
+    const day = dayAfter(from, offset, timeZone);
+    const candidate = instantOf(day, hour, minute, timeZone);
+    if (candidate.getTime() <= from.getTime()) continue;
+    if (
+      days.length > 0 &&
+      !days.includes(wallClockAt(candidate, timeZone).weekday)
+    ) {
+      continue;
+    }
+    return candidate;
   }
-  return next;
+  // Only reachable if every weekday was excluded, which `parseSchedule` refuses.
+  throw new RoutineError("That schedule never comes round.", 400);
 }
 
 function parseSchedule(input: RoutineInput): RoutineSchedule {
@@ -102,19 +142,39 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
     return schedule;
   }
   if (schedule.kind === "daily") {
-    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(schedule.timeUtc);
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(schedule.time);
     if (!match) {
-      throw new RoutineError("The daily time must be HH:MM, UTC.", 400);
+      throw new RoutineError("The daily time must be HH:MM.", 400);
     }
-    return schedule;
+    const timeZone = schedule.timeZone ?? "UTC";
+    if (!isKnownTimeZone(timeZone)) {
+      throw new RoutineError(`This machine does not know the zone "${timeZone}".`, 400);
+    }
+    const days = [...new Set(schedule.days ?? [])].sort((a, b) => a - b);
+    if (days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+      throw new RoutineError("Days must be 0 (Sunday) to 6.", 400);
+    }
+    // Every day and no days would be the same stored value; refusing the empty selection keeps
+    // "runs every day" from being something a person can arrive at by unticking everything.
+    if (schedule.days !== undefined && days.length === 0) {
+      throw new RoutineError("Pick at least one day.", 400);
+    }
+    return { kind: "daily", time: schedule.time, timeZone, days };
   }
   throw new RoutineError("The schedule must be interval or daily.", 400);
 }
 
 function scheduleOf(row: typeof lafRoutines.$inferSelect): RoutineSchedule {
-  return row.scheduleKind === "daily"
-    ? { kind: "daily", timeUtc: row.dailyUtc ?? "07:30" }
-    : { kind: "interval", minutes: row.intervalMinutes ?? 60 };
+  if (row.scheduleKind !== "daily") {
+    return { kind: "interval", minutes: row.intervalMinutes ?? 60 };
+  }
+  return {
+    kind: "daily",
+    time: row.dailyUtc ?? "07:30",
+    // A row written before zones existed meant UTC, because that is what it did.
+    timeZone: row.dailyTimeZone ?? "UTC",
+    days: row.dailyDays ?? [],
+  };
 }
 
 export type RoutineServiceOptions = {
@@ -290,7 +350,10 @@ export function createRoutineService(options: RoutineServiceOptions) {
             scheduleKind: schedule.kind,
             intervalMinutes:
               schedule.kind === "interval" ? schedule.minutes : null,
-            dailyUtc: schedule.kind === "daily" ? schedule.timeUtc : null,
+            dailyUtc: schedule.kind === "daily" ? schedule.time : null,
+            dailyTimeZone:
+              schedule.kind === "daily" ? (schedule.timeZone ?? "UTC") : null,
+            dailyDays: schedule.kind === "daily" ? (schedule.days ?? []) : null,
             enabled: true,
             createdById: actor.id,
             createdByRole: actor.role,

@@ -32,6 +32,7 @@ import {
   routineListQueryOptions,
   routineRequest,
   scheduleLabel,
+  weekdayNames,
 } from "@/lib/routines/queries";
 
 /**
@@ -301,7 +302,19 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
   const [instruction, setInstruction] = useState("");
   const [kind, setKind] = useState<"interval" | "daily">("daily");
   const [minutes, setMinutes] = useState("60");
-  const [timeUtc, setTimeUtc] = useState("22:30");
+  /*
+   * The time is a wall clock in the reader's own zone, defaulted from their browser.
+   *
+   * This field was labelled "Time (UTC)" and defaulted to 22:30, which is 07:30 in Seoul — the
+   * value was right and the person had no way to know it. Nobody setting a morning routine should
+   * have to convert anything.
+   */
+  const [time, setTime] = useState("07:30");
+  const [timeZone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  );
+  /** Empty means every day, which is what the server stores for an unrestricted routine. */
+  const [days, setDays] = useState<number[]>([]);
 
   const [trigger, setTrigger] = useState<{
     routineId: string;
@@ -317,8 +330,25 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
    */
   const scheduleReady =
     kind === "daily"
-      ? /^([01]\d|2[0-3]):[0-5]\d$/.test(timeUtc.trim())
+      ? /^([01]\d|2[0-3]):[0-5]\d$/.test(time.trim())
       : Number(minutes) >= 5;
+  /*
+   * The schedule, said back. Built from the same label the saved rows use, so what the form
+   * promises and what the list reports can never describe the same schedule differently.
+   */
+  const summarySentence = scheduleLabel({
+    id: "",
+    agentId: "",
+    name: "",
+    instruction: "",
+    enabled: true,
+    scheduleKind: "daily",
+    intervalMinutes: null,
+    dailyUtc: time,
+    dailyTimeZone: timeZone,
+    dailyDays: days,
+  } as Routine);
+
   const canCreate =
     Boolean(agentId) &&
     name.trim().length > 0 &&
@@ -334,7 +364,14 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
           instruction,
           schedule:
             kind === "daily"
-              ? { kind, timeUtc }
+              ? {
+                  kind,
+                  time,
+                  timeZone,
+                  // Omitted rather than empty: the server refuses an empty selection on purpose,
+                  // so "every day" has to be the absence of a restriction, not an empty one.
+                  ...(days.length > 0 ? { days } : {}),
+                }
               : { kind, minutes: Number(minutes) },
         }),
       }),
@@ -437,9 +474,10 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
         {kind === "daily" ? (
           <Input
             className="w-28"
-            value={timeUtc}
-            onChange={(event) => setTimeUtc(event.target.value)}
-            aria-label={t("Time (UTC)")}
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+            aria-label={t("Time")}
+            type="time"
           />
         ) : (
           <Input
@@ -459,6 +497,51 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
           {create.isPending ? t("Creating…") : t("Create routine")}
         </Button>
       </div>
+
+      {kind === "daily" ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/*
+           * Which days, as toggles rather than a select. Seven options that are all visible at once
+           * do not need a menu, and "weekdays" is the shape most routines want — the point is that
+           * a Monday-morning routine does not also go off on Sunday.
+           */}
+          {weekdayNames().map((label, index) => {
+            const on = days.includes(index);
+            return (
+              <button
+                aria-pressed={on}
+                className="h-7 rounded-full border border-border px-2.5 text-sm transition-colors aria-pressed:border-transparent aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                key={label}
+                onClick={() =>
+                  setDays((current) =>
+                    current.includes(index)
+                      ? current.filter((day) => day !== index)
+                      : [...current, index].sort((a, b) => a - b),
+                  )
+                }
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+          {days.length > 0 ? (
+            <Button
+              className="h-7"
+              onClick={() => setDays([])}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {t("Every day")}
+            </Button>
+          ) : null}
+          {/* Said back in words, because a row of chips and a clock is not a sentence. */}
+          <p className="ms-auto text-muted-foreground text-sm">
+            {summarySentence}
+          </p>
+        </div>
+      ) : null}
       {create.error ? (
         <p className="text-[12px] text-destructive" role="alert">
           {create.error.message}

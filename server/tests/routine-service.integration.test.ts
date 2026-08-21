@@ -72,16 +72,79 @@ describe("the schedule arithmetic", () => {
 
   test("a daily time later today fires today", () => {
     const from = new Date("2026-08-20T05:00:00Z");
-    expect(
-      nextRunAt({ kind: "daily", timeUtc: "07:30" }, from).toISOString(),
-    ).toBe("2026-08-20T07:30:00.000Z");
+    expect(nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString()).toBe(
+      "2026-08-20T07:30:00.000Z",
+    );
   });
 
   test("a daily time already past fires tomorrow", () => {
     const from = new Date("2026-08-20T23:50:00Z");
+    expect(nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString()).toBe(
+      "2026-08-21T07:30:00.000Z",
+    );
+  });
+
+  test("a time is a wall clock in its own zone, not an instant", () => {
+    // 07:30 in Seoul is 22:30 UTC the day before. Nobody should have to know that to ask for a
+    // morning routine, and the field used to be labelled "Time (UTC)".
+    const from = new Date("2026-08-20T05:00:00Z");
     expect(
-      nextRunAt({ kind: "daily", timeUtc: "07:30" }, from).toISOString(),
-    ).toBe("2026-08-21T07:30:00.000Z");
+      nextRunAt(
+        { kind: "daily", time: "07:30", timeZone: "Asia/Seoul" },
+        from,
+      ).toISOString(),
+    ).toBe("2026-08-20T22:30:00.000Z");
+  });
+
+  test("weekdays skip the weekend rather than firing through it", () => {
+    // 2026-08-22 is a Saturday in Seoul; the next weekday slot is Monday the 24th.
+    const saturday = new Date("2026-08-22T01:00:00Z");
+    expect(
+      nextRunAt(
+        {
+          kind: "daily",
+          time: "09:00",
+          timeZone: "Asia/Seoul",
+          days: [1, 2, 3, 4, 5],
+        },
+        saturday,
+      ).toISOString(),
+    ).toBe("2026-08-24T00:00:00.000Z");
+  });
+
+  test("a weekly routine reaches its one day from the day after it", () => {
+    // Restricted to Monday, asked on a Monday evening: the answer is next Monday, and finding it
+    // needs the eighth step — which is why the search window is eight days and not seven.
+    const mondayEvening = new Date("2026-08-24T12:00:00Z");
+    expect(
+      nextRunAt(
+        { kind: "daily", time: "09:00", timeZone: "Asia/Seoul", days: [1] },
+        mondayEvening,
+      ).toISOString(),
+    ).toBe("2026-08-31T00:00:00.000Z");
+  });
+
+  test("a wall clock holds across a daylight-saving change", () => {
+    /*
+     * New York moves to standard time on 2026-11-01. A routine set for 09:00 has to stay 09:00 on
+     * both sides of it — an offset stored instead of a zone would drift to 08:00 and the person who
+     * wrote "every morning at nine" would be woken an hour early for four months.
+     */
+    const beforeShift = new Date("2026-10-30T20:00:00Z");
+    expect(
+      nextRunAt(
+        { kind: "daily", time: "09:00", timeZone: "America/New_York" },
+        beforeShift,
+      ).toISOString(),
+    ).toBe("2026-10-31T13:00:00.000Z");
+
+    const afterShift = new Date("2026-11-01T20:00:00Z");
+    expect(
+      nextRunAt(
+        { kind: "daily", time: "09:00", timeZone: "America/New_York" },
+        afterShift,
+      ).toISOString(),
+    ).toBe("2026-11-02T14:00:00.000Z");
   });
 });
 

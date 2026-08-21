@@ -199,6 +199,20 @@ export const lafRoutines = pgTable("laf_routines", {
   intervalMinutes: integer("interval_minutes"),
   /** "HH:MM", UTC. Stored as text because it is a time-of-day, not a moment. */
   dailyUtc: text("daily_utc"),
+  /**
+   * The zone the daily time is written in, IANA. Null means the row predates zones and is UTC.
+   *
+   * Stored as the zone rather than as a fixed offset because an offset is wrong twice a year
+   * wherever daylight saving exists: "every weekday at 9am" has to stay 9am, not drift to 8.
+   */
+  dailyTimeZone: text("daily_time_zone"),
+  /**
+   * Which weekdays it may run on, 0 = Sunday. Empty or null means every day.
+   *
+   * The reason a shop owner needs this is not tidiness: without it, "Monday morning open-up
+   * checklist" also fires on Sunday, and a routine that cries wolf on a day off gets switched off.
+   */
+  dailyDays: integer("daily_days").array(),
   enabled: boolean("enabled").notNull().default(true),
   createdById: text("created_by_id").notNull(),
   createdByRole: text("created_by_role").notNull(),

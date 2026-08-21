@@ -131,6 +131,7 @@ export const ko: Record<string, string> = {
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
   "Custom pieces a Bot can draw in a conversation.":
     "봇이 대화 중에 그릴 수 있는 사용자 정의 조각.",
+  "Daily at {time}": "매일 {time}",
   Dark: "다크",
   "Dark theme": "다크 테마",
   Decision: "결정",
@@ -171,6 +172,7 @@ export const ko: Record<string, string> = {
     "모든 봇이 컴퓨터 한 대를 공유하고 있습니다.",
   "Every action a Bot took, and every one this deployment's policy refused.":
     "봇이 한 모든 행동과, 이 배포의 정책이 거부한 모든 행동.",
+  "Every day": "매일",
   Everything: "전체",
   "Everything a Bot can touch outside this app, and the limits on it.":
     "봇이 이 앱 밖에서 건드릴 수 있는 모든 것과 그 한계.",
@@ -374,6 +376,7 @@ export const ko: Record<string, string> = {
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
   "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
     "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 어시스턴트도 받지 않습니다.",
+  "Time": "시각",
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
   Toast: "식빵",
@@ -394,6 +397,7 @@ export const ko: Record<string, string> = {
   "Asked {name}": "{name}에게 물었습니다",
   "Asking a coworker": "코워커에게 물어보는 중",
   "Asked a coworker": "코워커에게 물었습니다",
+  "Weekdays at {time}": "평일 {time}",
   Whale: "고래",
   "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
     "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",

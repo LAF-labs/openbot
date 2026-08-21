@@ -10,6 +10,10 @@ export type Routine = {
   scheduleKind: "interval" | "daily";
   intervalMinutes: number | null;
   dailyUtc: string | null;
+  /** The IANA zone the daily time is written in. Null on rows that predate zones, meaning UTC. */
+  dailyTimeZone: string | null;
+  /** Weekdays it may run on, 0 = Sunday. Null or empty means every day. */
+  dailyDays: number[] | null;
   enabled: boolean;
   lastRunAt: string | null;
   nextRunAt: string;
@@ -63,11 +67,46 @@ export function routineListQueryOptions() {
   });
 }
 
-/** How a routine's schedule reads to a person. */
+/** The weekday names this browser uses, indexed 0 = Sunday to match the stored values. */
+export function weekdayNames(): string[] {
+  const format = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  // 2026-08-23 is a Sunday, so seven steps from it name the week in order.
+  return Array.from({ length: 7 }, (_, index) =>
+    format.format(new Date(Date.UTC(2026, 7, 23 + index))),
+  );
+}
+
+/**
+ * How a routine's schedule reads to a person.
+ *
+ * It used to read "Daily at 22:30 UTC", which asks a shop owner in Seoul to do arithmetic to find
+ * out that their routine runs at half past seven in the morning. The zone is named only when it is
+ * not the one the reader is in — telling somebody the time is in their own zone is noise.
+ */
 export function scheduleLabel(routine: Routine): string {
-  return routine.scheduleKind === "daily"
-    ? t("Daily at {time} UTC", { time: routine.dailyUtc ?? "" })
-    : t("Every {minutes} minutes", {
-        minutes: String(routine.intervalMinutes ?? 60),
-      });
+  if (routine.scheduleKind !== "daily") {
+    return t("Every {minutes} minutes", {
+      minutes: String(routine.intervalMinutes ?? 60),
+    });
+  }
+
+  const time = routine.dailyUtc ?? "";
+  const zone = routine.dailyTimeZone ?? "UTC";
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const suffix = zone === here ? "" : ` ${zone}`;
+  const days = routine.dailyDays ?? [];
+
+  if (days.length === 0 || days.length === 7) {
+    return `${t("Daily at {time}", { time })}${suffix}`;
+  }
+  const names = weekdayNames();
+  const isWeekdays =
+    days.length === 5 && [1, 2, 3, 4, 5].every((day) => days.includes(day));
+  if (isWeekdays) {
+    return `${t("Weekdays at {time}", { time })}${suffix}`;
+  }
+  return `${[...days]
+    .sort((a, b) => a - b)
+    .map((day) => names[day])
+    .join(", ")} ${time}${suffix}`;
 }
