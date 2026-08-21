@@ -226,9 +226,11 @@ export const ko: Record<string, string> = {
   "Night Shift": "야간 근무",
   "No Bots match your search": "검색과 일치하는 봇이 없습니다",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
+  "No Bots yet.": "아직 봇이 없습니다.",
   "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
+  "Nobody matches that.": "일치하는 봇이 없습니다.",
   "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on.":
     "아무것도 멈추지 않습니다. 규칙에 걸리는 행동은 거부됐을 것으로 기록만 됩니다 — 규칙을 켜기 전에 시험해 보는 방법입니다.",
   "Nothing was lost. Trying again is usually enough.":
@@ -272,6 +274,8 @@ export const ko: Record<string, string> = {
   "Save changes": "변경 저장",
   "Save skill": "스킬 저장",
   Seal: "물범",
+  Search: "검색",
+  "Search your team": "팀 검색",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   Sheep: "양",

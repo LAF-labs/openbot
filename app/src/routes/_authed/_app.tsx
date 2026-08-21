@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { BotRail } from "@/components/app-sidebar/bot-rail";
+import { BotSidebar } from "@/components/app-sidebar/bot-sidebar";
 import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/_app")({
@@ -12,10 +12,10 @@ function RouteComponent() {
      * ONE VIEWPORT, NEVER SCROLLS: panes scroll inside it. A growable shell lets the transcript's
      * scroller size against the page, grow it, and grow again.
      *
-     * The rail is a plain flex child rather than the sidebar primitive it used to be. That
-     * primitive brought a 340px width, a collapse mechanism, a mobile sheet and a keyboard
-     * shortcut — machinery for a rail you might want to hide. A 72px column of faces is not in the
-     * way of anything, so there is nothing to hide and nothing to bring back.
+     * The roster is a plain flex child rather than the sidebar primitive it used to be. That
+     * primitive brought its own width, a collapse mechanism, a mobile sheet and a keyboard
+     * shortcut; the column here is a fixed 280px that is always the inbox, so there is nothing to
+     * collapse and nothing to bring back.
      */
     <div className="flex h-svh w-full overflow-hidden">
       {/*
@@ -29,7 +29,7 @@ function RouteComponent() {
       >
         {t("Skip to the conversation")}
       </a>
-      <BotRail />
+      <BotSidebar />
       <main
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         id="main"

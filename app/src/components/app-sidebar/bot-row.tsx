@@ -47,35 +47,49 @@ export const BotRow = memo(function BotRow({
     row.scrollIntoView({ block: "center", behavior: "auto" });
   }, []);
 
+  /*
+   * THE MEASURED ROW: 54px tall, 10px corners, 8px gap, a 36px face.
+   *
+   * Not a padding that happens to add up — a fixed height, because the row holds two lines of text
+   * whose lengths vary and a roster whose rows breathe at different heights stops reading as a
+   * list. Hover and selected are `--sand-fill-ghost-*`: a #777777 alpha over whatever is behind,
+   * which is why the same two values work in both themes.
+   *
+   * The stacked active+hover variant outranks plain hover by specificity, so hovering the row you
+   * are on does not dip it back to the lighter fill.
+   */
   const shared = {
     ref: rowRef,
-    // The stacked active+hover variant outranks plain hover by specificity, so hovering the row you
-    // are on does not dip it back to the lighter fill.
     className:
-      "flex flex-row py-2 px-2 gap-2 items-center w-full rounded-lg hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8",
+      "flex h-[var(--sand-row-height)] w-full flex-row items-center gap-2 rounded-lg px-2 transition-colors hover:bg-[var(--sand-fill-ghost-hover)] data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]",
   };
 
   const body = (
     <>
-      <span className="inline-flex size-8 shrink-0 overflow-hidden rounded-full ring-1 ring-border">
+      <span className="inline-flex size-9 shrink-0 overflow-hidden rounded-xl">
         <Mascot
           className="size-full object-cover"
           seed={avatarSeed}
-          size={32}
+          size={36}
         />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex flex-row items-center justify-between gap-2">
-          <span className="truncate text-base tracking-[-1%]">{name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground/70 tabular-nums">
+      <span className="flex min-w-0 flex-1 shrink flex-col overflow-hidden">
+        <span className="flex min-w-0 flex-row items-center gap-1.5">
+          {/*
+           * The name takes the space it needs and no more, and the time is pushed out by `ms-auto`
+           * rather than by `justify-between` — with space-between a short name parks the timestamp
+           * against it in the middle of the row instead of on the right edge where the eye scans
+           * for it.
+           */}
+          <span className="min-w-0 shrink truncate text-base">{name}</span>
+          <span className="ms-auto shrink-0 text-muted-foreground/80 text-xs tabular-nums">
             {lastMessageAt}
           </span>
         </span>
-        {/* 12px is the scale's secondary role; the timestamp above is meta, at the 11px floor. */}
-        <span className="mt-px flex h-4 items-center">
-          <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-muted-foreground">
-            {subtitle}
-          </span>
+        {/* 13/18 — the scale's second body size, and a fixed min-height so an empty preview
+         * still holds the name on the same baseline as its neighbours. */}
+        <span className="min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm">
+          {subtitle}
         </span>
       </span>
     </>

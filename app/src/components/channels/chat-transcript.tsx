@@ -329,7 +329,8 @@ function Arriving({
        * the bubble's own width and short messages wrap for no reason, and `self-end` does nothing at
        * all outside a flex container.
        */
-      className="flex w-full flex-col"
+      // `relative`, because the copy action is lifted out of flow — see CopyReply.
+      className="relative flex w-full flex-col"
       initial={{
         opacity: 0,
         // Reduced motion keeps the fade and drops the movement: gentler, not absent.
@@ -364,11 +365,17 @@ function Arriving({
 const TranscriptMessage = memo(function TranscriptMessage({
   commandNames = "",
   delay,
+  joinedNext = false,
+  joinedPrev = false,
   role,
   text,
 }: {
   commandNames?: string;
   delay: number;
+  /** The message below is from the same speaker, with no tool line between them. */
+  joinedNext?: boolean;
+  /** The message above is. */
+  joinedPrev?: boolean;
   role: "user" | "assistant";
   text: string;
 }) {
@@ -381,10 +388,20 @@ const TranscriptMessage = memo(function TranscriptMessage({
       <MessageContent>
         <Arriving delay={delay}>
           {/* The chat measure: what a Bot says and what a person typed read at one size. */}
+          {/*
+           * BOTH SIDES GET A BUBBLE.
+           *
+           * A Bot's reply used to be bare prose on the page while the person's message sat in a
+           * grey box — which reads as one participant talking and the other narrating. Grok gives
+           * the Bot the grey bubble and the person the near-black one, and that symmetry is what
+           * makes the transcript read as a conversation between two parties.
+           */}
           <Bubble
             align={align}
             className="chat-prose"
-            variant={isUser ? "muted" : "ghost"}
+            joinedNext={joinedNext}
+            joinedPrev={joinedPrev}
+            variant={isUser ? "user" : "agent"}
           >
             <BubbleContent>
               {isUser ? (
@@ -469,7 +486,17 @@ function CopyReply({ text }: { text: string }) {
   return (
     <Button
       aria-label={copied ? t("Copied") : t("Copy this reply")}
-      className="mt-1 h-7 w-7 self-start p-0 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100"
+      /*
+       * OUT OF FLOW, BECAUSE A HIDDEN CONTROL WAS STILL TAKING 32px.
+       *
+       * This sat under every assistant bubble at `opacity: 0` — invisible, and still occupying its
+       * height plus margin in the column. That is where the transcript's spacing actually went: two
+       * replies in a row read 48px apart when the measured rhythm is 4px, and no amount of tuning
+       * the gap could fix it because the space was a button nobody could see.
+       *
+       * Absolute, hugging the bubble's bottom edge, in the gutter the bubble's max-width leaves.
+       */
+      className="-mt-1.5 absolute top-full left-0 z-10 h-7 w-7 p-0 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100"
       onClick={handleCopy}
       size="icon"
       title={copied ? t("Copied") : t("Copy this reply")}
@@ -550,6 +577,19 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
     </Arriving>
   );
 });
+
+/**
+ * Is the neighbouring item another message from the same speaker?
+ *
+ * A tool line between two replies breaks the run on purpose: the Bot did something in between, and
+ * drawing those two bubbles as one uninterrupted turn would hide that it had.
+ */
+function continues(
+  neighbour: ReturnType<typeof toVisibleChatItems>[number] | undefined,
+  role: "user" | "assistant",
+): boolean {
+  return neighbour?.kind === "text" && neighbour.role === role;
+}
 
 export function ChatTranscript({
   busy = false,
@@ -644,7 +684,16 @@ export function ChatTranscript({
         <MessageScrollerViewport>
           <MessageScrollerContent
             aria-busy={busy}
-            className="mx-auto w-full max-w-2xl px-4 py-6"
+            /*
+             * NO GAP, AND NO CENTRED COLUMN.
+             *
+             * The scroller's own `gap-6` put 24px between every message, so a Bot's three-sentence
+             * answer arrived as three remarks a beat apart instead of as one turn. Grok spaces the
+             * transcript from the rows instead: 2px above and below each, and 12px on the row that
+             * starts a new turn — 4px inside a run, 16px when the speaker changes. The bubble caps
+             * its own measure, so the column does not need to.
+             */
+            className="mx-auto w-full max-w-none gap-0 px-4 py-4"
           >
             {/* The finished reply, once, for a reader who cannot see it arrive. */}
             <div aria-atomic="true" aria-live="polite" className="sr-only">
@@ -658,7 +707,11 @@ export function ChatTranscript({
              */}
             {items.map((item, index) =>
               item.kind === "tool" ? (
-                <MessageScrollerItem key={item.id} messageId={item.id}>
+                <MessageScrollerItem
+                  className="py-0.5 pt-3"
+                  key={item.id}
+                  messageId={item.id}
+                >
                   <TranscriptToolCall
                     args={item.toolCall.function.arguments}
                     delay={delays.delayFor(item.id, index, items.length)}
@@ -669,6 +722,11 @@ export function ChatTranscript({
                 </MessageScrollerItem>
               ) : (
                 <MessageScrollerItem
+                  className={
+                    continues(items[index - 1], item.role)
+                      ? "py-0.5"
+                      : "py-0.5 pt-3"
+                  }
                   key={item.id}
                   messageId={item.id}
                   scrollAnchor={item.role === "user"}
@@ -676,6 +734,8 @@ export function ChatTranscript({
                   <TranscriptMessage
                     commandNames={commandNames}
                     delay={delays.delayFor(item.id, index, items.length)}
+                    joinedNext={continues(items[index + 1], item.role)}
+                    joinedPrev={continues(items[index - 1], item.role)}
                     role={item.role}
                     text={item.text}
                   />

@@ -8,9 +8,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // `primary-strong`, not `primary`: white on the accent blue is 3.24:1. See styles.css.
+        /*
+         * Near-black, not blue. Grok's filled control is `fill/primary` and the accent hue is spent
+         * only on links, focus and the dot that says a Bot needs you — which is why one blue button
+         * per screen used to read as an ad and now reads as the thing to press.
+         */
         default:
-          "bg-primary-strong text-primary-foreground hover:bg-primary-strong/85",
+          "bg-primary text-primary-foreground hover:bg-[var(--sand-fill-primary-hover)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
@@ -22,8 +26,9 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
+        // 32px — Grok's `height/lg`, the size every dialog and pane CTA is drawn at.
         default:
-          "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-10 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",

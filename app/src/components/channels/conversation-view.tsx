@@ -233,9 +233,15 @@ export function ConversationView({
           {...(stopped ? { stopped } : {})}
         />
       </div>
-      {/* `px-4`, matching the transcript column above: below 672px the composer's border ran into
-          the pane edge while every message above it kept a 16px inset. */}
-      <div className="max-w-2xl mx-auto w-full px-4 pb-4 shrink-0">
+      {/*
+       * FULL WIDTH, `px-4`, matching the transcript above it.
+       *
+       * Both used to be capped at a centred 588px column, which is a document's layout — it left
+       * the composer floating in the middle of a wide pane with dead space on either side. The
+       * transcript now runs the width of the pane and lets each bubble cap its own measure, and
+       * the box a person types into has to sit under the width it types into.
+       */}
+      <div className="w-full shrink-0 px-4 pb-4">
         {notice}
         <Composer
           agents={agents}

@@ -129,7 +129,15 @@ function RouteComponent() {
       }
     >
       <div className="flex flex-col">
-        <div className="h-12 border-b border-border sticky top-0 flex flex-row items-center justify-between px-3 gap-2">
+        {/*
+         * 44px, and NO RULE UNDER IT.
+         *
+         * The header is the height of the window chrome beside it, so the roster's title row and
+         * this one share a baseline across the whole window. The divider is gone because there is
+         * nothing to divide: the transcript below is the same surface, and a line drawn across the
+         * top of a conversation reads as a toolbar the conversation is filed under.
+         */}
+        <div className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3">
           {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
           <div className="flex min-w-0 items-center gap-1.5">
             <motion.div
@@ -149,7 +157,7 @@ function RouteComponent() {
             >
               <ChannelAvatar
                 participantIds={channel.data?.agentIds ?? []}
-                size={28}
+                size={20}
               />
             </motion.div>
             <motion.span
@@ -173,22 +181,17 @@ function RouteComponent() {
               {/*
                * THE COLLEAGUE, THE WAY A MESSAGING APP NAMES A THREAD.
                *
-               * A Bot has one conversation now, so the room IS the Bot and the header is their name
-               * over their standing role — the same two lines the roster row shows, which is what
-               * makes the rail and the screen it opens read as one thing. It used to lead with a
+               * A Bot has one conversation now, so the room IS the Bot, and the header is their
+               * name — one line, the way a messaging app titles a thread. It used to lead with a
                * title taken from the first message, which was right while every task minted its own
                * channel and is now just the Bot's name said twice.
                *
-               * The role line is always rendered, empty until the roster lands: mounting it late
-               * made the name above jump half a line on every open.
+               * The standing role that used to sit under it has gone with it: the roster row beside
+               * this header already carries it, and repeating it here made the header two lines
+               * tall to say nothing new.
                */}
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate text-[13px] tracking-tight">
-                  {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
-                </span>
-                <span className="h-[16px] truncate text-[11px] text-muted-foreground">
-                  {headerAgent?.title ?? null}
-                </span>
+              <span className="truncate font-semibold text-base">
+                {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
               </span>
             </motion.span>
           </div>

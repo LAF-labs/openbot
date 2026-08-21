@@ -252,8 +252,17 @@ export function Composer({
            * COMPACT_MAX_HEIGHT_PX: padding inside that box would scroll away with the text, so the
            * first visible line would still touch the top edge on a long message.
            */
-          // `pl-4` replaces the inset the removed `+` button used to provide.
-          "flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-card py-3 pr-3 pl-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+          /*
+           * THE MEASURED COMPOSER: an elevated pill on a hairline, lifted by a shadow so faint it
+           * reads as a raised surface rather than as a card.
+           *
+           * A 3px focus ring used to bloom around it. Grok focuses by darkening the hairline to
+           * `border/focus` and nothing else — on a control that is already the brightest thing on
+           * the screen, a ring is noise, and it was the one place the app shouted.
+           *
+           * `pl-4` replaces the inset the removed `+` button used to provide.
+           */
+          "flex min-h-12 items-center gap-3 rounded-[24px] border-[0.5px] border-border bg-[var(--sand-fill-elevated)] py-2 pr-2 pl-4 shadow-[var(--sand-shadow-composer)] transition-colors focus-within:border-[var(--sand-border-focus)]",
           className,
         )}
         onSubmit={handleFormSubmit}
@@ -309,7 +318,8 @@ export function Composer({
     <div className={cn("w-xl", className)}>
       <form
         aria-busy={isBusy}
-        className="overflow-hidden rounded-2xl border border-border bg-card"
+        // The same surface as the in-conversation composer, squared off because it grows a toolbar.
+        className="overflow-hidden rounded-2xl border-[0.5px] border-border bg-[var(--sand-fill-elevated)] shadow-[var(--sand-shadow-composer)] transition-colors focus-within:border-[var(--sand-border-focus)]"
         onSubmit={handleFormSubmit}
       >
         {/*
