@@ -360,6 +360,7 @@ export const ko: Record<string, string> = {
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
   Toast: "식빵",
+  "Today {time}": "오늘 {time}",
   "Toggle Sidebar": "사이드바 여닫기",
   "Try again": "다시 시도",
   "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. Worth adding while a match is recorded and allowed, before it starts refusing anybody's work.":
@@ -465,6 +466,7 @@ export const ko: Record<string, string> = {
   "No coworker by that name.": "그 이름의 봇이 없습니다.",
   "Nothing here is named “{query}”, and nobody has said it recently either.":
     "“{query}”라는 이름의 채널도, 최근 그런 말이 오간 채널도 없어요.",
+  "Yesterday {time}": "어제 {time}",
   "nothing saved yet": "아직 저장된 것 없음",
   "No credentials are configured.": "등록된 자격증명이 없습니다.",
   "No events match this filter yet.":

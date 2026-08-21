@@ -5,6 +5,7 @@
  * here; never edit core.ts or computer.ts to do it.
  */
 import {
+  boolean,
   index,
   pgEnum,
   pgTable,
@@ -59,6 +60,21 @@ export const agentPreferences = pgTable(
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    /**
+     * When this person pinned the Bot, or null.
+     *
+     * A timestamp rather than a boolean so pinned Bots keep a stable order among themselves — the
+     * one you pinned first stays first, instead of the group re-shuffling on every message the way
+     * it would if pins sorted by activity like everything else.
+     */
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    /**
+     * Whether to notify this person when the Bot finishes or needs them.
+     *
+     * Per-person, like `hidden_at`: two people sharing a public Bot make this choice separately,
+     * and one of them muting it must not silence the other.
+     */
+    notify: boolean("notify").notNull().default(true),
   },
   (table) => [primaryKey({ columns: [table.userId, table.agentId] })],
 );

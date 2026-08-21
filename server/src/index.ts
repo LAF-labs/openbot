@@ -46,6 +46,7 @@ import { createPluginStore } from "./plugins/store";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createRoutineService } from "./routines/service";
 import { LafPostgresRunner } from "./runner/laf-runner";
+import { createMessageTimeReader } from "./runner/message-times";
 import {
   createPackageStatusReader,
   loadTenantPackage,
@@ -475,6 +476,8 @@ const app = createApp(
   // One Bot asking another, over the same loader and keys the runtime itself uses.
   coworkerCall,
   routineService,
+  // When each message was first seen. Read from the snapshot column directly — see message-times.
+  createMessageTimeReader(database),
 );
 
 /**

@@ -29,6 +29,8 @@ export const channelKeys = {
   all: ["channels"] as const,
   list: () => ["channels", "list"] as const,
   detail: (channelId: string) => ["channels", "detail", channelId] as const,
+  messageTimes: (channelId: string) =>
+    ["channels", "message-times", channelId] as const,
 };
 
 export function channelListQueryOptions() {
@@ -42,6 +44,33 @@ export function channelListQueryOptions() {
       return ((await response.json()) as { channels: ChannelSummary[] })
         .channels;
     },
+  });
+}
+
+/**
+ * When each message in a channel was first seen: message id to ISO-8601.
+ *
+ * A separate request from the transcript, because the transcript does not come from us — it comes
+ * out of CopilotKit's agent, whose message shape is a fixed whitelist that drops any field we add.
+ * Fetched once when a channel opens; messages that arrive after that are stamped on arrival by the
+ * browser, which is the same clock to within a round trip.
+ */
+export function messageTimesQueryOptions(channelId: string) {
+  return queryOptions({
+    queryKey: channelKeys.messageTimes(channelId),
+    queryFn: async (): Promise<Record<string, string>> => {
+      const response = await fetch(
+        `/api/channels/${encodeURIComponent(channelId)}/message-times`,
+        { credentials: "include" },
+      );
+      // A transcript with no times is a transcript with no separators, which is survivable; a
+      // throw here would take the conversation down with it.
+      if (!response.ok) return {};
+      return ((await response.json()) as { times: Record<string, string> })
+        .times;
+    },
+    // The stamps for a message never change once written, so a refetch on focus buys nothing.
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 

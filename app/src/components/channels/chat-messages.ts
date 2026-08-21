@@ -5,7 +5,14 @@ import type { Message, ToolCall } from "@ag-ui/core";
  */
 
 export type VisibleChatItem =
-  | { kind: "text"; id: string; role: "user" | "assistant"; text: string }
+  | {
+      kind: "text";
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      /** ISO-8601, when this message was first seen. Absent for anything said before stamping. */
+      at?: string;
+    }
   | {
       kind: "tool";
       id: string;
@@ -25,6 +32,11 @@ function isToolResult(
 
 export function toVisibleChatItems(
   messages: ReadonlyArray<Readonly<Message>>,
+  /**
+   * Message id to ISO-8601. Only text items carry a time: a tool call is an action inside a turn,
+   * not something said, and a separator drawn above one would split a turn in half.
+   */
+  times: Readonly<Record<string, string>> = {},
 ): VisibleChatItem[] {
   // Gather results first so calls render with their current completion state in the same pass.
   const results = new Map<string, string | undefined>();
@@ -41,6 +53,7 @@ export function toVisibleChatItems(
           id: message.id,
           role: "assistant",
           text: message.content,
+          ...(times[message.id] ? { at: times[message.id] } : {}),
         });
       }
       for (const toolCall of message.toolCalls ?? []) {
@@ -74,6 +87,16 @@ export function toVisibleChatItems(
             .map((part) => part.text)
             .join("\n");
 
-    return text ? [{ kind: "text", id: message.id, role: "user", text }] : [];
+    return text
+      ? [
+          {
+            kind: "text",
+            id: message.id,
+            role: "user",
+            text,
+            ...(times[message.id] ? { at: times[message.id] } : {}),
+          },
+        ]
+      : [];
   });
 }

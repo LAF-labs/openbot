@@ -193,6 +193,22 @@ describe("OpenBot database schema", () => {
         hasDefault: false,
         primary: false,
       },
+      {
+        name: "pinned_at",
+        sqlType: "timestamp with time zone",
+        notNull: false,
+        hasDefault: false,
+        primary: false,
+      },
+      {
+        // Defaulted true, and NOT NULL, so a Bot nobody has an opinion about still speaks up. A
+        // nullable flag would make "never asked" indistinguishable from "muted" at the column.
+        name: "notify",
+        sqlType: "boolean",
+        notNull: true,
+        hasDefault: true,
+        primary: false,
+      },
     ]);
 
     expect(
@@ -305,6 +321,26 @@ describe("OpenBot database schema", () => {
     );
     expect(normalizedMigration).toContain(
       `CREATE INDEX "agent_profiles_visibility_deleted_idx" ON "agent_profiles" USING btree ("visibility","deleted_at")`,
+    );
+  });
+
+  /*
+   * The columns above arrived after 0000, so the assertion on that file cannot see them — and a
+   * column added to the schema with no migration behind it type-checks, passes every unit test,
+   * and fails on a fresh database. This is the check that the two halves agree.
+   */
+  test("ships the migration that added the pin and notification preferences", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0011_smiling_morlun.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    expect(normalized).toContain(
+      `ALTER TABLE "agent_preferences" ADD COLUMN "pinned_at" timestamp with time zone`,
+    );
+    expect(normalized).toContain(
+      `ALTER TABLE "agent_preferences" ADD COLUMN "notify" boolean DEFAULT true NOT NULL`,
     );
   });
 });

@@ -504,6 +504,11 @@ export function createChannelRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   /** Absent in tests and wherever live updates are not wanted; the routes still work without it. */
   events?: ChannelEventHub,
+  /**
+   * Reads when each message in a thread was first seen. Optional for the same reason as `events`:
+   * a deployment or a test without it serves a transcript with no separators, not an error.
+   */
+  readMessageTimes?: (threadId: string) => Promise<Record<string, string>>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -567,6 +572,32 @@ export function createChannelRoutes(
         parsed.value,
       );
       return context.body(null, 204);
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /*
+   * Before `/:channelId`, or "message-times" is read as a channel id.
+   *
+   * Keyed on the CHANNEL rather than the thread, even though the times are a property of the
+   * thread, because the channel is where membership is enforced: `store.get` returns null for
+   * somebody who is not in the room. A thread-keyed route would have had to re-derive that, and a
+   * transcript's timing is enough to tell you when somebody was working.
+   */
+  routes.get("/:channelId/message-times", requireUser, async (context) => {
+    try {
+      const channel = await store.get(
+        context.var.actor,
+        context.req.param("channelId"),
+      );
+      if (!channel) {
+        return context.json({ error: "Channel not found." }, 404);
+      }
+      const times = readMessageTimes
+        ? await readMessageTimes(channel.threadId)
+        : {};
+      return context.json({ times });
     } catch (error) {
       return mapStoreError(context, error);
     }

@@ -15,11 +15,25 @@ export type AgentProfile = {
   ownerUserId: string | null;
   systemOwned: boolean;
   hidden: boolean;
+  /**
+   * When this person pinned the Bot, or null. A time rather than a flag so pinned Bots hold a
+   * stable order among themselves instead of re-shuffling whenever one of them speaks.
+   */
+  pinnedAt: Date | null;
+  /** Whether this person wants to hear from the Bot. Per-person, like `hidden`. */
+  notify: boolean;
   deletedAt: Date | null;
   /** Where this coworker runs. Null for the Bot in the box. */
   endpoint: string | null;
   /** Whether a key is set for it. Never the key. */
   hasAuth: boolean;
+};
+
+/** Which of a person's preferences for a Bot to change. Absent means "leave it alone". */
+export type AgentPreferencePatch = {
+  hidden?: boolean;
+  pinned?: boolean;
+  notify?: boolean;
 };
 
 export type CreateAgentInput = Pick<

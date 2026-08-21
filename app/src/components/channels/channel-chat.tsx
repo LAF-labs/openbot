@@ -15,7 +15,10 @@ import {
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { recordChannelActivityMutationOptions } from "@/lib/channels/mutations";
-import type { AgentChannel } from "@/lib/channels/queries";
+import {
+  type AgentChannel,
+  messageTimesQueryOptions,
+} from "@/lib/channels/queries";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
@@ -27,6 +30,9 @@ import { useSkillCommands } from "@/lib/plugins/skill-commands";
  * Backstop for the first message of a new channel; a stalled join must not lose the message.
  */
 const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
+
+/** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
+const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
 /**
  * One channel's conversation with one coworker.
@@ -45,6 +51,8 @@ export function ChannelChat({
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
+  const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
   const { agent, isReady } = useAgent({
     agentId: `channel:${channel.id}`,
     runtimeAgentId,
@@ -287,10 +295,19 @@ export function ChannelChat({
           .find((message) => message.role === "assistant");
         const content = typeof reply?.content === "string" ? reply.content : "";
         if (content) reportRef.current(content, runtimeAgentId);
+        // The turn's messages have stamps now; this is the only thing that asks for them.
+        void refreshTimesRef.current();
       },
     });
     return () => subscription?.unsubscribe();
   }, [agent, runtimeAgentId]);
+
+  /*
+   * Held in a ref because the run subscriber is wired once per agent, not per render — capturing
+   * `refetch` directly would pin the closure to the first one and quietly stop refreshing.
+   */
+  const refreshTimesRef = useRef(storedTimes.refetch);
+  refreshTimesRef.current = storedTimes.refetch;
 
   /** Stable reference for effects and component callbacks. */
   const sayRef = useRef(say);
@@ -326,6 +343,24 @@ export function ChannelChat({
     // Keep `seed` in state; transcriptMessages hides it as soon as agent messages exist.
   }, [joinGatePromise]);
 
+  /*
+   * WHEN EACH MESSAGE WAS SAID — FROM THE SERVER ONLY.
+   *
+   * The transcript comes out of CopilotKit's agent, whose message shape has no room for a time, so
+   * the stamps live in our own snapshot and arrive by their own request.
+   *
+   * There was a second, local clock here: stamp anything this tab watches arrive, so the separator
+   * for a message you just sent appears without a round trip. It had to go. History hydration and
+   * this query are two independent fetches, and when the query settled first the "already restored"
+   * set it measured itself against was empty — so the whole conversation was stamped `now` and the
+   * transcript announced that every message in it had been said this afternoon. A separator that is
+   * a second late is a detail; one that says the wrong day is a lie about the record.
+   *
+   * The refetch below is what closes the gap: the server writes a message's stamp as its run
+   * begins and ends, so asking again when a turn finishes gets the real time within a round trip.
+   */
+  const messageTimes = storedTimes.data ?? EMPTY_TIMES;
+
   return (
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
@@ -335,6 +370,7 @@ export function ChannelChat({
         commands={skillCommands}
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
+        messageTimes={messageTimes}
         messages={transcriptMessages(agent.messages, seed)}
         notice={
           channel.active ? null : (

@@ -120,6 +120,14 @@ export function createApp(
   coworkerCall?: CoworkerCall,
   /** Instructions on a clock. Absent leaves the surface unmounted, exactly like the watch. */
   routineService?: RoutineService,
+  /**
+   * When each message in a thread was first seen, for the transcript's date separators.
+   *
+   * A reader rather than the database, because this module takes services and never a connection.
+   * Absent serves an empty map, and the transcript then draws no separators — which is the right
+   * degraded behaviour: a conversation with no times is still a readable conversation.
+   */
+  messageTimeReader?: (threadId: string) => Promise<Record<string, string>>,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -363,7 +371,12 @@ export function createApp(
   if (channelStore) {
     app.route(
       "/api/channels",
-      createChannelRoutes(channelStore, requireUser, channelEvents),
+      createChannelRoutes(
+        channelStore,
+        requireUser,
+        channelEvents,
+        messageTimeReader,
+      ),
     );
   }
 

@@ -54,6 +54,56 @@ function parseMessages(stored: unknown): Message[] {
   return [];
 }
 
+/**
+ * A message as we store it: AG-UI's shape plus the moment we first saw it.
+ *
+ * `lafAt` is ours, and it survives only because `messages` is jsonb and the read path casts rather
+ * than validates. It cannot ride AG-UI's own message type — every message schema is zod `strip`,
+ * so a key the client attaches is deleted before a run ever reaches this class. Stamping here, on
+ * the server, is also the only way the two sides of a conversation share one clock.
+ */
+type StampedMessage = Message & { lafAt?: string };
+
+/**
+ * Merge stamps onto a message list, FIRST SEEN WINS.
+ *
+ * Each run's input carries the whole history back, unstamped, so re-stamping on every save would
+ * march every message in a conversation forward to the time of its most recent turn. The stamps
+ * already on the previous snapshot are the record; `fallback` is only for messages that have none.
+ */
+export function stamp(
+  messages: Message[],
+  known: Map<string, string>,
+  /**
+   * Every id this thread already held, stamped or not.
+   *
+   * The distinction matters exactly once per thread: the first save after stamping shipped. Those
+   * messages are known to the snapshot and carry no time, because nobody was recording one when
+   * they were said — and `fallback` would then declare that the whole back history happened at the
+   * instant of the next reply. A conversation with no separators is a conversation whose timing we
+   * do not know; one with wrong separators is a record that lies.
+   */
+  seen: Set<string>,
+  fallback: string,
+): StampedMessage[] {
+  return messages.map((message) => {
+    const existing = (message as StampedMessage).lafAt ?? known.get(message.id);
+    if (existing) return { ...message, lafAt: existing };
+    if (seen.has(message.id)) return { ...message };
+    return { ...message, lafAt: fallback };
+  });
+}
+
+/** The stamps a snapshot already carries, so a save can preserve them. */
+export function stampsOf(messages: Message[]): Map<string, string> {
+  const times = new Map<string, string>();
+  for (const message of messages) {
+    const at = (message as StampedMessage).lafAt;
+    if (typeof at === "string") times.set(message.id, at);
+  }
+  return times;
+}
+
 function recordFromRow(row: SnapshotRow): InMemoryThread {
   return {
     id: row.threadId,
@@ -75,7 +125,11 @@ function recordFromRow(row: SnapshotRow): InMemoryThread {
  * then will contain them, and a reconstruction that guessed wrong would be worse
  * than one turn's tool detail arriving one run late.
  */
-function assistantMessagesFrom(events: BaseEvent[]): Message[] {
+function assistantMessagesFrom(
+  events: BaseEvent[],
+  /** When each assistant message STARTED streaming, captured live — see `run`. */
+  startedAt: Map<string, string>,
+): StampedMessage[] {
   const order: string[] = [];
   const parts = new Map<string, { role: string; content: string }>();
   for (const raw of events) {
@@ -103,7 +157,15 @@ function assistantMessagesFrom(events: BaseEvent[]): Message[] {
     if (!part || part.content.length === 0) {
       return [];
     }
-    return [{ id, role: part.role, content: part.content } as Message];
+    const at = startedAt.get(id);
+    return [
+      {
+        id,
+        role: part.role,
+        content: part.content,
+        ...(at === undefined ? {} : { lafAt: at }),
+      } as StampedMessage,
+    ];
   });
 }
 
@@ -176,9 +238,26 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     );
     const events = super.run(request);
     const collected: BaseEvent[] = [];
+    /*
+     * The clock reading for each assistant message, taken as it starts streaming.
+     *
+     * This subscriber is live — it fires per event, not once at completion — so TEXT_MESSAGE_START
+     * is the moment the Bot began saying this particular thing. Taking the time at `finishRun`
+     * instead would stamp every message of a long turn with the instant the last one ended, which
+     * is a lie the transcript would then draw a separator from.
+     */
+    const startedAt = new Map<string, string>();
     events.subscribe({
       next: (event) => {
         collected.push(event);
+        const started = event as BaseEvent & { messageId?: string };
+        if (
+          String(event.type) === "TEXT_MESSAGE_START" &&
+          started.messageId &&
+          !startedAt.has(started.messageId)
+        ) {
+          startedAt.set(started.messageId, new Date().toISOString());
+        }
       },
       error: (error: unknown) => {
         void this.finishRun(
@@ -187,6 +266,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           agentId,
           inputMessages,
           collected,
+          startedAt,
           error instanceof Error ? error.message : String(error),
         );
       },
@@ -197,6 +277,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           agentId,
           inputMessages,
           collected,
+          startedAt,
           null,
         );
       },
@@ -251,10 +332,14 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     agentId: string | null,
     inputMessages: Message[],
     events: BaseEvent[],
+    startedAt: Map<string, string>,
     errorMessage: string | null,
   ): Promise<void> {
     try {
-      const messages = [...inputMessages, ...assistantMessagesFrom(events)];
+      const messages = [
+        ...inputMessages,
+        ...assistantMessagesFrom(events, startedAt),
+      ];
       await this.saveSnapshot(threadId, agentId, messages);
       await this.database
         .update(lafThreadRuns)
@@ -273,9 +358,23 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   private async saveSnapshot(
     threadId: string,
     agentId: string | null,
-    messages: Message[],
+    incoming: Message[],
   ): Promise<void> {
     const updatedAt = new Date();
+    /*
+     * Stamps are merged against what this thread already holds, not recomputed.
+     *
+     * Every run hands back the entire history as its input, and that copy has been through AG-UI's
+     * `strip` on the way in, so it arrives bare. Without the merge, saving turn ten would set turn
+     * one's time to now — the conversation would claim to have happened all at once, every time.
+     */
+    const previous = this.restored.get(threadId)?.messages ?? [];
+    const messages = stamp(
+      incoming,
+      stampsOf(previous),
+      new Set(previous.map((message) => message.id)),
+      updatedAt.toISOString(),
+    );
     // `::text::jsonb`, measured, not guessed. A top-level JS array must not reach
     // the driver as itself (postgres-js reads it as a Postgres array) nor as a
     // parameter cast straight to jsonb (the jsonb serializer stringifies the

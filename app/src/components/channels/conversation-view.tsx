@@ -19,6 +19,7 @@ import {
 
 export function ConversationView({
   messages,
+  messageTimes,
   busy = false,
   notice,
   agents = [],
@@ -33,6 +34,8 @@ export function ConversationView({
   onStop,
 }: {
   messages: readonly Message[];
+  /** Message id to ISO-8601, for the transcript's time separators. */
+  messageTimes?: Readonly<Record<string, string>>;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
@@ -226,6 +229,7 @@ export function ConversationView({
             .map((command) => command.name)
             .join(",")}
           messages={messages}
+          {...(messageTimes ? { messageTimes } : {})}
           onRemoveQueued={(id) => {
             apply({ id, type: "remove" });
           }}

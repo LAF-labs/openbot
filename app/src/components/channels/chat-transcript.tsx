@@ -3,6 +3,7 @@ import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import { IconBox, IconCheck, IconCopy } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
+  Fragment,
   memo,
   useEffect,
   useMemo,
@@ -31,6 +32,7 @@ import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
+import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -41,6 +43,8 @@ type ChatTranscriptProps = {
   /** Comma-separated `/` command names, used to tell a skill chip from a leading slash. */
   commandNames?: string;
   messages: ReadonlyArray<Readonly<Message>>;
+  /** Message id to ISO-8601, for the time separators. Empty draws none. */
+  messageTimes?: Readonly<Record<string, string>>;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -578,6 +582,27 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   );
 });
 
+/** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
+const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
+
+/**
+ * "Today 1:45 PM", centred above the stretch of conversation it opens.
+ *
+ * Measured rather than styled to taste: 14px above, 8px below, 28px tall with 6px of its own
+ * padding, 12/16 at the secondary colour. One line per sitting, not a clock on every bubble — a
+ * timestamp beside every sentence is what makes a transcript read as a log instead of a chat.
+ */
+function TimeSeparator({ at }: { at: Date }) {
+  return (
+    <time
+      className="mt-3.5 mb-2 flex h-7 w-auto items-center justify-center self-center whitespace-nowrap py-1.5 text-muted-foreground text-xs"
+      dateTime={at.toISOString()}
+    >
+      {sittingLabel(at)}
+    </time>
+  );
+}
+
 /**
  * Is the neighbouring item another message from the same speaker?
  *
@@ -594,6 +619,7 @@ function continues(
 export function ChatTranscript({
   busy = false,
   commandNames = "",
+  messageTimes = EMPTY_TIMES,
   messages,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
@@ -609,7 +635,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from. This runs per render and is not worth guarding.
    */
-  const items = toVisibleChatItems(messages);
+  const items = toVisibleChatItems(messages, messageTimes);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -678,6 +704,24 @@ export function ChatTranscript({
     }
   }, [hasItems, delays]);
 
+  /*
+   * Which items open a new sitting, decided in one pass rather than per row.
+   *
+   * The comparison is against the last message that HAD a time, not the previous row — a tool call
+   * carries none, and treating its absence as a gap would put a separator in the middle of a turn.
+   * A conversation whose history predates stamping has no times at all and simply gets no
+   * separators, which is the honest outcome: the app does not know when those were said.
+   */
+  const separators = new Map<string, Date>();
+  let previousAt: Date | null = null;
+  for (const item of items) {
+    if (item.kind !== "text" || !item.at) continue;
+    const at = new Date(item.at);
+    if (Number.isNaN(at.getTime())) continue;
+    if (startsNewSitting(at, previousAt)) separators.set(item.id, at);
+    previousAt = at;
+  }
+
   return (
     <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
       <MessageScroller>
@@ -721,25 +765,33 @@ export function ChatTranscript({
                   />
                 </MessageScrollerItem>
               ) : (
-                <MessageScrollerItem
-                  className={
-                    continues(items[index - 1], item.role)
-                      ? "py-0.5"
-                      : "py-0.5 pt-3"
-                  }
-                  key={item.id}
-                  messageId={item.id}
-                  scrollAnchor={item.role === "user"}
-                >
-                  <TranscriptMessage
-                    commandNames={commandNames}
-                    delay={delays.delayFor(item.id, index, items.length)}
-                    joinedNext={continues(items[index + 1], item.role)}
-                    joinedPrev={continues(items[index - 1], item.role)}
-                    role={item.role}
-                    text={item.text}
-                  />
-                </MessageScrollerItem>
+                <Fragment key={item.id}>
+                  {separators.has(item.id) ? (
+                    // Outside the scroller item on purpose: it is not a message, so it must not be
+                    // measured, anchored or scrolled to as one.
+                    <TimeSeparator at={separators.get(item.id) as Date} />
+                  ) : null}
+                  <MessageScrollerItem
+                    className={
+                      // A row that opens a sitting already has the separator's 8px above it.
+                      continues(items[index - 1], item.role) &&
+                      !separators.has(item.id)
+                        ? "py-0.5"
+                        : "py-0.5 pt-3"
+                    }
+                    messageId={item.id}
+                    scrollAnchor={item.role === "user"}
+                  >
+                    <TranscriptMessage
+                      commandNames={commandNames}
+                      delay={delays.delayFor(item.id, index, items.length)}
+                      joinedNext={continues(items[index + 1], item.role)}
+                      joinedPrev={continues(items[index - 1], item.role)}
+                      role={item.role}
+                      text={item.text}
+                    />
+                  </MessageScrollerItem>
+                </Fragment>
               ),
             )}
             {/*

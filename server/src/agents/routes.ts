@@ -16,6 +16,7 @@ import {
 } from "./profile-store";
 import type {
   AgentActor,
+  AgentPreferencePatch,
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
@@ -376,6 +377,34 @@ export function createAgentRoutes(
     }
   });
 
+  /*
+   * ONE ROUTE FOR EVERY PER-PERSON PREFERENCE, not one verb per flag.
+   *
+   * `/hide` and `/unhide` stay because they are already in the wire and under test, but a pair of
+   * verb endpoints per flag does not scale past the first one — the pin and the notification
+   * toggle would have been four more. This takes a patch: the keys present are the ones changed.
+   *
+   * Deliberately NOT gated on `canManage`. A preference is about the reader, not about the Bot:
+   * somebody who can only see a shared Bot must still be able to pin it or mute it, and that
+   * changes nothing for anybody else.
+   */
+  routes.post("/:agentId/preferences", requireUser, async (context) => {
+    const body: unknown = await context.req.json().catch(() => null);
+    const patch = parsePreferencePatch(body);
+    if (!patch.ok) return context.json({ error: patch.error }, 400);
+
+    try {
+      await store.setPreferences(
+        context.var.actor,
+        context.req.param("agentId"),
+        patch.value,
+      );
+      return context.body(null, 204);
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
   routes.delete("/:agentId", requireUser, async (context) => {
     try {
       await store.softDelete(context.var.actor, context.req.param("agentId"));
@@ -400,6 +429,37 @@ function boundedText(
     : { ok: false, error };
 }
 
+/**
+ * A preference patch: only the three known keys, each strictly boolean.
+ *
+ * An empty patch is rejected rather than treated as a no-op, because the only way to send one is a
+ * caller that meant to change something and named it wrong — answering 204 would report success
+ * for a request that did nothing.
+ */
+function parsePreferencePatch(
+  body: unknown,
+):
+  | { ok: true; value: AgentPreferencePatch }
+  | { ok: false; error: string } {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "A preference patch is required." };
+  }
+  const object = body as Record<string, unknown>;
+  const value: AgentPreferencePatch = {};
+  for (const key of ["hidden", "pinned", "notify"] as const) {
+    const raw = object[key];
+    if (raw === undefined) continue;
+    if (typeof raw !== "boolean") {
+      return { ok: false, error: `\`${key}\` must be true or false.` };
+    }
+    value[key] = raw;
+  }
+  if (Object.keys(value).length === 0) {
+    return { ok: false, error: "No known preference was named." };
+  }
+  return { ok: true, value };
+}
+
 function agentDto(actor: AgentActor, agent: AgentProfile) {
   return {
     id: agent.id,
@@ -409,6 +469,9 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     avatarSeed: agent.avatarSeed,
     visibility: agent.visibility,
     hidden: agent.hidden,
+    // ISO, not a boolean: the roster sorts pinned Bots among themselves by when they were pinned.
+    pinnedAt: agent.pinnedAt?.toISOString() ?? null,
+    notify: agent.notify,
     systemOwned: agent.systemOwned,
     // Published so the edit form can show it. Safe to expose: it is an address the person supplied,
     // and any credential for it lives in the vault, never in this row.

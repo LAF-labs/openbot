@@ -12,6 +12,7 @@ import { authFromConfiguration, storeAgentAuth } from "./auth-header";
 import { canManageAgent } from "./profile-policy";
 import type {
   AgentActor,
+  AgentPreferencePatch,
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
@@ -47,6 +48,17 @@ export type AgentProfileStore = {
   ): Promise<AgentProfile>;
   duplicate(actor: AgentActor, id: string): Promise<AgentProfile>;
   setHidden(actor: AgentActor, id: string, hidden: boolean): Promise<void>;
+  /**
+   * Change any of this person's preferences for a Bot, leaving the ones not named alone.
+   *
+   * One method rather than one per flag: they share a primary key, and three upserts racing on the
+   * same row is how two of them end up clobbering the third.
+   */
+  setPreferences(
+    actor: AgentActor,
+    id: string,
+    patch: AgentPreferencePatch,
+  ): Promise<void>;
   softDelete(actor: AgentActor, id: string): Promise<void>;
 };
 
@@ -98,6 +110,8 @@ const joinedProjection = {
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
   hiddenAt: agentPreferences.hiddenAt,
+  pinnedAt: agentPreferences.pinnedAt,
+  notify: agentPreferences.notify,
   deletedAt: agentProfiles.deletedAt,
   configuration: agents.configuration,
 };
@@ -141,6 +155,15 @@ function mapProfile(
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
     hidden: row.hiddenAt !== null,
+    pinnedAt: row.pinnedAt,
+    /*
+     * Default ON for a Bot nobody has expressed an opinion about.
+     *
+     * The LEFT JOIN yields null for a person who has never touched this Bot's preferences, and null
+     * has to mean "notify" rather than "silent" — a Bot that finishes work and says nothing because
+     * a row was never written is indistinguishable from a Bot that failed.
+     */
+    notify: row.notify ?? true,
     deletedAt: row.deletedAt,
     endpoint: endpointOf(row.configuration),
     // Whether a key is set, never which. The form needs to show "a key is set" so a person does not
@@ -412,20 +435,32 @@ export function createAgentProfileStore(
     },
 
     setHidden(actor, id, hidden) {
+      return this.setPreferences(actor, id, { hidden });
+    },
+
+    setPreferences(actor, id, patch) {
       return database.transaction(async (transaction) => {
         const profile = await findAccessibleProfile(transaction, actor, id);
         if (!profile) throw new AgentNotFoundError(id);
 
+        /*
+         * Built from the keys the caller actually named, so `set` never carries a column the caller
+         * did not ask about. Spreading a fixed object with undefined holes would have drizzle write
+         * NULL over a pin somebody set last week because this call was only about notifications.
+         */
+        const now = new Date();
+        const changes: Partial<typeof agentPreferences.$inferInsert> = {};
+        if (patch.hidden !== undefined) changes.hiddenAt = patch.hidden ? now : null;
+        if (patch.pinned !== undefined) changes.pinnedAt = patch.pinned ? now : null;
+        if (patch.notify !== undefined) changes.notify = patch.notify;
+        if (Object.keys(changes).length === 0) return;
+
         await transaction
           .insert(agentPreferences)
-          .values({
-            userId: actor.id,
-            agentId: id,
-            hiddenAt: hidden ? new Date() : null,
-          })
+          .values({ userId: actor.id, agentId: id, ...changes })
           .onConflictDoUpdate({
             target: [agentPreferences.userId, agentPreferences.agentId],
-            set: { hiddenAt: hidden ? new Date() : null },
+            set: changes,
           });
       });
     },
