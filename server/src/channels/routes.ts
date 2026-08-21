@@ -36,8 +36,28 @@ export type ChannelSummary = AgentChannel & {
   lastMessage: string | null;
   lastMessageAt: Date | null;
   lastMessageAgentId: string | null;
+  /** A Bot has spoken here since this person last looked. */
+  unread: boolean;
   createdAt: Date;
 };
+
+/**
+ * Whether a room has something in it this person has not seen.
+ *
+ * Two conditions, and the second is the one that is easy to forget: a message only counts as unread
+ * if a BOT said it. Your own message is the newest thing in the room the instant you send it, so
+ * without the agent check every room you spoke in would mark itself unread the moment you left.
+ */
+function isUnread(row: {
+  lastMessageAt: Date | null;
+  lastMessageAgentId: string | null;
+  lastReadAt: Date | null;
+}): boolean {
+  if (row.lastMessageAgentId === null || row.lastMessageAt === null) {
+    return false;
+  }
+  return row.lastReadAt === null || row.lastMessageAt > row.lastReadAt;
+}
 
 /** What a client that ran an agent reports back about the message it just saw. */
 export type ChannelActivity = {
@@ -51,6 +71,17 @@ export type ChannelStore = {
   create(actor: AgentActor, agentIds: string[]): Promise<AgentChannel>;
   get(actor: AgentActor, channelId: string): Promise<AgentChannel | null>;
   list(actor: AgentActor): Promise<ChannelSummary[]>;
+  /**
+   * Move this person's read mark for a channel.
+   *
+   * `at` rather than a "mark read" verb, so the same call serves both directions: opening a room
+   * sets it to now, and "mark unread" sets it back before the last thing said.
+   */
+  setLastRead(
+    actor: AgentActor,
+    channelId: string,
+    at: Date | null,
+  ): Promise<{ previous: Date | null }>;
   recordActivity(
     actor: AgentActor,
     channelId: string,
@@ -269,6 +300,7 @@ export function createChannelStore(
           lastMessage: channels.lastMessage,
           lastMessageAt: channels.lastMessageAt,
           lastMessageAgentId: channels.lastMessageAgentId,
+          lastReadAt: channelMemberships.lastReadAt,
           createdAt: channels.createdAt,
         })
         .from(channels)
@@ -321,10 +353,52 @@ export function createChannelStore(
           lastMessage: row.lastMessage,
           lastMessageAt: row.lastMessageAt,
           lastMessageAgentId: row.lastMessageAgentId,
+          unread: isUnread(row),
           createdAt: row.createdAt,
         });
       }
       return [...summaries.values()];
+    },
+
+    setLastRead(actor, channelId, at) {
+      return database.transaction(async (transaction) => {
+        /*
+         * Scoped by userId in the WHERE, so this can only ever move the caller's own mark. Reading
+         * membership first and updating second would be the same two statements with a race in
+         * between; one guarded UPDATE is both.
+         */
+        /*
+         * The PREVIOUS mark comes back, and that is the point of returning anything.
+         *
+         * Opening a room marks it read, which destroys the very fact the transcript needs to draw
+         * its "unread from here" line. Reading it in a separate request would race the write; one
+         * statement that reports what it replaced cannot.
+         */
+        const [before] = await transaction
+          .select({ lastReadAt: channelMemberships.lastReadAt })
+          .from(channelMemberships)
+          .where(
+            and(
+              eq(channelMemberships.channelId, channelId),
+              eq(channelMemberships.userId, actor.id),
+            ),
+          )
+          .for("update");
+        // Not a member, or no such channel: the same answer either way, so belonging to a channel
+        // is not something an outsider can probe for.
+        if (!before) throw new ChannelNotFoundError(channelId);
+
+        await transaction
+          .update(channelMemberships)
+          .set({ lastReadAt: at })
+          .where(
+            and(
+              eq(channelMemberships.channelId, channelId),
+              eq(channelMemberships.userId, actor.id),
+            ),
+          );
+        return { previous: before.lastReadAt };
+      });
     },
 
     recordActivity(actor, channelId, activity) {
@@ -585,6 +659,66 @@ export function createChannelRoutes(
    * somebody who is not in the room. A thread-keyed route would have had to re-derive that, and a
    * transcript's timing is enough to tell you when somebody was working.
    */
+  /**
+   * Move the caller's read mark. `{ read: true }` on open, `{ read: false }` for "mark unread".
+   *
+   * Marking unread sets the mark to one millisecond BEFORE the last thing said rather than to null.
+   * Null means "never opened", and a room you have read and deliberately flagged to come back to is
+   * not the same as one you have never seen — collapsing them would lose the distinction the moment
+   * anybody used the feature.
+   */
+  routes.post("/:channelId/read", requireUser, async (context) => {
+    const body: unknown = await context.req.json().catch(() => null);
+    const read =
+      typeof body === "object" && body !== null
+        ? (body as { read?: unknown }).read
+        : undefined;
+    if (typeof read !== "boolean") {
+      return context.json({ error: "`read` must be true or false." }, 400);
+    }
+
+    try {
+      const channelId = context.req.param("channelId");
+      if (read) {
+        const { previous } = await store.setLastRead(
+          context.var.actor,
+          channelId,
+          new Date(),
+        );
+        return context.json({ previousReadAt: previous?.toISOString() ?? null });
+      }
+      /*
+       * THE BOUNDARY COMES FROM THE MESSAGE STAMPS, NOT FROM `last_message_at`.
+       *
+       * Those are two different clocks for the same event. `last_message_at` is reported by the
+       * browser once a reply has finished arriving; a message's own stamp is taken on the server as
+       * it STARTS streaming, which is earlier by however long the answer took. Marking unread
+       * against the browser's clock therefore placed the mark after every message the transcript
+       * knows about, and the "unread from here" line had nothing left to sit above — it silently
+       * did nothing, which is exactly how it first shipped.
+       *
+       * Read state is compared against message stamps, so it is set from message stamps.
+       */
+      const channel = await store.get(context.var.actor, channelId);
+      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      const times = readMessageTimes
+        ? await readMessageTimes(channel.threadId)
+        : {};
+      const newest = Object.values(times)
+        .map((iso) => new Date(iso).getTime())
+        .filter((value) => !Number.isNaN(value))
+        .reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
+      const { previous } = await store.setLastRead(
+        context.var.actor,
+        channelId,
+        Number.isFinite(newest) ? new Date(newest - 1) : null,
+      );
+      return context.json({ previousReadAt: previous?.toISOString() ?? null });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
   routes.get("/:channelId/message-times", requireUser, async (context) => {
     try {
       const channel = await store.get(
@@ -638,6 +772,7 @@ function channelSummaryDto(channel: ChannelSummary) {
     // Serialised as ISO-8601 so the browser gets a string it can sort and format.
     lastMessageAt: channel.lastMessageAt?.toISOString() ?? null,
     lastMessageAgentId: channel.lastMessageAgentId,
+    unread: channel.unread,
     createdAt: channel.createdAt.toISOString(),
   };
 }

@@ -45,6 +45,8 @@ type ChatTranscriptProps = {
   messages: ReadonlyArray<Readonly<Message>>;
   /** Message id to ISO-8601, for the time separators. Empty draws none. */
   messageTimes?: Readonly<Record<string, string>>;
+  /** Where this person's reading stopped, ISO-8601. Absent draws no unread line. */
+  readUpTo?: string;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -586,6 +588,25 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
 /**
+ * The line that says "you had read up to here".
+ *
+ * Measured: 14px above, 8px below, 2px of its own padding, a 1px rule in the accent colour on each
+ * side of an accent label. The accent is spent here on purpose — it is the one thing in a
+ * transcript that is about the reader rather than about the conversation.
+ */
+function UnreadLine() {
+  return (
+    <div className="my-2 mt-3.5 flex w-full items-center gap-2 py-0.5">
+      <span className="h-px flex-1 bg-[var(--sand-fill-accent)]" />
+      <span className="shrink-0 text-[var(--sand-text-accent)] text-xs">
+        {t("Unread")}
+      </span>
+      <span className="h-px flex-1 bg-[var(--sand-fill-accent)]" />
+    </div>
+  );
+}
+
+/**
  * "Today 1:45 PM", centred above the stretch of conversation it opens.
  *
  * Measured rather than styled to taste: 14px above, 8px below, 28px tall with 6px of its own
@@ -621,6 +642,7 @@ export function ChatTranscript({
   commandNames = "",
   messageTimes = EMPTY_TIMES,
   messages,
+  readUpTo,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   stopped,
@@ -714,12 +736,30 @@ export function ChatTranscript({
    */
   const separators = new Map<string, Date>();
   let previousAt: Date | null = null;
+  /*
+   * WHERE THE READING STOPPED — the first message a Bot said after this person last looked.
+   *
+   * Only one, and only on a Bot's message: the line answers "what did I miss", and your own
+   * messages are not something you can have missed. It is computed here rather than tracked,
+   * because `readUpTo` is frozen at the moment the room opened; a reply arriving now falls below a
+   * line that does not move.
+   */
+  const readMark = readUpTo ? new Date(readUpTo).getTime() : Number.NaN;
+  let firstUnreadId: string | null = null;
   for (const item of items) {
     if (item.kind !== "text" || !item.at) continue;
     const at = new Date(item.at);
     if (Number.isNaN(at.getTime())) continue;
     if (startsNewSitting(at, previousAt)) separators.set(item.id, at);
     previousAt = at;
+    if (
+      firstUnreadId === null &&
+      item.role === "assistant" &&
+      !Number.isNaN(readMark) &&
+      at.getTime() > readMark
+    ) {
+      firstUnreadId = item.id;
+    }
   }
 
   return (
@@ -766,6 +806,7 @@ export function ChatTranscript({
                 </MessageScrollerItem>
               ) : (
                 <Fragment key={item.id}>
+                  {firstUnreadId === item.id ? <UnreadLine /> : null}
                   {separators.has(item.id) ? (
                     // Outside the scroller item on purpose: it is not a message, so it must not be
                     // measured, anchored or scrolled to as one.

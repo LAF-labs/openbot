@@ -4,7 +4,11 @@ import {
   useAgent,
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -14,7 +18,10 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { recordChannelActivityMutationOptions } from "@/lib/channels/mutations";
+import {
+  recordChannelActivityMutationOptions,
+  setChannelReadMutationOptions,
+} from "@/lib/channels/mutations";
 import {
   type AgentChannel,
   messageTimesQueryOptions,
@@ -50,9 +57,51 @@ export function ChannelChat({
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
+  const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
   // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
   const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
+
+  /*
+   * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED.
+   *
+   * One call, on mount, per channel. The mark it replaced is the only thing that can place the
+   * "unread from here" line — the write destroys it, so a second request to read it would be a
+   * race with this one by construction.
+   *
+   * `readUpTo` is state and never re-derived: the line has to stay where it was when the room was
+   * opened. Recomputing it as replies arrive would walk it down the transcript, always sitting
+   * above the newest message, which is not a mark of what you had seen — it is just a decoration
+   * that follows the scroll.
+   */
+  const setRead = useMutation(setChannelReadMutationOptions(queryClient));
+  const [readUpTo, setReadUpTo] = useState<string | null>(null);
+  const markRead = useRef(setRead.mutateAsync);
+  markRead.current = setRead.mutateAsync;
+  /*
+   * ONCE PER MOUNTED ROOM, AND THE GUARD IS LOAD-BEARING.
+   *
+   * This call is not idempotent by nature: it reports the mark it replaced. React runs mount
+   * effects twice in development, so the second call answered with the timestamp the FIRST one had
+   * just written — "now" — and the line had nothing newer than itself to sit above. It drew
+   * nothing, in development only, for a reason invisible on the server: both requests returned 200
+   * and both did exactly what they were asked.
+   *
+   * A ref rather than a cleanup flag, because the second invocation must not send the request at
+   * all. It survives the simulated unmount and is fresh on a real one — `ChannelChat` is keyed on
+   * the channel — so revisiting a room still marks it read.
+   */
+  const marked = useRef<string | null>(null);
+  useEffect(() => {
+    if (marked.current === channel.id) return;
+    marked.current = channel.id;
+    void markRead
+      .current({ channelId: channel.id, read: true })
+      .then((result) => setReadUpTo(result.previousReadAt))
+      .catch(() => {
+        // A room that cannot be marked read is still a readable room.
+      });
+  }, [channel.id]);
   const { agent, isReady } = useAgent({
     agentId: `channel:${channel.id}`,
     runtimeAgentId,
@@ -365,12 +414,20 @@ export function ChannelChat({
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
         agents={toAgentOptions(agentProfiles, channel.agentIds)}
-        busy={agent.isRunning}
+        /*
+         * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
+         * note above already gives. `agent.isRunning` stays false for the second and a half while
+         * `say` waits for the runtime agent, so the transcript drew nothing at all during the one
+         * window a person is most likely to wonder whether anything happened: right after pressing
+         * send. It was the only one of the three turn-shaped props still reading the wire.
+         */
+        busy={agent.isRunning || turnsInFlight > 0}
         // The `/` menu exposes only skills granted to this Bot.
         commands={skillCommands}
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
         messageTimes={messageTimes}
+        {...(readUpTo ? { readUpTo } : {})}
         messages={transcriptMessages(agent.messages, seed)}
         notice={
           channel.active ? null : (

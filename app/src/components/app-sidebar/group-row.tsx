@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { memo } from "react";
 import { ChannelAvatar } from "@/components/channels/avatar";
+import { t } from "@/lib/i18n";
 
 /**
  * A room with more than one Bot in it, on the same 54px row as a colleague.
@@ -19,6 +20,7 @@ export const GroupRow = memo(function GroupRow({
   name,
   subtitle,
   lastMessageAt,
+  unread = false,
 }: {
   channelId: string;
   participantIds: string[];
@@ -26,6 +28,8 @@ export const GroupRow = memo(function GroupRow({
   /** The last thing said in the room, or nothing yet. */
   subtitle: string | undefined;
   lastMessageAt: string | undefined;
+  /** A Bot has spoken here since this person last opened it. */
+  unread?: boolean;
 }) {
   return (
     <Link
@@ -33,17 +37,38 @@ export const GroupRow = memo(function GroupRow({
       params={{ channelId }}
       to="/channel/$channelId"
     >
-      <span className="inline-flex shrink-0">
+      {unread ? <span className="sr-only">{t("Unread")}</span> : null}
+      <span className="relative inline-flex shrink-0">
         <ChannelAvatar participantIds={participantIds} size={36} />
+        {unread ? (
+          <span
+            aria-hidden="true"
+            className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-[var(--sand-fill-accent)] ring-2 ring-sidebar"
+          />
+        ) : null}
       </span>
       <span className="flex min-w-0 flex-1 shrink flex-col overflow-hidden">
         <span className="flex min-w-0 flex-row items-center gap-1.5">
-          <span className="min-w-0 shrink truncate text-base">{name}</span>
+          <span
+            className={
+              unread
+                ? "min-w-0 shrink truncate font-semibold text-base"
+                : "min-w-0 shrink truncate text-base"
+            }
+          >
+            {name}
+          </span>
           <span className="ms-auto shrink-0 text-muted-foreground/80 text-xs tabular-nums">
             {lastMessageAt}
           </span>
         </span>
-        <span className="min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm">
+        <span
+          className={
+            unread
+              ? "min-h-[18px] min-w-0 shrink truncate text-foreground text-sm"
+              : "min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm"
+          }
+        >
           {subtitle}
         </span>
       </span>

@@ -25,12 +25,15 @@ export const BotRow = memo(function BotRow({
   pinned = false,
   subtitle,
   lastMessageAt,
+  unread = false,
 }: {
   agentId: string;
   avatarSeed: string;
   name: string;
   /** Kept at the top of the roster by this person. Marked, or the order looks arbitrary. */
   pinned?: boolean;
+  /** The Bot has said something since this person last opened the room. */
+  unread?: boolean;
   /** The Bot's conversation, once it has one. */
   channelId: string | undefined;
   /** The last thing said, or the Bot's standing role before anything has been. */
@@ -71,12 +74,29 @@ export const BotRow = memo(function BotRow({
 
   const body = (
     <>
-      <span className="inline-flex size-9 shrink-0 overflow-hidden rounded-xl">
+      {/* A dot and a weight are not announced. This is. */}
+      {unread ? <span className="sr-only">{t("Unread")}</span> : null}
+      {/*
+       * `relative` and NOT `overflow-hidden` on the outer span: the dot overhangs the face by
+       * design, and clipping the wrapper would slice it in half. The face keeps its own rounding.
+       */}
+      <span className="relative inline-flex size-9 shrink-0">
         <Mascot
-          className="size-full object-cover"
+          className="size-full overflow-hidden rounded-xl object-cover"
           seed={avatarSeed}
           size={36}
         />
+        {/*
+         * 8px, at the avatar's bottom-right with a 2px inset — the measured corner marker. The ring
+         * is the row's own background so the dot reads as sitting on top of the face rather than
+         * punched into it.
+         */}
+        {unread ? (
+          <span
+            aria-hidden="true"
+            className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-[var(--sand-fill-accent)] ring-2 ring-sidebar"
+          />
+        ) : null}
       </span>
       <span className="flex min-w-0 flex-1 shrink flex-col overflow-hidden">
         <span className="flex min-w-0 flex-row items-center gap-1.5">
@@ -86,7 +106,15 @@ export const BotRow = memo(function BotRow({
            * against it in the middle of the row instead of on the right edge where the eye scans
            * for it.
            */}
-          <span className="min-w-0 shrink truncate text-base">{name}</span>
+          <span
+            className={
+              unread
+                ? "min-w-0 shrink truncate font-semibold text-base"
+                : "min-w-0 shrink truncate text-base"
+            }
+          >
+            {name}
+          </span>
           {/*
            * A pin that moves a row without saying so reads as a list that shuffles itself. The
            * glyph is the only thing on the row explaining why this one is above a Bot that spoke
@@ -104,7 +132,17 @@ export const BotRow = memo(function BotRow({
         </span>
         {/* 13/18 — the scale's second body size, and a fixed min-height so an empty preview
          * still holds the name on the same baseline as its neighbours. */}
-        <span className="min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm">
+        {/*
+         * The preview darkens too. The dot says "something happened here" from across the room; the
+         * weight is what tells you WHICH of two dotted rows you have not read yet once you look.
+         */}
+        <span
+          className={
+            unread
+              ? "min-h-[18px] min-w-0 shrink truncate text-foreground text-sm"
+              : "min-h-[18px] min-w-0 shrink truncate text-muted-foreground text-sm"
+          }
+        >
           {subtitle}
         </span>
       </span>

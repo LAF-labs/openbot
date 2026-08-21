@@ -85,6 +85,13 @@
       "when": 1787294631401,
       "tag": "0011_smiling_morlun",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787298654145,
+      "tag": "0012_perpetual_tana_nile",
+      "breakpoints": true
     }
   ]
 }

@@ -217,6 +217,7 @@ export const ko: Record<string, string> = {
   "Logging out…": "로그아웃 중…",
   "Make one and it will be here, ready to be asked.":
     "하나 만들면 여기에서 바로 부를 수 있어요.",
+  "Mark as unread": "읽지 않음으로 표시",
   "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
     "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
   "May no longer read this": "더 이상 읽을 수 없음",
@@ -379,6 +380,7 @@ export const ko: Record<string, string> = {
   "Unhiding…": "해제 중…",
   Unpin: "고정 해제",
   "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
+  "Unread": "읽지 않음",
   "Waiting for your answer": "답변을 기다리는 중",
   "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",
   "Watch this Bot's screen": "이 봇의 화면 보기",

@@ -58,3 +58,33 @@ export function recordChannelActivityMutationOptions() {
     },
   });
 }
+
+/**
+ * Move this person's read mark for a channel.
+ *
+ * Returns the mark it REPLACED, which is what the transcript draws its "unread from here" line
+ * from: opening a room marks it read, and that write destroys the very fact the line needs. One
+ * call that reports what it overwrote cannot race a second call that reads it.
+ */
+export function setChannelReadMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (variables: {
+      channelId: string;
+      read: boolean;
+    }): Promise<{ previousReadAt: string | null }> => {
+      const response = await fetch(
+        `/api/channels/${encodeURIComponent(variables.channelId)}/read`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ read: variables.read }),
+        },
+      );
+      if (!response.ok) throw new Error("Could not update the read mark");
+      return (await response.json()) as { previousReadAt: string | null };
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: channelKeys.list() }),
+  });
+}

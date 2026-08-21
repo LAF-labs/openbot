@@ -5,6 +5,7 @@ import {
   IconCopy,
   IconEyeOff,
   IconLogout,
+  IconMailOpened,
   IconPencil,
   IconPin,
   IconPinnedOff,
@@ -49,6 +50,7 @@ import {
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
@@ -129,6 +131,7 @@ function BotRowMenu({
   const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
   const duplicate = useMutation(duplicateAgentMutationOptions(queryClient));
   const remove = useMutation(deleteAgentMutationOptions(queryClient));
+  const setRead = useMutation(setChannelReadMutationOptions(queryClient));
   const pinned = agent.pinnedAt !== null;
 
   return (
@@ -146,6 +149,21 @@ function BotRowMenu({
           {pinned ? <IconPinnedOff /> : <IconPin />}
           {pinned ? t("Unpin") : t("Pin")}
         </ContextMenuItem>
+
+        {/*
+         * Only where there is a conversation to mark. A Bot nobody has spoken to has no room, and
+         * an item that silently does nothing is worse than one that is not offered.
+         */}
+        {channelId ? (
+          <ContextMenuItem
+            onClick={() => {
+              setRead.mutate({ channelId, read: false });
+            }}
+          >
+            <IconMailOpened />
+            {t("Mark as unread")}
+          </ContextMenuItem>
+        ) : null}
 
         <ContextMenuItem
           onClick={() => {
@@ -215,7 +233,12 @@ export function BotSidebar() {
   const channelFor = useMemo(() => {
     const byAgent = new Map<
       string,
-      { id: string; lastMessage: string | null; lastMessageAt: string | null }
+      {
+        id: string;
+        lastMessage: string | null;
+        lastMessageAt: string | null;
+        unread: boolean;
+      }
     >();
     for (const channel of channels.data ?? []) {
       if (channel.agentIds.length !== 1) continue;
@@ -225,6 +248,7 @@ export function BotSidebar() {
         id: channel.id,
         lastMessage: channel.lastMessage,
         lastMessageAt: channel.lastMessageAt,
+        unread: channel.unread,
       });
     }
     return byAgent;
@@ -265,6 +289,7 @@ export function BotSidebar() {
             ? channel.lastMessage
             : undefined,
         at: channel.lastMessageAt ?? channel.createdAt,
+        unread: channel.unread,
       }));
   }, [channels.data, query]);
 
@@ -392,11 +417,12 @@ export function BotSidebar() {
                     name={agent.name}
                     pinned={agent.pinnedAt !== null}
                     subtitle={subtitle}
+                    unread={channel?.unread ?? false}
                   />
                 </BotRowMenu>
               </li>
             ))}
-        {groups.map(({ channel, subtitle, at }) => (
+        {groups.map(({ channel, subtitle, at, unread }) => (
           <li key={channel.id}>
             <GroupRow
               channelId={channel.id}
@@ -404,6 +430,7 @@ export function BotSidebar() {
               name={channel.name}
               participantIds={channel.agentIds}
               subtitle={subtitle}
+              unread={unread}
             />
           </li>
         ))}

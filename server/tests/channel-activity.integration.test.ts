@@ -114,9 +114,71 @@ describe("channel activity", () => {
         lastMessage: "Categorized three expenses.",
         lastMessageAgentId: agentId,
         lastMessageAt: at,
+        // The Bot spoke and nobody has opened the room since, which is the whole definition.
+        unread: true,
         createdAt: expect.any(Date),
       },
     ]);
+  });
+
+  test("a person's own message does not leave the room unread", async () => {
+    /*
+     * The condition that is easy to forget. Your own message is the newest thing in the room the
+     * instant you send it, so without the "a Bot said it" half, every room you spoke in would mark
+     * itself unread the moment you navigated away from it.
+     */
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    await store.recordActivity(owner, channel.id, {
+      agentId: null,
+      at: new Date(),
+      text: "Can you check the invoices?",
+    });
+
+    expect((await store.list(owner))[0]?.unread).toBe(false);
+  });
+
+  test("opening the room clears it, and marking unread brings it back", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+    const at = new Date();
+
+    await store.recordActivity(owner, channel.id, {
+      agentId,
+      at,
+      text: "Categorized three expenses.",
+    });
+    expect((await store.list(owner))[0]?.unread).toBe(true);
+
+    await store.setLastRead(owner, channel.id, new Date(at.getTime() + 1000));
+    expect((await store.list(owner))[0]?.unread).toBe(false);
+
+    // One millisecond before the last message: read again, deliberately, which is not the same
+    // state as never opened.
+    await store.setLastRead(owner, channel.id, new Date(at.getTime() - 1));
+    expect((await store.list(owner))[0]?.unread).toBe(true);
+  });
+
+  test("a read mark belongs to the person who set it", async () => {
+    const owner = await createUser();
+    const stranger = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    await store.recordActivity(owner, channel.id, {
+      agentId,
+      at: new Date(),
+      text: "Done.",
+    });
+
+    // Not a member: the mark cannot be moved, and the room is not even acknowledged to exist.
+    await expect(
+      store.setLastRead(stranger, channel.id, new Date()),
+    ).rejects.toThrow();
+    expect((await store.list(owner))[0]?.unread).toBe(true);
   });
 
   /*

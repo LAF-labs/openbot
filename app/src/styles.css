@@ -103,6 +103,7 @@ html {
   --sand-fill-bubble-agent: #eeeeee;
   --sand-fill-bubble-user: #070707;
   --sand-fill-accent: #1084fe;
+  --sand-text-accent: #0c64c1;
   --sand-shadow-composer: 0 2px 8px -1px #0000000d, 0 1px 2px #00000008,
     0 0 0 1px #e4e4e40a;
   --sand-shadow-popover: 0 10px 20px -3px #0000001a, 0 4px 6px -4px #0000001a,
@@ -189,6 +190,7 @@ html {
   --sand-fill-bubble-agent: #262626;
   --sand-fill-bubble-user: #5a5a5a;
   --sand-fill-accent: #1084fe;
+  --sand-text-accent: #459ffe;
   --sand-shadow-composer: 0 0 0 var(--sand-hairline) var(--sand-border-weak);
   --sand-shadow-popover: 0 0 0 var(--sand-hairline) var(--sand-border-default);
 

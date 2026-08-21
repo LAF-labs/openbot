@@ -21,6 +21,8 @@ export type ChannelSummary = AgentChannel & {
   /** ISO-8601, or null for a channel nobody has used yet. */
   lastMessageAt: string | null;
   lastMessageAgentId: string | null;
+  /** A Bot has spoken here since this person last looked. */
+  unread: boolean;
   /** ISO-8601. Ordering falls back to this, so a channel just created sorts to the top. */
   createdAt: string;
 };

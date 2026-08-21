@@ -204,6 +204,15 @@ export const channelMemberships = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * When this person last had this conversation open, or null for one they have never opened.
+     *
+     * The home the comment on `channels.last_message` already named: what was said last is a
+     * property of the room, what has been SEEN is a property of a person in it. A time rather than
+     * a flag, so "mark unread" is just moving it back rather than a second column that can disagree
+     * with the first.
+     */
+    lastReadAt: timestamp("last_read_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [primaryKey({ columns: [table.channelId, table.userId] })],
