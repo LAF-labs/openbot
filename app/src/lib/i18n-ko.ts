@@ -174,6 +174,8 @@ export const ko: Record<string, string> = {
     "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
   Frog: "개구리",
   Ghost: "유령",
+  "Give this Bot something to do on a schedule.":
+    "이 봇에게 시간표대로 할 일을 하나 맡겨보세요.",
   "Going in circles": "같은 일 반복",
   Gorilla: "고릴라",
   "Granted to this Bot": "이 봇에게 부여됨",
@@ -228,6 +230,7 @@ export const ko: Record<string, string> = {
   "Open the audit trail": "감사 기록 열기",
   "Opening Google…": "Google 여는 중…",
   Panda: "판다",
+  Paused: "일시정지",
   "Polar bear": "북극곰",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",

@@ -7,8 +7,8 @@ import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { ChannelAvatar } from "@/components/channels/avatar";
+import { BotPanel } from "@/components/channels/bot-panel";
 import { ChannelChat } from "@/components/channels/channel-chat";
-import { ComputerView } from "@/components/computer/computer-view";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { Button } from "@/components/ui/button";
@@ -38,25 +38,6 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
   component: RouteComponent,
 });
-
-function ComputerViewPanel({
-  agentId,
-  name,
-}: {
-  agentId: string;
-  name?: string;
-}) {
-  return (
-    <div className="px-4 mt-4">
-      <div className="p-4">
-        <ComputerView active computerId={agentId} />
-        <span className="flex items-center justify-center w-full text-center text-muted-foreground mt-4 text-sm">
-          {name ? t("{name}'s screen", { name }) : t("The assistant's screen")}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
@@ -140,12 +121,8 @@ function RouteComponent() {
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action. Named after
-          // the coworker, not the channel: once the first message titles the channel, "«that whole
-          // sentence»'s screen" is nobody's screen.
-          <ComputerViewPanel
-            agentId={agentId}
-            name={headerAgent?.name ?? channel?.data?.name}
-          />
+          // the coworker, never the conversation.
+          <BotPanel agentId={agentId} name={headerAgent?.name} />
         ) : (
           <AgentProfile agentId={agentId} />
         )

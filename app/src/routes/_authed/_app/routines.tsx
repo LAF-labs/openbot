@@ -26,6 +26,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import {
+  type Routine,
+  type RoutineRun,
+  routineListQueryOptions,
+  routineRequest,
+  scheduleLabel,
+} from "@/lib/routines/queries";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -34,56 +41,6 @@ import { activeLocale, t } from "@/lib/i18n";
  * page is built accordingly: the instruction is the biggest field on it, and a routine's row leads
  * with what it says, not with its schedule.
  */
-
-type Routine = {
-  id: string;
-  agentId: string;
-  name: string;
-  instruction: string;
-  scheduleKind: "interval" | "daily";
-  intervalMinutes: number | null;
-  dailyUtc: string | null;
-  enabled: boolean;
-  lastRunAt: string | null;
-  nextRunAt: string;
-};
-
-type RoutineRun = {
-  id: string;
-  startedAt: string;
-  ok: boolean | null;
-  answer: string | null;
-  error: string | null;
-};
-
-async function routineRequest(path: string, init?: RequestInit) {
-  const response = await fetch(path, {
-    credentials: "include",
-    headers: init?.body ? { "content-type": "application/json" } : {},
-    ...init,
-  });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    // The server's sentence when there is one. `statusText` is "Internal Server Error", which
-    // tells a person nothing they can act on.
-    throw new Error(
-      String(body?.error ?? t("That did not go through. Try again.")),
-    );
-  }
-  return body;
-}
-
-function scheduleLabel(routine: Routine): string {
-  return routine.scheduleKind === "daily"
-    ? t("Daily at {time} UTC").replace("{time}", routine.dailyUtc ?? "")
-    : t("Every {minutes} minutes").replace(
-        "{minutes}",
-        String(routine.intervalMinutes ?? 60),
-      );
-}
 
 function RunHistory({ routineId }: { routineId: string }) {
   const runs = useQuery({
@@ -514,11 +471,7 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
 function RoutinesPage() {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
-  const routines = useQuery({
-    queryKey: ["routines"],
-    queryFn: async () =>
-      (await routineRequest("/api/routines"))?.routines as Routine[],
-  });
+  const routines = useQuery(routineListQueryOptions());
 
   return (
     <PageShell
