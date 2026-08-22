@@ -1,9 +1,10 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
 import { agentKeys } from "@/lib/agents/queries";
+import { routineKeys } from "@/lib/routines/queries";
 import { t } from "@/lib/i18n";
 import { useActiveBotHolder } from "./active-bot";
 
@@ -20,6 +21,159 @@ import { useActiveBotHolder } from "./active-bot";
  * so there is no argument through which a Bot could rename a colleague. The server checks the
  * person's own permission on top of that.
  */
+type RoutineArgs = {
+  action?: "set" | "create" | "delete" | "pause" | "resume";
+  name?: string;
+  routineId?: string;
+  instruction?: string;
+  schedule?: {
+    kind: "daily" | "interval";
+    time?: string;
+    timeZone?: string;
+    days?: number[];
+    minutes?: number;
+  };
+};
+
+/**
+ * The routine half of `update_state`.
+ *
+ * A person asking for something every morning is asking for a routine, and before this the only way
+ * to get one was to leave the conversation, open the Routines page and re-type what they had just
+ * said. The Bot writes it down instead — for itself, on its own id, which is why no agent id
+ * crosses the tool boundary.
+ */
+async function routineAction(
+  args: RoutineArgs,
+  botId: string,
+  remember: (
+    entry: { done: string; doing: string; note?: string },
+    failed?: boolean,
+  ) => void,
+  queryClient: QueryClient,
+): Promise<string> {
+  const line = (doing: string, done: string, note?: string) => ({
+    doing,
+    done,
+    ...(note ? { note } : {}),
+  });
+  const say = (
+    entry: { done: string; doing: string; note?: string },
+    failed: boolean,
+    message: string,
+  ) => {
+    remember(entry, failed);
+    return message;
+  };
+  const done = async (
+    entry: { done: string; doing: string; note?: string },
+    message: string,
+  ) => {
+    // The Routines screen and the Bot panel both read this list.
+    await queryClient.invalidateQueries({ queryKey: routineKeys.all });
+    return say(entry, false, message);
+  };
+  const reason = async (response: Response) => {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    return body?.error ?? response.statusText;
+  };
+
+  if (args.action === "create") {
+    const name = args.name?.trim();
+    const instruction = args.instruction?.trim();
+    if (!name || !instruction || !args.schedule) {
+      return say(
+        line(t("Saving a routine"), t("Could not save a routine")),
+        true,
+        "A routine needs a name, what it should do each time, and when to run.",
+      );
+    }
+    const response = await fetch("/api/routines", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        agentId: botId,
+        name,
+        instruction,
+        schedule: args.schedule,
+      }),
+    });
+    if (!response.ok) {
+      return say(
+        line(t("Saving a routine"), t("Saved a routine"), name),
+        true,
+        `The routine was not saved: ${await reason(response)}`,
+      );
+    }
+    return await done(
+      line(t("Saving a routine"), t("Saved a routine"), name),
+      `Saved the routine "${name}". It runs on its own from now on; the person can see and change it on the Routines screen.`,
+    );
+  }
+
+  const routineId = args.routineId?.trim();
+  if (!routineId) {
+    return say(
+      line(t("Changing a routine"), t("Could not change a routine")),
+      true,
+      "Say which routine, by its id.",
+    );
+  }
+
+  if (args.action === "delete") {
+    const response = await fetch(
+      `/api/routines/${encodeURIComponent(routineId)}`,
+      { method: "DELETE", credentials: "include" },
+    );
+    if (!response.ok) {
+      return say(
+        line(t("Deleting a routine"), t("Could not delete a routine")),
+        true,
+        `The routine was not deleted: ${await reason(response)}`,
+      );
+    }
+    return await done(
+      line(t("Deleting a routine"), t("Deleted a routine")),
+      "Deleted that routine.",
+    );
+  }
+
+  if (args.action === "pause" || args.action === "resume") {
+    const enabled = args.action === "resume";
+    const response = await fetch(
+      `/api/routines/${encodeURIComponent(routineId)}/enabled`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled }),
+      },
+    );
+    if (!response.ok) {
+      return say(
+        line(t("Changing a routine"), t("Could not change a routine")),
+        true,
+        `That routine was not changed: ${await reason(response)}`,
+      );
+    }
+    return await done(
+      enabled
+        ? line(t("Resuming a routine"), t("Resumed a routine"))
+        : line(t("Pausing a routine"), t("Paused a routine")),
+      enabled ? "Resumed that routine." : "Paused that routine.",
+    );
+  }
+
+  return say(
+    line(t("Changing a routine"), t("Could not change a routine")),
+    true,
+    "Say what to do with the routine: create, delete, pause or resume.",
+  );
+}
+
 export function SelfTools() {
   const bot = useActiveBotHolder();
   const queryClient = useQueryClient();
@@ -28,20 +182,34 @@ export function SelfTools() {
    * that registered it — the same reason the coworker tool keeps its exchanges in one.
    */
   const changes = useRef(
-    new Map<string, { fields: string[]; failed?: boolean }>(),
+    new Map<
+      string,
+      { done: string; doing: string; note?: string; failed?: boolean }
+    >(),
   );
 
   useFrontendTool({
     name: "update_state",
     description:
-      "Change your own profile — your name, what you are for, or your face. Use this the moment " +
-      "the person tells you what they want you to do, so you still know it in every later " +
-      "conversation. Send only the fields that change. This edits you and no one else.",
+      "Change your own standing state: your profile, or the routines you run on a schedule. " +
+      "Use it the moment the person tells you what you are for or asks for something regular, so " +
+      "it survives past this conversation. Send only what changes. This edits you and no one else.",
     parameters: z.object({
       target: z
-        .literal("profile")
-        .describe("What to change. Only 'profile' is supported so far."),
-      name: z.string().optional().describe("Your new name, if it changes"),
+        .enum(["profile", "routine"])
+        .describe(
+          "'profile' for who you are; 'routine' for work you repeat on a schedule",
+        ),
+      action: z
+        .enum(["set", "create", "delete", "pause", "resume"])
+        .optional()
+        .describe(
+          "For routine: create, delete, pause or resume. For profile: set (the default).",
+        ),
+      name: z
+        .string()
+        .optional()
+        .describe("Your new name, or the routine's name when creating one"),
       description: z
         .string()
         .optional()
@@ -52,20 +220,73 @@ export function SelfTools() {
         .string()
         .optional()
         .describe("A short role label, such as 'Finance operations'"),
+      routineId: z
+        .string()
+        .optional()
+        .describe("Which routine to delete, pause or resume"),
+      instruction: z
+        .string()
+        .optional()
+        .describe(
+          "What the routine does every time it fires, written to your future self",
+        ),
+      schedule: z
+        .object({
+          kind: z.enum(["daily", "interval"]),
+          time: z
+            .string()
+            .optional()
+            .describe("HH:MM on the wall clock, for a daily routine"),
+          timeZone: z
+            .string()
+            .optional()
+            .describe("IANA zone the time is written in, such as Asia/Seoul"),
+          days: z
+            .array(z.number())
+            .optional()
+            .describe("Weekdays it may run, 0 = Sunday. Omit for every day."),
+          minutes: z
+            .number()
+            .optional()
+            .describe("How often, for an interval routine"),
+        })
+        .optional()
+        .describe("When the routine runs. Required when creating one."),
     }),
     handler: async (
-      {
-        name,
-        description,
-        title,
-      }: {
-        target: "profile";
+      args: {
+        target: "profile" | "routine";
+        action?: "set" | "create" | "delete" | "pause" | "resume";
         name?: string;
         description?: string;
         title?: string;
+        routineId?: string;
+        instruction?: string;
+        schedule?: {
+          kind: "daily" | "interval";
+          time?: string;
+          timeZone?: string;
+          days?: number[];
+          minutes?: number;
+        };
       },
       call: { toolCall?: { id?: string } } = {},
     ) => {
+      const { name, description, title } = args;
+      const remember = (
+        entry: { done: string; doing: string; note?: string },
+        failed?: boolean,
+      ) => {
+        const id = call.toolCall?.id;
+        if (id) {
+          changes.current.set(id, { ...entry, ...(failed ? { failed } : {}) });
+        }
+      };
+
+      if (args.target === "routine") {
+        return await routineAction(args, bot.current, remember, queryClient);
+      }
+
       const patch: Record<string, string> = {};
       if (name !== undefined) patch.name = name;
       if (description !== undefined) patch.roleDescription = description;
@@ -78,16 +299,12 @@ export function SelfTools() {
         ...(title === undefined ? [] : [t("title")]),
         ...(description === undefined ? [] : [t("what it is for")]),
       ];
-      const remember = (failed?: boolean) => {
-        const id = call.toolCall?.id;
-        if (id) {
-          changes.current.set(id, {
-            fields: changed,
-            ...(failed ? { failed } : {}),
-          });
-        }
+      const profileLine = {
+        doing: t("Updating its own profile"),
+        done: t("Updated its own profile"),
+        note: changed.join(", "),
       };
-      remember();
+      remember(profileLine);
 
       const response = await fetch(
         `/api/agents/${encodeURIComponent(bot.current)}/profile`,
@@ -102,7 +319,7 @@ export function SelfTools() {
         error?: string;
       } | null;
       if (!response.ok) {
-        remember(true);
+        remember(profileLine, true);
         // Back to the model as text, so it can tell the person what happened rather than the
         // runtime flattening a thrown error into noise.
         return `Your profile could not be changed: ${body?.error ?? response.statusText}`;
@@ -120,17 +337,25 @@ export function SelfTools() {
     render: ({ status, toolCallId }) => {
       const entry = changes.current.get(toolCallId ?? "");
       const running = status !== "complete";
+      /*
+       * The line says what the Bot did, and one tool does two things: saying "updated its own
+       * profile" while it saved a routine is the kind of small lie that makes a person stop reading
+       * these lines at all.
+       */
+      const label = entry
+        ? running
+          ? entry.doing
+          : entry.done
+        : running
+          ? t("Changing its own settings")
+          : t("Changed its own settings");
       return (
         <ToolLine
           failed={entry?.failed === true}
-          label={
-            running
-              ? t("Updating its own profile")
-              : t("Updated its own profile")
-          }
+          label={label}
           running={running}
         >
-          {entry?.fields.length ? <p>{entry.fields.join(", ")}</p> : null}
+          {entry?.note ? <p>{entry.note}</p> : null}
         </ToolLine>
       );
     },
