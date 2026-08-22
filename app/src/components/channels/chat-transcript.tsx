@@ -52,6 +52,13 @@ type ChatTranscriptProps = {
    */
   readWindow?: { from: string; until: string };
   /**
+   * Who the Bot side of this transcript is, shown above each of its turns. Only a room with more
+   * than one Bot passes it: there, a grey bubble with no name does not say which of them spoke,
+   * and the honest answer today is "the room's first member, every time" — so that is the name.
+   * A room with one Bot has its name in the header and needs nothing on the bubbles.
+   */
+  speaker?: string;
+  /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
    */
@@ -378,6 +385,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   joinedNext = false,
   joinedPrev = false,
   role,
+  speaker,
   text,
 }: {
   commandNames?: string;
@@ -387,6 +395,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
   /** The message above is. */
   joinedPrev?: boolean;
   role: "user" | "assistant";
+  /** The Bot's name, drawn above the first bubble of each of its turns. See ChatTranscriptProps. */
+  speaker?: string;
   text: string;
 }) {
   const isUser = role === "user";
@@ -397,6 +407,12 @@ const TranscriptMessage = memo(function TranscriptMessage({
     <MessageRow align={align}>
       <MessageContent>
         <Arriving delay={delay}>
+          {!isUser && speaker && !joinedPrev && (
+            // The sender line a group thread draws: small, quiet, once per turn.
+            <span className="mb-1 block pl-3 text-[12px] text-muted-foreground leading-4">
+              {speaker}
+            </span>
+          )}
           {/* The chat measure: what a Bot says and what a person typed read at one size. */}
           {/*
            * BOTH SIDES GET A BUBBLE.
@@ -647,6 +663,7 @@ export function ChatTranscript({
   messageTimes = EMPTY_TIMES,
   messages,
   readWindow,
+  speaker,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   stopped,
@@ -839,6 +856,7 @@ export function ChatTranscript({
                       joinedNext={continues(items[index + 1], item.role)}
                       joinedPrev={continues(items[index - 1], item.role)}
                       role={item.role}
+                      {...(speaker ? { speaker } : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>

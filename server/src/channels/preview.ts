@@ -23,10 +23,12 @@ export function plainTextOf(markdown: string): string {
       .replace(/^[ \t]*[-*+][ \t]+/gm, "")
       .replace(/^[ \t]*\d+[.)][ \t]+/gm, "")
       .replace(/^[ \t]*>[ \t]?/gm, "")
-      // Emphasis: a run of marks that opens at a word's start and closes at its end. Not a mark
-      // inside a word — `a_b_c` and `2 * 3` are what they look like.
+      // Emphasis. Asterisks and tildes come off wherever they bracket a span — `**일상 비서**이며`
+      // closes straight into a particle, so no boundary is asked for at either end. Underscores
+      // are asked for one: `a_b_c` is an identifier, not two emphasised letters.
+      .replace(/(\*{1,3}|~~)(\S(?:[^\n]*?\S)?)\1/g, "$2")
       .replace(
-        /(^|[\s(["'])(\*{1,3}|_{1,3}|~~)(\S(?:.*?\S)?)\2(?=[\s)\]"'.,:;!?]|$)/gm,
+        /(^|[\s(["'])(_{1,3})(\S(?:[^\n]*?\S)?)\2(?=[\s)\]"'.,:;!?]|$)/gm,
         "$1$3",
       )
   );

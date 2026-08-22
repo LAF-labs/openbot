@@ -21,6 +21,7 @@ export function ConversationView({
   messages,
   messageTimes,
   readWindow,
+  speaker,
   busy = false,
   notice,
   agents = [],
@@ -39,6 +40,8 @@ export function ConversationView({
   messageTimes?: Readonly<Record<string, string>>;
   /** Where this person's reading stopped and resumed (ISO-8601), for the "unread" line. */
   readWindow?: { from: string; until: string };
+  /** The Bot side's name, for a room with several Bots. See ChatTranscript. */
+  speaker?: string;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
@@ -234,6 +237,7 @@ export function ConversationView({
           messages={messages}
           {...(messageTimes ? { messageTimes } : {})}
           {...(readWindow ? { readWindow } : {})}
+          {...(speaker ? { speaker } : {})}
           onRemoveQueued={(id) => {
             apply({ id, type: "remove" });
           }}

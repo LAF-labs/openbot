@@ -61,6 +61,11 @@ export function ChannelChat({
   // Mentions are scoped to the channel's permitted agents.
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  // Named on the bubbles only where a name is needed: a room with more than one Bot in it.
+  const speaker =
+    channel.agentIds.length > 1
+      ? agentProfiles?.find((profile) => profile.id === runtimeAgentId)?.name
+      : undefined;
   // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
   const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
 
@@ -478,6 +483,7 @@ export function ChannelChat({
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
         messageTimes={messageTimes}
+        {...(speaker ? { speaker } : {})}
         {...(readWindow ? { readWindow } : {})}
         messages={transcriptMessages(agent.messages, seed)}
         notice={

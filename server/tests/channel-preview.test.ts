@@ -12,8 +12,15 @@ describe("the roster preview of a markdown answer", () => {
     );
   });
 
-  test("leaves arithmetic and lone asterisks alone", () => {
+  test("leaves arithmetic and identifiers alone", () => {
     expect(plainTextOf("2 * 3 = 6 and a_b_c")).toBe("2 * 3 = 6 and a_b_c");
+  });
+
+  test("strips emphasis that closes straight into a Korean particle", () => {
+    expect(plainTextOf("저는 **일상 비서**이며, _일상 업무_를 돕습니다.")).toBe(
+      "저는 일상 비서이며, _일상 업무_를 돕습니다.",
+    );
+    expect(plainTextOf("~~취소~~된 건")).toBe("취소된 건");
   });
 
   test("caps at two hundred code points with an ellipsis", () => {
