@@ -33,6 +33,14 @@ has no `setAppBadge`) and OS notifications (the notification plugin — the
 webview's own `Notification` is unsupported there). Everything else the page
 does in a browser it does here unchanged.
 
+Plus the one page the shell serves itself, `public/index.html`: the
+connection page. An app whose whole UI lives on a server has exactly one
+failure it must explain on its own. The shell probes the origin (a TCP
+connect) before showing the window; if nothing answers, the window is sent
+to this page, which keeps probing and replaces itself with the origin the
+moment the server is back. Without it WKWebView shows a blank window and
+WebView2 its own error page.
+
 ## Running
 
 ```bash

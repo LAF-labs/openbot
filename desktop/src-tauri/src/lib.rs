@@ -12,6 +12,12 @@
 //! break every one of those at once, so the window navigates to the origin and the app runs there,
 //! exactly as it does in a browser. Today that origin is the development server; the day a deployed
 //! address exists it is one value in `tauri.conf.json`, and the same value is what a phone will use.
+//!
+//! The one page the shell serves itself is the connection page: an app whose whole UI lives on a
+//! server has exactly one failure it must explain on its own, and that is not reaching the server.
+
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::Duration;
 
 use tauri::Manager;
 
@@ -27,6 +33,47 @@ fn origin(app: &tauri::AppHandle) -> String {
             _ => None,
         })
         .unwrap_or_else(|| "http://localhost:3010".to_string())
+}
+
+/// Whether anything answers at the origin's address. A TCP connect, not an HTTP request: the
+/// question is only "is there a server", and a server that is up but unhappy should get to show
+/// its own page. Each address gets a short timeout; a refused local port fails instantly.
+fn reachable(origin: &str) -> bool {
+    let Ok(url) = tauri::Url::parse(origin) else {
+        return false;
+    };
+    let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+        return false;
+    };
+    let Ok(addresses) = (host, port).to_socket_addrs() else {
+        return false;
+    };
+    addresses
+        .take(3)
+        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(1500)).is_ok())
+}
+
+/// The shell's own connection page, with the origin for it to keep probing. A webview that cannot
+/// load its page explains nothing — WKWebView stays blank, WebView2 shows its own error — so the
+/// window is sent here instead, and the page navigates to the origin the moment it answers.
+fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
+    let mut url = match &app.config().build.dev_url {
+        // `tauri dev` does not embed `frontendDist`; it serves the folder from a server of its own
+        // and writes that address here. A debug build asking its own scheme for the page gets
+        // "asset not found" — measured — so in dev the page is fetched from where dev put it.
+        Some(dev_server) if cfg!(debug_assertions) => dev_server
+            .join("index.html")
+            .expect("the dev server address is a base URL"),
+        // A bundled app serves `frontendDist` on Tauri's own scheme, which differs by platform.
+        _ => tauri::Url::parse(if cfg!(windows) {
+            "http://tauri.localhost/index.html"
+        } else {
+            "tauri://localhost/index.html"
+        })
+        .expect("the shell page address is a literal"),
+    };
+    url.query_pairs_mut().append_pair("origin", origin);
+    url
 }
 
 /// The number of rooms waiting, on the dock icon.
@@ -58,8 +105,16 @@ pub fn run() {
             let target = origin(app.handle());
             log::info!("window origin: {target}");
             if let Some(window) = app.get_webview_window("main") {
-                // The window is declared with the origin as its URL, so nothing to navigate here;
-                // surfacing it once the webview exists is what avoids a white flash on launch.
+                // The window is declared with the origin as its URL and is already loading it. It
+                // is surfaced only once the webview exists, which avoids a white flash on launch —
+                // and only after the origin answered, so what appears is the app or an explanation,
+                // never a blank page.
+                if !reachable(&target) {
+                    log::warn!("origin unreachable, showing the connection page: {target}");
+                    if let Err(error) = window.navigate(connection_page(app.handle(), &target)) {
+                        log::error!("could not show the connection page: {error}");
+                    }
+                }
                 let _ = window.show();
             }
             Ok(())

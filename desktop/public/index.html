@@ -1,3 +1,84 @@
 <!doctype html>
-<!-- Never shown: the window navigates to the origin. Tauri requires a frontendDist to exist. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LAF Agent</title>
+<!--
+  The shell's own page, and the only one it has. The window normally shows the origin; it lands
+  here instead when the origin could not be reached at launch (the shell probes before showing
+  the window). A webview that cannot load its page explains nothing — WKWebView stays blank and
+  WebView2 shows its own error in its own words — so this page says what happened, keeps trying,
+  and gets out of the way the moment the server answers.
+
+  The origin arrives in the query string, written by the shell. Only http(s) is honoured.
+
+  Styled in the file: the shell serves this page itself, outside the app's build, so the app's
+  Tailwind pipeline never sees it.
+-->
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --muted: #6b6b6b; --bg: #f7f7f5; --line: #e2e2de; --accent: #1a1a1a; --accent-fg: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececec; --muted: #9a9a9a; --bg: #1e1e1e; --line: #333333; --accent: #ececec; --accent-fg: #1e1e1e; } }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: var(--bg); color: var(--fg); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", sans-serif; -webkit-font-smoothing: antialiased; }
+  main { width: min(420px, calc(100% - 48px)); text-align: center; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  p { margin: 0 0 6px; color: var(--muted); }
+  .origin { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); word-break: break-all; }
+  .status { margin-top: 20px; min-height: 1.5em; }
+  button { margin-top: 12px; padding: 9px 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 500; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .en { margin-top: 24px; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>서버에 연결할 수 없어요</h1>
+  <p>LAF Agent는 서버에 접속해서 동작합니다. 네트워크 연결을 확인해 주세요.<br>연결되면 자동으로 이어집니다.</p>
+  <p class="origin" id="origin"></p>
+  <p class="status" id="status"></p>
+  <button id="retry" type="button">다시 시도</button>
+  <p class="en">Can't reach the server. Retrying automatically.</p>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const origin = (() => {
+    try {
+      const url = new URL(params.get("origin") || "");
+      return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+    } catch { return null; }
+  })();
+  const status = document.getElementById("status");
+  const retry = document.getElementById("retry");
+  document.getElementById("origin").textContent = origin || "";
+  if (!origin) {
+    status.textContent = "접속할 서버 주소가 없습니다.";
+    retry.disabled = true;
+  }
+  const INTERVAL_MS = 3000;
+  let checking = false;
+  // A no-cors fetch resolves on any answer at all and rejects only when nothing answered, which
+  // is exactly the distinction: a server that is up but unhappy still gets the real page, where
+  // the app can explain itself.
+  async function probe() {
+    if (!origin || checking) return;
+    checking = true;
+    retry.disabled = true;
+    status.textContent = "연결 확인 중…";
+    try {
+      await fetch(origin + "/", { mode: "no-cors", cache: "no-store" });
+      status.textContent = "연결됐습니다. 여는 중…";
+      location.replace(origin);
+      return;
+    } catch {
+      status.textContent = "아직 연결되지 않았습니다. " + INTERVAL_MS / 1000 + "초 후 다시 확인합니다.";
+    }
+    checking = false;
+    retry.disabled = false;
+  }
+  retry.addEventListener("click", probe);
+  probe();
+  setInterval(probe, INTERVAL_MS);
+</script>
+</body>
+</html>
