@@ -207,7 +207,18 @@ pub fn run() {
                         log::error!("could not show the connection page: {error}");
                     }
                 }
-                let _ = window.show();
+                if let Err(error) = window.show() {
+                    log::error!("the window could not be shown: {error}");
+                }
+            } else {
+                /*
+                 * Nothing will appear, and the process will sit there looking alive. Worth saying
+                 * out loud: the one time this was seen, the cause was outside the app entirely —
+                 * a LOCKED SCREEN, which terminates WKWebView's content process, so the webview
+                 * never finishes being created. An app that logs nothing here looks like a bug in
+                 * itself.
+                 */
+                log::error!("no main window at setup: nothing will be visible");
             }
             #[cfg(not(debug_assertions))]
             install_updates(app.handle().clone());
