@@ -203,6 +203,29 @@ export function applyRoomFrame(
 }
 
 /**
+ * The connection was away, so whatever it missed is gone — including, possibly, the end of the turn.
+ *
+ * A turn is only ever ended by a `room.done` frame, and frames are not replayed. A socket that drops
+ * during a turn therefore leaves the room believing a turn is still running forever: the composer
+ * stays disabled and Stop stays showing, and nothing the person does brings it back. So a reconnect
+ * lets the turn go. If one really is still running, its very next frame says so and the room adopts
+ * it again — the frames carry the turn and the epoch, which is exactly what makes that safe.
+ *
+ * The questions are left alone: those are not carried by frames alone, and the catch-up that runs
+ * beside this reads them from the server.
+ */
+export function turnLost(state: RoomState): RoomState {
+  if (state.turnId === null && !state.messages.some((m) => m.streaming)) {
+    return state;
+  }
+  return {
+    ...state,
+    messages: state.messages.filter((message) => !message.streaming),
+    turnId: null,
+  };
+}
+
+/**
  * Reconcile the questions on screen with the ones the server says are open.
  *
  * The frames are how a question ARRIVES, and they only reach a mounted room on the instance running

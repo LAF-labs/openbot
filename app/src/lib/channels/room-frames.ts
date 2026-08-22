@@ -64,7 +64,8 @@ export type RoomFrame =
       rule: string;
       answered?: boolean;
     })
-  | (Base & { kind: "room.done"; reason: string });
+  /** `failures`: members that could not take their turn at all. Silence is not the same thing. */
+  | (Base & { kind: "room.done"; reason: string; failures?: number });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {
   const kind = (value as { kind?: unknown } | null)?.kind;

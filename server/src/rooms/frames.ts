@@ -83,8 +83,14 @@ export type RoomFrame =
       rule: string;
       answered?: boolean;
     })
-  /** The whole turn is over, however it ended. */
-  | (Base & { kind: "room.done"; reason: string });
+  /**
+   * The whole turn is over, however it ended.
+   *
+   * `failures` is how many members could not take their turn at all — a dead provider, a Bot that
+   * was deleted, a run that timed out. Without it a turn where everybody failed is delivered as a
+   * turn where nobody had anything to say, which is the same screen and a completely different fact.
+   */
+  | (Base & { kind: "room.done"; reason: string; failures?: number });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {
   const kind = (value as { kind?: unknown } | null)?.kind;

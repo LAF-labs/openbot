@@ -254,6 +254,8 @@ export function createRoomService(options: RoomServiceOptions) {
     memberIds: string[];
   }): Promise<void> {
     let ended = "failed";
+    // Members that could not take their turn at all, as opposed to members with nothing to add.
+    let failures = 0;
     const names = namesOf(input.members);
     try {
       await drive();
@@ -271,6 +273,7 @@ export function createRoomService(options: RoomServiceOptions) {
         turnId: input.turnId,
         epoch: input.epoch,
         reason: ended,
+        failures,
       });
     }
 
@@ -444,6 +447,7 @@ export function createRoomService(options: RoomServiceOptions) {
               posted: false,
             });
           }
+          if (result.failed) failures += 1;
           return result.spoke;
         },
       });

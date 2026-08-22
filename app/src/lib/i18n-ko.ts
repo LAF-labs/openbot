@@ -42,6 +42,10 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "The room could not be stopped. Try again.":
+    "대화를 멈추지 못했어요. 다시 시도해 주세요.",
+  "{count} of the coworkers could not answer this time.":
+    "이번에는 봇 {count}명이 답하지 못했어요.",
   "Allow: {question}": "허용: {question}",
   "Deny: {question}": "거부: {question}",
   "That answer could not be recorded. Try again.":

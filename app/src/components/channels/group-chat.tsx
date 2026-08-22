@@ -22,6 +22,7 @@ import {
   mergeApprovals,
   mergeStored,
   type RoomState,
+  turnLost,
   withoutApproval,
 } from "@/lib/channels/room-events";
 import type { RoomFrame } from "@/lib/channels/room-frames";
@@ -32,6 +33,8 @@ import {
   channelActivity,
   ROOM_FRAME,
   roomFrames,
+  SOCKET_RECONNECTED,
+  socketState,
 } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
 
@@ -198,6 +201,21 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     const onFrame = (event: Event) => {
       const frame = (event as CustomEvent<RoomFrame>).detail;
       setRoom((state) => applyRoomFrame(state, frame, channel.id));
+      /*
+       * A member that could not take its turn at all is not a member with nothing to say, and on
+       * screen those are the same thing: nothing appears. Said plainly, once, when the turn ends.
+       */
+      if (
+        frame.kind === "room.done" &&
+        frame.channelId === channel.id &&
+        (frame.failures ?? 0) > 0
+      ) {
+        setNotice(
+          t("{count} of the coworkers could not answer this time.", {
+            count: String(frame.failures ?? 0),
+          }),
+        );
+      }
     };
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ChannelActivity>).detail;
@@ -208,11 +226,21 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         .current({ channelId: channel.id, read: true })
         .catch(() => {});
     };
+    const onReconnected = () => {
+      // Whatever happened while the socket was away is not replayed, so the turn is let go and the
+      // thread and the open questions are read again. A turn that really is still running says so
+      // with its next frame.
+      setRoom(turnLost);
+      void catchUpRef.current();
+      void catchUpApprovalsRef.current();
+    };
     roomFrames.addEventListener(ROOM_FRAME, onFrame);
     channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
+    socketState.addEventListener(SOCKET_RECONNECTED, onReconnected);
     return () => {
       roomFrames.removeEventListener(ROOM_FRAME, onFrame);
       channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
+      socketState.removeEventListener(SOCKET_RECONNECTED, onReconnected);
     };
   }, [channel.id]);
 
@@ -292,10 +320,20 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   const stop = useCallback(async () => {
     setStopping(true);
     try {
-      await fetch(
+      const response = await fetch(
         `/api/channels/${encodeURIComponent(channel.id)}/room-turn/stop`,
         { method: "POST", credentials: "include" },
       );
+      /*
+       * Said out loud when it did not work. Stop swallowing its own failure is the worst version of
+       * this button: the person presses it, the room carries on, and the only explanation available
+       * to them is that the product ignored them.
+       */
+      if (!response.ok) {
+        setNotice(t("The room could not be stopped. Try again."));
+      }
+    } catch {
+      setNotice(t("The room could not be stopped. Try again."));
     } finally {
       setStopping(false);
     }

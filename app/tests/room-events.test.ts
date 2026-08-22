@@ -5,6 +5,7 @@ import {
   mergeApprovals,
   mergeStored,
   type RoomState,
+  turnLost,
   withoutApproval,
 } from "../src/lib/channels/room-events";
 import {
@@ -310,5 +311,52 @@ describe("catching up on questions", () => {
     const state = mergeApprovals(withMessage, [question]);
     expect(state.messages).toEqual(withMessage.messages);
     expect(state.turnId).toBe(withMessage.turnId);
+  });
+});
+
+describe("a connection that went away", () => {
+  /*
+   * Frames are not replayed. A socket that drops during a turn takes the turn's end with it, and a
+   * room that believes a turn is still running keeps its composer disabled with nothing the person
+   * can do about it.
+   */
+  test("the turn is let go, with whatever was half-typed", () => {
+    const mid = after([turn, open, delta("생각 중")]);
+    expect(mid.turnId).not.toBeNull();
+    expect(mid.messages).toHaveLength(1);
+
+    const recovered = turnLost(mid);
+    expect(recovered.turnId).toBeNull();
+    expect(recovered.messages).toEqual([]);
+  });
+
+  test("a settled message survives it", () => {
+    const settled = after([
+      turn,
+      open,
+      delta("반가워요"),
+      {
+        ...base,
+        kind: "room.end",
+        messageId: "call_1",
+        posted: true,
+        storedId: "m1",
+        at: "2026-08-22T13:00:00.000Z",
+        text: "반가워요",
+      },
+    ]);
+    const recovered = turnLost(settled);
+    expect(recovered.messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  test("a turn that really is still running says so with its next frame", () => {
+    const recovered = turnLost(after([turn, open]));
+    const resumed = applyRoomFrame(recovered, delta("이어서"), ROOM);
+    expect(resumed.turnId).toBe("t1");
+    expect(resumed.messages).toHaveLength(1);
+  });
+
+  test("an idle room is returned unchanged, so nothing re-renders", () => {
+    expect(turnLost(EMPTY_ROOM)).toBe(EMPTY_ROOM);
   });
 });

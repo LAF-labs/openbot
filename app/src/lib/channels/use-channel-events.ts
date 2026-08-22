@@ -42,6 +42,17 @@ export type ChannelActivity = ChannelActivityEvent;
 export const roomFrames = new EventTarget();
 export const ROOM_FRAME = "room-frame";
 
+/**
+ * The socket came back after having been away.
+ *
+ * Frames are not replayed, so anything that happened while it was gone is simply missing — and the
+ * one that matters is `room.done`, because a room whose turn never ended keeps its composer
+ * disabled and there is nothing the person can do about it. Screens that hold live state listen for
+ * this and resync. Not fired on the first connection: there is nothing to have missed.
+ */
+export const socketState = new EventTarget();
+export const SOCKET_RECONNECTED = "socket-reconnected";
+
 const FIRST_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
 
@@ -59,6 +70,7 @@ export function useChannelEvents() {
     let retryTimer: number | undefined;
     let retryDelay = FIRST_RETRY_MS;
     let stopped = false;
+    let opened = false;
 
     const connect = () => {
       if (stopped) return;
@@ -68,6 +80,8 @@ export function useChannelEvents() {
         retryDelay = FIRST_RETRY_MS;
         // Recover events missed while the socket was disconnected.
         void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+        if (opened) socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
+        opened = true;
       };
 
       socket.onmessage = (message) => {
