@@ -171,8 +171,14 @@ rather than invented. A tab that closes mid-turn no longer kills the turn,
 and two tabs cannot each drive their own version of it.
 
 The room is not any Bot's history. A member answers from a prompt built
-fresh for its turn: a header naming the room and who else is in it, the
-lines said since that member last spoke (at most 24), and whose turn it is.
+fresh for its turn: a header naming the room and who else is in it, the last
+stretch of what was said (at most 24 lines, and at most 24,000 characters
+across all of them — the per-line cut is not a bound on the prompt, and one
+room where a few people pasted a few long things would otherwise stop
+answering for everybody), and whose turn it is. It is the whole window
+rather than "since you last spoke", because a member turn is a fresh loop
+and cannot otherwise see what it itself said two lines ago; its own lines
+are marked.
 Tool calls, tool results and a Bot's scratch prose are its private working
 and never reach the room — the ONLY way a Bot can put words in a room is
 the `send_message` tool, so a turn with no call is a Bot with nothing to
@@ -201,12 +207,20 @@ already thinking still says what it produced.
 What the browser sees: `room.*` frames on the roster's socket — the turn
 starting, a member opening a message, the WHOLE text so far on each delta
 (never an increment, so a dropped frame heals on the next), the message
-settling or being refused, the turn ending. A settled message names the
+settling or being refused, the turn ending. The end frame carries how many
+members could not take their turn AT ALL, because a Bot whose provider died
+otherwise produces the same screen as a colleague with nothing to add. A
+member that throws before the model is reached is counted the same way and
+the turn goes on without it. A settled message names the
 provisional bubble it replaces and carries the stored id and final text, so
 the bubble is swapped in place; the first version removed it and waited for
 a refetch, and every reply blinked off the screen for a second. The turn's
 end frame is sent from a `finally`, so a turn that fails before its first
-member cannot leave the room stuck with Stop showing. Deltas are instance-local by
+member cannot leave the room stuck with Stop showing — and because frames
+are not replayed, a socket that reconnects mid-turn makes the room let the
+turn go and re-read everything: a `room.done` lost with the connection would
+otherwise leave the composer disabled with no way out. A turn that really is
+still running says so with its next frame. Deltas are instance-local by
 design; the settled message goes through `pg_notify` like any other. The
 room's transcript is read from `/api/channels/:id/messages`, which serves
 the snapshot directly — the runtime's own thread endpoint is answered by our
@@ -227,7 +241,11 @@ than the one that pressed the button). Before this it sat in the server's
 registry for its ten minutes where nobody could see it.
 
 And the turn HOLDS for the answer, because in a room the person is there —
-up to two minutes, against a member deadline of five. `runUnattended` gives
+up to two minutes, against a member deadline of five. The wait is abortable
+and is aborted when the member's turn ends however it ended: the run's
+deadline rejects the call and walks away from the promise rather than
+stopping it, so an answer arriving afterwards would otherwise perform the
+action on behalf of a turn nobody is watching. `runUnattended` gives
 up on an ask rule, which is right for a routine nobody is watching and wrong
 here. When the answer comes back the action is tried once more, carrying the
 approval id: the gateway spends an approval by id and fingerprint, so a
