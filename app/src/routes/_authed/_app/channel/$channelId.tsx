@@ -289,20 +289,17 @@ function ChannelBody({
   }
 
   /*
-   * A ROOM WITH SEVERAL BOTS OPENS, AND THE FIRST MEMBER ANSWERS.
+   * A ROOM WITH SEVERAL BOTS OPENS, AND THE FIRST MEMBER ANSWERS — UNTIL SOMEBODY NAMES ANOTHER.
    *
-   * This used to be a dead end — a sentence saying multi-coworker channels were not supported, on a
+   * This used to be a dead end: a sentence saying multi-coworker channels were not supported, on a
    * channel the server had happily created, named and listed. The transcript is the same
-   * transcript; what a group actually needs is a rule for whose turn it is, and the smallest honest
-   * one is that the room has a Bot who speaks for it. `agentIds` comes back in a stable order, so
-   * the same Bot answers every time rather than a different one per reload.
-   *
-   * Addressing a specific member with `@` is the obvious next rule and is deliberately NOT claimed
-   * here: the composer already collects `draft.agentId` and nothing routes on it yet, so a mention
-   * would look like it chose somebody and quietly not.
+   * transcript; what a group needs is a rule for whose turn it is, and it is now two rules. An `@`
+   * mention names the Bot the message is for and the room asks that one. Nothing named falls back
+   * to this default, which stays the room's first member so that opening a room twice does not get
+   * two different Bots — `agentIds` comes back in a stable order (sorted by id, server-side).
    */
-  const runtimeAgentId = channel.agentIds[0];
-  if (!runtimeAgentId) {
+  const defaultAgentId = channel.agentIds[0];
+  if (!defaultAgentId) {
     return (
       <p className="p-8 text-muted-foreground text-sm">
         {t("This channel has no coworker in it.")}
@@ -314,8 +311,8 @@ function ChannelBody({
   return (
     <ChannelChat
       channel={channel}
+      defaultAgentId={defaultAgentId}
       key={channel.id}
-      runtimeAgentId={runtimeAgentId}
     />
   );
 }

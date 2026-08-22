@@ -588,8 +588,6 @@ export const ko: Record<string, string> = {
   "There is no data to chart.": "차트로 그릴 데이터가 없습니다.",
   "There is nothing to quote.": "인용할 것이 없습니다.",
   Thinking: "생각 중",
-  "This channel has more than one coworker, which is not supported yet.":
-    "이 채널에는 봇이 둘 이상 있습니다 — 아직 지원되지 않습니다.",
   "This deployment has refused nothing.":
     "이 배포가 거부한 행동이 아직 없습니다.",
   "This deployment ships no components.": "이 배포에는 컴포넌트가 없습니다.",
@@ -676,4 +674,6 @@ export const ko: Record<string, string> = {
   "On for this browser.": "이 브라우저에서 켜져 있습니다.",
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
+  "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.":
+    "당신은 {me}입니다. 이 대화는 동료가 여럿 있는 방입니다: {roster}. 위의 답변 중 일부는 당신이 아니라 동료의 것입니다 — 그들의 작업이나 근거를 자기 것으로 말하지 마세요. 당신 자신에 대해서만 답하세요.",
 };

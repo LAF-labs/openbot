@@ -144,3 +144,28 @@ meant asking nobody, ever. Refusing leaves the preference alone, because wanting
 to hear from a Bot and letting the browser pop a window are two different
 answers, and a browser that refuses cannot be asked again by any API — the copy
 says so and stops.
+
+## A room with more than one Bot in it
+
+A channel can hold several Bots. One of them answers each turn, and which one
+is decided by the message: an `@` mention names the Bot it is for, and nothing
+named falls back to the room's default — its first member, so that opening the
+room twice does not get two different colleagues.
+
+Routing is the binding, not a relay. The mention re-points the run at
+`/agent/{id}/run`, so the Bot answers in its own voice with its own skills and
+its own computer; the thread is the room's, shared, and the client carries the
+history across the swap so nothing blinks. It changes only BETWEEN turns —
+Stop and the run counters bind to the agent instance, and swapping under a
+live run would leave Stop aborting a run nobody is watching. A mention of
+somebody who is not in the room is ignored rather than run.
+
+Because the thread is shared and AG-UI has one `assistant` role, the Bot about
+to answer would read its colleague's replies as its own previous turns. One
+short system line ahead of the turn says who is in the room and that some of
+the replies above are not theirs — added only once a colleague has actually
+spoken, so a room whose second Bot has never said anything carries nothing.
+
+Who said what is recorded per message (`lafAgentId` beside `lafAt` in the
+snapshot jsonb) and drawn as a name above each reply. Two colleagues' replies
+never join into one visual run, which would have hidden the second name.

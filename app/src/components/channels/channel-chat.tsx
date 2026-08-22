@@ -14,6 +14,7 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import {
   recordChannelActivityMutationOptions,
   setChannelReadMutationOptions,
@@ -54,11 +55,41 @@ const EMPTY_SPEAKERS: Readonly<Record<string, string>> = Object.freeze({});
  */
 export function ChannelChat({
   channel,
-  runtimeAgentId,
+  defaultAgentId,
 }: {
   channel: AgentChannel;
-  runtimeAgentId: string;
+  /** Who answers when nobody is named. The room's first member; see the route for why that one. */
+  defaultAgentId: string;
 }) {
+  /*
+   * WHO IS ANSWERING RIGHT NOW, WHICH IN A ROOM WITH SEVERAL BOTS IS NOT A CONSTANT.
+   *
+   * An `@` mention names the Bot a message is for, and the composer has always collected it. What
+   * routes on it is this: the id is handed to `useAgent`, whose run URL is `/agent/{id}/run`, so
+   * pointing it elsewhere is the whole of "ask the other one". It changes only BETWEEN turns —
+   * Stop, the run counters and the run subscriber all bind to the agent instance, and swapping
+   * under a live run would leave Stop aborting a controller nobody is watching.
+   */
+  const [speakingAgentId, setSpeakingAgentId] = useState(defaultAgentId);
+  const runtimeAgentId = speakingAgentId;
+  /** Read by `say`, which runs between renders and must not see the previous target. */
+  const speakingRef = useRef(speakingAgentId);
+  speakingRef.current = speakingAgentId;
+
+  /*
+   * Who is saying the thing currently arriving on screen.
+   *
+   * The server records the speaker of every message, but it records it as the run ends, and a
+   * name that appears only after the reply is finished is a name that appears too late in the one
+   * room where it matters. This is the same fact taken from the same event the server takes it
+   * from — TEXT_MESSAGE_START — one round trip earlier. The server's copy wins once it arrives;
+   * they are the same answer.
+   */
+  const [localSpeakers, setLocalSpeakers] = useState<Record<string, string>>(
+    {},
+  );
+  /** Message id to Bot id, both halves, for `deliver` — which runs between renders. */
+  const speakersRef = useRef<Record<string, string>>({});
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
@@ -124,6 +155,35 @@ export function ChannelChat({
       UseAgentUpdate.OnRunStatusChanged,
     ],
   });
+
+  /*
+   * THE SWAP, AND THE TWO THINGS IT COSTS.
+   *
+   * `useAgent` unregisters the old proxy and registers a fresh one when the runtime id changes, so
+   * the instance changes identity and its `messages` start EMPTY. Two consequences, handled here:
+   *
+   * The transcript would blank. The history is carried across in a ref and seeded onto the new
+   * instance the moment it arrives, before the restore effect above can race it — that effect
+   * refuses to overwrite a non-empty agent, so it becomes a no-op rather than a second writer.
+   *
+   * And the turn would be sent to whichever instance happened to be bound. `say` parks on the gate
+   * below until the seeding has happened, the same shape as the join and ready gates above.
+   */
+  const carried = useRef<Message[] | null>(null);
+  const openSwapGate = useRef<() => void>(() => {});
+  const swapGate = useRef<Promise<void> | null>(null);
+  /** The live instance, for a `say` that started before a swap and finishes after it. */
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (carried.current) {
+      if (agent.messages.length === 0) agent.setMessages(carried.current);
+      carried.current = null;
+    }
+    openSwapGate.current();
+  }, [agent, isReady]);
 
   /**
    * First-message seed from the compose screen. It is taken once per mount and retained until the
@@ -294,6 +354,12 @@ export function ChannelChat({
    * wrapped in covers every way out of here, a throw included.
    */
   const deliver = async (trimmed: string, skillInstructions: string[]) => {
+    /*
+     * The LIVE instance, not the one this closure was built with. A turn that swapped Bots on its
+     * way in resolved its gate one render later, and the agent bound at that point is the one that
+     * has the history and the run URL of the Bot being asked.
+     */
+    const agent = agentRef.current;
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
       await Promise.race([
@@ -319,6 +385,45 @@ export function ChannelChat({
      * `transcriptMessages` draws user and assistant turns, so this never appears on screen — the
      * chip is what says a skill was used, and it stays visible in the message they sent.
      */
+    /*
+     * IN A ROOM WITH COLLEAGUES, SAY SO — ONCE, WHEN IT IS TRUE.
+     *
+     * One thread, several Bots, and AG-UI has one `assistant` role: the Bot about to answer reads
+     * a colleague's replies as its own previous turns and will happily take credit for work it
+     * never did, or contradict itself explaining reasoning it never had. This line is the only
+     * thing standing between it and that, and it goes in the same slot as a skill instruction and
+     * for the same reason — the Bot should read the situation before the request.
+     *
+     * Only when the thread actually holds somebody else's words, so a room whose second Bot has
+     * never spoken carries nothing, and a room where it has stops adding one per turn once the
+     * conversation has settled back onto one colleague. It accumulates like a skill instruction
+     * does; bounding it to "when it is true" is what keeps that to a handful.
+     */
+    const colleagueSpoke = Object.entries(speakersRef.current).some(
+      ([, agentId]) => agentId !== speakingRef.current,
+    );
+    if (channel.agentIds.length > 1 && colleagueSpoke) {
+      const roster = channel.agentIds
+        .map(
+          (id) =>
+            agentProfilesRef.current?.find((profile) => profile.id === id)
+              ?.name ?? id,
+        )
+        .join(", ");
+      const me =
+        agentProfilesRef.current?.find(
+          (profile) => profile.id === speakingRef.current,
+        )?.name ?? speakingRef.current;
+      agent.addMessage({
+        content: t(
+          "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.",
+          { me, roster },
+        ),
+        id: crypto.randomUUID(),
+        role: "system",
+      });
+    }
+
     for (const instruction of skillInstructions) {
       agent.addMessage({
         content: instruction,
@@ -356,16 +461,50 @@ export function ChannelChat({
    * keeping here rather than in the view: the view sees only the turns it started itself, and a
    * queue that drains on the wrong one of those posts a correction into the middle of an answer.
    */
-  const say = async (text: string, skillInstructions: string[] = []) => {
+  const say = async (
+    text: string,
+    skillInstructions: string[] = [],
+    /** The Bot this message names. Ignored unless it is actually in this room. */
+    target?: string | null,
+  ) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
     setTurnsInFlight((count) => count + 1);
     try {
+      await routeTo(target);
       await deliver(trimmed, skillInstructions);
     } finally {
       setTurnsInFlight((count) => count - 1);
     }
+  };
+
+  /**
+   * Point the room at the Bot this message names, and wait for the swap to land.
+   *
+   * An id that is not in the room is ignored rather than run: `agentIds` is the room's membership,
+   * and a mention of somebody outside it is a typo or a stale chip, not an instruction to bring a
+   * stranger into somebody's conversation.
+   */
+  const routeTo = async (target?: string | null) => {
+    if (!target || target === speakingRef.current) return;
+    if (!channel.agentIds.includes(target)) return;
+
+    carried.current = [...agentRef.current.messages];
+    swapGate.current = new Promise<void>((resolve) => {
+      openSwapGate.current = resolve;
+    });
+    speakingRef.current = target;
+    setSpeakingAgentId(target);
+    /*
+     * Bounded, like the join gate: a swap that never reports ready must not swallow the message.
+     * Sending to the previous Bot is a worse outcome than sending late, so the wait is the longer
+     * of the two — but it still ends.
+     */
+    await Promise.race([
+      swapGate.current,
+      new Promise((resolve) => setTimeout(resolve, SEND_WITHOUT_JOIN_AFTER_MS)),
+    ]);
   };
 
   useEffect(() => {
@@ -375,6 +514,14 @@ export function ChannelChat({
       setRunError(message);
     };
     const subscription = agent.subscribe?.({
+      onTextMessageStartEvent: ({ event }) => {
+        const messageId = (event as { messageId?: string }).messageId;
+        if (!messageId) return;
+        const by = speakingRef.current;
+        setLocalSpeakers((known) =>
+          known[messageId] === by ? known : { ...known, [messageId]: by },
+        );
+      },
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
       onRunErrorEvent: ({ event }) => fail(stoppedReason(event?.message)),
@@ -478,16 +625,28 @@ export function ChannelChat({
       (agentProfiles ?? []).map((profile) => [profile.id, profile.name]),
     );
     const resolved: Record<string, string> = {};
-    for (const [messageId, agentId] of Object.entries(
-      storedTimes.data?.speakers ?? {},
-    )) {
+    for (const [messageId, agentId] of Object.entries({
+      ...localSpeakers,
+      ...(storedTimes.data?.speakers ?? {}),
+    })) {
       const name = names.get(agentId);
       // A Bot that has left the roster keeps its id off the bubble rather than showing an id:
       // "agent_f89904c2" over a sentence is worse than no name at all.
       if (name) resolved[messageId] = name;
     }
     return resolved;
-  }, [agentProfiles, channel.agentIds.length, storedTimes.data?.speakers]);
+  }, [
+    agentProfiles,
+    channel.agentIds.length,
+    localSpeakers,
+    storedTimes.data?.speakers,
+  ]);
+  speakersRef.current = {
+    ...localSpeakers,
+    ...(storedTimes.data?.speakers ?? {}),
+  };
+  const agentProfilesRef = useRef(agentProfiles);
+  agentProfilesRef.current = agentProfiles;
 
   return (
     <ConversationProvider ask={askFromComponent}>
@@ -519,24 +678,38 @@ export function ChannelChat({
           )
         }
         onSubmit={async (draft) => {
-          // `draft.agentId` carries the @mentioned coworker, but nothing routes on it yet: this
-          // channel is pinned to one `runtimeAgentId` for the life of its thread, so honouring a
-          // per-message mention is a change to that binding, not to the composer.
-          //
-          // `commandIds` are the `/` chips that survived into the send, in the order they were
-          // typed. Resolved against the same list the menu was built from, so a chip left over from
-          // a skill that has since been revoked resolves to nothing rather than to a stale
-          // instruction — the menu is refetched, and this reads from it.
+          /*
+           * `commandIds` are the `/` chips that survived into the send, in the order they were
+           * typed, and they are resolved against the skills of THE BOT THIS MESSAGE IS FOR — not
+           * the one the menu was drawn from. A chip picked while A was answering and then sent to
+           * B with an `@` would otherwise hand B an instruction for a skill B was never granted.
+           * The same read also drops a chip for a skill that has since been revoked, which is the
+           * behaviour this had before and the reason it resolves at send rather than at pick.
+           */
+          const target =
+            draft.agentId && channel.agentIds.includes(draft.agentId)
+              ? draft.agentId
+              : speakingRef.current;
+          const skills =
+            target === runtimeAgentId
+              ? skillCommands
+              : (
+                  (
+                    await queryClient
+                      .ensureQueryData(agentPluginsQueryOptions(target))
+                      .catch(() => null)
+                  )?.skills ?? []
+                ).map((skill) => ({
+                  id: skill.slug,
+                  prompt: skill.instructions,
+                }));
           const skillInstructions = draft.commandIds
-            .map(
-              (id) =>
-                skillCommands.find((command) => command.id === id)?.prompt,
-            )
+            .map((id) => skills.find((command) => command.id === id)?.prompt)
             .filter((instruction): instruction is string =>
               Boolean(instruction),
             );
 
-          await say(draft.text, skillInstructions);
+          await say(draft.text, skillInstructions, draft.agentId);
         }}
         /**
          * Stop through the core so the abort signal reaches frontend tools; `say` repairs any

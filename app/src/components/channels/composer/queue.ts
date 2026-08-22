@@ -44,6 +44,12 @@ export type QueuedMessage = {
    * eventually runs rather than being silently dropped on the way through the queue.
    */
   commandIds: string[];
+  /**
+   * The Bot it named with `@`, for the same reason the chips are kept: a room with several Bots
+   * routes on this, and dropping it here would mean a correction typed mid-turn went to whoever
+   * happened to be answering rather than to the colleague it was addressed to.
+   */
+  agentId: string | null;
 };
 
 export type QueueAction =
@@ -103,6 +109,7 @@ export function reduceQueue(
               id: action.id,
               text: action.draft.text,
               commandIds: [...action.draft.commandIds],
+              agentId: action.draft.agentId,
             },
           ]),
         };
@@ -114,6 +121,7 @@ export function reduceQueue(
             id: action.id,
             text: action.draft.text,
             commandIds: [...action.draft.commandIds],
+            agentId: action.draft.agentId,
           },
         ],
         run: null,
@@ -151,11 +159,14 @@ function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
   return {
     text: queue.map((message) => message.text).join("\n"),
     /*
-     * Nothing routes on a mention here. A queued message lands in a conversation already pinned to
-     * one coworker for the life of its thread, so there is nothing an `@` could change; the text of
-     * the mention stays in the words, where it was typed and where it still reads as addressed.
+     * THE LAST MENTION WINS, which is the rule `enforceSingleAgent` already applies inside one
+     * draft (draft.ts). Three corrections typed in three breaths are one instruction, and if the
+     * last of them named somebody, that is who the instruction is for — an earlier `@` in the same
+     * burst is a mind being changed, not a second recipient. Nothing named anywhere leaves it null
+     * and the room answers with whoever it was already asking.
      */
-    agentId: null,
+    agentId:
+      [...queue].reverse().find((message) => message.agentId)?.agentId ?? null,
     // The same skill queued twice is still one instruction. Sending it twice would put the same
     // paragraph in front of the Bot two times and say nothing new by doing it.
     commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],
