@@ -44,110 +44,120 @@ export function CoworkerTools() {
   rosterRef.current = agents.data ?? [];
   const names = rosterRef.current.map((agent) => agent.name).join(", ");
 
-  useFrontendTool({
-    name: "ask_coworker",
-    description:
-      "Ask one of your coworkers a question and get their answer. They reply from their own role " +
-      "and knowledge; they cannot browse or act while answering. Available coworkers: " +
-      (names || "none yet") +
-      ". Use this when a question belongs to a coworker's specialty rather than yours.",
-    parameters: z.object({
-      coworker: z
-        .string()
-        .describe(
-          "The coworker's name or id, exactly as it appears in the roster",
-        ),
-      request: z
-        .string()
-        .describe(
-          "The question, with enough context to answer it in one reply",
-        ),
-    }),
-    handler: async (
-      {
-        coworker,
-        request,
-      }: {
-        coworker: string;
-        request: string;
-      },
-      call: { toolCall?: { id?: string } } = {},
-    ) => {
-      const wanted = coworker.trim().toLowerCase();
-      let roster = rosterRef.current;
-      if (roster.length === 0) {
-        // The cache can genuinely be empty on a fresh tab; the server always knows.
-        const listed = await fetch("/api/agents", { credentials: "include" })
-          .then((response) => (response.ok ? response.json() : null))
-          .catch(() => null);
-        roster = (listed as { agents?: AgentProfile[] } | null)?.agents ?? [];
-      }
-      const target = roster.find(
-        (agent) =>
-          agent.id.toLowerCase() === wanted ||
-          agent.name.trim().toLowerCase() === wanted,
-      );
-      if (!target) {
-        const known = roster.map((agent) => agent.name).join(", ");
-        return `There is no coworker called "${coworker}". The roster: ${known || "empty"}.`;
-      }
-
-      const response = await fetch(
-        `/api/agents/${encodeURIComponent(target.id)}/ask`,
+  /*
+   * Re-registered whenever the roster changes — the second argument. `useFrontendTool` registers
+   * a tool once, keyed on its name; the description is read at that moment and never again. On a
+   * fresh tab the first render ran before the roster query had answered, so the model was told
+   * "Available coworkers: none yet" for the life of the page, and declined every handoff with
+   * "that coworker is not on the list" while the handler below would have found them.
+   */
+  useFrontendTool(
+    {
+      name: "ask_coworker",
+      description:
+        "Ask one of your coworkers a question and get their answer. They reply from their own role " +
+        "and knowledge; they cannot browse or act while answering. Available coworkers: " +
+        (names || "none yet") +
+        ". Use this when a question belongs to a coworker's specialty rather than yours.",
+      parameters: z.object({
+        coworker: z
+          .string()
+          .describe(
+            "The coworker's name or id, exactly as it appears in the roster",
+          ),
+        request: z
+          .string()
+          .describe(
+            "The question, with enough context to answer it in one reply",
+          ),
+      }),
+      handler: async (
         {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ message: request, from: bot.current }),
+          coworker,
+          request,
+        }: {
+          coworker: string;
+          request: string;
         },
-      );
-      const body = (await response.json().catch(() => null)) as {
-        answer?: string;
-        error?: string;
-      } | null;
-      if (!response.ok) {
-        remember(call.toolCall?.id, {
-          coworker: target.name,
-          failed: true,
-          answer: body?.error ?? response.statusText,
-        });
-        // The reason goes back to the model as text, so it can tell the person or try another way,
-        // rather than as a thrown error the runtime would flatten into noise.
-        return `The coworker could not answer: ${body?.error ?? response.statusText}`;
-      }
-      const answer =
-        body?.answer ?? "The coworker finished without saying anything.";
-      remember(call.toolCall?.id, { coworker: target.name, answer });
-      return answer;
+        call: { toolCall?: { id?: string } } = {},
+      ) => {
+        const wanted = coworker.trim().toLowerCase();
+        let roster = rosterRef.current;
+        if (roster.length === 0) {
+          // The cache can genuinely be empty on a fresh tab; the server always knows.
+          const listed = await fetch("/api/agents", { credentials: "include" })
+            .then((response) => (response.ok ? response.json() : null))
+            .catch(() => null);
+          roster = (listed as { agents?: AgentProfile[] } | null)?.agents ?? [];
+        }
+        const target = roster.find(
+          (agent) =>
+            agent.id.toLowerCase() === wanted ||
+            agent.name.trim().toLowerCase() === wanted,
+        );
+        if (!target) {
+          const known = roster.map((agent) => agent.name).join(", ");
+          return `There is no coworker called "${coworker}". The roster: ${known || "empty"}.`;
+        }
+
+        const response = await fetch(
+          `/api/agents/${encodeURIComponent(target.id)}/ask`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ message: request, from: bot.current }),
+          },
+        );
+        const body = (await response.json().catch(() => null)) as {
+          answer?: string;
+          error?: string;
+        } | null;
+        if (!response.ok) {
+          remember(call.toolCall?.id, {
+            coworker: target.name,
+            failed: true,
+            answer: body?.error ?? response.statusText,
+          });
+          // The reason goes back to the model as text, so it can tell the person or try another way,
+          // rather than as a thrown error the runtime would flatten into noise.
+          return `The coworker could not answer: ${body?.error ?? response.statusText}`;
+        }
+        const answer =
+          body?.answer ?? "The coworker finished without saying anything.";
+        remember(call.toolCall?.id, { coworker: target.name, answer });
+        return answer;
+      },
+      /*
+       * The transcript line, in words a person reads: who was asked, shimmering while the answer is
+       * on its way, the answer itself behind the disclosure. Without this the fallback prints the
+       * tool's wire name, and "ask_coworker" is plumbing, not a sentence.
+       */
+      render: ({ status, toolCallId }) => {
+        const entry = exchanges.current.get(toolCallId ?? "");
+        const running = status !== "complete";
+        const label = entry?.coworker
+          ? running
+            ? t("Asking {name}", { name: entry.coworker })
+            : t("Asked {name}", { name: entry.coworker })
+          : running
+            ? t("Asking a coworker")
+            : t("Asked a coworker");
+        return (
+          <ToolLine
+            label={label}
+            running={running}
+            failed={entry?.failed === true}
+          >
+            {entry?.answer ? (
+              <p className="whitespace-pre-wrap">{entry.answer}</p>
+            ) : null}
+          </ToolLine>
+        );
+      },
     },
-    /*
-     * The transcript line, in words a person reads: who was asked, shimmering while the answer is
-     * on its way, the answer itself behind the disclosure. Without this the fallback prints the
-     * tool's wire name, and "ask_coworker" is plumbing, not a sentence.
-     */
-    render: ({ status, toolCallId }) => {
-      const entry = exchanges.current.get(toolCallId ?? "");
-      const running = status !== "complete";
-      const label = entry?.coworker
-        ? running
-          ? t("Asking {name}", { name: entry.coworker })
-          : t("Asked {name}", { name: entry.coworker })
-        : running
-          ? t("Asking a coworker")
-          : t("Asked a coworker");
-      return (
-        <ToolLine
-          label={label}
-          running={running}
-          failed={entry?.failed === true}
-        >
-          {entry?.answer ? (
-            <p className="whitespace-pre-wrap">{entry.answer}</p>
-          ) : null}
-        </ToolLine>
-      );
-    },
-  });
+    [names],
+  );
 
   return null;
 }
