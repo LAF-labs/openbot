@@ -294,175 +294,196 @@ export function createRoomService(options: RoomServiceOptions) {
         addressedIds: input.addressed,
         isCurrent,
         runMember: async ({ member, windingDown }) => {
-          const base: UnattendedToolkit = options.tools
-            ? await options.tools(
-                member.id,
-                {
-                  id: input.actor.id,
-                  ...(input.actor.id.startsWith("dev-")
-                    ? {}
-                    : { userId: input.actor.id }),
-                },
-                input.actorLabel,
-              )
-            : { tools: [], execute: async () => ({ ok: false }) };
-
-          /*
-           * A GATED ACTION IS RAISED TO THE ROOM. The loop already tells the member that a person
-           * has to allow it and to say so. In a one-to-one conversation the question is then drawn
-           * on the tool call's own line; a room draws no tool calls, so without this the question
-           * sat in the registry for its ten minutes where nobody could see it, and the member's
-           * "I'm waiting for your approval" had no buttons anywhere.
-           */
-          /*
-           * The member's tools, with the boundary wired to the room: a question its action raises
-           * is shown to the person, the turn holds for their answer, and the answer travels with
-           * the retry. See `approval-relay.ts` for why those three belong together.
-           */
-          /*
-           * Aborted the moment this member's turn returns, however it returned. What it stops is a
-           * wait for a person's answer outliving the turn that raised the question.
-           */
-          const turnOver = new AbortController();
-          const toolkit = relayApprovals(base, {
-            memberId: member.id,
-            signal: turnOver.signal,
-            ...(options.awaitApproval ? { wait: options.awaitApproval } : {}),
-            announce: (question, answered) =>
-              options.emit({
-                kind: "room.approval",
-                channelId: input.channelId,
-                memberIds: input.memberIds,
-                turnId: input.turnId,
-                epoch: input.epoch,
-                memberId: member.id,
-                memberName: member.name,
-                approvalId: question.approvalId,
-                question: question.question,
-                rule: question.rule,
-                answered,
-              }),
-          });
-
-          const open = new Set<string>();
-          const result = await options.lane.run(member.id, async () => {
-            /*
-             * CHECKED AGAIN HERE, INSIDE THE LANE. The orchestrator checks before asking a member to
-             * speak, but the lane is a queue: a Bot busy with a routine can hold this for minutes,
-             * and the person may well have said something else by the time it is this member's
-             * turn. Answering then is answering a question nobody is still asking.
-             */
-            if (!(await isCurrent())) return { spoke: 0, failed: null };
-            /*
-             * READ INSIDE THE LANE, NOT BEFORE IT. Both of these are snapshots of a conversation
-             * and both go stale: the lane is a queue, and a member whose Bot is busy with a routine
-             * can wait minutes for its place. Read before the wait, a member speaking third in a
-             * round would open with what the room looked like before the first two spoke — which is
-             * the exact staleness reading them per member was for.
-             *
-             * The room's lines and the member's memory of the person, together because they are
-             * independent: one query's latency, not two.
-             */
-            const [lines, history] = await Promise.all([
-              readRoomLines(database, input.threadId, names, input.personName),
-              readPrivateHistory(database, input.actor.id, member.id),
-            ]);
-            return runMemberTurn({
-              room: { channelId: input.channelId, name: input.room.name },
-              member,
-              peers: input.members,
-              lines,
-              history,
-              windingDown,
-              agent: agents[member.id] ?? null,
-              toolkit,
-              userId: input.actor.id,
-              timeoutMs,
-              ...(options.ledger ? { ledger: options.ledger } : {}),
-              deliver: async (text, toolCallId) => {
-                const written = await appendRoomMessage(
-                  database,
+          try {
+            const base: UnattendedToolkit = options.tools
+              ? await options.tools(
+                  member.id,
                   {
-                    channelId: input.channelId,
-                    threadId: input.threadId,
-                    agentId: member.id,
-                    text,
+                    id: input.actor.id,
+                    ...(input.actor.id.startsWith("dev-")
+                      ? {}
+                      : { userId: input.actor.id }),
                   },
-                  options.onAppended,
-                );
-                open.delete(toolCallId);
-                /*
-                 * THE SETTLED MESSAGE REPLACES THE PROVISIONAL ONE IN PLACE. The browser has been
-                 * drawing this message under the tool call's id since its first fragment; this frame
-                 * names that id and carries the stored id and the final text, so the bubble is swapped
-                 * rather than removed-then-refetched. Measured before this: every reply blinked off
-                 * the screen at stream end and came back a second or two later through catch-up.
-                 */
+                  input.actorLabel,
+                )
+              : { tools: [], execute: async () => ({ ok: false }) };
+
+            /*
+             * A GATED ACTION IS RAISED TO THE ROOM. The loop already tells the member that a person
+             * has to allow it and to say so. In a one-to-one conversation the question is then drawn
+             * on the tool call's own line; a room draws no tool calls, so without this the question
+             * sat in the registry for its ten minutes where nobody could see it, and the member's
+             * "I'm waiting for your approval" had no buttons anywhere.
+             */
+            /*
+             * The member's tools, with the boundary wired to the room: a question its action raises
+             * is shown to the person, the turn holds for their answer, and the answer travels with
+             * the retry. See `approval-relay.ts` for why those three belong together.
+             */
+            /*
+             * Aborted the moment this member's turn returns, however it returned. What it stops is a
+             * wait for a person's answer outliving the turn that raised the question.
+             */
+            const turnOver = new AbortController();
+            const toolkit = relayApprovals(base, {
+              memberId: member.id,
+              signal: turnOver.signal,
+              ...(options.awaitApproval ? { wait: options.awaitApproval } : {}),
+              announce: (question, answered) =>
                 options.emit({
-                  kind: "room.end",
+                  kind: "room.approval",
                   channelId: input.channelId,
                   memberIds: input.memberIds,
                   turnId: input.turnId,
                   epoch: input.epoch,
-                  messageId: toolCallId,
-                  posted: true,
-                  storedId: written.messageId,
-                  at: written.at,
-                  text,
-                });
-              },
-              watch: {
-                open: (toolCallId) => {
-                  open.add(toolCallId);
+                  memberId: member.id,
+                  memberName: member.name,
+                  approvalId: question.approvalId,
+                  question: question.question,
+                  rule: question.rule,
+                  answered,
+                }),
+            });
+
+            const open = new Set<string>();
+            const result = await options.lane.run(member.id, async () => {
+              /*
+               * CHECKED AGAIN HERE, INSIDE THE LANE. The orchestrator checks before asking a member to
+               * speak, but the lane is a queue: a Bot busy with a routine can hold this for minutes,
+               * and the person may well have said something else by the time it is this member's
+               * turn. Answering then is answering a question nobody is still asking.
+               */
+              if (!(await isCurrent())) return { spoke: 0, failed: null };
+              /*
+               * READ INSIDE THE LANE, NOT BEFORE IT. Both of these are snapshots of a conversation
+               * and both go stale: the lane is a queue, and a member whose Bot is busy with a routine
+               * can wait minutes for its place. Read before the wait, a member speaking third in a
+               * round would open with what the room looked like before the first two spoke — which is
+               * the exact staleness reading them per member was for.
+               *
+               * The room's lines and the member's memory of the person, together because they are
+               * independent: one query's latency, not two.
+               */
+              const [lines, history] = await Promise.all([
+                readRoomLines(
+                  database,
+                  input.threadId,
+                  names,
+                  input.personName,
+                ),
+                readPrivateHistory(database, input.actor.id, member.id),
+              ]);
+              return runMemberTurn({
+                room: { channelId: input.channelId, name: input.room.name },
+                member,
+                peers: input.members,
+                lines,
+                history,
+                windingDown,
+                agent: agents[member.id] ?? null,
+                toolkit,
+                userId: input.actor.id,
+                timeoutMs,
+                ...(options.ledger ? { ledger: options.ledger } : {}),
+                deliver: async (text, toolCallId) => {
+                  const written = await appendRoomMessage(
+                    database,
+                    {
+                      channelId: input.channelId,
+                      threadId: input.threadId,
+                      agentId: member.id,
+                      text,
+                    },
+                    options.onAppended,
+                  );
+                  open.delete(toolCallId);
+                  /*
+                   * THE SETTLED MESSAGE REPLACES THE PROVISIONAL ONE IN PLACE. The browser has been
+                   * drawing this message under the tool call's id since its first fragment; this frame
+                   * names that id and carries the stored id and the final text, so the bubble is swapped
+                   * rather than removed-then-refetched. Measured before this: every reply blinked off
+                   * the screen at stream end and came back a second or two later through catch-up.
+                   */
                   options.emit({
-                    kind: "room.open",
+                    kind: "room.end",
                     channelId: input.channelId,
                     memberIds: input.memberIds,
                     turnId: input.turnId,
                     epoch: input.epoch,
                     messageId: toolCallId,
-                    authorId: member.id,
-                    authorName: member.name,
-                  });
-                },
-                text: (toolCallId, text) => {
-                  options.emit({
-                    kind: "room.delta",
-                    channelId: input.channelId,
-                    memberIds: input.memberIds,
-                    turnId: input.turnId,
-                    epoch: input.epoch,
-                    messageId: toolCallId,
+                    posted: true,
+                    storedId: written.messageId,
+                    at: written.at,
                     text,
                   });
                 },
-                /*
-                 * Deliberately NOT where the bubble comes down. This fires when the model has finished
-                 * WRITING the call — the tool has not run yet, so the message is not in the room. A
-                 * delivered call is settled by `deliver` above; one that was refused, or that the run
-                 * died on, is still in `open` when the member's turn ends and the sweep below clears
-                 * it. Nothing is emitted here.
-                 */
-                close: () => {},
-              },
+                watch: {
+                  open: (toolCallId) => {
+                    open.add(toolCallId);
+                    options.emit({
+                      kind: "room.open",
+                      channelId: input.channelId,
+                      memberIds: input.memberIds,
+                      turnId: input.turnId,
+                      epoch: input.epoch,
+                      messageId: toolCallId,
+                      authorId: member.id,
+                      authorName: member.name,
+                    });
+                  },
+                  text: (toolCallId, text) => {
+                    options.emit({
+                      kind: "room.delta",
+                      channelId: input.channelId,
+                      memberIds: input.memberIds,
+                      turnId: input.turnId,
+                      epoch: input.epoch,
+                      messageId: toolCallId,
+                      text,
+                    });
+                  },
+                  /*
+                   * Deliberately NOT where the bubble comes down. This fires when the model has finished
+                   * WRITING the call — the tool has not run yet, so the message is not in the room. A
+                   * delivered call is settled by `deliver` above; one that was refused, or that the run
+                   * died on, is still in `open` when the member's turn ends and the sweep below clears
+                   * it. Nothing is emitted here.
+                   */
+                  close: () => {},
+                },
+              });
             });
-          });
 
-          // A run that died mid-sentence leaves nothing half-drawn on anybody's screen.
-          for (const toolCallId of open) {
-            options.emit({
-              kind: "room.end",
-              channelId: input.channelId,
-              memberIds: input.memberIds,
-              turnId: input.turnId,
-              epoch: input.epoch,
-              messageId: toolCallId,
-              posted: false,
-            });
+            // A run that died mid-sentence leaves nothing half-drawn on anybody's screen.
+            for (const toolCallId of open) {
+              options.emit({
+                kind: "room.end",
+                channelId: input.channelId,
+                memberIds: input.memberIds,
+                turnId: input.turnId,
+                epoch: input.epoch,
+                messageId: toolCallId,
+                posted: false,
+              });
+            }
+            turnOver.abort();
+            if (result.failed) failures += 1;
+            return result.spoke;
+          } catch (error) {
+            /*
+             * ONE MEMBER'S BAD DAY IS NOT THE ROOM'S. Everything above can throw before the model
+             * is ever reached — resolving a Bot's tools, reading its grants, reading the thread —
+             * and unguarded, any of those took the whole turn down with it: the other members were
+             * never asked, and the room ended with a failure nobody could attribute. Counted as
+             * this member failing, which is what it is, and the turn goes on without it.
+             */
+            failures += 1;
+            console.error(
+              `[rooms] member ${member.id} could not take its turn:`,
+              error,
+            );
+            return 0;
           }
-          turnOver.abort();
-          if (result.failed) failures += 1;
-          return result.spoke;
         },
       });
 
