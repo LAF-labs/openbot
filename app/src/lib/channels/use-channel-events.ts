@@ -18,6 +18,19 @@ type ChannelActivityEvent = {
   lastMessageAgentId: string | null;
 };
 
+/**
+ * The same events, for whoever has the room open.
+ *
+ * The roster patches its cache below; the transcript of the open room needs the message itself,
+ * which only a fetch of the thread returns. Rather than thread a callback from the sidebar (where
+ * the socket lives) to the chat (where the room is), the event is re-broadcast here and the chat
+ * listens. One socket, any number of listeners.
+ */
+export const channelActivity = new EventTarget();
+export const CHANNEL_ACTIVITY = "channel-activity";
+
+export type ChannelActivity = ChannelActivityEvent;
+
 const FIRST_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
 
@@ -105,6 +118,12 @@ export function useChannelEvents() {
         if (activity.lastMessageAgentId) {
           void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
         }
+
+        channelActivity.dispatchEvent(
+          new CustomEvent<ChannelActivity>(CHANNEL_ACTIVITY, {
+            detail: activity,
+          }),
+        );
       };
 
       // WebSocket needs explicit reconnect handling.

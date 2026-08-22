@@ -13,6 +13,11 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  CHANNEL_ACTIVITY_TOPIC,
+  type ChannelActivityEvent,
+} from "../channels/events";
+import { previewOf } from "../channels/preview";
 import type { Database } from "../db/client";
 import {
   channelAgents,
@@ -174,15 +179,39 @@ export function createRoutineDelivery(
      * set is what makes the room count as unread — an answer nobody has read yet is exactly the
      * state the unread dot exists for.
      */
-    await database
+    const [row] = await database
       .update(channels)
       .set({
-        lastMessage: delivery.answer.slice(0, 200),
+        lastMessage: previewOf(delivery.answer),
         lastMessageAt: delivery.at,
         lastMessageAgentId: delivery.agentId,
         updatedAt: delivery.at,
       })
-      .where(eq(channels.id, target.channelId));
+      .where(eq(channels.id, target.channelId))
+      .returning({ name: channels.name, lastMessage: channels.lastMessage });
+    if (!row) return;
+
+    /*
+     * And announced, the way a message typed into the room is (channels/routes.ts,
+     * recordActivity): the same event on the same topic, so the roster row moves and the open
+     * transcript picks the message up without anybody reloading. Without this the delivery was a
+     * row in Postgres that the screen learned about from a four-second poll, or not at all.
+     */
+    const members = await database
+      .select({ userId: channelMemberships.userId })
+      .from(channelMemberships)
+      .where(eq(channelMemberships.channelId, target.channelId));
+    const event: ChannelActivityEvent = {
+      channelId: target.channelId,
+      memberIds: members.map((member) => member.userId),
+      name: row.name,
+      lastMessage: row.lastMessage,
+      lastMessageAt: at,
+      lastMessageAgentId: delivery.agentId,
+    };
+    await database.execute(
+      sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
+    );
   };
 }
 

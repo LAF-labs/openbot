@@ -1,3 +1,4 @@
+import { previewOf } from "./preview";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -91,7 +92,6 @@ export type ChannelStore = {
 
 const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
 const MAX_CHANNEL_NAME_CODE_POINTS = 120;
-const MAX_ACTIVITY_CODE_POINTS = 200;
 
 /**
  * Reduce a message to one line of plain text.
@@ -100,15 +100,6 @@ const MAX_ACTIVITY_CODE_POINTS = 200;
  * there: at best they are invisible, at worst a terminal escape somebody put in a message follows it
  * into a log. Newlines collapse to spaces because a preview is one line by definition.
  */
-function previewOf(text: string) {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point.
-  const flattened = text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
-  const collapsed = flattened.replace(/\s+/g, " ");
-  const codePoints = Array.from(collapsed);
-  if (codePoints.length <= MAX_ACTIVITY_CODE_POINTS) return collapsed;
-  return `${codePoints.slice(0, MAX_ACTIVITY_CODE_POINTS - 1).join("")}…`;
-}
-
 function channelName(names: string[]) {
   const joined = names.join(", ");
   const codePoints = Array.from(joined);

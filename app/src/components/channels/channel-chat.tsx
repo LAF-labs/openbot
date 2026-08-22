@@ -22,6 +22,11 @@ import {
   type AgentChannel,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
+import {
+  CHANNEL_ACTIVITY,
+  type ChannelActivity,
+  channelActivity,
+} from "@/lib/channels/use-channel-events";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
@@ -194,6 +199,49 @@ export function ChannelChat({
       current = false;
     };
   }, [copilotkit, agent, isReady, channel.threadId, runtimeAgentId]);
+
+  /*
+   * A message that arrived in this room from elsewhere — a routine delivering its answer at seven
+   * in the morning while the room sits open on a desk — is in the thread but not on the screen.
+   * The activity event says a Bot spoke; the thread is fetched and whatever it holds that the
+   * screen does not is appended. Not while this person's own turn is in flight: that reply is
+   * already streaming in, and the fetch would race it for the same message.
+   */
+  useEffect(() => {
+    const onActivity = (event: Event) => {
+      const activity = (event as CustomEvent<ChannelActivity>).detail;
+      if (activity.channelId !== channel.id) return;
+      if (!activity.lastMessageAgentId) return;
+      if (awaitingReply.current || agent.isRunning) return;
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/copilotkit/threads/${encodeURIComponent(channel.threadId)}/messages?agentId=${encodeURIComponent(runtimeAgentId)}`,
+            { credentials: "include" },
+          );
+          if (!response.ok) return;
+          const stored = (await response.json())?.messages;
+          if (!Array.isArray(stored)) return;
+          const seen = new Set(agent.messages.map((message) => message.id));
+          const missing = stored.filter(
+            (message: { id?: string }) => message.id && !seen.has(message.id),
+          );
+          if (missing.length === 0) return;
+          agent.setMessages([...agent.messages, ...missing]);
+          void refreshTimesRef.current();
+          // Read, because it is on the screen in front of them.
+          void markRead
+            .current({ channelId: channel.id, read: true })
+            .catch(() => {});
+        } catch {
+          // The next open of the room shows it; nothing here is worth a banner.
+        }
+      })();
+    };
+    channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
+    return () =>
+      channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
+  }, [agent, channel.id, channel.threadId, runtimeAgentId]);
 
   // Tool calls from this conversation act on this coworker's own computer.
   useActiveBot(runtimeAgentId);
