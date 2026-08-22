@@ -129,6 +129,15 @@ room you left, or in any room at all while the tab sits behind another window,
 raises one. Repeats replace: three answers while you were at lunch leave one
 notification per room, and the roster behind it carries the count.
 
+The rules are Grok Bot 0.24's, read out of its main process and copied rather than
+re-derived — one decider both kinds go through, so the mute, the hidden check
+and the throttle are written once and cannot drift apart. A Bot hidden from the
+roster says nothing even unmuted (hiding is the stronger statement). A Bot stays
+quiet for five seconds per kind after it has spoken, because ONE turn here is
+several runs on the wire whenever the Bot touches its computer — without the
+throttle a single errand left a row of notifications. A finished Bot is silent;
+a blocked one is not.
+
 A Bot that has STOPPED and is waiting on you leads, and it is the one thing
 here with a deadline: an unanswered question expires after ten minutes and the
 Bot gives up. That notice asks the browser to keep it on screen rather than
@@ -178,3 +187,8 @@ spoken, so a room whose second Bot has never said anything carries nothing.
 Who said what is recorded per message (`lafAgentId` beside `lafAt` in the
 snapshot jsonb) and drawn as a name above each reply. Two colleagues' replies
 never join into one visual run, which would have hidden the second name.
+
+The count of rooms waiting also goes on the app's icon (`navigator.setAppBadge`
+in an installed window, the tab title everywhere else). A MUTED Bot still counts
+there: muting silences the popup, not the fact that something is waiting. A
+hidden one does not, because it is not on the roster to be counted.

@@ -88,8 +88,6 @@ export function ChannelChat({
   const [localSpeakers, setLocalSpeakers] = useState<Record<string, string>>(
     {},
   );
-  /** Message id to Bot id, both halves, for `deliver` — which runs between renders. */
-  const speakersRef = useRef<Record<string, string>>({});
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
@@ -385,45 +383,6 @@ export function ChannelChat({
      * `transcriptMessages` draws user and assistant turns, so this never appears on screen — the
      * chip is what says a skill was used, and it stays visible in the message they sent.
      */
-    /*
-     * IN A ROOM WITH COLLEAGUES, SAY SO — ONCE, WHEN IT IS TRUE.
-     *
-     * One thread, several Bots, and AG-UI has one `assistant` role: the Bot about to answer reads
-     * a colleague's replies as its own previous turns and will happily take credit for work it
-     * never did, or contradict itself explaining reasoning it never had. This line is the only
-     * thing standing between it and that, and it goes in the same slot as a skill instruction and
-     * for the same reason — the Bot should read the situation before the request.
-     *
-     * Only when the thread actually holds somebody else's words, so a room whose second Bot has
-     * never spoken carries nothing, and a room where it has stops adding one per turn once the
-     * conversation has settled back onto one colleague. It accumulates like a skill instruction
-     * does; bounding it to "when it is true" is what keeps that to a handful.
-     */
-    const colleagueSpoke = Object.entries(speakersRef.current).some(
-      ([, agentId]) => agentId !== speakingRef.current,
-    );
-    if (channel.agentIds.length > 1 && colleagueSpoke) {
-      const roster = channel.agentIds
-        .map(
-          (id) =>
-            agentProfilesRef.current?.find((profile) => profile.id === id)
-              ?.name ?? id,
-        )
-        .join(", ");
-      const me =
-        agentProfilesRef.current?.find(
-          (profile) => profile.id === speakingRef.current,
-        )?.name ?? speakingRef.current;
-      agent.addMessage({
-        content: t(
-          "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.",
-          { me, roster },
-        ),
-        id: crypto.randomUUID(),
-        role: "system",
-      });
-    }
-
     for (const instruction of skillInstructions) {
       agent.addMessage({
         content: instruction,
@@ -611,6 +570,32 @@ export function ChannelChat({
    */
   const messageTimes = storedTimes.data?.times ?? EMPTY_TIMES;
 
+  /**
+   * The line that tells a Bot it is in a room with colleagues, when it is true.
+   *
+   * One thread, several Bots, and AG-UI has one `assistant` role: the Bot about to answer reads a
+   * colleague's replies as its own previous turns and will take credit for work it never did. This
+   * is the only thing standing between it and that, and it rides the same slot as a skill
+   * instruction — the Bot should read the situation before the request.
+   *
+   * Empty unless somebody else has actually spoken here, so a room whose second Bot has never said
+   * anything carries nothing. It accumulates in the thread the way a skill instruction does;
+   * bounding it to "when it is true" is what keeps that to a handful.
+   */
+  const colleagueNote = (target: string): string[] => {
+    if (channel.agentIds.length < 2) return [];
+    const spoke = Object.values(speakerIds).some((id) => id !== target);
+    if (!spoke) return [];
+    const nameOf = (id: string) =>
+      agentProfiles?.find((profile) => profile.id === id)?.name ?? id;
+    return [
+      t(
+        "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.",
+        { me: nameOf(target), roster: channel.agentIds.map(nameOf).join(", ") },
+      ),
+    ];
+  };
+
   /*
    * Names on the bubbles, and only where a name is needed: a room with more than one Bot in it.
    *
@@ -619,34 +604,26 @@ export function ChannelChat({
    * it every streamed chunk would hand the transcript a new object and undo the memo on every
    * message in the history.
    */
+  /** Message id to Bot id: what the server recorded, over what this tab watched arrive. */
+  const speakerIds = useMemo(
+    () => ({ ...localSpeakers, ...(storedTimes.data?.speakers ?? {}) }),
+    [localSpeakers, storedTimes.data?.speakers],
+  );
+
   const speakers = useMemo(() => {
     if (channel.agentIds.length < 2) return EMPTY_SPEAKERS;
     const names = new Map(
       (agentProfiles ?? []).map((profile) => [profile.id, profile.name]),
     );
     const resolved: Record<string, string> = {};
-    for (const [messageId, agentId] of Object.entries({
-      ...localSpeakers,
-      ...(storedTimes.data?.speakers ?? {}),
-    })) {
+    for (const [messageId, agentId] of Object.entries(speakerIds)) {
       const name = names.get(agentId);
       // A Bot that has left the roster keeps its id off the bubble rather than showing an id:
       // "agent_f89904c2" over a sentence is worse than no name at all.
       if (name) resolved[messageId] = name;
     }
     return resolved;
-  }, [
-    agentProfiles,
-    channel.agentIds.length,
-    localSpeakers,
-    storedTimes.data?.speakers,
-  ]);
-  speakersRef.current = {
-    ...localSpeakers,
-    ...(storedTimes.data?.speakers ?? {}),
-  };
-  const agentProfilesRef = useRef(agentProfiles);
-  agentProfilesRef.current = agentProfiles;
+  }, [agentProfiles, channel.agentIds.length, speakerIds]);
 
   return (
     <ConversationProvider ask={askFromComponent}>
@@ -709,7 +686,11 @@ export function ChannelChat({
               Boolean(instruction),
             );
 
-          await say(draft.text, skillInstructions, draft.agentId);
+          await say(
+            draft.text,
+            [...colleagueNote(target), ...skillInstructions],
+            draft.agentId,
+          );
         }}
         /**
          * Stop through the core so the abort signal reaches frontend tools; `say` repairs any

@@ -1,60 +1,114 @@
 import { describe, expect, test } from "bun:test";
 import {
-  shouldNotify,
-  shouldNotifyApproval,
+  decideNotice,
+  noticeBody,
+  type NoticeRequest,
+  THROTTLE_MS,
+  throttleKey,
 } from "../src/lib/notifications/bot-notifications";
 import { openChannelFrom } from "../src/lib/notifications/use-bot-notifications";
 
-const base = {
+const finished: NoticeRequest = {
+  kind: "finished",
   agentId: "risk-analyst",
   notify: true,
-  openChannelId: null as string | null,
-  channelId: "channel_a",
+  hidden: false,
   visible: true,
+  openChannelId: null,
+  channelId: "channel_a",
+  now: 1_000_000,
+};
+const needsYou: NoticeRequest = {
+  kind: "needs-you",
+  agentId: "risk-analyst",
+  notify: true,
+  hidden: false,
+  visible: false,
+  now: 1_000_000,
 };
 
-describe("whether a Bot speaking is worth interrupting for", () => {
-  test("a Bot speaking in a room that is not on screen is", () => {
-    expect(shouldNotify(base)).toBe(true);
-    expect(shouldNotify({ ...base, openChannelId: "channel_b" })).toBe(true);
+describe("whether a Bot finishing is worth interrupting for", () => {
+  test("a room that is not on screen is", () => {
+    expect(decideNotice(finished, undefined)).toBe("deliver");
+    expect(
+      decideNotice({ ...finished, openChannelId: "channel_b" }, undefined),
+    ).toBe("deliver");
   });
 
   test("the room the person is reading is not", () => {
-    expect(shouldNotify({ ...base, openChannelId: "channel_a" })).toBe(false);
-  });
-
-  test("a room open in a hidden tab is, because nobody is reading it", () => {
     expect(
-      shouldNotify({ ...base, openChannelId: "channel_a", visible: false }),
-    ).toBe(true);
+      decideNotice({ ...finished, openChannelId: "channel_a" }, undefined),
+    ).toBe("focused");
   });
 
-  test("the person's own message never is", () => {
-    expect(shouldNotify({ ...base, agentId: null })).toBe(false);
-  });
-
-  test("a muted Bot never is, wherever the person is looking", () => {
-    expect(shouldNotify({ ...base, notify: false })).toBe(false);
-  });
-
-  test("a Bot the roster has not loaded yet is, rather than silently dropped", () => {
-    // `notify` defaults to true on the server; an undefined here means "not loaded", and staying
-    // quiet on it would lose the first notification after every reload.
-    expect(shouldNotify({ ...base, notify: undefined })).toBe(true);
+  test("that room in a hidden tab is, because nobody is reading it", () => {
+    expect(
+      decideNotice(
+        { ...finished, openChannelId: "channel_a", visible: false },
+        undefined,
+      ),
+    ).toBe("deliver");
   });
 });
 
-describe("whether a Bot stopping to ask is worth interrupting for", () => {
-  test("a hidden tab is, because the card is on a screen nobody is looking at", () => {
-    expect(shouldNotifyApproval({ notify: true, visible: false })).toBe(true);
+describe("whether a Bot asking is worth interrupting for", () => {
+  test("a hidden tab is: the card is on a screen nobody is looking at", () => {
+    expect(decideNotice(needsYou, undefined)).toBe("deliver");
   });
 
-  test("a visible tab is not: the card and the status line already say it", () => {
-    expect(shouldNotifyApproval({ notify: true, visible: true })).toBe(false);
+  test("a visible tab is not, whatever room is open — the card is right there", () => {
+    expect(decideNotice({ ...needsYou, visible: true }, undefined)).toBe(
+      "focused",
+    );
+  });
+});
+
+describe("the rules both kinds share", () => {
+  test("a muted Bot says nothing", () => {
+    expect(decideNotice({ ...finished, notify: false }, undefined)).toBe(
+      "muted",
+    );
+    expect(decideNotice({ ...needsYou, notify: false }, undefined)).toBe(
+      "muted",
+    );
   });
 
-  test("a muted Bot is not, even blocked", () => {
-    expect(shouldNotifyApproval({ notify: false, visible: false })).toBe(false);
+  test("a Bot put away says nothing, even unmuted — hidden is the stronger statement", () => {
+    expect(
+      decideNotice({ ...finished, hidden: true, notify: true }, undefined),
+    ).toBe("hidden");
+    expect(
+      decideNotice({ ...needsYou, hidden: true, notify: true }, undefined),
+    ).toBe("hidden");
+  });
+
+  test("a Bot the roster has not loaded still notifies, rather than being dropped", () => {
+    expect(
+      decideNotice(
+        { ...finished, notify: undefined, hidden: undefined },
+        undefined,
+      ),
+    ).toBe("deliver");
+  });
+
+  test("five seconds of quiet per Bot per kind", () => {
+    // One turn is several runs on the wire once a Bot touches its computer, so the events arrive
+    // in a burst. Without this a single errand left a row of notifications.
+    expect(decideNotice(finished, finished.now - 1)).toBe("throttled");
+    expect(decideNotice(finished, finished.now - THROTTLE_MS)).toBe("deliver");
+  });
+
+  test("the throttle is per kind, so a finishing Bot can still say it needs you", () => {
+    expect(throttleKey(finished)).not.toBe(throttleKey(needsYou));
+  });
+});
+
+describe("what fits on a lock screen", () => {
+  test("newlines collapse and a long answer is cut with an ellipsis", () => {
+    expect(noticeBody("  두 줄\n\n짜리  ")).toBe("두 줄 짜리");
+    const long = "가".repeat(300);
+    expect(Array.from(noticeBody(long))).toHaveLength(140);
+    expect(noticeBody(long).endsWith("…")).toBe(true);
   });
 });
 

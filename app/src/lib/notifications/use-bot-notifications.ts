@@ -2,18 +2,22 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { openQuestions, watchQuestions } from "@/lib/approvals";
+import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
   channelActivity,
 } from "@/lib/channels/use-channel-events";
-import { openQuestions, watchQuestions } from "@/lib/approvals";
+import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
 import {
+  decideNotice,
+  type NoticeRequest,
   notificationSupport,
-  shouldNotify,
-  shouldNotifyApproval,
-  showApprovalNotice,
-  showBotNotice,
+  setUnreadBadge,
+  showNotice,
+  throttleKey,
 } from "@/lib/notifications/bot-notifications";
 
 /**
@@ -30,25 +34,30 @@ export function openChannelFrom(pathname: string): string | null {
 }
 
 /**
- * Raise a browser notification when a Bot speaks in a room nobody is reading.
+ * Interrupt somebody when a Bot needs them, or has finished while they were elsewhere.
+ *
+ * Both kinds go through one decider (`decideNotice`), which is the shape the reference product uses
+ * and the reason its rules cannot drift apart: the mute, the hidden check and the throttle are
+ * written once and are therefore true of both. The throttle is not decoration — one turn in this
+ * app is several runs on the wire whenever the Bot touches its computer, so the activity events
+ * arrive in a burst, and without it a single errand would leave a row of notifications.
  *
  * It rides the socket the roster already keeps open (`useChannelEvents`), through the same
  * re-broadcast the open transcript listens on. One socket, three listeners: the roster patches its
- * cache, the room appends the message, and this decides whether to interrupt anybody. A second
- * connection for notifications would have been a second thing to reconnect and a second thing to
- * get out of step with the first.
+ * cache, the room appends the message, and this decides whether to interrupt anybody.
  *
- * Mounted once, beside `useChannelEvents`.
+ * Mounted once, in `_authed`, so it covers every signed-in screen.
  */
 export function useBotNotifications(): void {
   const agents = useQuery(agentListQueryOptions());
+  const channels = useQuery(channelListQueryOptions());
   const navigate = useNavigate();
   const location = useLocation();
 
   /*
-   * Both in refs: the listener is attached once and outlives the render that attached it. Reading
-   * the roster or the current path from the closure would pin them to whatever they were when the
-   * roster was still loading — which is "no Bots" and "no room open", so every event would look
+   * The roster, the path and the navigate in refs: the listeners are attached once and outlive the
+   * render that attached them. Reading any of them from the closure would pin them to what they
+   * were while the roster was still loading — "no Bots", "no room open" — so every event would look
    * notifiable and none would know the Bot's name.
    */
   const rosterRef = useRef(agents.data);
@@ -57,39 +66,55 @@ export function useBotNotifications(): void {
   pathRef.current = location.pathname;
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
+  /** Last delivery per `${agentId}:${kind}`. Lives as long as the app does, like the socket. */
+  const lastNotified = useRef(new Map<string, number>());
+
+  /** The one place a notice can be raised, so nothing can be raised around the rules. */
+  const raise = useRef(
+    (
+      request: NoticeRequest,
+      notice: { title: string; body: string; tag: string },
+      onClick: () => void,
+    ) => {
+      if (notificationSupport() !== "granted") return;
+      const key = throttleKey(request);
+      if (decideNotice(request, lastNotified.current.get(key)) !== "deliver") {
+        return;
+      }
+      lastNotified.current.set(key, request.now);
+      showNotice(request.kind, notice, onClick);
+    },
+  );
 
   useEffect(() => {
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ChannelActivity>).detail;
-      if (notificationSupport() !== "granted") return;
+      // A person's own message is never news: a room is not unread for what you said in it.
+      const agentId = activity.lastMessageAgentId;
+      if (!agentId) return;
+      const bot = rosterRef.current?.find((profile) => profile.id === agentId);
 
-      const bot = rosterRef.current?.find(
-        (profile) => profile.id === activity.lastMessageAgentId,
-      );
-      const open = openChannelFrom(pathRef.current);
-      if (
-        !shouldNotify({
-          agentId: activity.lastMessageAgentId,
+      raise.current(
+        {
+          kind: "finished",
+          agentId,
           notify: bot?.notify,
-          openChannelId: open,
-          channelId: activity.channelId,
+          hidden: bot?.hidden,
           visible: document.visibilityState === "visible",
-        })
-      ) {
-        return;
-      }
-
-      showBotNotice(
+          openChannelId: openChannelFrom(pathRef.current),
+          channelId: activity.channelId,
+          now: Date.now(),
+        },
         {
           // The Bot's name, not the room's: a group room's title is a list of names, and the one
           // that matters is whoever just spoke.
           title: bot?.name ?? activity.name,
           body: activity.lastMessage ?? "",
-          channelId: activity.channelId,
+          tag: `laf-channel:${activity.channelId}`,
         },
-        (channelId) => {
+        () => {
           void navigateRef.current({
-            params: { channelId },
+            params: { channelId: activity.channelId },
             to: "/channel/$channelId",
           });
         },
@@ -104,34 +129,58 @@ export function useBotNotifications(): void {
   /*
    * AND THE LEADING CASE: a Bot that has stopped and is waiting on a person.
    *
-   * "What is blocked on you leads" is the rule this fork wrote down for the approval buzz, and it
-   * is the one thing here with a deadline — the server expires an unanswered question after ten
-   * minutes and the Bot gives up. It does not ride the socket and should not: the question is
-   * raised by a tool call in this very tab, which already holds the Bot, the id and the sentence.
-   * A server round trip to be told what this browser said one line earlier would be a slower way
-   * to learn nothing new.
+   * It does not ride the socket and should not — the question is raised by a tool call in this very
+   * tab, which already holds the Bot, the id and the sentence. A server round trip to be told what
+   * this browser said one line earlier would be a slower way to learn nothing new.
    *
-   * Each question is announced once. `watchQuestions` fires on every open AND every close, so
-   * without the seen-set an answered question would re-announce every one still waiting behind it.
+   * Each question is announced at most once. `watchQuestions` fires on every open AND every close,
+   * so without the seen-set an answered question would re-announce every one still waiting behind
+   * it — and the throttle would not catch that, because those questions are seconds apart.
    */
   useEffect(() => {
     const announced = new Set<string>();
     return watchQuestions(() => {
-      if (notificationSupport() !== "granted") return;
-      const visible = document.visibilityState === "visible";
       for (const question of openQuestions()) {
         if (announced.has(question.approvalId)) continue;
         const bot = rosterRef.current?.find(
           (profile) => profile.id === question.botId,
         );
-        if (!shouldNotifyApproval({ notify: bot?.notify, visible })) continue;
         announced.add(question.approvalId);
-        showApprovalNotice(
-          question.approvalId,
-          bot?.name ?? question.botId,
-          question.question,
+        raise.current(
+          {
+            kind: "needs-you",
+            agentId: question.botId,
+            notify: bot?.notify,
+            hidden: bot?.hidden,
+            visible: document.visibilityState === "visible",
+            now: Date.now(),
+          },
+          {
+            title: t("{name} needs you", { name: bot?.name ?? question.botId }),
+            body: question.question,
+            tag: `laf-approval:${question.approvalId}`,
+          },
+          () => {},
         );
       }
     });
   }, []);
+
+  /*
+   * The number on the app's own icon, which is the one notification that survives the tab being
+   * closed and reopened. Counted from the roster the sidebar already holds, so it costs no request.
+   * A muted Bot still counts — muting silences the popup, not the fact that something is waiting.
+   */
+  useEffect(() => {
+    const hidden = new Set(
+      (agents.data ?? [])
+        .filter((profile) => profile.hidden)
+        .map((profile) => profile.id),
+    );
+    const waiting = (channels.data ?? []).filter(
+      (channel) =>
+        channel.unread && !channel.agentIds.every((id) => hidden.has(id)),
+    ).length;
+    setUnreadBadge(waiting, appConfig.brand.productName);
+  }, [agents.data, channels.data]);
 }

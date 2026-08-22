@@ -1,10 +1,15 @@
 /**
  * Telling the person something happened when they are not looking at it.
  *
- * The rule is the one this fork already wrote down for the approval buzz and the morning digest
+ * The rules are Grok Bot 0.24's, read out of its main process and copied rather than re-derived:
+ * ONE decider both kinds go through, so the mute, the hidden check and the throttle are
+ * automatically true of both; a Bot blocked on you makes noise and asks to stay on screen while a
+ * Bot that merely finished is silent; five seconds of quiet per Bot per kind; and a window the
+ * person is looking at silences things, because the screen is already telling them.
+ *
+ * It is also the rule this fork wrote down for the approval buzz and the morning digest
  * (server/src/watch/digest.ts): what is blocked on you leads, what merely happened follows, and
- * everything else stays out of the way. A Bot speaking in a room you are reading is "everything
- * else" — you can see it. A Bot speaking in a room you are not reading is the case this exists for.
+ * everything else stays out of the way.
  *
  * It is the browser's own Notification, deliberately: no service worker, no push service, no
  * dependency. WHAT THAT COSTS, SAID PLAINLY: nothing arrives while the tab is closed. A person who
@@ -53,122 +58,112 @@ export async function requestNotificationPermission(): Promise<NotificationSuppo
   return "ask";
 }
 
-export type BotNotice = {
-  /** The Bot's name, which is the only thing worth putting in a notification's title. */
-  title: string;
-  /** What it said, already flattened to one line by the server's preview. */
-  body: string;
-  /** Where clicking it should land. */
-  channelId: string;
+/**
+ * The two things worth interrupting somebody for, and neither is "a message arrived".
+ *
+ * `needs-you` is a Bot blocked on a person; `finished` is a Bot that stopped working. The names
+ * mirror the reference product's own kinds (`agent-needs-input`, `agent-done`), because every rule
+ * below turns on the distinction.
+ */
+export type NoticeKind = "needs-you" | "finished";
+
+/** How long one Bot stays quiet about one kind after a notice goes out. */
+export const THROTTLE_MS = 5_000;
+
+/** As much of a message as belongs on a lock screen. */
+const BODY_LIMIT = 140;
+
+export type NoticeDecision =
+  | "deliver"
+  | "muted"
+  | "hidden"
+  | "focused"
+  | "throttled";
+
+export type NoticeRequest = {
+  kind: NoticeKind;
+  /** Which Bot: the throttle key, and the name on the notice. */
+  agentId: string;
+  /** The Bot's `notify` preference. Absent for a Bot the roster has not loaded yet: notify. */
+  notify: boolean | undefined;
+  /** A Bot hidden from the roster is one somebody has already put away. */
+  hidden: boolean | undefined;
+  /** `document.visibilityState === "visible"`. */
+  visible: boolean;
+  /** The room on screen, and the room this is about. Only `finished` has a room. */
+  openChannelId?: string | null;
+  channelId?: string;
+  /** Milliseconds, for the throttle. */
+  now: number;
 };
 
 /**
- * Whether this event is worth interrupting for, from facts the caller already holds.
+ * One decider, both kinds, in this order: put away, muted, looking at it, too soon.
  *
- * Pulled out of the hook so it can be tested without a DOM: every one of these clauses was a
- * decision, and a decision nothing can pin is one that quietly rots.
+ * The order is not cosmetic. Hidden is checked before the preference because hiding a Bot is the
+ * stronger statement — it is already off the roster — and an unmuted-but-hidden Bot would
+ * otherwise interrupt somebody who had put it away.
+ *
+ * "Looking at it" differs by kind, and that asymmetry is the point. A question is raised by a tool
+ * call in the tab the person is driving, so a visible tab already draws the card on that call's own
+ * line and a visible tab is enough to stay quiet. A message can arrive in any room, so it takes a
+ * visible tab AND that room being the one on screen.
  */
-export function shouldNotify(input: {
-  /** Null when the person themselves said it: a room is never unread for your own message. */
-  agentId: string | null;
-  /** The Bot's `notify` preference. Absent for a Bot that is not in the roster we loaded. */
-  notify: boolean | undefined;
-  /** The channel the person is looking at right now, if any. */
-  openChannelId: string | null;
-  channelId: string;
-  /** `document.visibilityState === "visible"`. */
-  visible: boolean;
-}): boolean {
-  if (!input.agentId) return false;
-  if (input.notify === false) return false;
-  // Looking straight at it. The transcript draws the reply; a notification would say it twice.
-  if (input.visible && input.openChannelId === input.channelId) return false;
-  return true;
+export function decideNotice(
+  request: NoticeRequest,
+  lastNotifiedAt: number | undefined,
+): NoticeDecision {
+  if (request.hidden) return "hidden";
+  if (request.notify === false) return "muted";
+  if (request.visible) {
+    if (request.kind === "needs-you") return "focused";
+    if (request.openChannelId === request.channelId) return "focused";
+  }
+  if (
+    lastNotifiedAt !== undefined &&
+    request.now - lastNotifiedAt < THROTTLE_MS
+  ) {
+    return "throttled";
+  }
+  return "deliver";
+}
+
+/** One Bot may be quiet about finishing and still be able to say it needs you. */
+export function throttleKey(request: {
+  agentId: string;
+  kind: NoticeKind;
+}): string {
+  return `${request.agentId}:${request.kind}`;
+}
+
+/** One line, clamped, because a lock screen shows about this much and then stops. */
+export function noticeBody(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length <= BODY_LIMIT ? line : `${line.slice(0, BODY_LIMIT - 1)}…`;
 }
 
 /**
- * Whether a Bot stopping to ask is worth interrupting for.
+ * Show one.
  *
- * Deliberately a different rule from `shouldNotify`, and the asymmetry is the point. A question is
- * raised by a tool call in the tab the person is driving, so "the room is on screen" and "the tab
- * is visible" are the same fact here — there is no other room it could have come from. A visible
- * tab already says it: the card is drawn on the tool call's own line and the transcript's status
- * slot keeps saying so wherever the reader has scrolled (`anyQuestionOpen`). Interrupting somebody
- * who is looking straight at the question would be the notification saying it twice.
+ * `tag` collapses repeats: three answers while somebody was at lunch leave one notification saying
+ * the newest thing rather than three saying three. A finished Bot is SILENT and an asking one is
+ * not — a sound for every completed errand is what teaches somebody to turn notifications off.
+ * `requireInteraction` on the asking kind is the browser's nearest thing to the reference's
+ * `urgency: "critical"`: a question expires in ten minutes, and a notice that fades after four
+ * seconds is one somebody misses while making coffee.
  */
-export function shouldNotifyApproval(input: {
-  /** The Bot's `notify` preference. Absent for a Bot the roster has not loaded. */
-  notify: boolean | undefined;
-  /** `document.visibilityState === "visible"`. */
-  visible: boolean;
-}): boolean {
-  if (input.notify === false) return false;
-  return !input.visible;
-}
-
-/**
- * Show one, replacing any earlier one for the same room.
- *
- * `tag` is the channel: a Bot that answers three times while somebody is at lunch should leave one
- * notification saying the newest thing, not three saying three things. That is what a messaging app
- * does per conversation, and the roster behind it still carries the full count.
- */
-export function showBotNotice(
-  notice: BotNotice,
-  onOpen: (channelId: string) => void,
-): void {
-  show(
-    {
-      title: notice.title,
-      body: notice.body,
-      tag: `laf-channel:${notice.channelId}`,
-    },
-    () => onOpen(notice.channelId),
-  );
-}
-
-/**
- * A Bot has stopped and is waiting on a person.
- *
- * `requireInteraction` because unlike a delivered answer this one burns a ten-minute window — the
- * server expires an unanswered question (`APPROVAL_TTL_MS`) and the Bot gives up. A notice that
- * fades after four seconds is one somebody misses while making coffee, and the thing they miss is
- * the only thing in this product that is genuinely blocked on them.
- *
- * Clicking it only focuses the window. The card is already on screen in the tab that raised the
- * question, and sending somebody to a route would be sending them somewhere they already are.
- */
-export function showApprovalNotice(
-  approvalId: string,
-  title: string,
-  question: string,
-): void {
-  show(
-    {
-      title,
-      body: question,
-      tag: `laf-approval:${approvalId}`,
-      requireInteraction: true,
-    },
-    () => {},
-  );
-}
-
-function show(
-  options: {
-    title: string;
-    body: string;
-    tag: string;
-    requireInteraction?: boolean;
-  },
+export function showNotice(
+  kind: NoticeKind,
+  options: { title: string; body: string; tag: string },
   onClick: () => void,
 ): void {
   if (notificationSupport() !== "granted") return;
   try {
     const notification = new Notification(options.title, {
-      body: options.body,
+      body: noticeBody(options.body),
       tag: options.tag,
-      ...(options.requireInteraction ? { requireInteraction: true } : {}),
+      silent: kind === "finished",
+      ...(kind === "needs-you" ? { requireInteraction: true } : {}),
     });
     notification.onclick = () => {
       window.focus();
@@ -179,4 +174,33 @@ function show(
     // Some browsers throw here rather than resolve `denied` (older Chrome on Android). A
     // notification that cannot be shown is not a reason for anything else to stop.
   }
+}
+
+/**
+ * How many rooms are waiting, on the app's own icon.
+ *
+ * A MUTED Bot still counts: muting silences the popup, not the fact that something is waiting —
+ * the same split the reference makes. A HIDDEN Bot does not, because it is not on the roster to be
+ * counted.
+ *
+ * `setAppBadge` exists in installed Chromium apps and nowhere else, so the title carries the number
+ * for everybody else. Written only when it changes: a title rewritten on every socket event is a
+ * tab that flickers.
+ */
+let badged: number | null = null;
+
+export function setUnreadBadge(count: number, baseTitle: string): void {
+  if (badged === count) return;
+  badged = count;
+  const withBadge = navigator as Navigator & {
+    setAppBadge?: (count?: number) => Promise<void>;
+    clearAppBadge?: () => Promise<void>;
+  };
+  if (count > 0) {
+    void withBadge.setAppBadge?.(count).catch(() => {});
+    document.title = `(${count}) ${baseTitle}`;
+    return;
+  }
+  void withBadge.clearAppBadge?.().catch(() => {});
+  document.title = baseTitle;
 }
