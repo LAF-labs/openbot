@@ -82,7 +82,15 @@ export type ChannelStore = {
     actor: AgentActor,
     channelId: string,
     at: Date | null,
-  ): Promise<{ previous: Date | null }>;
+    options?: {
+      /**
+       * Only ever move the mark BACK. What "mark unread" means, and it has to be enforced against
+       * the stored mark rather than computed by the caller, because reading it first and writing it
+       * second is the same two statements with a race in between.
+       */
+      neverForward?: boolean;
+    },
+  ): Promise<{ previous: Date | null; at: Date | null }>;
   recordActivity(
     actor: AgentActor,
     channelId: string,
@@ -351,7 +359,7 @@ export function createChannelStore(
       return [...summaries.values()];
     },
 
-    setLastRead(actor, channelId, at) {
+    setLastRead(actor, channelId, at, options) {
       return database.transaction(async (transaction) => {
         /*
          * Scoped by userId in the WHERE, so this can only ever move the caller's own mark. Reading
@@ -379,16 +387,27 @@ export function createChannelStore(
         // is not something an outsider can probe for.
         if (!before) throw new ChannelNotFoundError(channelId);
 
+        /*
+         * NEVER FORWARDS, when asked not to. Marking unread puts the boundary just before the
+         * newest thing said — and on a room that already had several unread replies, taking that
+         * literally moved the mark FORWARD and marked the earlier ones read. "I have not read this"
+         * cannot be an instruction that marks four messages read.
+         */
+        const next =
+          options?.neverForward && before.lastReadAt !== null && at !== null
+            ? new Date(Math.min(before.lastReadAt.getTime(), at.getTime()))
+            : at;
+
         await transaction
           .update(channelMemberships)
-          .set({ lastReadAt: at })
+          .set({ lastReadAt: next })
           .where(
             and(
               eq(channelMemberships.channelId, channelId),
               eq(channelMemberships.userId, actor.id),
             ),
           );
-        return { previous: before.lastReadAt };
+        return { previous: before.lastReadAt, at: next };
       });
     },
 
@@ -737,11 +756,20 @@ export function createChannelRoutes(
         .map((iso) => new Date(iso).getTime())
         .filter((value) => !Number.isNaN(value))
         .reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
-      const mark = Number.isFinite(newest) ? new Date(newest - 1) : null;
-      const { previous } = await store.setLastRead(
+      /*
+       * NEVER FORWARDS. Marking unread moves the boundary BACK to just before the newest thing
+       * said, and taking that literally moved it forward on a room that already had unread
+       * messages: five replies somebody had not read collapsed to one, because the mark jumped
+       * past the other four. "I have not read this" cannot be an instruction that marks four
+       * messages read. The reference product takes the same minimum
+       * (`Math.min(lastViewedAt, …)`); this is that, with the existing mark included.
+       */
+      const wanted = Number.isFinite(newest) ? new Date(newest - 1) : null;
+      const { previous, at: mark } = await store.setLastRead(
         context.var.actor,
         channelId,
-        mark,
+        wanted,
+        { neverForward: true },
       );
       return context.json({
         previousReadAt: previous?.toISOString() ?? null,

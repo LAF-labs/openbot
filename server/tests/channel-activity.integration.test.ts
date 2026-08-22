@@ -342,3 +342,39 @@ describe("whose clock decides when something was said", () => {
     );
   });
 });
+
+describe("marking a room unread", () => {
+  test("moves the boundary back, and never forward over messages nobody read", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    // Read up to here, then five replies land that nobody has read.
+    const readAt = new Date(Date.now() - 60_000);
+    await store.setLastRead(owner, channel.id, readAt);
+    const newest = new Date(Date.now() - 1_000);
+
+    /*
+     * "Mark unread" puts the boundary just before the newest thing said. Taken literally on a room
+     * that already had unread replies, that moved the mark FORWARD — and marked the earlier four
+     * read. It must only ever move back.
+     */
+    const back = await store.setLastRead(
+      owner,
+      channel.id,
+      new Date(newest.getTime() - 1),
+      { neverForward: true },
+    );
+    expect(back.at?.getTime()).toBe(readAt.getTime());
+
+    // From a room that WAS fully read, the same call does move the boundary back.
+    await store.setLastRead(owner, channel.id, new Date());
+    const later = await store.setLastRead(
+      owner,
+      channel.id,
+      new Date(newest.getTime() - 1),
+      { neverForward: true },
+    );
+    expect(later.at?.getTime()).toBe(newest.getTime() - 1);
+  });
+});
