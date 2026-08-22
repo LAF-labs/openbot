@@ -47,6 +47,7 @@ import { createPluginStore } from "./plugins/store";
 import { createRoutineDelivery } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
 import { createRoomService } from "./rooms/service";
+import { createApprovalWaiter } from "./rooms/wait-for-approval";
 import { createThreadMessageReader } from "./rooms/messages";
 import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner } from "./runner/laf-runner";
@@ -552,6 +553,8 @@ const app = createApp(
       pluginStore,
     }),
     emit: (frame) => channelEvents.deliverRoom(frame),
+    // A room holds while the person answers, because in a room the person is there. See the module.
+    awaitApproval: createApprovalWaiter(approvals),
     onAppended: (threadId, agentId, messages) =>
       lafRunner.adoptSnapshot(threadId, agentId, messages as never),
   }),

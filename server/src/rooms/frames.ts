@@ -68,6 +68,11 @@ export type RoomFrame =
    * A member's action met an ask rule. In a one-to-one conversation the question is drawn on the
    * tool call's own line; a room draws no tool calls — a member's working is private — so the
    * question is raised to the room, with who asked. The answer goes the usual way, by approval id.
+   *
+   * `answered` true is the same frame arriving to take the card down, the way `room.end` carries
+   * `posted`. It is sent when the WAIT ended in an answer, which is what a second tab needs: the tab
+   * that pressed the button already took its own card down. A wait that timed out sends nothing,
+   * because the question is still open and answering it late still counts.
    */
   | (Base & {
       kind: "room.approval";
@@ -76,6 +81,7 @@ export type RoomFrame =
       approvalId: string;
       question: string;
       rule: string;
+      answered?: boolean;
     })
   /** The whole turn is over, however it ended. */
   | (Base & { kind: "room.done"; reason: string });

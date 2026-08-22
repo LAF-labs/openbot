@@ -43,8 +43,16 @@ export type ToolOutcome = Record<string, unknown> & { ok: boolean };
 export type ToolExecutor = (
   name: string,
   args: Record<string, unknown>,
-  /** The call being executed. A room needs its id: the browser draws the message under it. */
-  call?: { id: string },
+  /**
+   * The call being executed. A room needs its id: the browser draws the message under it.
+   *
+   * `approvalId` is an answer a person has ALREADY given, presented for the call it was given for.
+   * The same contract the browser keeps (`withApproval` in `lib/copilot/computer-tools.tsx`) and
+   * the acting routes keep: the id alone proves nothing, it is the id together with the fingerprint
+   * of the call actually being made. Without it a retry after an approval raises a SECOND question
+   * — measured, 400 ms after the person pressed Allow — and the grant is spent on nothing.
+   */
+  call?: { id: string; approvalId?: string },
 ) => Promise<ToolOutcome>;
 
 export type UnattendedToolkit = {
@@ -671,7 +679,9 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
       })),
     ];
 
-    const execute: ToolExecutor = async (name, args) => {
+    const execute: ToolExecutor = async (name, args, call) => {
+      // An answer already given, carried into the call it was given for. Undefined on a first try.
+      const approvalId = call?.approvalId;
       try {
         const ref = pluginByName.get(name);
         if (ref !== undefined && pluginStore) {
@@ -680,6 +690,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             args,
             botId,
             actorId: actorLabel,
+            ...(approvalId ? { approvalId } : {}),
           });
           return { ok: !result.isError, text: result.text };
         }
@@ -697,6 +708,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                 botId,
                 actor,
                 String(args.url ?? ""),
+                approvalId,
               )),
             };
           case "computer_read":
@@ -712,7 +724,14 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               };
             return {
               ok: true,
-              ...(await gateway.click(c, botId, actor, target)),
+              ...(await gateway.click(
+                c,
+                botId,
+                actor,
+                target,
+                undefined,
+                approvalId,
+              )),
             };
           }
           case "computer_type": {
@@ -725,11 +744,18 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.type(c, botId, actor, {
-                ...target,
-                text: args.text,
-                submit: args.submit === true,
-              })),
+              ...(await gateway.type(
+                c,
+                botId,
+                actor,
+                {
+                  ...target,
+                  text: args.text,
+                  submit: args.submit === true,
+                },
+                undefined,
+                approvalId,
+              )),
             };
           }
           case "computer_key": {
@@ -741,27 +767,43 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.key(c, botId, actor, {
-                key: args.key,
-                ...(asRef(args) ?? {}),
-              })),
+              ...(await gateway.key(
+                c,
+                botId,
+                actor,
+                { key: args.key, ...(asRef(args) ?? {}) },
+                undefined,
+                approvalId,
+              )),
             };
           }
           case "computer_scroll":
             return {
               ok: true,
-              ...(await gateway.scroll(c, botId, actor, {
-                ...(typeof args.deltaY === "number"
-                  ? { deltaY: args.deltaY }
-                  : {}),
-              })),
+              ...(await gateway.scroll(
+                c,
+                botId,
+                actor,
+                {
+                  ...(typeof args.deltaY === "number"
+                    ? { deltaY: args.deltaY }
+                    : {}),
+                },
+                approvalId,
+              )),
             };
           case "computer_list_files":
             return {
               ok: true,
-              ...(await gateway.listFiles(c, botId, actor, {
-                ...(typeof args.path === "string" ? { path: args.path } : {}),
-              })),
+              ...(await gateway.listFiles(
+                c,
+                botId,
+                actor,
+                {
+                  ...(typeof args.path === "string" ? { path: args.path } : {}),
+                },
+                approvalId,
+              )),
             };
           case "computer_read_file":
             if (typeof args.path !== "string") {
@@ -769,7 +811,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.readFile(c, botId, actor, { path: args.path })),
+              ...(await gateway.readFile(
+                c,
+                botId,
+                actor,
+                { path: args.path },
+                approvalId,
+              )),
             };
           case "computer_write_file":
             if (
@@ -783,11 +831,17 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.writeFile(c, botId, actor, {
-                path: args.path,
-                contents: args.contents,
-                append: args.append === true,
-              })),
+              ...(await gateway.writeFile(
+                c,
+                botId,
+                actor,
+                {
+                  path: args.path,
+                  contents: args.contents,
+                  append: args.append === true,
+                },
+                approvalId,
+              )),
             };
           default:
             return { ok: false, reason: `There is no tool called ${name}.` };

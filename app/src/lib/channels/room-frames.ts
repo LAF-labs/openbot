@@ -54,6 +54,7 @@ export type RoomFrame =
    * tool call's own line; a room draws no tool calls — a member's working is private — so the
    * question is raised to the room, with who asked. The answer goes the usual way, by approval id.
    */
+  /** `answered` true takes the card down — for a tab other than the one that pressed the button. */
   | (Base & {
       kind: "room.approval";
       memberId: string;
@@ -61,6 +62,7 @@ export type RoomFrame =
       approvalId: string;
       question: string;
       rule: string;
+      answered?: boolean;
     })
   | (Base & { kind: "room.done"; reason: string });
 

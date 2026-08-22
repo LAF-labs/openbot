@@ -23,7 +23,9 @@ import type { AbstractAgent } from "@ag-ui/client";
 import type { RoomFrame } from "./frames";
 import { namesOf, resolveRoomMembers } from "./members";
 import { runMemberTurn } from "./member-turn";
+import { relayApprovals } from "./approval-relay";
 import { readPrivateHistory } from "./private-history";
+import type { ApprovalWaiter } from "./wait-for-approval";
 import { runRoomTurn } from "./orchestrator";
 import type { RoomMember } from "./prompt";
 import {
@@ -68,6 +70,13 @@ export type RoomServiceOptions = {
     agentId: string | null,
     messages: StoredMessage[],
   ) => void;
+  /**
+   * Hold a member's turn while a person answers the question its action raised.
+   *
+   * Absent in tests and in any deployment with no computer: the member then reports that it is
+   * waiting, exactly as it did before, and the question stays on screen to be answered late.
+   */
+  awaitApproval?: ApprovalWaiter;
   memberTimeoutMs?: number;
 };
 
@@ -325,33 +334,29 @@ export function createRoomService(options: RoomServiceOptions) {
            * sat in the registry for its ten minutes where nobody could see it, and the member's
            * "I'm waiting for your approval" had no buttons anywhere.
            */
-          const toolkit: UnattendedToolkit = {
-            tools: base.tools,
-            execute: async (name, args, call) => {
-              const outcome = await base.execute(name, args, call);
-              if (
-                outcome.awaitingApproval === true &&
-                typeof outcome.approvalId === "string"
-              ) {
-                options.emit({
-                  kind: "room.approval",
-                  channelId: input.channelId,
-                  memberIds: input.memberIds,
-                  turnId: input.turnId,
-                  epoch: input.epoch,
-                  memberId: member.id,
-                  memberName: member.name,
-                  approvalId: outcome.approvalId,
-                  question:
-                    typeof outcome.question === "string"
-                      ? outcome.question
-                      : "",
-                  rule: typeof outcome.rule === "string" ? outcome.rule : "",
-                });
-              }
-              return outcome;
-            },
-          };
+          /*
+           * The member's tools, with the boundary wired to the room: a question its action raises
+           * is shown to the person, the turn holds for their answer, and the answer travels with
+           * the retry. See `approval-relay.ts` for why those three belong together.
+           */
+          const toolkit = relayApprovals(base, {
+            memberId: member.id,
+            ...(options.awaitApproval ? { wait: options.awaitApproval } : {}),
+            announce: (question, answered) =>
+              options.emit({
+                kind: "room.approval",
+                channelId: input.channelId,
+                memberIds: input.memberIds,
+                turnId: input.turnId,
+                epoch: input.epoch,
+                memberId: member.id,
+                memberName: member.name,
+                approvalId: question.approvalId,
+                question: question.question,
+                rule: question.rule,
+                answered,
+              }),
+          });
 
           const open = new Set<string>();
           const result = await options.lane.run(member.id, () =>

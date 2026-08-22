@@ -256,6 +256,11 @@ describe("a member waiting on an answer", () => {
     expect(state.approvals).toHaveLength(1);
   });
 
+  test("comes down for every tab when it is answered", () => {
+    const state = after([turn, approval, { ...approval, answered: true }]);
+    expect(state.approvals).toEqual([]);
+  });
+
   test("survives catch-up", () => {
     const state = mergeStored(after([turn, approval]), [], {
       speakers: {},

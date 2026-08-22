@@ -76,6 +76,9 @@ export function applyRoomFrame(
   // A question is not typing. It stands whatever turn it was raised in, until it is answered or
   // the server lets it expire, so it is not subject to the staleness rule below.
   if (frame.kind === "room.approval") {
+    // The wait ended in an answer. The tab that pressed the button took its own card down; this is
+    // for every other tab looking at the same room.
+    if (frame.answered) return withoutApproval(state, frame.approvalId);
     if (state.approvals.some((a) => a.approvalId === frame.approvalId)) {
       return state;
     }
