@@ -114,3 +114,29 @@ room**, which is what makes the interaction one hop by construction — a
 coworker answering a question has no `ask_coworker` of its own to call. Every
 exchange writes a `coworker.asked` audit row, whichever way it went. The
 endpoint is `POST /api/agents/:agentId/ask` with `{ from, message }`.
+
+## Being told, when you are not looking
+
+Every Bot carries one preference per person: `notify`, on by default, editable
+from the switch on its profile. What it governs is the browser's own
+notification, raised when that Bot speaks in a room you are not reading.
+
+The rule is the one this fork already wrote down for the approval buzz and the
+morning digest (`server/src/watch/digest.ts`): what is blocked on you leads,
+what merely happened follows, everything else stays out of the way. So a reply
+in the room you are reading raises nothing — you can see it — and a reply in a
+room you left, or in any room at all while the tab sits behind another window,
+raises one. Repeats replace: three answers while you were at lunch leave one
+notification per room, and the roster behind it carries the count.
+
+It rides the socket the roster already keeps open
+(`app/src/lib/channels/use-channel-events.ts`) rather than a second connection,
+and it is the platform `Notification` — no service worker, no push service, no
+dependency. **Nothing arrives while the tab is closed**, and the profile says so
+rather than implying otherwise. The durable notification is the roster: a room a
+Bot has spoken in since you last read it is bold whenever you come back.
+
+Permission is requested from that switch and nowhere else — a page that asks on
+load is asking before anybody can judge the request. Refusing it leaves the
+preference on, because wanting to hear from a Bot and letting the browser pop a
+window are two different answers.

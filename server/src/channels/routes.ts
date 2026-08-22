@@ -393,18 +393,22 @@ export function createChannelStore(
     },
 
     recordActivity(actor, channelId, activity) {
-      /*
-       * Clamped to the server's clock. The browser says when it saw the message because only it
-       * knows that, but a browser whose clock runs ahead would write a `last_message_at` in the
-       * future — and then no read mark set by this server could ever pass it, so the room would
-       * stay unread however often it was opened. Earlier is honest; later is impossible.
-       */
-      const now = new Date();
-      const at = activity.at > now ? now : activity.at;
       return database.transaction(
         async (transaction) => {
           const [membership] = await transaction
-            .select({ channelId: channelMemberships.channelId })
+            .select({
+              channelId: channelMemberships.channelId,
+              /*
+               * POSTGRES' CLOCK, NOT THIS PROCESS'S, and taken here so it costs no extra round
+               * trip. Everything this table orders by is written by Postgres — `created_at`
+               * defaults, `now()` in the read mark — and the two clocks are not the same clock:
+               * measured, this Postgres runs ~66 ms ahead of the Bun process beside it. Clamping a
+               * browser's reported time to `new Date()` therefore pinned a message BEHIND the
+               * `created_at` of the room it was sent to, and a room a person had just spoken in
+               * failed to move to the top of their roster.
+               */
+              at: sql<Date>`now()`,
+            })
             .from(channelMemberships)
             .where(
               and(
@@ -415,6 +419,15 @@ export function createChannelStore(
           // Not a member, or no such channel: the same answer either way, so belonging to a channel
           // is not something an outsider can probe for.
           if (!membership) throw new ChannelNotFoundError(channelId);
+
+          /*
+           * The browser says when it saw the message, because only it knows that. A browser whose
+           * clock runs ahead would write a `last_message_at` in the future, and then no read mark
+           * this server sets could ever pass it — the room would stay unread however often it was
+           * opened. Earlier is honest; later is impossible.
+           */
+          const now = new Date(membership.at);
+          const at = activity.at > now ? now : activity.at;
 
           if (activity.agentId !== null) {
             const [linked] = await transaction
@@ -477,7 +490,9 @@ export function createChannelStore(
             // event that carries it.
             name: appliedRow.name,
             lastMessage,
-            lastMessageAt: activity.at.toISOString(),
+            // The clamped time — what was WRITTEN. The event carrying the browser's own reading
+            // would have every other tab patch its roster with a time the database does not hold.
+            lastMessageAt: at.toISOString(),
             lastMessageAgentId: activity.agentId,
           };
           await transaction.execute(

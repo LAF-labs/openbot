@@ -314,3 +314,31 @@ describe("channel activity", () => {
     ]);
   });
 });
+
+describe("whose clock decides when something was said", () => {
+  test("a browser running ahead cannot write a time past the database's own", async () => {
+    const owner = await createUser();
+    const agentId = await createAgent(owner);
+    const channel = await createChannel(owner, [agentId]);
+
+    // An hour ahead: what a laptop with a wrong clock reports.
+    await store.recordActivity(owner, channel.id, {
+      agentId,
+      at: new Date(Date.now() + 3_600_000),
+      text: "From the future.",
+    });
+
+    const [row] = await store.list(owner);
+    const written = new Date(row?.lastMessageAt ?? 0).getTime();
+    expect(written).toBeLessThan(Date.now() + 60_000);
+    /*
+     * And not clamped so hard that it lands behind the room's own `created_at`. Postgres runs its
+     * own clock — measured ~66 ms ahead of this process — so clamping to `new Date()` here put a
+     * message a person had just sent BELOW the moment the room was created, and the room did not
+     * move to the top of their roster.
+     */
+    expect(written).toBeGreaterThanOrEqual(
+      new Date(row?.createdAt ?? 0).getTime(),
+    );
+  });
+});
