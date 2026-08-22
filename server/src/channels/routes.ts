@@ -1,3 +1,4 @@
+import { RoomError } from "../rooms/service";
 import { previewOf } from "./preview";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
@@ -568,6 +569,14 @@ function isChannelInputObject(input: unknown): input is ChannelInputObject {
 /** As much reported text as any real message has, and far less than a request built to cost. */
 const MAX_ACTIVITY_TEXT = 100_000;
 
+/**
+ * As much as a person may say to a room in one turn.
+ *
+ * Much smaller than `MAX_ACTIVITY_TEXT`, which bounds a report of something ALREADY said. This is
+ * input to as many models as there are Bots in the room, several times over as the rounds go.
+ */
+const MAX_ROOM_TURN_TEXT = 8000;
+
 type ActivityInputParseResult =
   | { ok: true; value: ChannelActivity }
   | { ok: false; error: string };
@@ -632,6 +641,22 @@ export function createChannelRoutes(
     times: Record<string, string>;
     speakers: Record<string, string>;
   }>,
+  /** Runs a room's turn on the server. Absent leaves the room routes unmounted. */
+  rooms?: {
+    post: (input: {
+      actor: { id: string; role: "admin" | "user" };
+      actorLabel: string;
+      channelId: string;
+      threadId: string;
+      text: string;
+      messageId?: string;
+      addressedAgentIds?: string[];
+      personName: string;
+    }) => Promise<{ turnId: string; messageId: string; epoch: number }>;
+    stop: (actor: { id: string }, channelId: string) => Promise<void>;
+  },
+  /** The room's transcript, straight out of the snapshot. Absent serves an empty room. */
+  readThreadMessages?: (threadId: string) => Promise<unknown[]>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -786,6 +811,106 @@ export function createChannelRoutes(
         previousReadAt: previous?.toISOString() ?? null,
         readAt: mark?.toISOString() ?? null,
       });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /*
+   * A ROOM'S TURN, RUN ON THE SERVER.
+   *
+   * Registered before `/:channelId` for the reason `/events` and `/message-times` already are: a
+   * path segment that is not a channel id would otherwise be read as one.
+   *
+   * A room is a channel with more than one Bot in it. Its turn does not run in the browser — several
+   * Bots answering in rounds is a minute of work that must survive a closed tab, and two tabs must
+   * not each drive their own version of it. The browser posts the message and then watches.
+   */
+  if (rooms) {
+    routes.post("/:channelId/room-turn", requireUser, async (context) => {
+      const body = (await context.req.json().catch(() => null)) as {
+        text?: unknown;
+        messageId?: unknown;
+        addressedAgentIds?: unknown;
+      } | null;
+      const text = typeof body?.text === "string" ? body.text : "";
+      if (!text.trim()) {
+        return context.json({ error: "Say something first." }, 400);
+      }
+      if (text.length > MAX_ROOM_TURN_TEXT) {
+        return context.json({ error: "That message is too long." }, 400);
+      }
+      const channelId = context.req.param("channelId");
+      const channel = await store.get(context.var.actor, channelId);
+      if (!channel) return context.json({ error: "Channel not found." }, 404);
+
+      try {
+        const started = await rooms.post({
+          actor: {
+            id: context.var.actor.id,
+            role: context.var.actor.role === "admin" ? "admin" : "user",
+          },
+          actorLabel: context.var.actor.email,
+          channelId,
+          threadId: channel.threadId,
+          text,
+          ...(typeof body?.messageId === "string"
+            ? { messageId: body.messageId }
+            : {}),
+          addressedAgentIds: Array.isArray(body?.addressedAgentIds)
+            ? body.addressedAgentIds.filter(
+                (id): id is string => typeof id === "string",
+              )
+            : [],
+          personName: context.var.actor.name?.trim() || "User",
+        });
+        return context.json(
+          {
+            turnId: started.turnId,
+            messageId: started.messageId,
+            epoch: started.epoch,
+          },
+          202,
+        );
+      } catch (error) {
+        if (error instanceof RoomError) {
+          return context.json({ error: error.message }, error.status);
+        }
+        throw error;
+      }
+    });
+
+    routes.post("/:channelId/room-turn/stop", requireUser, async (context) => {
+      try {
+        await rooms.stop(context.var.actor, context.req.param("channelId"));
+        return context.body(null, 204);
+      } catch (error) {
+        if (error instanceof RoomError) {
+          return context.json({ error: error.message }, error.status);
+        }
+        throw error;
+      }
+    });
+  }
+
+  /*
+   * The room's transcript, read from the snapshot column directly.
+   *
+   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route is answered by our runner
+   * only when the deployment is in local mode, and a room's messages are written by the server
+   * rather than by a run — so a room in Intelligence mode would have shown an empty screen.
+   */
+  routes.get("/:channelId/messages", requireUser, async (context) => {
+    try {
+      const channel = await store.get(
+        context.var.actor,
+        context.req.param("channelId"),
+      );
+      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      const messages = readThreadMessages
+        ? await readThreadMessages(channel.threadId)
+        : [];
+      return context.json({ messages });
     } catch (error) {
       return mapStoreError(context, error);
     }

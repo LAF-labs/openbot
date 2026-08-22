@@ -46,6 +46,9 @@ import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
 import { createRoutineDelivery } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
+import { createRoomService } from "./rooms/service";
+import { createThreadMessageReader } from "./rooms/messages";
+import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
@@ -408,6 +411,32 @@ const coworkerCall = createCoworkerCall({
   ledger: runLedger,
 });
 
+/**
+ * One thing at a time per Bot, shared by everything that drives one server-side.
+ *
+ * An account has ONE virtual computer and its Bots share it, so a routine firing at seven and a
+ * room turn asking the same Bot a question would drive one browser at once — each one's snapshot
+ * going stale under the other. This is the queue that stops that, and it has to be one queue: two
+ * services each serialising against themselves would not see each other at all.
+ */
+const botLane = createBotLane();
+
+/** The same agents, keys and model every server-side run path resolves. */
+const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
+  resolveRuntimeAgents(
+    () => loadAgentsForActor(actor),
+    tenantPackage.model,
+    () =>
+      resolveModelApiKey({
+        encryptionKey: config.keyEncryptionKey,
+        reader: credentialStore,
+        provider: tenantPackage.model.provider,
+        keyId: tenantPackage.model.credentialSecretRef,
+        environment: process.env,
+      }),
+    stallGuard,
+  );
+
 // Instructions on a clock, running through the same server-side path a coworker answer does.
 const routineService = createRoutineService({
   database,
@@ -427,6 +456,7 @@ const routineService = createRoutineService({
     ),
   auditStore: bootAuditStore,
   ledger: runLedger,
+  lane: botLane,
   // And the answer lands in the Bot's own conversation, where a person already reads.
   deliver: createRoutineDelivery(database, (threadId, agentId, messages) =>
     lafRunner.adoptSnapshot(threadId, agentId, messages as never),
@@ -507,6 +537,25 @@ const app = createApp(
   createMessageTimeReader(database),
   // What is running for a person right now, from the same ledger chat and routines both write.
   createWorkingReader(database),
+  /*
+   * A room's turn, run here rather than in the browser. Every dependency is the one a routine
+   * already uses — the same agents, the same tools, the same ledger, the same lane — so a Bot in a
+   * room is governed exactly as a Bot on a schedule is.
+   */
+  createRoomService({
+    database,
+    lane: botLane,
+    ledger: runLedger,
+    resolveAgents: resolveAgentsFor,
+    tools: createUnattendedTools({
+      ...(computerGateway ? { gateway: computerGateway } : {}),
+      pluginStore,
+    }),
+    emit: (frame) => channelEvents.deliverRoom(frame),
+    onAppended: (threadId, agentId, messages) =>
+      lafRunner.adoptSnapshot(threadId, agentId, messages as never),
+  }),
+  createThreadMessageReader(database),
 );
 
 /**

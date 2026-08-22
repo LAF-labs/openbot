@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, count, desc, eq, isNull, lte, notInArray } from "drizzle-orm";
 import { runAgentOnce } from "../agents/coworker-call";
+import type { BotLane } from "../runner/bot-lane";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
@@ -247,6 +248,12 @@ export type RoutineServiceOptions = {
   ) => Promise<UnattendedToolkit>;
   now?: () => Date;
   runTimeoutMs?: number;
+  /**
+   * One thing at a time per Bot, shared with every other server-side run path.
+   *
+   * Absent runs without serialisation, which is what a test that drives one routine wants.
+   */
+  lane?: BotLane;
 };
 
 export function createRoutineService(options: RoutineServiceOptions) {
@@ -264,17 +271,18 @@ export function createRoutineService(options: RoutineServiceOptions) {
    * A promise chain per Bot makes the second wait for the first; it costs nothing when there is
    * no second.
    */
-  const inFlight = new Map<string, Promise<void>>();
   function execute(row: typeof lafRoutines.$inferSelect): Promise<void> {
-    const previous = inFlight.get(row.agentId) ?? Promise.resolve();
-    const run = previous.then(() => executeNow(row));
-    inFlight.set(
-      row.agentId,
-      run.catch(() => {}),
-    );
-    return run.finally(() => {
-      if (inFlight.get(row.agentId) === run) inFlight.delete(row.agentId);
-    });
+    /*
+     * One unattended run per Bot at a time, through the lane every server-side path shares.
+     *
+     * The tick is sequential, but Run now is not the tick, a room turn is not either, and any two
+     * of those can name the same Bot. With one shared computer, two tool loops on one Bot drive one
+     * browser at once — each one's snapshot goes stale under the other, and a click meant for one
+     * page lands on the other's. A queue private to this service would not have seen the room.
+     */
+    return options.lane
+      ? options.lane.run(row.agentId, () => executeNow(row))
+      : executeNow(row);
   }
 
   async function executeNow(row: typeof lafRoutines.$inferSelect) {

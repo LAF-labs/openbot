@@ -186,9 +186,21 @@ export function roomTurnPrompt(input: {
     parts.push(recent.map((line) => renderLine(line, member.id)).join("\n"));
   }
 
+  /*
+   * THE LAST WORDS IN THE REQUEST, AND BLUNT ON PURPOSE.
+   *
+   * A Bot arrives here carrying its own system prompt, which ends by telling it to say what it
+   * found in plain language — sensible everywhere else in the product and exactly wrong in a room.
+   * Measured: with a polite "say something with send_message if you like", both members answered in
+   * prose and the room stayed empty. The instruction has to be unmistakable and it has to be last.
+   */
   parts.push(
     "",
-    `It's your turn, ${clamp(member.name, ROOM_NAME_CHARS)}. Say something with send_message if you have something worth adding; if you don't, end your turn without calling it.`,
+    `It's your turn, ${clamp(member.name, ROOM_NAME_CHARS)}.`,
+    "DO NOT reply in plain text — nobody in the room can see plain text. To say anything at all you",
+    "must call the send_message tool with what you want to say.",
+    "If you have nothing worth adding, call nothing and end your turn. That is staying silent, and",
+    "it is a perfectly good answer.",
   );
   if (windingDown) {
     parts.push(
@@ -207,6 +219,9 @@ export function roomTurnPrompt(input: {
  */
 export function roomConduct(member: RoomMember): string {
   return [
+    "YOU ARE IN A ROOM, AND PLAIN TEXT IS INVISIBLE HERE.",
+    "Whatever you write as an ordinary answer goes nowhere: nobody in the room sees it. The send_message tool is the only thing that puts words in front of the other participants. Any instruction you carry about answering in plain language does not apply during this turn.",
+    "",
     `Several participants share this room. Stay fully in character as ${member.name}. Never speak or write as another participant or as the person, and never narrate the conversation from the outside.`,
     "",
     "How you talk in the room:",

@@ -37,6 +37,15 @@ export type ChannelEventHub = {
   register(userId: string, send: Send): () => void;
   /** Fan one event out to this instance's own connections. */
   deliver(event: ChannelActivityEvent): void;
+  /**
+   * Fan one room frame out, to this instance's connections only.
+   *
+   * Deliberately not through `pg_notify` like `deliver`: that carrier caps a payload at 8000 bytes
+   * and costs a database round trip per frame, and a room turn produces one every few tokens. The
+   * SETTLED message still goes the other way, so a person connected to a second instance sees the
+   * message when it lands rather than as it is typed — which is exactly what they see today.
+   */
+  deliverRoom(frame: { memberIds: string[] } & Record<string, unknown>): void;
   connectionCount(userId: string): number;
 };
 
@@ -57,6 +66,20 @@ export function createChannelEventHub(): ChannelEventHub {
         // set per person who ever connected.
         if (remaining.size === 0) connections.delete(userId);
       };
+    },
+
+    deliverRoom(frame) {
+      const payload = JSON.stringify(frame);
+      for (const userId of frame.memberIds) {
+        for (const send of connections.get(userId) ?? []) {
+          try {
+            send(payload);
+          } catch {
+            // Same rule as `deliver`: a connection that cannot be written to is one that is
+            // closing, and failing here would deny the frame to everybody after it in the set.
+          }
+        }
+      }
     },
 
     deliver(event) {

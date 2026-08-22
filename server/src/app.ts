@@ -141,6 +141,25 @@ export function createApp(
       startedAt: string;
     }>
   >,
+  /**
+   * Runs a room's turn on the server. Absent leaves the room routes unmounted, which is what a
+   * deployment without a model runtime should look like: rooms simply cannot answer.
+   */
+  roomService?: {
+    post: (input: {
+      actor: { id: string; role: "admin" | "user" };
+      actorLabel: string;
+      channelId: string;
+      threadId: string;
+      text: string;
+      messageId?: string;
+      addressedAgentIds?: string[];
+      personName: string;
+    }) => Promise<{ turnId: string; messageId: string; epoch: number }>;
+    stop: (actor: { id: string }, channelId: string) => Promise<void>;
+  },
+  /** A room's transcript, straight out of the snapshot column. */
+  readThreadMessages?: (threadId: string) => Promise<unknown[]>,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -391,6 +410,8 @@ export function createApp(
         requireUser,
         channelEvents,
         messageTimeReader,
+        roomService,
+        readThreadMessages,
       ),
     );
   }

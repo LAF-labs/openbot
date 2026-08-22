@@ -130,7 +130,8 @@ describe("writing into a room", () => {
       .select({ messages: lafThreadSnapshots.messages })
       .from(lafThreadSnapshots)
       .where(eq(lafThreadSnapshots.threadId, threadId));
-    expect((row?.messages as StoredMessage[])[0]?.id).toBe(messageId);
+    const stored = (row?.messages ?? []) as StoredMessage[];
+    expect(stored[0]?.id).toBe(messageId);
   });
 });
 
