@@ -571,6 +571,7 @@ const app = createApp(
   }),
   createThreadMessageReader(database),
   standingApprovals,
+  tenantPackage.model.supportsEffort,
 );
 
 /**

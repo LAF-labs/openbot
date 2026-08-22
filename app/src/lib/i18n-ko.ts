@@ -865,4 +865,10 @@ export const ko: Record<string, string> = {
     "각 항목은 누군가 “항상”으로 답한 질문입니다. 취소하기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
+  "How hard it thinks": "얼마나 깊이 생각할지",
+  "Thinking longer costs time. It is worth it on the hard ones.":
+    "오래 생각하면 그만큼 시간이 걸립니다. 어려운 일에는 그럴 값어치가 있습니다.",
+  Quick: "빠르게",
+  Balanced: "보통",
+  Thorough: "꼼꼼하게",
 };

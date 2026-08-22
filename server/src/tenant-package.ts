@@ -114,6 +114,8 @@ export type TenantPackage = {
     provider: "openai";
     credentialSecretRef: string;
     defaultModel: string;
+    /** Whether this model takes an effort setting. See `agent_effort` and `model.yaml`. */
+    supportsEffort: boolean;
   };
   knowledgeSources: {
     type: "google-drive" | "microsoft-onedrive";
@@ -183,6 +185,21 @@ function requiredString(value: unknown, name: string): string {
     throw new Error(`${name} must be a non-empty string`);
   }
   return value;
+}
+
+/**
+ * A yes/no a package may leave out.
+ *
+ * The strings as well as the booleans, because these values come out of YAML with environment
+ * substitution in them: `${BOT_MODEL_EFFORT:-true}` is the string "true" however the variable is
+ * set, and a parser that only accepted real booleans would read every one of them as malformed.
+ */
+function asBoolean(value: unknown, fallback: boolean, name: string): boolean {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be true or false`);
 }
 
 function stringArray(value: unknown, name: string): string[] {
@@ -336,6 +353,13 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
         "model.credential_secret_ref",
       ),
       defaultModel: requiredString(model.default_model, "model.default_model"),
+      // Absent reads as yes: the product's own model has one, and a package that says nothing about
+      // effort is far more likely to be an older package than a deployment on a model without it.
+      supportsEffort: asBoolean(
+        model.supports_effort,
+        true,
+        "model.supports_effort",
+      ),
     },
     knowledgeSources: sources,
     themeCss: files.themeCss,

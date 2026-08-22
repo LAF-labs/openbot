@@ -1,5 +1,10 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
-import { type AgentProfile, type AgentVisibility, agentKeys } from "./queries";
+import {
+  type AgentEffort,
+  type AgentProfile,
+  type AgentVisibility,
+  agentKeys,
+} from "./queries";
 
 export type AgentInput = {
   name: string;
@@ -14,6 +19,21 @@ export type AgentInput = {
   avatarSeed?: string;
 };
 
+/**
+ * A change to one part of a Bot's profile, merged into what is stored.
+ *
+ * `AgentInput` above replaces: every required field has to be sent or the parser refuses it. This
+ * one is what `/profile` takes, and it is how a single control changes a single thing without
+ * carrying the rest of the form along with it.
+ */
+export type AgentProfilePatch = {
+  name?: string;
+  title?: string;
+  roleDescription?: string;
+  avatarSeed?: string;
+  effort?: AgentEffort;
+};
+
 /** Which of this person's preferences for a Bot to change. Absent means "leave it alone". */
 export type AgentPreferencePatch = {
   hidden?: boolean;
@@ -23,7 +43,10 @@ export type AgentPreferencePatch = {
 
 async function agentRequest(
   path: string,
-  init: { method: string; body?: AgentInput | AgentPreferencePatch },
+  init: {
+    method: string;
+    body?: AgentInput | AgentPreferencePatch | AgentProfilePatch;
+  },
 ): Promise<Response> {
   const response = await fetch(path, {
     method: init.method,
@@ -68,6 +91,28 @@ export function updateAgentMutationOptions(queryClient: QueryClient) {
         await agentRequest(`/api/agents/${variables.agentId}`, {
           method: "PATCH",
           body: variables.input,
+        }),
+      ),
+    onSuccess: () => invalidateAgents(queryClient),
+  });
+}
+
+/**
+ * One setting, changed on its own.
+ *
+ * The PATCH above replaces the fields it carries and therefore needs every required one sent back,
+ * which is right for a form and wrong for a switch: a control that had to resend the name and the
+ * role to change how hard a Bot thinks would overwrite whatever somebody typed into the form beside
+ * it and had not saved yet. `/profile` merges into what is stored, so this carries only what
+ * changed — the same endpoint a Bot uses to write its own profile.
+ */
+export function setAgentEffortMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (variables: { agentId: string; effort: AgentEffort }) =>
+      agentFrom(
+        await agentRequest(`/api/agents/${variables.agentId}/profile`, {
+          method: "POST",
+          body: { effort: variables.effort },
         }),
       ),
     onSuccess: () => invalidateAgents(queryClient),

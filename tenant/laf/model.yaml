@@ -2,3 +2,15 @@ model:
   provider: openai
   credential_secret_ref: openai-api-key
   default_model: ${BOT_MODEL:-gpt-4.1}
+  # Whether this deployment's model reasons, and therefore takes an effort setting.
+  #
+  # AN ASSERTION, NOT A DESCRIPTION. The model provider decides on its own whether to send an effort
+  # by pattern-matching the model's name — o-series, or gpt-5 and up — and sends nothing for anything
+  # else. Measured against the wire: `gpt-5` carried the setting and `stealth/ox-alpha` carried
+  # nothing at all. The product's model is served by us under a name only we choose, so no heuristic
+  # over model names can ever recognise it, and this line is how the deployment says so.
+  #
+  # True also puts the system prompt in the developer role, which is what the provider does for every
+  # model it recognises as reasoning. Set it false on a model that does not reason: nothing is sent,
+  # and the control disappears from the Bot's profile rather than sitting there doing nothing.
+  supports_effort: ${BOT_MODEL_EFFORT:-true}

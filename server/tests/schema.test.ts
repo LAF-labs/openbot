@@ -138,6 +138,14 @@ describe("OpenBot database schema", () => {
         primary: false,
       },
       {
+        // Defaulted, unlike the columns around it: every Bot that existed before this column did has
+        // one, and nothing had to be backfilled. See `agentEffort`.
+        name: "effort",
+        notNull: true,
+        hasDefault: true,
+        primary: false,
+      },
+      {
         name: "visibility",
         notNull: true,
         hasDefault: false,

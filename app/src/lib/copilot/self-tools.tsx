@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
 import { agentKeys } from "@/lib/agents/queries";
 import { routineKeys } from "@/lib/routines/queries";
+import { type AgentEffort, effortLabel } from "@/lib/agents/effort-label";
 import { t } from "@/lib/i18n";
 import { useActiveBotHolder } from "./active-bot";
 
@@ -198,7 +199,7 @@ export function SelfTools() {
       target: z
         .enum(["profile", "routine"])
         .describe(
-          "'profile' for who you are; 'routine' for work you repeat on a schedule",
+          "'profile' for who you are and how hard you think; 'routine' for work you repeat on a schedule",
         ),
       action: z
         .enum(["set", "create", "delete", "pause", "resume"])
@@ -220,6 +221,12 @@ export function SelfTools() {
         .string()
         .optional()
         .describe("A short role label, such as 'Finance operations'"),
+      effort: z
+        .enum(["quick", "balanced", "thorough"])
+        .optional()
+        .describe(
+          "How hard you think before answering. Raise it when the work needs care, lower it when speed matters more than depth.",
+        ),
       routineId: z
         .string()
         .optional()
@@ -260,6 +267,7 @@ export function SelfTools() {
         name?: string;
         description?: string;
         title?: string;
+        effort?: AgentEffort;
         routineId?: string;
         instruction?: string;
         schedule?: {
@@ -272,7 +280,7 @@ export function SelfTools() {
       },
       call: { toolCall?: { id?: string } } = {},
     ) => {
-      const { name, description, title } = args;
+      const { name, description, title, effort } = args;
       const remember = (
         entry: { done: string; doing: string; note?: string },
         failed?: boolean,
@@ -291,6 +299,7 @@ export function SelfTools() {
       if (name !== undefined) patch.name = name;
       if (description !== undefined) patch.roleDescription = description;
       if (title !== undefined) patch.title = title;
+      if (effort !== undefined) patch.effort = effort;
       if (Object.keys(patch).length === 0) {
         return "Nothing was changed: no fields were given.";
       }
@@ -298,6 +307,7 @@ export function SelfTools() {
         ...(name === undefined ? [] : [t("name")]),
         ...(title === undefined ? [] : [t("title")]),
         ...(description === undefined ? [] : [t("what it is for")]),
+        ...(effort === undefined ? [] : [effortLabel(effort)]),
       ];
       const profileLine = {
         doing: t("Updating its own profile"),

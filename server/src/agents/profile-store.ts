@@ -106,6 +106,7 @@ const joinedProjection = {
   title: agentProfiles.title,
   roleDescription: agentProfiles.roleDescription,
   avatarSeed: agentProfiles.avatarSeed,
+  effort: agentProfiles.effort,
   visibility: agentProfiles.visibility,
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
@@ -151,6 +152,7 @@ function mapProfile(
     title: row.title,
     roleDescription: row.roleDescription,
     avatarSeed: row.avatarSeed,
+    effort: row.effort,
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
@@ -329,6 +331,9 @@ export function createAgentProfileStore(
           // overwrote it with the agent id, so the mascot hashed that into SOME face and the person
           // silently got a different one from the one they chose.
           avatarSeed: input.avatarSeed ?? id,
+          // Absent takes the column's default rather than being written as one here, so the default
+          // lives in exactly one place.
+          ...(input.effort === undefined ? {} : { effort: input.effort }),
           visibility: input.visibility,
         });
 
@@ -390,6 +395,8 @@ export function createAgentProfileStore(
               ...(input.avatarSeed === undefined
                 ? {}
                 : { avatarSeed: input.avatarSeed }),
+              // The same for how hard it thinks: a form that did not show it must not reset it.
+              ...(input.effort === undefined ? {} : { effort: input.effort }),
               updatedAt,
             })
             .where(eq(agentProfiles.agentId, id));
@@ -431,6 +438,8 @@ export function createAgentProfileStore(
           title: source.title,
           roleDescription: source.roleDescription,
           avatarSeed: source.avatarSeed,
+          // A copy is the same colleague again, which includes how long it takes to answer.
+          effort: source.effort,
           visibility: "private",
         });
 

@@ -1,5 +1,20 @@
 export type AgentVisibility = "public" | "private";
 
+/**
+ * How hard a Bot thinks before it answers.
+ *
+ * The only thing about the model a person chooses; which model answers is the deployment's decision.
+ * See `agentEffort` in `db/schema/coworker.ts` for the argument, and `RuntimeModel.supportsEffort`
+ * for why a deployment can be running a model that takes no such setting.
+ */
+export type AgentEffort = "quick" | "balanced" | "thorough";
+
+export const AGENT_EFFORTS: readonly AgentEffort[] = [
+  "quick",
+  "balanced",
+  "thorough",
+];
+
 export type AgentActor = {
   id: string;
   role: "admin" | "user";
@@ -11,6 +26,7 @@ export type AgentProfile = {
   title: string;
   roleDescription: string;
   avatarSeed: string;
+  effort: AgentEffort;
   visibility: AgentVisibility;
   ownerUserId: string | null;
   systemOwned: boolean;
@@ -56,6 +72,13 @@ export type CreateAgentInput = Pick<
    * unknown value degrades to a face rather than to nothing.
    */
   avatarSeed?: string;
+  /**
+   * How hard it thinks.
+   *
+   * Absent means "leave it alone", like the face: a form that saves a name must not reset a setting
+   * it did not show, and a Bot made before anybody could choose keeps the column's default.
+   */
+  effort?: AgentEffort;
   /**
    * A key this agent sits behind, if any.
    *

@@ -74,6 +74,9 @@ describe("server authorization", () => {
         // anybody in a flow whose end it cannot record.
         onboarded: true,
       },
+      // What this deployment can do, beside who is asking. True when nothing says otherwise, so an
+      // app talking to a server that has not been told reads it the same way the package defaults.
+      deployment: { effort: true },
     });
   });
 

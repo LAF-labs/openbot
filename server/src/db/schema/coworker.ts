@@ -25,6 +25,26 @@ export const agentVisibility = pgEnum("agent_visibility", [
   "private",
 ]);
 
+/**
+ * How hard a Bot thinks before it answers.
+ *
+ * The only thing about the model a person can change, and deliberately so. Which model answers is
+ * the deployment's decision — one model, served by us, the same for everybody — because a list of
+ * model names is a question a person cannot answer well: it asks them to know which of a dozen
+ * vendors' products is better at their particular job, and the honest answer changes every month.
+ * How long they are willing to wait, though, is a question only they can answer, and it is the one
+ * that actually differs from task to task.
+ *
+ * Three, named for the wait rather than for the mechanism. `quick`, `balanced` and `thorough` become
+ * a reasoning effort at the model call; a person choosing between "low" and "high" is being asked
+ * to reason about somebody's API.
+ */
+export const agentEffort = pgEnum("agent_effort", [
+  "quick",
+  "balanced",
+  "thorough",
+]);
+
 export const agentProfiles = pgTable(
   "agent_profiles",
   {
@@ -37,6 +57,12 @@ export const agentProfiles = pgTable(
     title: text("title").notNull(),
     roleDescription: text("role_description").notNull(),
     avatarSeed: text("avatar_seed").notNull(),
+    /**
+     * Defaulted rather than required, so every Bot that already exists has one and nothing has to
+     * be backfilled. `balanced` because a Bot nobody has thought about should be the one that
+     * neither keeps somebody waiting nor answers a hard question badly.
+     */
+    effort: agentEffort("effort").notNull().default("balanced"),
     visibility: agentVisibility("visibility").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),

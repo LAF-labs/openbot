@@ -14,11 +14,13 @@ import {
   ProtectedAgentError,
   RosterFullError,
 } from "./profile-store";
-import type {
-  AgentActor,
-  AgentPreferencePatch,
-  AgentProfile,
-  CreateAgentInput,
+import {
+  AGENT_EFFORTS,
+  type AgentActor,
+  type AgentEffort,
+  type AgentPreferencePatch,
+  type AgentProfile,
+  type CreateAgentInput,
 } from "./profile-types";
 
 type AgentInputParseResult =
@@ -32,6 +34,7 @@ type AgentInputObject = {
   visibility?: unknown;
   endpoint?: unknown;
   avatarSeed?: unknown;
+  effort?: unknown;
   auth?: unknown;
 };
 
@@ -112,6 +115,22 @@ export function parseAgentInput(
     avatarSeed = supplied;
   }
 
+  // Optional, and one of exactly three. Checked against the list rather than passed through, because
+  // it reaches a Postgres enum: an unknown value is a failed transaction at write time rather than a
+  // 400 here, which is the same outcome dressed as a server fault.
+  let effort: AgentEffort | undefined;
+  if (input.effort !== undefined) {
+    const supplied =
+      typeof input.effort === "string" ? input.effort.trim() : "";
+    if (!AGENT_EFFORTS.includes(supplied as AgentEffort)) {
+      return {
+        ok: false,
+        error: "Effort must be quick, balanced or thorough.",
+      };
+    }
+    effort = supplied as AgentEffort;
+  }
+
   // The key is optional and write-only. An absent field leaves an existing key alone; sending one
   // replaces it. There is no way to read one back, here or anywhere.
   let auth: { header: string; value: string } | undefined;
@@ -141,6 +160,7 @@ export function parseAgentInput(
       endpoint,
       auth,
       ...(avatarSeed === undefined ? {} : { avatarSeed }),
+      ...(effort === undefined ? {} : { effort }),
     },
   };
 }
@@ -419,6 +439,9 @@ export function createAgentRoutes(
           ...(patch.avatarSeed === undefined
             ? {}
             : { avatarSeed: patch.avatarSeed }),
+          // Absent leaves it alone, like the face. A Bot writing its own description must not reset
+          // how hard it thinks as a side effect of doing so.
+          ...(patch.effort === undefined ? {} : { effort: patch.effort }),
         },
         allowPrivateHosts,
       );
@@ -573,6 +596,7 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     title: agent.title,
     roleDescription: agent.roleDescription,
     avatarSeed: agent.avatarSeed,
+    effort: agent.effort,
     visibility: agent.visibility,
     hidden: agent.hidden,
     // ISO, not a boolean: the roster sorts pinned Bots among themselves by when they were pinned.

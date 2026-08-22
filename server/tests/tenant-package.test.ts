@@ -137,6 +137,54 @@ describe("tenant theme validation", () => {
 });
 
 describe("tenant YAML validation", () => {
+  const packageWithModel = (model: string) =>
+    validateTenantPackage({
+      brand: "tenant: { id: fintech, product_name: Ledgerline }",
+      agents: "agents: []",
+      channels: "channels: []",
+      model,
+      knowledge: "sources: []",
+      themeCss: "",
+    });
+
+  /**
+   * Whether the deployment's model takes an effort setting.
+   *
+   * Declared rather than guessed from a model's name, and the values arrive as STRINGS: these come
+   * out of YAML with environment substitution in them, so `${BOT_MODEL_EFFORT:-true}` is the string
+   * "true" however the variable is set. A parser that only took real booleans would read every
+   * deployment's declaration as malformed.
+   */
+  test("reads effort support as a string or a boolean, and defaults to yes", () => {
+    const base =
+      "provider: openai, credential_secret_ref: openai-key, default_model: gpt-4.1";
+    expect(packageWithModel(`model: { ${base} }`).model.supportsEffort).toBe(
+      true,
+    );
+    expect(
+      packageWithModel(`model: { ${base}, supports_effort: false }`).model
+        .supportsEffort,
+    ).toBe(false);
+    expect(
+      packageWithModel(`model: { ${base}, supports_effort: "false" }`).model
+        .supportsEffort,
+    ).toBe(false);
+    expect(
+      packageWithModel(`model: { ${base}, supports_effort: "true" }`).model
+        .supportsEffort,
+    ).toBe(true);
+  });
+
+  test("refuses an effort declaration that is neither", () => {
+    // Not read as truthy. "maybe" almost certainly means an environment variable that did not
+    // resolve, and reading it as yes would send the parameter to a model that cannot take it.
+    expect(() =>
+      packageWithModel(
+        "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-4.1, supports_effort: maybe }",
+      ),
+    ).toThrow("model.supports_effort must be true or false");
+  });
+
   test("rejects an agent without a title", () => {
     expect(() =>
       validateTenantPackage({

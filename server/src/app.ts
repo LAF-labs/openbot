@@ -176,6 +176,14 @@ export function createApp(
    * should keep asking rather than accept one it cannot show anybody.
    */
   standingApprovals?: StandingApprovalStore,
+  /**
+   * Whether this deployment's model takes an effort setting, for the surface to draw or not draw.
+   *
+   * The same fact `RuntimeModel.supportsEffort` decides with, read from the same package, so the
+   * control appears exactly where the parameter is actually sent. Absent reads as yes, matching the
+   * package's own default.
+   */
+  deploymentEffort?: boolean,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -222,7 +230,19 @@ export function createApp(
     const onboarded = onboarding
       ? await onboarding.isOnboarded(actor.id).catch(() => true)
       : true;
-    return context.json({ user: { ...actor, onboarded } });
+    /*
+     * What this deployment can do, beside who is asking.
+     *
+     * Here rather than on its own endpoint because it is one boolean and this is the call the app
+     * already makes before it draws anything. Today it says whether the model takes an effort
+     * setting: a deployment whose model does not reason must not offer a control that silently does
+     * nothing, and the surface cannot work that out for itself — the model is never sent to it, and
+     * it should not have to know model names to draw a form.
+     */
+    return context.json({
+      user: { ...actor, onboarded },
+      deployment: { effort: deploymentEffort !== false },
+    });
   });
 
   /**

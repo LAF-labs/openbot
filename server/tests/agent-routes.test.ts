@@ -647,3 +647,52 @@ describe("agent route composition", () => {
     expect(response.status).toBe(404);
   });
 });
+
+/**
+ * How hard a Bot thinks — the one thing about the model anybody sets.
+ *
+ * The failures worth pinning are all about a value reaching a Postgres enum: an unknown one is a
+ * failed transaction rather than a 400, which is the same refusal dressed as a server fault, and an
+ * absent one must mean "leave it alone" rather than "reset it" — otherwise saving a name through
+ * the form quietly puts a Bot somebody set to thorough back to balanced.
+ */
+describe("how hard a Bot thinks", () => {
+  test("is one of three, checked before it reaches the column", () => {
+    const parsed = parseAgentInput({
+      name: "Analyst",
+      visibility: "private",
+      effort: "as hard as possible",
+    });
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error).toContain("quick, balanced");
+  });
+
+  test("takes the three it does allow", () => {
+    for (const effort of ["quick", "balanced", "thorough"] as const) {
+      const parsed = parseAgentInput({
+        name: "Analyst",
+        visibility: "private",
+        effort,
+      });
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.value.effort).toBe(effort);
+    }
+  });
+
+  test("is absent when nothing said, so the column's default stands", () => {
+    // Not defaulted here. A second place that knows the default is a second place to get it wrong,
+    // and an absent field on an update has to keep meaning "leave it alone".
+    const parsed = parseAgentInput({ name: "Analyst", visibility: "private" });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.effort).toBeUndefined();
+  });
+
+  test("a blank one is refused rather than read as a default", () => {
+    const parsed = parseAgentInput({
+      name: "Analyst",
+      visibility: "private",
+      effort: "",
+    });
+    expect(parsed.ok).toBe(false);
+  });
+});

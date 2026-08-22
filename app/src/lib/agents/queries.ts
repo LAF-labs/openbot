@@ -8,12 +8,28 @@ export type AgentVisibility = "public" | "private";
  * `canManage` and `systemOwned` are server-decided authorization facts; components render from the
  * returned flags rather than recomputing ownership rules.
  */
+export type AgentEffort = "quick" | "balanced" | "thorough";
+
+export const AGENT_EFFORTS: readonly AgentEffort[] = [
+  "quick",
+  "balanced",
+  "thorough",
+];
+
 export type AgentProfile = {
   id: string;
   name: string;
   title: string;
   roleDescription: string;
   avatarSeed: string;
+  /**
+   * How hard it thinks before it answers.
+   *
+   * The only thing about the model anybody chooses; which model answers is the deployment's
+   * decision. Present on every Bot even where the deployment's model takes no such setting — the
+   * value is stored either way, and `deployment.effort` decides whether the control is drawn.
+   */
+  effort: AgentEffort;
   visibility: AgentVisibility;
   /** Where this coworker runs. Null for the Bot in the box. */
   endpoint: string | null;

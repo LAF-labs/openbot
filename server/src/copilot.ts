@@ -9,7 +9,7 @@ import {
   CopilotRuntime,
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
-import type { AgentActor } from "./agents/profile-types";
+import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 
@@ -45,6 +45,8 @@ type RegisteredBuiltInAgent = {
    */
   standing: string;
   systemPrompt: string;
+  /** How hard this Bot thinks. See `agentEffort` in the schema for why this is the only knob. */
+  effort: AgentEffort;
 };
 
 type RegisteredRemoteAgent = {
@@ -125,6 +127,23 @@ export function standingRoleMessage(
 export type RuntimeModel = {
   provider: "openai";
   defaultModel: string;
+  /**
+   * Whether this deployment's model takes an effort setting.
+   *
+   * False sends nothing, whatever a Bot's own setting says. A model that does not reason answers a
+   * request carrying the parameter with a 400 on some providers and silence on others, and the one
+   * thing this must not do is turn a Bot that works into a Bot that errors because somebody moved a
+   * slider. The surface reads the same flag and hides the control, so nobody is offered a choice
+   * that does nothing.
+   */
+  supportsEffort: boolean;
+};
+
+/** Effort as the model provider spells it. The three the schema names, in the API's words. */
+const REASONING_EFFORT: Record<AgentEffort, "low" | "medium" | "high"> = {
+  quick: "low",
+  balanced: "medium",
+  thorough: "high",
 };
 
 type RuntimeAgentRow = {
@@ -134,6 +153,8 @@ type RuntimeAgentRow = {
   configuration: unknown;
   title: string;
   roleDescription: string;
+  /** Absent on a row read by something that does not select it; `balanced` is the column's default. */
+  effort?: AgentEffort;
 };
 
 export function registeredAgentFromRow(
@@ -154,6 +175,7 @@ export function registeredAgentFromRow(
           type: "built_in",
           standing: standingRoleMessage(row).content,
           systemPrompt: trimmedSystemPrompt,
+          effort: row.effort ?? "balanced",
         }
       : null;
   }
@@ -208,6 +230,39 @@ export function builtInAgentConfiguration(
     // Who it is first, then how it works: the role is the part the person wrote.
     prompt: `${agent.standing}\n\n${agent.systemPrompt}`,
     apiKey,
+    /*
+     * The one thing about the model a person sets, and only where the model takes one.
+     *
+     * Keyed by provider because that is the shape the SDK takes; `provider` is narrowed to "openai"
+     * in this deployment, so there is one key and it is the right one. Omitted entirely rather than
+     * sent as a default when the model does not reason — see RuntimeModel.supportsEffort.
+     */
+    ...(model.supportsEffort
+      ? {
+          providerOptions: {
+            openai: {
+              reasoningEffort: REASONING_EFFORT[agent.effort],
+              /*
+               * WITHOUT THIS THE SETTING IS DROPPED FOR OUR OWN MODEL.
+               *
+               * The provider decides whether to send an effort by pattern-matching the model's
+               * name — o-series, or gpt-5 and up — and sends nothing at all for anything else.
+               * Measured against the wire: `gpt-5` carried `reasoning: { effort: "high" }` and
+               * `stealth/ox-alpha`, which is what this deployment actually runs, carried nothing.
+               * The control would have saved, shown its ring, and changed how the Bot answers not
+               * at all.
+               *
+               * `supportsEffort` is the deployment asserting that its model reasons, which is a
+               * thing only the deployment can know: the product's model is served by us under a
+               * name only we choose, and no heuristic over model names can keep up with that. So
+               * the assertion is what decides, and a deployment on a model that does not reason
+               * says so and the control disappears rather than lying.
+               */
+              forceReasoning: true,
+            },
+          },
+        }
+      : {}),
   };
 }
 

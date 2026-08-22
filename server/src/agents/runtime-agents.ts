@@ -70,6 +70,8 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
       configuration: agents.configuration,
       title: agentProfiles.title,
       roleDescription: agentProfiles.roleDescription,
+      // The one model setting a Bot carries into its own run. See RegisteredBuiltInAgent.effort.
+      effort: agentProfiles.effort,
     })
     .from(agents)
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))

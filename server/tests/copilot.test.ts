@@ -39,6 +39,9 @@ describe("registered Copilot agents", () => {
       type: "built_in",
       standing: standingRoleMessage(assistantRow).content,
       systemPrompt: "Be helpful.",
+      // A row that does not carry one — anything reading agents without selecting the column —
+      // lands on the same value the column defaults to, rather than on undefined.
+      effort: "balanced",
     });
     expect(
       registeredAgentFromRow({
@@ -85,17 +88,62 @@ describe("registered Copilot agents", () => {
     ).toMatchObject({ endpoint: "https://risk.internal:443/ag-ui" });
   });
 
+  const assistant = {
+    id: "general-assistant",
+    name: "General Assistant",
+    type: "built_in" as const,
+    standing: "You are General Assistant, Everyday work.",
+    systemPrompt: "Be helpful.",
+    effort: "balanced" as const,
+  };
+
   test("configures an OpenAI built-in agent", () => {
     expect(
       builtInAgentConfiguration(
-        {
-          id: "general-assistant",
-          name: "General Assistant",
-          type: "built_in",
-          standing: "You are General Assistant, Everyday work.",
-          systemPrompt: "Be helpful.",
-        },
-        { provider: "openai", defaultModel: "gpt-4.1" },
+        assistant,
+        { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
+        "openai-secret",
+      ),
+    ).toEqual({
+      model: "openai/gpt-4.1",
+      prompt: "You are General Assistant, Everyday work.\n\nBe helpful.",
+      apiKey: "openai-secret",
+      // `forceReasoning` too: without it the provider drops the effort for every model name it does
+      // not recognise, which includes the one this product actually serves. See the wire test.
+      providerOptions: {
+        openai: { reasoningEffort: "medium", forceReasoning: true },
+      },
+    });
+  });
+
+  test("carries the Bot's own effort into the call", () => {
+    // The three the schema names, in the words the provider uses. A person choosing between "low"
+    // and "high" is being asked to reason about somebody's API, so the translation happens here.
+    const effortOf = (effort: "quick" | "balanced" | "thorough") =>
+      (
+        builtInAgentConfiguration(
+          { ...assistant, effort },
+          { provider: "openai", defaultModel: "gpt-5", supportsEffort: true },
+          "openai-secret",
+        ) as { providerOptions?: { openai?: { reasoningEffort?: string } } }
+      ).providerOptions?.openai?.reasoningEffort;
+
+    expect(effortOf("quick")).toBe("low");
+    expect(effortOf("balanced")).toBe("medium");
+    expect(effortOf("thorough")).toBe("high");
+  });
+
+  test("sends nothing at all where the model takes no effort setting", () => {
+    /*
+     * The whole reason the flag exists. A model that does not reason answers a request carrying the
+     * parameter with a 400 on some providers and silence on others, so a Bot somebody set to
+     * "thorough" on a deployment running gpt-4.1 must send exactly what it sent before — not a
+     * default effort, not an empty object, nothing.
+     */
+    expect(
+      builtInAgentConfiguration(
+        { ...assistant, effort: "thorough" },
+        { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: false },
         "openai-secret",
       ),
     ).toEqual({
@@ -112,10 +160,12 @@ describe("registered Copilot agents", () => {
           id: "general-assistant",
           name: "General Assistant",
           type: "built_in",
+          standing: "You are General Assistant.",
           systemPrompt: "Be helpful.",
+          effort: "balanced",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       null,
     );
     const agent = agents["general-assistant"];
@@ -157,7 +207,7 @@ describe("registered Copilot agents", () => {
           endpoint: "http://risk.internal/ag-ui",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       "openai-secret",
     );
 
@@ -198,7 +248,7 @@ describe("registered Copilot agents", () => {
           endpoint: "http://risk.internal/ag-ui",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       "openai-secret",
       stallGuard,
     );
@@ -257,12 +307,12 @@ describe("registered Copilot agents", () => {
 
     const first = await resolveRuntimeAgents(
       async () => registered,
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       resolveModelApiKey,
     );
     const second = await resolveRuntimeAgents(
       async () => registered,
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       resolveModelApiKey,
     );
 
@@ -289,7 +339,7 @@ describe("registered Copilot agents", () => {
           endpoint: "http://risk.internal/ag-ui",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       async () => {
         resolverInvoked = true;
         throw new Error("corrupt model credential");
@@ -331,7 +381,7 @@ describe("standing agent roles", () => {
     await using endpoint = fakeAgUiEndpoint();
     const agents = buildAgents(
       [remoteAgent(endpoint.url)],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       null,
     );
 
@@ -355,7 +405,7 @@ describe("standing agent roles", () => {
     await using endpoint = fakeAgUiEndpoint();
     const agents = buildAgents(
       [remoteAgent(endpoint.url)],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       null,
     );
 
@@ -381,7 +431,7 @@ describe("standing agent roles", () => {
           reason: "Expense Manager has been deleted.",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       null,
     );
 
@@ -409,7 +459,7 @@ describe("standing agent roles", () => {
         seen.actors.push(actor);
         return [remoteAgent("http://coworker.internal/ag-ui")];
       },
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       async () => null,
     );
 
@@ -428,7 +478,7 @@ describe("standing agent roles", () => {
       async () => [
         remoteAgent("http://coworker.internal/ag-ui", { roleDescription }),
       ],
-      { provider: "openai", defaultModel: "gpt-4.1" },
+      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
       async () => null,
     );
     const request = new Request("http://openbot.test/api/copilotkit");

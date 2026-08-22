@@ -8,15 +8,22 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  AGENT_EFFORTS,
+  type AgentEffort,
+  effortLabel,
+} from "@/lib/agents/effort-label";
 import { agentInputFrom } from "@/lib/agents/form";
 import {
   deleteAgentMutationOptions,
   duplicateAgentMutationOptions,
+  setAgentEffortMutationOptions,
   setAgentHiddenMutationOptions,
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
 import { agentQueryOptions } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 
@@ -243,6 +250,11 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </p>
       ) : null}
 
+      {/* Above notifications: how the Bot works comes before how it reaches you. */}
+      {profile.canManage ? (
+        <EffortCard agentId={agentId} effort={profile.effort} />
+      ) : null}
+
       <NotifyCard
         agentId={agentId}
         name={profile.name}
@@ -347,6 +359,91 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * How hard this Bot thinks, and nothing else about the model.
+ *
+ * THE ONLY MODEL SETTING THERE IS. A list of model names asks somebody to know which of a dozen
+ * vendors' products is better at their particular job, and the honest answer changes every month;
+ * so the model is the deployment's decision, one for everybody, and what a person chooses is how
+ * long they are willing to wait. That is a question only they can answer, and the one that genuinely
+ * differs between "summarise this" and "work out what happened".
+ *
+ * Applied on the press, like the face and the notification switch, because it is a setting and not
+ * a draft. It goes through `/profile`, which merges into what is stored, so pressing it cannot
+ * overwrite something half-typed in the form above.
+ *
+ * NOT DRAWN AT ALL where the deployment's model takes no such setting. The alternative — showing it
+ * and quietly sending nothing — is a control that lies, and the person most likely to press it is
+ * the one who most wants it to work.
+ */
+function EffortCard({
+  agentId,
+  effort,
+}: {
+  agentId: string;
+  effort: AgentEffort;
+}) {
+  const queryClient = useQueryClient();
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const setEffort = useMutation(setAgentEffortMutationOptions(queryClient));
+  const labelId = useId();
+
+  if (user && !user.deployment.effort) return null;
+
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      {/*
+       * A fieldset, and `aria-pressed` on the buttons — the same grammar the face picker uses. One
+       * choice out of three, and a reader arriving on the middle button should hear which one is
+       * already made rather than three identical-sounding options.
+       */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="flex flex-col gap-0.5 pb-2">
+          <span className="font-medium text-base" id={labelId}>
+            {t("How hard it thinks")}
+          </span>
+          <span className="block text-muted-foreground text-sm">
+            {t("Thinking longer costs time. It is worth it on the hard ones.")}
+          </span>
+        </legend>
+        <div className="flex gap-1.5">
+          {AGENT_EFFORTS.map((option) => (
+            <Button
+              aria-pressed={option === effort}
+              /*
+               * `ring-2 ring-primary`, the same mark the face picker puts on the tile you chose.
+               * A tint was the first try and it did not read: on this ground `bg-foreground/5` is
+               * about two per cent of contrast, so the three buttons looked identical and only a
+               * screen reader was told which one was set — which is the wrong way round.
+               */
+              className={`flex-1 text-sm!${
+                option === effort
+                  ? " ring-2 ring-primary ring-offset-1 ring-offset-[var(--sand-fill-secondary)]"
+                  : ""
+              }`}
+              disabled={setEffort.isPending}
+              key={option}
+              onClick={() => {
+                if (option === effort) return;
+                setEffort.mutate({ agentId, effort: option });
+              }}
+              size="sm"
+              variant="outline"
+            >
+              {effortLabel(option)}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
+      {setEffort.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {setEffort.error.message}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
