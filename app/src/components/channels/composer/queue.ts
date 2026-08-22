@@ -101,18 +101,16 @@ export function reduceQueue(
         if (queue.length === 0) {
           return { queue, run: action.draft };
         }
-        return {
-          queue: [],
-          run: joinQueued([
-            ...queue,
-            {
-              id: action.id,
-              text: action.draft.text,
-              commandIds: [...action.draft.commandIds],
-              agentId: action.draft.agentId,
-            },
-          ]),
-        };
+        const [now, later] = drainable([
+          ...queue,
+          {
+            id: action.id,
+            text: action.draft.text,
+            commandIds: [...action.draft.commandIds],
+            agentId: action.draft.agentId,
+          },
+        ]);
+        return { queue: later, run: joinQueued(now) };
       }
       return {
         queue: [
@@ -132,7 +130,9 @@ export function reduceQueue(
       if (queue.length === 0) {
         return { queue, run: null };
       }
-      return { queue: [], run: joinQueued(queue) };
+      // Only what is addressed to one Bot drains now; the rest waits for the turn after.
+      const [now, later] = drainable(queue);
+      return { queue: later, run: joinQueued(now) };
     }
 
     case "remove": {
@@ -143,6 +143,30 @@ export function reduceQueue(
       };
     }
   }
+}
+
+/**
+ * The front of the queue that is addressed to ONE Bot, and whatever is left for the turn after.
+ *
+ * A message that names nobody belongs to the recipient in front of it — that is what a correction
+ * is. A message that names somebody ELSE starts a new turn: two colleagues asked in one breath are
+ * two questions, and joining them would put the first person's question in front of the second.
+ */
+function drainable(
+  queue: readonly QueuedMessage[],
+): [QueuedMessage[], QueuedMessage[]] {
+  let recipient: string | null = null;
+  for (const [at, message] of queue.entries()) {
+    if (!message.agentId) continue;
+    if (recipient === null) {
+      recipient = message.agentId;
+      continue;
+    }
+    if (message.agentId !== recipient) {
+      return [queue.slice(0, at), queue.slice(at)];
+    }
+  }
+  return [[...queue], []];
 }
 
 /**
@@ -159,14 +183,16 @@ function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
   return {
     text: queue.map((message) => message.text).join("\n"),
     /*
-     * THE LAST MENTION WINS, which is the rule `enforceSingleAgent` already applies inside one
-     * draft (draft.ts). Three corrections typed in three breaths are one instruction, and if the
-     * last of them named somebody, that is who the instruction is for — an earlier `@` in the same
-     * burst is a mind being changed, not a second recipient. Nothing named anywhere leaves it null
-     * and the room answers with whoever it was already asking.
+     * ONE RECIPIENT, AND `drainable` HAS ALREADY GUARANTEED IT.
+     *
+     * Three corrections typed in three breaths are one instruction, and a message with no `@` in
+     * that burst is part of the same thought — so the name anywhere in the slice is the name.
+     * Two DIFFERENT names are not: merging "@analyst check the numbers" with "@assistant book the
+     * room" would send both sentences to the assistant, which is the very thing `routeTo` refuses
+     * to do with a visible error. `drainable` splits the queue there, so this only ever joins
+     * messages meant for one recipient.
      */
-    agentId:
-      [...queue].reverse().find((message) => message.agentId)?.agentId ?? null,
+    agentId: queue.find((message) => message.agentId)?.agentId ?? null,
     // The same skill queued twice is still one instruction. Sending it twice would put the same
     // paragraph in front of the Bot two times and say nothing new by doing it.
     commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],

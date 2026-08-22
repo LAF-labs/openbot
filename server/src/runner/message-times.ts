@@ -19,20 +19,7 @@ export type MessageTimes = Record<string, string>;
 /** Message id to the id of the Bot that said it, for every message that carries one. */
 export type MessageSpeakers = Record<string, string>;
 
-export type ThreadMarks = {
-  times: MessageTimes;
-  speakers: MessageSpeakers;
-  /**
-   * Assistant messages the record does not name a Bot for.
-   *
-   * Listed rather than left to the caller to work out, because working it out needs the roles and
-   * the roles are only here. It is what a room with several Bots backfills: those rows were
-   * written when every group turn was pinned to the first member. A user's message is never in it
-   * — a person is not one of the Bots, and a speaker map that claimed otherwise would be a trap
-   * for whoever reads it next.
-   */
-  unattributed: string[];
-};
+export type ThreadMarks = { times: MessageTimes; speakers: MessageSpeakers };
 
 export function createMessageTimeReader(database: Database) {
   return async (threadId: string): Promise<ThreadMarks> => {
@@ -41,7 +28,7 @@ export function createMessageTimeReader(database: Database) {
       .from(lafThreadSnapshots)
       .where(eq(lafThreadSnapshots.threadId, threadId))
       .limit(1);
-    if (!row) return { times: {}, speakers: {}, unattributed: [] };
+    if (!row) return { times: {}, speakers: {} };
 
     /*
      * Anything that is not a stamped message is skipped rather than defaulted. A missing time makes
@@ -49,25 +36,20 @@ export function createMessageTimeReader(database: Database) {
      * said, and this column has held rows written before stamping existed.
      */
     const stored: unknown = row.messages;
-    if (!Array.isArray(stored)) {
-      return { times: {}, speakers: {}, unattributed: [] };
-    }
+    if (!Array.isArray(stored)) return { times: {}, speakers: {} };
     const times: MessageTimes = {};
     const speakers: MessageSpeakers = {};
-    const unattributed: string[] = [];
     for (const message of stored) {
       if (typeof message !== "object" || message === null) continue;
-      const { id, role, lafAt, lafAgentId } = message as {
+      const { id, lafAt, lafAgentId } = message as {
         id?: unknown;
-        role?: unknown;
         lafAt?: unknown;
         lafAgentId?: unknown;
       };
       if (typeof id !== "string") continue;
       if (typeof lafAt === "string") times[id] = lafAt;
       if (typeof lafAgentId === "string") speakers[id] = lafAgentId;
-      else if (role === "assistant") unattributed.push(id);
     }
-    return { times, speakers, unattributed };
+    return { times, speakers };
   };
 }

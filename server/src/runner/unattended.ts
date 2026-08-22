@@ -83,8 +83,6 @@ export type UnattendedRunResult = {
    * back to the last thing it did say, so a run that spoke at all never delivers blank.
    */
   answer: string;
-  /** Every tool the run used, in order, for the record the routine keeps. */
-  toolCalls: Array<{ name: string; ok: boolean }>;
   /** The turns, in order. The shape of the run: how many, how long, what each asked for. */
   steps: UnattendedStep[];
   /** The run stopped because something needs a person, and this is what. */
@@ -183,7 +181,6 @@ export async function runUnattended(
 ): Promise<UnattendedRunResult> {
   const deadline = Date.now() + options.timeoutMs;
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
-  const toolCalls: UnattendedRunResult["toolCalls"] = [];
   const steps: UnattendedStep[] = [];
   let awaiting: string | null = null;
 
@@ -275,10 +272,17 @@ export async function runUnattended(
     if (failure !== null) throw new RunFailed(failure, steps);
   };
 
-  const record = (name: string, ok: boolean) => {
-    toolCalls.push({ name, ok });
-    const step = steps.at(-1);
-    const call = step?.calls.find((entry) => entry.name === name && !entry.ok);
+  /**
+   * Mark the outcome of the call at `index` in the turn that just ran.
+   *
+   * BY INDEX, NOT BY NAME. Matching on the name found the first unresolved call with that name, so
+   * a model asking for `computer_navigate` twice — the first failing, the second succeeding — set
+   * the FAILED one to succeeded and left the successful one marked failed. The operator's run
+   * history then said the wrong page had loaded. `pending` and `step.calls` are built in the same
+   * order from the same messages, so the index is exact.
+   */
+  const record = (index: number, ok: boolean) => {
+    const call = steps.at(-1)?.calls[index];
     if (call) call.ok = ok;
   };
 
@@ -295,7 +299,7 @@ export async function runUnattended(
      */
     const outOfSteps = step === maxSteps;
 
-    for (const call of pending) {
+    for (const [index, call] of pending.entries()) {
       let outcome: ToolOutcome;
       if (outOfSteps) {
         outcome = {
@@ -308,7 +312,7 @@ export async function runUnattended(
           options.toolkit.execute(call.name, parseArgs(call.args)),
         );
       }
-      record(call.name, outcome.ok);
+      record(index, outcome.ok);
       if (outcome.awaitingApproval === true && awaiting === null) {
         awaiting = String(outcome.question ?? outcome.reason ?? "");
       }
@@ -333,7 +337,7 @@ export async function runUnattended(
        * answer holds all the way to the last message, whatever the model did with its last turn.
        */
       for (const call of unanswered(target.messages)) {
-        record(call.name, false);
+        // Answered so the thread has no dangling call, but NOT recorded: nothing was attempted.
         target.addMessage({
           id: randomUUID(),
           role: "tool",
@@ -355,7 +359,7 @@ export async function runUnattended(
     .filter(Boolean);
   const answer = said.at(-1) ?? "";
 
-  return { answer, toolCalls, steps, awaiting };
+  return { answer, steps, awaiting };
 }
 
 /* ------------------------------------------------------------------------------------------ */

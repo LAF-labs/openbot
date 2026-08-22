@@ -37,8 +37,24 @@ export function plainTextOf(markdown: string): string {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point.
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]+/g;
 
+/**
+ * How much of the text is worth stripping marks off.
+ *
+ * CUT FIRST, THEN STRIP, and the order is the whole point. `plainTextOf` runs several regexes with
+ * a lazy inner match; on adversarial input — a line of ` _aaaa…` repeated — every mark start opens
+ * a scan to end-of-line for a closer that never comes, and the cost is quadratic in the length.
+ * Measured on this machine before the cut: 21 KB took 29 ms, 42 KB took 73 ms, 85 KB took 275 ms,
+ * and the activity route accepted a megabyte. That is one request holding the whole process, which
+ * on a single-process server is every other tenant's request too.
+ *
+ * Four times the visible length is the headroom: stripping only ever shortens, so the 200 code
+ * points that survive are drawn from a window no honest preview could exhaust.
+ */
+const STRIP_WINDOW = MAX_ACTIVITY_CODE_POINTS * 4;
+
 export function previewOf(text: string): string {
-  const flattened = plainTextOf(text).replace(CONTROL_CHARACTERS, " ").trim();
+  const window = Array.from(text).slice(0, STRIP_WINDOW).join("");
+  const flattened = plainTextOf(window).replace(CONTROL_CHARACTERS, " ").trim();
   const collapsed = flattened.replace(/\s+/g, " ");
   const codePoints = Array.from(collapsed);
   if (codePoints.length <= MAX_ACTIVITY_CODE_POINTS) return collapsed;

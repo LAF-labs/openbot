@@ -131,7 +131,6 @@ export function createApp(
   messageTimeReader?: (threadId: string) => Promise<{
     times: Record<string, string>;
     speakers: Record<string, string>;
-    unattributed: string[];
   }>,
   /** Which of a person's Bots are mid-run, for the roster. Absent answers "none". */
   readWorking?: (userId: string) => Promise<

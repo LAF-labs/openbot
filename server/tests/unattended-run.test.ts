@@ -124,7 +124,6 @@ describe("an unattended run", () => {
       title: "Example Domain",
     });
     expect(result.answer).toBe("The page says Example Domain.");
-    expect(result.toolCalls).toEqual([{ name: "computer_navigate", ok: true }]);
     expect(result.awaiting).toBeNull();
     expect(agent.runs).toBe(2);
   });
@@ -158,7 +157,7 @@ describe("an unattended run", () => {
       timeoutMs: 5_000,
     });
     expect(result.awaiting).toBe("Open bank.example?");
-    expect(result.toolCalls).toEqual([
+    expect(result.steps[0]?.calls).toEqual([
       { name: "computer_navigate", ok: false },
     ]);
   });
@@ -193,7 +192,15 @@ describe("an unattended run", () => {
         .map((m) => (m as { toolCallId: string }).toolCallId),
     );
     expect(calls.every((id) => answered.has(id))).toBe(true);
-    expect(result.toolCalls.at(-1)?.ok).toBe(false);
+    /*
+     * A step lists what its turn ASKED for and whether each ask went through. The last turn is the
+     * tool-less one after the budget: it asked, nothing was executed, and every call reads as not
+     * gone through — which is the honest record, and the reason the run's flat "tools used" list
+     * was deleted rather than fixed. That list claimed these had been used.
+     */
+    const last = result.steps.at(-1)?.calls ?? [];
+    expect(last.length).toBeGreaterThan(0);
+    expect(last.every((call) => !call.ok)).toBe(true);
   });
 
   test("gives up at the deadline rather than running all night", async () => {
@@ -388,7 +395,9 @@ describe("what the run reports", () => {
       timeoutMs: 5_000,
     });
     expect(run.answer).toBe("Opening it.");
-    expect(run.toolCalls.every((entry) => !entry.ok)).toBe(true);
+    expect(run.steps.flatMap((step) => step.calls).every((c) => !c.ok)).toBe(
+      true,
+    );
     expect(run.steps[1]?.calls).toEqual([
       { name: "computer_navigate", ok: false },
     ]);

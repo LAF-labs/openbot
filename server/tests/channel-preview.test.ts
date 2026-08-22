@@ -2,6 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { plainTextOf, previewOf } from "../src/channels/preview";
 
 describe("the roster preview of a markdown answer", () => {
+  test("a long body costs the same as a short one", () => {
+    /*
+     * The marks come off a WINDOW, not the whole text. Stripping runs regexes with a lazy inner
+     * match, so on a line of ` _aaaa…` every mark start opens a scan to end-of-line for a closer
+     * that never comes: measured before the window, 21 KB took 29 ms and 85 KB took 275 ms, and
+     * the route accepted a megabyte. One request held the whole process.
+     */
+    const nasty = ` _${"a".repeat(20)}`.repeat(20_000);
+    const started = performance.now();
+    previewOf(nasty);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   test("loses the marks and keeps the words", () => {
     expect(
       previewOf(

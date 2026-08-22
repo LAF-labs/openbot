@@ -565,6 +565,9 @@ function isChannelInputObject(input: unknown): input is ChannelInputObject {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
+/** As much reported text as any real message has, and far less than a request built to cost. */
+const MAX_ACTIVITY_TEXT = 100_000;
+
 type ActivityInputParseResult =
   | { ok: true; value: ChannelActivity }
   | { ok: false; error: string };
@@ -583,6 +586,15 @@ export function parseActivityInput(input: unknown): ActivityInputParseResult {
 
   if (typeof object.text !== "string" || object.text.trim().length === 0) {
     return { ok: false, error: "Text is required." };
+  }
+  /*
+   * BOUNDED, because nothing else here is. Only a preview of this is ever stored, so a caller
+   * sending a megabyte is not sending anything anybody will read — but the server still has to
+   * receive it, parse it and run a preview over it. The limit is generous against any real message
+   * and small against a request built to cost something.
+   */
+  if (object.text.length > MAX_ACTIVITY_TEXT) {
+    return { ok: false, error: "That message is too long to report." };
   }
   if (object.agentId !== null && typeof object.agentId !== "string") {
     return { ok: false, error: "Agent ID must be a string or null." };
@@ -619,7 +631,6 @@ export function createChannelRoutes(
   readMessageTimes?: (threadId: string) => Promise<{
     times: Record<string, string>;
     speakers: Record<string, string>;
-    unattributed: string[];
   }>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -751,7 +762,7 @@ export function createChannelRoutes(
       if (!channel) return context.json({ error: "Channel not found." }, 404);
       const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
-        : { times: {}, speakers: {}, unattributed: [] };
+        : { times: {}, speakers: {} };
       const newest = Object.values(marks.times)
         .map((iso) => new Date(iso).getTime())
         .filter((value) => !Number.isNaN(value))
@@ -791,23 +802,16 @@ export function createChannelRoutes(
       }
       const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
-        : { times: {}, speakers: {}, unattributed: [] };
+        : { times: {}, speakers: {} };
       /*
-       * ONE BACKFILL, FOR ROWS WRITTEN BEFORE SPEAKERS WERE RECORDED, AND ONLY WHERE IT IS A FACT.
-       *
-       * In a room with several Bots, every turn used to be pinned to `agentIds[0]` — the client
-       * had no way to run any other — and a routine only ever delivers into a Bot's own solo room.
-       * So an assistant message in a group room that carries no speaker was said by the first
-       * member: that is what the old code did, not a guess about what it might have done. It stops
-       * applying the moment a message carries its own, which every message written from here on
-       * does.
+       * No backfill for rows written before speakers were recorded. It used to fill them in with
+       * the room's first member — true of how the old code ran, but recomputed on every request
+       * against the CURRENT membership, so adding a Bot whose id sorts first relabelled the whole
+       * pre-attribution history to somebody who was not in the room when it was said. `attribute()`
+       * refuses to guess a speaker for exactly this reason; this now refuses too, and an old
+       * message simply carries no name.
        */
-      const speakers = { ...marks.speakers };
-      const first = channel.agentIds[0];
-      if (channel.agentIds.length > 1 && first) {
-        for (const id of marks.unattributed) speakers[id] = first;
-      }
-      return context.json({ times: marks.times, speakers });
+      return context.json({ times: marks.times, speakers: marks.speakers });
     } catch (error) {
       return mapStoreError(context, error);
     }

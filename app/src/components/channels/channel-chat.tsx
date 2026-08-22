@@ -50,6 +50,15 @@ const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
  */
 const SWAP_TIMEOUT_MS = 5000;
 
+/**
+ * How the room note is recognised again on the next turn, so the old copy can be taken out.
+ *
+ * A marker rather than matching the sentence, because the sentence carries names and a language:
+ * renaming a Bot or switching to Korean would otherwise leave the previous copies unmatched and
+ * accumulating, which is the exact failure this exists to end.
+ */
+const ROOM_NOTE_PREFIX = "[room] ";
+
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
@@ -81,6 +90,9 @@ export function ChannelChat({
    */
   const [speakingAgentId, setSpeakingAgentId] = useState(defaultAgentId);
   const runtimeAgentId = speakingAgentId;
+  /** Something arrived while the Bot had the turn; show it once the turn is over. */
+  const missedWhileBusy = useRef(false);
+
   /** Read by `say`, which runs between renders and must not see the previous target. */
   const speakingRef = useRef(speakingAgentId);
   speakingRef.current = speakingAgentId;
@@ -189,7 +201,11 @@ export function ChannelChat({
       if (agent.messages.length === 0) agent.setMessages(carried.current);
       carried.current = null;
     }
-    openSwapGate.current();
+    // Fired once, then forgotten: this effect also runs on reconnects and on later swaps, and a
+    // resolver left in place is one that gets called again for a wait that ended long ago.
+    const open = openSwapGate.current;
+    openSwapGate.current = () => {};
+    open();
   }, [agent, isReady]);
 
   /**
@@ -274,34 +290,53 @@ export function ChannelChat({
    * screen does not is appended. Not while this person's own turn is in flight: that reply is
    * already streaming in, and the fetch would race it for the same message.
    */
+  /**
+   * Fetch the thread and append whatever it holds that this screen does not.
+   *
+   * Bound to the agent instance it started with: a swap tears this effect down while the fetch is
+   * still out, and setting messages on an unregistered proxy writes them into nothing at all —
+   * silently, which is how it would have stayed.
+   */
+  const catchUp = useCallback(async () => {
+    const bound = agentRef.current;
+    const stored = await loadThreadHistory(channel.threadId, runtimeAgentId);
+    // Unreadable: the next open of the room shows it; nothing here is worth a banner.
+    if (!stored || bound !== agentRef.current) return;
+    const seen = new Set(bound.messages.map((message) => message.id));
+    const missing = stored.filter((message) => !seen.has(message.id));
+    if (missing.length === 0) return;
+    bound.setMessages([...bound.messages, ...missing]);
+    void refreshTimesRef.current();
+    // Read, because it is on the screen in front of them.
+    void markRead
+      .current({ channelId: channel.id, read: true })
+      .catch(() => {});
+  }, [channel.id, channel.threadId, runtimeAgentId]);
+  const catchUpRef = useRef(catchUp);
+  catchUpRef.current = catchUp;
+
   useEffect(() => {
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ChannelActivity>).detail;
       if (activity.channelId !== channel.id) return;
       if (!activity.lastMessageAgentId) return;
-      if (awaitingReply.current || agent.isRunning) return;
-      void (async () => {
-        const stored = await loadThreadHistory(
-          channel.threadId,
-          runtimeAgentId,
-        );
-        // Unreadable: the next open of the room shows it; nothing here is worth a banner.
-        if (!stored) return;
-        const seen = new Set(agent.messages.map((message) => message.id));
-        const missing = stored.filter((message) => !seen.has(message.id));
-        if (missing.length === 0) return;
-        agent.setMessages([...agent.messages, ...missing]);
-        void refreshTimesRef.current();
-        // Read, because it is on the screen in front of them.
-        void markRead
-          .current({ channelId: channel.id, read: true })
-          .catch(() => {});
-      })();
+      /*
+       * PARKED, not dropped, while this person's own turn is in flight. That reply is already
+       * streaming in and the fetch would race it for the same message — but the event is the only
+       * news that anything else arrived, and discarding it left a routine's answer sitting in
+       * Postgres, invisible on an open screen until somebody navigated away and back.
+       */
+      if (awaitingReply.current || agent.isRunning) {
+        missedWhileBusy.current = true;
+        return;
+      }
+      void catchUpRef.current();
     };
+
     channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
     return () =>
       channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
-  }, [agent, channel.id, channel.threadId, runtimeAgentId]);
+  }, [agent, channel.id]);
 
   // Tool calls from this conversation act on this coworker's own computer.
   useActiveBot(runtimeAgentId);
@@ -392,6 +427,29 @@ export function ChannelChat({
      * `transcriptMessages` draws user and assistant turns, so this never appears on screen — the
      * chip is what says a skill was used, and it stays visible in the message they sent.
      */
+    /*
+     * ONE COPY, AT THE END. The room note is a property of the TURN, not of the transcript, and
+     * `addMessage` puts it in the thread — which the runner persists and `mergeKeepingStoredOnly`
+     * then re-inserts even if a client drops it. Bounding it to "only when a colleague has spoken"
+     * bounded nothing: in a two-Bot room that is true permanently from the second Bot's first
+     * sentence, so fifty turns left fifty identical system messages, all stored and all shipped to
+     * the provider on every request. Prior copies come off first.
+     */
+    const notes = skillInstructions.filter((instruction) =>
+      instruction.startsWith(ROOM_NOTE_PREFIX),
+    );
+    if (notes.length > 0) {
+      const kept = agent.messages.filter(
+        (message) =>
+          message.role !== "system" ||
+          typeof message.content !== "string" ||
+          !message.content.startsWith(ROOM_NOTE_PREFIX),
+      );
+      if (kept.length !== agent.messages.length) {
+        agent.setMessages(kept as typeof agent.messages);
+      }
+    }
+
     for (const instruction of skillInstructions) {
       agent.addMessage({
         content: instruction,
@@ -448,7 +506,7 @@ export function ChannelChat({
          * and the transcript would have every reason to believe it had been asked of the right one.
          */
         setRunError(
-          t("{name} could not be reached, so nothing was sent.", {
+          t("{name} did not pick up in time. Nothing was sent — try again.", {
             name:
               agentProfiles?.find((profile) => profile.id === target)?.name ??
               String(target),
@@ -494,13 +552,13 @@ export function ChannelChat({
       swapGate.current,
       new Promise((resolve) => setTimeout(resolve, SWAP_TIMEOUT_MS)),
     ]);
-    if (!landed) {
-      // Put it back, so the next message goes where the room was actually left pointing.
-      speakingRef.current = channel.agentIds.includes(speakingAgentId)
-        ? speakingAgentId
-        : defaultAgentId;
-      carried.current = null;
-    }
+    /*
+     * NOTHING IS UNWOUND ON A TIMEOUT, and the previous attempt to unwind was worse than the wait.
+     * It reset the ref that the very next render overwrites from state, left the room pointed at
+     * the Bot the app had just said it could not reach, and dropped the carried history so the
+     * swap — which does still land, a moment later — came up with an empty transcript. The swap is
+     * kept; only the message is withheld, and the person is told to try again.
+     */
     return landed;
   };
 
@@ -535,6 +593,11 @@ export function ChannelChat({
         if (content) reportRef.current(content, runtimeAgentId);
         // The turn's messages have stamps now; this is the only thing that asks for them.
         void refreshTimesRef.current();
+        // And anything that landed while the Bot had the turn, which was parked rather than shown.
+        if (missedWhileBusy.current) {
+          missedWhileBusy.current = false;
+          void catchUpRef.current();
+        }
         /*
          * And the room is read again. The mark was set when the room opened; a reply that landed
          * while the person sat watching it is newer than that mark, so on leaving, the roster
@@ -627,10 +690,14 @@ export function ChannelChat({
     const nameOf = (id: string) =>
       agentProfiles?.find((profile) => profile.id === id)?.name ?? id;
     return [
-      t(
-        "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.",
-        { me: nameOf(target), roster: channel.agentIds.map(nameOf).join(", ") },
-      ),
+      ROOM_NOTE_PREFIX +
+        t(
+          "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.",
+          {
+            me: nameOf(target),
+            roster: channel.agentIds.map(nameOf).join(", "),
+          },
+        ),
     ];
   };
 

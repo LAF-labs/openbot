@@ -140,13 +140,22 @@ describe("settling", () => {
     );
   });
 
-  test("the last mention in a burst wins, the way it does inside one draft", () => {
+  test("two colleagues asked in one breath are two turns, not one merged turn", () => {
+    /*
+     * `routeTo` refuses, with a visible error, to send a message to a Bot other than the one it
+     * named. Joining these would have done exactly that: both sentences to whoever came last.
+     */
     let queue = park([], "one", "@Knowledge check that", [], "knowledge");
-    queue = park(queue, "two", "actually @Risk should", [], "risk-analyst");
+    queue = park(queue, "two", "@Risk take a look", [], "risk-analyst");
 
-    expect(reduceQueue(queue, { type: "settle" }).run?.agentId).toBe(
-      "risk-analyst",
-    );
+    const first = reduceQueue(queue, { type: "settle" });
+    expect(first.run?.agentId).toBe("knowledge");
+    expect(first.run?.text).toBe("@Knowledge check that");
+    expect(first.queue).toHaveLength(1);
+
+    const second = reduceQueue(first.queue, { type: "settle" });
+    expect(second.run?.agentId).toBe("risk-analyst");
+    expect(second.run?.text).toBe("@Risk take a look");
   });
 
   test("naming nobody leaves the room asking whoever it was already asking", () => {

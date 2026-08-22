@@ -12,7 +12,7 @@
  * against the chat thread would double the cost and could answer differently the second time.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   CHANNEL_ACTIVITY_TOPIC,
   type ChannelActivityEvent,
@@ -184,16 +184,44 @@ export function createRoutineDelivery(
      * set is what makes the room count as unread — an answer nobody has read yet is exactly the
      * state the unread dot exists for.
      */
+    /*
+     * POSTGRES' CLOCK AND THE SAME FORWARD-ONLY GUARD THE OTHER WRITER USES.
+     *
+     * This is the second thing that writes `last_message_at`, and it was writing Bun's clock —
+     * measured ~66 ms behind Postgres on this machine — with no ordering guard at all. A message a
+     * person sent (stamped by `recordActivity` with Postgres `now()`) followed 50 ms later by a
+     * delivery would be overwritten by a time EARLIER than itself, and `unread` is
+     * `last_message_at > last_read_at`: the room could fail to go unread for the delivery and sort
+     * below where it belongs. Same clock, same `lt` guard, so the two writers cannot disagree.
+     */
     const [row] = await database
       .update(channels)
       .set({
         lastMessage: previewOf(delivery.answer),
-        lastMessageAt: delivery.at,
+        lastMessageAt: sql`now()`,
         lastMessageAgentId: delivery.agentId,
-        updatedAt: delivery.at,
+        updatedAt: sql`now()`,
       })
-      .where(eq(channels.id, target.channelId))
-      .returning({ name: channels.name, lastMessage: channels.lastMessage });
+      .where(
+        and(
+          eq(channels.id, target.channelId),
+          or(
+            isNull(channels.lastMessageAt),
+            lt(channels.lastMessageAt, sql`now()`),
+          ),
+        ),
+      )
+      .returning({
+        name: channels.name,
+        lastMessage: channels.lastMessage,
+        lastMessageAt: channels.lastMessageAt,
+      });
+    /*
+     * Nothing moved, which means something newer is already there. The message itself is in the
+     * thread — it was appended above, atomically — so the transcript has it and the roster row is
+     * already showing something more recent. Announcing a stale preview would be the news going
+     * backwards on every open tab.
+     */
     if (!row) return;
 
     /*
@@ -211,7 +239,8 @@ export function createRoutineDelivery(
       memberIds: members.map((member) => member.userId),
       name: row.name,
       lastMessage: row.lastMessage,
-      lastMessageAt: at,
+      // The time that was WRITTEN, on the database's clock, not the one this process guessed.
+      lastMessageAt: (row.lastMessageAt ?? delivery.at).toISOString(),
       lastMessageAgentId: delivery.agentId,
     };
     await database.execute(
