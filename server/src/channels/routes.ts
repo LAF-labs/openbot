@@ -402,6 +402,14 @@ export function createChannelStore(
     },
 
     recordActivity(actor, channelId, activity) {
+      /*
+       * Clamped to the server's clock. The browser says when it saw the message because only it
+       * knows that, but a browser whose clock runs ahead would write a `last_message_at` in the
+       * future — and then no read mark set by this server could ever pass it, so the room would
+       * stay unread however often it was opened. Earlier is honest; later is impossible.
+       */
+      const now = new Date();
+      const at = activity.at > now ? now : activity.at;
       return database.transaction(
         async (transaction) => {
           const [membership] = await transaction
@@ -445,7 +453,7 @@ export function createChannelStore(
             .update(channels)
             .set({
               lastMessage,
-              lastMessageAt: activity.at,
+              lastMessageAt: at,
               lastMessageAgentId: activity.agentId,
               updatedAt: new Date(),
             })
@@ -454,7 +462,7 @@ export function createChannelStore(
                 eq(channels.id, channelId),
                 or(
                   isNull(channels.lastMessageAt),
-                  lt(channels.lastMessageAt, activity.at),
+                  lt(channels.lastMessageAt, at),
                 ),
               ),
             )
@@ -680,13 +688,21 @@ export function createChannelRoutes(
     try {
       const channelId = context.req.param("channelId");
       if (read) {
+        const readAt = new Date();
         const { previous } = await store.setLastRead(
           context.var.actor,
           channelId,
-          new Date(),
+          readAt,
         );
+        /*
+         * Both ends of the unread window, on the server's clock — the clock the message stamps
+         * are on. `previousReadAt` is where the reading stopped; `readAt` is where it resumed. A
+         * reply that lands AFTER `readAt` was watched arrive, and a line drawn above it would tell
+         * the person they had missed the thing they just read.
+         */
         return context.json({
           previousReadAt: previous?.toISOString() ?? null,
+          readAt: readAt.toISOString(),
         });
       }
       /*
@@ -710,12 +726,16 @@ export function createChannelRoutes(
         .map((iso) => new Date(iso).getTime())
         .filter((value) => !Number.isNaN(value))
         .reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
+      const mark = Number.isFinite(newest) ? new Date(newest - 1) : null;
       const { previous } = await store.setLastRead(
         context.var.actor,
         channelId,
-        Number.isFinite(newest) ? new Date(newest - 1) : null,
+        mark,
       );
-      return context.json({ previousReadAt: previous?.toISOString() ?? null });
+      return context.json({
+        previousReadAt: previous?.toISOString() ?? null,
+        readAt: mark?.toISOString() ?? null,
+      });
     } catch (error) {
       return mapStoreError(context, error);
     }

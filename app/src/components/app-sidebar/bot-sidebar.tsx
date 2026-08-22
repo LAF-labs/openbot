@@ -18,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
-import { channelListQueryOptions } from "@/lib/channels/queries";
+import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
 
@@ -250,7 +250,17 @@ export function BotSidebar() {
         unread: boolean;
       }
     >();
-    for (const channel of channels.data ?? []) {
+    /*
+     * THE OLDEST solo channel is the Bot's conversation — the same rule `create` uses on the
+     * server, which is what the Home screen and the compose screen send through. The list arrives
+     * newest-first, so taking the first match picked the NEWEST, and on an account with legacy
+     * duplicates (every early send minted a channel) the roster row and the composer were two
+     * different conversations with one colleague.
+     */
+    const oldestFirst = [...(channels.data ?? [])].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    );
+    for (const channel of oldestFirst) {
       if (channel.agentIds.length !== 1) continue;
       const agentId = channel.agentIds[0];
       if (!agentId || byAgent.has(agentId)) continue;
@@ -302,6 +312,25 @@ export function BotSidebar() {
         unread: channel.unread,
       }));
   }, [channels.data, query]);
+
+  /*
+   * A run ending is the moment a routine's answer lands in a room, and nothing pushes that to the
+   * browser — the socket carries only what a browser reported. The working poll already notices
+   * the run end; this turns that into a roster refresh, so the delivered answer and its unread dot
+   * appear within a poll interval rather than whenever the list next happens to refetch.
+   */
+  const workingIds = (working.data ?? []).map((run) => run.agentId).join(",");
+  const previousWorkingIds = useRef(workingIds);
+  useEffect(() => {
+    const before = new Set(
+      previousWorkingIds.current.split(",").filter(Boolean),
+    );
+    const after = new Set(workingIds.split(",").filter(Boolean));
+    previousWorkingIds.current = workingIds;
+    if ([...before].some((id) => !after.has(id))) {
+      void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+    }
+  }, [workingIds, queryClient]);
 
   /** Bot id to what it is doing, so a row is one map lookup rather than a scan per render. */
   const workingByAgent = useMemo(() => {

@@ -194,7 +194,7 @@ export const ko: Record<string, string> = {
   Gorilla: "고릴라",
   "Granted to this Bot": "이 봇에게 부여됨",
   "Helping another Bot": "다른 봇을 돕는 중",
-  "Hidden": "숨김",
+  Hidden: "숨김",
   "Hidden from your agents list. This changes nothing for anyone else.":
     "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
@@ -376,7 +376,7 @@ export const ko: Record<string, string> = {
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
   "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
     "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 어시스턴트도 받지 않습니다.",
-  "Time": "시각",
+  Time: "시각",
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
   Toast: "식빵",
@@ -389,7 +389,7 @@ export const ko: Record<string, string> = {
   "Unhiding…": "해제 중…",
   Unpin: "고정 해제",
   "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
-  "Unread": "읽지 않음",
+  Unread: "읽지 않음",
   "Waiting for your answer": "답변을 기다리는 중",
   "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",
   "Watch this Bot's screen": "이 봇의 화면 보기",

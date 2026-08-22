@@ -104,10 +104,10 @@ html {
   --sand-fill-bubble-user: #070707;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #0c64c1;
-  --sand-shadow-composer: 0 2px 8px -1px #0000000d, 0 1px 2px #00000008,
-    0 0 0 1px #e4e4e40a;
-  --sand-shadow-popover: 0 10px 20px -3px #0000001a, 0 4px 6px -4px #0000001a,
-    0 0 0 1px #e4e4e40a;
+  --sand-shadow-composer:
+    0 2px 8px -1px #0000000d, 0 1px 2px #00000008, 0 0 0 1px #e4e4e40a;
+  --sand-shadow-popover:
+    0 10px 20px -3px #0000001a, 0 4px 6px -4px #0000001a, 0 0 0 1px #e4e4e40a;
 
   /* ---- geometry, identical on web and desktop ---- */
   --sand-hairline: 0.5px;

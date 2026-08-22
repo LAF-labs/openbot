@@ -20,7 +20,7 @@ import {
 export function ConversationView({
   messages,
   messageTimes,
-  readUpTo,
+  readWindow,
   busy = false,
   notice,
   agents = [],
@@ -37,8 +37,8 @@ export function ConversationView({
   messages: readonly Message[];
   /** Message id to ISO-8601, for the transcript's time separators. */
   messageTimes?: Readonly<Record<string, string>>;
-  /** ISO-8601 of where this person's reading stopped, for the "unread from here" line. */
-  readUpTo?: string;
+  /** Where this person's reading stopped and resumed (ISO-8601), for the "unread" line. */
+  readWindow?: { from: string; until: string };
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
@@ -233,7 +233,7 @@ export function ConversationView({
             .join(",")}
           messages={messages}
           {...(messageTimes ? { messageTimes } : {})}
-          {...(readUpTo ? { readUpTo } : {})}
+          {...(readWindow ? { readWindow } : {})}
           onRemoveQueued={(id) => {
             apply({ id, type: "remove" });
           }}

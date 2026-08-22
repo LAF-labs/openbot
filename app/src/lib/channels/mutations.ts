@@ -71,7 +71,7 @@ export function setChannelReadMutationOptions(queryClient: QueryClient) {
     mutationFn: async (variables: {
       channelId: string;
       read: boolean;
-    }): Promise<{ previousReadAt: string | null }> => {
+    }): Promise<{ previousReadAt: string | null; readAt: string | null }> => {
       const response = await fetch(
         `/api/channels/${encodeURIComponent(variables.channelId)}/read`,
         {
@@ -82,7 +82,10 @@ export function setChannelReadMutationOptions(queryClient: QueryClient) {
         },
       );
       if (!response.ok) throw new Error("Could not update the read mark");
-      return (await response.json()) as { previousReadAt: string | null };
+      return (await response.json()) as {
+        previousReadAt: string | null;
+        readAt: string | null;
+      };
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: channelKeys.list() }),

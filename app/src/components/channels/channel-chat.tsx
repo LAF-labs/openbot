@@ -4,11 +4,7 @@ import {
   useAgent,
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -69,13 +65,17 @@ export function ChannelChat({
    * "unread from here" line — the write destroys it, so a second request to read it would be a
    * race with this one by construction.
    *
-   * `readUpTo` is state and never re-derived: the line has to stay where it was when the room was
+   * `readWindow` is state and never re-derived: the line has to stay where it was when the room was
    * opened. Recomputing it as replies arrive would walk it down the transcript, always sitting
    * above the newest message, which is not a mark of what you had seen — it is just a decoration
    * that follows the scroll.
    */
   const setRead = useMutation(setChannelReadMutationOptions(queryClient));
-  const [readUpTo, setReadUpTo] = useState<string | null>(null);
+  /** Where the reading stopped and where it resumed, both on the server's clock. */
+  const [readWindow, setReadWindow] = useState<{
+    from: string;
+    until: string;
+  } | null>(null);
   const markRead = useRef(setRead.mutateAsync);
   markRead.current = setRead.mutateAsync;
   /*
@@ -97,7 +97,11 @@ export function ChannelChat({
     marked.current = channel.id;
     void markRead
       .current({ channelId: channel.id, read: true })
-      .then((result) => setReadUpTo(result.previousReadAt))
+      .then((result) => {
+        if (result.previousReadAt && result.readAt) {
+          setReadWindow({ from: result.previousReadAt, until: result.readAt });
+        }
+      })
       .catch(() => {
         // A room that cannot be marked read is still a readable room.
       });
@@ -346,6 +350,15 @@ export function ChannelChat({
         if (content) reportRef.current(content, runtimeAgentId);
         // The turn's messages have stamps now; this is the only thing that asks for them.
         void refreshTimesRef.current();
+        /*
+         * And the room is read again. The mark was set when the room opened; a reply that landed
+         * while the person sat watching it is newer than that mark, so on leaving, the roster
+         * flagged as unread the one reply they had just read. The previous mark is deliberately
+         * not captured here — the line stays where the person's reading actually started.
+         */
+        void markRead
+          .current({ channelId: channel.id, read: true })
+          .catch(() => {});
       },
     });
     return () => subscription?.unsubscribe();
@@ -427,7 +440,7 @@ export function ChannelChat({
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
         messageTimes={messageTimes}
-        {...(readUpTo ? { readUpTo } : {})}
+        {...(readWindow ? { readWindow } : {})}
         messages={transcriptMessages(agent.messages, seed)}
         notice={
           channel.active ? null : (

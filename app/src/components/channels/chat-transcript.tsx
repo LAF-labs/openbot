@@ -28,11 +28,11 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from "@/components/ui/message-scroller";
+import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
+import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
-import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
-import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -45,8 +45,12 @@ type ChatTranscriptProps = {
   messages: ReadonlyArray<Readonly<Message>>;
   /** Message id to ISO-8601, for the time separators. Empty draws none. */
   messageTimes?: Readonly<Record<string, string>>;
-  /** Where this person's reading stopped, ISO-8601. Absent draws no unread line. */
-  readUpTo?: string;
+  /**
+   * Where this person's reading stopped and where it resumed, ISO-8601, both on the server's
+   * clock. The line goes above the first Bot message inside that window — and only inside it: a
+   * reply that arrives after `until` was watched arrive, and is not something anybody missed.
+   */
+  readWindow?: { from: string; until: string };
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -642,7 +646,7 @@ export function ChatTranscript({
   commandNames = "",
   messageTimes = EMPTY_TIMES,
   messages,
-  readUpTo,
+  readWindow,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   stopped,
@@ -741,10 +745,15 @@ export function ChatTranscript({
    *
    * Only one, and only on a Bot's message: the line answers "what did I miss", and your own
    * messages are not something you can have missed. It is computed here rather than tracked,
-   * because `readUpTo` is frozen at the moment the room opened; a reply arriving now falls below a
+   * because `readWindow` is frozen at the moment the room opened; a reply arriving now falls below a
    * line that does not move.
    */
-  const readMark = readUpTo ? new Date(readUpTo).getTime() : Number.NaN;
+  const readMark = readWindow
+    ? new Date(readWindow.from).getTime()
+    : Number.NaN;
+  const readUntil = readWindow
+    ? new Date(readWindow.until).getTime()
+    : Number.NaN;
   let firstUnreadId: string | null = null;
   for (const item of items) {
     if (item.kind !== "text" || !item.at) continue;
@@ -756,7 +765,8 @@ export function ChatTranscript({
       firstUnreadId === null &&
       item.role === "assistant" &&
       !Number.isNaN(readMark) &&
-      at.getTime() > readMark
+      at.getTime() > readMark &&
+      at.getTime() <= readUntil
     ) {
       firstUnreadId = item.id;
     }

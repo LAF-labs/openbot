@@ -71,6 +71,7 @@ async function soloChannelFor(
         select count(*) from ${channelAgents}
         where ${channelAgents.channelId} = ${channels.id}
       )`,
+      createdAt: channels.createdAt,
     })
     .from(channels)
     .innerJoin(
@@ -82,7 +83,10 @@ async function soloChannelFor(
     )
     .where(inArray(channels.id, mine));
 
-  const solo = rows.find((row) => Number(row.members) === 1);
+  // The OLDEST solo channel, which is the rule `channels.create` resolves by and the roster follows.
+  const solo = rows
+    .filter((row) => Number(row.members) === 1)
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
   return solo ? { channelId: solo.channelId, threadId: solo.threadId } : null;
 }
 

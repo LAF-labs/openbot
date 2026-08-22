@@ -2,8 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  Mascot,
   MASCOT_TILES,
+  Mascot,
   mascotBackground,
 } from "@/components/agents/mascot";
 import { Button } from "@/components/ui/button";

@@ -95,6 +95,16 @@ export function useChannelEvents() {
               : next;
           },
         );
+
+        /*
+         * The event carries what was said, not whether THIS person has read it — the read mark is
+         * per member and only the server holds it. Patching the row above keeps the preview and
+         * the order live; this refetch is what lets a Bot's reply in another room turn its row
+         * bold. A person's own message never needs it: a room is not unread for what you said.
+         */
+        if (activity.lastMessageAgentId) {
+          void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+        }
       };
 
       // WebSocket needs explicit reconnect handling.
