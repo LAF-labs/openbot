@@ -334,7 +334,9 @@ describe("a webhook firing a routine", () => {
       routine.triggerToken,
       '{"review":"별점 1점"}',
     );
-    expect(outcome).toEqual({ ran: true });
+    expect(outcome.ran).toBe(true);
+    // The trigger answers on the claim; the run is behind `finished`, which a sender never waits on.
+    if (outcome.ran) await outcome.finished;
     expect(asked[0]).toContain("summarize the event");
     expect(asked[0]).toContain("별점 1점");
   });
@@ -355,11 +357,12 @@ describe("a webhook firing a routine", () => {
     let clock = new Date("2026-08-20T07:00:00Z");
     const { service, routine, asked } = await armed(() => clock);
 
-    await service.trigger(routine.id, routine.triggerToken);
+    const first = await service.trigger(routine.id, routine.triggerToken);
     clock = new Date("2026-08-20T07:00:10Z");
     const second = await service.trigger(routine.id, routine.triggerToken);
 
     expect(second).toEqual({ ran: false, reason: "debounced" });
+    if (first.ran) await first.finished;
     expect(asked).toHaveLength(1);
   });
 

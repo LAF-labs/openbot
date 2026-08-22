@@ -611,15 +611,24 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (!claimed) return { ran: false, reason: "debounced" as const };
 
       const trimmed = payload?.slice(0, TRIGGER_PAYLOAD_LIMIT).trim();
-      await execute(
+      /*
+       * Claimed, and answered — the run goes on without the caller. A webhook sender gives a
+       * receiver ten to thirty seconds and then retries; a run with tools takes a minute or ten.
+       * Awaiting it here meant every real sender timed out on a run that was going fine, retried
+       * into the debounce, and logged the routine as failing. The claim above is the receipt:
+       * exactly one run was bought, and `finished` is it, for whoever (a test) needs to wait.
+       */
+      const finished = execute(
         trimmed
           ? {
               ...claimed,
               instruction: `${claimed.instruction}\n\n[Trigger payload]\n${trimmed}`,
             }
           : claimed,
-      );
-      return { ran: true as const };
+      ).catch((error: unknown) => {
+        console.error("[routines] a triggered run failed:", error);
+      });
+      return { ran: true as const, finished };
     },
 
     tick,

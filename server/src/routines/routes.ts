@@ -68,6 +68,8 @@ export function createRoutineRoutes(
         token,
         payload,
       );
+      // 202: the run was accepted and is happening; the sender is not kept on the line for it.
+      if (outcome.ran) return context.json({ ran: true }, 202);
       return context.json(outcome);
     } catch (error) {
       const mapped = mapError(error);
