@@ -18,6 +18,7 @@ import {
 import { ChatOpenAI } from "@langchain/openai";
 import { serve } from "bun";
 import { SYSTEM_PROMPT } from "../../shared/bot-prompt";
+import { textOf } from "../../shared/message-content";
 
 /**
  * The same Bot, on a framework.
@@ -117,11 +118,11 @@ function toLangChainMessages(input: RunAgentInput): BaseMessage[] {
 
   for (const message of input.messages) {
     if (message.role === "user") {
-      messages.push(new HumanMessage(String(message.content ?? "")));
+      messages.push(new HumanMessage(textOf(message.content)));
       continue;
     }
     if (message.role === "system" || message.role === "developer") {
-      messages.push(new SystemMessage(String(message.content ?? "")));
+      messages.push(new SystemMessage(textOf(message.content)));
       continue;
     }
     if (message.role === "tool") {
@@ -129,7 +130,7 @@ function toLangChainMessages(input: RunAgentInput): BaseMessage[] {
       messages.push(
         new ToolMessage({
           tool_call_id: message.toolCallId,
-          content: String(message.content ?? ""),
+          content: textOf(message.content),
         }),
       );
       continue;

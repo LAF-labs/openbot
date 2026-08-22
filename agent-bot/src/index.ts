@@ -3,6 +3,7 @@ import { EventEncoder } from "@ag-ui/encoder";
 import { serve } from "bun";
 import OpenAI from "openai";
 import { SYSTEM_PROMPT } from "../../shared/bot-prompt";
+import { textOf } from "../../shared/message-content";
 
 /**
  * The built-in Bot is an AG-UI HTTP service registered the same way as any customer-provided Bot.
@@ -53,11 +54,13 @@ function toProviderMessages(input: RunAgentInput) {
 
   for (const message of input.messages) {
     if (message.role === "user") {
-      messages.push({ role: "user", content: String(message.content ?? "") });
+      // Not `String(content)`: a user message's content can be an array of parts, and stringifying
+      // one hands the model "[object Object]" with nothing anywhere saying so. See message-content.
+      messages.push({ role: "user", content: textOf(message.content) });
       continue;
     }
     if (message.role === "system" || message.role === "developer") {
-      messages.push({ role: "system", content: String(message.content ?? "") });
+      messages.push({ role: "system", content: textOf(message.content) });
       continue;
     }
     if (message.role === "tool") {
@@ -65,7 +68,7 @@ function toProviderMessages(input: RunAgentInput) {
       messages.push({
         role: "tool",
         tool_call_id: message.toolCallId,
-        content: String(message.content ?? ""),
+        content: textOf(message.content),
       });
       continue;
     }
