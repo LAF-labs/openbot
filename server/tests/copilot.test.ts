@@ -37,6 +37,7 @@ describe("registered Copilot agents", () => {
       id: "general-assistant",
       name: "General Assistant",
       type: "built_in",
+      standing: standingRoleMessage(assistantRow).content,
       systemPrompt: "Be helpful.",
     });
     expect(
@@ -91,6 +92,7 @@ describe("registered Copilot agents", () => {
           id: "general-assistant",
           name: "General Assistant",
           type: "built_in",
+          standing: "You are General Assistant, Everyday work.",
           systemPrompt: "Be helpful.",
         },
         { provider: "openai", defaultModel: "gpt-4.1" },
@@ -98,7 +100,7 @@ describe("registered Copilot agents", () => {
       ),
     ).toEqual({
       model: "openai/gpt-4.1",
-      prompt: "Be helpful.",
+      prompt: "You are General Assistant, Everyday work.\n\nBe helpful.",
       apiKey: "openai-secret",
     });
   });

@@ -37,6 +37,13 @@ type RegisteredBuiltInAgent = {
   id: string;
   name: string;
   type: "built_in";
+  /**
+   * The same standing role a remote Bot is sent as its first message (see `standingRoleMessage`),
+   * as the text a built-in Bot is prompted with. Without it the built-in Bots were the only ones
+   * that did not know their own name, title or role: asked who was answering, 일상 비서 named its
+   * model and its vendor.
+   */
+  standing: string;
   systemPrompt: string;
 };
 
@@ -131,6 +138,7 @@ export function registeredAgentFromRow(
           id: row.id,
           name: row.name,
           type: "built_in",
+          standing: standingRoleMessage(row).content,
           systemPrompt: trimmedSystemPrompt,
         }
       : null;
@@ -183,7 +191,8 @@ export function builtInAgentConfiguration(
 
   return {
     model: `${model.provider}/${model.defaultModel}`,
-    prompt: agent.systemPrompt,
+    // Who it is first, then how it works: the role is the part the person wrote.
+    prompt: `${agent.standing}\n\n${agent.systemPrompt}`,
     apiKey,
   };
 }

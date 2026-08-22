@@ -22,6 +22,7 @@ import {
   type AgentChannel,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
+import { loadThreadHistory } from "@/lib/channels/thread-history";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -172,23 +173,19 @@ export function ChannelChat({
       }
 
       try {
-        const response = await fetch(
-          `/api/copilotkit/threads/${encodeURIComponent(channel.threadId)}/messages?agentId=${encodeURIComponent(runtimeAgentId)}`,
-          { credentials: "include" },
+        const stored = await loadThreadHistory(
+          channel.threadId,
+          runtimeAgentId,
         );
-        if (response.ok && current) {
-          const stored = (await response.json())?.messages;
-          // Never overwrite local messages that arrived while history was loading.
-          if (
-            Array.isArray(stored) &&
-            stored.length > 0 &&
-            agent.messages.length === 0
-          ) {
-            agent.setMessages(stored);
-          }
+        // Never overwrite local messages that arrived while history was loading.
+        if (
+          current &&
+          stored &&
+          stored.length > 0 &&
+          agent.messages.length === 0
+        ) {
+          agent.setMessages(stored);
         }
-      } catch {
-        // An unreadable history is not a reason to block the composer.
       } finally {
         // Release even on join/restore failure; the gate orders messages, not withholds them.
         openJoinGate.current();
@@ -214,28 +211,21 @@ export function ChannelChat({
       if (!activity.lastMessageAgentId) return;
       if (awaitingReply.current || agent.isRunning) return;
       void (async () => {
-        try {
-          const response = await fetch(
-            `/api/copilotkit/threads/${encodeURIComponent(channel.threadId)}/messages?agentId=${encodeURIComponent(runtimeAgentId)}`,
-            { credentials: "include" },
-          );
-          if (!response.ok) return;
-          const stored = (await response.json())?.messages;
-          if (!Array.isArray(stored)) return;
-          const seen = new Set(agent.messages.map((message) => message.id));
-          const missing = stored.filter(
-            (message: { id?: string }) => message.id && !seen.has(message.id),
-          );
-          if (missing.length === 0) return;
-          agent.setMessages([...agent.messages, ...missing]);
-          void refreshTimesRef.current();
-          // Read, because it is on the screen in front of them.
-          void markRead
-            .current({ channelId: channel.id, read: true })
-            .catch(() => {});
-        } catch {
-          // The next open of the room shows it; nothing here is worth a banner.
-        }
+        const stored = await loadThreadHistory(
+          channel.threadId,
+          runtimeAgentId,
+        );
+        // Unreadable: the next open of the room shows it; nothing here is worth a banner.
+        if (!stored) return;
+        const seen = new Set(agent.messages.map((message) => message.id));
+        const missing = stored.filter((message) => !seen.has(message.id));
+        if (missing.length === 0) return;
+        agent.setMessages([...agent.messages, ...missing]);
+        void refreshTimesRef.current();
+        // Read, because it is on the screen in front of them.
+        void markRead
+          .current({ channelId: channel.id, read: true })
+          .catch(() => {});
       })();
     };
     channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
