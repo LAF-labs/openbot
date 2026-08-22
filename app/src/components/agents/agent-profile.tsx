@@ -18,11 +18,7 @@ import {
 } from "@/lib/agents/mutations";
 import { agentQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
-import {
-  type NotificationSupport,
-  notificationSupport,
-  requestNotificationPermission,
-} from "@/lib/notifications/bot-notifications";
+import { NotificationPermission } from "@/components/notifications/notification-permission";
 
 function Tag({ children }: { children: ReactNode }) {
   return (
@@ -376,17 +372,6 @@ function NotifyCard({
     setAgentPreferencesMutationOptions(queryClient),
   );
   const labelId = useId();
-  /*
-   * The browser's permission, asked for HERE and nowhere else.
-   *
-   * Turning this on is the gesture that means "yes, tell me about this one", and it is the only
-   * moment in the app where a person has enough context to answer the browser's dialog. Asking on
-   * load is the pattern browsers now bury behind a warning. Held in state rather than read at
-   * render because `Notification.permission` does not notify anybody when it changes.
-   */
-  const [support, setSupport] = useState<NotificationSupport>(() =>
-    notificationSupport(),
-  );
 
   return (
     <section className="flex items-start gap-3 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
@@ -397,18 +382,10 @@ function NotifyCard({
         <p className="text-muted-foreground text-sm">
           {t("Tell me when {name} finishes or needs me.", { name })}
         </p>
-        {notify && support === "denied" ? (
-          <p className="pt-1 text-muted-foreground text-sm">
-            {t(
-              "Your browser is blocking notifications for this site. The room still turns bold when {name} speaks.",
-              { name },
-            )}
-          </p>
-        ) : null}
-        {notify && support === "granted" ? (
-          <p className="pt-1 text-muted-foreground text-sm">
-            {t("Only while this tab is open.")}
-          </p>
+        {notify ? (
+          <NotificationPermission
+            grantedNote={t("Only while a tab is open.")}
+          />
         ) : null}
         {preferences.error ? (
           <p className="pt-1 text-destructive text-sm" role="alert">
@@ -423,13 +400,12 @@ function NotifyCard({
         disabled={preferences.isPending}
         onCheckedChange={(next) => {
           /*
-           * Saved either way, and the browser asked only when turning it ON. The preference is
-           * this person's answer about this Bot; the browser's permission is about the site. A
-           * refused dialog must not silently flip the switch back — the Bot is still one they
-           * want to hear from, and the roster still says so in bold.
+           * The preference is this person's answer about this Bot; the browser's permission is
+           * about the site, and it is asked for separately just above. Muting a Bot here is not a
+           * statement about the site, and a browser that refuses the site is no reason to stop
+           * wanting to hear from the Bot — the roster still goes bold for it either way.
            */
           preferences.mutate({ agentId, patch: { notify: next } });
-          if (next) void requestNotificationPermission().then(setSupport);
         }}
       />
     </section>

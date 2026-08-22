@@ -669,7 +669,11 @@ export const ko: Record<string, string> = {
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
   "{name} is on": "'{name}' 켜짐",
   "{name}'s screen": "{name}의 화면",
-  "Only while this tab is open.": "이 탭이 열려 있는 동안에만 알립니다.",
-  "Your browser is blocking notifications for this site. The room still turns bold when {name} speaks.":
-    "브라우저가 이 사이트의 알림을 차단하고 있습니다. {name}이(가) 말하면 대화 목록은 그대로 굵게 표시됩니다.",
+  "Only while a tab is open.": "탭이 열려 있는 동안에만 알립니다.",
+  "Your browser is blocking notifications for this site.":
+    "브라우저가 이 사이트의 알림을 차단하고 있습니다.",
+  "Turn on notifications": "알림 켜기",
+  "On for this browser.": "이 브라우저에서 켜져 있습니다.",
+  "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
+    "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
 };

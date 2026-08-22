@@ -54,8 +54,6 @@ import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
-import { useChannelEvents } from "@/lib/channels/use-channel-events";
-import { useBotNotifications } from "@/lib/notifications/use-bot-notifications";
 import { t } from "@/lib/i18n";
 
 /**
@@ -237,10 +235,6 @@ export function BotSidebar() {
   const hidden = useQuery(agentListQueryOptions(true));
   const working = useQuery(workingQueryOptions());
   const searchId = useId();
-  // One socket for the app, opened where the roster is kept live.
-  useChannelEvents();
-  // And what rides it when nobody is looking: a Bot speaking in a room that is not on screen.
-  useBotNotifications();
 
   /** A Bot's conversation, once it has one. Single-Bot channels only; a group is not a colleague. */
   const channelFor = useMemo(() => {

@@ -6,6 +6,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -169,6 +170,22 @@ function RouteComponent() {
                 </SelectContent>
               </Select>
             </ItemActions>
+          </Item>
+          {/*
+           * The site's permission, beside Language and Appearance because that is what it is: one
+           * answer for the whole account, not a per-Bot setting. Which Bots may use it stays on
+           * the Bots — this row cannot turn any of them on or off.
+           */}
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>{t("Notifications")}</ItemTitle>
+              <ItemDescription>
+                {t(
+                  "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.",
+                )}
+              </ItemDescription>
+              <NotificationPermission grantedNote={t("On for this browser.")} />
+            </ItemContent>
           </Item>
         </PageRows>
       </PageSection>

@@ -136,7 +136,11 @@ dependency. **Nothing arrives while the tab is closed**, and the profile says so
 rather than implying otherwise. The durable notification is the roster: a room a
 Bot has spoken in since you last read it is bold whenever you come back.
 
-Permission is requested from that switch and nowhere else — a page that asks on
-load is asking before anybody can judge the request. Refusing it leaves the
-preference on, because wanting to hear from a Bot and letting the browser pop a
-window are two different answers.
+Permission is asked for by its own control — on a Bot's profile and in
+Settings — and never on load, because a page that asks on load is asking before
+anybody can judge the request. It is deliberately NOT tied to the switch: every
+Bot starts with `notify` on, so asking only when somebody turns it on would have
+meant asking nobody, ever. Refusing leaves the preference alone, because wanting
+to hear from a Bot and letting the browser pop a window are two different
+answers, and a browser that refuses cannot be asked again by any API — the copy
+says so and stops.
