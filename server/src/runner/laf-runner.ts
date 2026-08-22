@@ -204,6 +204,42 @@ function assistantMessagesFrom(
   });
 }
 
+/**
+ * What the ledger says a run came to, from the events it produced.
+ *
+ * The stream completing is not the run finishing. A person pressing Stop closes the stream with
+ * no RUN_FINISHED in it; a Bot whose stream stalled carries a RUN_ERROR and then completes like
+ * any other. Both were recorded as `done` — the roster cleared, which was right, and the record
+ * said the Bot had finished, which was not. The events are the only honest witness, so the
+ * status is read from them: `error` with the Bot's own reason, `stopped` for a run nothing ended,
+ * `done` only for one the Bot itself closed.
+ */
+export function runOutcome(
+  events: ReadonlyArray<BaseEvent>,
+  failure: string | null,
+): { status: "done" | "error" | "stopped"; error: string | null } {
+  const errored = events.find((event) => String(event.type) === "RUN_ERROR");
+  const reason =
+    failure ??
+    ((errored as (BaseEvent & { message?: string }) | undefined)?.message ||
+      (errored ? "The Bot reported an error." : null));
+  /*
+   * A person's Stop reaches this as "The operation was aborted." — measured: the runtime turns
+   * the browser's abort into a RUN_ERROR event carrying the transport's AbortError wording, and
+   * a transport that drops first says the same. A Stop is not something that went wrong.
+   */
+  if (reason !== null && /abort/i.test(reason)) {
+    return { status: "stopped", error: null };
+  }
+  if (reason !== null) return { status: "error", error: reason };
+  const finished = events.some(
+    (event) => String(event.type) === "RUN_FINISHED",
+  );
+  return finished
+    ? { status: "done", error: null }
+    : { status: "stopped", error: null };
+}
+
 export class LafPostgresRunner extends InMemoryAgentRunner {
   private constructor(
     private readonly database: Database,
@@ -461,8 +497,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       await this.database
         .update(lafThreadRuns)
         .set({
-          status: errorMessage === null ? "done" : "error",
-          error: errorMessage,
+          ...runOutcome(events, errorMessage),
           eventCount: events.length,
           finishedAt: new Date(),
         })
