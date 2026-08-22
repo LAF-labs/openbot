@@ -222,8 +222,19 @@ a room draws no tool calls, so a `room.approval` frame carries who asked and
 what, and the room shows it above the composer with the same Allow and Deny
 the line-level card has. The question is not typing: it is not subject to
 the turn-epoch rule, it outlives the turn's end, and it comes down when
-answered. Before this it sat in the server's registry for its ten minutes
-where nobody could see it.
+answered (the frame arrives a second time with `answered`, for tabs other
+than the one that pressed the button). Before this it sat in the server's
+registry for its ten minutes where nobody could see it.
+
+And the turn HOLDS for the answer, because in a room the person is there —
+up to two minutes, against a member deadline of five. `runUnattended` gives
+up on an ask rule, which is right for a routine nobody is watching and wrong
+here. When the answer comes back the action is tried once more, carrying the
+approval id: the gateway spends an approval by id and fingerprint, so a
+retry that presents neither just raises a second question and the person's
+Allow pays for nothing. Deny is final and the member is told not to retry.
+Nobody answering is not a failure — the member says it is still waiting, the
+card stays up, and an answer given late is found by its next attempt.
 
 The count of rooms waiting also goes on the app's icon — through the desktop
 shell's `set_badge` command when the app runs in it (`app/src/lib/notifications/shell.ts`
