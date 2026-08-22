@@ -1,3 +1,4 @@
+import { inArray } from "drizzle-orm";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   createDatabaseRepeatDetector,
@@ -28,9 +29,15 @@ const database = createDatabase(
 
 const CLICK = { tool: "computer_click", ref: "e9" };
 
+// This file's Bots only: unscoped, this wiped the repeat counters of the database the app is using.
+const BOTS = ["bot", "sales-bot", "research-bot"];
 afterEach(async () => {
-  await database.delete(computerRepeatCalls);
-  await database.delete(computerRepeatReports);
+  await database
+    .delete(computerRepeatCalls)
+    .where(inArray(computerRepeatCalls.botId, BOTS));
+  await database
+    .delete(computerRepeatReports)
+    .where(inArray(computerRepeatReports.botId, BOTS));
 });
 
 type Build = (options: RepeatDetectorOptions) => RepeatDetector;

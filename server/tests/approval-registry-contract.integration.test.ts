@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   type ApprovalRegistry,
@@ -35,8 +36,11 @@ const SUBJECT = {
   target: { type: "computer", id: "default" },
 };
 
+// This file's Bot only: unscoped, this wiped the pending approvals of the database the app is using.
 afterEach(async () => {
-  await database.delete(computerApprovals);
+  await database
+    .delete(computerApprovals)
+    .where(eq(computerApprovals.botId, SUBJECT.botId));
 });
 
 const REGISTRIES: [string, () => ApprovalRegistry][] = [

@@ -65,10 +65,28 @@ export type UnattendedRunOptions = {
   maxSteps?: number;
 };
 
+/** One turn of the model, for the record a routine keeps and an operator reads. */
+export type UnattendedStep = {
+  /** Wall-clock milliseconds the model took for this turn. */
+  ms: number;
+  /** Characters of prose the turn produced. Zero on a turn that only asked for tools. */
+  text: number;
+  /** The tools the turn asked for, and whether each one went through. */
+  calls: Array<{ name: string; ok: boolean }>;
+};
+
 export type UnattendedRunResult = {
+  /**
+   * What the Bot said on its LAST turn — the answer, not the narration. A model that says "let me
+   * check" before every tool call would otherwise deliver three "let me check"s ahead of the
+   * sentence that was asked for. A last turn that said nothing (a refused tool call, say) falls
+   * back to the last thing it did say, so a run that spoke at all never delivers blank.
+   */
   answer: string;
   /** Every tool the run used, in order, for the record the routine keeps. */
   toolCalls: Array<{ name: string; ok: boolean }>;
+  /** The turns, in order. The shape of the run: how many, how long, what each asked for. */
+  steps: UnattendedStep[];
   /** The run stopped because something needs a person, and this is what. */
   awaiting: string | null;
 };
@@ -85,10 +103,42 @@ const UNATTENDED_NOTE =
   "person — a sign-in, a code, an approval — say exactly what in your answer and stop; do not " +
   "wait for them and do not try another way round it.";
 
-class RunDeadline extends Error {
-  constructor() {
-    super("The run did not finish in time.");
+/**
+ * A run that did not get to an answer, carrying the turns it did take.
+ *
+ * The routine's record keeps those turns whichever way the run ended; a failure that threw them
+ * away would leave "Failed" with no account of how far the Bot got.
+ */
+export class UnattendedRunError extends Error {
+  constructor(
+    message: string,
+    public readonly steps: UnattendedStep[],
+  ) {
+    super(message);
+    this.name = "UnattendedRunError";
+  }
+}
+
+class RunDeadline extends UnattendedRunError {
+  constructor(steps: UnattendedStep[]) {
+    super("The run did not finish in time.", steps);
     this.name = "RunDeadline";
+  }
+}
+
+/**
+ * The Bot's stream ended with RUN_ERROR — its provider failed, or the stall watchdog gave up on it.
+ *
+ * `runAgent` RESOLVES on that event: AG-UI treats RUN_ERROR as a message about the run, not a
+ * failure of the call, and hands it to a subscriber. Without reading it the loop saw a turn that
+ * simply ended, found no tool calls pending, and returned whatever prose had arrived before the
+ * cut — half a sentence, delivered as a finished answer with `ok: true` on the record. A run the
+ * Bot did not finish is a failed run, and the person reads the reason, not the fragment.
+ */
+class RunFailed extends UnattendedRunError {
+  constructor(message: string, steps: UnattendedStep[]) {
+    super(`The Bot stopped before it finished: ${message}`, steps);
+    this.name = "RunFailed";
   }
 }
 
@@ -134,6 +184,7 @@ export async function runUnattended(
   const deadline = Date.now() + options.timeoutMs;
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const toolCalls: UnattendedRunResult["toolCalls"] = [];
+  const steps: UnattendedStep[] = [];
   let awaiting: string | null = null;
 
   target.setMessages([
@@ -146,23 +197,93 @@ export async function runUnattended(
    * the agent's stream open and a built-in Bot still generating after the routine had been marked
    * failed and its ledger row closed — cost and work continuing past the point anything reported
    * them. `abortRun` is AG-UI's own cancellation; the fake agent in tests has none, hence optional.
+   *
+   * Each timer is cleared once its wait settles. Left armed, every wait of the run would fire at
+   * the deadline — after the run had finished — and abort whatever the agent was doing by then.
    */
-  const withDeadline = <T>(promise: Promise<T>): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        setTimeout(
-          () => {
-            target.abortRun?.();
-            reject(new RunDeadline());
+  const withDeadline = <T>(promise: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => {
+          target.abortRun?.();
+          reject(new RunDeadline(steps));
+        },
+        Math.max(0, deadline - Date.now()),
+      );
+      timer.unref?.();
+    });
+    return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+  };
+
+  /**
+   * One turn of the model, watched.
+   *
+   * The subscriber is how a RUN_ERROR reaches this loop at all; see `RunFailed`. The step record
+   * is taken from the messages the turn added, which is also what the next turn's `unanswered`
+   * reads, so the record and the loop cannot disagree about what the model asked for.
+   */
+  const turn = async (tools: Tool[]): Promise<void> => {
+    const startedAt = Date.now();
+    let failure: string | null = null;
+    let finished = false;
+    const before = target.messages.length;
+    await withDeadline(
+      target.runAgent(
+        { tools },
+        {
+          onRunErrorEvent: ({ event }) => {
+            failure = event.message || "no reason was given";
+            return {};
           },
-          Math.max(0, deadline - Date.now()),
-        ).unref?.();
-      }),
-    ]);
+          onRunFinishedEvent: () => {
+            finished = true;
+            return {};
+          },
+        },
+      ),
+    );
+    /*
+     * A stream that just ENDS — the connection dropped, a proxy's idle limit closed it, the
+     * process behind it died — carries no RUN_ERROR to read. `runAgent` resolves on that too, and
+     * the prose that had arrived by then looks exactly like a short answer. Only RUN_FINISHED
+     * says the model meant to stop there.
+     */
+    if (failure === null && !finished) {
+      failure = "its stream ended before the run finished";
+    }
+    const added = target.messages.slice(before);
+    steps.push({
+      ms: Date.now() - startedAt,
+      text: added
+        .filter((message) => message.role === "assistant")
+        .reduce(
+          (total, message) =>
+            total +
+            (typeof message.content === "string" ? message.content.length : 0),
+          0,
+        ),
+      calls: added.flatMap((message) =>
+        message.role === "assistant"
+          ? (message.toolCalls ?? []).map((call) => ({
+              name: call.function?.name ?? "",
+              ok: false,
+            }))
+          : [],
+      ),
+    });
+    if (failure !== null) throw new RunFailed(failure, steps);
+  };
+
+  const record = (name: string, ok: boolean) => {
+    toolCalls.push({ name, ok });
+    const step = steps.at(-1);
+    const call = step?.calls.find((entry) => entry.name === name && !entry.ok);
+    if (call) call.ok = ok;
+  };
 
   for (let step = 0; step <= maxSteps; step += 1) {
-    await withDeadline(target.runAgent({ tools: options.toolkit.tools }));
+    await turn(options.toolkit.tools);
 
     const pending = unanswered(target.messages);
     if (pending.length === 0) break;
@@ -187,7 +308,7 @@ export async function runUnattended(
           options.toolkit.execute(call.name, parseArgs(call.args)),
         );
       }
-      toolCalls.push({ name: call.name, ok: outcome.ok });
+      record(call.name, outcome.ok);
       if (outcome.awaitingApproval === true && awaiting === null) {
         awaiting = String(outcome.question ?? outcome.reason ?? "");
       }
@@ -205,14 +326,14 @@ export async function runUnattended(
      * promised answer never written. One more turn, with no tools on offer, so it can only speak.
      */
     if (outOfSteps) {
-      await withDeadline(target.runAgent({ tools: [] }));
+      await turn([]);
       /*
        * A model offered no tools can still emit a tool call — some do, out of habit. Those get the
        * same refusal and are never executed: the invariant that every call in the thread has an
        * answer holds all the way to the last message, whatever the model did with its last turn.
        */
       for (const call of unanswered(target.messages)) {
-        toolCalls.push({ name: call.name, ok: false });
+        record(call.name, false);
         target.addMessage({
           id: randomUUID(),
           role: "tool",
@@ -226,16 +347,15 @@ export async function runUnattended(
     }
   }
 
-  const answer = target.messages
+  const said = target.messages
     .filter((message) => message.role === "assistant")
     .map((message) =>
-      typeof message.content === "string" ? message.content : "",
+      typeof message.content === "string" ? message.content.trim() : "",
     )
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+    .filter(Boolean);
+  const answer = said.at(-1) ?? "";
 
-  return { answer, toolCalls, awaiting };
+  return { answer, toolCalls, steps, awaiting };
 }
 
 /* ------------------------------------------------------------------------------------------ */

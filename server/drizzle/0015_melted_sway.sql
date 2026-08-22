@@ -1,0 +1,1 @@
+ALTER TABLE "laf_routine_runs" ADD COLUMN "steps" jsonb;

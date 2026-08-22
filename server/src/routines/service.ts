@@ -9,7 +9,12 @@ import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafRoutines } from "../db/schema";
 import type { RunLedger } from "../runner/run-ledger";
-import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
+import {
+  runUnattended,
+  UnattendedRunError,
+  type UnattendedRunResult,
+  type UnattendedToolkit,
+} from "../runner/unattended";
 import type { DeliverRoutineAnswer } from "./deliver";
 import {
   dayAfter,
@@ -33,8 +38,16 @@ export const MAX_ROUTINES = 20;
 /** Five minutes. Anything faster is polling, and polling is the watch service's job. */
 export const MIN_INTERVAL_MINUTES = 5;
 
-/** How long a routine's run may take. Longer than a coworker answer: nobody is waiting on screen. */
-export const ROUTINE_RUN_TIMEOUT_MS = 180_000;
+/**
+ * How long a routine's run may take, tools included.
+ *
+ * Longer than a coworker answer: nobody is waiting on screen. And long enough for a reasoning
+ * model, whose turns were measured at 50–75 seconds each — three minutes was four turns, and an
+ * "open two pages and compare" routine was reaching the deadline on its way to the answer. This
+ * is not the guard against a hung Bot: the stall watchdog (AGENT_STALL_TIMEOUT_MS) is, and it ends
+ * a silent stream in a minute. This bounds a Bot that keeps working.
+ */
+export const ROUTINE_RUN_TIMEOUT_MS = 600_000;
 
 /** How many run records each routine keeps. The history of record is audit_events. */
 const KEPT_RUNS = 20;
@@ -270,6 +283,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
     let ok = false;
     let answer = "";
     let failure = "";
+    let steps: UnattendedRunResult["steps"] | null = null;
     /*
      * OPEN THE LEDGER FIRST, so the Bot reads as busy for the whole time it is busy.
      *
@@ -312,6 +326,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
           timeoutMs: runTimeoutMs,
         });
         answer = run.answer;
+        steps = run.steps;
         /*
          * A run that stopped because a person is needed is not a failure — the Bot did its job,
          * which was to find out — but the person has to be told, and a routine's answer is the one
@@ -326,6 +341,8 @@ export function createRoutineService(options: RoutineServiceOptions) {
       ok = true;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
+      // A failed loop still took its turns; they are the record of how far it got.
+      if (error instanceof UnattendedRunError) steps = error.steps;
     }
 
     if (ok && answer.trim().length > 0) {
@@ -358,6 +375,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
       ok,
       answer: ok ? answer : null,
       error: ok ? null : failure,
+      steps,
     });
     // Keep the newest KEPT_RUNS; the audit row below is the durable record.
     const keep = database

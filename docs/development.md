@@ -112,8 +112,11 @@ bun run build
 Integration tests expect a PostgreSQL database with pgvector. Use `start.sh` or point `DATABASE_URL` at a compatible database.
 
 They write to whichever database `DATABASE_URL` names and leave their rows behind, so running
-them against a deployment you are using puts test Bots in its audit trail and its activity
-reports. Point `DATABASE_URL` at a database of their own to keep the two apart.
+them against the development database leaves test Bots and channels in the app. Point
+`DATABASE_URL` at a database of their own to keep the two apart. Every test's cleanup is scoped
+to the rows that test created — an unscoped `delete(table)` in an `afterEach` once erased every
+routine a person had made, each time the suite ran. Keep it that way: a new integration test
+deletes by its own actor, prefix or Bot id, never the table.
 
 CI uses `bun run test:ci` to verify the expected test count in addition to normal tests.
 

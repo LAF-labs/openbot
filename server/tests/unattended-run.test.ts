@@ -11,11 +11,17 @@ import type { Message } from "@ag-ui/client";
 import {
   type LoopAgent,
   runUnattended,
+  UnattendedRunError,
   type UnattendedToolkit,
 } from "../src/runner/unattended";
 
 /** Scripted turns: what the "model" says each time it is run. */
-function fakeAgent(turns: Array<Message | Message[]>): LoopAgent & {
+type Stalled = { stalled: string; said?: string };
+type Dropped = { dropped: string };
+
+function fakeAgent(
+  turns: Array<Message | Message[] | Stalled | Dropped>,
+): LoopAgent & {
   runs: number;
 } {
   const agent = {
@@ -27,11 +33,30 @@ function fakeAgent(turns: Array<Message | Message[]>): LoopAgent & {
     addMessage(message: Message) {
       agent.messages.push(message);
     },
-    async runAgent() {
+    async runAgent(
+      _parameters?: unknown,
+      subscriber?: {
+        onRunErrorEvent?: (payload: { event: { message: string } }) => unknown;
+        onRunFinishedEvent?: () => unknown;
+      },
+    ) {
       const turn = turns[agent.runs] ?? [];
       agent.runs += 1;
+      if (!Array.isArray(turn) && "dropped" in turn) {
+        // A connection that closed: prose so far, no RUN_FINISHED, no RUN_ERROR.
+        agent.messages.push(say(turn.dropped));
+        return { result: undefined, newMessages: [] };
+      }
+      if (!Array.isArray(turn) && "stalled" in turn) {
+        // What a stalled or failed stream looks like from here: any prose that arrived, then the
+        // RUN_ERROR event handed to the subscriber, and runAgent resolving all the same.
+        if (turn.said) agent.messages.push(say(turn.said));
+        subscriber?.onRunErrorEvent?.({ event: { message: turn.stalled } });
+        return { result: undefined, newMessages: [] };
+      }
       const added = Array.isArray(turn) ? turn : [turn];
       agent.messages.push(...added);
+      subscriber?.onRunFinishedEvent?.();
       return { result: undefined, newMessages: added };
     },
   };
@@ -244,14 +269,16 @@ describe("the ends of an unattended run", () => {
     turns.push(say("Here is what I found before I ran out of steps."));
     const agent = fakeAgent(turns);
     const offered: number[] = [];
-    (agent as { runAgent: unknown }).runAgent = async (parameters?: {
-      tools?: unknown[];
-    }) => {
+    (agent as { runAgent: unknown }).runAgent = async (
+      parameters?: { tools?: unknown[] },
+      subscriber?: { onRunFinishedEvent?: () => unknown },
+    ) => {
       offered.push(parameters?.tools?.length ?? -1);
       const turn = turns[agent.runs] ?? [];
       agent.runs += 1;
       const added = Array.isArray(turn) ? turn : [turn];
       agent.messages.push(...added);
+      subscriber?.onRunFinishedEvent?.();
       return { result: undefined, newMessages: added };
     };
 
@@ -281,5 +308,89 @@ describe("the ends of an unattended run", () => {
       }),
     ).rejects.toThrow("did not finish in time");
     expect(aborted).toBe(true);
+  });
+});
+
+describe("what the run reports", () => {
+  test("a stream that ends in RUN_ERROR is a failed run, not a short answer", async () => {
+    const agent = fakeAgent([
+      call("c1", "computer_navigate", { url: "https://a" }),
+      {
+        stalled: "The Bot produced nothing for 60 seconds.",
+        said: "Let me check",
+      },
+    ]);
+    let thrown: unknown;
+    try {
+      await runUnattended(agent, "look", {
+        toolkit: toolkit(async () => ({ ok: true })),
+        timeoutMs: 5_000,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UnattendedRunError);
+    const error = thrown as UnattendedRunError;
+    expect(error.message).toContain("stopped before it finished");
+    expect(error.message).toContain("60 seconds");
+    // The turns it did take survive the failure: the record says how far it got.
+    expect(error.steps).toHaveLength(2);
+    expect(error.steps[0]?.calls).toEqual([
+      { name: "computer_navigate", ok: true },
+    ]);
+  });
+
+  test("a stream that ends without RUN_FINISHED is a failed run too", async () => {
+    const agent = fakeAgent([{ dropped: "I checked and the email deliv" }]);
+    let thrown: unknown;
+    try {
+      await runUnattended(agent, "send it", {
+        toolkit: toolkit(async () => ({ ok: true })),
+        timeoutMs: 5_000,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UnattendedRunError);
+    expect((thrown as Error).message).toContain(
+      "ended before the run finished",
+    );
+  });
+
+  test("the answer is the last turn, not the narration before it", async () => {
+    const agent = fakeAgent([
+      [
+        say("Let me look at both."),
+        call("c1", "computer_navigate", { url: "https://a" }),
+      ],
+      say("Busan is warmer."),
+    ]);
+    const run = await runUnattended(agent, "which is warmer", {
+      toolkit: toolkit(async () => ({ ok: true })),
+      timeoutMs: 5_000,
+    });
+    expect(run.answer).toBe("Busan is warmer.");
+    expect(run.steps.map((step) => step.calls.length)).toEqual([1, 0]);
+    expect(run.steps[0]?.text).toBe("Let me look at both.".length);
+  });
+
+  test("a last turn that said nothing falls back to the last thing said", async () => {
+    const agent = fakeAgent([
+      [
+        say("Opening it."),
+        call("c1", "computer_navigate", { url: "https://a" }),
+      ],
+      call("c2", "computer_navigate", { url: "https://b" }),
+      [],
+    ]);
+    const run = await runUnattended(agent, "look", {
+      toolkit: toolkit(async () => ({ ok: false, reason: "down" })),
+      timeoutMs: 5_000,
+    });
+    expect(run.answer).toBe("Opening it.");
+    expect(run.toolCalls.every((entry) => !entry.ok)).toBe(true);
+    expect(run.steps[1]?.calls).toEqual([
+      { name: "computer_navigate", ok: false },
+    ]);
   });
 });

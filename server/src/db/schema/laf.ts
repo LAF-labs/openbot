@@ -250,4 +250,17 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
   /** The Bot's answer, which for a digest-shaped routine IS the product. */
   answer: text("answer"),
   error: text("error"),
+  /**
+   * The turns the run took: how many, how long each, which tools each asked for and whether they
+   * went through. An operator reading "Failed: the Bot stopped before it finished" wants to know
+   * how far it got; the answer alone cannot say. Null on rows written before this existed.
+   */
+  steps:
+    jsonb("steps").$type<
+      Array<{
+        ms: number;
+        text: number;
+        calls: Array<{ name: string; ok: boolean }>;
+      }>
+    >(),
 });

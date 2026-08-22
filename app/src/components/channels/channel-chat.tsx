@@ -362,7 +362,7 @@ export function ChannelChat({
       },
     });
     return () => subscription?.unsubscribe();
-  }, [agent, runtimeAgentId]);
+  }, [agent, runtimeAgentId, channel.id]);
 
   /*
    * Held in a ref because the run subscriber is wired once per agent, not per render — capturing

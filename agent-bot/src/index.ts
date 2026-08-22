@@ -37,6 +37,9 @@ const MODEL = process.env.BOT_MODEL ?? "gpt-5.5";
  */
 const BASE_URL = process.env.OPENAI_BASE_URL?.trim() || undefined;
 
+/** Often enough that no sane stall timeout fires between two; rare enough to be nothing on the wire. */
+const HEARTBEAT_MS = 15_000;
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseURL: BASE_URL,
@@ -112,6 +115,25 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
         threadId: input.threadId,
         runId: input.runId,
       } as BaseEvent);
+
+      /*
+       * A heartbeat while the model is quiet.
+       *
+       * A reasoning model can sit for a minute before its first token, and to the runtime watching
+       * this stream that minute is indistinguishable from a provider that has hung — its stall
+       * watchdog ends the turn at the configured silence (60 s by default) and the person reads an
+       * answer cut off at nothing. An SSE comment line is the protocol's own keepalive: it is bytes
+       * on the wire, so the watchdog sees a live stream, and it carries no `data:` field, so every
+       * AG-UI parser drops it without reading it. Sent between tokens too — the quiet can come
+       * mid-answer, when a model stops to think before a tool call.
+       */
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(utf8.encode(": keepalive\n\n"));
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, HEARTBEAT_MS);
 
       try {
         const completion = await openai.chat.completions.create({
@@ -199,6 +221,7 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
               : "The Bot could not answer.",
         } as BaseEvent);
       } finally {
+        clearInterval(heartbeat);
         controller.close();
       }
     },

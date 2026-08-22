@@ -441,6 +441,10 @@ export const ko: Record<string, string> = {
   "Run now": "지금 실행",
   Enabled: "켜짐",
   Ran: "성공",
+  "1 turn": "1턴",
+  turns: "턴",
+  "1 tool": "도구 1개",
+  tools: "도구",
   Failed: "실패",
   "This routine has not run yet.": "아직 실행된 적이 없습니다.",
   "No routines yet. Give a Bot something to do every morning.":

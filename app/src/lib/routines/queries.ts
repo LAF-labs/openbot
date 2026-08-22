@@ -25,7 +25,34 @@ export type RoutineRun = {
   ok: boolean | null;
   answer: string | null;
   error: string | null;
+  /** The turns the run took; null on runs recorded before the server kept them. */
+  steps: Array<{
+    ms: number;
+    text: number;
+    calls: Array<{ name: string; ok: boolean }>;
+  }> | null;
 };
+
+/**
+ * One line for what a run did: "3 turns · 2 tools · 41s". Nothing for a run that has no record of
+ * its turns, rather than a row of zeros that reads as a Bot that did nothing.
+ */
+export function runShape(
+  steps: RoutineRun["steps"],
+  t: (text: string) => string,
+): string | null {
+  if (!steps?.length) return null;
+  const tools = steps.reduce((total, step) => total + step.calls.length, 0);
+  const seconds = Math.round(
+    steps.reduce((total, step) => total + step.ms, 0) / 1000,
+  );
+  const parts = [
+    steps.length === 1 ? t("1 turn") : `${steps.length} ${t("turns")}`,
+    tools === 1 ? t("1 tool") : `${tools} ${t("tools")}`,
+    `${seconds}s`,
+  ];
+  return parts.join(" · ");
+}
 
 export const routineKeys = {
   all: ["routines"] as const,

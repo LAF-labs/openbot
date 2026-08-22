@@ -30,6 +30,7 @@ import {
   type Routine,
   type RoutineRun,
   routineListQueryOptions,
+  runShape,
   routineRequest,
   scheduleLabel,
   weekdayNames,
@@ -89,6 +90,7 @@ function RunHistory({ routineId }: { routineId: string }) {
             <span>{new Date(run.startedAt).toLocaleString(activeLocale)}</span>
             <span className={run.ok ? "" : "text-destructive"}>
               {run.ok ? t("Ran") : t("Failed")}
+              {runShape(run.steps, t) ? ` · ${runShape(run.steps, t)}` : ""}
             </span>
           </div>
           <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed">

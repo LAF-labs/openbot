@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AbstractAgent } from "@ag-ui/client";
-import { eq } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import type { AuditEventInput } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import { lafRoutineRuns, lafRoutines } from "../src/db/schema";
@@ -25,9 +25,23 @@ const database = createDatabase(
 
 const ACTOR = { id: "routine-tester", role: "admin" as const };
 
+/*
+ * Only this file's rows. Every test here creates as ACTOR, so everything it made carries that
+ * id — and nothing else does. The suite runs against whatever DATABASE_URL names, which on a
+ * development machine is the database the app is using; a `delete(lafRoutines)` with no clause
+ * erased every routine a person had made, each time the tests ran.
+ */
 afterEach(async () => {
-  await database.delete(lafRoutineRuns);
-  await database.delete(lafRoutines);
+  const mine = database
+    .select({ id: lafRoutines.id })
+    .from(lafRoutines)
+    .where(eq(lafRoutines.createdById, ACTOR.id));
+  await database
+    .delete(lafRoutineRuns)
+    .where(inArray(lafRoutineRuns.routineId, mine));
+  await database
+    .delete(lafRoutines)
+    .where(eq(lafRoutines.createdById, ACTOR.id));
 });
 
 function fakeAgents(reply: string, delayMs = 0) {
@@ -245,7 +259,15 @@ describe("a routine on the clock", () => {
   test("refuses the routine past the cap, with the reason", async () => {
     const { agents } = fakeAgents("x");
     const { service } = serviceWith(agents, () => new Date());
-    for (let held = 0; held < MAX_ROUTINES; held += 1) {
+    // The cap is the deployment's, and a development database already holds a person's routines.
+    const [existing] = await database
+      .select({ count: count() })
+      .from(lafRoutines);
+    for (
+      let held = Number(existing?.count ?? 0);
+      held < MAX_ROUTINES;
+      held += 1
+    ) {
       await service.create(ACTOR, {
         agentId: "morning-bot",
         name: `routine ${held}`,
