@@ -46,6 +46,20 @@ const openai = new OpenAI({
   baseURL: BASE_URL,
 });
 
+/**
+ * The one call this service makes to a model, as a seam.
+ *
+ * A test hands in a fake that yields scripted chunks; the service itself never notices. Narrower
+ * than the whole client on purpose: it is the only method used, and a fake of one method cannot
+ * drift from a client it does not pretend to be.
+ */
+export type CompletionProvider = (
+  request: Parameters<typeof openai.chat.completions.create>[0],
+) => Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
+
+const liveProvider: CompletionProvider = (request) =>
+  openai.chat.completions.create({ ...request, stream: true });
+
 /** Translate the conversation AG-UI carries into the shape the model provider expects. */
 function toProviderMessages(input: RunAgentInput) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -105,7 +119,10 @@ function toProviderTools(input: RunAgentInput) {
   }));
 }
 
-async function runAgent(input: RunAgentInput): Promise<Response> {
+export async function runAgent(
+  input: RunAgentInput,
+  provider: CompletionProvider = liveProvider,
+): Promise<Response> {
   const encoder = new EventEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -139,7 +156,7 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
       }, HEARTBEAT_MS);
 
       try {
-        const completion = await openai.chat.completions.create({
+        const completion = await provider({
           model: MODEL,
           messages: toProviderMessages(input),
           tools: toProviderTools(input),
@@ -148,12 +165,18 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
 
         const messageId = `msg_${input.runId}`;
         let textOpen = false;
-        // Providers stream a tool call's arguments in fragments across many chunks, keyed only by
-        // index. Buffering per index is what turns that back into one call the surface can run.
-        const toolCalls = new Map<
-          number,
-          { id: string; name: string; args: string }
-        >();
+        /*
+         * Providers stream a tool call's arguments in fragments across many chunks, keyed only by
+         * index. Each fragment is FORWARDED AS IT ARRIVES and also kept, because the two halves
+         * serve different readers: `@ag-ui/client` reassembles the fragments into the finished call
+         * (`arguments += delta`), and anything watching the stream can read the partial value.
+         *
+         * It used to buffer everything and emit one TOOL_CALL_START / ARGS / END after the model
+         * had finished. Measured: with that, a room turn showed nothing at all while a Bot wrote —
+         * speaking in a room IS a tool call, so the whole message arrived at once or not at all,
+         * and every Bot a person creates in this product runs through this service.
+         */
+        const toolCalls = new Map<number, { id: string; started: boolean }>();
 
         for await (const chunk of completion) {
           const delta = chunk.choices[0]?.delta;
@@ -178,14 +201,32 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
           for (const call of delta.tool_calls ?? []) {
             const existing = toolCalls.get(call.index) ?? {
               id: call.id ?? `call_${input.runId}_${call.index}`,
-              name: "",
-              args: "",
+              started: false,
             };
             if (call.id) existing.id = call.id;
-            if (call.function?.name) existing.name = call.function.name;
-            if (call.function?.arguments)
-              existing.args += call.function.arguments;
             toolCalls.set(call.index, existing);
+
+            /*
+             * The call opens the moment its NAME is known, which is the first thing a provider
+             * sends. Anything later is arguments, and a watcher that has the name already knows
+             * what kind of call it is watching.
+             */
+            if (call.function?.name && !existing.started) {
+              existing.started = true;
+              send({
+                type: "TOOL_CALL_START",
+                toolCallId: existing.id,
+                toolCallName: call.function.name,
+                parentMessageId: messageId,
+              } as BaseEvent);
+            }
+            if (call.function?.arguments) {
+              send({
+                type: "TOOL_CALL_ARGS",
+                toolCallId: existing.id,
+                delta: call.function.arguments,
+              } as BaseEvent);
+            }
           }
         }
 
@@ -193,18 +234,13 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
           send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
         }
 
+        /*
+         * Only the ends, after the stream. A call whose name never arrived was never opened and is
+         * not closed either: closing one the surface never saw would be reporting a call nobody
+         * made.
+         */
         for (const call of toolCalls.values()) {
-          send({
-            type: "TOOL_CALL_START",
-            toolCallId: call.id,
-            toolCallName: call.name,
-            parentMessageId: messageId,
-          } as BaseEvent);
-          send({
-            type: "TOOL_CALL_ARGS",
-            toolCallId: call.id,
-            delta: call.args || "{}",
-          } as BaseEvent);
+          if (!call.started) continue;
           send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
         }
 
@@ -239,23 +275,30 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
   });
 }
 
-serve({
-  port: PORT,
-  idleTimeout: 120,
-  async fetch(request) {
-    const url = new URL(request.url);
+/*
+ * Only when run as the service. Importing this module — a test driving `runAgent` against a fake
+ * provider — must not bind a port, or the second test file in a run fails with EADDRINUSE against
+ * the first.
+ */
+if (import.meta.main) {
+  serve({
+    port: PORT,
+    idleTimeout: 120,
+    async fetch(request) {
+      const url = new URL(request.url);
 
-    if (url.pathname === "/health") {
-      return Response.json({ status: "ok", model: MODEL });
-    }
+      if (url.pathname === "/health") {
+        return Response.json({ status: "ok", model: MODEL });
+      }
 
-    if (url.pathname === "/ag-ui" && request.method === "POST") {
-      const input = (await request.json()) as RunAgentInput;
-      return runAgent(input);
-    }
+      if (url.pathname === "/ag-ui" && request.method === "POST") {
+        const input = (await request.json()) as RunAgentInput;
+        return runAgent(input);
+      }
 
-    return Response.json({ error: "Not found." }, { status: 404 });
-  },
-});
+      return Response.json({ error: "Not found." }, { status: 404 });
+    },
+  });
 
-console.info(`agent-bot listening on http://localhost:${PORT}/ag-ui`);
+  console.info(`agent-bot listening on http://localhost:${PORT}/ag-ui`);
+}

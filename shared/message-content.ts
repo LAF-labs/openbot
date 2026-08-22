@@ -18,18 +18,30 @@
  * run is the failure this file exists to prevent.
  */
 
-/** One part of a user's message, in the shape AG-UI's `InputContentSchema` produces. */
+/**
+ * One part of a user's message, in the shape AG-UI's `InputContentSchema` produces.
+ *
+ * `text` is the only part read. Everything else AG-UI 0.0.57 allows — image, audio, video,
+ * document, binary — is named by its kind rather than typed out in full, because this file does
+ * not send any of them and a type that enumerated their sources would be a promise of support it
+ * does not keep.
+ */
 type InputPart =
   | { type: "text"; text: string }
-  | { type: "image"; source: unknown; metadata?: unknown };
+  | { type: string; source?: unknown; metadata?: unknown };
 
 export type MessageContent = string | InputPart[] | null | undefined;
 
-/** The readable text of a message. Images are named, never stringified and never dropped. */
+/**
+ * The readable text of a message. Anything that is not text is NAMED, never stringified and never
+ * dropped — "[image]" or "[audio]" keeps "what is this?" from arriving as an empty question.
+ */
 export function textOf(content: MessageContent): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
   return content
-    .map((part) => (part.type === "text" ? part.text : "[image]"))
+    .map((part) =>
+      part.type === "text" ? (part as { text: string }).text : `[${part.type}]`,
+    )
     .filter((text) => text.length > 0)
     .join("\n");
 }

@@ -24,6 +24,15 @@ describe("what a message says when its content is not a string", () => {
     );
   });
 
+  test("every non-text part is named by its kind, so the question is not left empty", () => {
+    expect(
+      textOf([
+        { type: "audio", source: { type: "url", value: "https://x/a.m4a" } },
+        { type: "text", text: "이거 받아 적어줘" },
+      ]),
+    ).toBe("[audio]\n이거 받아 적어줘");
+  });
+
   test("an image is named rather than dropped, so the question is not left empty", () => {
     expect(
       textOf([
