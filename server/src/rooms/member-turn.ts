@@ -11,7 +11,7 @@
  * SENDS THEM rather than at the end — so a member's first sentence reaches the room while it is
  * still deciding whether to add a second.
  */
-import type { AbstractAgent } from "@ag-ui/client";
+import type { AbstractAgent, Message } from "@ag-ui/client";
 import type { RunLedger } from "../runner/run-ledger";
 import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
 import {
@@ -36,6 +36,8 @@ export type MemberTurnInput = {
   peers: readonly RoomMember[];
   lines: readonly RoomLine[];
   windingDown: boolean;
+  /** The tail of this Bot's private conversation with the person. See `private-history.ts`. */
+  history?: Message[];
   /** The Bot itself, resolved for the person whose room it is. Null when it can no longer answer. */
   agent: AbstractAgent | null;
   toolkit: UnattendedToolkit;
@@ -83,6 +85,7 @@ export async function runMemberTurn(
       toolkit,
       timeoutMs: input.timeoutMs,
       preamble: roomConduct(input.member),
+      ...(input.history ? { history: input.history } : {}),
       watch: watchRoomSpeech(input.watch),
     });
   } catch (error) {

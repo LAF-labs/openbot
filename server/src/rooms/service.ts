@@ -23,6 +23,7 @@ import type { AbstractAgent } from "@ag-ui/client";
 import type { RoomFrame } from "./frames";
 import { namesOf, resolveRoomMembers } from "./members";
 import { runMemberTurn } from "./member-turn";
+import { readPrivateHistory } from "./private-history";
 import { runRoomTurn } from "./orchestrator";
 import type { RoomMember } from "./prompt";
 import {
@@ -293,6 +294,17 @@ export function createRoomService(options: RoomServiceOptions) {
             input.personName,
           );
 
+          /*
+           * What this member remembers of the person: the tail of their private conversation, read
+           * here rather than once per turn because a turn can outlast a private exchange. Bounded
+           * in `private-history.ts`, and empty for a Bot the person has never talked to alone.
+           */
+          const history = await readPrivateHistory(
+            database,
+            input.actor.id,
+            member.id,
+          );
+
           const toolkit = options.tools
             ? await options.tools(
                 member.id,
@@ -313,6 +325,7 @@ export function createRoomService(options: RoomServiceOptions) {
               member,
               peers: input.members,
               lines,
+              history,
               windingDown,
               agent: agents[member.id] ?? null,
               toolkit,

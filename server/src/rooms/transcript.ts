@@ -36,7 +36,8 @@ export type Executor = Pick<
   "select" | "insert" | "update" | "execute"
 >;
 
-function textOf(content: unknown): string {
+/** The words of a stored message. Parts that are not text — an image, a file — are not words. */
+export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   // AG-UI allows an array of parts on a user message. Only the text of it belongs in a room line.
   if (!Array.isArray(content)) return "";

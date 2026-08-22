@@ -79,6 +79,14 @@ export type UnattendedRunOptions = {
    */
   preamble?: string;
   /**
+   * What the Bot remembers going in, placed between the situation note and the instruction.
+   *
+   * A routine has none: it is a standing order, not a conversation. A room turn carries the tail
+   * of the Bot's own conversation with the person (`rooms/private-history.ts`), which is what lets
+   * it answer "did you finish that?" in a room the way it would in private.
+   */
+  history?: Message[];
+  /**
    * Somebody watching the model's events as they arrive.
    *
    * A room turn relays them to the browser so a person sees the Bot typing. Merged UNDER the loop's
@@ -214,6 +222,7 @@ export async function runUnattended(
       role: "system",
       content: options.preamble ?? UNATTENDED_NOTE,
     },
+    ...(options.history ?? []),
     { id: randomUUID(), role: "user", content: instruction },
   ]);
 

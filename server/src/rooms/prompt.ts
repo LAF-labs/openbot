@@ -8,13 +8,12 @@
  * Bot answers from ITS OWN conversation, and the room arrives as one tagged user turn — a header,
  * who is present, and the lines said since this Bot last spoke.
  *
- * WHAT A ROOM TURN CONTAINS, EXACTLY: this prompt and nothing else. The Bot's own conversation with
- * this person is deliberately NOT in scope yet. The reference does include it — its members answer
- * from a unified history — and that is the better end state, but it means sending a whole private
- * conversation on every room turn, and nothing in this product bounds a conversation's length yet.
- * A room turn that is self-contained is one whose cost is known. The seam for it is `history` on
- * the member turn, and the day it is filled in, this paragraph and the last clause of
- * `roomConduct` are what have to change with it.
+ * WHAT A ROOM TURN CONTAINS: this prompt, behind the tail of the Bot's own conversation with this
+ * person. The reference's members answer from their unified history and so do ours, with one bound
+ * the reference does not have: `private-history.ts` carries the last dozen things said in private
+ * and cuts each one, so a room turn's worst-case cost is a known number rather than the length of
+ * somebody's conversation. Everything older than that tail is not in front of the Bot, which is
+ * why `roomConduct` ends by telling it to ask rather than assume.
  *
  * SPEAKING IS A TOOL CALL, NOT PROSE. Plain text a Bot writes during a room turn is private
  * scratch space; only `send_message` puts words in the room. That is what makes silence
@@ -74,7 +73,8 @@ export function linesSince(
   return [...lines];
 }
 
-function clamp(text: string, limit: number): string {
+/** `text` cut to `limit` characters, the last one an ellipsis when anything was dropped. */
+export function clamp(text: string, limit: number): string {
   const points = Array.from(text);
   return points.length <= limit
     ? text
@@ -234,6 +234,6 @@ export function roomConduct(member: RoomMember): string {
     "",
     "When the room asks for real work — checking a page, reading a file — do the work first and then deliver the result with send_message. Tool calls and plain text are private; only what you send is delivered.",
     "",
-    `Everything you know about this room is above. Your private conversation with this person is not in front of you during a room turn, so ask rather than assume, and never claim to remember something the room has not said.`,
+    "The most recent part of your private conversation with this person is in your history; the room's messages are in this turn. Beyond those two, ask rather than assume, and never claim to remember something neither has said.",
   ].join("\n");
 }

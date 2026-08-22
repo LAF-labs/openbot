@@ -403,3 +403,43 @@ describe("what the run reports", () => {
     ]);
   });
 });
+
+describe("what the Bot remembers going in", () => {
+  test("history sits between the situation note and the instruction", async () => {
+    const agent = fakeAgent([
+      { id: "a-reply", role: "assistant", content: "ok" },
+    ]);
+    await runUnattended(agent, "It's your turn.", {
+      toolkit: { tools: [], execute: async () => ({ ok: false }) },
+      timeoutMs: 1_000,
+      preamble: "You are in a room.",
+      history: [
+        { id: "h1", role: "user", content: "다음 주 일정 정리해줘" },
+        { id: "h2", role: "assistant", content: "회의가 세 건 있어요." },
+      ],
+    });
+    // The model's own reply is appended by the fake; everything before it is what the loop set.
+    const seen = agent.messages
+      .filter((message) => message.id !== "a-reply")
+      .map((message) => [message.role, message.content]);
+    expect(seen).toEqual([
+      ["system", "You are in a room."],
+      ["user", "다음 주 일정 정리해줘"],
+      ["assistant", "회의가 세 건 있어요."],
+      ["user", "It's your turn."],
+    ]);
+  });
+
+  test("a routine carries none", async () => {
+    const agent = fakeAgent([{ id: "a-reply", role: "assistant", content: "ok" }]);
+    await runUnattended(agent, "Check the balance.", {
+      toolkit: { tools: [], execute: async () => ({ ok: false }) },
+      timeoutMs: 1_000,
+    });
+    expect(agent.messages.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
+  });
+});
