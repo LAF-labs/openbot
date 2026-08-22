@@ -41,7 +41,13 @@ export function NewAgent() {
   const [title, setTitle] = useState("");
   const [role, setRole] = useState("");
 
-  const ready = name.trim() && title.trim() && role.trim();
+  /*
+   * A NAME IS ALL THAT IS ASKED. A bot starts with nothing set and can become anything; the
+   * description is what it will be, and a person who does not know that yet should be able to make
+   * the bot anyway and find out by talking to it. A bot created with no description opens by asking
+   * what it is for.
+   */
+  const ready = name.trim().length > 0;
 
   /*
    * The translated text, not the English source. A preset is a starting point for a Bot's own name,
@@ -68,6 +74,7 @@ export function NewAgent() {
           ...agentInputFrom({
             ...emptyAgentForm,
             name: name.trim(),
+            // Not asked for here — a preset may carry one, and the profile screen edits it later.
             title: title.trim(),
             roleDescription: role.trim(),
           }),
@@ -126,17 +133,12 @@ export function NewAgent() {
       </Field>
 
       <Field>
-        <FieldLabel htmlFor="new-bot-title">{t("Title")}</FieldLabel>
-        <Input
-          id="new-bot-title"
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder={t("Finance Operations")}
-          value={title}
-        />
-      </Field>
-
-      <Field>
-        <FieldLabel htmlFor="new-bot-role">{t("Role")}</FieldLabel>
+        <FieldLabel htmlFor="new-bot-role">
+          {t("What should this Bot help with?")}{" "}
+          <span className="font-normal text-muted-foreground">
+            {t("(Optional)")}
+          </span>
+        </FieldLabel>
         <Textarea
           id="new-bot-role"
           onChange={(event) => setRole(event.target.value)}
@@ -148,7 +150,7 @@ export function NewAgent() {
         />
         <p className="text-muted-foreground text-sm">
           {t(
-            "The role you write here applies in every channel this coworker works in.",
+            "This is what the Bot is for. Leave it blank and it will ask you itself. You can change it any time.",
           )}
         </p>
       </Field>

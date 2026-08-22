@@ -97,12 +97,26 @@ export type AgentStandingProfile = {
 export function standingRoleMessage(
   profile: AgentStandingProfile,
 ): StandingRoleMessage {
+  const title = profile.title.trim();
+  const role = profile.roleDescription.trim();
   return {
     id: `standing-role:${profile.id}`,
     role: "system",
     content: [
-      `You are ${profile.name}, ${profile.title}.`,
-      profile.roleDescription,
+      title ? `You are ${profile.name}, ${title}.` : `You are ${profile.name}.`,
+      /*
+       * A BOT WITH NO DESCRIPTION HAS NOT BEEN GIVEN A JOB YET, AND IS TOLD SO.
+       *
+       * A bot starts with nothing set — the person who made it decides what it becomes, and until
+       * they have said, the honest thing is to ask. Without this the empty description simply fell
+       * out of the message and the bot behaved as if it had a role nobody had written, which reads
+       * to the person as a colleague who has forgotten what they are for.
+       */
+      role ||
+        "You have just been created and nobody has told you what you are for yet. " +
+          "Open by introducing yourself in one line and asking what they would like you to help " +
+          "with. Whatever they answer is your job from then on: take it up immediately, and say " +
+          "that they can make it stick by writing it into your description in your profile.",
       "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
     ].join("\n\n"),
   };

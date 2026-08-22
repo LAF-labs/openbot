@@ -57,17 +57,23 @@ export function parseAgentInput(
   );
   if (typeof name !== "string") return name;
 
-  const title = boundedText(
+  /*
+   * OPTIONAL, BOTH OF THEM. A bot starts with nothing set and can become anything; forcing a job
+   * description out of somebody before they have met the bot is the shape we just removed from the
+   * deployment package. A bot with no description opens by asking what it is for
+   * (`standingRoleMessage`), which is the honest version of an empty field.
+   */
+  const title = optionalBoundedText(
     input.title,
     120,
-    "Title must be text between 1 and 120 characters.",
+    "Title must be text of at most 120 characters.",
   );
   if (typeof title !== "string") return title;
 
-  const roleDescription = boundedText(
+  const roleDescription = optionalBoundedText(
     input.roleDescription,
     1000,
-    "Role description must be text between 1 and 1000 characters.",
+    "Role description must be text of at most 1000 characters.",
   );
   if (typeof roleDescription !== "string") return roleDescription;
 
@@ -457,6 +463,18 @@ function boundedText(
   return trimmed.length > 0 && trimmed.length <= maximumLength
     ? trimmed
     : { ok: false, error };
+}
+
+/** The same, for a field a person may leave blank. Absent and empty both mean empty. */
+function optionalBoundedText(
+  value: unknown,
+  maximumLength: number,
+  error: string,
+): string | { ok: false; error: string } {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") return { ok: false, error };
+  const trimmed = value.trim();
+  return trimmed.length <= maximumLength ? trimmed : { ok: false, error };
 }
 
 /**

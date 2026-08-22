@@ -42,6 +42,10 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "What should this Bot help with?": "이 봇이 무엇을 도와주면 좋을까요?",
+  "(Optional)": "(선택)",
+  "This is what the Bot is for. Leave it blank and it will ask you itself. You can change it any time.":
+    "봇이 무엇을 하는 존재인지입니다. 비워 두면 봇이 직접 물어봅니다. 언제든 바꿀 수 있어요.",
   "Nobody had anything to add this time.":
     "이번에는 아무도 덧붙일 말이 없었어요.",
   "A coworker": "봇",

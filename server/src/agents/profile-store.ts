@@ -318,7 +318,10 @@ export function createAgentProfileStore(
           ownerUserId: actor.id,
           title: input.title,
           roleDescription: input.roleDescription,
-          avatarSeed: id,
+          // The face the person picked, not the id. `update()` always honoured this; `create()`
+          // overwrote it with the agent id, so the mascot hashed that into SOME face and the person
+          // silently got a different one from the one they chose.
+          avatarSeed: input.avatarSeed ?? id,
           visibility: input.visibility,
         });
 

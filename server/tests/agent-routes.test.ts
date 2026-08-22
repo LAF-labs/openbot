@@ -128,33 +128,17 @@ describe("agent input parser", () => {
     ["name", 12, "Name must be text between 1 and 80 characters."],
     ["name", "   ", "Name must be text between 1 and 80 characters."],
     ["name", "n".repeat(81), "Name must be text between 1 and 80 characters."],
-    ["title", undefined, "Title must be text between 1 and 120 characters."],
-    ["title", false, "Title must be text between 1 and 120 characters."],
-    ["title", "\n\t", "Title must be text between 1 and 120 characters."],
-    [
-      "title",
-      "t".repeat(121),
-      "Title must be text between 1 and 120 characters.",
-    ],
-    [
-      "roleDescription",
-      undefined,
-      "Role description must be text between 1 and 1000 characters.",
-    ],
+    ["title", false, "Title must be text of at most 120 characters."],
+    ["title", "t".repeat(121), "Title must be text of at most 120 characters."],
     [
       "roleDescription",
       {},
-      "Role description must be text between 1 and 1000 characters.",
-    ],
-    [
-      "roleDescription",
-      "   ",
-      "Role description must be text between 1 and 1000 characters.",
+      "Role description must be text of at most 1000 characters.",
     ],
     [
       "roleDescription",
       "r".repeat(1001),
-      "Role description must be text between 1 and 1000 characters.",
+      "Role description must be text of at most 1000 characters.",
     ],
     ["visibility", undefined, "Visibility must be public or private."],
     ["visibility", 1, "Visibility must be public or private."],
@@ -164,6 +148,29 @@ describe("agent input parser", () => {
     expect(parseAgentInput({ ...validInput, [field]: value })).toEqual({
       ok: false,
       error,
+    });
+  });
+
+  /*
+   * A BOT MAY BE CREATED WITH NOTHING BUT A NAME. The description is what the bot is for, and a
+   * person who does not know that yet should still be able to make the bot and find out by talking
+   * to it — a bot with no description opens by asking. Absent, null and blank all mean the same
+   * thing, and all of them are allowed.
+   */
+  test.each([
+    ["title", undefined],
+    ["title", null],
+    ["title", "   "],
+    ["title", "\n\t"],
+    ["roleDescription", undefined],
+    ["roleDescription", null],
+    ["roleDescription", "   "],
+  ])("accepts a blank %s, because it is optional", (field, value) => {
+    const result = parseAgentInput({ ...validInput, [field]: value });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { ...validInput, [field]: "" },
     });
   });
 
@@ -480,11 +487,37 @@ describe("agent lifecycle routes", () => {
     expect(await json(malformed)).toEqual({
       error: "Agent input must be a JSON object.",
     });
+    /*
+     * A name alone is still not a whole body — `visibility` says who may see the bot, and guessing
+     * that for somebody is not a thing this parser will do. What a name alone no longer fails on is
+     * the title and the description: those are the bot's job, and a bot may be made before its job
+     * is decided.
+     */
     expect(partial.status).toBe(400);
     expect(await json(partial)).toEqual({
-      error: "Title must be text between 1 and 120 characters.",
+      error: "Visibility must be public or private.",
     });
     expect(store.calls).toEqual([]);
+  });
+
+  test("accepts a bot that has nothing but a name", async () => {
+    const store = fakeStore();
+    const app = appFor(store);
+
+    const response = await app.request("http://openbot.test/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "새 봇", visibility: "private" }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(store.calls.at(0)?.[0]).toBe("create");
+    // calls are [method, actor, input]
+    expect(store.calls.at(0)?.[2]).toMatchObject({
+      name: "새 봇",
+      title: "",
+      roleDescription: "",
+    });
   });
 
   test("returns 404 when get returns null", async () => {
