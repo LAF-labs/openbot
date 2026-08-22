@@ -62,6 +62,14 @@ export function relayApprovals(
     announce: (question: RoomQuestion, answered: boolean) => void;
     /** Absent where nothing can wait: the member then reports that it is waiting, as before. */
     wait?: ApprovalWaiter;
+    /**
+     * Aborted when the member's turn is over, however it ended.
+     *
+     * The run's deadline rejects the call and walks away from this promise; it does not stop it. So
+     * without this the wait keeps polling after the turn is dead and, when the person finally
+     * answers, performs the action on behalf of a turn nobody is watching any more.
+     */
+    signal?: AbortSignal;
   },
 ): UnattendedToolkit {
   return {
@@ -75,7 +83,12 @@ export function relayApprovals(
       const answer = await options.wait?.(
         options.memberId,
         question.approvalId,
+        options.signal,
       );
+
+      // Checked again after the wait as well as inside it: an answer that arrived in the same tick
+      // as the turn's end must not be spent on it.
+      if (options.signal?.aborted) return outcome;
 
       if (answer === "granted") {
         options.announce(question, true);

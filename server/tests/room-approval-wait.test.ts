@@ -80,6 +80,15 @@ describe("waiting for a person, in a room", () => {
     expect(it.sleeps).toEqual([1_000, 1_000, 1_000, 1_000, 1_000]);
   });
 
+  test("a turn that ended stops the wait where it stands", async () => {
+    const over = new AbortController();
+    over.abort();
+    const it = registry([[approval()]]);
+    expect(await it.waiter("risk", "ap_1", over.signal)).toBe("unanswered");
+    // Not even one look: there is nothing left to answer for.
+    expect(it.looks()).toBe(0);
+  });
+
   test("a failed read is a blip, not an answer", async () => {
     const it = registry([null, null, [approval({ granted: true })]]);
     expect(await it.waiter("risk", "ap_1")).toBe("granted");

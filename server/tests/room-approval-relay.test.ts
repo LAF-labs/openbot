@@ -38,7 +38,12 @@ function toolkit(outcomes: ToolOutcome[]) {
 
 function relay(
   outcomes: ToolOutcome[],
-  wait?: () => Promise<"granted" | "denied" | "unanswered">,
+  wait?: (
+    botId: string,
+    approvalId: string,
+    signal?: AbortSignal,
+  ) => Promise<"granted" | "denied" | "unanswered">,
+  signal?: AbortSignal,
 ) {
   const { base, calls } = toolkit(outcomes);
   const announced: Array<{ approvalId: string; answered: boolean }> = [];
@@ -47,6 +52,7 @@ function relay(
     announce: (question, answered) =>
       announced.push({ approvalId: question.approvalId, answered }),
     ...(wait ? { wait } : {}),
+    ...(signal ? { signal } : {}),
   });
   return { relayed, calls, announced };
 }
@@ -139,6 +145,31 @@ describe("a member's action at a boundary", () => {
       { id: "c" },
     );
     expect(outcome).toBe(ASKING);
+    expect(it.announced).toEqual([{ approvalId: "ap_1", answered: false }]);
+  });
+
+  test("an answer that arrives after the turn is over is not acted on", async () => {
+    /*
+     * The run's deadline rejects the call and walks away from this promise; it does not stop it. An
+     * answer landing then must not send the action through on behalf of a turn nobody is watching.
+     */
+    const over = new AbortController();
+    const it = relay(
+      [ASKING, { ok: true, text: "24°C" }],
+      async () => {
+        over.abort();
+        return "granted";
+      },
+      over.signal,
+    );
+    const outcome = await it.relayed.execute(
+      "computer_navigate",
+      {},
+      { id: "c" },
+    );
+    expect(outcome).toBe(ASKING);
+    // Never retried, and never announced as answered.
+    expect(it.calls).toHaveLength(1);
     expect(it.announced).toEqual([{ approvalId: "ap_1", answered: false }]);
   });
 

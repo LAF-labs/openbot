@@ -360,3 +360,47 @@ describe("a connection that went away", () => {
     expect(turnLost(EMPTY_ROOM)).toBe(EMPTY_ROOM);
   });
 });
+
+describe("interrupting a room mid-reply", () => {
+  test("a half-typed message goes with the turn it belonged to", () => {
+    /*
+     * The person said something else. The fragment on screen belongs to a turn that is now
+     * superseded, and its own end frame will be dropped as stale — so it would have sat there until
+     * the NEXT turn happened to finish.
+     */
+    const mid = after([turn, open, delta("생각하고 있는")]);
+    expect(mid.messages).toHaveLength(1);
+
+    const next = applyRoomFrame(
+      mid,
+      { ...base, kind: "room.turn", turnId: "t2", epoch: 4, members: [] },
+      ROOM,
+    );
+    expect(next.messages).toEqual([]);
+    expect(next.turnId).toBe("t2");
+    expect(next.epoch).toBe(4);
+  });
+
+  test("messages that had settled are kept", () => {
+    const settled = after([
+      turn,
+      open,
+      delta("반가워요"),
+      {
+        ...base,
+        kind: "room.end",
+        messageId: "call_1",
+        posted: true,
+        storedId: "m1",
+        at: "2026-08-22T13:00:00.000Z",
+        text: "반가워요",
+      },
+    ]);
+    const next = applyRoomFrame(
+      settled,
+      { ...base, kind: "room.turn", turnId: "t2", epoch: 4, members: [] },
+      ROOM,
+    );
+    expect(next.messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+});

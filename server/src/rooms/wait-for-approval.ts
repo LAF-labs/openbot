@@ -33,6 +33,8 @@ export const APPROVAL_POLL_MS = 1_000;
 export type ApprovalWaiter = (
   botId: string,
   approvalId: string,
+  /** Stop waiting: the turn this wait belongs to is over. */
+  signal?: AbortSignal,
 ) => Promise<ApprovalOutcome>;
 
 export function createApprovalWaiter(
@@ -55,9 +57,15 @@ export function createApprovalWaiter(
         timer.unref?.();
       }));
 
-  return async function waitForApproval(botId, approvalId) {
+  return async function waitForApproval(botId, approvalId, signal) {
     const deadline = now() + waitMs;
     for (;;) {
+      /*
+       * The turn ended while this was waiting — its deadline fired, or it was aborted. The wait is
+       * inside a promise the loop has already walked away from, so without this it keeps polling
+       * and, worse, its answer would send the action through on behalf of a turn that is over.
+       */
+      if (signal?.aborted) return "unanswered";
       /*
        * `pending` includes answered-but-unspent questions on purpose — that is how a waiting caller
        * learns the answer, and it is what the browser's waiter reads too. A question that is GONE

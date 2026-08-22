@@ -70,7 +70,18 @@ export function applyRoomFrame(
   if (frame.channelId !== channelId) return state;
 
   if (frame.kind === "room.turn") {
-    return { ...state, turnId: frame.turnId, epoch: frame.epoch };
+    /*
+     * A NEW TURN TAKES THE OLD ONE'S HALF-DRAWN MESSAGES WITH IT. The person said something else,
+     * so whatever a member was part-way through saying is never going to finish — its own
+     * `room.end` belongs to the superseded turn and is dropped as stale. Left alone, the fragment
+     * sat on screen until the next turn happened to end.
+     */
+    return {
+      ...state,
+      messages: state.messages.filter((message) => !message.streaming),
+      turnId: frame.turnId,
+      epoch: frame.epoch,
+    };
   }
 
   // A question is not typing. It stands whatever turn it was raised in, until it is answered or
@@ -95,10 +106,23 @@ export function applyRoomFrame(
   // Anything from a turn older than the one we know about is a member answering a superseded
   // question. A turn newer than ours is one we missed the start of — adopt it rather than drop it.
   if (frame.epoch < state.epoch) return state;
+  /*
+   * A NEWER EPOCH TAKES THE OLD TURN'S HALF-DRAWN MESSAGES WITH IT. The person said something else,
+   * so whatever a member was part-way through saying is never going to finish — its own `room.end`
+   * belongs to the superseded turn and is dropped as stale. Left alone, the fragment sat on screen
+   * until the NEXT turn happened to end.
+   */
   const adopted =
-    frame.epoch > state.epoch || state.turnId === null
-      ? { ...state, turnId: frame.turnId, epoch: frame.epoch }
-      : state;
+    frame.epoch > state.epoch
+      ? {
+          ...state,
+          messages: state.messages.filter((message) => !message.streaming),
+          turnId: frame.turnId,
+          epoch: frame.epoch,
+        }
+      : state.turnId === null
+        ? { ...state, turnId: frame.turnId, epoch: frame.epoch }
+        : state;
 
   switch (frame.kind) {
     case "room.open": {

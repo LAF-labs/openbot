@@ -319,8 +319,14 @@ export function createRoomService(options: RoomServiceOptions) {
            * is shown to the person, the turn holds for their answer, and the answer travels with
            * the retry. See `approval-relay.ts` for why those three belong together.
            */
+          /*
+           * Aborted the moment this member's turn returns, however it returned. What it stops is a
+           * wait for a person's answer outliving the turn that raised the question.
+           */
+          const turnOver = new AbortController();
           const toolkit = relayApprovals(base, {
             memberId: member.id,
+            signal: turnOver.signal,
             ...(options.awaitApproval ? { wait: options.awaitApproval } : {}),
             announce: (question, answered) =>
               options.emit({
@@ -340,6 +346,13 @@ export function createRoomService(options: RoomServiceOptions) {
 
           const open = new Set<string>();
           const result = await options.lane.run(member.id, async () => {
+            /*
+             * CHECKED AGAIN HERE, INSIDE THE LANE. The orchestrator checks before asking a member to
+             * speak, but the lane is a queue: a Bot busy with a routine can hold this for minutes,
+             * and the person may well have said something else by the time it is this member's
+             * turn. Answering then is answering a question nobody is still asking.
+             */
+            if (!(await isCurrent())) return { spoke: 0, failed: null };
             /*
              * READ INSIDE THE LANE, NOT BEFORE IT. Both of these are snapshots of a conversation
              * and both go stale: the lane is a queue, and a member whose Bot is busy with a routine
@@ -447,6 +460,7 @@ export function createRoomService(options: RoomServiceOptions) {
               posted: false,
             });
           }
+          turnOver.abort();
           if (result.failed) failures += 1;
           return result.spoke;
         },
