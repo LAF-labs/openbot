@@ -41,6 +41,15 @@ import { useSkillCommands } from "@/lib/plugins/skill-commands";
  */
 const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
 
+/**
+ * How long a room waits to be pointed at another Bot before giving up on the message.
+ *
+ * Longer than the join wait because the consequence is different: a join that has not finished
+ * costs ordering, and a swap that has not finished costs the message going to the wrong colleague.
+ * Giving up means saying so, never sending.
+ */
+const SWAP_TIMEOUT_MS = 5000;
+
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
@@ -431,7 +440,22 @@ export function ChannelChat({
 
     setTurnsInFlight((count) => count + 1);
     try {
-      await routeTo(target);
+      if (!(await routeTo(target))) {
+        /*
+         * The room could not be pointed at the Bot this message names, so the message is NOT sent.
+         * Sending it to whoever was bound a moment ago is the one outcome that must not happen: it
+         * puts a question meant for the risk analyst in front of the assistant, and both the person
+         * and the transcript would have every reason to believe it had been asked of the right one.
+         */
+        setRunError(
+          t("{name} could not be reached, so nothing was sent.", {
+            name:
+              agentProfiles?.find((profile) => profile.id === target)?.name ??
+              String(target),
+          }),
+        );
+        return;
+      }
       await deliver(trimmed, skillInstructions);
     } finally {
       setTurnsInFlight((count) => count - 1);
@@ -441,29 +465,43 @@ export function ChannelChat({
   /**
    * Point the room at the Bot this message names, and wait for the swap to land.
    *
-   * An id that is not in the room is ignored rather than run: `agentIds` is the room's membership,
-   * and a mention of somebody outside it is a typo or a stale chip, not an instruction to bring a
-   * stranger into somebody's conversation.
+   * Returns whether the room is now pointed where the caller asked. FALSE MEANS DO NOT SEND. The
+   * bound wait exists because a swap that never reports ready must not hang the composer forever —
+   * but timing out used to fall through and send anyway, to the Bot that was bound before, which is
+   * the worst of the three possible outcomes: the person asked one colleague and another answered,
+   * with nothing on screen saying so.
+   *
+   * An id that is not in the room is ignored rather than run, and that is not a failure: `agentIds`
+   * is the room's membership, and a mention of somebody outside it is a typo or a stale chip, not
+   * an instruction to bring a stranger into somebody's conversation. The message goes to whoever
+   * the room was already asking.
    */
-  const routeTo = async (target?: string | null) => {
-    if (!target || target === speakingRef.current) return;
-    if (!channel.agentIds.includes(target)) return;
+  const routeTo = async (target?: string | null): Promise<boolean> => {
+    if (!target || target === speakingRef.current) return true;
+    if (!channel.agentIds.includes(target)) return true;
 
     carried.current = [...agentRef.current.messages];
+    let landed = false;
     swapGate.current = new Promise<void>((resolve) => {
-      openSwapGate.current = resolve;
+      openSwapGate.current = () => {
+        landed = true;
+        resolve();
+      };
     });
     speakingRef.current = target;
     setSpeakingAgentId(target);
-    /*
-     * Bounded, like the join gate: a swap that never reports ready must not swallow the message.
-     * Sending to the previous Bot is a worse outcome than sending late, so the wait is the longer
-     * of the two — but it still ends.
-     */
     await Promise.race([
       swapGate.current,
-      new Promise((resolve) => setTimeout(resolve, SEND_WITHOUT_JOIN_AFTER_MS)),
+      new Promise((resolve) => setTimeout(resolve, SWAP_TIMEOUT_MS)),
     ]);
+    if (!landed) {
+      // Put it back, so the next message goes where the room was actually left pointing.
+      speakingRef.current = channel.agentIds.includes(speakingAgentId)
+        ? speakingAgentId
+        : defaultAgentId;
+      carried.current = null;
+    }
+    return landed;
   };
 
   useEffect(() => {

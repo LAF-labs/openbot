@@ -677,4 +677,6 @@ export const ko: Record<string, string> = {
   "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.":
     "당신은 {me}입니다. 이 대화는 동료가 여럿 있는 방입니다: {roster}. 위의 답변 중 일부는 당신이 아니라 동료의 것입니다 — 그들의 작업이나 근거를 자기 것으로 말하지 마세요. 당신 자신에 대해서만 답하세요.",
   "{name} needs you": "{name}이(가) 기다립니다",
+  "{name} could not be reached, so nothing was sent.":
+    "{name}에게 연결하지 못해 아무것도 보내지 않았습니다.",
 };
