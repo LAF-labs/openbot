@@ -20,7 +20,7 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafThreadRuns } from "../db/schema";
 
-export type RunOrigin = "chat" | "routine" | "wake" | "handoff";
+export type RunOrigin = "chat" | "routine" | "wake" | "handoff" | "room";
 
 export type RunStart = {
   agentId: string | null;

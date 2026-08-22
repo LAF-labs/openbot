@@ -1,0 +1,1 @@
+ALTER TABLE "channels" ADD COLUMN "room_turn_epoch" bigint DEFAULT 0 NOT NULL;

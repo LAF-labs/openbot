@@ -679,4 +679,5 @@ export const ko: Record<string, string> = {
   "{name} needs you": "{name}이(가) 기다립니다",
   "{name} did not pick up in time. Nothing was sent — try again.":
     "{name}이(가) 제때 응답하지 않았습니다. 아무것도 보내지 않았으니 다시 시도해 주세요.",
+  "In a room": "방에서 대화 중",
 };

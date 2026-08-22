@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
-  isRoomTurn,
+  addressedMembers,
+  isSilence,
   linesSince,
   ROOM_LINES,
   type RoomLine,
   roomConduct,
   roomTurnPrompt,
+  rotate,
 } from "../src/rooms/prompt";
 
 const risk = {
@@ -122,18 +124,49 @@ describe("which lines a Bot has not seen", () => {
   });
 });
 
-describe("telling a room turn from a private message", () => {
-  test("the tag is what distinguishes them, and only at the start", () => {
-    const prompt = roomTurnPrompt({
-      room: { name: "출시 준비" },
-      member: risk,
-      peers: [risk],
-      lines: [],
-    });
-    expect(isRoomTurn(prompt)).toBe(true);
-    expect(isRoomTurn("출시 일정 알려줘")).toBe(false);
-    // A person quoting the tag mid-sentence is not a room turn.
-    expect(isRoomTurn('제가 [Room: "출시 준비"] 라고 썼어요')).toBe(false);
+describe("whose turn it is", () => {
+  const members = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  test("naming nobody means everybody, not the Bot that sorts first", () => {
+    expect(addressedMembers(members, []).map((m) => m.id)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  test("naming somebody means only them", () => {
+    expect(addressedMembers(members, ["b"]).map((m) => m.id)).toEqual(["b"]);
+  });
+
+  test("naming only strangers falls back to everybody rather than nobody", () => {
+    expect(addressedMembers(members, ["zzz"]).map((m) => m.id)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  test("the order rotates, so the same Bot does not open every round", () => {
+    expect(rotate(members, 0).map((m) => m.id)).toEqual(["a", "b", "c"]);
+    expect(rotate(members, 1).map((m) => m.id)).toEqual(["b", "c", "a"]);
+    expect(rotate(members, 4).map((m) => m.id)).toEqual(["b", "c", "a"]);
+    expect(rotate([], 3)).toEqual([]);
+  });
+});
+
+describe("a Bot that had nothing to add", () => {
+  test("nothing, whitespace and (pass) are all silence", () => {
+    expect(isSilence("")).toBe(true);
+    expect(isSilence("   \n ")).toBe(true);
+    expect(isSilence("(pass)")).toBe(true);
+    expect(isSilence("pass")).toBe(true);
+    expect(isSilence("PASS")).toBe(true);
+  });
+
+  test("anything a room would want to read is not", () => {
+    expect(isSilence("동의합니다")).toBe(false);
+    expect(isSilence("pass the report over")).toBe(false);
   });
 });
 

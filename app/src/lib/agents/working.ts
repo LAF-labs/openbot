@@ -56,5 +56,6 @@ export function workingLabel(run: WorkingRun): string {
   if (run.origin === "routine") return t("Running a routine");
   if (run.origin === "handoff") return t("Helping another Bot");
   if (run.origin === "wake") return t("Following something up");
+  if (run.origin === "room") return t("In a room");
   return t("Working…");
 }

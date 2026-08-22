@@ -19,7 +19,12 @@
  * says so in its answer instead, which is the honest outcome.
  */
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent, Message, Tool } from "@ag-ui/client";
+import type {
+  AbstractAgent,
+  AgentSubscriber,
+  Message,
+  Tool,
+} from "@ag-ui/client";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -63,6 +68,23 @@ export type UnattendedRunOptions = {
    * page, read it, save a note" and short of a Bot clicking around a site until the timeout.
    */
   maxSteps?: number;
+  /**
+   * What the run is told about its situation, ahead of the instruction.
+   *
+   * A routine gets `UNATTENDED_NOTE` — nobody is watching, do not wait for anyone. A room turn gets
+   * something else entirely: who is in the room and how to talk in it. Same loop either way, which
+   * is the point of the parameter rather than a second loop.
+   */
+  preamble?: string;
+  /**
+   * Somebody watching the model's events as they arrive.
+   *
+   * A room turn relays them to the browser so a person sees the Bot typing. Merged UNDER the loop's
+   * own two handlers on purpose: the loop reads `onRunErrorEvent` and `onRunFinishedEvent` to tell
+   * a stream that failed from one that simply ended, and a watcher that shadowed either would take
+   * that away silently.
+   */
+  watch?: AgentSubscriber;
 };
 
 /** One turn of the model, for the record a routine keeps and an operator reads. */
@@ -185,7 +207,11 @@ export async function runUnattended(
   let awaiting: string | null = null;
 
   target.setMessages([
-    { id: randomUUID(), role: "system", content: UNATTENDED_NOTE },
+    {
+      id: randomUUID(),
+      role: "system",
+      content: options.preamble ?? UNATTENDED_NOTE,
+    },
     { id: randomUUID(), role: "user", content: instruction },
   ]);
 
@@ -229,6 +255,7 @@ export async function runUnattended(
       target.runAgent(
         { tools },
         {
+          ...options.watch,
           onRunErrorEvent: ({ event }) => {
             failure = event.message || "no reason was given";
             return {};

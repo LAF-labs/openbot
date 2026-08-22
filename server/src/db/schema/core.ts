@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -168,6 +169,19 @@ export const channels = pgTable(
     lastMessage: text("last_message"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     /** Which agent spoke, so a channel with several can show the right one. Null for a person. */
+    /**
+     * Which room turn is current, counted up by every message a person posts into the room.
+     *
+     * A ROOM TURN CAN OUTLIVE ITS QUESTION. Several Bots answering in rounds takes a minute, and in
+     * that minute the person can say something else — at which point everything still running is
+     * answering a question that has been superseded. Every checkpoint in the turn compares this
+     * number against the one it started with, so a newer message ends the older turn wherever it had
+     * got to. A column rather than a counter in memory because two server processes must not each
+     * believe their own turn is the current one.
+     */
+    roomTurnEpoch: bigint("room_turn_epoch", { mode: "number" })
+      .notNull()
+      .default(0),
     lastMessageAgentId: text("last_message_agent_id").references(
       () => agents.id,
       {
