@@ -1067,3 +1067,91 @@ describe("a process holding no snapshot", () => {
     expect(calls).toEqual(["click"]);
   });
 });
+
+/**
+ * A deployment that has decided every one of these gets a pair of eyes.
+ *
+ * The allowance is a real widening of a boundary, and until this existed there was no way to say
+ * no to it: any administrator could stand down any ask rule from a transcript line, and the person
+ * doing it at the end of a long task is not deciding policy, they are clearing an obstacle. Grok
+ * names the same thing — "Always allow is disabled by team policy".
+ *
+ * The switch expresses itself as the ABSENCE OF A SCOPE on the question. One decision made once, in
+ * the place that already knows the policy, rather than the same rule written into a lookup, a
+ * button and an answering handler and kept in agreement by hand.
+ */
+describe("when the boundary refuses to be answered for good", () => {
+  const NO_STANDING: ActionPolicy = {
+    mode: "enforce",
+    deny: [],
+    ask: ['contains(element.name, "submit")'],
+    allow: ["true"],
+    standingAllowances: "off",
+  };
+
+  test("the question carries no scope, so nothing offers to grant one", async () => {
+    const { gateway } = await gatewayWith(NO_STANDING);
+    const error = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    // The card draws its wider button from this and the answering route grants from it. Absent, the
+    // question has two answers and neither of them is "for good".
+    expect(error.scope).toBeUndefined();
+  });
+
+  test("an allowance granted before the switch is not honoured while it is off", async () => {
+    // Not deleted — suspended. A policy is what is in force now, and a switch that left last week's
+    // allowances working would not restore the boundary it appears to restore.
+    const { gateway, standing, calls, rows } = await gatewayWith(NO_STANDING);
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "example.com" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    const error = await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+    expect(rows.map((row) => row.eventType)).toEqual(["approval.requested"]);
+  });
+
+  test("and it works again the moment the switch comes back", async () => {
+    let policy: ActionPolicy = NO_STANDING;
+    const { client, calls } = fakeClient();
+    const { store, rows } = fakeAudit();
+    const standing = createStandingApprovalStore();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => policy,
+      approvals: createApprovalRegistry(),
+      standing,
+    });
+    await gateway.snapshot("default");
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "example.com" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    policy = { ...NO_STANDING, standingAllowances: "allowed" };
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    expect(calls).toEqual(["click"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+    ]);
+  });
+});

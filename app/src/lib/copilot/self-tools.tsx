@@ -307,7 +307,19 @@ export function SelfTools() {
         ...(name === undefined ? [] : [t("name")]),
         ...(title === undefined ? [] : [t("title")]),
         ...(description === undefined ? [] : [t("what it is for")]),
-        ...(effort === undefined ? [] : [effortLabel(effort)]),
+        /*
+         * The field, then the value it was set to. Its siblings are field names, so the bare label
+         * put a value in a list of names — "이름, 빠르게" — which reads as a Bot that renamed
+         * itself to "quickly". Naming both is also more useful than either: the one thing a person
+         * would want to check about this change is which way it went.
+         */
+        ...(effort === undefined
+          ? []
+          : [
+              t("how hard it thinks ({level})", {
+                level: effortLabel(effort),
+              }),
+            ]),
       ];
       const profileLine = {
         doing: t("Updating its own profile"),

@@ -650,3 +650,36 @@ describe("a rule about a Bot repeating itself", () => {
     ).toBe(false);
   });
 });
+/**
+ * Whether a question may be answered for good, as it arrives over HTTP.
+ *
+ * Rejected rather than coerced, like everything else here. A typo silently meaning "allowed" is the
+ * direction that loosens a boundary, and an operator would believe a restriction is in force when
+ * it is not — which is the one behaviour this parser exists to prevent.
+ */
+describe("standing allowances in a policy", () => {
+  const base = { mode: "enforce", deny: [], ask: [], allow: ["true"] };
+
+  test("absent means allowed, so an older policy still means what it meant", () => {
+    const parsed = parseActionPolicy(base);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.policy.standingAllowances).toBeUndefined();
+  });
+
+  test("takes the two it allows", () => {
+    for (const value of ["allowed", "off"] as const) {
+      const parsed = parseActionPolicy({ ...base, standingAllowances: value });
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.policy.standingAllowances).toBe(value);
+    }
+  });
+
+  test("refuses anything else rather than reading it as allowed", () => {
+    expect(parseActionPolicy({ ...base, standingAllowances: "no" }).ok).toBe(
+      false,
+    );
+    expect(parseActionPolicy({ ...base, standingAllowances: false }).ok).toBe(
+      false,
+    );
+  });
+});

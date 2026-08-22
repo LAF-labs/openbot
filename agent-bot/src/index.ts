@@ -119,6 +119,31 @@ function toProviderTools(input: RunAgentInput) {
   }));
 }
 
+/**
+ * How hard to think, as the caller asked and this API spells it.
+ *
+ * The words on the wire are the product's — `quick`, `balanced`, `thorough` — because the two
+ * services that answer a Bot speak different APIs and would otherwise each need the other's
+ * spelling: the built-in path sends `reasoning: { effort }` to the Responses API and this one sends
+ * `reasoning_effort` to chat completions. Each end translates its own, so a third would be one
+ * file, not a change everywhere upstream.
+ *
+ * Undefined for anything else, including nothing at all. A caller that says nothing gets exactly
+ * the request this service made before the setting existed, which is the only safe reading of
+ * silence — and a value this service does not recognise is silence.
+ */
+function reasoningEffortOf(
+  input: RunAgentInput,
+): "low" | "medium" | "high" | undefined {
+  const forwarded = input.forwardedProps;
+  if (!forwarded || typeof forwarded !== "object") return undefined;
+  const effort = (forwarded as Record<string, unknown>).effort;
+  if (effort === "quick") return "low";
+  if (effort === "balanced") return "medium";
+  if (effort === "thorough") return "high";
+  return undefined;
+}
+
 export async function runAgent(
   input: RunAgentInput,
   provider: CompletionProvider = liveProvider,
@@ -156,11 +181,16 @@ export async function runAgent(
       }, HEARTBEAT_MS);
 
       try {
+        const effort = reasoningEffortOf(input);
         const completion = await provider({
           model: MODEL,
           messages: toProviderMessages(input),
           tools: toProviderTools(input),
           stream: true,
+          // Omitted rather than sent as a default: a model that does not reason answers a request
+          // carrying this with a 400 on some providers and silence on others, and a deployment that
+          // has not said its model reasons must get the request it always got.
+          ...(effort ? { reasoning_effort: effort } : {}),
         });
 
         const messageId = `msg_${input.runId}`;

@@ -422,13 +422,24 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       });
       const rule = decision.matched ?? "";
       /*
+       * WHETHER THIS QUESTION CAN BE ANSWERED FOR GOOD AT ALL.
+       *
+       * A deployment that has decided every one of these actions gets a pair of eyes says so here,
+       * and one switch then does the whole job: nothing standing is honoured, and the approval goes
+       * out without a scope — which is already how the card and the answering route read "there is
+       * nothing to grant". One decision, expressed once, rather than the same rule written into a
+       * lookup, a button and a handler and kept in agreement by hand.
+       */
+      const mayStand = (policy?.standingAllowances ?? "allowed") === "allowed";
+      /*
        * Looked up before the question is opened, and only for an `ask`. A `deny` never reaches this
        * branch, so nothing a deployment has forbidden can be waved through by an allowance — which
        * is the one property that makes this a convenience rather than a hole.
        */
-      const already = presented?.ok
-        ? null
-        : await standing.find(botId, rule, scopeKeyOf(allowance));
+      const already =
+        presented?.ok || !mayStand
+          ? null
+          : await standing.find(botId, rule, scopeKeyOf(allowance));
 
       if (presented?.ok && presented.approval.answeredBy) {
         approvedBy = presented.approval.answeredBy;
@@ -451,7 +462,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           rule,
           question: decision.reason,
           fingerprint,
-          scope: allowance,
+          // Absent where the deployment has turned allowances off: the card then offers two buttons
+          // and the answering route has nothing to grant, without either of them knowing why.
+          ...(mayStand ? { scope: allowance } : {}),
           // Where the answer's own row will be filed, decided here where what the question is about
           // is still known. See PendingApproval.target.
           target: { type: "computer", id: computerId },

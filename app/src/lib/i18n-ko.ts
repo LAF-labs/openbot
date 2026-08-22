@@ -871,4 +871,15 @@ export const ko: Record<string, string> = {
   Quick: "빠르게",
   Balanced: "보통",
   Thorough: "꼼꼼하게",
+  "Answering for good": "한 번에 답하기",
+  "A person may answer once and for all": "사람이 한 번에 답할 수 있음",
+  "Ask every time": "매번 묻기",
+  "A question can be answered with “always”, and the same kind of action is allowed after that without anybody being asked. Every allowance is listed below and can be taken back.":
+    "질문에 “항상”으로 답할 수 있고, 그 뒤로 같은 종류의 행동은 아무에게도 묻지 않고 허용됩니다. 허용된 항목은 아래에 모두 나열되며 언제든 취소할 수 있습니다.",
+  "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.":
+    "위 규칙에 걸리는 행동은 매번 사람 앞에 놓입니다. 넓게 허용하는 버튼은 제공되지 않고, 이미 허용된 항목도 효력이 없습니다 — 아래에 그대로 남아 있고, 다시 켜면 되살아납니다.",
+  "Suspended — it asks about these again": "중지됨 — 이 항목들은 다시 묻습니다",
+  "how hard it thinks ({level})": "생각 깊이 ({level})",
+  "These are not in force. Answering for good is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.":
+    "지금은 효력이 없습니다. 위에서 “한 번에 답하기”가 꺼져 있어, 여기 해당하는 행동도 매번 다시 묻습니다 — 다시 켜면 누군가 내린 결정이 그대로 되살아나도록 남겨둡니다.",
 };

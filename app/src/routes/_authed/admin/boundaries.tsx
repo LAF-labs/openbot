@@ -19,6 +19,8 @@ type ActionPolicy = {
   deny: string[];
   ask: string[];
   allow: string[];
+  /** Absent means allowed, matching the server. See the section below. */
+  standingAllowances?: "allowed" | "off";
 };
 
 type Preset = { label: string; rule: string; cost?: string };
@@ -494,6 +496,50 @@ function BoundariesPage() {
       </PageSection>
 
       {/*
+       * WHETHER A QUESTION MAY BE ANSWERED FOR GOOD AT ALL.
+       *
+       * Beside the section it governs, because it is the same decision seen from the other side:
+       * "Ask me first" says which actions stop, and this says whether stopping can be switched off
+       * one answer at a time. A deployment that has decided every one of these gets a pair of eyes
+       * had no way to say so, and any administrator could stand the whole thing down from a
+       * transcript line at the end of a long task.
+       */}
+      <PageSection title={t("Answering for good")}>
+        <div className="mt-2 flex gap-2">
+          {(["allowed", "off"] as const).map((choice) => (
+            <Button
+              aria-pressed={(policy.standingAllowances ?? "allowed") === choice}
+              className={
+                (policy.standingAllowances ?? "allowed") === choice
+                  ? "bg-foreground/5"
+                  : undefined
+              }
+              disabled={saving}
+              key={choice}
+              onClick={() =>
+                void save({ ...policy, standingAllowances: choice })
+              }
+              size="sm"
+              variant="outline"
+            >
+              {choice === "allowed"
+                ? t("A person may answer once and for all")
+                : t("Ask every time")}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {(policy.standingAllowances ?? "allowed") === "allowed"
+            ? t(
+                "A question can be answered with “always”, and the same kind of action is allowed after that without anybody being asked. Every allowance is listed below and can be taken back.",
+              )
+            : t(
+                "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.",
+              )}
+        </p>
+      </PageSection>
+
+      {/*
        * AFTER "Ask me first", because that is what it is a hole in. A person reading that section
        * and stopping there believes they are asked about everything it names; this says which of
        * those questions somebody has already answered for good.
@@ -503,7 +549,15 @@ function BoundariesPage() {
        * anybody about until there is.
        */}
       {standing && standing.length > 0 ? (
-        <PageSection title={t("It no longer asks about")}>
+        <PageSection
+          title={
+            (policy.standingAllowances ?? "allowed") === "allowed"
+              ? t("It no longer asks about")
+              : // Said in the heading, not only in a note underneath: a list under "it no longer
+                // asks about" that is in fact being asked about is worse than no list.
+                t("Suspended — it asks about these again")
+          }
+        >
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
             {standing.map((allowance) => (
               <li
@@ -549,9 +603,15 @@ function BoundariesPage() {
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted-foreground">
-            {t(
-              "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
-            )}
+            {(policy.standingAllowances ?? "allowed") === "allowed"
+              ? t(
+                  "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
+                )
+              : // The heading says suspended; this has to as well. A note still promising that these
+                // actions go through unasked is the same lie one line further down.
+                t(
+                  "These are not in force. Answering for good is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.",
+                )}
           </p>
         </PageSection>
       ) : null}

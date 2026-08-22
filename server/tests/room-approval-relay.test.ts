@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { DECLINED, relayApprovals } from "../src/rooms/approval-relay";
+import {
+  DECLINED,
+  relayApprovals,
+  type RoomQuestion,
+} from "../src/rooms/approval-relay";
 import type { ToolOutcome, UnattendedToolkit } from "../src/runner/unattended";
 
 /**
@@ -47,14 +51,17 @@ function relay(
 ) {
   const { base, calls } = toolkit(outcomes);
   const announced: Array<{ approvalId: string; answered: boolean }> = [];
+  const announcedQuestions: RoomQuestion[] = [];
   const relayed = relayApprovals(base, {
     memberId: "risk",
-    announce: (question, answered) =>
-      announced.push({ approvalId: question.approvalId, answered }),
+    announce: (question, answered) => {
+      announcedQuestions.push(question);
+      announced.push({ approvalId: question.approvalId, answered });
+    },
     ...(wait ? { wait } : {}),
     ...(signal ? { signal } : {}),
   });
-  return { relayed, calls, announced };
+  return { relayed, calls, announced, announcedQuestions };
 }
 
 describe("a member's action at a boundary", () => {
@@ -186,5 +193,43 @@ describe("a member's action at a boundary", () => {
     expect(outcome.ok).toBe(false);
     expect(it.announced).toEqual([]);
     expect(it.calls).toHaveLength(1);
+  });
+});
+
+/**
+ * What the wider answer covers, carried into the room.
+ *
+ * A one-to-one chat draws its question on the tool call's own line and a room draws it above the
+ * composer, and the same press has to mean the same thing on both. The scope is what the button
+ * says out loud, so a room that lost it in translation would offer "always allow" with nothing
+ * naming what — which is the one thing a consent button must never do. There is no shared component
+ * between the two paths, only a shared shape, so this is where the shape is held.
+ */
+describe("a question raised in a room", () => {
+  test("announces the scope the gateway derived", async () => {
+    const { relayed, announcedQuestions } = relay([
+      { ...ASKING, scope: { kind: "host", value: "wttr.in" } },
+    ]);
+    await relayed.execute("computer_navigate", {}, { id: "c1" });
+    expect(announcedQuestions[0]?.scope).toEqual({
+      kind: "host",
+      value: "wttr.in",
+    });
+  });
+
+  test("a question with no scope announces none, rather than a guess", async () => {
+    const { relayed, announcedQuestions } = relay([ASKING]);
+    await relayed.execute("computer_navigate", {}, { id: "c1" });
+    expect(announcedQuestions[0]?.scope).toBeUndefined();
+  });
+
+  test("a scope this server cannot vouch for is dropped, not passed on", async () => {
+    // The outcome map is loosely typed and its contents came from an error object. A kind the
+    // surface has no words for would put a button on screen whose label had to be guessed at.
+    const { relayed, announcedQuestions } = relay([
+      { ...ASKING, scope: { kind: "everything", value: "*" } },
+    ]);
+    await relayed.execute("computer_navigate", {}, { id: "c1" });
+    expect(announcedQuestions[0]?.scope).toBeUndefined();
   });
 });

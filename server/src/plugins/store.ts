@@ -335,11 +335,17 @@ export function createPluginStore(options: PluginStoreOptions) {
      * can produce from one button, which is why the button says the tool's name out loud.
      */
     const allowance = allowanceFor({ tool: question.ref });
-    const already = await options.standing?.find(
-      question.botId,
-      question.rule,
-      scopeKeyOf(allowance),
-    );
+    // The same switch the computer's gateway reads, and it does the same two things here: nothing
+    // standing is honoured, and the question goes out without a scope so there is nothing to grant.
+    const mayStand =
+      (options.policy()?.standingAllowances ?? "allowed") === "allowed";
+    const already = mayStand
+      ? await options.standing?.find(
+          question.botId,
+          question.rule,
+          scopeKeyOf(allowance),
+        )
+      : undefined;
     if (already) return already.grantedBy;
 
     const pending = await options.approvals.request({
@@ -348,7 +354,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       rule: question.rule,
       question: question.question,
       fingerprint,
-      scope: allowance,
+      ...(mayStand ? { scope: allowance } : {}),
       // Filed against the tool, so the answer's row lands beside the call's own row rather than
       // under whichever surface the person happened to press the button on.
       target: { type: "mcp_tool", id: question.ref },

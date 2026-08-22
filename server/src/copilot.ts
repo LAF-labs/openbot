@@ -55,6 +55,16 @@ type RegisteredRemoteAgent = {
   type: "remote_ag_ui";
   endpoint: string;
   standingMessage: StandingRoleMessage;
+  /**
+   * How hard it thinks, sent to the endpoint on every run.
+   *
+   * REMOTE IS NOT THE EXOTIC CASE, IT IS EVERY CASE. Only the Bots a package shipped are
+   * `built_in`; every Bot anybody creates is `remote_ag_ui`, pointed at this deployment's own
+   * `agent-bot`. A setting wired into the built-in configuration alone therefore reaches nothing
+   * anybody will ever make — which is what shipped, and was mistaken for working because the Bot it
+   * was tried on answered perfectly well with the setting going nowhere at all.
+   */
+  effort: AgentEffort;
   /** The key this agent sits behind, resolved from the vault at load time. Never logged. */
   headers?: Record<string, string>;
 };
@@ -188,6 +198,7 @@ export function registeredAgentFromRow(
         type: "remote_ag_ui",
         endpoint,
         standingMessage: standingRoleMessage(row),
+        effort: row.effort ?? "balanced",
       }
     : null;
 }
@@ -299,7 +310,7 @@ function buildAgent(
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
   }
-  return remoteAgentWithStandingRole(agent, stallGuard);
+  return remoteAgentWithStandingRole(agent, model.supportsEffort, stallGuard);
 }
 
 /**
@@ -316,6 +327,8 @@ function buildAgent(
  */
 function remoteAgentWithStandingRole(
   agent: RegisteredRemoteAgent,
+  /** Whether this deployment's model takes an effort setting. See `RuntimeModel.supportsEffort`. */
+  supportsEffort: boolean,
   stallGuard?: StallGuard,
 ) {
   const remote = new HttpAgent({
@@ -337,6 +350,32 @@ function remoteAgentWithStandingRole(
           (message) => message.id !== agent.standingMessage.id,
         ),
       ],
+      /*
+       * HOW HARD IT THINKS, on the run rather than in the configuration.
+       *
+       * A remote Bot's model is answered by the endpoint, not here, so the effort has to travel to
+       * it — and this middleware is the one place every run path goes through, so chat, rooms and
+       * routines all carry it without any of them knowing.
+       *
+       * OUR WORD, NOT THE PROVIDER'S. `thorough`, not `high`: the two ends spell it differently
+       * anyway — the built-in path sends `reasoning: { effort }` to the Responses API and
+       * `agent-bot` sends `reasoning_effort` to chat completions — so each end translates its own,
+       * and adding a third API means changing one file rather than everything upstream of it.
+       *
+       * Merged over whatever the caller forwarded rather than replacing it, and omitted entirely
+       * when the deployment's model takes no effort setting.
+       */
+      ...(supportsEffort
+        ? {
+            forwardedProps: {
+              ...(typeof input.forwardedProps === "object" &&
+              input.forwardedProps !== null
+                ? input.forwardedProps
+                : {}),
+              effort: agent.effort,
+            },
+          }
+        : {}),
     }),
   );
   return remote;

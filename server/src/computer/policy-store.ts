@@ -130,6 +130,9 @@ function clone(policy: ActionPolicy): ActionPolicy {
     deny: [...policy.deny],
     ask: [...policy.ask],
     allow: [...policy.allow],
+    ...(policy.standingAllowances
+      ? { standingAllowances: policy.standingAllowances }
+      : {}),
   };
 }
 
@@ -173,11 +176,25 @@ export function parseActionPolicy(
     lists[key] = value as string[];
   }
 
-  // `ask` defaults to empty like the others, so a policy written before this list existed still
-  // parses and still means what it meant. A deployment that has never asked anybody anything is a
-  // deployment with no ask rules, not an invalid one.
+  // Absent means allowed, like `ask` defaulting to empty: a policy written before this existed
+  // still parses and still means what it meant. Anything else is refused rather than read as one of
+  // the two, because a typo silently meaning "allowed" is the direction that loosens a boundary.
+  const standing = candidate.standingAllowances;
+  if (standing !== undefined && standing !== "allowed" && standing !== "off") {
+    return {
+      ok: false,
+      error: 'standingAllowances must be "allowed" or "off".',
+    };
+  }
+
   return {
     ok: true,
-    policy: { mode, deny: lists.deny, ask: lists.ask, allow: lists.allow },
+    policy: {
+      mode,
+      deny: lists.deny,
+      ask: lists.ask,
+      allow: lists.allow,
+      ...(standing === undefined ? {} : { standingAllowances: standing }),
+    },
   };
 }

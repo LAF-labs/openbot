@@ -119,3 +119,64 @@ describe("a tool call on the wire", () => {
     expect(kinds).not.toContain("TOOL_CALL_END");
   });
 });
+
+/**
+ * The effort the run was asked for, on the request this service makes.
+ *
+ * EVERY BOT ANYBODY CREATES RUNS THROUGH HERE. Only a Bot a package shipped is `built_in`; the rest
+ * are remote and are answered by this service, so a model setting that reaches only the built-in
+ * configuration reaches nothing anybody will ever make. That is what shipped, and it read as
+ * working because the Bot it was tried on answered perfectly well with the setting going nowhere.
+ *
+ * The words on the wire are the product's, not the provider's: the caller says `thorough` and each
+ * service translates into whatever its own API spells it as.
+ */
+describe("how hard to think", () => {
+  /** Run once with these forwarded props and hand back the request the provider was given. */
+  async function requestFor(
+    forwardedProps: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    process.env.OPENAI_API_KEY ??= "test-key";
+    const { runAgent } = await import("../src/index");
+    let sent: Record<string, unknown> = {};
+    const response = await runAgent(
+      {
+        threadId: "t1",
+        runId: "r1",
+        messages: [{ id: "m1", role: "user", content: "안녕" }],
+        tools: [],
+        context: [],
+        forwardedProps,
+        state: {},
+      } as never,
+      (async (request: Record<string, unknown>) => {
+        sent = request;
+        return fakeCompletion([]) as never;
+      }) as never,
+    );
+    await response.text();
+    return sent;
+  }
+
+  test("carries the three the product names, in this API's words", async () => {
+    expect((await requestFor({ effort: "quick" })).reasoning_effort).toBe(
+      "low",
+    );
+    expect((await requestFor({ effort: "balanced" })).reasoning_effort).toBe(
+      "medium",
+    );
+    expect((await requestFor({ effort: "thorough" })).reasoning_effort).toBe(
+      "high",
+    );
+  });
+
+  test("sends nothing at all when nothing was asked for", async () => {
+    // A deployment whose model does not reason forwards no effort, and must then get exactly the
+    // request this service made before the setting existed — not a default, not a null.
+    expect(await requestFor({})).not.toHaveProperty("reasoning_effort");
+    // A value from somewhere else is silence too, rather than something passed through to the API.
+    expect(await requestFor({ effort: "maximum" })).not.toHaveProperty(
+      "reasoning_effort",
+    );
+  });
+});

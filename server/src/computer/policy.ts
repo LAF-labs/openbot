@@ -48,6 +48,24 @@ export type ActionPolicy = {
   ask: string[];
   /** Any expression true means permitted. Empty means nothing is permitted. */
   allow: string[];
+  /**
+   * Whether a person answering a question may also answer it for good.
+   *
+   * "off" leaves the approval card with two buttons: every action an `ask` rule matches is put in
+   * front of somebody, every time, and no allowance can be granted. A deployment that has decided
+   * every one of these actions gets a pair of eyes needs a way to say so, because otherwise the
+   * whole boundary can be stood down by whoever is at the keyboard at the end of a long task — and
+   * the person who does it is not deciding policy, they are clearing an obstacle.
+   *
+   * It stops the standing ones being honoured too, not merely new ones being granted. A policy is
+   * what is in force now, and a switch that left last week's allowances working would not restore
+   * the boundary it appears to restore. The rows stay and the Boundaries page says they are not in
+   * force, so nobody's decision is deleted behind their back — it is suspended, visibly, and comes
+   * back if the switch does.
+   *
+   * Optional, and absent means allowed. A policy written before this existed means what it meant.
+   */
+  standingAllowances?: "allowed" | "off";
 };
 
 /**

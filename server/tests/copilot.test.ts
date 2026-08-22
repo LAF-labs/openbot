@@ -54,6 +54,8 @@ describe("registered Copilot agents", () => {
       type: "remote_ag_ui",
       endpoint: "http://risk.internal/ag-ui",
       standingMessage: standingRoleMessage(riskRow),
+      // A remote Bot carries it too, and that is the whole point: every Bot anybody creates is one.
+      effort: "balanced",
     });
   });
 
@@ -552,3 +554,92 @@ function fakeAgUiEndpoint() {
     [Symbol.asyncDispose]: () => server.stop(true),
   };
 }
+
+/**
+ * That a remote Bot's run carries how hard it should think.
+ *
+ * THE CASE THAT WAS MISSED. `builtInAgentConfiguration` above is the path a package's own Bots take,
+ * and it is the only path the setting reached when it shipped. Every Bot anybody creates is
+ * `remote_ag_ui`, answered by this deployment's own `agent-bot`, so the setting reached nothing a
+ * person would ever make — and reading it back off the profile said `thorough` the whole time.
+ *
+ * Driven through the agent's own fetch rather than by reaching into its middleware: what matters is
+ * the request that leaves, and the middleware is an implementation detail that a version bump is
+ * free to rename. The stall guard is the supported way to hand one in, and it is the same seam this
+ * file already uses to prove a remote Bot is watched.
+ */
+describe("a remote Bot's run", () => {
+  const risk = {
+    id: "risk",
+    name: "Risk",
+    type: "remote_ag_ui" as const,
+    endpoint: "http://risk.internal/ag-ui",
+    standingMessage: standingRoleMessage(riskRow),
+    effort: "thorough" as const,
+  };
+
+  /** Run one turn against a fetch that records, and hand back the body the endpoint would receive. */
+  async function bodySentBy(
+    agent: typeof risk,
+    supportsEffort: boolean,
+    props: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> {
+    let sent: Record<string, unknown> = {};
+    const recordingFetch = async (_url: unknown, init?: { body?: unknown }) => {
+      sent = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      // One RUN_FINISHED and nothing else: the request is the assertion, and a body the client can
+      // parse keeps the failure out of the way of it.
+      return new Response(
+        `data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: "t1", runId: "r1" })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    };
+    const agents = buildAgents(
+      [agent],
+      { provider: "openai", defaultModel: "laf-1", supportsEffort },
+      null,
+      { watch: () => recordingFetch as never },
+    );
+    /*
+     * The client logs the stream it could not parse. It is caught and irrelevant — the request has
+     * already been recorded — but a whole minified bundle printed into the suite's output three
+     * times is how a real failure gets scrolled past, so it is silenced for the duration.
+     */
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await (agents.risk as HttpAgent)
+        .runAgent({
+          // Not the Bot's own effort: what a caller forwarded, which must survive.
+          forwardedProps: props,
+          messages: [{ id: "m1", role: "user", content: "안녕" }],
+        } as never)
+        .catch(() => {});
+    } finally {
+      consoleError.mockRestore();
+    }
+    return sent;
+  }
+
+  test("carries the effort, in the product's own words", async () => {
+    // `thorough`, not `high`: the two services that answer a Bot speak different APIs and each
+    // translates its own. See the middleware's comment.
+    const body = await bodySentBy(risk, true);
+    expect(
+      (body.forwardedProps as Record<string, unknown> | undefined)?.effort,
+    ).toBe("thorough");
+  });
+
+  test("leaves what the caller forwarded alone", async () => {
+    const forwarded = (await bodySentBy(risk, true, { threadName: "Q3" }))
+      .forwardedProps as Record<string, unknown>;
+    expect(forwarded.threadName).toBe("Q3");
+    expect(forwarded.effort).toBe("thorough");
+  });
+
+  test("sends none where the deployment's model takes none", async () => {
+    const forwarded = (await bodySentBy(risk, false)).forwardedProps as
+      | Record<string, unknown>
+      | undefined;
+    expect(forwarded?.effort).toBeUndefined();
+  });
+});

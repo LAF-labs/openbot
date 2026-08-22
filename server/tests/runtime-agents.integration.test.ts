@@ -111,6 +111,9 @@ describe("runtime agent loading", () => {
         roleDescription:
           "Review receipts, categorize expenses, and prepare reimbursement reports.",
       }),
+      // Every Bot anybody creates is remote, so this loader is where a remote Bot's model setting
+      // has to arrive from. The column's default, for a Bot nobody has chosen one for.
+      effort: "balanced",
     });
   });
 
