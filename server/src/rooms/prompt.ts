@@ -6,7 +6,15 @@
  * one AG-UI `assistant` role, so a Bot reading the room as its own history claims its colleagues'
  * work as its own. The reference never has that problem: the room is not the Bot's history. The
  * Bot answers from ITS OWN conversation, and the room arrives as one tagged user turn — a header,
- * who is present, and the lines said since this Bot last spoke.
+ * who is present, and the last stretch of what was said.
+ *
+ * THE WHOLE WINDOW, NOT "SINCE YOU LAST SPOKE". The reference can show a member only what is new,
+ * because its members answer from a unified history that already holds what they themselves said.
+ * Ours cannot: a member turn is a fresh loop every time, and the private history it carries is the
+ * one-to-one conversation, which has no room messages in it. Shown only what arrived since it last
+ * spoke, a member would have no idea what IT had said two lines ago — and "do not repeat points
+ * already made" is not something you can ask of a Bot that cannot see its own points. So the window
+ * is the last `ROOM_LINES`, its own lines marked `(you)`.
  *
  * WHAT A ROOM TURN CONTAINS: this prompt, behind the tail of the Bot's own conversation with this
  * person. The reference's members answer from their unified history and so do ours, with one bound
@@ -62,16 +70,16 @@ export const WIND_DOWN_SLOTS = 2;
 const ROOM_LINE_CHARS = 8000;
 const ROOM_NAME_CHARS = 120;
 
-/** The room's lines since this Bot last spoke. Everything, if it has not spoken here yet. */
-export function linesSince(
-  lines: readonly RoomLine[],
-  memberId: string,
-): RoomLine[] {
-  for (let at = lines.length - 1; at >= 0; at -= 1) {
-    if (lines[at]?.agentId === memberId) return lines.slice(at + 1);
-  }
-  return [...lines];
-}
+/**
+ * What the whole room block may cost, across every line in it.
+ *
+ * The per-line cut is not a bound on the prompt: twenty-four lines of eight thousand characters is
+ * a hundred and ninety-two thousand, and in Korean that is roughly as many tokens — a request no
+ * provider accepts, so a room where a few people pasted a few long things would simply stop
+ * answering for everybody. This is the bound that actually holds, and it keeps the NEWEST lines,
+ * because a conversation is understood from its end.
+ */
+const ROOM_BLOCK_CHARS = 24_000;
 
 /** `text` cut to `limit` characters, the last one an ellipsis when anything was dropped. */
 export function clamp(text: string, limit: number): string {
@@ -93,6 +101,27 @@ function renderLine(line: RoomLine, memberId: string): string {
   if (line.agentId === null) return `${name} (user): ${text}`;
   const you = line.agentId === memberId ? " (you)" : "";
   return `${name}${you}: ${text}`;
+}
+
+/**
+ * The newest lines that fit in `ROOM_BLOCK_CHARS`, rendered, oldest first.
+ *
+ * Dropping from the front rather than cutting the middle: a room is read from its end, and half a
+ * sentence from an hour ago helps nobody. At least one line always survives, because a single line
+ * over budget is already cut to `ROOM_LINE_CHARS` and showing nothing would be worse.
+ */
+function withinBudget(lines: readonly RoomLine[], memberId: string): string[] {
+  const kept: string[] = [];
+  let spent = 0;
+  for (let at = lines.length - 1; at >= 0; at -= 1) {
+    const line = lines[at];
+    if (!line) continue;
+    const rendered = renderLine(line, memberId);
+    if (kept.length > 0 && spent + rendered.length > ROOM_BLOCK_CHARS) break;
+    spent += rendered.length;
+    kept.push(rendered);
+  }
+  return kept.reverse();
 }
 
 /**
@@ -178,12 +207,12 @@ export function roomTurnPrompt(input: {
     );
   }
 
-  const recent = lines.slice(-ROOM_LINES);
+  const recent = withinBudget(lines.slice(-ROOM_LINES), member.id);
   if (recent.length === 0) {
-    parts.push("No new messages in the room since your last turn.");
+    parts.push("Nothing has been said in the room yet.");
   } else {
-    parts.push("New messages in the room (oldest first):");
-    parts.push(recent.map((line) => renderLine(line, member.id)).join("\n"));
+    parts.push("The room so far (oldest first):");
+    parts.push(recent.join("\n"));
   }
 
   /*

@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   addressedMembers,
   isSilence,
-  linesSince,
   ROOM_LINES,
   type RoomLine,
   roomConduct,
@@ -43,7 +42,7 @@ describe("what a Bot is shown of the room", () => {
       true,
     );
     expect(prompt).toContain("Participants: 일상 비서 (일상 업무)");
-    expect(prompt).toContain("New messages in the room (oldest first):");
+    expect(prompt).toContain("The room so far (oldest first):");
     expect(prompt).toContain("김기범 (user): 다음 주 출시 괜찮을까요?");
     expect(prompt).toContain("It's your turn, 리스크 분석가.");
   });
@@ -70,9 +69,7 @@ describe("what a Bot is shown of the room", () => {
       peers: [risk],
       lines: [],
     });
-    expect(prompt).toContain(
-      "No new messages in the room since your last turn.",
-    );
+    expect(prompt).toContain("Nothing has been said in the room yet.");
   });
 
   test("only the last two dozen lines are shown", () => {
@@ -98,29 +95,6 @@ describe("what a Bot is shown of the room", () => {
       windingDown: true,
     });
     expect(prompt).toContain("The room is wrapping up this turn");
-  });
-});
-
-describe("which lines a Bot has not seen", () => {
-  test("everything said after its own last line", () => {
-    const lines = [
-      said(null, "김기범", "하나"),
-      said("risk-analyst", "리스크 분석가", "둘"),
-      said("general-assistant", "일상 비서", "셋"),
-      said(null, "김기범", "넷"),
-    ];
-    expect(linesSince(lines, "risk-analyst").map((line) => line.text)).toEqual([
-      "셋",
-      "넷",
-    ]);
-  });
-
-  test("everything, for a Bot that has not spoken here yet", () => {
-    const lines = [
-      said(null, "김기범", "하나"),
-      said("knowledge", "지식", "둘"),
-    ];
-    expect(linesSince(lines, "risk-analyst")).toHaveLength(2);
   });
 });
 
@@ -152,6 +126,41 @@ describe("whose turn it is", () => {
     expect(rotate(members, 1).map((m) => m.id)).toEqual(["b", "c", "a"]);
     expect(rotate(members, 4).map((m) => m.id)).toEqual(["b", "c", "a"]);
     expect(rotate([], 3)).toEqual([]);
+  });
+});
+
+describe("what a room turn may cost", () => {
+  /*
+   * The per-line cut is not a bound on the prompt. Twenty-four lines of eight thousand characters
+   * is a hundred and ninety-two thousand — in Korean, roughly that many tokens — and a room where a
+   * few people pasted a few long things would stop answering for everybody, all at once.
+   */
+  test("the whole room block is bounded, and it is the newest lines that survive", () => {
+    const long = "가".repeat(8_000);
+    const lines = Array.from({ length: 24 }, (_, at) =>
+      said(null, "김기범", `${at}${long}`),
+    );
+    const prompt = roomTurnPrompt({
+      room: { name: "출시 준비" },
+      member: { id: "risk-analyst", name: "리스크 분석가" },
+      peers: [],
+      lines,
+    });
+    expect(prompt.length).toBeLessThan(30_000);
+    // The end of the conversation is what a room is understood from.
+    expect(prompt).toContain("23");
+    expect(prompt).not.toContain("김기범 (user): 0가");
+  });
+
+  test("one line over budget is still shown, cut", () => {
+    const prompt = roomTurnPrompt({
+      room: { name: "출시 준비" },
+      member: { id: "risk-analyst", name: "리스크 분석가" },
+      peers: [],
+      lines: [said(null, "김기범", "나".repeat(40_000))],
+    });
+    expect(prompt).toContain("김기범 (user): 나");
+    expect(prompt.length).toBeLessThan(30_000);
   });
 });
 
