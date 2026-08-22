@@ -21,8 +21,21 @@
  *
  * Enforced where Bots are created rather than where computers are resolved: a sixth Bot must fail
  * to exist, not exist and fail to reach a computer.
+ *
+ * Read from the environment so a deployment can be given a different number without a build, and so
+ * the test suite can stop competing with real rows for the same five seats: integration tests write
+ * to a real database, and once four Bots existed in it, tests that create two of their own began
+ * failing with a roster-full error that had nothing to do with what they were testing.
  */
-export const MAX_BOTS_PER_COMPUTER = 5;
+export const MAX_BOTS_PER_COMPUTER = seatsPerAccount();
+
+function seatsPerAccount(): number {
+  const configured = Number.parseInt(
+    process.env.BOT_SEATS_PER_ACCOUNT ?? "",
+    10,
+  );
+  return Number.isFinite(configured) && configured > 0 ? configured : 5;
+}
 
 /** The supervisor key for the one account this deployment serves. */
 const SINGLE_ACCOUNT_COMPUTER = "account-default";

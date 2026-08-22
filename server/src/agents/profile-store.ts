@@ -246,6 +246,13 @@ export function createAgentProfileStore(
    * agent with a key then simply cannot be created, which is better than storing it in the clear.
    */
   vault?: { store: CredentialStore; encryptionKey: string },
+  /**
+   * How many Bots this account's computer seats. Defaults to the product number.
+   *
+   * Injected so the cap can be tested for what it is — the rule that a sixth Bot must fail to
+   * exist — without the test needing five real Bots to be absent from a shared database first.
+   */
+  seats: number = MAX_BOTS_PER_COMPUTER,
 ): AgentProfileStore {
   const managedConfiguration = {
     endpoint: managedAgentAgUiUrl.toString(),
@@ -283,7 +290,7 @@ export function createAgentProfileStore(
           .from(agents)
           .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
           .where(isNull(agentProfiles.deletedAt));
-        if (Number(seated?.count ?? 0) >= MAX_BOTS_PER_COMPUTER) {
+        if (Number(seated?.count ?? 0) >= seats) {
           throw new RosterFullError();
         }
         const id = newAgentId();
@@ -407,7 +414,7 @@ export function createAgentProfileStore(
           .from(agents)
           .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
           .where(isNull(agentProfiles.deletedAt));
-        if (Number(seated?.count ?? 0) >= MAX_BOTS_PER_COMPUTER) {
+        if (Number(seated?.count ?? 0) >= seats) {
           throw new RosterFullError();
         }
 

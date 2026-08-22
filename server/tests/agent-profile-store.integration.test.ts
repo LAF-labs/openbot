@@ -667,17 +667,31 @@ describe("agent profile store integration", () => {
  * count is whatever the deployment already holds plus what this test seeds, because the shipped
  * package Bots sit at the same desk as everybody else.
  */
-describe("the five-seat cap", () => {
-  test("refuses the Bot that would need a sixth seat, and seats one after a deletion", async () => {
+describe("the seat cap", () => {
+  test("refuses the Bot that would need one seat too many, and seats one after a deletion", async () => {
     const owner = await createUser();
+    /*
+     * A STORE WITH ITS OWN CAP, counted from whatever this database already holds. The rule under
+     * test is "one past the cap must fail to exist", and expressing it against the product's five
+     * meant first arranging for a shared database to contain exactly the right number of unrelated
+     * Bots — which stopped being true the moment anything else in the deployment made one.
+     */
     const [{ occupied }] = (await database
       .select({ occupied: sql<number>`count(*)::int` })
       .from(agents)
       .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
       .where(isNull(agentProfiles.deletedAt))) as [{ occupied: number }];
 
+    const seats = occupied + 2;
+    const capped = createAgentProfileStore(
+      database,
+      managedAgentAgUiUrl,
+      undefined,
+      seats,
+    );
+
     const seeded: string[] = [];
-    for (let seat = occupied; seat < 5; seat += 1) {
+    for (let seat = occupied; seat < seats; seat += 1) {
       seeded.push(
         (await createProfileFixture({ owner, visibility: "private" })).agentId,
       );
@@ -689,13 +703,13 @@ describe("the five-seat cap", () => {
       roleDescription: "Should never come to exist.",
       visibility: "private" as const,
     };
-    await expect(store.create(owner, input)).rejects.toThrow(RosterFullError);
+    await expect(capped.create(owner, input)).rejects.toThrow(RosterFullError);
 
     // A freed seat is a usable seat: soft-delete one and the same create goes through.
     const [freed] = seeded;
     if (!freed) throw new Error("the deployment already held five seats");
-    await store.softDelete(owner, freed);
-    const created = await store.create(owner, input);
+    await capped.softDelete(owner, freed);
+    const created = await capped.create(owner, input);
     createdAgentIds.push(created.id);
     expect(created.name).toBe(input.name);
   });
