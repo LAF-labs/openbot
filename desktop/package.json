@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
-    "typecheck": "echo 'desktop: Rust only; checked by cargo'"
+    "typecheck": "echo 'desktop: Rust only; checked by cargo'",
+    "bundle": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.0"

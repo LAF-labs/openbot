@@ -9,6 +9,7 @@ function packageManifest(path: string) {
     readFileSync(join(repositoryRoot, path, "package.json"), "utf8"),
   ) as {
     name: string;
+    scripts?: Record<string, string>;
   };
 }
 
@@ -34,5 +35,18 @@ describe("OpenBot workspace", () => {
       expect(existsSync(join(repositoryRoot, packageName))).toBe(true);
       expect(packageManifest(packageName).name).toBe(packageName);
     }
+  });
+
+  test("the shell is not built by the web build", () => {
+    /*
+     * The root `build` is `bun run --filter '*' build`, and CI runs it on a Linux runner. A `build`
+     * script in `desktop` would put `tauri build` there, which cannot produce a bundle on that
+     * runner and has no reason to try: the shell is built by .github/workflows/release.yml, for the
+     * platforms it ships on. The script is called `bundle` for exactly this reason, and this test is
+     * here because renaming it back would break CI on a change that looks unrelated.
+     */
+    const desktop = packageManifest("desktop");
+    expect(desktop.scripts?.build).toBeUndefined();
+    expect(desktop.scripts?.bundle).toBe("tauri build");
   });
 });

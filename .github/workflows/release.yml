@@ -22,6 +22,11 @@ name: Release
 #
 # `releases/latest/download/latest.json` — the updater endpoint — only serves PUBLISHED releases,
 # so no installed app is offered anything until the draft is published. That is the gate.
+#
+# Both platform jobs write into the SAME draft and the action merges their platforms into one
+# latest.json. They deliberately do not fail as a unit (`fail-fast: false`, so one platform failing
+# does not cancel the other's build), which means a RED run can still leave a draft holding one
+# platform. Read the run before publishing the draft: green is both, red is not.
 
 on:
   push:
@@ -76,6 +81,10 @@ jobs:
       # decode path the bundler uses, instead of as a cryptic error after the compile.
       - name: Prove the updater key can sign
         shell: bash
+        # Run in the desktop workspace, which is where the Tauri CLI is installed. From the
+        # repository root `bunx tauri` finds nothing local and fetches an unrelated package of that
+        # name from npm — while this step holds the signing key in its environment.
+        working-directory: desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -88,9 +97,31 @@ jobs:
           bunx tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" sign-probe.txt
           rm -f sign-probe.txt sign-probe.txt.sig
 
+      # The built version comes from tauri.conf.json, which does not know what tag it is being built
+      # for. Without this every release carries the version in the file — 0.1.0 forever — and an
+      # installed app compares that against its own, finds them equal, and is never offered the
+      # update. The tag is the version and the file follows it. Not committed: it is stamped on the
+      # runner, for this build.
+      - name: Stamp the version from the tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::Tag '$TAG' is not a version. Tag releases as v1.2.3."; exit 1 ;;
+          esac
+          export VERSION
+          bun -e 'const p = "src-tauri/tauri.conf.json"; const c = await Bun.file(p).json(); c.version = process.env.VERSION; await Bun.write(p, JSON.stringify(c, null, 2))'
+          echo "Building version $VERSION"
+        working-directory: desktop
+
       # Apple signing is optional until a Developer ID exists. The variables are exported only when
       # the secret is present: the bundler treats an EMPTY APPLE_CERTIFICATE as a certificate to
-      # import, and fails on it.
+      # import, and fails on it. Half-configured is refused rather than attempted, because
+      # notarization with empty credentials fails deep in the bundler with an unrelated message.
       - name: Export Apple signing when configured
         if: runner.os == 'macOS'
         shell: bash
@@ -102,14 +133,31 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "$APPLE_CERTIFICATE" ]; then
-            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-              echo "$name=${!name}" >> "$GITHUB_ENV"
-            done
-            echo "Developer ID signing and notarization are on."
-          else
+          NAMES="APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID"
+          if [ -z "$APPLE_CERTIFICATE" ]; then
             echo "No Apple signing secrets: the dmg will be ad-hoc signed (rehearsal only)."
+            exit 0
           fi
+          missing=""
+          for name in $NAMES; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Apple signing is only partly configured. Missing:$missing"
+            exit 1
+          fi
+          # Heredoc form rather than NAME=value: a certificate is base64 that GitHub may store with
+          # newlines, and a bare assignment would both truncate it and let a newline inside any
+          # secret define environment variables of its own.
+          for name in $NAMES; do
+            {
+              echo "$name<<__LAF_SECRET__"
+              printf '%s\n' "${!name}"
+              echo "__LAF_SECRET__"
+            } >> "$GITHUB_ENV"
+          done
+          echo "Developer ID signing and notarization are on."
+
 
       # On a tag: build, sign the updater artifacts, create or extend the draft release. Both matrix
       # jobs land in the same draft, and the action merges their platforms into one latest.json.

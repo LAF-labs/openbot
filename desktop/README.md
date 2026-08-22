@@ -46,8 +46,12 @@ WebView2 its own error page.
 ```bash
 bun install
 cd desktop && bun run dev       # needs the app on :3010 and the API on :3001
-cd desktop && bun run build     # .app + .dmg on macOS, .exe (NSIS) on Windows
+cd desktop && bun run bundle    # .app + .dmg on macOS, .exe (NSIS) on Windows
 ```
+
+The script is `bundle`, not `build`, on purpose: the root `bun run build`
+runs every workspace's `build`, and CI runs that on a Linux runner where a
+Tauri bundle cannot be produced.
 
 The updater's public key and endpoint are carried over from the previous
 shell; releases publish `latest.json` beside the installers.
