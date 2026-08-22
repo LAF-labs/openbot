@@ -42,6 +42,11 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "Updating its own profile": "자기 프로필을 바꾸는 중",
+  "Updated its own profile": "자기 프로필을 바꿨습니다",
+  name: "이름",
+  title: "직함",
+  "what it is for": "무엇을 하는 봇인지",
   "Your team of always-on Bots": "언제나 켜져 있는 당신의 봇 팀",
   "Each one is a colleague you can hand real work to. They keep working when this window is closed.":
     "각자 실제로 일을 맡길 수 있는 동료입니다. 이 창을 닫아도 계속 일합니다.",

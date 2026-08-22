@@ -6,6 +6,7 @@ import { CoworkerTools } from "./coworker-tools";
 import { GalleryTools } from "./gallery-tools";
 import { PluginTools } from "./plugin-tools";
 import { SandboxedTools } from "./sandboxed-tools";
+import { SelfTools } from "./self-tools";
 
 /**
  * The CopilotKit client, wrapped once for the whole authenticated app.
@@ -29,6 +30,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         <ComputerTools />
         {/* Coworkers can brief each other; the answer comes from the server, toolless. */}
         <CoworkerTools />
+        <SelfTools />
         {/* Gallery tools are registered once; their handlers re-read the active Bot to avoid shadowing renderers. */}
         <GalleryTools />
         {/* MCP tools share the same active-Bot context and server-side grant checks. */}

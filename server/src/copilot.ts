@@ -115,8 +115,8 @@ export function standingRoleMessage(
       role ||
         "You have just been created and nobody has told you what you are for yet. " +
           "Open by introducing yourself in one line and asking what they would like you to help " +
-          "with. Whatever they answer is your job from then on: take it up immediately, and say " +
-          "that they can make it stick by writing it into your description in your profile.",
+          "with. Whatever they answer is your job from then on: write it into your own description " +
+          "with update_state so you still know it next time, then take it up immediately.",
       "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
     ].join("\n\n"),
   };

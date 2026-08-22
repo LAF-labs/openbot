@@ -375,6 +375,66 @@ export function createAgentRoutes(
     }
   });
 
+  /**
+   * A Bot rewriting its own profile.
+   *
+   * The product model is that a Bot is a name, a description and a face, and that what it becomes
+   * is settled by talking to it rather than by filling a form once. That only works if the Bot can
+   * write the answer down: told "from now on you handle the invoices", it says so here and still
+   * knows it next week, in every conversation, without the person opening a settings screen.
+   *
+   * A PATCH of only what changed, unlike `PATCH /:agentId`, which is the edit form and replaces the
+   * whole record. A Bot asked to change its name must not silently clear its own description.
+   *
+   * Authorisation is unchanged: the request carries the person's session and the store still
+   * refuses anybody who may not manage this Bot. A Bot cannot edit a colleague this way — the id in
+   * the path is the Bot the tool call came from, and the tool passes its own.
+   */
+  routes.post("/:agentId/profile", requireUser, async (context) => {
+    const patch = (await context.req.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    if (!patch || typeof patch !== "object") {
+      return context.json(
+        { error: "Profile input must be a JSON object." },
+        400,
+      );
+    }
+
+    try {
+      const current = await store.get(
+        context.var.actor,
+        context.req.param("agentId"),
+      );
+      if (!current) return context.json({ error: "Agent not found." }, 404);
+
+      // Merged before validation, so the same rules that guard the edit form guard this too.
+      const merged = parseAgentInput(
+        {
+          name: patch.name ?? current.name,
+          title: patch.title ?? current.title,
+          roleDescription: patch.roleDescription ?? current.roleDescription,
+          visibility: current.visibility,
+          ...(patch.avatarSeed === undefined
+            ? {}
+            : { avatarSeed: patch.avatarSeed }),
+        },
+        allowPrivateHosts,
+      );
+      if (!merged.ok) return context.json({ error: merged.error }, 400);
+
+      const agent = await store.update(
+        context.var.actor,
+        context.req.param("agentId"),
+        merged.value,
+      );
+      return context.json({ agent: agentDto(context.var.actor, agent) });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
   routes.post("/:agentId/duplicate", requireUser, async (context) => {
     try {
       const agent = await store.duplicate(
