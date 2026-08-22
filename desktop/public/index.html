@@ -66,7 +66,7 @@
     retry.disabled = true;
     status.textContent = "연결 확인 중…";
     try {
-      await fetch(origin + "/", { mode: "no-cors", cache: "no-store" });
+      await fetch(`${origin}/`, { mode: "no-cors", cache: "no-store" });
       status.textContent = "연결됐습니다. 여는 중…";
       // Released before navigating, not after: `location.replace` does not always take — a server
       // that answered the probe and then refused the document leaves this page on screen, and it
@@ -76,7 +76,7 @@
       location.replace(origin);
       return;
     } catch {
-      status.textContent = "아직 연결되지 않았습니다. " + INTERVAL_MS / 1000 + "초 후 다시 확인합니다.";
+      status.textContent = `아직 연결되지 않았습니다. ${INTERVAL_MS / 1000}초 후 다시 확인합니다.`;
     }
     checking = false;
     retry.disabled = false;

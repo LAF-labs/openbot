@@ -42,6 +42,10 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "A coworker": "봇",
+  "This room is no longer available.": "이 대화방은 더 이상 사용할 수 없어요.",
+  "That message could not be sent. It may be too long.":
+    "메시지를 보내지 못했어요. 너무 길 수 있어요.",
   "The room could not be stopped. Try again.":
     "대화를 멈추지 못했어요. 다시 시도해 주세요.",
   "{count} of the coworkers could not answer this time.":

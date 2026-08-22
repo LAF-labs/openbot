@@ -169,7 +169,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         .map((approval) => ({
           approvalId: approval.id,
           memberId: ids[at] ?? approval.botId,
-          memberName: memberNames.get(ids[at] ?? "") ?? ids[at] ?? "",
+          // Never the raw id: "a4f1c… is waiting for your answer" tells a person nothing.
+          memberName: memberNames.get(ids[at] ?? "") ?? t("A coworker"),
           question: approval.question,
           rule: approval.rule,
         })),
@@ -293,10 +294,18 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           return;
         }
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as {
-            error?: string;
-          } | null;
-          setNotice(body?.error ?? t("The room could not take that message."));
+          /*
+           * The server's own sentence is deliberately not read. It is written in English for an
+           * operator, and this screen is read in Korean by somebody who wants to know what to do
+           * next — which the status says well enough on its own.
+           */
+          setNotice(
+            response.status === 404
+              ? t("This room is no longer available.")
+              : response.status === 400
+                ? t("That message could not be sent. It may be too long.")
+                : t("The room could not take that message."),
+          );
           setRoom((state) => ({
             ...state,
             messages: state.messages.filter((m) => m.id !== messageId),
