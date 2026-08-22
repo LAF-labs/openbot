@@ -53,12 +53,17 @@ const SEND_MESSAGE_TOOL: Tool = {
  */
 export function roomToolkit(
   base: UnattendedToolkit,
-  deliver: (text: string) => Promise<void>,
+  /**
+   * Put one message in the room. Handed the call's id as well as the text, because the browser has
+   * been drawing this message under that id since the first fragment arrived, and the settled copy
+   * has to say which provisional bubble it replaces.
+   */
+  deliver: (text: string, toolCallId: string) => Promise<void>,
 ): UnattendedToolkit & { spoken: () => number } {
   let spoken = 0;
 
-  const execute: ToolExecutor = async (name, args) => {
-    if (name !== SEND_MESSAGE) return base.execute(name, args);
+  const execute: ToolExecutor = async (name, args, call) => {
+    if (name !== SEND_MESSAGE) return base.execute(name, args, call);
 
     const text = typeof args.text === "string" ? args.text : "";
     if (text.trim().length === 0) {
@@ -78,8 +83,12 @@ export function roomToolkit(
       } satisfies ToolOutcome;
     }
 
+    /*
+     * Charged only once the append has succeeded. Counting first meant a failed append took one of
+     * the member's three slots and the turn counted a message that is not in the room.
+     */
+    await deliver(text, call?.id ?? "");
     spoken += 1;
-    await deliver(text);
     return { ok: true, delivered: true } satisfies ToolOutcome;
   };
 

@@ -165,30 +165,50 @@ says so and stops.
 
 ## A room with more than one Bot in it
 
-A channel can hold several Bots. One of them answers each turn, and which one
-is decided by the message: an `@` mention names the Bot it is for, and nothing
-named falls back to the room's default — its first member, so that opening the
-room twice does not get two different colleagues.
+A channel can hold several Bots. Its turn runs ON THE SERVER, and the
+browser only watches — the shape Grok Bot 0.24 uses, ported from its host
+rather than invented. A tab that closes mid-turn no longer kills the turn,
+and two tabs cannot each drive their own version of it.
 
-Routing is the binding, not a relay. The mention re-points the run at
-`/agent/{id}/run`, so the Bot answers in its own voice with its own skills and
-its own computer; the thread is the room's, shared, and the client carries the
-history across the swap so nothing blinks. It changes only BETWEEN turns —
-Stop and the run counters bind to the agent instance, and swapping under a
-live run would leave Stop aborting a run nobody is watching. A mention of
-somebody who is not in the room is ignored rather than run.
+The room is not any Bot's history. A member answers from a prompt built
+fresh for its turn: a header naming the room and who else is in it, the
+lines said since that member last spoke (at most 24), and whose turn it is.
+Tool calls, tool results and a Bot's scratch prose are its private working
+and never reach the room — the ONLY way a Bot can put words in a room is
+the `send_message` tool, so a turn with no call is a Bot with nothing to
+add, and a Bot can open a page mid-turn without narrating it at everybody.
+A member's own private conversation with the person is deliberately NOT in
+the prompt yet; the seam for it is on the member turn, and this paragraph
+changes the day it is filled in.
 
-Because the thread is shared and AG-UI has one `assistant` role, the Bot about
-to answer would read its colleague's replies as its own previous turns. One
-short system line ahead of the turn says who is in the room and that some of
-the replies above are not theirs — added only once a colleague has actually
-spoken, so a room whose second Bot has never said anything carries nothing.
+Whose turn it is: nobody named means EVERYBODY answers (the reference's
+rule, and the opposite of the one we had). Up to three rounds, rotating who
+opens each round, ten messages per turn across the room, three per member,
+six members — every cap exists to end a conversation between models, which
+does not stop on its own. A round in which nobody spoke ends the turn. With
+two slots left, or on the last round, members are asked to wrap up.
 
-Who said what is recorded per message (`lafAgentId` beside `lafAt` in the
-snapshot jsonb) and drawn as a name above each reply. Two colleagues' replies
-never join into one visual run, which would have hidden the second name.
+Two fences for two races. `channels.room_turn_epoch` counts up on every
+message the person posts, and every checkpoint compares it against the one
+the turn started with — a superseded turn stops at its next member wherever
+it is, on whatever process it is on. A per-Bot lane, shared with routines,
+keeps two loops off one Bot's browser. Stop bumps the epoch; a member
+already thinking still says what it produced.
 
-The count of rooms waiting also goes on the app's icon (`navigator.setAppBadge`
-in an installed window, the tab title everywhere else). A MUTED Bot still counts
-there: muting silences the popup, not the fact that something is waiting. A
-hidden one does not, because it is not on the roster to be counted.
+What the browser sees: `room.*` frames on the roster's socket — the turn
+starting, a member opening a message, the WHOLE text so far on each delta
+(never an increment, so a dropped frame heals on the next), the message
+settling or being refused, the turn ending. A settled message names the
+provisional bubble it replaces and carries the stored id and final text, so
+the bubble is swapped in place; the first version removed it and waited for
+a refetch, and every reply blinked off the screen for a second. The turn's
+end frame is sent from a `finally`, so a turn that fails before its first
+member cannot leave the room stuck with Stop showing. Deltas are instance-local by
+design; the settled message goes through `pg_notify` like any other. The
+room's transcript is read from `/api/channels/:id/messages`, which serves
+the snapshot directly — the runtime's own thread endpoint is answered by our
+runner only in local mode, and every message in a room is written by the
+server.
+
+Who said what is recorded per message (`lafAgentId` beside `lafAt`) and
+drawn as a name above each reply.

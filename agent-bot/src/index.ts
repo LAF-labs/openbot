@@ -176,7 +176,16 @@ export async function runAgent(
          * speaking in a room IS a tool call, so the whole message arrived at once or not at all,
          * and every Bot a person creates in this product runs through this service.
          */
-        const toolCalls = new Map<number, { id: string; started: boolean }>();
+        const toolCalls = new Map<
+          number,
+          {
+            id: string | null;
+            name: string | null;
+            /** Fragments that arrived before the call could legally open. */
+            pending: string;
+            started: boolean;
+          }
+        >();
 
         for await (const chunk of completion) {
           const delta = chunk.choices[0]?.delta;
@@ -200,32 +209,43 @@ export async function runAgent(
 
           for (const call of delta.tool_calls ?? []) {
             const existing = toolCalls.get(call.index) ?? {
-              id: call.id ?? `call_${input.runId}_${call.index}`,
+              id: null as string | null,
+              name: null as string | null,
+              pending: "",
               started: false,
             };
             if (call.id) existing.id = call.id;
+            if (call.function?.name) existing.name = call.function.name;
             toolCalls.set(call.index, existing);
 
             /*
-             * The call opens the moment its NAME is known, which is the first thing a provider
-             * sends. Anything later is arguments, and a watcher that has the name already knows
-             * what kind of call it is watching.
+             * A call opens only once BOTH its id and its name are known, and the fragments that
+             * arrived before that moment go out right behind the open. Providers do not agree on
+             * order — measured: one sends an arguments fragment before the name, another sends the
+             * id a chunk after the name — and opening early put an ARGS event on the wire for an id
+             * no START had announced, which AG-UI's verifier rejects and the whole run fails on.
+             * The old all-at-the-end buffering was order-proof; this keeps that property while
+             * still forwarding as soon as forwarding is legal.
              */
-            if (call.function?.name && !existing.started) {
+            if (call.function?.arguments) {
+              existing.pending += call.function.arguments;
+            }
+            if (!existing.started && existing.id && existing.name) {
               existing.started = true;
               send({
                 type: "TOOL_CALL_START",
                 toolCallId: existing.id,
-                toolCallName: call.function.name,
+                toolCallName: existing.name,
                 parentMessageId: messageId,
               } as BaseEvent);
             }
-            if (call.function?.arguments) {
+            if (existing.started && existing.pending) {
               send({
                 type: "TOOL_CALL_ARGS",
                 toolCallId: existing.id,
-                delta: call.function.arguments,
+                delta: existing.pending,
               } as BaseEvent);
+              existing.pending = "";
             }
           }
         }
@@ -240,7 +260,28 @@ export async function runAgent(
          * made.
          */
         for (const call of toolCalls.values()) {
-          if (!call.started) continue;
+          /*
+           * A call that never got both an id and a name never opened, so it is not closed either;
+           * a call the provider named but never gave an id gets a minted one now, so its
+           * fragments are not lost — the open and the args go out together, then the end.
+           */
+          if (!call.started) {
+            if (!call.name) continue;
+            call.id ??= `call_${input.runId}_${[...toolCalls.values()].indexOf(call)}`;
+            send({
+              type: "TOOL_CALL_START",
+              toolCallId: call.id,
+              toolCallName: call.name,
+              parentMessageId: messageId,
+            } as BaseEvent);
+            if (call.pending) {
+              send({
+                type: "TOOL_CALL_ARGS",
+                toolCallId: call.id,
+                delta: call.pending,
+              } as BaseEvent);
+            }
+          }
           send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
         }
 

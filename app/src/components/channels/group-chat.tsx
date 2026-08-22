@@ -180,19 +180,38 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
             { id: messageId, role: "user", content: trimmed },
           ],
         }));
-        const response = await fetch(
-          `/api/channels/${encodeURIComponent(channel.id)}/room-turn`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              text: trimmed,
-              messageId,
-              addressedAgentIds,
-            }),
-          },
-        );
+        /*
+         * A network failure is caught HERE and not left to throw. Thrown, the composer would put
+         * the draft back in the box while the optimistic bubble stayed on screen with nothing
+         * saying why — and from the seed effect it would be an unhandled rejection. And the 202
+         * may have been lost AFTER the server stored the message: that is why the bubble is kept
+         * under the server's id on a network error and catch-up is asked — if the message is
+         * there, it stays; if not, the notice says to try again.
+         */
+        let response: Response | null = null;
+        try {
+          response = await fetch(
+            `/api/channels/${encodeURIComponent(channel.id)}/room-turn`,
+            {
+              method: "POST",
+              credentials: "include",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                text: trimmed,
+                messageId,
+                addressedAgentIds,
+              }),
+            },
+          );
+        } catch {
+          setNotice(
+            t(
+              "The room could not be reached. Check the connection and try again.",
+            ),
+          );
+          void catchUpRef.current();
+          return;
+        }
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as {
             error?: string;

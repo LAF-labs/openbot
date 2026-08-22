@@ -11,10 +11,11 @@ import type { RoomFrame } from "./room-frames";
  * A FRAME FROM A STALE TURN IS IGNORED. The person said something else; whatever the old turn's
  * members were typing is answering a question that has been superseded.
  *
- * A PROVISIONAL MESSAGE AND ITS SETTLED COPY ARE TWO IDS. While a member types, the message is
- * keyed by the tool call; when it lands, the server stores it under its own id and announces THAT
- * through the roster path. `room.end{posted:true}` therefore removes the provisional one — the
- * settled copy arrives through `catch-up`, the same fetch the solo room already uses.
+ * A PROVISIONAL MESSAGE IS SWAPPED FOR ITS SETTLED COPY IN PLACE. While a member types, the
+ * message is keyed by the tool call; when it lands, `room.end{posted:true}` names that id and
+ * carries the stored id and final text, and the bubble is re-keyed where it stands. Removing it
+ * and waiting for catch-up — which is what this did first — blinked every reply off the screen for
+ * the second or two between stream end and the settled fetch.
  *
  * A DELTA FOR A MESSAGE NOBODY OPENED OPENS IT. The open frame can be the one that was dropped,
  * and a message whose first frame was lost should still appear rather than never.
@@ -67,6 +68,8 @@ export function applyRoomFrame(
 
   switch (frame.kind) {
     case "room.open": {
+      // An id already on screen — a replayed frame, or a settled message with the same id — is
+      // left alone: re-opening it would wipe text the person has already read.
       if (adopted.messages.some((message) => message.id === frame.messageId)) {
         return adopted;
       }
@@ -118,19 +121,47 @@ export function applyRoomFrame(
     }
 
     case "room.end": {
-      const messages = adopted.messages.filter(
-        (message) => message.id !== frame.messageId,
+      const at = adopted.messages.findIndex(
+        (message) => message.id === frame.messageId,
       );
-      if (messages.length === adopted.messages.length) return adopted;
-      const { [frame.messageId]: _dropped, ...speakers } = adopted.speakers;
-      return { ...adopted, messages, speakers };
+      const { [frame.messageId]: author, ...rest } = adopted.speakers;
+
+      if (!frame.posted || !frame.storedId) {
+        // Refused, or never delivered: the words are not in the room and must not stay on screen.
+        if (at === -1) return adopted;
+        const messages = adopted.messages.filter((_, index) => index !== at);
+        return { ...adopted, messages, speakers: rest };
+      }
+
+      // Settled. Already holding the stored copy (catch-up got there first) means nothing to do
+      // beyond dropping the provisional one, if it is still there.
+      const storedAt = adopted.messages.findIndex(
+        (message) => message.id === frame.storedId,
+      );
+      const provisional = adopted.messages[at];
+      const settled: RoomMessage = {
+        id: frame.storedId,
+        role: "assistant",
+        content:
+          frame.text ??
+          (typeof provisional?.content === "string" ? provisional.content : ""),
+      };
+      const messages = adopted.messages.filter(
+        (_, index) => index !== at && index !== storedAt,
+      );
+      const insertAt =
+        at === -1 ? messages.length : Math.min(at, messages.length);
+      messages.splice(insertAt, 0, settled);
+      const speakers = author ? { ...rest, [frame.storedId]: author } : rest;
+      const times = frame.at
+        ? { ...adopted.times, [frame.storedId]: frame.at }
+        : adopted.times;
+      return { ...adopted, messages, speakers, times };
     }
 
     case "room.done": {
-      if (adopted.turnId !== frame.turnId && frame.epoch !== adopted.epoch) {
-        return adopted;
-      }
-      // Anything still provisional when the turn ends was never posted.
+      // By here the frame's epoch equals ours (older returned early, newer was adopted), so there
+      // is nothing left to check: the turn this frame ends is the one on screen.
       const messages = adopted.messages.filter((message) => !message.streaming);
       return { ...adopted, messages, turnId: null };
     }

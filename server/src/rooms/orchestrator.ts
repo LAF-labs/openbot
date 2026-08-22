@@ -8,9 +8,10 @@
  *
  * The shape is the reference's `Ivt.run`, and so are the reasons:
  *
- * WHO IS ADDRESSED IS RECOMPUTED EACH ROUND, not fixed at the start. A member can pull a colleague
- * in by name mid-turn, and a room where that is ignored until the next thing the person types is a
- * room where the Bots cannot actually talk to each other.
+ * WHO IS ADDRESSED IS FIXED FOR THE TURN: the names in the person's message, or everybody. The
+ * reference lets a member pull a colleague in by @-naming them mid-turn and re-reads the room each
+ * round to find out; this does not yet, and says so rather than pretending. The seam is
+ * `addressedIds` — make it a function of the lines said so far and the rest follows.
  *
  * THE ORDER ROTATES. Whoever speaks first sets the frame, and the same Bot opening every round is
  * the same Bot deciding what the room is about every round.

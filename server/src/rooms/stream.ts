@@ -14,8 +14,12 @@
  *    object — which the published type invites — yields `undefined` and the typing indicator
  *    simply never appears, with nothing anywhere saying why.
  *
- * 2. `toolCallBuffer` is the buffer BEFORE the current delta: the client appends after calling the
- *    subscriber. `partialToolCallArgs` already accounts for the delta, so it is what to read.
+ * 2. BOTH `toolCallBuffer` and `partialToolCallArgs` are the buffer BEFORE the current delta: the
+ *    client computes them, calls the subscriber, and only then appends (`arguments += delta`).
+ *    Measured in the dist, not read from the type. So the indicator trails the model by exactly one
+ *    fragment, and the final fragment reaches us only through `onToolCallEndEvent`'s complete
+ *    `toolCallArgs` — which is why `close` is NOT where the bubble comes off the screen. The
+ *    settled message, carrying the final text, is what replaces it.
  *
  * EVERY SUBSCRIBER HERE IS SYNCHRONOUS. `@ag-ui/client` dispatches subscribers through `concatMap`
  * and awaits each in order, so an `await` in here back-pressures the Bot's own stream — the model
@@ -30,7 +34,10 @@ export type RoomStreamWatcher = {
   open: (toolCallId: string) => void;
   /** The whole text so far, never an increment — a dropped frame heals on the next one. */
   text: (toolCallId: string, text: string) => void;
-  /** The member stopped speaking this message, whether or not it was delivered. */
+  /**
+   * The member stopped writing this message. NOT the moment it is delivered — the tool has not
+   * run yet when this fires — so a caller must not take the bubble down here. See service.ts.
+   */
   close: (toolCallId: string) => void;
 };
 
@@ -75,6 +82,12 @@ export function watchRoomSpeech(watcher: RoomStreamWatcher): AgentSubscriber {
     onToolCallArgsEvent: ({ event, partialToolCallArgs }) => {
       const { toolCallId } = event as { toolCallId?: string };
       if (!toolCallId || !speaking.has(toolCallId)) return;
+      /*
+       * One fragment behind the model (fact #2), and left that way on purpose. Closing the live
+       * buffer ourselves would mean importing untruncate-json, which is @ag-ui/client's dependency
+       * and not ours; a typing indicator one fragment late is invisible, and the complete text
+       * arrives through the END event below regardless.
+       */
       const text = textOfPartialArgs(partialToolCallArgs);
       if (text !== null) watcher.text(toolCallId, text);
     },

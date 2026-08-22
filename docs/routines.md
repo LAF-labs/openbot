@@ -38,7 +38,15 @@ its usual ten minutes, so a person who reads the answer in time can still grant
 it.
 
 The answer lands in the Bot's own conversation as one message headed by the
-routine's name, and marks the room unread. A coworker being *asked* by another
+routine's name, and marks the room unread.
+
+One unattended run per Bot at a time, through a lane shared with every other
+server-side path (`runner/bot-lane.ts`). An account has one virtual computer
+and its Bots share it, so a routine firing at seven and a room turn asking the
+same Bot a question would otherwise drive one browser at once — each one's
+snapshot going stale under the other. The lane is shared rather than private
+to routines because two services each serialising against themselves would
+not see each other. A coworker being *asked* by another
 Bot still runs toolless (`agents/coworker-call.ts`) — that is what makes a
 handoff one hop by construction.
 

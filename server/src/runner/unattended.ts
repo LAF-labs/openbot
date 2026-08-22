@@ -43,6 +43,8 @@ export type ToolOutcome = Record<string, unknown> & { ok: boolean };
 export type ToolExecutor = (
   name: string,
   args: Record<string, unknown>,
+  /** The call being executed. A room needs its id: the browser draws the message under it. */
+  call?: { id: string },
 ) => Promise<ToolOutcome>;
 
 export type UnattendedToolkit = {
@@ -336,7 +338,9 @@ export async function runUnattended(
         };
       } else {
         outcome = await withDeadline(
-          options.toolkit.execute(call.name, parseArgs(call.args)),
+          options.toolkit.execute(call.name, parseArgs(call.args), {
+            id: call.id,
+          }),
         );
       }
       record(index, outcome.ok);

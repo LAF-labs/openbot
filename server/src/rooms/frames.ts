@@ -51,10 +51,18 @@ export type RoomFrame =
   /** Everything that member has said in this message so far. */
   | (Base & { kind: "room.delta"; messageId: string; text: string })
   /**
-   * The member stopped. `posted` false means it was refused — over its message limit, or empty —
-   * and the provisional message should come off the screen rather than settle.
+   * The message settled (`posted` true: swap the provisional bubble for the stored copy, in place)
+   * or was refused — over its message limit, or empty — and should come off the screen.
    */
-  | (Base & { kind: "room.end"; messageId: string; posted: boolean })
+  | (Base & {
+      kind: "room.end";
+      messageId: string;
+      posted: boolean;
+      /** Present when posted: the id the message was stored under, and the final text. */
+      storedId?: string;
+      at?: string;
+      text?: string;
+    })
   /** The whole turn is over, however it ended. */
   | (Base & { kind: "room.done"; reason: string });
 

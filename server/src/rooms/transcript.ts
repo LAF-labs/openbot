@@ -121,7 +121,7 @@ export async function appendRoomMessage(
     agentId: string | null,
     messages: StoredMessage[],
   ) => void,
-): Promise<{ messageId: string; at: string } | null> {
+): Promise<{ messageId: string; at: string }> {
   const at = new Date();
   const message: StoredMessage = {
     id: append.messageId ?? randomUUID(),
@@ -192,6 +192,13 @@ export async function appendRoomMessage(
     .from(channelMemberships)
     .where(eq(channelMemberships.channelId, append.channelId));
 
+  /*
+   * Safe to announce from inside a caller's transaction, and MEASURED rather than assumed: a
+   * NOTIFY issued inside a transaction reaches listeners on commit (432 ms after, with the
+   * transaction held open 400 ms) and never after a rollback. So a message that is rolled back is
+   * never announced, and a message that commits is announced exactly once — the same guarantee
+   * `recordActivity` relies on.
+   */
   await executor.execute(
     sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify({
       channelId: append.channelId,

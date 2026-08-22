@@ -39,8 +39,8 @@ export type MemberTurnInput = {
   /** The Bot itself, resolved for the person whose room it is. Null when it can no longer answer. */
   agent: AbstractAgent | null;
   toolkit: UnattendedToolkit;
-  /** Put a message in the room. Returns the id it was stored under, for the stream to close on. */
-  deliver: (text: string) => Promise<void>;
+  /** Put a message in the room. Given the call's id so the settled copy can replace the bubble. */
+  deliver: (text: string, toolCallId: string) => Promise<void>;
   /** Report what the member is typing, before it has finished. */
   watch: {
     open: (toolCallId: string) => void;
@@ -56,9 +56,12 @@ export async function runMemberTurn(
   input: MemberTurnInput,
 ): Promise<MemberTurnResult> {
   /*
-   * A Bot that has been deleted since the room was made is skipped, not an error. The room still
-   * lists it — a member missing from the header is a room that lies about who is in it — and the
-   * turn simply goes on without it.
+   * A Bot absent from the resolved map is skipped, not an error. The room still lists it — a
+   * member missing from the header is a room that lies about who is in it — and the turn goes on
+   * without it. A Bot that was soft-DELETED is not this case: the runtime resolves it to an
+   * `UnavailableAgent` whose run throws, so it reaches the `catch` below with a ledger row opened
+   * and closed against it every round. That is honest — the ledger records that the room tried —
+   * but it is a cost worth knowing about, and the place to stop paying it is `resolveRoomMembers`.
    */
   if (!input.agent) {
     return { spoke: 0, failed: "This Bot is no longer available." };

@@ -566,6 +566,11 @@ function isChannelInputObject(input: unknown): input is ChannelInputObject {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
+
 /** As much reported text as any real message has, and far less than a request built to cost. */
 const MAX_ACTIVITY_TEXT = 100_000;
 
@@ -839,6 +844,15 @@ export function createChannelRoutes(
       }
       if (text.length > MAX_ROOM_TURN_TEXT) {
         return context.json({ error: "That message is too long." }, 400);
+      }
+      /*
+       * The browser mints the message's id so it can draw the bubble before the round trip and
+       * keep it through catch-up. That makes the id input, and input is validated: a UUID and
+       * nothing else, or a caller could store a message under an id that already exists and have
+       * two messages share one key.
+       */
+      if (body?.messageId !== undefined && !isUuid(body.messageId)) {
+        return context.json({ error: "messageId must be a UUID." }, 400);
       }
       const channelId = context.req.param("channelId");
       const channel = await store.get(context.var.actor, channelId);

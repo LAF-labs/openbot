@@ -677,4 +677,6 @@ export const ko: Record<string, string> = {
   "{name} needs you": "{name}이(가) 기다립니다",
   "In a room": "방에서 대화 중",
   "The room could not take that message.": "방이 이 메시지를 받지 못했습니다.",
+  "The room could not be reached. Check the connection and try again.":
+    "방에 연결하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.",
 };

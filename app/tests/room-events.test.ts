@@ -65,15 +65,83 @@ describe("a member typing", () => {
 });
 
 describe("a message landing", () => {
-  test("the provisional copy comes off when it is posted; the settled one arrives by catch-up", () => {
+  test("the settled copy replaces the provisional bubble IN PLACE, keeping its author", () => {
+    /*
+     * The first version removed the provisional bubble here and waited for catch-up to bring the
+     * stored copy. Measured: every reply blinked off the screen at stream end and came back a
+     * second or two later. Now the frame names the bubble it replaces and carries the stored id.
+     */
     const state = after([
       turn,
       open,
-      delta("안녕하세요"),
-      { ...base, kind: "room.end", messageId: "call_1", posted: true },
+      delta("안녕하"),
+      {
+        ...base,
+        kind: "room.end",
+        messageId: "call_1",
+        posted: true,
+        storedId: "stored_1",
+        at: "2026-08-22T00:00:01.000Z",
+        text: "안녕하세요",
+      },
     ]);
-    expect(state.messages).toHaveLength(0);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]?.id).toBe("stored_1");
+    expect(state.messages[0]?.content).toBe("안녕하세요");
+    expect(state.messages[0]?.streaming).toBeUndefined();
     expect(state.speakers.call_1).toBeUndefined();
+    expect(state.speakers.stored_1).toBe("risk");
+    expect(state.times.stored_1).toBe("2026-08-22T00:00:01.000Z");
+  });
+
+  test("settling keeps its position between neighbours rather than jumping to the end", () => {
+    const before = after([turn, open, delta("첫")]);
+    const withLater = {
+      ...before,
+      messages: [
+        ...before.messages,
+        { id: "u9", role: "user" as const, content: "뒤에 온 질문" },
+      ],
+    };
+    const state = applyRoomFrame(
+      withLater,
+      {
+        ...base,
+        kind: "room.end",
+        messageId: "call_1",
+        posted: true,
+        storedId: "s1",
+        text: "첫 번째",
+      },
+      ROOM,
+    );
+    expect(state.messages.map((m) => m.id)).toEqual(["s1", "u9"]);
+  });
+
+  test("catch-up arriving first is not a duplicate: the provisional one is dropped, the stored one kept once", () => {
+    const typing = after([turn, open, delta("안녕")]);
+    const caughtUp = mergeStored(
+      typing,
+      [{ id: "s1", role: "assistant", content: "안녕하세요" }],
+      {
+        speakers: { s1: "risk" },
+        times: {},
+      },
+    );
+    const state = applyRoomFrame(
+      caughtUp,
+      {
+        ...base,
+        kind: "room.end",
+        messageId: "call_1",
+        posted: true,
+        storedId: "s1",
+        text: "안녕하세요",
+      },
+      ROOM,
+    );
+    expect(state.messages.filter((m) => m.id === "s1")).toHaveLength(1);
+    expect(state.messages.some((m) => m.id === "call_1")).toBe(false);
   });
 
   test("a refused message comes off too, rather than leaving words that are not in the room", () => {

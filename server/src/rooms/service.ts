@@ -15,8 +15,8 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
-import { channelAgents, channelMemberships, channels } from "../db/schema";
-import type { BotLane } from "../runner/bot-lane";
+import { channelMemberships, channels } from "../db/schema";
+import { type BotLane, createBotLane } from "../runner/bot-lane";
 import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
 import type { AbstractAgent } from "@ag-ui/client";
@@ -81,8 +81,11 @@ export type RoomTurnStart = {
 export function createRoomService(options: RoomServiceOptions) {
   const { database } = options;
   const timeoutMs = options.memberTimeoutMs ?? MEMBER_TURN_TIMEOUT_MS;
-  /** One turn at a time per room, in this process. The epoch is what covers the other one. */
-  const lanes = new Map<string, Promise<unknown>>();
+  /**
+   * One turn at a time per room, in this process. The epoch is what covers the other one. The
+   * same lane type the Bots use — a queue keyed by a string is a queue keyed by a string.
+   */
+  const roomLane = createBotLane();
 
   async function roomOf(actor: { id: string }, channelId: string) {
     const [row] = await database
@@ -138,6 +141,13 @@ export function createRoomService(options: RoomServiceOptions) {
       }
 
       const turnId = randomUUID();
+      /*
+       * `onAppended` updates the runner's in-memory copy of the thread, and it is NOT passed into
+       * the transaction. Called there, a rollback after the append would leave the runner holding a
+       * message Postgres never kept — and `mergeKeepingStoredOnly` would faithfully re-insert that
+       * phantom on the thread's next save. It is told once the transaction has committed.
+       */
+      let appended: StoredMessage[] | null = null;
       const posted = await database.transaction(async (transaction) => {
         const written = await appendRoomMessage(
           transaction,
@@ -148,7 +158,9 @@ export function createRoomService(options: RoomServiceOptions) {
             text,
             ...(input.messageId ? { messageId: input.messageId } : {}),
           },
-          options.onAppended,
+          (_threadId, _agentId, messages) => {
+            appended = messages;
+          },
         );
         const [bumped] = await transaction
           .update(channels)
@@ -157,6 +169,7 @@ export function createRoomService(options: RoomServiceOptions) {
           .returning({ epoch: channels.roomTurnEpoch });
         return { written, epoch: Number(bumped?.epoch ?? room.epoch) };
       });
+      if (appended) options.onAppended?.(input.threadId, null, appended);
 
       const memberIds = await watchers(database, input.channelId);
       const addressed = input.addressedAgentIds ?? [];
@@ -173,27 +186,29 @@ export function createRoomService(options: RoomServiceOptions) {
         })),
       });
 
-      const finished = queue(input.channelId, () =>
-        run({
-          actor: input.actor,
-          actorLabel: input.actorLabel,
-          channelId: input.channelId,
-          threadId: input.threadId,
-          room: { name: room.name },
-          members,
-          addressed,
-          personName: input.personName,
-          turnId,
-          epoch: posted.epoch,
-          memberIds,
-        }),
-      ).catch((error: unknown) => {
-        console.error("[rooms] a turn failed:", error);
-      });
+      const finished = roomLane
+        .run(input.channelId, () =>
+          run({
+            actor: input.actor,
+            actorLabel: input.actorLabel,
+            channelId: input.channelId,
+            threadId: input.threadId,
+            room: { name: room.name },
+            members,
+            addressed,
+            personName: input.personName,
+            turnId,
+            epoch: posted.epoch,
+            memberIds,
+          }),
+        )
+        .catch((error: unknown) => {
+          console.error("[rooms] a turn failed:", error);
+        });
 
       return {
         turnId,
-        messageId: posted.written?.messageId ?? "",
+        messageId: posted.written.messageId,
         epoch: posted.epoch,
         finished,
       };
@@ -215,20 +230,6 @@ export function createRoomService(options: RoomServiceOptions) {
     },
   };
 
-  function queue<T>(channelId: string, task: () => Promise<T>): Promise<T> {
-    const previous = lanes.get(channelId) ?? Promise.resolve();
-    const started = previous.then(task, task);
-    const settled = started.then(
-      () => undefined,
-      () => undefined,
-    );
-    lanes.set(channelId, settled);
-    void settled.then(() => {
-      if (lanes.get(channelId) === settled) lanes.delete(channelId);
-    });
-    return started;
-  }
-
   async function run(input: {
     actor: { id: string; role: "admin" | "user" };
     actorLabel: string;
@@ -242,155 +243,169 @@ export function createRoomService(options: RoomServiceOptions) {
     epoch: number;
     memberIds: string[];
   }): Promise<void> {
+    let ended = "failed";
     const names = namesOf(input.members);
-    const agents = await options.resolveAgents(input.actor);
+    try {
+      await drive();
+    } finally {
+      /*
+       * ALWAYS, whatever threw. The browser was told the turn started and holds the composer
+       * parked on it; a turn that failed before its first member — agents that would not resolve,
+       * a plugin store that was down — used to leave the room stuck with Stop showing until a
+       * reload. Stop cannot help either: it bumps the epoch, and nothing is running to notice.
+       */
+      options.emit({
+        kind: "room.done",
+        channelId: input.channelId,
+        memberIds: input.memberIds,
+        turnId: input.turnId,
+        epoch: input.epoch,
+        reason: ended,
+      });
+    }
 
-    const isCurrent = async () => {
-      const [row] = await database
-        .select({ epoch: channels.roomTurnEpoch })
-        .from(channels)
-        .where(eq(channels.id, input.channelId))
-        .limit(1);
-      return Number(row?.epoch ?? input.epoch) === input.epoch;
-    };
+    async function drive(): Promise<void> {
+      const agents = await options.resolveAgents(input.actor);
 
-    const outcome = await runRoomTurn({
-      members: input.members,
-      addressedIds: input.addressed,
-      isCurrent,
-      runMember: async ({ member, windingDown }) => {
-        /*
-         * The lines are read FRESH for every member, not once for the turn. A member speaking
-         * third in a round has to see what the first two just said, or the room is three Bots
-         * answering the same question in parallel rather than a conversation.
-         */
-        const lines = await readRoomLines(
-          database,
-          input.threadId,
-          names,
-          input.personName,
-        );
+      const isCurrent = async () => {
+        const [row] = await database
+          .select({ epoch: channels.roomTurnEpoch })
+          .from(channels)
+          .where(eq(channels.id, input.channelId))
+          .limit(1);
+        return Number(row?.epoch ?? input.epoch) === input.epoch;
+      };
 
-        const toolkit = options.tools
-          ? await options.tools(
-              member.id,
-              {
-                id: input.actor.id,
-                ...(input.actor.id.startsWith("dev-")
-                  ? {}
-                  : { userId: input.actor.id }),
-              },
-              input.actorLabel,
-            )
-          : { tools: [], execute: async () => ({ ok: false }) };
+      const outcome = await runRoomTurn({
+        members: input.members,
+        addressedIds: input.addressed,
+        isCurrent,
+        runMember: async ({ member, windingDown }) => {
+          /*
+           * The lines are read FRESH for every member, not once for the turn. A member speaking
+           * third in a round has to see what the first two just said, or the room is three Bots
+           * answering the same question in parallel rather than a conversation.
+           */
+          const lines = await readRoomLines(
+            database,
+            input.threadId,
+            names,
+            input.personName,
+          );
 
-        const open = new Set<string>();
-        const result = await options.lane.run(member.id, () =>
-          runMemberTurn({
-            room: { channelId: input.channelId, name: input.room.name },
-            member,
-            peers: input.members,
-            lines,
-            windingDown,
-            agent: agents[member.id] ?? null,
-            toolkit,
-            userId: input.actor.id,
-            timeoutMs,
-            ...(options.ledger ? { ledger: options.ledger } : {}),
-            deliver: async (text) => {
-              const written = await appendRoomMessage(
-                database,
+          const toolkit = options.tools
+            ? await options.tools(
+                member.id,
                 {
-                  channelId: input.channelId,
-                  threadId: input.threadId,
-                  agentId: member.id,
-                  text,
+                  id: input.actor.id,
+                  ...(input.actor.id.startsWith("dev-")
+                    ? {}
+                    : { userId: input.actor.id }),
                 },
-                options.onAppended,
-              );
-              if (written) {
+                input.actorLabel,
+              )
+            : { tools: [], execute: async () => ({ ok: false }) };
+
+          const open = new Set<string>();
+          const result = await options.lane.run(member.id, () =>
+            runMemberTurn({
+              room: { channelId: input.channelId, name: input.room.name },
+              member,
+              peers: input.members,
+              lines,
+              windingDown,
+              agent: agents[member.id] ?? null,
+              toolkit,
+              userId: input.actor.id,
+              timeoutMs,
+              ...(options.ledger ? { ledger: options.ledger } : {}),
+              deliver: async (text, toolCallId) => {
+                const written = await appendRoomMessage(
+                  database,
+                  {
+                    channelId: input.channelId,
+                    threadId: input.threadId,
+                    agentId: member.id,
+                    text,
+                  },
+                  options.onAppended,
+                );
+                open.delete(toolCallId);
+                /*
+                 * THE SETTLED MESSAGE REPLACES THE PROVISIONAL ONE IN PLACE. The browser has been
+                 * drawing this message under the tool call's id since its first fragment; this frame
+                 * names that id and carries the stored id and the final text, so the bubble is swapped
+                 * rather than removed-then-refetched. Measured before this: every reply blinked off
+                 * the screen at stream end and came back a second or two later through catch-up.
+                 */
                 options.emit({
                   kind: "room.end",
                   channelId: input.channelId,
                   memberIds: input.memberIds,
                   turnId: input.turnId,
                   epoch: input.epoch,
-                  messageId: written.messageId,
+                  messageId: toolCallId,
                   posted: true,
-                });
-              }
-            },
-            watch: {
-              open: (toolCallId) => {
-                open.add(toolCallId);
-                options.emit({
-                  kind: "room.open",
-                  channelId: input.channelId,
-                  memberIds: input.memberIds,
-                  turnId: input.turnId,
-                  epoch: input.epoch,
-                  messageId: toolCallId,
-                  authorId: member.id,
-                  authorName: member.name,
-                });
-              },
-              text: (toolCallId, text) => {
-                options.emit({
-                  kind: "room.delta",
-                  channelId: input.channelId,
-                  memberIds: input.memberIds,
-                  turnId: input.turnId,
-                  epoch: input.epoch,
-                  messageId: toolCallId,
+                  storedId: written.messageId,
+                  at: written.at,
                   text,
                 });
               },
-              /*
-               * The provisional message comes off the screen when the call ends. Either it was
-               * delivered — in which case the settled message has already arrived under its own id
-               * — or it was refused, and a refusal must not leave words on screen that are not in
-               * the room.
-               */
-              close: (toolCallId) => {
-                open.delete(toolCallId);
-                options.emit({
-                  kind: "room.end",
-                  channelId: input.channelId,
-                  memberIds: input.memberIds,
-                  turnId: input.turnId,
-                  epoch: input.epoch,
-                  messageId: toolCallId,
-                  posted: false,
-                });
+              watch: {
+                open: (toolCallId) => {
+                  open.add(toolCallId);
+                  options.emit({
+                    kind: "room.open",
+                    channelId: input.channelId,
+                    memberIds: input.memberIds,
+                    turnId: input.turnId,
+                    epoch: input.epoch,
+                    messageId: toolCallId,
+                    authorId: member.id,
+                    authorName: member.name,
+                  });
+                },
+                text: (toolCallId, text) => {
+                  options.emit({
+                    kind: "room.delta",
+                    channelId: input.channelId,
+                    memberIds: input.memberIds,
+                    turnId: input.turnId,
+                    epoch: input.epoch,
+                    messageId: toolCallId,
+                    text,
+                  });
+                },
+                /*
+                 * Deliberately NOT where the bubble comes down. This fires when the model has finished
+                 * WRITING the call — the tool has not run yet, so the message is not in the room. A
+                 * delivered call is settled by `deliver` above; one that was refused, or that the run
+                 * died on, is still in `open` when the member's turn ends and the sweep below clears
+                 * it. Nothing is emitted here.
+                 */
+                close: () => {},
               },
-            },
-          }),
-        );
+            }),
+          );
 
-        // A run that died mid-sentence leaves nothing half-drawn on anybody's screen.
-        for (const toolCallId of open) {
-          options.emit({
-            kind: "room.end",
-            channelId: input.channelId,
-            memberIds: input.memberIds,
-            turnId: input.turnId,
-            epoch: input.epoch,
-            messageId: toolCallId,
-            posted: false,
-          });
-        }
-        return result.spoke;
-      },
-    });
+          // A run that died mid-sentence leaves nothing half-drawn on anybody's screen.
+          for (const toolCallId of open) {
+            options.emit({
+              kind: "room.end",
+              channelId: input.channelId,
+              memberIds: input.memberIds,
+              turnId: input.turnId,
+              epoch: input.epoch,
+              messageId: toolCallId,
+              posted: false,
+            });
+          }
+          return result.spoke;
+        },
+      });
 
-    options.emit({
-      kind: "room.done",
-      channelId: input.channelId,
-      memberIds: input.memberIds,
-      turnId: input.turnId,
-      epoch: input.epoch,
-      reason: outcome.ended,
-    });
+      ended = outcome.ended;
+    }
   }
 }
 
@@ -403,16 +418,4 @@ async function watchers(
     .from(channelMemberships)
     .where(eq(channelMemberships.channelId, channelId));
   return rows.map((row) => row.userId);
-}
-
-/** Whether this channel is a room: more than one Bot in it. */
-export async function isRoom(
-  database: Database,
-  channelId: string,
-): Promise<boolean> {
-  const rows = await database
-    .select({ agentId: channelAgents.agentId })
-    .from(channelAgents)
-    .where(eq(channelAgents.channelId, channelId));
-  return rows.length > 1;
 }
