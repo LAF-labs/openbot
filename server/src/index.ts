@@ -20,6 +20,7 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
@@ -257,6 +258,12 @@ const approvals = withApprovalNotifications(
   },
 );
 
+/**
+ * The allowances, in the database, because an allowance whose whole point is to outlive the turn
+ * must outlive the process too. See `standing-approvals.ts`.
+ */
+const standingApprovals = createDatabaseStandingApprovalStore(database);
+
 const pluginStore = createPluginStore({
   database,
   auditStore: bootAuditStore,
@@ -264,6 +271,7 @@ const pluginStore = createPluginStore({
   encryptionKey: config.keyEncryptionKey,
   policy: () => policyStore.get(),
   approvals,
+  standing: standingApprovals,
 });
 
 void recordAuditEvent(bootAuditStore, {
@@ -374,6 +382,7 @@ const computerGateway = computerClient
       // server is running applies to the very next action instead of after a restart.
       policy: () => policyStore.get(),
       approvals,
+      standing: standingApprovals,
       // Stop, reset and the listing act on containers when there are containers to act on.
       ...(supervisor ? { supervisor } : {}),
       // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
@@ -561,6 +570,7 @@ const app = createApp(
       lafRunner.adoptSnapshot(threadId, agentId, messages as never),
   }),
   createThreadMessageReader(database),
+  standingApprovals,
 );
 
 /**

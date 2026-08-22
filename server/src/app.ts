@@ -23,6 +23,7 @@ import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
+import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { ComputerClient } from "./computer/client";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
@@ -163,6 +164,18 @@ export function createApp(
   },
   /** A room's transcript, straight out of the snapshot column. */
   readThreadMessages?: (threadId: string) => Promise<unknown[]>,
+  /**
+   * The questions a person has decided not to be asked again.
+   *
+   * LAST, and new parameters belong here too. Everything above is positional, so a parameter
+   * inserted anywhere else shifts every argument after it — which has already broken composition
+   * tests that reach a late slot through a run of `undefined`, silently, because the types line up.
+   *
+   * Absent leaves the answering handler ignoring `always` and the two `/standing` handlers reporting
+   * nothing, which is the honest degraded behaviour: a deployment with nowhere to record a widening
+   * should keep asking rather than accept one it cannot show anybody.
+   */
+  standingApprovals?: StandingApprovalStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -402,7 +415,12 @@ export function createApp(
   if (approvals && auditStore) {
     app.route(
       "/api/approvals",
-      createApprovalRoutes(approvals, auditStore, requireUser),
+      createApprovalRoutes(
+        approvals,
+        auditStore,
+        requireUser,
+        standingApprovals,
+      ),
     );
   }
 

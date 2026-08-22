@@ -1,5 +1,6 @@
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { alwaysLabel } from "@/components/channels/allowance-label";
 import {
   answerApproval,
   closeQuestion,
@@ -9,7 +10,7 @@ import {
 import { t } from "@/lib/i18n";
 
 /**
- * A transcript line that grew two buttons, for the one action a boundary wanted a person to see.
+ * A transcript line that grew buttons, for the one action a boundary wanted a person to see.
  *
  * Not a modal, and the restraint is the point. A question about one click belongs where the click is
  * being reported, in sequence with everything else the Bot did, so a person can see what led up to it
@@ -40,13 +41,14 @@ export function ApprovalRequest({
   const questionId = useId();
 
   const answer = useCallback(
-    async (granted: boolean) => {
+    async (granted: boolean, always = false) => {
       if (!asking) return;
       setAnswering(true);
       const result = await answerApproval(
         asking.botId,
         asking.approvalId,
         granted,
+        always,
       );
       setAnswering(false);
       if (!result.ok) {
@@ -94,7 +96,7 @@ export function ApprovalRequest({
           {asking.rule}
         </p>
       ) : null}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
           // Described by the question rather than wrapped in a group role: "Allow" on its own says
           // nothing about what is being allowed.
@@ -103,8 +105,26 @@ export function ApprovalRequest({
           onClick={() => void answer(true)}
           size="sm"
         >
-          {t("Allow")}
+          {t("Allow once")}
         </Button>
+        {/*
+         * THE WIDER BUTTON SAYS HOW WIDE. A person cannot consent to something they were not shown,
+         * and "Always allow" on its own is a promise about an unnamed set: the same press means one
+         * website, one file or one tool depending on what the Bot was doing, and the difference
+         * between those is the whole decision. Absent when the server derived no scope, in which
+         * case there is nothing honest to write on it.
+         */}
+        {asking.scope ? (
+          <Button
+            aria-describedby={questionId}
+            disabled={answering}
+            onClick={() => void answer(true, true)}
+            size="sm"
+            variant="outline"
+          >
+            {alwaysLabel(asking.scope)}
+          </Button>
+        ) : null}
         <Button
           aria-describedby={questionId}
           disabled={answering}
@@ -114,10 +134,14 @@ export function ApprovalRequest({
         >
           {t("Deny")}
         </Button>
-        <span className="text-muted-foreground text-xs">
-          {t("Asked because of this rule. Allowing covers this one action.")}
-        </span>
       </div>
+      <p className="mt-1.5 text-muted-foreground text-xs">
+        {asking.scope
+          ? t(
+              "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
+            )
+          : t("Asked because of this rule. Allowing covers this one action.")}
+      </p>
       {problem ? (
         <p className="mt-2 text-destructive text-xs" role="alert">
           {problem}

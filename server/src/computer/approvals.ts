@@ -26,6 +26,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNull, lte } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { computerApprovals } from "../db/schema/computer";
+import type { AllowanceScope } from "./standing-approvals";
 
 /**
  * How long a question stays open.
@@ -92,6 +93,15 @@ export type PendingApproval = {
    * whole point is to compare the action a person saw against the action being attempted.
    */
   fingerprint: string;
+  /**
+   * What answering this with "always" would cover. Absent when nothing could be derived.
+   *
+   * Decided by whoever raised the question, from the action itself, and never by the client pressing
+   * the button — see `standing-approvals.ts`. It travels out to the surface because a person cannot
+   * consent to a widening they were not shown, and it comes back off the record rather than off the
+   * request when the widening is actually granted.
+   */
+  scope?: AllowanceScope;
   requestedAt: string;
   expiresAt: string;
   /** Undefined until somebody answers. False is an answer, and a final one. */
@@ -117,6 +127,8 @@ export type PresentedApproval = {
   botId: string;
   rule: string;
   question: string;
+  /** What "always" would cover, so the surface can say so on the button rather than beside it. */
+  scope?: AllowanceScope;
   requestedAt: string;
   expiresAt: string;
   granted?: boolean;
@@ -129,6 +141,7 @@ export function presentable(approval: PendingApproval): PresentedApproval {
     botId: approval.botId,
     rule: approval.rule,
     question: approval.question,
+    ...(approval.scope ? { scope: approval.scope } : {}),
     requestedAt: approval.requestedAt,
     expiresAt: approval.expiresAt,
     ...(approval.granted === undefined ? {} : { granted: approval.granted }),
@@ -207,6 +220,8 @@ export type ApprovalRegistry = {
     rule: string;
     question: string;
     fingerprint: string;
+    /** What answering "always" would cover. Omitted where nothing about the action is durable. */
+    scope?: AllowanceScope;
     target: { type: string; id: string };
   }) => Promise<PendingApproval>;
   /**
@@ -273,6 +288,7 @@ export function createApprovalRegistry(
         rule: input.rule,
         question: input.question,
         fingerprint: input.fingerprint,
+        ...(input.scope ? { scope: input.scope } : {}),
         target: input.target,
         requestedAt: new Date(at).toISOString(),
         expiresAt: new Date(at + ttlMs).toISOString(),
@@ -372,6 +388,16 @@ export function createDatabaseApprovalRegistry(
       rule: row.rule ?? "",
       question: row.question,
       fingerprint: row.fingerprint,
+      // Both columns or neither: `request` writes them together, and a half-written pair could not
+      // be shown on a button without guessing at the missing half.
+      ...(row.scopeKind && row.scopeValue !== null
+        ? {
+            scope: {
+              kind: row.scopeKind as AllowanceScope["kind"],
+              value: row.scopeValue,
+            },
+          }
+        : {}),
       target: { type: row.targetType, id: row.targetId },
       requestedAt: row.requestedAt.toISOString(),
       expiresAt: row.expiresAt.toISOString(),
@@ -394,6 +420,9 @@ export function createDatabaseApprovalRegistry(
           rule: input.rule,
           question: input.question,
           fingerprint: input.fingerprint,
+          ...(input.scope
+            ? { scopeKind: input.scope.kind, scopeValue: input.scope.value }
+            : {}),
           targetType: input.target.type,
           targetId: input.target.id,
           requestedAt: new Date(at),

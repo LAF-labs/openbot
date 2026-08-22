@@ -59,6 +59,8 @@ export type RoomFrame =
       kind: "room.approval";
       memberId: string;
       memberName: string;
+      /** What "always" would cover; absent means the room's card offers "this once" alone. */
+      scope?: { kind: "host" | "file" | "tool"; value: string };
       approvalId: string;
       question: string;
       rule: string;

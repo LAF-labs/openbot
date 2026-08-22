@@ -81,6 +81,8 @@ export type RoomFrame =
       approvalId: string;
       question: string;
       rule: string;
+      /** What "always" would cover; absent means the room's card offers "this once" alone. */
+      scope?: { kind: "host" | "file" | "tool"; value: string };
       answered?: boolean;
     })
   /**

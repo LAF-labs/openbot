@@ -547,6 +547,9 @@ function awaitingApproval(
       approvalId: error.approvalId,
       question: error.question,
       rule: error.rule,
+      // Undefined drops out of the JSON, so a question with no derivable scope simply arrives
+      // without one and the card offers "this once" alone.
+      scope: error.scope,
     },
     409,
   );

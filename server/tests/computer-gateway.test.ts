@@ -12,6 +12,7 @@ import {
   createRepeatDetector,
   type RepeatDetector,
 } from "../src/computer/repeat";
+import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import type { SnapshotResult } from "../src/computer/schema";
 
 /**
@@ -127,16 +128,20 @@ async function gatewayWith(
   // answer a question the way a person does, without going through the surface they answer it on;
   // that surface has its own tests.
   const approvals = createApprovalRegistry();
+  // Empty unless a test grants something, so every test that says nothing about allowances is
+  // testing the gateway exactly as it behaved before they existed.
+  const standing = createStandingApprovalStore();
   const gateway = createComputerGateway({
     client,
     auditStore: store,
     policy: () => policy,
     approvals,
+    standing,
     ...(repeat ? { repeat } : {}),
   });
   // Every test acts on refs, so the server must hold a snapshot first, exactly as the real flow does.
   await gateway.snapshot("default");
-  return { gateway, approvals, calls, rows };
+  return { gateway, approvals, standing, calls, rows };
 }
 
 describe("the computer gateway", () => {
@@ -491,6 +496,91 @@ describe("the gateway when the boundary asks a person", () => {
     };
     expect(decision.source).toBe("ask");
     expect(decision.approvedBy).toBe("manager-user");
+  });
+
+  test("an allowance somebody granted means it is not asked again", async () => {
+    const { gateway, standing, calls, rows } = await gatewayWith(ASKING);
+    // Granted the way the answering route grants it: the Bot, the rule that asked, and the scope
+    // the gateway itself derives — here the site, because a click carries no file path.
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "example.com" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    // No question at all: one row, and it is the action.
+    expect(calls).toEqual(["click"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+    ]);
+    const decision = rows[0]?.payload.decision as {
+      source?: string;
+      approvedBy?: string;
+      allowance?: string;
+      allowanceScope?: string;
+    };
+    // Still an `ask` that a person stood behind, so the trail does not read as an ordinary
+    // permission — but it says the yes came from an allowance rather than from somebody looking at
+    // this action, which is a different amount of attention and must not be reported as the same.
+    expect(decision.source).toBe("ask");
+    expect(decision.approvedBy).toBe("manager-user");
+    expect(decision.allowanceScope).toBe("host=example.com");
+    expect(decision.allowance).toEqual(expect.any(String));
+  });
+
+  test("an allowance for one site does not cover another", async () => {
+    const { gateway, standing, calls, rows } = await gatewayWith(ASKING);
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "elsewhere.test" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    const error = await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+    expect(rows.map((row) => row.eventType)).toEqual(["approval.requested"]);
+  });
+
+  test("an allowance for one Bot does not cover another Bot", async () => {
+    const { gateway, standing, calls } = await gatewayWith(ASKING);
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "example.com" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    const error = await gateway
+      .click("default", "bot-2", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+  });
+
+  test("the question carries the scope answering it with always would cover", async () => {
+    const { gateway } = await gatewayWith(ASKING);
+    const error = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+
+    // What the button on the card is allowed to say. Derived here, from the action, so that the
+    // sentence a person reads and the grant that follows are one fact rather than two.
+    expect(error.scope).toEqual({ kind: "host", value: "example.com" });
   });
 
   test("an approval for one action does not carry to another", async () => {

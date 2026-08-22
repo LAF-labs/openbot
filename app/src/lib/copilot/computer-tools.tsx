@@ -7,7 +7,13 @@ import {
   type ControlState,
   readControl,
 } from "@/components/computer/take-the-wheel";
-import { closeQuestion, openQuestion, waitForApproval } from "@/lib/approvals";
+import {
+  allowanceScopeOf,
+  closeQuestion,
+  openQuestion,
+  pauseFrom,
+  waitForApproval,
+} from "@/lib/approvals";
 import { t } from "@/lib/i18n";
 import { useActiveBotHolder } from "./active-bot";
 import { reportComputerActivity } from "./computer-activity";
@@ -106,6 +112,7 @@ async function callComputer(
     botId,
     question: String(outcome.question ?? outcome.reason ?? ""),
     rule: typeof outcome.rule === "string" ? outcome.rule : null,
+    scope: allowanceScopeOf(outcome.scope),
   });
   try {
     const answer = await waitForApproval(botId, approvalId, signal);
@@ -175,14 +182,18 @@ async function sendToComputer(
     // Read before anything else a 409 can mean. The other two, stale refs and a person holding the
     // wheel, are conditions the model reacts to; this one it must not see at all, because the caller
     // above is going to wait and then send the very same request again.
-    if (response.status === 409 && body?.awaitingApproval === true) {
+    const pause = response.status === 409 ? pauseFrom(body) : null;
+    if (pause) {
       return {
         ok: false,
         awaitingApproval: true,
-        approvalId: body.approvalId ?? "",
-        question: body.question ?? "",
-        rule: body.rule ?? null,
-        reason: (body.error as string) ?? "Somebody is being asked about that.",
+        // Spread, not copied field by field. `pauseFrom` owns the shape, so a field added to the
+        // reply reaches the card without this file being edited — which is the failure that
+        // happened here: the scope was added at both ends and dropped in the middle, with every
+        // test on both sides green.
+        ...pause,
+        reason:
+          (body?.error as string) ?? "Somebody is being asked about that.",
       };
     }
     return {

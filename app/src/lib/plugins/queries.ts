@@ -1,5 +1,11 @@
 import { queryOptions } from "@tanstack/react-query";
-import { closeQuestion, openQuestion, waitForApproval } from "@/lib/approvals";
+import {
+  type AllowanceScope,
+  closeQuestion,
+  openQuestion,
+  pauseFrom,
+  waitForApproval,
+} from "@/lib/approvals";
 
 /** A tool one server offers, as the Plugins page sees it. */
 export type PluginTool = {
@@ -149,6 +155,7 @@ export async function callPluginTool(
     botId: agentId,
     question: outcome.question,
     rule: outcome.rule,
+    scope: outcome.scope,
   });
   try {
     const answer = await waitForApproval(agentId, outcome.approvalId, signal);
@@ -200,6 +207,8 @@ type AwaitingApproval = {
   approvalId: string;
   question: string;
   rule: string | null;
+  /** What "always" would cover here — always a tool, for a call to somebody else's server. */
+  scope?: AllowanceScope | undefined;
 };
 
 async function sendCall(
@@ -232,6 +241,7 @@ async function sendCall(
     awaitingApproval?: boolean;
     approvalId?: string;
     question?: string;
+    scope?: unknown;
   } | null;
 
   if (response.ok) {
@@ -243,14 +253,8 @@ async function sendCall(
   }
   // Read before anything else a 409 can mean, and never shown to the model: the caller above is
   // going to wait and then send the very same call again.
-  if (response.status === 409 && body?.awaitingApproval === true) {
-    return {
-      awaitingApproval: true,
-      approvalId: body.approvalId ?? "",
-      question: body.question ?? body.error ?? "",
-      rule: body.rule ?? null,
-    };
-  }
+  const pause = response.status === 409 ? pauseFrom(body) : null;
+  if (pause) return { awaitingApproval: true, ...pause };
   if (response.status === 403) {
     return {
       ok: false,

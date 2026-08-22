@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 
 /**
@@ -20,6 +22,23 @@ type ActionPolicy = {
 };
 
 type Preset = { label: string; rule: string; cost?: string };
+
+/**
+ * A question somebody answered with "and stop asking me", as this page lists it.
+ *
+ * Mirrors `StandingApproval` on the server minus the withdrawn ones, which the route never sends:
+ * this section is what is in force, and a list that mixed in revoked rows would need a reader to
+ * work out which half of it still meant anything.
+ */
+type StandingAllowance = {
+  id: string;
+  botId: string;
+  rule: string;
+  scopeKind: "host" | "file" | "tool";
+  scopeValue: string;
+  question: string;
+  grantedAt: string;
+};
 
 /**
  * Presets are concrete CEL rules, not a separate policy language.
@@ -83,6 +102,21 @@ function BoundariesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [askDraft, setAskDraft] = useState("");
+  /**
+   * The places this boundary has been stood down, and by whose hand.
+   *
+   * Here rather than on a page of its own, because an allowance is a hole in what the section above
+   * promises: somebody reading "Ask me first" and not finding this would believe they are asked
+   * about things nobody has been asked about for weeks. Null while it has never loaded, so a
+   * deployment that cannot answer shows nothing rather than an empty list that reads as "none".
+   */
+  const [standing, setStanding] = useState<StandingAllowance[] | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  // Names, so the list reads as "리스크 분석가" rather than as a uuid. A Bot this administrator
+  // cannot see falls back to its id, which is still enough to withdraw the allowance.
+  const { data: agents } = useQuery(agentListQueryOptions());
+  const nameOf = (botId: string) =>
+    agents?.find((agent) => agent.id === botId)?.name ?? botId;
 
   const load = useCallback(async () => {
     try {
@@ -101,9 +135,45 @@ function BoundariesPage() {
     }
   }, []);
 
+  const loadStanding = useCallback(async () => {
+    try {
+      const response = await fetch("/api/approvals/standing", {
+        credentials: "include",
+      });
+      if (!response.ok) return;
+      const body = (await response.json()) as {
+        standing?: StandingAllowance[];
+      };
+      setStanding(body.standing ?? []);
+    } catch {
+      // Left as it was. This section is a reading of the boundary, not the boundary itself, and a
+      // failed read must not blank a list somebody is about to act on.
+    }
+  }, []);
+
+  const revoke = useCallback(
+    async (id: string) => {
+      setRevoking(id);
+      try {
+        const response = await fetch(`/api/approvals/standing/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        // 409 is "already withdrawn, most likely in another tab" — the list is simply out of date,
+        // so reloading it is the whole fix and there is nothing to tell anybody.
+        if (response.ok || response.status === 409) await loadStanding();
+      } catch {
+        // Nothing changed; the row stays and the button becomes pressable again.
+      }
+      setRevoking(null);
+    },
+    [loadStanding],
+  );
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadStanding();
+  }, [load, loadStanding]);
 
   /**
    * Returns whether it saved.
@@ -422,6 +492,69 @@ function BoundariesPage() {
           )}
         </p>
       </PageSection>
+
+      {/*
+       * AFTER "Ask me first", because that is what it is a hole in. A person reading that section
+       * and stopping there believes they are asked about everything it names; this says which of
+       * those questions somebody has already answered for good.
+       *
+       * Absent entirely while nothing has been granted, rather than shown as an empty list. An
+       * empty section is a thing to reassure yourself about, and there is nothing here to reassure
+       * anybody about until there is.
+       */}
+      {standing && standing.length > 0 ? (
+        <PageSection title={t("It no longer asks about")}>
+          <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+            {standing.map((allowance) => (
+              <li
+                className="flex items-start justify-between gap-4 px-3 py-2"
+                key={allowance.id}
+              >
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm">
+                    {allowance.scopeKind === "host"
+                      ? t("{bot} — anything on {site}", {
+                          bot: nameOf(allowance.botId),
+                          site: allowance.scopeValue,
+                        })
+                      : allowance.scopeKind === "file"
+                        ? t("{bot} — the file {path}", {
+                            bot: nameOf(allowance.botId),
+                            path: allowance.scopeValue,
+                          })
+                        : t("{bot} — the tool {tool}", {
+                            bot: nameOf(allowance.botId),
+                            tool: allowance.scopeValue,
+                          })}
+                  </span>
+                  {/* The sentence they were reading when they granted it, and the rule it stands down. */}
+                  <span className="text-muted-foreground text-xs">
+                    {allowance.question}
+                  </span>
+                  {allowance.rule ? (
+                    <code className="break-all font-mono text-[11px] text-muted-foreground">
+                      {allowance.rule}
+                    </code>
+                  ) : null}
+                </div>
+                <Button
+                  disabled={revoking === allowance.id}
+                  onClick={() => void revoke(allowance.id)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("Ask me again")}
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {t(
+              "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
+            )}
+          </p>
+        </PageSection>
+      ) : null}
 
       <PageSection title={t("Otherwise it may")}>
         <ul className="mt-2 space-y-1">

@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { type AllowanceScope, allowanceScopeOf } from "@/lib/approvals";
 import type { RoomFrame } from "./room-frames";
 
 /**
@@ -44,6 +45,8 @@ export type RoomApproval = {
   memberName: string;
   question: string;
   rule: string;
+  /** What "always" would cover, or absent when only this once is on offer. See lib/approvals.ts. */
+  scope?: AllowanceScope;
 };
 
 export type RoomState = {
@@ -103,11 +106,22 @@ export function applyRoomFrame(
       return state;
     }
     const { memberId, memberName, approvalId, question, rule } = frame;
+    // Validated rather than spread through: the frame arrives over a socket, and a scope this
+    // surface cannot vouch for should leave the card offering "this once" rather than a button
+    // whose words it had to guess at.
+    const scope = allowanceScopeOf(frame.scope);
     return {
       ...state,
       approvals: [
         ...state.approvals,
-        { memberId, memberName, approvalId, question, rule },
+        {
+          memberId,
+          memberName,
+          approvalId,
+          question,
+          rule,
+          ...(scope ? { scope } : {}),
+        },
       ],
     };
   }

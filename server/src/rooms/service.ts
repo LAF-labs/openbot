@@ -343,6 +343,7 @@ export function createRoomService(options: RoomServiceOptions) {
                   approvalId: question.approvalId,
                   question: question.question,
                   rule: question.rule,
+                  ...(question.scope ? { scope: question.scope } : {}),
                   answered,
                 }),
             });

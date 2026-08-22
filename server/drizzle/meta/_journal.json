@@ -127,6 +127,13 @@
       "when": 1787413207124,
       "tag": "0017_curvy_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787416845032,
+      "tag": "0018_chilly_eternity",
+      "breakpoints": true
     }
   ]
 }

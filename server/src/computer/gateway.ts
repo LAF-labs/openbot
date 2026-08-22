@@ -33,6 +33,14 @@ import {
   policyDecidesOnSnapshot,
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
+import {
+  type AllowanceScope,
+  allowanceFor,
+  createStandingApprovalStore,
+  scopeKeyOf,
+  type StandingApproval,
+  type StandingApprovalStore,
+} from "./standing-approvals";
 import type {
   ClickInput,
   KeyInput,
@@ -74,6 +82,14 @@ export class ActionNeedsApprovalError extends Error {
   readonly question: string;
   /** The rule that asked, so the surface can name the boundary the way a refusal does. */
   readonly rule: string;
+  /**
+   * What answering "always" would cover, so the card can say it on the button.
+   *
+   * Carried out with the question rather than fetched back: the sentence a person reads and the
+   * scope that gets granted have to be the same fact, and a surface that went and asked separately
+   * could show one and grant the other. Absent means the card offers only "this once".
+   */
+  readonly scope: AllowanceScope | undefined;
 
   constructor(approval: PendingApproval) {
     super(approval.question);
@@ -81,6 +97,7 @@ export class ActionNeedsApprovalError extends Error {
     this.approvalId = approval.id;
     this.question = approval.question;
     this.rule = approval.rule;
+    this.scope = approval.scope;
   }
 }
 
@@ -129,6 +146,15 @@ export type ComputerGatewayOptions = {
    * minutes is a test somebody eventually deletes.
    */
   repeat?: RepeatDetector;
+  /**
+   * The questions a person has already decided not to be asked again.
+   *
+   * Consulted before a question is opened, so an allowance somebody granted last week means the Bot
+   * simply gets on with it. Absent, the gateway makes its own in-memory one, which is what the tests
+   * get: a store that nothing has granted anything in behaves exactly as this file did before it
+   * existed, so a test that says nothing about allowances is testing what it always was.
+   */
+  standing?: StandingApprovalStore;
 };
 
 /**
@@ -150,6 +176,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   const snapshots = new Map<string, CachedSnapshot>();
   const approvals = options.approvals ?? createApprovalRegistry();
   const repeat = options.repeat ?? createRepeatDetector();
+  const standing = options.standing ?? createStandingApprovalStore();
 
   /**
    * The computer, addressed as the Bot that is asking.
@@ -358,6 +385,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * people.
      */
     let approvedBy: string | undefined;
+    /**
+     * Set when the yes came from an allowance rather than from somebody looking at this action.
+     *
+     * Kept apart so the trail can say which it was. "Allowed by Sam" and "allowed by an allowance Sam
+     * granted last Tuesday" are different facts about how much attention this action received, and a
+     * row that reported the second as the first would overstate the review every time.
+     */
+    let allowedByStanding: StandingApproval | null = null;
     if (decision.source === "ask" && !decision.forward) {
       const fingerprint = fingerprintOf({
         botId,
@@ -372,8 +407,34 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         ? await approvals.consume(subject.approvalId, fingerprint)
         : undefined;
 
+      /*
+       * What a standing allowance for this action would have to cover.
+       *
+       * Derived here, from the same fields the policy was given, so that the scope offered on the
+       * button and the scope checked on the next action are computed by one function from one set of
+       * facts. Deriving it twice from two places is how a person ends up granting something other
+       * than what stops them being asked.
+       */
+      const allowance = allowanceFor({
+        tool: toolName,
+        host: hostOf(pageUrl),
+        filePath,
+      });
+      const rule = decision.matched ?? "";
+      /*
+       * Looked up before the question is opened, and only for an `ask`. A `deny` never reaches this
+       * branch, so nothing a deployment has forbidden can be waved through by an allowance — which
+       * is the one property that makes this a convenience rather than a hole.
+       */
+      const already = presented?.ok
+        ? null
+        : await standing.find(botId, rule, scopeKeyOf(allowance));
+
       if (presented?.ok && presented.approval.answeredBy) {
         approvedBy = presented.approval.answeredBy;
+      } else if (already) {
+        approvedBy = already.grantedBy;
+        allowedByStanding = already;
       } else {
         // Every unsuccessful presentation asks again rather than failing: an expired approval, an id
         // spent already, a person's No being replayed, and an approval granted for a different button
@@ -387,9 +448,10 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         const pending = await approvals.request({
           botId,
           actor: actor.id,
-          rule: decision.matched ?? "",
+          rule,
           question: decision.reason,
           fingerprint,
+          scope: allowance,
           // Where the answer's own row will be filed, decided here where what the question is about
           // is still known. See PendingApproval.target.
           target: { type: "computer", id: computerId },
@@ -415,7 +477,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ...decision,
           allowed: true,
           forward: true,
-          reason: `Allowed by ${approvedBy}, who was asked because of the rule \`${decision.matched}\`.`,
+          reason: allowedByStanding
+            ? `Allowed by a standing allowance ${approvedBy} granted for ${allowedByStanding.scope}, asked because of the rule \`${decision.matched}\`.`
+            : `Allowed by ${approvedBy}, who was asked because of the rule \`${decision.matched}\`.`,
         }
       : decision;
 
@@ -431,6 +495,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       pageUrl,
       decision: settled,
       ...(approvedBy ? { approvedBy } : {}),
+      ...(allowedByStanding
+        ? {
+            standingAllowance: {
+              id: allowedByStanding.id,
+              scope: allowedByStanding.scope,
+            },
+          }
+        : {}),
     });
 
     if (!settled.forward) {
@@ -462,6 +534,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         pageUrl,
         decision: settled,
         ...(approvedBy ? { approvedBy } : {}),
+        ...(allowedByStanding
+          ? {
+              standingAllowance: {
+                id: allowedByStanding.id,
+                scope: allowedByStanding.scope,
+              },
+            }
+          : {}),
         failure: error instanceof Error ? error.message : "The action failed.",
       });
       throw error;
@@ -952,6 +1032,16 @@ async function write(
      * discover that a person stood behind this particular click.
      */
     approvedBy?: string;
+    /**
+     * The allowance that answered for them, when nobody was actually asked.
+     *
+     * `approvedBy` alone would report a standing allowance as somebody having looked at this action,
+     * and those are different amounts of attention: one is consent to this click, the other is a
+     * decision made once about a whole site. A trail that reported the second as the first would
+     * overstate the review on every action an allowance covers — which, being the ones nobody saw,
+     * are exactly the ones an investigator is reading the trail to find.
+     */
+    standingAllowance?: { id: string; scope: string };
     /** Set only when a permitted action was attempted and did not succeed. */
     failure?: string;
   },
@@ -1005,6 +1095,14 @@ async function write(
         source: entry.decision.source,
         rule: entry.decision.matched,
         ...(entry.approvedBy ? { approvedBy: entry.approvedBy } : {}),
+        // Structured rather than folded into the reason, so "everything an allowance let through"
+        // is a query somebody can actually run.
+        ...(entry.standingAllowance
+          ? {
+              allowance: entry.standingAllowance.id,
+              allowanceScope: entry.standingAllowance.scope,
+            }
+          : {}),
         /** Present so the trail explains a dry-run row that was recorded as refused but still ran. */
         carriedOut: entry.decision.forward,
       },

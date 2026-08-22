@@ -25,6 +25,35 @@
 const WAIT_FOR_ANSWER_MS = 10 * 60_000;
 const WAIT_POLL_MS = 1_000;
 
+/**
+ * How wide "always allow" would be, decided by the server from the action itself.
+ *
+ * `host` covers every action on one site, `file` one path, `tool` one tool by name. It is here so
+ * the button can say which — a person cannot consent to a widening they were not shown — and it is
+ * never sent back when the button is pressed: the server reads the scope off its own record, so
+ * nothing a page could do makes the grant wider than the sentence somebody read.
+ */
+export type AllowanceScope = {
+  kind: "host" | "file" | "tool";
+  value: string;
+};
+
+/**
+ * The scope out of a pause reply, or undefined if it was not one.
+ *
+ * One parser for both callers — the computer's tools and the plugin call — because a scope that
+ * half-validates in one of them is a button offering a widening the server will not perform. Not
+ * knowing means offering "this once" alone, which is the safe direction and the behaviour this card
+ * had before the wider button existed.
+ */
+export function allowanceScopeOf(value: unknown): AllowanceScope | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { kind, value: scoped } = value as Record<string, unknown>;
+  if (kind !== "host" && kind !== "file" && kind !== "tool") return undefined;
+  if (typeof scoped !== "string" || !scoped) return undefined;
+  return { kind, value: scoped };
+}
+
 export type PendingApproval = {
   id: string;
   botId: string;
@@ -32,6 +61,8 @@ export type PendingApproval = {
   rule: string;
   /** What is about to happen, in one sentence. */
   question: string;
+  /** Absent when nothing durable could be derived; the card then offers "this once" alone. */
+  scope?: AllowanceScope;
   requestedAt: string;
   expiresAt: string;
   /** Absent while nobody has answered. False is an answer. */
@@ -39,12 +70,45 @@ export type PendingApproval = {
   answeredBy?: string;
 };
 
+/**
+ * A pause reply, read once, in one place.
+ *
+ * Two callers meet this shape — an acting call on the computer and a call to somebody else's server
+ * — and until this existed they each unpicked it field by field, in their own file, into their own
+ * object. Which meant that adding a field to the reply and forwarding it in one of them left the
+ * other silently dropping it, with both sides' tests green: measured, the "always allow" button
+ * simply never appeared, because one of the two hops had not been told the scope existed.
+ *
+ * Null for anything that is not a pause, so a caller can ask this question and the "is it one"
+ * question at the same time.
+ */
+export function pauseFrom(
+  body: Record<string, unknown> | null,
+): Omit<OpenQuestion, "botId"> | null {
+  if (body?.awaitingApproval !== true) return null;
+  return {
+    approvalId: typeof body.approvalId === "string" ? body.approvalId : "",
+    // The error is the question in different clothes — the pause error's message IS the question —
+    // so a reply that carried only one of them still names what is being asked about.
+    question:
+      typeof body.question === "string" && body.question
+        ? body.question
+        : typeof body.error === "string"
+          ? body.error
+          : "",
+    rule: typeof body.rule === "string" ? body.rule : null,
+    scope: allowanceScopeOf(body.scope),
+  };
+}
+
 /** A question one tool call is waiting on, as its own line in the transcript needs to draw it. */
 export type OpenQuestion = {
   approvalId: string;
   botId: string;
   question: string;
   rule: string | null;
+  /** What answering "always" would cover, or undefined when only this once is on offer. */
+  scope?: AllowanceScope | undefined;
 };
 
 const open = new Map<string, OpenQuestion>();
@@ -134,13 +198,22 @@ export async function answerApproval(
   botId: string,
   approvalId: string,
   granted: boolean,
+  /**
+   * "And stop asking me about this."
+   *
+   * A flag, not a scope. What it covers was decided when the question was raised and is held on the
+   * server's own record; sending the scope from here would let a page grant itself something other
+   * than what it displayed. Only meaningful alongside `granted: true` — there is no "always deny",
+   * because a thing that should never happen belongs in the boundary where everybody can read it.
+   */
+  always = false,
 ): Promise<ApprovalAnswerResult> {
   try {
     const response = await fetch(`/api/approvals/${botId}/${approvalId}`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ granted }),
+      body: JSON.stringify({ granted, always }),
     });
     if (response.ok) return { ok: true };
     return { ok: false, gone: response.status === 409 };

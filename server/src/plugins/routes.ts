@@ -411,6 +411,7 @@ export function createPluginRoutes(
             approvalId: error.approvalId,
             question: error.question,
             rule: error.rule,
+            scope: error.scope,
           },
           409,
         );

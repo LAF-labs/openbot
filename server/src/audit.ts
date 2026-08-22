@@ -118,6 +118,22 @@ export const auditEventTypes = [
   "approval.requested",
   "approval.granted",
   "approval.denied",
+  /**
+   * A person deciding not to be asked about this again, and later changing their mind.
+   *
+   * Its own pair rather than a flag on `approval.granted`, because these are not answers to a
+   * question — they are edits to the boundary, and they keep working long after the turn that
+   * prompted them has ended. A reader counting grants should not have to know that some of them
+   * silently authorised everything that came after, and a reader asking "why was this never
+   * questioned" needs a row to find.
+   *
+   * The granted row records the scope, so the widening is legible without going and reading the
+   * table; the revoked row records who withdrew it, because withdrawing is a decision about a
+   * boundary too and a row that simply disappeared would leave the trail claiming an allowance that
+   * no longer stands.
+   */
+  "approval.standing_granted",
+  "approval.standing_revoked",
   // The computer itself being stopped or wiped. `reset` destroys every login the Bot had, which is
   // both the recovery path and the most consequential button on the admin page, so who pressed it and
   // when is exactly the sort of thing an investigator needs and nothing else records.

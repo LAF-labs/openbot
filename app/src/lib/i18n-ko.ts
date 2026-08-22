@@ -850,4 +850,19 @@ export const ko: Record<string, string> = {
     "쌓이는 자잘한 일을 처리해줘 — 서류, 갱신, 예약, 두 가지 비교 같은 것. 무엇을 했고 아직 내가 해야 할 게 뭔지 알려줘.",
   "Show me others": "다른 제안 보기",
   "Or start from one of these": "아니면 이 중에서 시작하세요",
+  "Allow once": "이번만 허용",
+  "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.":
+    "이 규칙 때문에 묻습니다. 이번만 허용은 이 행동 하나에만 적용되고, 다른 하나는 경계 설정에서 취소할 때까지 같은 종류를 모두 허용합니다.",
+  "Always allow {site}": "{site} 항상 허용",
+  "Always allow this file": "이 파일 항상 허용",
+  "Always allow this tool": "이 도구 항상 허용",
+  "It no longer asks about": "이제 묻지 않는 것",
+  "{bot} — anything on {site}": "{bot} — {site}에서 하는 모든 것",
+  "{bot} — the file {path}": "{bot} — 파일 {path}",
+  "{bot} — the tool {tool}": "{bot} — 도구 {tool}",
+  "Ask me again": "다시 묻게 하기",
+  "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
+    "각 항목은 누군가 “항상”으로 답한 질문입니다. 취소하기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
+  "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
+  "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
 };

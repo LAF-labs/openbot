@@ -433,6 +433,9 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       approvalId: error.approvalId,
       question: error.question,
       rule: error.rule,
+      // Carried so a room can offer the wider button too. Undefined where the question had no
+      // derivable scope, which the room reads the same way the one-to-one card does.
+      scope: error.scope,
       reason:
         "A person has to allow that, and nobody is here right now. The request is waiting for " +
         "them. Say what you were waiting for and stop.",

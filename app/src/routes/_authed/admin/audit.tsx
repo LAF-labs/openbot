@@ -55,7 +55,8 @@ const FILTERS = [
      * screen, which is the case this trail records that nothing else in the product would show.
      */
     label: "Asked a person",
-    search: "?eventType=approval.requested,approval.granted,approval.denied",
+    search:
+      "?eventType=approval.requested,approval.granted,approval.denied,approval.standing_granted,approval.standing_revoked",
   },
   {
     // Its own filter rather than a place in "Blocked". A Bot repeating itself has not been stopped by
@@ -357,6 +358,11 @@ const DECISIONS: Record<string, string> = {
   "approval.requested": "The boundary asked a person",
   "approval.granted": "A person allowed it",
   "approval.denied": "A person declined it",
+  // Not "allowed it". These two edit the boundary, and every action the allowance covers afterwards
+  // is allowed without anybody looking at it — a reader skimming for grants must not read one of
+  // these as one more answered question.
+  "approval.standing_granted": "A person stopped being asked about this",
+  "approval.standing_revoked": "A person asked to be asked again",
 
   "component.granted": "Granted to this Bot",
   "component.revoked": "Taken away from this Bot",

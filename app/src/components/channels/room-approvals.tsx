@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { alwaysLabel } from "@/components/channels/allowance-label";
 import { answerApproval } from "@/lib/approvals";
 import type { RoomApproval } from "@/lib/channels/room-events";
 import { t } from "@/lib/i18n";
@@ -34,12 +35,17 @@ export function RoomApprovals({
   const [problems, setProblems] = useState<Record<string, true>>({});
   if (approvals.length === 0) return null;
 
-  const answer = async (approval: RoomApproval, granted: boolean) => {
+  const answer = async (
+    approval: RoomApproval,
+    granted: boolean,
+    always = false,
+  ) => {
     setAnswering(approval.approvalId);
     const result = await answerApproval(
       approval.memberId,
       approval.approvalId,
       granted,
+      always,
     );
     setAnswering(null);
     if (result.ok || result.gone) {
@@ -76,13 +82,17 @@ export function RoomApprovals({
           </p>
           {approval.rule ? (
             <p className="mt-1 text-muted-foreground text-xs">
-              {t(
-                "Asked because of this rule. Allowing covers this one action.",
-              )}{" "}
+              {approval.scope
+                ? t(
+                    "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
+                  )
+                : t(
+                    "Asked because of this rule. Allowing covers this one action.",
+                  )}{" "}
               <code>{approval.rule}</code>
             </p>
           ) : null}
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <Button
               aria-label={t("Allow: {question}", {
                 question: approval.question,
@@ -91,8 +101,24 @@ export function RoomApprovals({
               onClick={() => void answer(approval, true)}
               size="sm"
             >
-              {t("Allow")}
+              {t("Allow once")}
             </Button>
+            {/*
+             * The wider answer, named. Two cards can be stacked here, so the label carries the
+             * question as well: without it a screen reader hears the same promise twice with
+             * nothing to say which member it belongs to.
+             */}
+            {approval.scope ? (
+              <Button
+                aria-label={`${alwaysLabel(approval.scope)}: ${approval.question}`}
+                disabled={answering === approval.approvalId}
+                onClick={() => void answer(approval, true, true)}
+                size="sm"
+                variant="outline"
+              >
+                {alwaysLabel(approval.scope)}
+              </Button>
+            ) : null}
             <Button
               aria-label={t("Deny: {question}", {
                 question: approval.question,

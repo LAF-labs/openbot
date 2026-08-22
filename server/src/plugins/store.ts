@@ -6,6 +6,12 @@ import {
   type PendingApproval,
 } from "../computer/approvals";
 import {
+  type AllowanceScope,
+  allowanceFor,
+  scopeKeyOf,
+  type StandingApprovalStore,
+} from "../computer/standing-approvals";
+import {
   type ActionPolicy,
   evaluateActionPolicy,
   type PolicyContext,
@@ -151,6 +157,14 @@ export class PluginNeedsApprovalError extends Error {
   readonly question: string;
   /** The rule that asked, so the surface can name the boundary the way a refusal does. */
   readonly rule: string;
+  /**
+   * What answering "always" would cover, so the card can say it on the button.
+   *
+   * Carried out with the question rather than fetched back: the sentence a person reads and the
+   * scope that gets granted have to be the same fact, and a surface that went and asked separately
+   * could show one and grant the other. Absent means the card offers only "this once".
+   */
+  readonly scope: AllowanceScope | undefined;
 
   constructor(approval: PendingApproval) {
     super(approval.question);
@@ -158,6 +172,7 @@ export class PluginNeedsApprovalError extends Error {
     this.approvalId = approval.id;
     this.question = approval.question;
     this.rule = approval.rule;
+    this.scope = approval.scope;
   }
 }
 
@@ -212,6 +227,14 @@ export type PluginStoreOptions = {
    * forgot to pass.
    */
   approvals: ApprovalRegistry;
+  /**
+   * The allowances a person has already granted, so "always allow" reaches this path too.
+   *
+   * Optional, unlike `approvals` above, and absent behaves exactly as this file did before: every
+   * asked call opens a question. A missing registry would turn an `ask` into a refusal, which is why
+   * that one is required; a missing allowance store only means nobody has been given the shortcut.
+   */
+  standing?: StandingApprovalStore;
 };
 
 export function createPluginStore(options: PluginStoreOptions) {
@@ -305,12 +328,27 @@ export function createPluginStore(options: PluginStoreOptions) {
       return presented.approval.answeredBy;
     }
 
+    /*
+     * A call to somebody else's server has no host and no path, only a name, so an allowance here is
+     * always about the tool. Note what that widens: the approval it stands in for is bound to the
+     * arguments — see the fingerprint above — and this is not. It is the broadest grant this product
+     * can produce from one button, which is why the button says the tool's name out loud.
+     */
+    const allowance = allowanceFor({ tool: question.ref });
+    const already = await options.standing?.find(
+      question.botId,
+      question.rule,
+      scopeKeyOf(allowance),
+    );
+    if (already) return already.grantedBy;
+
     const pending = await options.approvals.request({
       botId: question.botId,
       actor: question.actorId,
       rule: question.rule,
       question: question.question,
       fingerprint,
+      scope: allowance,
       // Filed against the tool, so the answer's row lands beside the call's own row rather than
       // under whichever surface the person happened to press the button on.
       target: { type: "mcp_tool", id: question.ref },

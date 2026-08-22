@@ -21,6 +21,7 @@
  * Once, never in a loop. If the retry meets a boundary again, that is what the member is told —
  * an approval that does not fit its action is a fact to report, not a thing to keep asking about.
  */
+import type { AllowanceScope } from "../computer/standing-approvals";
 import type { ToolOutcome, UnattendedToolkit } from "../runner/unattended";
 import type { ApprovalWaiter } from "./wait-for-approval";
 
@@ -29,6 +30,8 @@ export type RoomQuestion = {
   approvalId: string;
   question: string;
   rule: string;
+  /** What "always" would cover, so a room's card offers the same three answers a chat's does. */
+  scope?: AllowanceScope;
 };
 
 /** What a member is told when the person said no. Model-facing, so it says what to do next. */
@@ -44,7 +47,19 @@ function questionOf(outcome: ToolOutcome): RoomQuestion | null {
     approvalId,
     question: typeof outcome.question === "string" ? outcome.question : "",
     rule: typeof outcome.rule === "string" ? outcome.rule : "",
+    ...(isScope(outcome.scope) ? { scope: outcome.scope } : {}),
   };
+}
+
+/** The outcome map is loosely typed, so the scope is checked before it is passed on as one. */
+function isScope(value: unknown): value is AllowanceScope {
+  if (!value || typeof value !== "object") return false;
+  const { kind, value: scoped } = value as Record<string, unknown>;
+  return (
+    (kind === "host" || kind === "file" || kind === "tool") &&
+    typeof scoped === "string" &&
+    scoped.length > 0
+  );
 }
 
 export function relayApprovals(

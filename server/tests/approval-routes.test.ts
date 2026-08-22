@@ -14,6 +14,7 @@ import {
   ActionNeedsApprovalError,
   createComputerGateway,
 } from "../src/computer/gateway";
+import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 
@@ -88,12 +89,16 @@ async function surface() {
     insert: async (event) => void rows.push(event),
   };
   const approvals: ApprovalRegistry = createApprovalRegistry();
+  // One store behind the gateway and the routes, which is the arrangement being tested: the button
+  // is pressed on one and the next action is decided on the other.
+  const standing = createStandingApprovalStore();
   const { client, calls } = fakeClient();
   const gateway = createComputerGateway({
     client,
     auditStore,
     policy: () => ASKING,
     approvals,
+    standing,
   });
   await gateway.snapshot("bot-1");
 
@@ -105,7 +110,10 @@ async function surface() {
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();
-  app.route("/", createApprovalRoutes(approvals, auditStore, requireUser));
+  app.route(
+    "/",
+    createApprovalRoutes(approvals, auditStore, requireUser, standing),
+  );
 
   /** A click that meets the ask rule, and the question it leaves open. */
   const ask = async (botId: string) =>
@@ -113,16 +121,21 @@ async function surface() {
       .click(botId, botId, DRIVER, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
-  return { app, approvals, gateway, ask, rows, calls };
+  return { app, approvals, standing, gateway, ask, rows, calls };
 }
 
 const answer =
   (app: Hono<{ Variables: AppVariables }>) =>
-  async (botId: string, approvalId: string, granted: boolean) =>
+  async (
+    botId: string,
+    approvalId: string,
+    granted: boolean,
+    body: Record<string, unknown> = {},
+  ) =>
     app.request(`/${botId}/${approvalId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ granted }),
+      body: JSON.stringify({ granted, ...body }),
     });
 
 describe("answering a question", () => {
@@ -322,5 +335,201 @@ describe("answering a question", () => {
       }),
     );
     expect(elsewhere.ok).toBe(false);
+  });
+});
+
+/**
+ * "And stop asking me about this."
+ *
+ * The interesting failures here are all about the gap between what a person was shown and what the
+ * press actually did: a scope taken from the request instead of the record, a widening that never
+ * takes effect, one that cannot be taken back, and a trail that reports it as an ordinary answered
+ * question. Each has its own test, because each fails silently in a different direction.
+ */
+describe("answering with always", () => {
+  test("stops the same question being asked again", async () => {
+    const { app, ask, gateway, calls } = await surface();
+    const asked = await ask("bot-1");
+    expect(
+      await answer(app)("bot-1", asked.approvalId, true, { always: true }),
+    ).toHaveProperty("status", 200);
+
+    // A fresh action, presenting nothing. Without the allowance this raises a second question; the
+    // approval it was answered with is bound to one action and cannot be spent on this one.
+    await gateway.click("bot-1", "bot-1", DRIVER, { ref: "e9", snapshotId: 7 });
+    expect(calls).toEqual(["click"]);
+  });
+
+  test("covers what the question said it would and no more", async () => {
+    const { app, ask, standing } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true, { always: true });
+
+    // The site the click was on, which is what the card's button was allowed to say. Not the ref,
+    // which belongs to one snapshot, and not everything.
+    const [granted] = await standing.list("bot-1");
+    expect(granted?.scopeKind).toBe("host");
+    expect(granted?.scopeValue).toBe("example.com");
+    expect(granted?.rule).toBe('contains(element.name, "submit")');
+    expect(granted?.grantedBy).toBe(MANAGER.id);
+    // The sentence they were reading, kept so the list can show it back to them later.
+    expect(granted?.question).toBe(asked.question);
+  });
+
+  test("the body cannot name its own scope", async () => {
+    const { app, ask, standing } = await surface();
+    const asked = await ask("bot-1");
+    // A page that could widen its own grant would make the button a lie: shown one site, granted
+    // every tool. The scope comes off the approval the server raised, so this is simply ignored.
+    await answer(app)("bot-1", asked.approvalId, true, {
+      always: true,
+      scope: { kind: "tool", value: "computer_click" },
+    });
+
+    const [granted] = await standing.list("bot-1");
+    expect(granted?.scopeKind).toBe("host");
+    expect(granted?.scopeValue).toBe("example.com");
+  });
+
+  test("a denial never grants anything, whatever the body says", async () => {
+    const { app, ask, standing } = await surface();
+    const asked = await ask("bot-1");
+    // There is no "always deny": a thing that should never happen belongs in the boundary, not
+    // buried in an allowance table. Sending both must not produce a grant.
+    await answer(app)("bot-1", asked.approvalId, false, { always: true });
+    expect(await standing.list("bot-1")).toEqual([]);
+  });
+
+  test("plain yes leaves nothing standing", async () => {
+    const { app, ask, standing } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true);
+    expect(await standing.list("bot-1")).toEqual([]);
+  });
+
+  test("the trail records the widening as its own act", async () => {
+    const { app, ask, rows } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true, { always: true });
+
+    // Two rows, not one with a flag: the answer, and the edit to the boundary that followed it. A
+    // reader counting grants must not have to know that some of them authorised everything after.
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "approval.requested",
+      "approval.granted",
+      "approval.standing_granted",
+    ]);
+    const widening = rows[2]?.payload as Record<string, unknown>;
+    expect(widening.scope).toBe("host=example.com");
+    expect(widening.bot).toBe("bot-1");
+    expect(widening.actor).toBe(MANAGER.id);
+    // Joined to the question it came from, so the trail reads in order rather than as two facts.
+    expect(widening.approval).toBe(asked.approvalId);
+  });
+});
+
+describe("taking an allowance back", () => {
+  test("lists what stands and withdraws it", async () => {
+    const { app, ask, gateway, calls } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true, { always: true });
+
+    const listed = (await (await app.request("/standing")).json()) as {
+      standing: Array<{ id: string; scopeValue: string }>;
+    };
+    expect(listed.standing).toHaveLength(1);
+    expect(listed.standing[0]?.scopeValue).toBe("example.com");
+
+    const removed = await app.request(`/standing/${listed.standing[0]?.id}`, {
+      method: "DELETE",
+    });
+    expect(removed.status).toBe(200);
+
+    // And the boundary is back: the next action asks again rather than going through.
+    const again = await gateway
+      .click("bot-1", "bot-1", DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+    expect(again).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+  });
+
+  test("withdrawing twice is a conflict rather than a second withdrawal", async () => {
+    const { app, ask, standing } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true, { always: true });
+    const [granted] = await standing.list("bot-1");
+
+    expect(
+      (await app.request(`/standing/${granted?.id}`, { method: "DELETE" }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await app.request(`/standing/${granted?.id}`, { method: "DELETE" }))
+        .status,
+    ).toBe(409);
+  });
+
+  test("the trail records the withdrawal too", async () => {
+    const { app, ask, standing, rows } = await surface();
+    const asked = await ask("bot-1");
+    await answer(app)("bot-1", asked.approvalId, true, { always: true });
+    const [granted] = await standing.list("bot-1");
+    await app.request(`/standing/${granted?.id}`, { method: "DELETE" });
+
+    const last = rows.at(-1);
+    expect(last?.eventType).toBe("approval.standing_revoked");
+    expect(last?.payload.scope).toBe("host=example.com");
+  });
+
+  test("neither list nor withdrawal is open to somebody who is not the owner", async () => {
+    // The same rule answering has. This list is where a boundary has been stood down, so reading it
+    // is reading which parts of the policy are not in force.
+    const approvals = createApprovalRegistry();
+    const standing = createStandingApprovalStore();
+    const asBystander: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", BYSTANDER);
+      await next();
+    };
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createApprovalRoutes(
+        approvals,
+        { insert: async () => {} },
+        asBystander,
+        standing,
+      ),
+    );
+    const granted = await standing.grant({
+      botId: "bot-1",
+      rule: "r",
+      scope: { kind: "host", value: "example.com" },
+      question: "q",
+      grantedBy: MANAGER.id,
+    });
+
+    expect((await app.request("/standing")).status).toBe(403);
+    expect(
+      (await app.request(`/standing/${granted.id}`, { method: "DELETE" }))
+        .status,
+    ).toBe(403);
+    // And nothing was withdrawn on the way to being refused.
+    expect(await standing.list("bot-1")).toHaveLength(1);
+  });
+
+  test("a Bot called standing is a Bot, not the allowance list", async () => {
+    // Hono matches in registration order, so `/standing` has to be registered before `/:botId`.
+    // Registered the other way round this returns that Bot's open questions under the key
+    // `approvals`, and nothing anywhere looks wrong.
+    const { app } = await surface();
+    const body = (await (await app.request("/standing")).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(body).toHaveProperty("standing");
+    expect(body).not.toHaveProperty("approvals");
   });
 });
