@@ -674,11 +674,7 @@ export const ko: Record<string, string> = {
   "On for this browser.": "이 브라우저에서 켜져 있습니다.",
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
-  "You are {me}. This conversation is a room with more than one colleague in it: {roster}. Some of the earlier replies here are theirs, not yours — do not claim their work or their reasoning as your own. Answer only for yourself.":
-    "당신은 {me}입니다. 이 대화는 동료가 여럿 있는 방입니다: {roster}. 위의 답변 중 일부는 당신이 아니라 동료의 것입니다 — 그들의 작업이나 근거를 자기 것으로 말하지 마세요. 당신 자신에 대해서만 답하세요.",
   "{name} needs you": "{name}이(가) 기다립니다",
-  "{name} did not pick up in time. Nothing was sent — try again.":
-    "{name}이(가) 제때 응답하지 않았습니다. 아무것도 보내지 않았으니 다시 시도해 주세요.",
   "In a room": "방에서 대화 중",
   "The room could not take that message.": "방이 이 메시지를 받지 못했습니다.",
 };

@@ -322,8 +322,8 @@ function ChannelBody({
   return (
     <ChannelChat
       channel={channel}
-      defaultAgentId={defaultAgentId}
       key={channel.id}
+      runtimeAgentId={defaultAgentId}
     />
   );
 }
