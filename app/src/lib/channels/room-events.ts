@@ -26,6 +26,15 @@ import type { RoomFrame } from "./room-frames";
 export type RoomMessage = Message & {
   /** Set while the member is still typing. Cleared by `room.end`. */
   streaming?: boolean;
+  /**
+   * Set on the person's own message between showing it and the server confirming it.
+   *
+   * The room accepts a message with 202 AFTER writing it, so once the request has answered the
+   * message is stored and catch-up will find it. Before that it exists only here, and a catch-up
+   * landing in that window — a late frame from the previous turn is enough — would fetch a thread
+   * that does not contain it yet and take the person's own words off the screen.
+   */
+  pending?: boolean;
 };
 
 /** A question one member is waiting on. Answered by approval id, like the line-level card. */
@@ -308,7 +317,9 @@ export function mergeStored(
     (message) => known.get(message.id) ?? message,
   );
   for (const message of state.messages) {
-    if (message.streaming && !merged.some((m) => m.id === message.id)) {
+    // Still being typed, or not yet acknowledged: either way the server does not have it to return.
+    const local = message.streaming || message.pending;
+    if (local && !merged.some((m) => m.id === message.id)) {
       merged.push(message);
     }
   }

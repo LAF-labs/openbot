@@ -404,3 +404,47 @@ describe("interrupting a room mid-reply", () => {
     expect(next.messages.map((m) => m.id)).toEqual(["m1"]);
   });
 });
+
+describe("the person's own message, before the server has answered", () => {
+  const mine = {
+    id: "mine-1",
+    role: "user" as const,
+    content: "다들 어떻게 생각해요?",
+    pending: true,
+  };
+
+  test("a catch-up that lands before the write does not take it away", () => {
+    /*
+     * The room writes the message and THEN answers 202. In the window before that answer the
+     * message exists only on screen, and a late frame from the previous turn is enough to trigger
+     * a catch-up — which would fetch a thread that does not contain it yet.
+     */
+    const posted = { ...EMPTY_ROOM, messages: [mine] };
+    const state = mergeStored(posted, [], { speakers: {}, times: {} });
+    expect(state.messages.map((m) => m.id)).toEqual(["mine-1"]);
+  });
+
+  test("once the server has it, the stored copy is what stays", () => {
+    const acknowledged = {
+      ...EMPTY_ROOM,
+      messages: [{ ...mine, pending: false }],
+    };
+    const state = mergeStored(
+      acknowledged,
+      [{ id: "mine-1", role: "user", content: "다들 어떻게 생각해요?" }],
+      { speakers: {}, times: {} },
+    );
+    expect(state.messages).toHaveLength(1);
+  });
+
+  test("a message the server does not have and nobody is waiting on is dropped", () => {
+    // The post failed and said so; the bubble must not outlive it.
+    const orphan = {
+      ...EMPTY_ROOM,
+      messages: [{ ...mine, pending: false }],
+    };
+    expect(
+      mergeStored(orphan, [], { speakers: {}, times: {} }).messages,
+    ).toEqual([]);
+  });
+});

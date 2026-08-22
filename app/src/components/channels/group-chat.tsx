@@ -278,7 +278,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           ...state,
           messages: [
             ...state.messages,
-            { id: messageId, role: "user", content: trimmed },
+            { id: messageId, role: "user", content: trimmed, pending: true },
           ],
         }));
         /*
@@ -313,6 +313,19 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           void catchUpRef.current();
           return;
         }
+        /*
+         * Acknowledged, so the server has it: the room writes the message and THEN answers 202.
+         * Until this point the bubble exists only on screen, and a catch-up in that window would
+         * have fetched a thread without it and taken the person's own words away.
+         */
+        setRoom((state) => ({
+          ...state,
+          messages: state.messages.map((message) =>
+            message.id === messageId && message.pending
+              ? { ...message, pending: false }
+              : message,
+          ),
+        }));
         if (!response.ok) {
           /*
            * The server's own sentence is deliberately not read. It is written in English for an
