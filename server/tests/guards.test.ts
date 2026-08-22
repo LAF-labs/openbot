@@ -70,6 +70,9 @@ describe("server authorization", () => {
         name: "OpenBot Member",
         image: "https://example.test/member.png",
         role: "user",
+        // True when nothing tracks onboarding, so a deployment without the store never traps
+        // anybody in a flow whose end it cannot record.
+        onboarded: true,
       },
     });
   });

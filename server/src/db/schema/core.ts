@@ -52,6 +52,15 @@ export const users = pgTable("users", {
   image: text("image"),
   emailVerified: boolean("email_verified").notNull().default(false),
   groups: text("groups").array().notNull().default([]),
+  /**
+   * When this person finished making their first Bot, or null if they have not.
+   *
+   * Onboarding runs once and is the only place the product asks anybody to set something up, so
+   * "have they done it" has to survive a reload and a new device — which rules out the browser. It
+   * is a timestamp rather than a boolean because the day somebody asks "when did they join", this
+   * is the honest answer and a boolean would have thrown it away.
+   */
+  onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

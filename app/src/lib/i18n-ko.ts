@@ -42,6 +42,24 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "Your team of always-on Bots": "언제나 켜져 있는 당신의 봇 팀",
+  "Each one is a colleague you can hand real work to. They keep working when this window is closed.":
+    "각자 실제로 일을 맡길 수 있는 동료입니다. 이 창을 닫아도 계속 일합니다.",
+  "They share one computer": "봇들은 컴퓨터 한 대를 함께 씁니다",
+  "Your Bots work on a real browser of their own — they open pages, read them, and fill things in.":
+    "봇은 진짜 브라우저에서 일합니다 — 페이지를 열고, 읽고, 입력합니다.",
+  "It is one computer for all of them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.":
+    "모든 봇이 한 대를 함께 쓰기 때문에, 한 봇이 로그인한 사이트는 다른 봇들도 로그인된 상태가 됩니다. 팀 전체에 줘도 괜찮은 접근 권한만 주세요.",
+  "Make your first Bot": "첫 봇을 만들어 보세요",
+  "It starts with nothing set and can become anything. You can make up to five.":
+    "아무것도 정해지지 않은 상태로 시작하고, 무엇이든 될 수 있습니다. 최대 다섯 개까지 만들 수 있어요.",
+  "Name your Bot": "봇의 이름",
+  "Leave it blank and the Bot will ask you itself when you first talk to it.":
+    "비워 두면 처음 대화할 때 봇이 직접 물어봅니다.",
+  "That Bot could not be created. Try again.":
+    "봇을 만들지 못했어요. 다시 시도해 주세요.",
+  Next: "다음",
+  Back: "뒤로",
   "What should this Bot help with?": "이 봇이 무엇을 도와주면 좋을까요?",
   "(Optional)": "(선택)",
   "This is what the Bot is for. Leave it blank and it will ask you itself. You can change it any time.":

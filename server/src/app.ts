@@ -5,6 +5,7 @@ import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
 import { type AuditReader, type AuditStore, auditQueryFromUrl } from "./audit";
 import { createDevRequireUser } from "./auth/dev-actor";
+import type { OnboardingStore } from "./auth/onboarding";
 import {
   type AppVariables,
   type AuthService,
@@ -46,6 +47,8 @@ export function createApp(
   credentialService?: CredentialAdminService,
   packageStatusReader?: PackageStatusReader,
   connectorService?: ConnectorAdminService,
+  /** Whether this person has made their first Bot yet. Absent means nobody is ever asked to. */
+  onboarding?: OnboardingStore,
   /**
    * The CopilotKit endpoint, already built by the caller.
    *
@@ -197,9 +200,29 @@ export function createApp(
       ? createRequireUser(auth, roleRepository)
       : authenticationUnavailable;
 
-  app.get("/api/me", requireUser, (context) =>
-    context.json({ user: context.var.actor }),
-  );
+  app.get("/api/me", requireUser, async (context) => {
+    const actor = context.var.actor;
+    /*
+     * `onboarded: true` when nothing tracks it, so a deployment without the store never traps
+     * anybody in a flow it cannot record the end of.
+     */
+    const onboarded = onboarding
+      ? await onboarding.isOnboarded(actor.id).catch(() => true)
+      : true;
+    return context.json({ user: { ...actor, onboarded } });
+  });
+
+  /**
+   * They finished onboarding. Written by the flow itself once the first Bot exists.
+   *
+   * Its own call rather than a side effect of creating an agent: a Bot made later from the Agents
+   * page is the same creation and must not silently mean "and they have been onboarded", which is
+   * the kind of coupling that makes the flow impossible to change afterwards.
+   */
+  app.post("/api/me/onboarded", requireUser, async (context) => {
+    if (onboarding) await onboarding.markOnboarded(context.var.actor.id);
+    return context.body(null, 204);
+  });
   app.get("/api/admin/status", requireUser, (context) => {
     const denied = requireAdmin(context);
     return denied ?? context.json({ status: "ok" });

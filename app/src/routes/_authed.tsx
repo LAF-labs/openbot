@@ -21,6 +21,17 @@ export const Route = createFileRoute("/_authed")({
        */
       throw redirect({ to: "/sign", search: { redirect: location.href } });
     }
+    /*
+     * NOBODY GETS PAST THIS WITHOUT A BOT OF THEIR OWN.
+     *
+     * The product is a roster of Bots you made; there is nothing to look at before the first one
+     * exists, and the deployment no longer hands anybody a Bot it designed. Checked here rather
+     * than on the main layout so Settings and the admin screens are behind it too — a first-run
+     * person who lands on a deep link should still meet the product before its preferences.
+     */
+    if (!user.onboarded && location.pathname !== "/welcome") {
+      throw redirect({ to: "/welcome" });
+    }
   },
   // Mounted INSIDE the authed boundary, not at the root: the runtime endpoint requires a session, so
   // a provider above the sign-in gate would open a run for a visitor who has not signed in yet.

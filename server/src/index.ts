@@ -42,6 +42,7 @@ import {
   createCredentialStore,
   resolveModelApiKey,
 } from "./credentials";
+import { createOnboardingStore } from "./auth/onboarding";
 import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
 import { createRoutineDelivery } from "./routines/deliver";
@@ -489,6 +490,7 @@ const app = createApp(
       createAuditStore(database),
     ),
   ),
+  createOnboardingStore(database),
   // The runtime call: the model, per-actor agent loading, and the two identity
   // functions are how a run is attributed to a person.
   mountCopilotRuntime(

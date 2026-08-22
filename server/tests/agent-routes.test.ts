@@ -597,8 +597,9 @@ describe("agent route composition", () => {
         api: { getSession: async () => session },
       },
       { rolesForUser: async () => ["user"] },
-      // Positions 4-11: auditReader, credentialService, packageStatusReader, connectorService,
-      // copilotHandler, computerClient, computerGateway, computerPolicy.
+      // Positions 4-12: auditReader, credentialService, packageStatusReader, connectorService,
+      // onboarding, copilotHandler, computerClient, computerGateway, computerPolicy.
+      undefined,
       undefined,
       undefined,
       undefined,

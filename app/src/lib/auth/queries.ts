@@ -6,6 +6,8 @@ export type AuthenticatedUser = {
   name?: string | null;
   image?: string | null;
   role: "admin" | "user";
+  /** False until they have been through onboarding and their first Bot exists. */
+  onboarded: boolean;
 };
 
 export const authKeys = {
