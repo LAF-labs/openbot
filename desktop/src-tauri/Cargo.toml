@@ -1,0 +1,41 @@
+[package]
+name = "laf-desktop"
+version = "0.1.0"
+edition = "2021"
+
+# The installable shell around the cloud service: a window onto the deployed origin, and nothing
+# that the browser tab did not already do. Compare the 56 dependencies of the previous, local-agent
+# shell — a Node sidecar, a PTY, an RPC bridge — none of which a client of a server needs.
+
+[lib]
+name = "laf_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "laf-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# No `macos-private-api`: that feature exists for transparent windows and vibrancy, which this shell
+# does not draw, and it requires the matching `app.macOSPrivateApi` in tauri.conf.json — the build
+# script refuses the one without the other. The previous shell carried both for its overlay title
+# bar; a window onto a web origin has no use for either.
+tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LAF Agent",
+  "version": "0.1.0",
+  "identifier": "com.lafco.lafagent",
+  "build": {
+    "frontendDist": "../public",
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "LAF Agent",
+        "url": "http://localhost:3010",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "visible": false,
+        "zoomHotkeysEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg",
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxQjVFODZBQzg4NjhENTgKUldSWWpZYklhdWkxWVltbXBSL0JuRUQ3VXpFM2N5eTJmZWtlT3dyOE41RVZjYzRvQTR1amtkYlUK",
+      "endpoints": [
+        "https://github.com/LAF-labs/openbot/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

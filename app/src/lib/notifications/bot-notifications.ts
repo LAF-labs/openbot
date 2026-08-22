@@ -23,6 +23,8 @@
  * `components/notifications/notification-permission.tsx` for why it is not the mute switch.
  */
 
+import { inShell, setShellBadge, showShellNotice } from "./shell";
+
 export type NotificationSupport = "unsupported" | "granted" | "denied" | "ask";
 
 /** What the browser will currently let us do, without asking it for anything. */
@@ -157,6 +159,31 @@ export function showNotice(
   options: { title: string; body: string; tag: string },
   onClick: () => void,
 ): void {
+  /*
+   * Inside the desktop shell, the OS notification centre; the webview's own `Notification` is
+   * unsupported there (WKWebView) or dies with the window. The shell path is tried first and the
+   * web path is the fallback, so a browser tab is exactly what it was. Clicking a native
+   * notification focuses the app; the room-level navigation is lost on that path, and that is the
+   * honest trade until the shell carries a deep link.
+   */
+  if (inShell()) {
+    void showShellNotice({
+      title: options.title,
+      body: noticeBody(options.body),
+      silent: kind === "finished",
+    }).then((shown) => {
+      if (!shown) showWebNotice(kind, options, onClick);
+    });
+    return;
+  }
+  showWebNotice(kind, options, onClick);
+}
+
+function showWebNotice(
+  kind: NoticeKind,
+  options: { title: string; body: string; tag: string },
+  onClick: () => void,
+): void {
   if (notificationSupport() !== "granted") return;
   try {
     const notification = new Notification(options.title, {
@@ -192,6 +219,9 @@ let badged: number | null = null;
 export function setUnreadBadge(count: number, baseTitle: string): void {
   if (badged === count) return;
   badged = count;
+  // The dock icon, when there is one. The title is still set below: it is what a tab shows, and it
+  // costs nothing in a shell where nobody can see it.
+  void setShellBadge(count);
   const withBadge = navigator as Navigator & {
     setAppBadge?: (count?: number) => Promise<void>;
     clearAppBadge?: () => Promise<void>;

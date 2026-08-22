@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can.",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:3010/*",
+      "http://localhost:3010"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-focus",
+    "notification:default",
+    "updater:default",
+    "process:allow-restart",
+    "shell:allow-open",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-set-badge-label"
+  ]
+}

@@ -211,4 +211,12 @@ runner only in local mode, and every message in a room is written by the
 server.
 
 Who said what is recorded per message (`lafAgentId` beside `lafAt`) and
-drawn as a name above each reply.
+drawn as a name above each reply.The count of rooms waiting also goes on the app's icon — through the desktop
+shell's `set_badge` command when the app runs in it (`app/src/lib/notifications/shell.ts`
+feature-detects `window.__TAURI__`), through `navigator.setAppBadge` in an
+installed Chromium window, and the tab title everywhere else. In the shell,
+notifications go through the OS centre rather than the webview's own API,
+which WKWebView does not provide; they survive the window being hidden behind
+other apps, which is the reason a person installs an app at all. A MUTED Bot
+still counts there: muting silences the popup, not the fact that something is
+waiting. A hidden one does not, because it is not on the roster to be counted.
