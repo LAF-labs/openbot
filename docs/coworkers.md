@@ -129,7 +129,16 @@ room you left, or in any room at all while the tab sits behind another window,
 raises one. Repeats replace: three answers while you were at lunch leave one
 notification per room, and the roster behind it carries the count.
 
-It rides the socket the roster already keeps open
+A Bot that has STOPPED and is waiting on you leads, and it is the one thing
+here with a deadline: an unanswered question expires after ten minutes and the
+Bot gives up. That notice asks the browser to keep it on screen rather than
+fading, and it is raised only while the tab is hidden — a question is raised by
+a tool call in the tab you are driving, so a visible tab already draws the card
+on the tool call's own line and says so in the status slot wherever you have
+scrolled. It does not ride the socket and should not: the browser already holds
+the Bot, the id and the sentence.
+
+The rest rides the socket the roster already keeps open
 (`app/src/lib/channels/use-channel-events.ts`) rather than a second connection,
 and it is the platform `Notification` — no service worker, no push service, no
 dependency. **Nothing arrives while the tab is closed**, and the profile says so

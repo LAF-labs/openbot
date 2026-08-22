@@ -73,6 +73,11 @@ export function questionOn(toolCallId: string): OpenQuestion | undefined {
   return open.get(toolCallId);
 }
 
+/** Everything currently waiting, for a reader that wants the set rather than one entry. */
+export function openQuestions(): OpenQuestion[] {
+  return [...open.values()];
+}
+
 /**
  * Whether anything at all is waiting on an answer.
  *

@@ -14,8 +14,8 @@
  *
  * Permission is never requested on load. A page that asks the moment it opens is the pattern every
  * browser now buries behind a warning, and a person who has not yet seen a Bot answer has no way to
- * judge the request. It is asked for from the switch on a Bot's profile, which is a gesture that
- * means "yes, tell me about this one".
+ * judge the request. It is asked for by its own control, on a Bot's profile and in Settings — see
+ * `components/notifications/notification-permission.tsx` for why it is not the mute switch.
  */
 
 export type NotificationSupport = "unsupported" | "granted" | "denied" | "ask";
@@ -87,6 +87,26 @@ export function shouldNotify(input: {
 }
 
 /**
+ * Whether a Bot stopping to ask is worth interrupting for.
+ *
+ * Deliberately a different rule from `shouldNotify`, and the asymmetry is the point. A question is
+ * raised by a tool call in the tab the person is driving, so "the room is on screen" and "the tab
+ * is visible" are the same fact here — there is no other room it could have come from. A visible
+ * tab already says it: the card is drawn on the tool call's own line and the transcript's status
+ * slot keeps saying so wherever the reader has scrolled (`anyQuestionOpen`). Interrupting somebody
+ * who is looking straight at the question would be the notification saying it twice.
+ */
+export function shouldNotifyApproval(input: {
+  /** The Bot's `notify` preference. Absent for a Bot the roster has not loaded. */
+  notify: boolean | undefined;
+  /** `document.visibilityState === "visible"`. */
+  visible: boolean;
+}): boolean {
+  if (input.notify === false) return false;
+  return !input.visible;
+}
+
+/**
  * Show one, replacing any earlier one for the same room.
  *
  * `tag` is the channel: a Bot that answers three times while somebody is at lunch should leave one
@@ -97,16 +117,63 @@ export function showBotNotice(
   notice: BotNotice,
   onOpen: (channelId: string) => void,
 ): void {
-  if (notificationSupport() !== "granted") return;
-  try {
-    const notification = new Notification(notice.title, {
+  show(
+    {
+      title: notice.title,
       body: notice.body,
       tag: `laf-channel:${notice.channelId}`,
+    },
+    () => onOpen(notice.channelId),
+  );
+}
+
+/**
+ * A Bot has stopped and is waiting on a person.
+ *
+ * `requireInteraction` because unlike a delivered answer this one burns a ten-minute window — the
+ * server expires an unanswered question (`APPROVAL_TTL_MS`) and the Bot gives up. A notice that
+ * fades after four seconds is one somebody misses while making coffee, and the thing they miss is
+ * the only thing in this product that is genuinely blocked on them.
+ *
+ * Clicking it only focuses the window. The card is already on screen in the tab that raised the
+ * question, and sending somebody to a route would be sending them somewhere they already are.
+ */
+export function showApprovalNotice(
+  approvalId: string,
+  title: string,
+  question: string,
+): void {
+  show(
+    {
+      title,
+      body: question,
+      tag: `laf-approval:${approvalId}`,
+      requireInteraction: true,
+    },
+    () => {},
+  );
+}
+
+function show(
+  options: {
+    title: string;
+    body: string;
+    tag: string;
+    requireInteraction?: boolean;
+  },
+  onClick: () => void,
+): void {
+  if (notificationSupport() !== "granted") return;
+  try {
+    const notification = new Notification(options.title, {
+      body: options.body,
+      tag: options.tag,
+      ...(options.requireInteraction ? { requireInteraction: true } : {}),
     });
     notification.onclick = () => {
       window.focus();
       notification.close();
-      onOpen(notice.channelId);
+      onClick();
     };
   } catch {
     // Some browsers throw here rather than resolve `denied` (older Chrome on Android). A
