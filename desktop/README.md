@@ -43,3 +43,26 @@ cd desktop && bun run build     # .app + .dmg on macOS, .exe (NSIS) on Windows
 
 The updater's public key and endpoint are carried over from the previous
 shell; releases publish `latest.json` beside the installers.
+
+## Releasing
+
+`.github/workflows/release.yml` builds a universal macOS dmg and a Windows
+x64 installer (NSIS, per-user) and publishes them as a **draft** release
+when a `v*` tag is pushed:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+A manual run of the workflow only builds and keeps the installers as
+workflow artifacts. The updater reads
+`releases/latest/download/latest.json`, which serves published releases
+only — publishing the draft is what offers the update to installed apps.
+
+The workflow needs `TAURI_SIGNING_PRIVATE_KEY` (the private half of the
+updater pubkey in `tauri.conf.json`, as the base64 file `tauri signer
+generate` writes) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the
+repository secrets, entered by a person. Apple Developer ID secrets are
+optional; without them the dmg is ad-hoc signed, which Gatekeeper accepts
+only on the Mac that built it. Windows code signing is not set up; SmartScreen
+will warn until it is.
