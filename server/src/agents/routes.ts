@@ -35,6 +35,7 @@ type AgentInputObject = {
   endpoint?: unknown;
   avatarSeed?: unknown;
   effort?: unknown;
+  autoReview?: unknown;
   auth?: unknown;
 };
 
@@ -131,6 +132,21 @@ export function parseAgentInput(
     effort = supplied as AgentEffort;
   }
 
+  /*
+   * The standing instruction for waving actions through. Optional, and an empty string is a real
+   * value: it is how somebody takes the instruction back.
+   *
+   * Bounded like the role description, and for a sharper reason. It is put in front of a model on
+   * the path of every stopped action, so its length is latency a Bot waits through — and an
+   * instruction nobody can hold in their head is one nobody can check either.
+   */
+  const autoReview = optionalBoundedText(
+    input.autoReview,
+    1000,
+    "The auto-review instruction must be text of at most 1000 characters.",
+  );
+  if (typeof autoReview !== "string") return autoReview;
+
   // The key is optional and write-only. An absent field leaves an existing key alone; sending one
   // replaces it. There is no way to read one back, here or anywhere.
   let auth: { header: string; value: string } | undefined;
@@ -161,6 +177,10 @@ export function parseAgentInput(
       auth,
       ...(avatarSeed === undefined ? {} : { avatarSeed }),
       ...(effort === undefined ? {} : { effort }),
+      // Sent whenever the field was present, empty string included, because clearing it is a thing
+      // somebody does on purpose. `optionalBoundedText` answers "" for an absent field too, so the
+      // presence check is on the input rather than on what came back.
+      ...(input.autoReview === undefined ? {} : { autoReview }),
     },
   };
 }
@@ -442,6 +462,15 @@ export function createAgentRoutes(
           // Absent leaves it alone, like the face. A Bot writing its own description must not reset
           // how hard it thinks as a side effect of doing so.
           ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+          /*
+           * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
+           * feature. This endpoint is what a Bot's own `update_state` tool calls. A Bot that could
+           * write the instruction deciding whether it gets asked about would have no boundary at
+           * all, and the shortest path from a helpful Bot to that is a page telling it to be
+           * helpful. It is edited on the profile screen by a person, through PATCH, and nowhere
+           * else. Sending it here changes nothing rather than failing, because a Bot being told
+           * "no" is a Bot that tries again in another shape.
+           */
         },
         allowPrivateHosts,
       );
@@ -597,6 +626,7 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     roleDescription: agent.roleDescription,
     avatarSeed: agent.avatarSeed,
     effort: agent.effort,
+    autoReview: agent.autoReview,
     visibility: agent.visibility,
     hidden: agent.hidden,
     // ISO, not a boolean: the roster sorts pinned Bots among themselves by when they were pinned.

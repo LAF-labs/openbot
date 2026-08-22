@@ -1,0 +1,1 @@
+ALTER TABLE "action_policy" ADD COLUMN "settle_without_asking" text;

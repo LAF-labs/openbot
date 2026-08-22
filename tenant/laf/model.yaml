@@ -14,3 +14,13 @@ model:
   # model it recognises as reasoning. Set it false on a model that does not reason: nothing is sent,
   # and the control disappears from the Bot's profile rather than sitting there doing nothing.
   supports_effort: ${BOT_MODEL_EFFORT:-true}
+  # Which model judges a Bot's "do not ask me about" instruction. Defaults to the one above.
+  #
+  # ITS OWN, BECAUSE IT IS A DIFFERENT JOB. Deciding whether one action is read-only is a
+  # classification, and asking a flagship reasoning model to do it costs both money and a Bot
+  # standing still: measured against the model this deployment serves, a yes/no took between ten
+  # and thirty seconds, which is longer than a person often takes to press the button itself.
+  #
+  # Point it at something small and fast. Unset, it is the same model as everything else, which
+  # works and is slow.
+  review_model: ${REVIEW_MODEL:-}

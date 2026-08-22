@@ -663,22 +663,22 @@ describe("standing allowances in a policy", () => {
   test("absent means allowed, so an older policy still means what it meant", () => {
     const parsed = parseActionPolicy(base);
     expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.policy.standingAllowances).toBeUndefined();
+    if (parsed.ok) expect(parsed.policy.settleWithoutAsking).toBeUndefined();
   });
 
   test("takes the two it allows", () => {
     for (const value of ["allowed", "off"] as const) {
-      const parsed = parseActionPolicy({ ...base, standingAllowances: value });
+      const parsed = parseActionPolicy({ ...base, settleWithoutAsking: value });
       expect(parsed.ok).toBe(true);
-      if (parsed.ok) expect(parsed.policy.standingAllowances).toBe(value);
+      if (parsed.ok) expect(parsed.policy.settleWithoutAsking).toBe(value);
     }
   });
 
   test("refuses anything else rather than reading it as allowed", () => {
-    expect(parseActionPolicy({ ...base, standingAllowances: "no" }).ok).toBe(
+    expect(parseActionPolicy({ ...base, settleWithoutAsking: "no" }).ok).toBe(
       false,
     );
-    expect(parseActionPolicy({ ...base, standingAllowances: false }).ok).toBe(
+    expect(parseActionPolicy({ ...base, settleWithoutAsking: false }).ok).toBe(
       false,
     );
   });

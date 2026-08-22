@@ -175,6 +175,27 @@ describe("tenant YAML validation", () => {
     ).toBe(true);
   });
 
+  test("the review model is its own, and falls back to the main one", () => {
+    const base =
+      "provider: openai, credential_secret_ref: openai-key, default_model: gpt-4.1";
+    // Deciding whether one action is read-only is a classification. Measured against this
+    // deployment's own reasoning model it took ten to thirty seconds, which is a Bot standing still
+    // for longer than a person often takes to press the button.
+    expect(
+      packageWithModel(`model: { ${base}, review_model: tiny-1 }`).model
+        .reviewModel,
+    ).toBe("tiny-1");
+    // `${REVIEW_MODEL:-}` with nothing set is the empty string, not an absent key, so both have to
+    // fall back rather than one of them failing.
+    expect(packageWithModel(`model: { ${base} }`).model.reviewModel).toBe(
+      "gpt-4.1",
+    );
+    expect(
+      packageWithModel(`model: { ${base}, review_model: "" }`).model
+        .reviewModel,
+    ).toBe("gpt-4.1");
+  });
+
   test("refuses an effort declaration that is neither", () => {
     // Not read as truthy. "maybe" almost certainly means an environment variable that did not
     // resolve, and reading it as yes would send the parameter to a model that cannot take it.

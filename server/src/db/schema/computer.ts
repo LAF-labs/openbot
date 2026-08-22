@@ -46,6 +46,18 @@ export const actionPolicy = pgTable("action_policy", {
    */
   ask: text("ask").array().notNull().default([]),
   allow: text("allow").array().notNull(),
+  /**
+   * Whether an asked action may be settled without a person seeing it. See `settleWithoutAsking`.
+   *
+   * A COLUMN, because the live policy is held in memory and a restart returns to whatever this row
+   * says. Left out of the row, a deployment that switched it off would come back up with it on and
+   * nothing anywhere would mention it — a governance switch that quietly un-switches itself is
+   * worse than one that was never offered.
+   *
+   * Nullable, and null reads as allowed: a row written before this column existed means what it
+   * meant.
+   */
+  settleWithoutAsking: text("settle_without_asking"),
   /** Who last changed it, for the Admin page and the trail. */
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true })

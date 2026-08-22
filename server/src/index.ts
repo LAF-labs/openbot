@@ -1,5 +1,7 @@
 import "./telemetry-off";
 import { serve } from "bun";
+import { eq } from "drizzle-orm";
+import { agentProfiles } from "./db/schema";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -20,6 +22,10 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import {
+  createModelAutoReviewer,
+  type ReviewSubject,
+} from "./computer/auto-review";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
@@ -264,6 +270,39 @@ const approvals = withApprovalNotifications(
  */
 const standingApprovals = createDatabaseStandingApprovalStore(database);
 
+/**
+ * The owner's own sentence about what not to be asked, judged against one action.
+ *
+ * Given to the gateway as one function, so the gateway knows nothing about where an instruction is
+ * kept or how it is judged. Read per action rather than cached: it is edited on a screen, and an
+ * edit that took effect on the next restart would be a boundary somebody believes they tightened.
+ *
+ * `OPENAI_BASE_URL` is where everything else in this deployment reaches a model, and the key is
+ * resolved per call for the same reason the runtime's is — revoking a credential then takes effect
+ * on the next action rather than on the next restart.
+ */
+const reviewModel = createModelAutoReviewer({
+  baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+  model: tenantPackage.model.reviewModel,
+  apiKey: () =>
+    resolveModelApiKey({
+      encryptionKey: config.keyEncryptionKey,
+      reader: credentialStore,
+      provider: tenantPackage.model.provider,
+      keyId: tenantPackage.model.credentialSecretRef,
+      environment: process.env,
+    }),
+});
+
+const autoReviewFor = async (botId: string, subject: ReviewSubject) => {
+  const [row] = await database
+    .select({ instruction: agentProfiles.autoReview })
+    .from(agentProfiles)
+    .where(eq(agentProfiles.agentId, botId));
+  // No row and no instruction are the same answer: there is nothing to judge, so a person is asked.
+  return row?.instruction ? reviewModel(row.instruction, subject) : null;
+};
+
 const pluginStore = createPluginStore({
   database,
   auditStore: bootAuditStore,
@@ -383,6 +422,7 @@ const computerGateway = computerClient
       policy: () => policyStore.get(),
       approvals,
       standing: standingApprovals,
+      autoReview: autoReviewFor,
       // Stop, reset and the listing act on containers when there are containers to act on.
       ...(supervisor ? { supervisor } : {}),
       // Always supplied, unlike the window: the gateway's own fallback counts in this process, and

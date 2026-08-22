@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profiles" ADD COLUMN "auto_review" text DEFAULT '' NOT NULL;

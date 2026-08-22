@@ -107,6 +107,7 @@ const joinedProjection = {
   roleDescription: agentProfiles.roleDescription,
   avatarSeed: agentProfiles.avatarSeed,
   effort: agentProfiles.effort,
+  autoReview: agentProfiles.autoReview,
   visibility: agentProfiles.visibility,
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
@@ -153,6 +154,7 @@ function mapProfile(
     roleDescription: row.roleDescription,
     avatarSeed: row.avatarSeed,
     effort: row.effort,
+    autoReview: row.autoReview,
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
@@ -334,6 +336,9 @@ export function createAgentProfileStore(
           // Absent takes the column's default rather than being written as one here, so the default
           // lives in exactly one place.
           ...(input.effort === undefined ? {} : { effort: input.effort }),
+          ...(input.autoReview === undefined
+            ? {}
+            : { autoReview: input.autoReview }),
           visibility: input.visibility,
         });
 
@@ -397,6 +402,9 @@ export function createAgentProfileStore(
                 : { avatarSeed: input.avatarSeed }),
               // The same for how hard it thinks: a form that did not show it must not reset it.
               ...(input.effort === undefined ? {} : { effort: input.effort }),
+              ...(input.autoReview === undefined
+                ? {}
+                : { autoReview: input.autoReview }),
               updatedAt,
             })
             .where(eq(agentProfiles.agentId, id));
@@ -440,6 +448,11 @@ export function createAgentProfileStore(
           avatarSeed: source.avatarSeed,
           // A copy is the same colleague again, which includes how long it takes to answer.
           effort: source.effort,
+          /*
+           * NOT COPIED. Everything else about a duplicate is the same colleague again, and this one
+           * is a standing permission to act without being seen — inheriting it silently would make
+           * "Duplicate" a way to widen a boundary by pressing a button labelled something else.
+           */
           visibility: "private",
         });
 

@@ -20,7 +20,7 @@ type ActionPolicy = {
   ask: string[];
   allow: string[];
   /** Absent means allowed, matching the server. See the section below. */
-  standingAllowances?: "allowed" | "off";
+  settleWithoutAsking?: "allowed" | "off";
 };
 
 type Preset = { label: string; rule: string; cost?: string };
@@ -504,37 +504,39 @@ function BoundariesPage() {
        * had no way to say so, and any administrator could stand the whole thing down from a
        * transcript line at the end of a long task.
        */}
-      <PageSection title={t("Answering for good")}>
+      <PageSection title={t("Getting past without asking")}>
         <div className="mt-2 flex gap-2">
           {(["allowed", "off"] as const).map((choice) => (
             <Button
-              aria-pressed={(policy.standingAllowances ?? "allowed") === choice}
+              aria-pressed={
+                (policy.settleWithoutAsking ?? "allowed") === choice
+              }
               className={
-                (policy.standingAllowances ?? "allowed") === choice
+                (policy.settleWithoutAsking ?? "allowed") === choice
                   ? "bg-foreground/5"
                   : undefined
               }
               disabled={saving}
               key={choice}
               onClick={() =>
-                void save({ ...policy, standingAllowances: choice })
+                void save({ ...policy, settleWithoutAsking: choice })
               }
               size="sm"
               variant="outline"
             >
               {choice === "allowed"
-                ? t("A person may answer once and for all")
+                ? t("A person may settle it in advance")
                 : t("Ask every time")}
             </Button>
           ))}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          {(policy.standingAllowances ?? "allowed") === "allowed"
+          {(policy.settleWithoutAsking ?? "allowed") === "allowed"
             ? t(
-                "A question can be answered with “always”, and the same kind of action is allowed after that without anybody being asked. Every allowance is listed below and can be taken back.",
+                "Two things can settle a question without anybody seeing the action: “always” on a card, and a Bot's own “do not ask me about” instruction. Both are recorded, and every allowance is listed below and can be taken back.",
               )
             : t(
-                "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.",
+                "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, no Bot's own instruction is consulted, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.",
               )}
         </p>
       </PageSection>
@@ -551,7 +553,7 @@ function BoundariesPage() {
       {standing && standing.length > 0 ? (
         <PageSection
           title={
-            (policy.standingAllowances ?? "allowed") === "allowed"
+            (policy.settleWithoutAsking ?? "allowed") === "allowed"
               ? t("It no longer asks about")
               : // Said in the heading, not only in a note underneath: a list under "it no longer
                 // asks about" that is in fact being asked about is worse than no list.
@@ -603,14 +605,14 @@ function BoundariesPage() {
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted-foreground">
-            {(policy.standingAllowances ?? "allowed") === "allowed"
+            {(policy.settleWithoutAsking ?? "allowed") === "allowed"
               ? t(
                   "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
                 )
               : // The heading says suspended; this has to as well. A note still promising that these
                 // actions go through unasked is the same lie one line further down.
                 t(
-                  "These are not in force. Answering for good is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.",
+                  "These are not in force. Getting past without asking is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.",
                 )}
           </p>
         </PageSection>

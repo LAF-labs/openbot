@@ -33,6 +33,7 @@ import {
   policyDecidesOnSnapshot,
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
+import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import {
   type AllowanceScope,
   allowanceFor,
@@ -146,6 +147,18 @@ export type ComputerGatewayOptions = {
    * minutes is a test somebody eventually deletes.
    */
   repeat?: RepeatDetector;
+  /**
+   * The person's own sentence about what they do not want to be asked, applied per action.
+   *
+   * Absent means every stopped action is put in front of somebody, which is what this file did
+   * before it existed. Given as one function rather than as a store plus a model client, so the
+   * gateway knows nothing about where an instruction is kept or how it is judged — it asks one
+   * question and reads one answer. See `auto-review.ts`.
+   */
+  autoReview?: (
+    botId: string,
+    subject: ReviewSubject,
+  ) => Promise<ReviewVerdict | null>;
   /**
    * The questions a person has already decided not to be asked again.
    *
@@ -393,6 +406,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * row that reported the second as the first would overstate the review every time.
      */
     let allowedByStanding: StandingApproval | null = null;
+    /**
+     * Set when the yes came from the owner's instruction rather than from anybody at all.
+     *
+     * Kept apart from `approvedBy` for the same reason a standing allowance is, and more so: this
+     * action was seen by no person and by no earlier decision about this particular thing. A trail
+     * that reported it as an approval would be describing a review that never happened.
+     */
+    let allowedByReview: ReviewVerdict | null = null;
     if (decision.source === "ask" && !decision.forward) {
       const fingerprint = fingerprintOf({
         botId,
@@ -430,7 +451,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        * nothing to grant". One decision, expressed once, rather than the same rule written into a
        * lookup, a button and a handler and kept in agreement by hand.
        */
-      const mayStand = (policy?.standingAllowances ?? "allowed") === "allowed";
+      const mayStand = (policy?.settleWithoutAsking ?? "allowed") === "allowed";
       /*
        * Looked up before the question is opened, and only for an `ask`. A `deny` never reaches this
        * branch, so nothing a deployment has forbidden can be waved through by an allowance — which
@@ -441,11 +462,38 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ? null
           : await standing.find(botId, rule, scopeKeyOf(allowance));
 
+      /*
+       * The owner's own sentence, asked about this action, and only after the cheap answers.
+       *
+       * Third, deliberately: a presented approval and a standing allowance are a lookup each, and
+       * this is a model call on the path of an action a Bot is waiting to take. It runs only when
+       * the first two found nothing, only for an `ask`, and only where the deployment permits a
+       * question to be settled without eyes on it.
+       */
+      const reviewed =
+        presented?.ok || already || !mayStand || !options.autoReview
+          ? null
+          : await options.autoReview(botId, {
+              action: toolName,
+              host: hostOf(pageUrl) || undefined,
+              file: filePath,
+              // What the SERVER resolved from its own snapshot. A judge shown a label the caller
+              // supplied would be deciding on the attacker's description of the attacker's button.
+              element: element
+                ? { role: element.role, name: element.name }
+                : undefined,
+              question: decision.reason,
+            });
+
       if (presented?.ok && presented.approval.answeredBy) {
         approvedBy = presented.approval.answeredBy;
       } else if (already) {
         approvedBy = already.grantedBy;
         allowedByStanding = already;
+      } else if (reviewed?.allowed) {
+        // Nobody's name goes on this. `approvedBy` stays undefined, so the row cannot read as a
+        // person having stood behind it — which is the one thing this record must never claim.
+        allowedByReview = reviewed;
       } else {
         // Every unsuccessful presentation asks again rather than failing: an expired approval, an id
         // spent already, a person's No being replayed, and an approval granted for a different button
@@ -477,6 +525,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           toolName,
           pageUrl,
           filePath,
+          ...(reviewed ? { autoReview: reviewed } : {}),
         });
         throw new ActionNeedsApprovalError(pending);
       }
@@ -485,16 +534,23 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     // What the boundary settled on, once a person's answer is folded in. The source stays `ask`, so
     // the row reads as "allowed, because somebody was asked and said yes" rather than as an ordinary
     // permission nobody ever questioned.
-    const settled: PolicyDecision = approvedBy
+    const settled: PolicyDecision = allowedByReview
       ? {
           ...decision,
           allowed: true,
           forward: true,
-          reason: allowedByStanding
-            ? `Allowed by a standing allowance ${approvedBy} granted for ${allowedByStanding.scope}, asked because of the rule \`${decision.matched}\`.`
-            : `Allowed by ${approvedBy}, who was asked because of the rule \`${decision.matched}\`.`,
+          reason: `Allowed by this Bot's auto-review instruction, which was asked because of the rule \`${decision.matched}\`: ${allowedByReview.reason}`,
         }
-      : decision;
+      : approvedBy
+        ? {
+            ...decision,
+            allowed: true,
+            forward: true,
+            reason: allowedByStanding
+              ? `Allowed by a standing allowance ${approvedBy} granted for ${allowedByStanding.scope}, asked because of the rule \`${decision.matched}\`.`
+              : `Allowed by ${approvedBy}, who was asked because of the rule \`${decision.matched}\`.`,
+          }
+        : decision;
 
     await write(auditStore, {
       toolName,
@@ -516,6 +572,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
             },
           }
         : {}),
+      ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
     });
 
     if (!settled.forward) {
@@ -555,6 +612,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
               },
             }
           : {}),
+        ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
         failure: error instanceof Error ? error.message : "The action failed.",
       });
       throw error;
@@ -1055,6 +1113,15 @@ async function write(
      * are exactly the ones an investigator is reading the trail to find.
      */
     standingAllowance?: { id: string; scope: string };
+    /**
+     * The reason the Bot's own instruction gave, when that is what let this through.
+     *
+     * Its own field rather than folded into `approvedBy`, which stays empty here on purpose: this
+     * action was seen by nobody, and the row has to be findable as one of those. The reason is what
+     * makes the row worth reading — an investigator asking "why was this never questioned" gets a
+     * sentence rather than a flag.
+     */
+    autoReviewed?: string;
     /** Set only when a permitted action was attempted and did not succeed. */
     failure?: string;
   },
@@ -1116,6 +1183,7 @@ async function write(
               allowanceScope: entry.standingAllowance.scope,
             }
           : {}),
+        ...(entry.autoReviewed ? { autoReviewed: entry.autoReviewed } : {}),
         /** Present so the trail explains a dry-run row that was recorded as refused but still ran. */
         carriedOut: entry.decision.forward,
       },
@@ -1239,6 +1307,15 @@ async function writeApprovalEvent(
     toolName?: string;
     pageUrl?: string;
     filePath?: string | undefined;
+    /**
+     * What the Bot's own instruction made of this, when there was one.
+     *
+     * On the row that says a person was asked, because that is the row somebody reads when they
+     * want to know why they are being asked despite having written an instruction. Without it the
+     * two reasons look identical from here — the instruction did not cover this, and the model
+     * could not be reached — and the difference is the whole of whether the feature is working.
+     */
+    autoReview?: { allowed: boolean; reason: string } | null;
   },
 ) {
   await recordAuditEvent(auditStore, {
@@ -1258,6 +1335,16 @@ async function writeApprovalEvent(
       ...(entry.toolName ? { action: entry.toolName } : {}),
       ...(entry.pageUrl ? { page: entry.pageUrl } : {}),
       ...(entry.filePath ? { file: entry.filePath } : {}),
+      // An empty reason is the judge having failed rather than having decided, and the two are said
+      // differently: "could not be reached" is somebody's provider being down, not their rule being
+      // too narrow, and only one of those is worth editing the rule over.
+      ...(entry.autoReview
+        ? {
+            autoReview: entry.autoReview.reason
+              ? `declined: ${entry.autoReview.reason}`
+              : "could not be reached",
+          }
+        : {}),
     },
   });
 }

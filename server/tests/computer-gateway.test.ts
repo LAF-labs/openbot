@@ -1086,7 +1086,7 @@ describe("when the boundary refuses to be answered for good", () => {
     deny: [],
     ask: ['contains(element.name, "submit")'],
     allow: ["true"],
-    standingAllowances: "off",
+    settleWithoutAsking: "off",
   };
 
   test("the question carries no scope, so nothing offers to grant one", async () => {
@@ -1143,7 +1143,7 @@ describe("when the boundary refuses to be answered for good", () => {
       grantedBy: MANAGER.id,
     });
 
-    policy = { ...NO_STANDING, standingAllowances: "allowed" };
+    policy = { ...NO_STANDING, settleWithoutAsking: "allowed" };
     await gateway.click("default", "bot-1", ACTOR, {
       ref: "e9",
       snapshotId: 7,
@@ -1153,5 +1153,169 @@ describe("when the boundary refuses to be answered for good", () => {
     expect(rows.map((row) => row.eventType)).toEqual([
       "computer.action_allowed",
     ]);
+  });
+});
+
+/**
+ * The owner's own sentence, applied to a stopped action.
+ *
+ * The ordering is the interesting part and it is not cosmetic: a presented approval and a standing
+ * allowance are a lookup each, and this is a model call on the path of an action a Bot is waiting
+ * to take. It also must not run at all where the deployment has said every action gets seen.
+ *
+ * And what it produces must never read as an approval. Nobody looked at this one.
+ */
+describe("when a Bot has an instruction of its own", () => {
+  const ASKING_ONLY: ActionPolicy = {
+    mode: "enforce",
+    deny: [],
+    ask: ['contains(element.name, "submit")'],
+    allow: ["true"],
+  };
+
+  /** A gateway whose judge always answers this, recording what it was asked. */
+  async function gatewayJudging(
+    verdict: { allowed: boolean; reason: string } | null,
+    policy: ActionPolicy = ASKING_ONLY,
+  ) {
+    const asked: Array<{ botId: string; subject: Record<string, unknown> }> =
+      [];
+    const { client, calls } = fakeClient();
+    const { store, rows } = fakeAudit();
+    const standing = createStandingApprovalStore();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => policy,
+      approvals: createApprovalRegistry(),
+      standing,
+      autoReview: async (botId, subject) => {
+        asked.push({ botId, subject: subject as never });
+        return verdict;
+      },
+    });
+    await gateway.snapshot("default");
+    return { gateway, standing, calls, rows, asked };
+  }
+
+  test("a yes lets the action through without anybody being asked", async () => {
+    const { gateway, calls, rows } = await gatewayJudging({
+      allowed: true,
+      reason: "Reading a page on our own site.",
+    });
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    expect(calls).toEqual(["click"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+    ]);
+    const decision = rows[0]?.payload.decision as {
+      approvedBy?: string;
+      autoReviewed?: string;
+    };
+    // NOBODY'S NAME. `approvedBy` is what says a person stood behind an action, and no person did.
+    expect(decision.approvedBy).toBeUndefined();
+    expect(decision.autoReviewed).toBe("Reading a page on our own site.");
+  });
+
+  test("a no asks a person, as though there had been no instruction", async () => {
+    const { gateway, calls, rows } = await gatewayJudging({
+      allowed: false,
+      reason: "This submits a form.",
+    });
+
+    const error = await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+    expect(rows.map((row) => row.eventType)).toEqual(["approval.requested"]);
+  });
+
+  test("it is judged on what the server resolved, not on what was claimed", async () => {
+    const { gateway, asked } = await gatewayJudging({
+      allowed: false,
+      reason: "no",
+    });
+    await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch(() => {});
+
+    // The element comes from this server's own snapshot. A judge shown a label the caller supplied
+    // would be deciding on the attacker's description of the attacker's button.
+    expect(asked[0]?.botId).toBe("bot-1");
+    expect(asked[0]?.subject.element).toEqual({
+      role: "button",
+      name: "Submit order",
+    });
+    expect(asked[0]?.subject.host).toBe("example.com");
+  });
+
+  test("a standing allowance answers first, and no model is asked", async () => {
+    const { gateway, standing, calls, asked } = await gatewayJudging({
+      allowed: false,
+      reason: "no",
+    });
+    await standing.grant({
+      botId: "bot-1",
+      rule: 'contains(element.name, "submit")',
+      scope: { kind: "host", value: "example.com" },
+      question: "Place the order?",
+      grantedBy: MANAGER.id,
+    });
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+
+    expect(calls).toEqual(["click"]);
+    // A lookup already answered this. Spending a model call to be told the same thing is latency on
+    // the path of an action a Bot is waiting to take.
+    expect(asked).toEqual([]);
+  });
+
+  test("nothing is judged where the deployment has said every action is seen", async () => {
+    const { gateway, calls, asked } = await gatewayJudging(
+      { allowed: true, reason: "Reading is fine." },
+      { ...ASKING_ONLY, settleWithoutAsking: "off" },
+    );
+
+    const error = await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    // The one switch covers both ways past. A deployment that turned it off to stop allowances and
+    // found a model still waving actions through would have been told something untrue.
+    expect(error).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
+  test("a deny is never put to it", async () => {
+    const { gateway, calls, asked } = await gatewayJudging(
+      { allowed: true, reason: "Reading is fine." },
+      {
+        mode: "enforce",
+        deny: ['contains(element.name, "submit")'],
+        ask: ["true"],
+        allow: ["true"],
+      },
+    );
+
+    const error = await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+
+    // Deny beats ask, so this never reaches the branch. Nothing a deployment has forbidden is up
+    // for a model's opinion, which is the property that makes the whole feature arguable at all.
+    expect(error).toBeInstanceOf(ActionRefusedError);
+    expect(calls).toEqual([]);
+    expect(asked).toEqual([]);
   });
 });

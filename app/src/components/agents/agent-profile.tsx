@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AGENT_EFFORTS,
   type AgentEffort,
@@ -255,6 +256,10 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         <EffortCard agentId={agentId} effort={profile.effort} />
       ) : null}
 
+      {profile.canManage ? (
+        <AutoReviewCard agentId={agentId} instruction={profile.autoReview} />
+      ) : null}
+
       <NotifyCard
         agentId={agentId}
         name={profile.name}
@@ -441,6 +446,103 @@ function EffortCard({
       {setEffort.error ? (
         <p className="text-destructive text-sm" role="alert">
           {setEffort.error.message}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * What you have already decided not to be asked about.
+ *
+ * The Boundaries page says which actions stop; this says which of those stops the person who owns
+ * this Bot has answered in advance. It is the same widening as pressing "always allow" on a card,
+ * written ahead of time and in words instead — and it is a model that reads it, against an action
+ * partly described by a page somebody else controls. So the card says both of those out loud rather
+ * than presenting itself as a rule.
+ *
+ * SAVED ON A BUTTON, not on every keystroke. Everything else on this screen applies as you press
+ * it, and this one must not: half a sentence is a different instruction from the whole one, and an
+ * instruction that took effect while it was being typed would be judged in states nobody meant to
+ * write.
+ *
+ * PATCH, not `/profile`. The merging endpoint is what a Bot's own tool posts to, and this is the
+ * one field a Bot must never write.
+ */
+function AutoReviewCard({
+  agentId,
+  instruction,
+}: {
+  agentId: string;
+  instruction: string;
+}) {
+  const queryClient = useQueryClient();
+  const { data: profile } = useQuery(agentQueryOptions(agentId));
+  const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
+  const [draft, setDraft] = useState(instruction);
+  const labelId = useId();
+  const dirty = draft.trim() !== instruction.trim();
+
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-medium text-base" id={labelId}>
+          {t("Do not ask me about")}
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "When this Bot is stopped for your permission, this is read first. Write what you are happy for it to get on with; it is asked about everything else.",
+          )}
+        </p>
+      </div>
+      <Textarea
+        aria-labelledby={labelId}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder={t("Reading anything on our own site is fine.")}
+        rows={3}
+        value={draft}
+      />
+      <p className="text-muted-foreground text-xs">
+        {t(
+          "A model reads this against each stopped action, so keep it to things you would recognise. Anything it lets through was seen by nobody, and is recorded that way in the audit trail. What the deployment forbids outright is never affected.",
+        )}
+      </p>
+      {dirty ? (
+        <div className="flex gap-2">
+          <Button
+            disabled={updateAgent.isPending}
+            onClick={() => {
+              if (!profile) return;
+              updateAgent.mutate({
+                agentId,
+                // A PATCH replaces what it carries, so the fields the parser requires go back
+                // unchanged — the same reason the face picker sends them.
+                input: {
+                  name: profile.name,
+                  title: profile.title,
+                  roleDescription: profile.roleDescription,
+                  visibility: profile.visibility,
+                  autoReview: draft.trim(),
+                },
+              });
+            }}
+            size="sm"
+          >
+            {updateAgent.isPending ? t("Saving…") : t("Save")}
+          </Button>
+          <Button
+            disabled={updateAgent.isPending}
+            onClick={() => setDraft(instruction)}
+            size="sm"
+            variant="outline"
+          >
+            {t("Cancel")}
+          </Button>
+        </div>
+      ) : null}
+      {updateAgent.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {updateAgent.error.message}
         </p>
       ) : null}
     </section>

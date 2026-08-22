@@ -146,6 +146,14 @@ describe("OpenBot database schema", () => {
         primary: false,
       },
       {
+        // The sentence deciding whether this Bot gets asked about. Defaulted to empty, which means
+        // ask about everything the boundary stops — the behaviour before the column existed.
+        name: "auto_review",
+        notNull: true,
+        hasDefault: true,
+        primary: false,
+      },
+      {
         name: "visibility",
         notNull: true,
         hasDefault: false,

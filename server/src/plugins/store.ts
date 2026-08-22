@@ -338,7 +338,7 @@ export function createPluginStore(options: PluginStoreOptions) {
     // The same switch the computer's gateway reads, and it does the same two things here: nothing
     // standing is honoured, and the question goes out without a scope so there is nothing to grant.
     const mayStand =
-      (options.policy()?.standingAllowances ?? "allowed") === "allowed";
+      (options.policy()?.settleWithoutAsking ?? "allowed") === "allowed";
     const already = mayStand
       ? await options.standing?.find(
           question.botId,

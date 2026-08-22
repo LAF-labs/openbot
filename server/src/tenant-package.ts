@@ -116,6 +116,8 @@ export type TenantPackage = {
     defaultModel: string;
     /** Whether this model takes an effort setting. See `agent_effort` and `model.yaml`. */
     supportsEffort: boolean;
+    /** Which model judges an auto-review instruction. Falls back to `defaultModel`. */
+    reviewModel: string;
   };
   knowledgeSources: {
     type: "google-drive" | "microsoft-onedrive";
@@ -360,6 +362,12 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
         true,
         "model.supports_effort",
       ),
+      // Empty falls back rather than failing: `${REVIEW_MODEL:-}` with nothing set is the empty
+      // string, and a deployment that has not chosen one should run on the model it already has.
+      reviewModel:
+        typeof model.review_model === "string" && model.review_model.trim()
+          ? model.review_model.trim()
+          : requiredString(model.default_model, "model.default_model"),
     },
     knowledgeSources: sources,
     themeCss: files.themeCss,

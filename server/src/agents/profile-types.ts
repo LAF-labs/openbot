@@ -27,6 +27,11 @@ export type AgentProfile = {
   roleDescription: string;
   avatarSeed: string;
   effort: AgentEffort;
+  /**
+   * What this Bot may be waved through for, in the owner's own words. Empty means ask about
+   * everything the policy stops. See `agentProfiles.autoReview`.
+   */
+  autoReview: string;
   visibility: AgentVisibility;
   ownerUserId: string | null;
   systemOwned: boolean;
@@ -79,6 +84,13 @@ export type CreateAgentInput = Pick<
    * it did not show, and a Bot made before anybody could choose keeps the column's default.
    */
   effort?: AgentEffort;
+  /**
+   * The standing instruction for waving actions through, when a person is changing it.
+   *
+   * Absent leaves it alone. An empty string is a real value and clears it, which is how somebody
+   * takes the instruction back.
+   */
+  autoReview?: string;
   /**
    * A key this agent sits behind, if any.
    *

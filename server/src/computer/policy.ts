@@ -49,23 +49,29 @@ export type ActionPolicy = {
   /** Any expression true means permitted. Empty means nothing is permitted. */
   allow: string[];
   /**
-   * Whether a person answering a question may also answer it for good.
+   * Whether an asked action may be settled without a person looking at THAT action.
    *
-   * "off" leaves the approval card with two buttons: every action an `ask` rule matches is put in
-   * front of somebody, every time, and no allowance can be granted. A deployment that has decided
-   * every one of these actions gets a pair of eyes needs a way to say so, because otherwise the
-   * whole boundary can be stood down by whoever is at the keyboard at the end of a long task — and
-   * the person who does it is not deciding policy, they are clearing an obstacle.
+   * Two things settle a question without eyes on it, and this governs both: an allowance somebody
+   * granted earlier for a whole site, and an auto-review instruction a model applies on their
+   * behalf. A switch named for only one of them would be a deployment believing every action is
+   * being seen while the other quietly waves them through, which is the failure this whole area
+   * keeps being written against.
    *
-   * It stops the standing ones being honoured too, not merely new ones being granted. A policy is
-   * what is in force now, and a switch that left last week's allowances working would not restore
-   * the boundary it appears to restore. The rows stay and the Boundaries page says they are not in
-   * force, so nobody's decision is deleted behind their back — it is suspended, visibly, and comes
-   * back if the switch does.
+   * "off" leaves the approval card with two buttons and no auto-review runs: every action an `ask`
+   * rule matches is put in front of somebody, every time. A deployment that has decided that needs
+   * a way to say so, because otherwise the boundary can be stood down by whoever is at the keyboard
+   * at the end of a long task — and that person is not deciding policy, they are clearing an
+   * obstacle.
+   *
+   * It suspends what already stands, not merely what is granted next. A policy is what is in force
+   * now, and a switch that left last week's allowances working would not restore the boundary it
+   * appears to restore. The rows stay and the Boundaries page says they are not in force, so
+   * nobody's decision is deleted behind their back — it is suspended, visibly, and comes back if
+   * the switch does.
    *
    * Optional, and absent means allowed. A policy written before this existed means what it meant.
    */
-  standingAllowances?: "allowed" | "off";
+  settleWithoutAsking?: "allowed" | "off";
 };
 
 /**

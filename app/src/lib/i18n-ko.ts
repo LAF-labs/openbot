@@ -882,4 +882,21 @@ export const ko: Record<string, string> = {
   "how hard it thinks ({level})": "생각 깊이 ({level})",
   "These are not in force. Answering for good is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.":
     "지금은 효력이 없습니다. 위에서 “한 번에 답하기”가 꺼져 있어, 여기 해당하는 행동도 매번 다시 묻습니다 — 다시 켜면 누군가 내린 결정이 그대로 되살아나도록 남겨둡니다.",
+  "Do not ask me about": "이건 묻지 마세요",
+  "When this Bot is stopped for your permission, this is read first. Write what you are happy for it to get on with; it is asked about everything else.":
+    "이 봇이 허락을 받으려고 멈추면 이 내용을 먼저 읽습니다. 그냥 진행해도 괜찮은 것을 적어두세요. 나머지는 전부 물어봅니다.",
+  "Reading anything on our own site is fine.":
+    "우리 사이트에서 읽기만 하는 건 괜찮아요.",
+  "A model reads this against each stopped action, so keep it to things you would recognise. Anything it lets through was seen by nobody, and is recorded that way in the audit trail. What the deployment forbids outright is never affected.":
+    "멈춘 행동마다 모델이 이 문장과 대조해 판단하므로, 본인이 알아볼 수 있는 것만 적으세요. 여기서 통과한 행동은 아무도 본 사람이 없으며, 감사 기록에도 그렇게 남습니다. 배포가 아예 금지한 것은 영향을 받지 않습니다.",
+  "Saving…": "저장 중…",
+  Save: "저장",
+  "Getting past without asking": "묻지 않고 넘어가기",
+  "A person may settle it in advance": "미리 정해둘 수 있음",
+  "Two things can settle a question without anybody seeing the action: “always” on a card, and a Bot's own “do not ask me about” instruction. Both are recorded, and every allowance is listed below and can be taken back.":
+    "아무도 그 행동을 보지 않은 채 질문이 정리되는 경로가 둘 있습니다 — 카드의 “항상”, 그리고 봇에 적어둔 “이건 묻지 마세요”. 둘 다 기록에 남고, 허용된 항목은 아래에 모두 나열되며 취소할 수 있습니다.",
+  "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, no Bot's own instruction is consulted, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.":
+    "위 규칙에 걸리는 행동은 매번 사람 앞에 놓입니다. 넓게 허용하는 버튼도 없고, 봇에 적어둔 지시도 보지 않으며, 이미 허용된 항목도 효력이 없습니다 — 아래에 그대로 남아 있고, 다시 켜면 되살아납니다.",
+  "These are not in force. Getting past without asking is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.":
+    "지금은 효력이 없습니다. 위에서 “묻지 않고 넘어가기”가 꺼져 있어, 여기 해당하는 행동도 매번 다시 묻습니다 — 다시 켜면 누군가 내린 결정이 그대로 되살아나도록 남겨둡니다.",
 };

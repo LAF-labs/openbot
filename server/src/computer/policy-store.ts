@@ -76,6 +76,7 @@ export function createPolicyStore(
             deny: next.deny,
             ask: next.ask,
             allow: next.allow,
+            settleWithoutAsking: next.settleWithoutAsking ?? null,
             updatedBy: by ?? null,
             updatedAt: new Date(),
           })
@@ -86,6 +87,7 @@ export function createPolicyStore(
               deny: next.deny,
               ask: next.ask,
               allow: next.allow,
+              settleWithoutAsking: next.settleWithoutAsking ?? null,
               updatedBy: by ?? null,
               updatedAt: new Date(),
             },
@@ -118,6 +120,14 @@ export function createPolicyStore(
         deny: [...row.deny],
         ask: [...row.ask],
         allow: [...row.allow],
+        // Only the two the parser allows reach the column, so anything else in it is a row edited
+        // by hand — read as "off", because that is the reading that keeps the boundary.
+        ...(row.settleWithoutAsking === null
+          ? {}
+          : {
+              settleWithoutAsking:
+                row.settleWithoutAsking === "allowed" ? "allowed" : "off",
+            }),
       };
       return "the database";
     },
@@ -130,8 +140,8 @@ function clone(policy: ActionPolicy): ActionPolicy {
     deny: [...policy.deny],
     ask: [...policy.ask],
     allow: [...policy.allow],
-    ...(policy.standingAllowances
-      ? { standingAllowances: policy.standingAllowances }
+    ...(policy.settleWithoutAsking
+      ? { settleWithoutAsking: policy.settleWithoutAsking }
       : {}),
   };
 }
@@ -179,11 +189,11 @@ export function parseActionPolicy(
   // Absent means allowed, like `ask` defaulting to empty: a policy written before this existed
   // still parses and still means what it meant. Anything else is refused rather than read as one of
   // the two, because a typo silently meaning "allowed" is the direction that loosens a boundary.
-  const standing = candidate.standingAllowances;
+  const standing = candidate.settleWithoutAsking;
   if (standing !== undefined && standing !== "allowed" && standing !== "off") {
     return {
       ok: false,
-      error: 'standingAllowances must be "allowed" or "off".',
+      error: 'settleWithoutAsking must be "allowed" or "off".',
     };
   }
 
@@ -194,7 +204,7 @@ export function parseActionPolicy(
       deny: lists.deny,
       ask: lists.ask,
       allow: lists.allow,
-      ...(standing === undefined ? {} : { standingAllowances: standing }),
+      ...(standing === undefined ? {} : { settleWithoutAsking: standing }),
     },
   };
 }

@@ -63,6 +63,28 @@ export const agentProfiles = pgTable(
      * neither keeps somebody waiting nor answers a hard question badly.
      */
     effort: agentEffort("effort").notNull().default("balanced"),
+    /**
+     * What this Bot may be waved through for, written in words rather than in CEL.
+     *
+     * The `ask` list is where a deployment says which actions stop. This is where the person who
+     * owns the Bot says which of those stops they do not want: "anything read-only on our own site
+     * is fine, ask me about everything else". A model reads it against each stopped action and
+     * answers yes or no.
+     *
+     * IT IS NOT A RULE ENGINE and must not be mistaken for one. A sentence is judged, by a model,
+     * against facts partly taken from a page the Bot is looking at — so it is a convenience that
+     * trades certainty for not being asked, and everything it lets through is recorded as having
+     * been decided by nobody. `deny` never reaches it, `settleWithoutAsking: "off"` disables it
+     * whole, and the trail names the instruction and the reason on every action it passes.
+     *
+     * WRITTEN BY A PERSON, NEVER BY THE BOT. `update_state` can change a Bot's name, its job and
+     * its routines; it cannot touch this. A Bot that could write the rule deciding whether it gets
+     * asked about has no boundary at all, and the shortest path from "helpful" to that is a page
+     * telling it to be helpful.
+     *
+     * Empty means ask about everything the policy stops, which is the behaviour before this column.
+     */
+    autoReview: text("auto_review").notNull().default(""),
     visibility: agentVisibility("visibility").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),

@@ -17,6 +17,13 @@ export type AgentInput = {
   auth?: { header: string; value: string };
   /** The face somebody picked. Omitted leaves whatever the Bot already wears. */
   avatarSeed?: string;
+  /**
+   * The standing instruction for waving actions through, when a person is changing it.
+   *
+   * On the replacing input rather than the merging patch, deliberately: the merging one is what a
+   * Bot's own tool posts to, and this is the one field a Bot must never be able to write.
+   */
+  autoReview?: string;
 };
 
 /**
