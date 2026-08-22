@@ -4,16 +4,19 @@ import { and, count, desc, eq, isNull, lte, notInArray } from "drizzle-orm";
 import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
+import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafRoutines } from "../db/schema";
+import type { RunLedger } from "../runner/run-ledger";
+import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
+import type { DeliverRoutineAnswer } from "./deliver";
 import {
   dayAfter,
   instantOf,
   isKnownTimeZone,
   wallClockAt,
 } from "./zoned-clock";
-import type { RunLedger } from "../runner/run-ledger";
-import type { DeliverRoutineAnswer } from "./deliver";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -149,7 +152,10 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
     }
     const timeZone = schedule.timeZone ?? "UTC";
     if (!isKnownTimeZone(timeZone)) {
-      throw new RoutineError(`This machine does not know the zone "${timeZone}".`, 400);
+      throw new RoutineError(
+        `This machine does not know the zone "${timeZone}".`,
+        400,
+      );
     }
     const days = [...new Set(schedule.days ?? [])].sort((a, b) => a - b);
     if (days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
@@ -197,6 +203,17 @@ export type RoutineServiceOptions = {
    * a successful morning routine into a reported failure.
    */
   deliver?: DeliverRoutineAnswer;
+  /**
+   * The Bot's tools, assembled per run — the same gateway and grants the browser goes through.
+   *
+   * Absent, a routine runs as it always did: toolless, able to think and not to look. Present, it
+   * is an agent turn. See runner/unattended.ts for why the loop lives on the server.
+   */
+  tools?: (
+    botId: string,
+    actor: ActionActor,
+    actorLabel: string,
+  ) => Promise<UnattendedToolkit>;
   now?: () => Date;
   runTimeoutMs?: number;
 };
@@ -237,7 +254,35 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (!target) {
         throw new Error(`The Bot "${row.agentId}" is no longer in the roster.`);
       }
-      answer = await runAgentOnce(target, row.instruction, runTimeoutMs);
+      if (options.tools) {
+        const actor: ActionActor = {
+          id: row.createdById,
+          // The local actor is not a row in `users`, and the audit table has a foreign key to it.
+          ...(row.createdById === DEV_ACTOR.id
+            ? {}
+            : { userId: row.createdById }),
+        };
+        const toolkit = await options.tools(
+          row.agentId,
+          actor,
+          row.createdById,
+        );
+        const run = await runUnattended(target, row.instruction, {
+          toolkit,
+          timeoutMs: runTimeoutMs,
+        });
+        answer = run.answer;
+        /*
+         * A run that stopped because a person is needed is not a failure — the Bot did its job,
+         * which was to find out — but the person has to be told, and a routine's answer is the one
+         * place they will read it.
+         */
+        if (run.awaiting) {
+          answer = `${answer}\n\n⏸ ${run.awaiting}`.trim();
+        }
+      } else {
+        answer = await runAgentOnce(target, row.instruction, runTimeoutMs);
+      }
       ok = true;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);

@@ -42,9 +42,11 @@ export const COWORKER_ANSWER_TIMEOUT_MS = 90_000;
 /**
  * One server-side run: the message in, the assistant's text out, or a timeout.
  *
- * Shared by a coworker being asked and a routine firing, because they are the same act — a Bot
- * running once from a fresh instance with no tools in the room — differing only in who wanted it
- * and what gets recorded, which stays with the callers.
+ * A Bot running once from a fresh instance with no tools in the room. This is still what a
+ * coworker being ASKED gets — the one-hop guarantee above depends on it. It is no longer what a
+ * routine gets: a routine runs the tool loop in runner/unattended.ts, because a scheduled Bot that
+ * can only think and never look answers "check the supplier's prices" with confident fiction. This
+ * stays as the fallback for a deployment that wires the routine service without tools.
  */
 export async function runAgentOnce(
   target: AbstractAgent,

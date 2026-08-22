@@ -6,14 +6,31 @@ summarize the new ones", every morning, without anybody typing it.
 ## Shape
 
 The instruction is a sentence, deliberately — something its owner can read
-back and edit. The Bot runs it server-side through the same toolless path a
-coworker being asked uses (`agents/coworker-call.ts`), so a routine can think
-and write but cannot yet click; the browser-driving version arrives when tool
-execution moves off the browser.
+back and edit. The Bot runs it server-side **with its tools**: the loop in
+`runner/unattended.ts` offers the model the same computer tools and granted
+plugins the browser offers, executes whatever it asks for through the same
+gateway and plugin store — policy, grants, audit row and approval registry all
+underneath — appends the results and runs again until the model stops asking,
+or the step budget (12) or the run timeout ends it. So a routine can open a
+page, read it, save a note, or call a connector, and answer from what it found.
+
+Two tools are deliberately withheld: `computer_request_help` and
+`computer_request_secret` hand the wheel to a person at the screen, and there is
+no screen. A run that hits an ask-rule or needs a sign-in does not wait; it says
+so in its answer (marked ⏸) and stops. The approval it raised stays pending for
+its usual ten minutes, so a person who reads the answer in time can still grant
+it.
+
+The answer lands in the Bot's own conversation as one message headed by the
+routine's name, and marks the room unread. A coworker being *asked* by another
+Bot still runs toolless (`agents/coworker-call.ts`) — that is what makes a
+handoff one hop by construction.
 
 ## Scheduling
 
-`interval` (every N minutes, minimum five) or `daily` (HH:MM, UTC). The whole
+`interval` (every N minutes, minimum five) or `daily` (HH:MM on the wall
+clock of an IANA zone, optionally restricted to weekdays 0–6; rows written
+before zones existed read as UTC). The whole
 scheduler is one column: a tick claims a due routine by advancing `nextRunAt`
 in a conditional UPDATE, so two server processes ticking the same table cannot
 both fire it. The claim precedes the run — a crash mid-run costs one execution

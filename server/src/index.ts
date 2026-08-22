@@ -1,5 +1,6 @@
 import "./telemetry-off";
 import { serve } from "bun";
+import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
@@ -43,12 +44,12 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { createPluginStore } from "./plugins/store";
-import { createCoworkerCall } from "./agents/coworker-call";
+import { createRoutineDelivery } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
-import { createRoutineDelivery } from "./routines/deliver";
 import { createRunLedger } from "./runner/run-ledger";
+import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
 import {
   createPackageStatusReader,
@@ -352,6 +353,37 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
+/**
+ * The only path to an acting call.
+ *
+ * Built here rather than inline in `createApp`'s arguments because it has a second caller now: an
+ * unattended run executes a Bot's tools through this exact object, so a routine's click is judged
+ * by the same policy, written to the same audit trail and held for the same approvals as one
+ * somebody watched.
+ */
+const computerGateway = computerClient
+  ? createComputerGateway({
+      client: computerClient,
+      auditStore: bootAuditStore,
+      // Read on every decision rather than captured once, so a rule an administrator adds while the
+      // server is running applies to the very next action instead of after a restart.
+      policy: () => policyStore.get(),
+      approvals,
+      // Stop, reset and the listing act on containers when there are containers to act on.
+      ...(supervisor ? { supervisor } : {}),
+      // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
+      // a deployment with a second process would then split every Bot's count between them and
+      // never reach a threshold. The window is still only passed when a deployment has said its
+      // Bots retry on a slower rhythm than the built-in one assumes.
+      repeat: createDatabaseRepeatDetector(
+        database,
+        config.computer?.repeatWindowMs
+          ? { windowMs: config.computer.repeatWindowMs }
+          : {},
+      ),
+    })
+  : undefined;
+
 // One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
 // a revoked key or a deleted coworker takes effect on the next question rather than on restart.
 const coworkerCall = createCoworkerCall({
@@ -398,6 +430,11 @@ const routineService = createRoutineService({
   deliver: createRoutineDelivery(database, (threadId, messages) =>
     lafRunner.adoptSnapshot(threadId, messages as never),
   ),
+  // The Bot's tools, on the server, through the same gateway and grants the browser uses.
+  tools: createUnattendedTools({
+    ...(computerGateway ? { gateway: computerGateway } : {}),
+    pluginStore,
+  }),
 });
 
 const app = createApp(
@@ -440,29 +477,7 @@ const app = createApp(
     lafRunner,
   ),
   computerClient,
-  // The only path to an acting call.
-  computerClient
-    ? createComputerGateway({
-        client: computerClient,
-        auditStore: bootAuditStore,
-        // Read on every decision rather than captured once, so a rule an administrator adds while the
-        // server is running applies to the very next action instead of after a restart.
-        policy: () => policyStore.get(),
-        approvals,
-        // Stop, reset and the listing act on containers when there are containers to act on.
-        ...(supervisor ? { supervisor } : {}),
-        // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
-        // a deployment with a second process would then split every Bot's count between them and
-        // never reach a threshold. The window is still only passed when a deployment has said its
-        // Bots retry on a slower rhythm than the built-in one assumes.
-        repeat: createDatabaseRepeatDetector(
-          database,
-          config.computer?.repeatWindowMs
-            ? { windowMs: config.computer.repeatWindowMs }
-            : {},
-        ),
-      })
-    : undefined,
+  computerGateway,
   policyStore,
   // Bots as durable objects, and the channels they run in.
   agentProfileStore,
