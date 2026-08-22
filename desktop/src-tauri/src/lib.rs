@@ -11,15 +11,32 @@
 //! relative `/api` calls, a socket built from `window.location`. Loading it from `tauri://` would
 //! break every one of those at once, so the window navigates to the origin and the app runs there,
 //! exactly as it does in a browser. Today that origin is the development server; the day a deployed
-//! address exists it is one value in `tauri.conf.json`, and the same value is what a phone will use.
+//! address exists it is TWO values, and it is the same address a phone will use:
+//!
+//!   1. `app.windows[0].url` in `tauri.conf.json` — where the window goes.
+//!   2. `remote.urls` in `capabilities/default.json` — whether the page there may ask the shell for
+//!      anything. Change the first without the second and the window loads, the app works, and the
+//!      badge and notifications silently stop: the bridge below feature-detects, so there is no
+//!      error anywhere, just an app that quietly stopped being an app.
 //!
 //! The one page the shell serves itself is the connection page: an app whose whole UI lives on a
 //! server has exactly one failure it must explain on its own, and that is not reaching the server.
 
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
+#[cfg(not(debug_assertions))]
+use tauri_plugin_updater::UpdaterExt;
+
+/// How long launch will wait to find out whether the origin is there.
+///
+/// Both halves of the probe are bounded by it, and it is deliberately short: this is time the person
+/// spends looking at a dock icon and nothing else.
+const PROBE_BUDGET: Duration = Duration::from_millis(1200);
 
 /// Where the app lives. Read from the bundled config so a build for a different deployment is a
 /// different config and not a different binary.
@@ -37,20 +54,44 @@ fn origin(app: &tauri::AppHandle) -> String {
 
 /// Whether anything answers at the origin's address. A TCP connect, not an HTTP request: the
 /// question is only "is there a server", and a server that is up but unhappy should get to show
-/// its own page. Each address gets a short timeout; a refused local port fails instantly.
+/// its own page.
+///
+/// ON A WORKER THREAD, AND BOUNDED. This runs during `setup()`, which is before the event loop
+/// starts and before any window is on screen, so every millisecond it takes is a millisecond the
+/// person spends looking at a bouncing dock icon. Name resolution is the part that cannot be
+/// bounded from the inside — `getaddrinfo` blocks for as long as the resolver wants, which on a
+/// laptop that just woke with a captive portal is tens of seconds — so the whole thing happens
+/// somewhere else and launch waits `PROBE_BUDGET` for the answer.
+///
+/// A probe that has not finished in time counts as REACHABLE. "I do not know yet" must not become
+/// "the server is down": the webview is already loading the origin, and a slow network deserves to
+/// keep loading rather than be replaced by a page announcing it is offline.
 fn reachable(origin: &str) -> bool {
     let Ok(url) = tauri::Url::parse(origin) else {
         return false;
     };
-    let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+    let (Some(host), Some(port)) = (
+        url.host_str().map(str::to_owned),
+        url.port_or_known_default(),
+    ) else {
         return false;
     };
-    let Ok(addresses) = (host, port).to_socket_addrs() else {
-        return false;
-    };
-    addresses
-        .take(3)
-        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(1500)).is_ok())
+
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        // Every address the name resolves to, not the first few: a host that is up on its second
+        // address is up.
+        let answered = (host.as_str(), port)
+            .to_socket_addrs()
+            .map(|addresses| {
+                addresses.into_iter().any(|address| {
+                    TcpStream::connect_timeout(&address, PROBE_BUDGET).is_ok()
+                })
+            })
+            .unwrap_or(false);
+        let _ = sender.send(answered);
+    });
+    receiver.recv_timeout(PROBE_BUDGET).unwrap_or(true)
 }
 
 /// The shell's own connection page, with the origin for it to keep probing. A webview that cannot
@@ -82,6 +123,58 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
 /// WKWebView has no equivalent, so without this the app's only badge was a number in the tab title,
 /// and a dock icon has no title. The SPA calls this when it holds `window.__TAURI__`; a count of
 /// zero clears it. The same value the tab title carried, in the place a person actually looks.
+/// Open a link in the person's own browser.
+///
+/// Every link a Bot writes is rendered `target="_blank"` (`app/src/lib/markdown.tsx`), and a webview
+/// has nowhere to put a new window: without this, clicking any link in any message does nothing at
+/// all. The page asks for this command rather than the shell plugin's own `open`, and the plugin is
+/// deliberately NOT granted to the origin — a general-purpose opener reachable from a web page can
+/// launch whatever a scheme handler is registered for, and this can only open the web.
+#[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "not a link".to_string())?;
+    match parsed.scheme() {
+        "http" | "https" => app
+            .opener()
+            .open_url(parsed.to_string(), None::<&str>)
+            .map_err(|error| error.to_string()),
+        scheme => Err(format!("{scheme} links are not opened")),
+    }
+}
+
+/// Fetch and install a newer version, if the release the endpoint points at is newer than this one.
+///
+/// Release builds only: a development launch has no business asking GitHub, and the version it
+/// would compare is whatever happens to be in the config. Failure is logged and nothing else — an
+/// app that cannot reach its update endpoint is an app that still has to run.
+///
+/// Installed rather than merely downloaded, and WITHOUT a restart: the new version is in place for
+/// the next launch. Restarting an app somebody is using, to deliver a change they did not ask for,
+/// is the behaviour that teaches people to dread updates.
+#[cfg(not(debug_assertions))]
+fn install_updates(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let updater = match app.updater() {
+            Ok(updater) => updater,
+            Err(error) => {
+                log::warn!("no updater configured: {error}");
+                return;
+            }
+        };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                log::info!("update {} is available; installing", update.version);
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    Ok(()) => log::info!("update installed; it applies on the next launch"),
+                    Err(error) => log::warn!("update could not be installed: {error}"),
+                }
+            }
+            Ok(None) => log::info!("no update available"),
+            Err(error) => log::warn!("update check failed: {error}"),
+        }
+    });
+}
+
 #[tauri::command]
 fn set_badge(app: tauri::AppHandle, count: u32) -> Result<(), String> {
     let window = app
@@ -95,12 +188,11 @@ fn set_badge(app: tauri::AppHandle, count: u32) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![set_badge])
+        .invoke_handler(tauri::generate_handler![set_badge, open_external])
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let target = origin(app.handle());
             log::info!("window origin: {target}");
@@ -117,6 +209,8 @@ pub fn run() {
                 }
                 let _ = window.show();
             }
+            #[cfg(not(debug_assertions))]
+            install_updates(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

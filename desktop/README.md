@@ -11,10 +11,13 @@ The app is same-origin by construction (cookie auth, relative `/api`, a
 socket built from `window.location`). Loading it from `tauri://` would break
 all of that at once, so the window's `url` in `src-tauri/tauri.conf.json` IS
 the origin and the app runs there exactly as in a browser. Today that is the
-development server, `http://localhost:3010`; the day a deployed address exists
-it is that one value, plus the same value under `capabilities/default.json`
-`remote.urls` so the app may call the shell. A phone build will use the same
-address.
+development server, `http://localhost:3010`.
+
+Changing it is TWO values, and they must move together: the window's `url`,
+and `remote.urls` in `capabilities/default.json`. Change only the first and
+everything appears to work — the window loads, the app runs — while the badge,
+the notifications and outward links silently stop, because the bridge
+feature-detects and finds nothing. A phone build will use the same address.
 
 `withGlobalTauri` is on: the page is not bundled, so it cannot `import`
 `@tauri-apps/api` — the global is the only way the SPA can ask the shell for
@@ -27,11 +30,21 @@ shell had — would block the origin's own scripts.
 
 ## What the shell adds
 
-Exactly two things, both reached from the SPA through the global and both
-with a web fallback: the dock badge (`set_badge`, a Rust command — WKWebView
-has no `setAppBadge`) and OS notifications (the notification plugin — the
-webview's own `Notification` is unsupported there). Everything else the page
-does in a browser it does here unchanged.
+Three things, each reached from the SPA through the global and each with a
+web fallback: the dock badge (`set_badge`, a Rust command — WKWebView has no
+`setAppBadge`), OS notifications (the notification plugin — the webview's own
+`Notification` is unsupported there), and links out (`open_external` — every
+link a Bot writes is `target="_blank"`, and a webview has no second window to
+put one in, so without this every link in every message did nothing).
+Everything else the page does in a browser it does here unchanged.
+
+`open_external` takes http and https and refuses every other scheme, and the
+opener plugin is NOT granted to the origin. Neither is the updater, nor the
+process plugin: the shell checks for updates from Rust, on release builds
+only, and installs them for the next launch rather than restarting an app
+somebody is using. So a page running somebody else's script cannot make this
+process install software, restart itself, or hand an arbitrary scheme to the
+operating system.
 
 Plus the one page the shell serves itself, `public/index.html`: the
 connection page. An app whose whole UI lives on a server has exactly one

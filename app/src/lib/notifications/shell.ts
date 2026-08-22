@@ -15,6 +15,12 @@
  * NATIVE NOTIFICATIONS. A webview's `Notification` is unsupported (WKWebView) or bound to the
  * webview's own lifetime. The shell's go through the OS centre and survive the window being hidden
  * behind others — which is the whole reason the person installed an app.
+ *
+ * LINKS OUT. Every link a Bot writes is rendered `target="_blank"` (`lib/markdown.tsx`), and a
+ * webview has no second window to put one in: in the shell, clicking any link in any message did
+ * nothing at all. `openExternal` hands it to the person's own browser. It goes through the shell's
+ * own `open_external` command rather than the opener plugin, because a general-purpose opener
+ * reachable from a web page can launch whatever a scheme handler is registered for.
  */
 
 type TauriGlobal = {
@@ -56,6 +62,21 @@ export async function setShellBadge(count: number): Promise<boolean> {
   if (!invoke) return false;
   try {
     await invoke("set_badge", { count });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Open a link in the person's browser. False when there is no shell, or the shell refused it — the
+ * caller then lets the browser do what it was always going to do.
+ */
+export async function openExternal(url: string): Promise<boolean> {
+  const invoke = shell()?.core?.invoke;
+  if (!invoke) return false;
+  try {
+    await invoke("open_external", { url });
     return true;
   } catch {
     return false;

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can.",
+  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can. The updater, the process plugin and the shell's opener are deliberately absent: the shell updates itself from Rust and exposes one narrow `open_external` command, so a page that runs somebody else's script cannot make this process install software, restart itself, or hand a URL of any scheme to the operating system.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://localhost:3010/*", "http://localhost:3010"]
@@ -16,9 +16,6 @@
     "core:window:allow-is-maximized",
     "core:window:allow-set-focus",
     "notification:default",
-    "updater:default",
-    "process:allow-restart",
-    "shell:allow-open",
     "core:window:allow-set-badge-count",
     "core:window:allow-set-badge-label"
   ]

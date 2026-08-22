@@ -68,6 +68,11 @@
     try {
       await fetch(origin + "/", { mode: "no-cors", cache: "no-store" });
       status.textContent = "연결됐습니다. 여는 중…";
+      // Released before navigating, not after: `location.replace` does not always take — a server
+      // that answered the probe and then refused the document leaves this page on screen, and it
+      // should be a page that is still trying rather than one frozen mid-attempt.
+      checking = false;
+      retry.disabled = false;
       location.replace(origin);
       return;
     } catch {
