@@ -52,6 +52,14 @@ import { t } from "@/lib/i18n";
  * and the frames the server sends while a turn runs. Both go through pure functions with their
  * own tests (`room-events.ts`), so what a frame does to the screen is decided in one place.
  */
+/**
+ * How long the room waits after a message lands before reading the thread again.
+ *
+ * Long enough that a turn's messages arrive as one burst rather than ten, short enough that a
+ * message from somewhere else — another tab, a routine — still appears promptly.
+ */
+const ACTIVITY_SETTLE_MS = 700;
+
 export function GroupChat({ channel }: { channel: AgentChannel }) {
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
@@ -218,14 +226,25 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         );
       }
     };
+    /*
+     * COLLAPSED, because a turn arrives as a burst. Every message a member posts raises an activity
+     * event, and answering each one meant a transcript fetch, a message-times fetch and a read POST
+     * — four requests per reply, up to ten replies a turn, all of them asking for a thread the
+     * frames had already delivered. The settled frame is what puts the message on screen; this is
+     * the safety net behind it, and a net does not need to be cast forty times.
+     */
+    let pending: ReturnType<typeof setTimeout> | undefined;
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ChannelActivity>).detail;
       if (activity.channelId !== channel.id) return;
       if (!activity.lastMessageAgentId) return;
-      void catchUpRef.current();
-      void markRead
-        .current({ channelId: channel.id, read: true })
-        .catch(() => {});
+      clearTimeout(pending);
+      pending = setTimeout(() => {
+        void catchUpRef.current();
+        void markRead
+          .current({ channelId: channel.id, read: true })
+          .catch(() => {});
+      }, ACTIVITY_SETTLE_MS);
     };
     const onReconnected = () => {
       // Whatever happened while the socket was away is not replayed, so the turn is let go and the
@@ -239,6 +258,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
     socketState.addEventListener(SOCKET_RECONNECTED, onReconnected);
     return () => {
+      clearTimeout(pending);
       roomFrames.removeEventListener(ROOM_FRAME, onFrame);
       channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
       socketState.removeEventListener(SOCKET_RECONNECTED, onReconnected);
