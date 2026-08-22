@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { parse } from "yaml";
 import type { Database } from "./db/client";
 import {
@@ -472,6 +472,28 @@ export async function synchronizeTenantPackage(
         );
       }
     }
+
+    /*
+     * A BOT THE PACKAGE NO LONGER SHIPS IS RELEASED, NOT LEFT STRANDED.
+     *
+     * `systemOwned` is derived from `packageId`, and the only thing it does is refuse edits and
+     * deletion. So an agent dropped from the package but left with its `packageId` becomes the worst
+     * of both: nobody can change it, nobody can remove it, and it goes on occupying one of the
+     * account's five seats forever. Clearing the id hands it back — an ordinary bot the person can
+     * rename, re-describe or delete — and keeps every conversation it has had.
+     *
+     * Its rows are otherwise untouched: this is a change of custody, not of content.
+     */
+    const shipped = tenantPackage.agents.map((agent) => agent.id);
+    await transaction
+      .update(agentTable)
+      .set({ packageId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(agentTable.packageId, deploymentPackage.id),
+          shipped.length > 0 ? notInArray(agentTable.id, shipped) : sql`true`,
+        ),
+      );
 
     for (const channel of tenantPackage.channels) {
       await transaction

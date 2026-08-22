@@ -1,16 +1,7 @@
-channels:
-  - id: general-assistant
-    name: 일상 비서
-    description: 일상 업무를 무엇이든 부탁하세요.
-    permitted_agents: [general-assistant]
-    allowed_groups: [all]
-  - id: risk-and-compliance
-    name: 리스크 · 컴플라이언스
-    description: 정책, 거래 모니터링, 통제 증빙을 조사합니다.
-    permitted_agents: [knowledge, risk-analyst]
-    allowed_groups: [risk, compliance]
-  - id: company-knowledge
-    name: 사내 지식
-    description: 회사 문서에서 승인된 답을 찾습니다.
-    permitted_agents: [knowledge]
-    allowed_groups: [all]
+# 이 배포가 미리 만들어 내려주는 채널 — 없다.
+#
+# 채널은 봇을 참조하므로(`permitted_agents`) 봇 목록이 비면 채널도 빈다. 그리고
+# 예전 채널들은 `allowed_groups: [risk, compliance]` 처럼 **여러 사람이 공유하는 방**을
+# 전제로 했는데, 지금 제품에서 봇은 각자의 것이다. 사람들 사이의 대화는 봇 공유가
+# 아니라 별도 기능으로 다룬다.
+channels: []

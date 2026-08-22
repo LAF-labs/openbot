@@ -616,3 +616,77 @@ describe("expanding a package file against the environment", () => {
     );
   });
 });
+
+describe("a bot the package stops shipping", () => {
+  /*
+   * `systemOwned` is derived from `packageId`, and all it does is refuse edits and deletion. An
+   * agent dropped from the package but left carrying its id is therefore the worst of both: nobody
+   * can change it, nobody can remove it, and it keeps one of the account's five seats forever.
+   */
+  test("is released to the account, with its conversations intact", async () => {
+    const staying = packageAgent({ name: "Stays" });
+    const leaving = packageAgent({ name: "Leaves" });
+    createdAgentIds.push(staying.id, leaving.id);
+
+    const first = loadedPackage(staying);
+    first.agents = [staying, leaving];
+    const shipped = await synchronizeTenantPackage(database, first);
+    createdPackageIds.push(shipped.id);
+
+    const before = await database
+      .select({ id: agents.id, packageId: agents.packageId })
+      .from(agents)
+      .where(eq(agents.id, leaving.id));
+    expect(before[0]?.packageId).toBe(shipped.id);
+
+    // The same package, one bot lighter.
+    const second: LoadedTenantPackage = {
+      ...first,
+      agents: [staying],
+      checksum: randomUUID(),
+    };
+    await synchronizeTenantPackage(database, second);
+
+    const [released] = await database
+      .select({ packageId: agents.packageId, name: agents.name })
+      .from(agents)
+      .where(eq(agents.id, leaving.id));
+    // Still there — this is a change of custody, not of content.
+    expect(released?.name).toBe("Leaves");
+    expect(released?.packageId).toBeNull();
+
+    // And its profile row is untouched, so every conversation it has had still resolves.
+    const [profile] = await database
+      .select({ agentId: agentProfiles.agentId })
+      .from(agentProfiles)
+      .where(eq(agentProfiles.agentId, leaving.id));
+    expect(profile?.agentId).toBe(leaving.id);
+
+    // The bot the package still ships keeps its id, and stays protected.
+    const [kept] = await database
+      .select({ packageId: agents.packageId })
+      .from(agents)
+      .where(eq(agents.id, staying.id));
+    expect(kept?.packageId).toBe(shipped.id);
+  });
+
+  test("a package that ships nothing releases everything it used to", async () => {
+    const only = packageAgent({ name: "Sole" });
+    createdAgentIds.push(only.id);
+    const first = loadedPackage(only);
+    const shipped = await synchronizeTenantPackage(database, first);
+    createdPackageIds.push(shipped.id);
+
+    await synchronizeTenantPackage(database, {
+      ...first,
+      agents: [],
+      checksum: randomUUID(),
+    });
+
+    const [released] = await database
+      .select({ packageId: agents.packageId })
+      .from(agents)
+      .where(eq(agents.id, only.id));
+    expect(released?.packageId).toBeNull();
+  });
+});
