@@ -202,6 +202,36 @@ export function applyRoomFrame(
   }
 }
 
+/**
+ * Reconcile the questions on screen with the ones the server says are open.
+ *
+ * The frames are how a question ARRIVES, and they only reach a mounted room on the instance running
+ * the turn. Everything else — opening the room after a member had already stopped at a boundary,
+ * reloading the tab, a question raised on another server behind the load balancer — has no frame to
+ * carry it, and before this the person saw nothing while the member waited.
+ *
+ * Authoritative in both directions: a question the server no longer lists has expired or been
+ * answered somewhere else, and its card comes down. So the caller must pass the WHOLE open set, and
+ * must not call at all if it could not read part of it.
+ */
+export function mergeApprovals(
+  state: RoomState,
+  open: readonly RoomApproval[],
+): RoomState {
+  const wanted = new Map(
+    open.map((approval) => [approval.approvalId, approval]),
+  );
+  const kept = state.approvals.filter((approval) =>
+    wanted.has(approval.approvalId),
+  );
+  const known = new Set(kept.map((approval) => approval.approvalId));
+  const added = open.filter((approval) => !known.has(approval.approvalId));
+  if (added.length === 0 && kept.length === state.approvals.length) {
+    return state;
+  }
+  return { ...state, approvals: [...kept, ...added] };
+}
+
 /** The question was answered (or dismissed); its card comes down. */
 export function withoutApproval(
   state: RoomState,

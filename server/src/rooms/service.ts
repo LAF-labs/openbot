@@ -291,29 +291,6 @@ export function createRoomService(options: RoomServiceOptions) {
         addressedIds: input.addressed,
         isCurrent,
         runMember: async ({ member, windingDown }) => {
-          /*
-           * The lines are read FRESH for every member, not once for the turn. A member speaking
-           * third in a round has to see what the first two just said, or the room is three Bots
-           * answering the same question in parallel rather than a conversation.
-           */
-          const lines = await readRoomLines(
-            database,
-            input.threadId,
-            names,
-            input.personName,
-          );
-
-          /*
-           * What this member remembers of the person: the tail of their private conversation, read
-           * here rather than once per turn because a turn can outlast a private exchange. Bounded
-           * in `private-history.ts`, and empty for a Bot the person has never talked to alone.
-           */
-          const history = await readPrivateHistory(
-            database,
-            input.actor.id,
-            member.id,
-          );
-
           const base: UnattendedToolkit = options.tools
             ? await options.tools(
                 member.id,
@@ -359,8 +336,22 @@ export function createRoomService(options: RoomServiceOptions) {
           });
 
           const open = new Set<string>();
-          const result = await options.lane.run(member.id, () =>
-            runMemberTurn({
+          const result = await options.lane.run(member.id, async () => {
+            /*
+             * READ INSIDE THE LANE, NOT BEFORE IT. Both of these are snapshots of a conversation
+             * and both go stale: the lane is a queue, and a member whose Bot is busy with a routine
+             * can wait minutes for its place. Read before the wait, a member speaking third in a
+             * round would open with what the room looked like before the first two spoke — which is
+             * the exact staleness reading them per member was for.
+             *
+             * The room's lines and the member's memory of the person, together because they are
+             * independent: one query's latency, not two.
+             */
+            const [lines, history] = await Promise.all([
+              readRoomLines(database, input.threadId, names, input.personName),
+              readPrivateHistory(database, input.actor.id, member.id),
+            ]);
+            return runMemberTurn({
               room: { channelId: input.channelId, name: input.room.name },
               member,
               peers: input.members,
@@ -438,8 +429,8 @@ export function createRoomService(options: RoomServiceOptions) {
                  */
                 close: () => {},
               },
-            }),
-          );
+            });
+          });
 
           // A run that died mid-sentence leaves nothing half-drawn on anybody's screen.
           for (const toolCallId of open) {

@@ -117,11 +117,24 @@ export async function readApprovals(
   }
 }
 
+/**
+ * What became of an answer.
+ *
+ * `gone` is the server's 409: the question expired, or somebody answered it in another tab. Nothing
+ * is broken and there is nothing to retry, so a card that hears it should come down rather than sit
+ * there with an error beside two buttons that will never work again.
+ *
+ * No prose crosses this boundary. The server's sentences are English, and a component that rendered
+ * them would show a Korean reader English no matter what the dictionary said — so this reports what
+ * happened and the surface owns the words.
+ */
+export type ApprovalAnswerResult = { ok: true } | { ok: false; gone: boolean };
+
 export async function answerApproval(
   botId: string,
   approvalId: string,
   granted: boolean,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<ApprovalAnswerResult> {
   try {
     const response = await fetch(`/api/approvals/${botId}/${approvalId}`, {
       method: "POST",
@@ -130,18 +143,9 @@ export async function answerApproval(
       body: JSON.stringify({ granted }),
     });
     if (response.ok) return { ok: true };
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    return {
-      ok: false,
-      error: body?.error ?? "That answer could not be recorded.",
-    };
+    return { ok: false, gone: response.status === 409 };
   } catch {
-    return {
-      ok: false,
-      error: "The assistant's computer could not be reached.",
-    };
+    return { ok: false, gone: false };
   }
 }
 

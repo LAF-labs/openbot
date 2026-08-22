@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyRoomFrame,
   EMPTY_ROOM,
+  mergeApprovals,
   mergeStored,
   type RoomState,
   withoutApproval,
@@ -267,5 +268,47 @@ describe("a member waiting on an answer", () => {
       times: {},
     });
     expect(state.approvals).toHaveLength(1);
+  });
+});
+
+describe("catching up on questions", () => {
+  const question = {
+    approvalId: "ap_1",
+    memberId: "risk",
+    memberName: "리스크 분석가",
+    question: "Open wttr.in?",
+    rule: "true",
+  };
+  const asked: RoomFrame = { ...base, kind: "room.approval", ...question };
+
+  test("a question raised while the room was closed still appears", () => {
+    // No frame ever reached this tab: the member stopped at the boundary before it was opened.
+    expect(mergeApprovals(EMPTY_ROOM, [question]).approvals).toEqual([
+      question,
+    ]);
+  });
+
+  test("a question already on screen is not duplicated", () => {
+    expect(mergeApprovals(after([turn, asked]), [question]).approvals).toEqual([
+      question,
+    ]);
+  });
+
+  test("a question the server no longer lists comes down", () => {
+    // Expired, or answered in another tab. Nothing is waiting for it any more.
+    expect(mergeApprovals(after([turn, asked]), []).approvals).toEqual([]);
+  });
+
+  test("an unchanged set returns the same object, so nothing re-renders", () => {
+    const before = after([turn, asked]);
+    expect(mergeApprovals(before, [question])).toBe(before);
+    expect(mergeApprovals(EMPTY_ROOM, [])).toBe(EMPTY_ROOM);
+  });
+
+  test("messages and the turn are untouched", () => {
+    const withMessage = after([turn, open, delta("반가워요")]);
+    const state = mergeApprovals(withMessage, [question]);
+    expect(state.messages).toEqual(withMessage.messages);
+    expect(state.turnId).toBe(withMessage.turnId);
   });
 });

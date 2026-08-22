@@ -13,17 +13,25 @@ import { t } from "@/lib/i18n";
  * registry for ten minutes where nobody could see it while the member said "I'm waiting for your
  * approval" into the room. Here it is raised with who asked, and answered by the same call the
  * line-level card uses, so the server's record of consent is the same either way.
+ *
+ * A member holds its turn while this is on screen (`server/src/rooms/wait-for-approval.ts`), so an
+ * answer given here is spent on the action the person actually saw.
  */
 export function RoomApprovals({
   approvals,
   onAnswered,
 }: {
   approvals: readonly RoomApproval[];
-  /** The answer landed; the card comes down. The member is told on its next turn. */
+  /** The question is settled or gone; the card comes down. */
   onAnswered: (approvalId: string) => void;
 }) {
   const [answering, setAnswering] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  /*
+   * Kept per question, not one for the section. A room can have two members waiting at once, and a
+   * single string put one member's failure under another member's name — then cleared it the moment
+   * anything else succeeded.
+   */
+  const [problems, setProblems] = useState<Record<string, true>>({});
   if (approvals.length === 0) return null;
 
   const answer = async (approval: RoomApproval, granted: boolean) => {
@@ -34,17 +42,25 @@ export function RoomApprovals({
       granted,
     );
     setAnswering(null);
-    if (!result.ok) {
-      setProblem(result.error ?? t("That answer could not be recorded."));
+    if (result.ok || result.gone) {
+      // `gone` means it expired or somebody answered it elsewhere: nothing to fix, and nothing left
+      // to press. Leaving the card up with an error would offer buttons that can never work again.
+      onAnswered(approval.approvalId);
       return;
     }
-    setProblem(null);
-    onAnswered(approval.approvalId);
+    setProblems((current) => ({ ...current, [approval.approvalId]: true }));
   };
 
   return (
+    /*
+     * ANNOUNCED, AND EACH BUTTON SAYS WHAT IT ANSWERS. A question appearing above the composer is a
+     * silent change of the page for somebody using a screen reader, and two stacked cards otherwise
+     * expose four buttons all reading "Allow"/"Deny" with nothing to tell them apart. `aria-live`
+     * reads the question when it arrives; the labels name the member each button answers for.
+     */
     <section
       aria-label={t("Waiting for your answer")}
+      aria-live="polite"
       className="flex flex-col gap-2 pb-2"
     >
       {approvals.map((approval) => (
@@ -68,6 +84,9 @@ export function RoomApprovals({
           ) : null}
           <div className="mt-2 flex gap-2">
             <Button
+              aria-label={t("Allow: {question}", {
+                question: approval.question,
+              })}
               disabled={answering === approval.approvalId}
               onClick={() => void answer(approval, true)}
               size="sm"
@@ -75,6 +94,9 @@ export function RoomApprovals({
               {t("Allow")}
             </Button>
             <Button
+              aria-label={t("Deny: {question}", {
+                question: approval.question,
+              })}
               disabled={answering === approval.approvalId}
               onClick={() => void answer(approval, false)}
               size="sm"
@@ -83,13 +105,13 @@ export function RoomApprovals({
               {t("Deny")}
             </Button>
           </div>
+          {problems[approval.approvalId] ? (
+            <p className="mt-2 text-destructive text-xs" role="alert">
+              {t("That answer could not be recorded. Try again.")}
+            </p>
+          ) : null}
         </div>
       ))}
-      {problem ? (
-        <p className="text-destructive text-sm" role="alert">
-          {problem}
-        </p>
-      ) : null}
     </section>
   );
 }

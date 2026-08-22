@@ -50,7 +50,13 @@ export function ApprovalRequest({
       );
       setAnswering(false);
       if (!result.ok) {
-        setProblem(result.error ?? "That answer could not be recorded.");
+        // Expired, or answered in another tab: there is nothing here to press any more.
+        if (result.gone) {
+          closeQuestion(toolCallId ?? "");
+          setProblem(null);
+          return;
+        }
+        setProblem(t("That answer could not be recorded. Try again."));
         return;
       }
       // Taken down here rather than waiting for the call to notice, so the buttons stop being

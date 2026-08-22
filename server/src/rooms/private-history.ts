@@ -34,7 +34,17 @@ export const HISTORY_MESSAGE_CHARS = 1500;
  */
 export function historyOf(stored: readonly StoredMessage[]): Message[] {
   const said: Message[] = [];
-  for (const entry of stored) {
+  /*
+   * BACKWARDS, AND IT STOPS AT TWELVE. Only the tail is carried, so only the tail is worth reading:
+   * walking forwards meant flattening and clamping every message in the thread — a year of
+   * conversation — to keep the last dozen, on every member of every round.
+   */
+  for (
+    let at = stored.length - 1;
+    at >= 0 && said.length < HISTORY_MESSAGES;
+    at -= 1
+  ) {
+    const entry = stored[at];
     if (!entry || typeof entry !== "object") continue;
     if (entry.role !== "user" && entry.role !== "assistant") continue;
     const text = textOf(entry.content).trim();
@@ -46,7 +56,7 @@ export function historyOf(stored: readonly StoredMessage[]): Message[] {
         : { id: randomUUID(), role: "assistant", content },
     );
   }
-  return said.slice(-HISTORY_MESSAGES);
+  return said.reverse();
 }
 
 /** Empty for a Bot the person has never talked to alone, and for one whose thread has nothing said. */

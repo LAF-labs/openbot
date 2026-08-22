@@ -10,6 +10,7 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { readApprovals } from "@/lib/approvals";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
   type AgentChannel,
@@ -18,6 +19,7 @@ import {
 import {
   applyRoomFrame,
   EMPTY_ROOM,
+  mergeApprovals,
   mergeStored,
   type RoomState,
   withoutApproval,
@@ -50,6 +52,16 @@ import { t } from "@/lib/i18n";
 export function GroupChat({ channel }: { channel: AgentChannel }) {
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  /** Stable across renders, so the effects below do not restart on every parent render. */
+  const memberIdsKey = channel.agentIds.join(",");
+  const memberIds = useMemo(
+    () => (memberIdsKey ? memberIdsKey.split(",") : []),
+    [memberIdsKey],
+  );
+  const memberNames = useMemo(
+    () => new Map((agentProfiles ?? []).map((agent) => [agent.id, agent.name])),
+    [agentProfiles],
+  );
   const marks = useQuery(messageTimesQueryOptions(channel.id));
   const [room, setRoom] = useState<RoomState>(EMPTY_ROOM);
   const [posting, setPosting] = useState(false);
@@ -132,12 +144,50 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       }),
     );
   }, [channel.id, queryClient]);
+  /**
+   * The questions this room's members are waiting on, asked for rather than waited for.
+   *
+   * A `room.approval` frame only reaches a room that is on screen, on the instance running the
+   * turn. Somebody who opened the room after a member stopped at a boundary, or reloaded, or is
+   * connected to a different server, has no frame to have missed — so the open set is read on mount
+   * and while a turn is in flight. Authoritative: it also takes down a card whose question expired.
+   *
+   * Nothing is reconciled unless every member answered, because a partial read would take down
+   * cards for the members whose request happened to fail.
+   */
+  const catchUpApprovals = useCallback(async () => {
+    const ids = memberIds.length > 0 ? memberIds : [];
+    if (ids.length === 0) return;
+    const lists = await Promise.all(ids.map((id) => readApprovals(id)));
+    if (lists.some((list) => list === null)) return;
+    const open = lists.flatMap((list, at) =>
+      (list ?? [])
+        .filter((approval) => approval.granted === undefined)
+        .map((approval) => ({
+          approvalId: approval.id,
+          memberId: ids[at] ?? approval.botId,
+          memberName: memberNames.get(ids[at] ?? "") ?? ids[at] ?? "",
+          question: approval.question,
+          rule: approval.rule,
+        })),
+    );
+    setRoom((state) => mergeApprovals(state, open));
+  }, [memberIds, memberNames]);
+  const catchUpApprovalsRef = useRef(catchUpApprovals);
+  catchUpApprovalsRef.current = catchUpApprovals;
+
   const catchUpRef = useRef(catchUp);
   catchUpRef.current = catchUp;
 
   useEffect(() => {
     void catchUpRef.current();
   }, []);
+
+  // On the callback itself, not through the ref: it changes exactly when the members or their names
+  // do, which is exactly when the open set has to be read again.
+  useEffect(() => {
+    void catchUpApprovals();
+  }, [catchUpApprovals]);
 
   /*
    * Two listeners on the one socket. Frames are the turn as it runs; activity is a message that
@@ -273,6 +323,16 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   );
 
   const inTurn = room.turnId !== null;
+
+  /*
+   * While a turn runs, look again every ten seconds. A question raised on another instance has no
+   * frame that reaches this tab, and the member holding for it is not going to say so twice.
+   */
+  useEffect(() => {
+    if (!inTurn) return;
+    const timer = setInterval(() => void catchUpApprovalsRef.current(), 10_000);
+    return () => clearInterval(timer);
+  }, [inTurn]);
 
   return (
     <ConversationView
