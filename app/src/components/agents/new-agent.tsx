@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
-import { AGENT_PRESETS, type AgentPreset } from "@/lib/agents/presets";
+import { type AgentPreset, pickSuggestions } from "@/lib/agents/presets";
 import { t } from "@/lib/i18n";
 
 /**
@@ -24,9 +24,10 @@ import { t } from "@/lib/i18n";
  * on the first one.
  *
  * So: a face, a name, and what the job is. The face is picked inline rather than behind a dialog,
- * because choosing it is the fun part and it is what makes the roster yours. The presets underneath
- * fill all three at once, for anybody who would rather start from a job that already exists than
- * invent one.
+ * because choosing it is the fun part and it is what makes the roster yours. A suggestion
+ * underneath fills every one of them at once, for anybody who would rather start from a job that
+ * already exists than invent one — six at a time out of thirty-two, one per kind of work, because a
+ * catalogue gets read and a handful gets taken.
  *
  * Connecting your own endpoint has not gone anywhere — it is on the Bot's profile, where it belongs:
  * an existing colleague being pointed somewhere else.
@@ -37,6 +38,12 @@ export function NewAgent() {
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
 
   const [avatarSeed, setAvatarSeed] = useState(MASCOT_TILES[0]?.id ?? "r0c1");
+  /*
+   * Chosen once, in an initialiser. Calling `pickSuggestions()` in the render body would deal a new
+   * six on every keystroke in the name field — the cards a person was reading would move while they
+   * read them. `Show me others` is the only thing that redeals.
+   */
+  const [suggestions, setSuggestions] = useState(() => pickSuggestions(6));
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [role, setRole] = useState("");
@@ -170,11 +177,20 @@ export function NewAgent() {
       </Button>
 
       <section className="flex flex-col gap-3 border-border border-t pt-6">
-        <h2 className="font-medium text-muted-foreground text-xs">
-          {t("Suggestions")}
-        </h2>
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="font-medium text-muted-foreground text-xs">
+            {t("Suggestions")}
+          </h2>
+          <button
+            className="text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            onClick={() => setSuggestions(pickSuggestions(6))}
+            type="button"
+          >
+            {t("Show me others")}
+          </button>
+        </div>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
-          {AGENT_PRESETS.map((preset) => (
+          {suggestions.map((preset) => (
             <button
               className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-ring/40"
               key={preset.id}

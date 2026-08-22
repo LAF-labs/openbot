@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
+import { type AgentPreset, pickSuggestions } from "@/lib/agents/presets";
 import { authKeys } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
@@ -36,8 +37,24 @@ function Welcome() {
   const [step, setStep] = useState<Step>("hello");
   const [avatarSeed, setAvatarSeed] = useState(MASCOT_TILES[0]?.id ?? "r0c1");
   const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
   const [role, setRole] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  /*
+   * Three, not six, and not a wall: this screen is somebody's first minute and the point of the
+   * cards is to answer "what would I even use this for", not to be chosen from. Dealt once, in an
+   * initialiser, so they hold still while they are being read.
+   */
+  const [suggestions, setSuggestions] = useState(() => pickSuggestions(3));
+
+  const applyPreset = (preset: AgentPreset) => {
+    // The translated text, not the key: these become the Bot's own words, shown and given to the
+    // model for as long as it exists.
+    setAvatarSeed(preset.avatarSeed);
+    setName(t(preset.name));
+    setTitle(t(preset.title));
+    setRole(t(preset.roleDescription));
+  };
 
   /*
    * A REF, NOT `isPending`. The mutation's flag is a render-time value, so two clicks landing in the
@@ -56,6 +73,7 @@ function Welcome() {
         ...agentInputFrom({
           ...emptyAgentForm,
           name: name.trim(),
+          title: title.trim(),
           roleDescription: role.trim(),
         }),
         avatarSeed,
@@ -161,6 +179,48 @@ function Welcome() {
                 )}
               </p>
             </div>
+
+            {/*
+             * BEFORE THE FORM, DELIBERATELY. A person who has never seen the product read "it can
+             * become anything" one line ago; three real jobs are what makes that sentence mean
+             * something. Tapping one fills every field below, including the face.
+             */}
+            <section className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="font-medium text-muted-foreground text-xs">
+                  {t("Or start from one of these")}
+                </h2>
+                <button
+                  className="text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  onClick={() => setSuggestions(pickSuggestions(3))}
+                  type="button"
+                >
+                  {t("Show me others")}
+                </button>
+              </div>
+              {suggestions.map((preset) => (
+                <button
+                  className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
+                  key={preset.id}
+                  onClick={() => applyPreset(preset)}
+                  type="button"
+                >
+                  <Mascot
+                    className="size-8 shrink-0 rounded-lg"
+                    seed={preset.avatarSeed}
+                    size={32}
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium text-[13px]">
+                      {t(preset.name)}
+                    </span>
+                    <span className="truncate text-[12px] text-muted-foreground">
+                      {t(preset.roleDescription)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </section>
 
             <fieldset className="flex flex-wrap justify-center gap-2">
               <legend className="sr-only">{t("Pick a face")}</legend>

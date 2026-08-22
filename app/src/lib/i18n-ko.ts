@@ -736,4 +736,118 @@ export const ko: Record<string, string> = {
   "The room could not take that message.": "방이 이 메시지를 받지 못했습니다.",
   "The room could not be reached. Check the connection and try again.":
     "방에 연결하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.",
+  "Tax Season": "세무 담당",
+  "Payments Chaser": "미수금 관리",
+  "Quote Desk": "견적·청구",
+  "Front Desk": "고객 응대",
+  "Review Watch": "리뷰 모니터",
+  "Booking Desk": "예약 관리",
+  "Customer List": "고객 명부",
+  "Note Taker": "회의록 정리",
+  "Weekly Report": "주간 보고",
+  "Competitor Watch": "경쟁사 모니터",
+  "Research Desk": "리서치 담당",
+  "Price Check": "가격 조사",
+  "News Briefing": "뉴스 브리핑",
+  "Stock Check": "재고 관리",
+  "Supplier Chase": "발주 관리",
+  "Hiring Screen": "채용 서류 검토",
+  "Social Posts": "SNS 게시물",
+  "Product Pages": "상품 상세",
+  Newsletter: "뉴스레터",
+  "Blog Drafts": "블로그 초안",
+  "Contract Review": "계약서 검토",
+  "Document Digest": "문서 요약",
+  Translator: "번역 담당",
+  "File Keeper": "파일 정리",
+  "Trip Planner": "여행 계획",
+  "To-do Wrangler": "할 일 정리",
+  "Study Coach": "학습 코치",
+  "Errand Runner": "잡무 처리",
+  "Tax and filings": "세무·신고",
+  "Accounts receivable": "미수금",
+  "Quotes and invoices": "견적·청구서",
+  "Customer messages": "고객 문의",
+  Reputation: "평판 관리",
+  Appointments: "예약",
+  Records: "고객 기록",
+  "Meeting notes": "회의록",
+  Reporting: "보고",
+  "Market intelligence": "시장 조사",
+  Research: "조사",
+  Sourcing: "구매 조사",
+  "Daily news": "데일리 뉴스",
+  Inventory: "재고",
+  Purchasing: "구매",
+  Recruiting: "채용",
+  Marketing: "마케팅",
+  "Ecommerce copy": "상품 문구",
+  "Email marketing": "이메일 마케팅",
+  Writing: "글쓰기",
+  "Legal admin": "법무 사무",
+  Reading: "읽기",
+  Languages: "언어",
+  Filing: "파일 관리",
+  Travel: "여행",
+  "Personal admin": "개인 일정",
+  Learning: "학습",
+  Errands: "잡무",
+  "Keep the paperwork a filing needs in one place as it arrives, and tell me each month what is still missing. Never file anything yourself.":
+    "신고에 필요한 서류가 생길 때마다 한곳에 모아두고, 매달 아직 빠진 게 뭔지 알려줘. 신고 자체는 절대 네가 하지 마.",
+  "Track which invoices have been paid and which are late. Draft the reminder for the late ones in a tone that keeps the customer, and show it to me before it goes.":
+    "어떤 청구서가 입금됐고 어떤 게 밀렸는지 추적해줘. 밀린 건 거래처를 잃지 않을 말투로 독촉 초안을 써두고, 보내기 전에 나한테 보여줘.",
+  "Turn an enquiry into a quote using our usual prices and terms, and an accepted quote into an invoice. Ask me about anything priced differently from last time.":
+    "문의가 오면 우리 평소 단가와 조건으로 견적서를 만들고, 확정된 견적은 청구서로 바꿔줘. 지난번과 값이 다른 항목은 나한테 물어봐.",
+  "Read what customers send us, answer the ones with a clear answer, and bring me the rest with the history attached. Never send a reply without showing it to me first.":
+    "고객이 보낸 문의를 읽고, 답이 분명한 건 답해주고 나머지는 지난 대화까지 붙여서 나한테 가져와. 답장은 나한테 먼저 보여주기 전에 절대 보내지 마.",
+  "Check our reviews and mentions daily. Tell me about anything unhappy the same day, with a draft reply, and summarise the rest at the end of the week.":
+    "매일 우리 리뷰와 언급을 확인해줘. 불만이 있으면 그날 안에 답변 초안까지 붙여서 알려주고, 나머지는 주말에 모아서 정리해줘.",
+  "Keep the day's bookings straight: confirm the new ones, remind people the day before, and warn me about gaps and double-bookings while they can still be fixed.":
+    "그날 예약을 정리해줘 — 새 예약은 확정하고, 전날 리마인드를 보내고, 빈 시간이나 중복 예약은 아직 손볼 수 있을 때 알려줘.",
+  "Keep the customer list tidy — merge duplicates, fill in what is missing, and note who we last spoke to and about what. Ask before deleting anybody.":
+    "고객 명부를 정돈해줘 — 중복은 합치고, 빠진 항목은 채우고, 누구와 마지막으로 무슨 얘기를 했는지 적어둬. 누굴 지우기 전에는 나한테 물어봐.",
+  "Turn my rough meeting notes into something readable: what was decided, what was left open, and who agreed to do what by when. Keep my wording where it matters.":
+    "내가 대충 적은 회의 메모를 읽을 만하게 정리해줘 — 무엇을 정했고, 무엇이 남았고, 누가 언제까지 뭘 하기로 했는지. 중요한 표현은 내가 쓴 말 그대로 둬.",
+  "Every Friday, write the week up: what moved, what the numbers did, and what is stuck. Short enough to read standing up, and say plainly when a week was quiet.":
+    "매주 금요일에 한 주를 정리해줘 — 무엇이 진행됐고, 숫자는 어떻게 움직였고, 무엇이 막혀 있는지. 서서도 읽을 만큼 짧게, 조용한 주였으면 조용했다고 그대로 써.",
+  "Watch the handful of companies we compete with — prices, launches, hiring, anything they announce — and tell me what changed and why it might matter to us.":
+    "우리와 경쟁하는 몇 군데를 지켜봐줘 — 가격, 신제품, 채용, 발표하는 건 뭐든. 무엇이 바뀌었고 그게 우리한테 왜 중요할 수 있는지 알려줘.",
+  "When I ask a question, go and find out properly: read the sources, say what they actually claim, and tell me where they disagree. Always link where it came from.":
+    "내가 물으면 제대로 알아봐줘 — 출처를 직접 읽고, 그 출처가 실제로 뭐라고 하는지 말하고, 서로 엇갈리는 지점을 짚어줘. 출처 링크는 항상 붙여.",
+  "Find what something costs from several sellers, with delivery and lead time included, and lay them side by side. Say which you would pick and why. Never buy anything.":
+    "여러 판매처의 가격을 배송비와 소요 기간까지 포함해 찾아 나란히 놓아줘. 네가 고른다면 어디를 왜 고를지도 말해줘. 구매는 절대 하지 마.",
+  "Each morning, brief me on the news for our industry: five items at most, one line each, and skip the day entirely if nothing happened.":
+    "매일 아침 우리 업계 뉴스를 브리핑해줘 — 많아야 다섯 건, 한 줄씩. 별일 없던 날은 그냥 넘겨.",
+  "Watch what we are running out of and tell me before it runs out, not after. Work from how fast it has actually been selling, not from a fixed number.":
+    "떨어져 가는 게 뭔지 지켜보다가 다 떨어지기 전에 알려줘, 떨어진 뒤 말고. 정해둔 수량이 아니라 실제로 얼마나 빨리 나가는지를 기준으로 봐.",
+  "Keep track of what we have ordered and when it was promised, and chase anything late. Draft the message; let me send it.":
+    "무엇을 언제까지 받기로 하고 발주했는지 챙기고, 늦어지는 건 확인해줘. 메시지는 초안까지만, 보내는 건 내가 할게.",
+  "Read applications against what the role actually needs and sort them into worth meeting, maybe, and no — with a reason for each. Judge the work, never the person.":
+    "그 자리에 정말 필요한 게 뭔지를 기준으로 지원서를 읽고 만나볼 만함·보류·아님으로 나눠줘. 각각 이유를 붙이고, 사람이 아니라 일한 결과를 봐.",
+  "Draft our posts for the week from what is actually happening here, in our voice rather than an advertisement's. Nothing goes out until I have seen it.":
+    "이번 주 게시물을 여기서 실제로 일어난 일을 가지고 초안 잡아줘. 광고 말투 말고 우리 말투로. 내가 보기 전에는 아무것도 올리지 마.",
+  "Write product descriptions that say what the thing is and who it suits. No superlatives, no invented specifications — ask me when you do not know something.":
+    "그 물건이 무엇이고 누구에게 맞는지 말하는 상품 설명을 써줘. 과장된 수식어 금지, 없는 사양 지어내기 금지 — 모르는 건 나한테 물어봐.",
+  "Put together the newsletter from the month's news and drafts, in an order that makes sense. Show me the whole thing before it is scheduled.":
+    "이번 달 소식과 초안을 가지고 뉴스레터를 말이 되는 순서로 엮어줘. 예약 발송하기 전에 전체를 나한테 보여줘.",
+  "Take a rough idea and write it out properly: an argument that goes somewhere, examples that are real, and a length the idea deserves. Leave the publishing to me.":
+    "거친 아이디어를 제대로 글로 풀어줘 — 어디론가 이어지는 논지, 실제 사례, 그 아이디어에 걸맞은 분량으로. 발행은 내가 할게.",
+  "Read a contract and tell me in plain language what it commits us to, what is unusual, and what the dates are. You are not a lawyer — say so when something needs one.":
+    "계약서를 읽고 우리가 무엇을 약속하게 되는지, 이상한 조항은 뭔지, 날짜는 언제인지 쉬운 말로 알려줘. 너는 변호사가 아니니, 변호사가 필요한 대목은 그렇다고 말해.",
+  "Read the long documents I do not have time for and give me the argument, the numbers that matter, and anything that contradicts what we already believed.":
+    "내가 볼 시간이 없는 긴 문서를 읽고 논지와 중요한 숫자, 그리고 우리가 지금까지 믿어온 것과 어긋나는 대목을 알려줘.",
+  "Translate what I give you so it reads as though it were written that way, not word by word. Flag anything where the meaning could go two ways.":
+    "내가 주는 글을 단어 대 단어가 아니라 원래 그 언어로 쓴 것처럼 읽히게 번역해줘. 뜻이 두 갈래로 갈릴 수 있는 부분은 표시해줘.",
+  "Keep our files in an order I can find things in: sensible names, the right folders, duplicates pointed out. Move things freely, but never delete without asking.":
+    "내가 찾을 수 있는 순서로 파일을 정리해줘 — 알아볼 만한 이름, 맞는 폴더, 중복은 표시. 옮기는 건 마음대로 해도 되지만 묻지 않고 지우지는 마.",
+  "Plan the trip end to end — routes, times, places to stay, what it costs — and give me one itinerary rather than a list of options. Book nothing; I will do that.":
+    "여행을 처음부터 끝까지 짜줘 — 동선, 시간, 숙소, 비용까지. 선택지 목록 말고 일정표 하나로 줘. 예약은 하지 마, 내가 할게.",
+  "Keep my list honest: what is actually due, what I have been avoiding, and what can be dropped. Ask me each morning for the three things that matter today.":
+    "내 할 일 목록을 솔직하게 유지해줘 — 진짜 기한이 온 것, 내가 피하고 있던 것, 그냥 버려도 되는 것. 매일 아침 오늘 중요한 세 가지를 나한테 물어봐.",
+  "Teach me what I am trying to learn a little at a time, ask me questions instead of giving answers, and come back to whatever I got wrong last time.":
+    "내가 배우려는 걸 조금씩 가르쳐줘. 답을 주는 대신 질문을 하고, 지난번에 틀린 건 다시 짚어줘.",
+  "Handle the small things that pile up — forms, renewals, appointments, comparing two options. Tell me what you did and what still needs me.":
+    "쌓이는 자잘한 일을 처리해줘 — 서류, 갱신, 예약, 두 가지 비교 같은 것. 무엇을 했고 아직 내가 해야 할 게 뭔지 알려줘.",
+  "Show me others": "다른 제안 보기",
+  "Or start from one of these": "아니면 이 중에서 시작하세요",
 };
