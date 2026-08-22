@@ -23,6 +23,7 @@ import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
+import type { DemonstrationRecorder } from "./computer/demonstration";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { ComputerClient } from "./computer/client";
 import type { ComputerGateway } from "./computer/gateway";
@@ -184,6 +185,12 @@ export function createApp(
    * package's own default.
    */
   deploymentEffort?: boolean,
+  /**
+   * Where a demonstration is recorded while somebody teaches a Bot. Last, like everything new here.
+   *
+   * Absent leaves taking the wheel exactly as it was — see the `teaching` note on `control/take`.
+   */
+  demonstrations?: DemonstrationRecorder,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -427,6 +434,7 @@ export function createApp(
         computerGateway,
         computerPolicy,
         requireUser,
+        demonstrations,
       ),
     );
   }

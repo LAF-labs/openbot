@@ -796,6 +796,91 @@ serve<StreamData>({
     // The list of things on the page a Bot can act on. POST rather than GET because it mutates the
     // page, stamping every element it describes, and a GET that changes the document is a lie that
     // caches and prefetchers eventually punish.
+    /**
+     * What is at one point on the page, in the words a person would use for it.
+     *
+     * FOR TEACHING, and only for that. When somebody drives this browser to show a Bot how a task
+     * is done, what arrives over the socket is `click at (412, 338)` — a fact about one render of
+     * one page at one window size, worth nothing the next time. This turns it into "the 주문 확인
+     * button", which is what the demonstration is actually about.
+     *
+     * ITS OWN ENDPOINT rather than geometry added to the snapshot. A snapshot goes out on every
+     * governed action a Bot takes, so a bounding box per element would make every one of those
+     * payloads larger, forever, to serve a feature that runs while a person is teaching. This is
+     * called on clicks during a demonstration and at no other time.
+     *
+     * Climbs to the nearest thing a person would name. The element under the cursor is as often as
+     * not a `<span>` inside the button that was actually pressed, and "clicked a span" describes
+     * nothing.
+     */
+    if (url.pathname === "/describe-point" && request.method === "POST") {
+      const body = (await request.json().catch(() => null)) as {
+        x?: unknown;
+        y?: unknown;
+      } | null;
+      if (typeof body?.x !== "number" || typeof body?.y !== "number") {
+        return json({ error: "A point needs x and y." }, 400);
+      }
+      try {
+        const target = await currentPage(botId);
+        const found = await target.evaluate(
+          ({ x, y }: { x: number; y: number }) => {
+            const NAMED = new Set([
+              "a",
+              "button",
+              "input",
+              "select",
+              "textarea",
+              "label",
+              "summary",
+              "option",
+            ]);
+            const NAMED_ROLES = new Set([
+              "button",
+              "link",
+              "checkbox",
+              "radio",
+              "menuitem",
+              "tab",
+              "option",
+              "switch",
+            ]);
+            let node = document.elementFromPoint(x, y);
+            // Five is enough to escape the usual span-inside-a-span-inside-a-button, and few enough
+            // that a click on the page background does not get attributed to the whole document.
+            for (let step = 0; node && step < 5; step += 1) {
+              const role = node.getAttribute("role") ?? "";
+              const tag = node.tagName.toLowerCase();
+              if (NAMED.has(tag) || NAMED_ROLES.has(role)) break;
+              node = node.parentElement;
+            }
+            if (!node) return null;
+            const element = node as HTMLElement;
+            const label =
+              element.getAttribute("aria-label") ??
+              element.getAttribute("title") ??
+              element.getAttribute("placeholder") ??
+              element.getAttribute("alt") ??
+              // Trimmed hard: a container's text can be the whole page, and a label nobody can read
+              // is no better than none.
+              (element.innerText ?? "").trim().slice(0, 80);
+            return {
+              role:
+                element.getAttribute("role") ?? element.tagName.toLowerCase(),
+              name: (label ?? "").replace(/\s+/g, " ").trim(),
+            };
+          },
+          { x: body.x, y: body.y },
+        );
+        // Null rather than an invented name. A click on nothing nameable is a real thing that
+        // happens — a canvas, a PDF, the page background — and saying so lets the step be written
+        // as "clicked somewhere on this page" instead of as a confident lie.
+        return json({ element: found?.name ? found : null });
+      } catch (error) {
+        return json({ error: describe(error, "Nothing could be read.") }, 502);
+      }
+    }
+
     if (url.pathname === "/snapshot" && request.method === "POST") {
       try {
         return json(await snapshotPage(session, await currentPage(botId)));

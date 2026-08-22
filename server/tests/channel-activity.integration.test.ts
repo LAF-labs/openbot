@@ -113,7 +113,17 @@ describe("channel activity", () => {
         ...channel,
         lastMessage: "Categorized three expenses.",
         lastMessageAgentId: agentId,
-        lastMessageAt: at,
+        /*
+         * NOT `at`. `recordActivity` deliberately stamps with Postgres' clock rather than this
+         * process's, because the two are not the same clock — its own comment measures the drift at
+         * tens of milliseconds — and a message stamped behind the `created_at` of its own room
+         * fails to move that room to the top of a roster.
+         *
+         * Asserting the caller's time came back therefore asserted the opposite of what the code is
+         * for, and passed only while the drift happened to be small. Measured here at seven
+         * milliseconds, in the direction that made it fail.
+         */
+        lastMessageAt: expect.any(Date),
         // The Bot spoke and nobody has opened the room since, which is the whole definition.
         unread: true,
         createdAt: expect.any(Date),
@@ -153,12 +163,23 @@ describe("channel activity", () => {
     });
     expect((await store.list(owner))[0]?.unread).toBe(true);
 
-    await store.setLastRead(owner, channel.id, new Date(at.getTime() + 1000));
+    /*
+     * Read against the time the message actually got, not against `at`. The stamp is Postgres'
+     * clock and the two differ by tens of milliseconds either way, so a mark placed a second after
+     * this process's `at` can still land BEFORE the message — which reads as unread and made this
+     * test fail on drift rather than on behaviour.
+     */
+    const stamped = (await store.list(owner))[0]?.lastMessageAt as Date;
+    await store.setLastRead(
+      owner,
+      channel.id,
+      new Date(stamped.getTime() + 1000),
+    );
     expect((await store.list(owner))[0]?.unread).toBe(false);
 
     // One millisecond before the last message: read again, deliberately, which is not the same
     // state as never opened.
-    await store.setLastRead(owner, channel.id, new Date(at.getTime() - 1));
+    await store.setLastRead(owner, channel.id, new Date(stamped.getTime() - 1));
     expect((await store.list(owner))[0]?.unread).toBe(true);
   });
 

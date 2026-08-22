@@ -11,6 +11,7 @@ import {
   WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "./client";
+import type { DemonstrationRecorder } from "./demonstration";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -35,6 +36,13 @@ export function createComputerRoutes(
   gateway: ComputerGateway,
   policyStore: PolicyStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  /**
+   * Where a demonstration is recorded, when somebody is teaching rather than fixing.
+   *
+   * Optional: without one, taking the wheel is what it always was and the two handlers below say
+   * there is nothing to show. A deployment with no computer has no wheel to take either.
+   */
+  demonstrations?: DemonstrationRecorder,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -240,13 +248,53 @@ export function createComputerRoutes(
     act(context, (botId, actor) => gateway.resetComputer(botId, botId, actor)),
   );
 
+  /**
+   * Taking the wheel, and saying which of the two reasons it is.
+   *
+   * `teaching` is a separate door on purpose. Taking control to unstick a Bot and taking it to show
+   * the Bot how something is done look identical from here and are not the same act: the first is
+   * somebody's private business in their own browser, and `audit.ts` deliberately records it as a
+   * period rather than as keystrokes precisely so it stays that way. Recording every handover would
+   * quietly turn that decision over.
+   *
+   * So a demonstration is entered by pressing the button that says so, and by nothing else.
+   */
   routes.post("/:botId/control/take", requireUser, (context) =>
-    act(context, (botId, actor) => gateway.takeControl(botId, botId, actor)),
+    act(context, async (botId, actor, body) => {
+      const state = await gateway.takeControl(botId, botId, actor);
+      if (body?.teaching === true) demonstrations?.start(botId, actor.id);
+      return state;
+    }),
   );
 
   routes.post("/:botId/control/release", requireUser, (context) =>
-    act(context, (botId, actor) => gateway.releaseControl(botId, botId, actor)),
+    act(context, async (botId, actor) => {
+      // Handing back ends the demonstration, always. A recording with its own stop button is a
+      // second state to get wrong, and somebody who has finished showing has finished showing.
+      demonstrations?.finish(botId);
+      return await gateway.releaseControl(botId, botId, actor);
+    }),
   );
+
+  /**
+   * What was recorded, for the person who recorded it to read.
+   *
+   * A read, so no audit row. What is in here never leaves this process and never becomes a Bot's
+   * instruction until somebody says so — see the note at the top of `demonstration.ts` about what
+   * it does and does not keep.
+   */
+  routes.get("/:botId/demonstration", requireUser, (context) =>
+    context.json({
+      demonstration:
+        demonstrations?.read(context.req.param("botId") ?? "") ?? null,
+    }),
+  );
+
+  /** Thrown away. What somebody decides not to keep should stop existing. */
+  routes.delete("/:botId/demonstration", requireUser, (context) => {
+    demonstrations?.discard(context.req.param("botId") ?? "");
+    return context.body(null, 204);
+  });
 
   /** The Bot asking for a value it must not be told. */
   routes.post("/:botId/control/secret", requireUser, (context) =>

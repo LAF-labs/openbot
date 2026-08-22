@@ -26,6 +26,7 @@ import {
   createModelAutoReviewer,
   type ReviewSubject,
 } from "./computer/auto-review";
+import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
@@ -269,6 +270,45 @@ const approvals = withApprovalNotifications(
  * must outlive the process too. See `standing-approvals.ts`.
  */
 const standingApprovals = createDatabaseStandingApprovalStore(database);
+
+/**
+ * What somebody did while showing a Bot how a task is done.
+ *
+ * In this process because that is where the socket is: a demonstration belongs to one person
+ * driving one browser, and both ends of that live here. It names each press by asking the computer
+ * what is at the point, which is the whole difference between a trace worth writing up and a list
+ * of coordinates. See `demonstration.ts`.
+ */
+const demonstrations = createDemonstrationRecorder({
+  namePoint: async (botId, point) => {
+    if (!config.computer) return null;
+    const response = await fetch(
+      `${config.computer.baseUrl.replace(/\/$/, "")}/describe-point?bot=${encodeURIComponent(botId)}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(config.computer.token
+            ? { authorization: `Bearer ${config.computer.token}` }
+            : {}),
+        },
+        body: JSON.stringify(point),
+        // A name is a nicety. A lookup that hangs must not sit in a map for the rest of the session.
+        signal: AbortSignal.timeout(3_000),
+      },
+    );
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      element?: { role?: unknown; name?: unknown } | null;
+    };
+    const element = body.element;
+    return element &&
+      typeof element.role === "string" &&
+      typeof element.name === "string"
+      ? { role: element.role, name: element.name }
+      : null;
+  },
+});
 
 /**
  * The owner's own sentence about what not to be asked, judged against one action.
@@ -612,6 +652,7 @@ const app = createApp(
   createThreadMessageReader(database),
   standingApprovals,
   tenantPackage.model.supportsEffort,
+  demonstrations,
 );
 
 /**
@@ -642,7 +683,18 @@ const streamPathBotId = (pathname: string): string | null => {
 };
 
 /** What each proxied socket carries: where to connect inward, and the socket once opened. */
-type StreamData = { upstream: string; inward?: WebSocket };
+type StreamData = {
+  upstream: string;
+  inward?: WebSocket;
+  /**
+   * Which Bot's browser this socket drives.
+   *
+   * Carried so a demonstration can be recorded from the messages passing through. The proxy is
+   * otherwise byte-for-byte and has no reason to know — see the `message` handler for the one line
+   * that reads it, and `demonstration.ts` for why that line is where teaching happens.
+   */
+  botId: string;
+};
 
 /**
  * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
@@ -706,7 +758,7 @@ serve<SocketData>({
           { status: 502 },
         );
       }
-      if (server.upgrade(request, { data: { upstream } })) {
+      if (server.upgrade(request, { data: { upstream, botId: streamBotId } })) {
         return undefined as unknown as Response;
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
@@ -738,7 +790,25 @@ serve<SocketData>({
         channelSocket.message(asChannelSocket(ws), raw);
         return;
       }
-      if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
+      const text = String(raw);
+      /*
+       * WHERE TEACHING HAPPENS, and the only place it could.
+       *
+       * Every click and keystroke a person makes in a Bot's browser passes through this line on its
+       * way there. When they are showing the Bot how a task is done, that is the demonstration —
+       * and nothing else in this process ever sees these messages.
+       *
+       * Before the forward, never instead of it: the recorder is told and the message goes on
+       * regardless. It cannot throw and does not wait; see `observe`.
+       */
+      if (demonstrations.recording(ws.data.botId)) {
+        try {
+          demonstrations.observe(ws.data.botId, JSON.parse(text));
+        } catch {
+          // Not JSON, so not an input message this understands. Forwarded all the same.
+        }
+      }
+      if (ws.data.inward?.readyState === 1) ws.data.inward.send(text);
     },
     close(ws, code, reason) {
       if (!isProxiedStream(ws.data)) {
