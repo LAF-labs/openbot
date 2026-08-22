@@ -256,6 +256,7 @@ export function createRoomService(options: RoomServiceOptions) {
     let ended = "failed";
     // Members that could not take their turn at all, as opposed to members with nothing to add.
     let failures = 0;
+    let posted = 0;
     const names = namesOf(input.members);
     try {
       await drive();
@@ -274,6 +275,7 @@ export function createRoomService(options: RoomServiceOptions) {
         epoch: input.epoch,
         reason: ended,
         failures,
+        posted,
       });
     }
 
@@ -488,6 +490,7 @@ export function createRoomService(options: RoomServiceOptions) {
       });
 
       ended = outcome.ended;
+      posted = outcome.posted;
     }
   }
 }

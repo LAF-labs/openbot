@@ -65,7 +65,13 @@ export type RoomFrame =
       answered?: boolean;
     })
   /** `failures`: members that could not take their turn at all. Silence is not the same thing. */
-  | (Base & { kind: "room.done"; reason: string; failures?: number });
+  | (Base & {
+      kind: "room.done";
+      reason: string;
+      failures?: number;
+      /** Messages put in the room this turn. Zero with no failures is everybody choosing silence. */
+      posted?: number;
+    });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {
   const kind = (value as { kind?: unknown } | null)?.kind;

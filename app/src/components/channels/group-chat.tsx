@@ -10,6 +10,7 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { readApprovals } from "@/lib/approvals";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
@@ -63,6 +64,13 @@ const ACTIVITY_SETTLE_MS = 700;
 export function GroupChat({ channel }: { channel: AgentChannel }) {
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  /*
+   * Answering is the owner's alone — `POST /api/approvals/:botId/:approvalId` is admin-only, and
+   * deliberately so. Drawn for everybody, the card gave every other member of the room two buttons
+   * that could only ever fail, on a question they cannot do anything about.
+   */
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const mayAnswer = currentUser?.role === "admin";
   /** Stable across renders, so the effects below do not restart on every parent render. */
   const memberIdsKey = channel.agentIds.join(",");
   const memberIds = useMemo(
@@ -78,6 +86,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   const [posting, setPosting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Something worth saying that is not a fault — a turn where nobody had anything to add. */
+  const [quiet, setQuiet] = useState<string | null>(null);
 
   /**
    * First-message seed from the compose screen, taken once per mount and shown until the stored
@@ -214,16 +224,23 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
        * A member that could not take its turn at all is not a member with nothing to say, and on
        * screen those are the same thing: nothing appears. Said plainly, once, when the turn ends.
        */
-      if (
-        frame.kind === "room.done" &&
-        frame.channelId === channel.id &&
-        (frame.failures ?? 0) > 0
-      ) {
-        setNotice(
-          t("{count} of the coworkers could not answer this time.", {
-            count: String(frame.failures ?? 0),
-          }),
-        );
+      if (frame.kind === "room.done" && frame.channelId === channel.id) {
+        if ((frame.failures ?? 0) > 0) {
+          setNotice(
+            t("{count} of the coworkers could not answer this time.", {
+              count: String(frame.failures ?? 0),
+            }),
+          );
+          return;
+        }
+        /*
+         * A turn where every member chose silence looked exactly like a turn that never happened:
+         * the person asked, the room thought, and then nothing — no message, no explanation. Said
+         * quietly rather than as a fault, because silence is a first-class answer here.
+         */
+        if (frame.posted === 0) {
+          setQuiet(t("Nobody had anything to add this time."));
+        }
       }
     };
     /*
@@ -237,7 +254,13 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ChannelActivity>).detail;
       if (activity.channelId !== channel.id) return;
-      if (!activity.lastMessageAgentId) return;
+      /*
+       * A person's own message is announced with no Bot on it, and skipping those meant a SECOND
+       * view of the same room — another window, or the desktop shell beside a browser tab — went
+       * busy on `room.turn` without ever fetching the message that started the turn, and watched
+       * members answer a question that was not on its screen. The catch-up below is debounced, so
+       * answering these too costs one request per burst.
+       */
       clearTimeout(pending);
       pending = setTimeout(() => {
         void catchUpRef.current();
@@ -270,6 +293,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       const trimmed = text.trim();
       if (!trimmed) return;
       setNotice(null);
+      setQuiet(null);
       setPosting(true);
       try {
         const messageId = crypto.randomUUID();
@@ -424,7 +448,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       notice={
         <>
           <RoomApprovals
-            approvals={room.approvals}
+            approvals={mayAnswer ? room.approvals : []}
             onAnswered={(approvalId) =>
               setRoom((state) => withoutApproval(state, approvalId))
             }
@@ -432,6 +456,10 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           {notice ? (
             <p className="pb-2 text-destructive text-sm" role="alert">
               {notice}
+            </p>
+          ) : quiet ? (
+            <p className="pb-2 text-muted-foreground text-sm" role="status">
+              {quiet}
             </p>
           ) : !channel.active ? (
             <p className="pb-2 text-muted-foreground text-sm" role="status">

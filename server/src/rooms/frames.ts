@@ -90,7 +90,13 @@ export type RoomFrame =
    * was deleted, a run that timed out. Without it a turn where everybody failed is delivered as a
    * turn where nobody had anything to say, which is the same screen and a completely different fact.
    */
-  | (Base & { kind: "room.done"; reason: string; failures?: number });
+  | (Base & {
+      kind: "room.done";
+      reason: string;
+      failures?: number;
+      /** Messages put in the room this turn. Zero with no failures is everybody choosing silence. */
+      posted?: number;
+    });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {
   const kind = (value as { kind?: unknown } | null)?.kind;
