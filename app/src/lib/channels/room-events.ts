@@ -28,8 +28,22 @@ export type RoomMessage = Message & {
   streaming?: boolean;
 };
 
+/** A question one member is waiting on. Answered by approval id, like the line-level card. */
+export type RoomApproval = {
+  approvalId: string;
+  memberId: string;
+  memberName: string;
+  question: string;
+  rule: string;
+};
+
 export type RoomState = {
   messages: readonly RoomMessage[];
+  /**
+   * The questions members are waiting on. Not cleared by `room.done`: the server holds a question
+   * for ten minutes and the person answers on their own time; `withoutApproval` takes one down.
+   */
+  approvals: readonly RoomApproval[];
   /** Message id → Bot id, for the name above a reply. */
   speakers: Readonly<Record<string, string>>;
   /** Message id → ISO-8601, for the time separators. */
@@ -41,6 +55,7 @@ export type RoomState = {
 
 export const EMPTY_ROOM: RoomState = {
   messages: [],
+  approvals: [],
   speakers: {},
   times: {},
   turnId: null,
@@ -56,6 +71,22 @@ export function applyRoomFrame(
 
   if (frame.kind === "room.turn") {
     return { ...state, turnId: frame.turnId, epoch: frame.epoch };
+  }
+
+  // A question is not typing. It stands whatever turn it was raised in, until it is answered or
+  // the server lets it expire, so it is not subject to the staleness rule below.
+  if (frame.kind === "room.approval") {
+    if (state.approvals.some((a) => a.approvalId === frame.approvalId)) {
+      return state;
+    }
+    const { memberId, memberName, approvalId, question, rule } = frame;
+    return {
+      ...state,
+      approvals: [
+        ...state.approvals,
+        { memberId, memberName, approvalId, question, rule },
+      ],
+    };
   }
 
   // Anything from a turn older than the one we know about is a member answering a superseded
@@ -166,6 +197,18 @@ export function applyRoomFrame(
       return { ...adopted, messages, turnId: null };
     }
   }
+}
+
+/** The question was answered (or dismissed); its card comes down. */
+export function withoutApproval(
+  state: RoomState,
+  approvalId: string,
+): RoomState {
+  if (!state.approvals.some((a) => a.approvalId === approvalId)) return state;
+  return {
+    ...state,
+    approvals: state.approvals.filter((a) => a.approvalId !== approvalId),
+  };
 }
 
 /**

@@ -305,7 +305,7 @@ export function createRoomService(options: RoomServiceOptions) {
             member.id,
           );
 
-          const toolkit = options.tools
+          const base: UnattendedToolkit = options.tools
             ? await options.tools(
                 member.id,
                 {
@@ -317,6 +317,41 @@ export function createRoomService(options: RoomServiceOptions) {
                 input.actorLabel,
               )
             : { tools: [], execute: async () => ({ ok: false }) };
+
+          /*
+           * A GATED ACTION IS RAISED TO THE ROOM. The loop already tells the member that a person
+           * has to allow it and to say so. In a one-to-one conversation the question is then drawn
+           * on the tool call's own line; a room draws no tool calls, so without this the question
+           * sat in the registry for its ten minutes where nobody could see it, and the member's
+           * "I'm waiting for your approval" had no buttons anywhere.
+           */
+          const toolkit: UnattendedToolkit = {
+            tools: base.tools,
+            execute: async (name, args, call) => {
+              const outcome = await base.execute(name, args, call);
+              if (
+                outcome.awaitingApproval === true &&
+                typeof outcome.approvalId === "string"
+              ) {
+                options.emit({
+                  kind: "room.approval",
+                  channelId: input.channelId,
+                  memberIds: input.memberIds,
+                  turnId: input.turnId,
+                  epoch: input.epoch,
+                  memberId: member.id,
+                  memberName: member.name,
+                  approvalId: outcome.approvalId,
+                  question:
+                    typeof outcome.question === "string"
+                      ? outcome.question
+                      : "",
+                  rule: typeof outcome.rule === "string" ? outcome.rule : "",
+                });
+              }
+              return outcome;
+            },
+          };
 
           const open = new Set<string>();
           const result = await options.lane.run(member.id, () =>

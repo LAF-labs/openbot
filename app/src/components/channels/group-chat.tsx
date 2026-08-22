@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { RoomApprovals } from "@/components/channels/room-approvals";
 import {
   seedMessage,
   takeFirstMessage,
@@ -19,6 +20,7 @@ import {
   EMPTY_ROOM,
   mergeStored,
   type RoomState,
+  withoutApproval,
 } from "@/lib/channels/room-events";
 import type { RoomFrame } from "@/lib/channels/room-frames";
 import { normalizeStoredMessages } from "@/lib/channels/thread-history";
@@ -280,17 +282,25 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       messageTimes={messageTimes}
       messages={transcriptMessages(room.messages, seed)}
       notice={
-        notice ? (
-          <p className="pb-2 text-destructive text-sm" role="alert">
-            {notice}
-          </p>
-        ) : !channel.active ? (
-          <p className="pb-2 text-muted-foreground text-sm" role="status">
-            {t(
-              "This coworker has been deleted. The conversation stays readable, but it can no longer reply.",
-            )}
-          </p>
-        ) : null
+        <>
+          <RoomApprovals
+            approvals={room.approvals}
+            onAnswered={(approvalId) =>
+              setRoom((state) => withoutApproval(state, approvalId))
+            }
+          />
+          {notice ? (
+            <p className="pb-2 text-destructive text-sm" role="alert">
+              {notice}
+            </p>
+          ) : !channel.active ? (
+            <p className="pb-2 text-muted-foreground text-sm" role="status">
+              {t(
+                "This coworker has been deleted. The conversation stays readable, but it can no longer reply.",
+              )}
+            </p>
+          ) : null}
+        </>
       }
       onStop={() => void stop()}
       onSubmit={(draft) =>

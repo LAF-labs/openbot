@@ -16,6 +16,7 @@ export const ROOM_FRAME_KINDS = [
   "room.open",
   "room.delta",
   "room.end",
+  "room.approval",
   "room.done",
 ] as const;
 
@@ -47,6 +48,19 @@ export type RoomFrame =
       storedId?: string;
       at?: string;
       text?: string;
+    })
+  /**
+   * A member's action met an ask rule. In a one-to-one conversation the question is drawn on the
+   * tool call's own line; a room draws no tool calls — a member's working is private — so the
+   * question is raised to the room, with who asked. The answer goes the usual way, by approval id.
+   */
+  | (Base & {
+      kind: "room.approval";
+      memberId: string;
+      memberName: string;
+      approvalId: string;
+      question: string;
+      rule: string;
     })
   | (Base & { kind: "room.done"; reason: string });
 

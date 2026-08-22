@@ -4,6 +4,7 @@ import {
   EMPTY_ROOM,
   mergeStored,
   type RoomState,
+  withoutApproval,
 } from "../src/lib/channels/room-events";
 import {
   ROOM_FRAME_KINDS,
@@ -216,5 +217,50 @@ describe("the two halves of the contract", () => {
   test("the client's frame kinds are the server's, by value", async () => {
     const server = await import("../../server/src/rooms/frames");
     expect([...ROOM_FRAME_KINDS]).toEqual([...server.ROOM_FRAME_KINDS]);
+  });
+});
+
+describe("a member waiting on an answer", () => {
+  const approval: RoomFrame = {
+    ...base,
+    kind: "room.approval",
+    memberId: "risk",
+    memberName: "리스크 분석가",
+    approvalId: "ap_1",
+    question: "Send the report to the client?",
+    rule: "send_email",
+  };
+  const done: RoomFrame = { ...base, kind: "room.done", reason: "ended" };
+
+  test("is raised to the room once, however often the frame arrives", () => {
+    const state = after([turn, approval, approval]);
+    expect(state.approvals.map((a) => a.approvalId)).toEqual(["ap_1"]);
+    expect(state.approvals[0]?.memberName).toBe("리스크 분석가");
+  });
+
+  test("outlives the turn, and comes down when answered", () => {
+    // The server holds a question for ten minutes; the person answers on their own time.
+    const state = after([turn, approval, done]);
+    expect(state.turnId).toBeNull();
+    expect(state.approvals).toHaveLength(1);
+    expect(withoutApproval(state, "ap_1").approvals).toEqual([]);
+    expect(withoutApproval(state, "nobody")).toBe(state);
+  });
+
+  test("is not typing: a question from a superseded turn still stands", () => {
+    const state = after([{ ...approval, epoch: 1 }], {
+      ...EMPTY_ROOM,
+      epoch: 3,
+      turnId: "t2",
+    });
+    expect(state.approvals).toHaveLength(1);
+  });
+
+  test("survives catch-up", () => {
+    const state = mergeStored(after([turn, approval]), [], {
+      speakers: {},
+      times: {},
+    });
+    expect(state.approvals).toHaveLength(1);
   });
 });

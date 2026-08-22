@@ -431,7 +431,9 @@ describe("what the Bot remembers going in", () => {
   });
 
   test("a routine carries none", async () => {
-    const agent = fakeAgent([{ id: "a-reply", role: "assistant", content: "ok" }]);
+    const agent = fakeAgent([
+      { id: "a-reply", role: "assistant", content: "ok" },
+    ]);
     await runUnattended(agent, "Check the balance.", {
       toolkit: { tools: [], execute: async () => ({ ok: false }) },
       timeoutMs: 1_000,

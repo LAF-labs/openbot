@@ -177,9 +177,12 @@ Tool calls, tool results and a Bot's scratch prose are its private working
 and never reach the room — the ONLY way a Bot can put words in a room is
 the `send_message` tool, so a turn with no call is a Bot with nothing to
 add, and a Bot can open a page mid-turn without narrating it at everybody.
-A member's own private conversation with the person is deliberately NOT in
-the prompt yet; the seam for it is on the member turn, and this paragraph
-changes the day it is filled in.
+A member does carry the tail of its own private conversation with the
+person — the last twelve things said, each cut to 1,500 characters, words
+only — placed between the conduct note and the turn, where the reference's
+unified history sits. The bound is the point: a room turn's worst case is a
+known number, not the length of somebody's conversation. Older than that
+tail, the Bot is told to ask rather than assume.
 
 Whose turn it is: nobody named means EVERYBODY answers (the reference's
 rule, and the opposite of the one we had). Up to three rounds, rotating who
@@ -211,7 +214,18 @@ runner only in local mode, and every message in a room is written by the
 server.
 
 Who said what is recorded per message (`lafAgentId` beside `lafAt`) and
-drawn as a name above each reply.The count of rooms waiting also goes on the app's icon — through the desktop
+drawn as a name above each reply.
+
+A member's action that meets an ask rule is raised to the room. In a
+one-to-one conversation the question is drawn on the tool call's own line;
+a room draws no tool calls, so a `room.approval` frame carries who asked and
+what, and the room shows it above the composer with the same Allow and Deny
+the line-level card has. The question is not typing: it is not subject to
+the turn-epoch rule, it outlives the turn's end, and it comes down when
+answered. Before this it sat in the server's registry for its ten minutes
+where nobody could see it.
+
+The count of rooms waiting also goes on the app's icon — through the desktop
 shell's `set_badge` command when the app runs in it (`app/src/lib/notifications/shell.ts`
 feature-detects `window.__TAURI__`), through `navigator.setAppBadge` in an
 installed Chromium window, and the tab title everywhere else. In the shell,

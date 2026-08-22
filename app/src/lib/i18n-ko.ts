@@ -42,6 +42,8 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "{name} is waiting for your answer: {question}":
+    "{name}이(가) 답을 기다리고 있어요: {question}",
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
     "다른 용도의 Enter도 함께 막힙니다. 폼은 어느 입력칸에서든 Enter로 제출되기 때문입니다.",
   Answered: "응답함",

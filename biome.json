@@ -7,7 +7,9 @@
       "!.",
       "!app/src/components/ui",
       "!app/src/lib/generated/application-config.ts",
-      "!app/src/routeTree.gen.ts"
+      "!app/src/routeTree.gen.ts",
+      "!desktop/src-tauri/target",
+      "!desktop/src-tauri/gen"
     ]
   },
   "formatter": {
@@ -24,11 +26,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "server/tests/**",
-        "tests/**",
-        "app/tests/**"
-      ],
+      "includes": ["server/tests/**", "tests/**", "app/tests/**"],
       "linter": {
         "rules": {
           "suspicious": {
