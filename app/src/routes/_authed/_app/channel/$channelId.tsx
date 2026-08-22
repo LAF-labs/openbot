@@ -8,6 +8,7 @@ import { AgentProfile } from "@/components/agents/agent-profile";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { BotPanel } from "@/components/channels/bot-panel";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { GroupChat } from "@/components/channels/group-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { Button } from "@/components/ui/button";
@@ -307,7 +308,17 @@ function ChannelBody({
     );
   }
 
-  // Remount on channel changes so CopilotKit agent/thread state cannot leak between channels.
+  /*
+   * A ROOM IS WATCHED; A CONVERSATION IS DRIVEN.
+   *
+   * A channel with several Bots runs its turn on the server and this screen only listens
+   * (`GroupChat`). A channel with one Bot keeps the browser-driven path, which streams for free
+   * and needs no relay. Both are keyed on the channel so nothing leaks between rooms.
+   */
+  if (channel.agentIds.length > 1) {
+    return <GroupChat channel={channel} key={channel.id} />;
+  }
+
   return (
     <ChannelChat
       channel={channel}

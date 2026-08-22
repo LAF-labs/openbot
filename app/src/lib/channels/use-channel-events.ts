@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { type ChannelSummary, channelKeys } from "./queries";
+import { isRoomFrame, type RoomFrame } from "./room-frames";
 
 /**
  * Keep the roster live.
@@ -31,6 +32,16 @@ export const CHANNEL_ACTIVITY = "channel-activity";
 
 export type ChannelActivity = ChannelActivityEvent;
 
+/**
+ * The second thing the same socket carries: a room turn, as it runs on the server.
+ *
+ * Its own target, beside the activity one, because the two have different listeners with different
+ * rules: the roster and the solo room read activity, the group room reads frames, and a listener
+ * that had to tell the two apart by shape would be the place the next deploy breaks.
+ */
+export const roomFrames = new EventTarget();
+export const ROOM_FRAME = "room-frame";
+
 const FIRST_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
 
@@ -60,12 +71,25 @@ export function useChannelEvents() {
       };
 
       socket.onmessage = (message) => {
-        let activity: ChannelActivityEvent;
+        let parsed: unknown;
         try {
-          activity = JSON.parse(message.data as string);
+          parsed = JSON.parse(message.data as string);
         } catch {
           return;
         }
+        /*
+         * Switched on `kind` BEFORE the roster patch. A room frame is not an activity event, and
+         * spreading it onto a roster row would put `text` and `turnId` on an object the sidebar
+         * renders. A frame with no `kind` is the activity event this handler has always taken, so
+         * the two halves can deploy independently.
+         */
+        if (isRoomFrame(parsed)) {
+          roomFrames.dispatchEvent(
+            new CustomEvent<RoomFrame>(ROOM_FRAME, { detail: parsed }),
+          );
+          return;
+        }
+        const activity = parsed as ChannelActivityEvent;
 
         // The list cache is patched below, but the open channel's header reads the detail query;
         // a retitle has to reach it too, and invalidation is cheaper than mirroring the patch.

@@ -1,0 +1,152 @@
+import { describe, expect, test } from "bun:test";
+import {
+  applyRoomFrame,
+  EMPTY_ROOM,
+  mergeStored,
+  type RoomState,
+} from "../src/lib/channels/room-events";
+import {
+  ROOM_FRAME_KINDS,
+  type RoomFrame,
+} from "../src/lib/channels/room-frames";
+
+/**
+ * The rules a room's screen follows as frames arrive. Every one exists because the socket drops,
+ * replays, and carries turns that are already over.
+ */
+
+const ROOM = "channel_a";
+const base = { channelId: ROOM, turnId: "t1", epoch: 3 } as const;
+const turn: RoomFrame = {
+  ...base,
+  kind: "room.turn",
+  members: [{ id: "risk", name: "리스크 분석가" }],
+};
+const open: RoomFrame = {
+  ...base,
+  kind: "room.open",
+  messageId: "call_1",
+  authorId: "risk",
+  authorName: "리스크 분석가",
+};
+const delta = (text: string): RoomFrame => ({
+  ...base,
+  kind: "room.delta",
+  messageId: "call_1",
+  text,
+});
+
+function after(frames: RoomFrame[], from: RoomState = EMPTY_ROOM): RoomState {
+  return frames.reduce(
+    (state, frame) => applyRoomFrame(state, frame, ROOM),
+    from,
+  );
+}
+
+describe("a member typing", () => {
+  test("opens a provisional message with its author, then carries the whole text each time", () => {
+    const state = after([turn, open, delta("안녕"), delta("안녕하세요")]);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]?.content).toBe("안녕하세요");
+    expect(state.messages[0]?.streaming).toBe(true);
+    expect(state.speakers.call_1).toBe("risk");
+    expect(state.turnId).toBe("t1");
+  });
+
+  test("a delta whose open frame was lost still appears", () => {
+    const state = after([turn, delta("안녕하세요")]);
+    expect(state.messages[0]?.content).toBe("안녕하세요");
+  });
+
+  test("the same text twice changes nothing, so nothing re-renders", () => {
+    const once = after([turn, open, delta("안녕")]);
+    expect(applyRoomFrame(once, delta("안녕"), ROOM)).toBe(once);
+  });
+});
+
+describe("a message landing", () => {
+  test("the provisional copy comes off when it is posted; the settled one arrives by catch-up", () => {
+    const state = after([
+      turn,
+      open,
+      delta("안녕하세요"),
+      { ...base, kind: "room.end", messageId: "call_1", posted: true },
+    ]);
+    expect(state.messages).toHaveLength(0);
+    expect(state.speakers.call_1).toBeUndefined();
+  });
+
+  test("a refused message comes off too, rather than leaving words that are not in the room", () => {
+    const state = after([
+      turn,
+      open,
+      delta("네 번째 메시지"),
+      { ...base, kind: "room.end", messageId: "call_1", posted: false },
+    ]);
+    expect(state.messages).toHaveLength(0);
+  });
+
+  test("whatever is still provisional when the turn ends was never posted", () => {
+    const state = after([
+      turn,
+      open,
+      delta("끊긴 문장"),
+      { ...base, kind: "room.done", reason: "superseded" },
+    ]);
+    expect(state.messages).toHaveLength(0);
+    expect(state.turnId).toBeNull();
+  });
+});
+
+describe("turns that are not this one", () => {
+  test("a frame from an older turn is ignored: its member is answering a superseded question", () => {
+    const current = after([turn]);
+    const stale = applyRoomFrame(
+      current,
+      { ...open, epoch: 2, turnId: "t0" },
+      ROOM,
+    );
+    expect(stale).toBe(current);
+  });
+
+  test("a frame from a newer turn is adopted, because we missed its start", () => {
+    const current = after([turn]);
+    const next = applyRoomFrame(
+      current,
+      { ...open, epoch: 4, turnId: "t2" },
+      ROOM,
+    );
+    expect(next.turnId).toBe("t2");
+    expect(next.messages).toHaveLength(1);
+  });
+
+  test("a frame for another room returns the very same state object", () => {
+    const current = after([turn]);
+    expect(
+      applyRoomFrame(current, { ...open, channelId: "channel_b" }, ROOM),
+    ).toBe(current);
+  });
+});
+
+describe("catching up from the server", () => {
+  test("stored messages come in, what is still being typed survives, known ones keep identity", () => {
+    const typing = after([turn, open, delta("입력 중")]);
+    const stored = [{ id: "u1", role: "user" as const, content: "질문" }];
+    const merged = mergeStored(typing, stored, {
+      speakers: {},
+      times: { u1: "2026-08-22T00:00:00.000Z" },
+    });
+    expect(merged.messages.map((m) => m.id)).toEqual(["u1", "call_1"]);
+    expect(merged.times.u1).toBeDefined();
+
+    const again = mergeStored(merged, stored, { speakers: {}, times: {} });
+    expect(again.messages[0]).toBe(merged.messages[0]);
+  });
+});
+
+describe("the two halves of the contract", () => {
+  test("the client's frame kinds are the server's, by value", async () => {
+    const server = await import("../../server/src/rooms/frames");
+    expect([...ROOM_FRAME_KINDS]).toEqual([...server.ROOM_FRAME_KINDS]);
+  });
+});
