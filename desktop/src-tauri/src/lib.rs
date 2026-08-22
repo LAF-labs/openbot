@@ -98,7 +98,7 @@ fn reachable(origin: &str) -> bool {
 /// load its page explains nothing — WKWebView stays blank, WebView2 shows its own error — so the
 /// window is sent here instead, and the page navigates to the origin the moment it answers.
 fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
-    let mut url = match &app.config().build.dev_url {
+    let base = match &app.config().build.dev_url {
         // `tauri dev` does not embed `frontendDist`; it serves the folder from a server of its own
         // and writes that address here. A debug build asking its own scheme for the page gets
         // "asset not found" — measured — so in dev the page is fetched from where dev put it.
@@ -113,8 +113,18 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
         })
         .expect("the shell page address is a literal"),
     };
+    tauri::Url::parse(&connection_page_url(base.as_str(), origin))
+        .expect("the page address was already a URL")
+}
+
+/// The page address with the origin it should keep retrying, encoded into the query.
+///
+/// Split out from the config lookup so the encoding can be tested: an origin that arrives at the
+/// page half-escaped is a page that retries the wrong address, or nothing at all.
+fn connection_page_url(base: &str, origin: &str) -> String {
+    let mut url = tauri::Url::parse(base).expect("the page address is a URL");
     url.query_pairs_mut().append_pair("origin", origin);
-    url
+    url.to_string()
 }
 
 /// The number of rooms waiting, on the dock icon.
@@ -123,6 +133,16 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
 /// WKWebView has no equivalent, so without this the app's only badge was a number in the tab title,
 /// and a dock icon has no title. The SPA calls this when it holds `window.__TAURI__`; a count of
 /// zero clears it. The same value the tab title carried, in the place a person actually looks.
+#[tauri::command]
+fn set_badge(app: tauri::AppHandle, count: u32) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "no main window".to_string())?;
+    window
+        .set_badge_count(if count == 0 { None } else { Some(count as i64) })
+        .map_err(|error| error.to_string())
+}
+
 /// Open a link in the person's own browser.
 ///
 /// Every link a Bot writes is rendered `target="_blank"` (`app/src/lib/markdown.tsx`), and a webview
@@ -132,12 +152,21 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
 /// launch whatever a scheme handler is registered for, and this can only open the web.
 #[tauri::command]
 fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    let parsed = tauri::Url::parse(&url).map_err(|_| "not a link".to_string())?;
+    let web = web_url(&url)?;
+    app.opener()
+        .open_url(web, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+/// The web address in `url`, or why it is not one.
+///
+/// Separate from the command so the rule can be stated once and tested: the page asking is a web
+/// page, and handing the operating system an arbitrary scheme is how a link becomes a way to launch
+/// whatever a scheme handler is registered for.
+fn web_url(url: &str) -> Result<String, String> {
+    let parsed = tauri::Url::parse(url).map_err(|_| "not a link".to_string())?;
     match parsed.scheme() {
-        "http" | "https" => app
-            .opener()
-            .open_url(parsed.to_string(), None::<&str>)
-            .map_err(|error| error.to_string()),
+        "http" | "https" => Ok(parsed.to_string()),
         scheme => Err(format!("{scheme} links are not opened")),
     }
 }
@@ -173,16 +202,6 @@ fn install_updates(app: tauri::AppHandle) {
             Err(error) => log::warn!("update check failed: {error}"),
         }
     });
-}
-
-#[tauri::command]
-fn set_badge(app: tauri::AppHandle, count: u32) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "no main window".to_string())?;
-    window
-        .set_badge_count(if count == 0 { None } else { Some(count as i64) })
-        .map_err(|error| error.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -226,4 +245,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("the desktop shell failed to start");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{connection_page_url, web_url};
+
+    /// The shell decides two things on its own. Both are one line, and both are the kind of line
+    /// that is wrong in a way nobody notices until it matters.
+    #[test]
+    fn only_the_web_is_opened() {
+        assert_eq!(
+            web_url("https://wttr.in/Seoul").as_deref(),
+            Ok("https://wttr.in/Seoul")
+        );
+        assert!(web_url("http://localhost:3010/channel/a").is_ok());
+        // Everything else is a way to hand the operating system something it will act on.
+        for refused in [
+            "file:///etc/passwd",
+            "mailto:someone@example.com",
+            "javascript:alert(1)",
+            "ftp://example.com",
+            "not a url at all",
+            "",
+        ] {
+            assert!(web_url(refused).is_err(), "should refuse {refused}");
+        }
+    }
+
+    #[test]
+    fn the_connection_page_carries_the_origin_it_should_retry() {
+        let page = connection_page_url("tauri://localhost/index.html", "http://localhost:3010");
+        assert!(page.starts_with("tauri://localhost/index.html?origin="));
+        // Encoded, so the page reads back exactly the address the shell was pointed at.
+        assert!(page.contains("http%3A%2F%2Flocalhost%3A3010"));
+    }
 }

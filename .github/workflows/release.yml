@@ -76,6 +76,13 @@ jobs:
       # pull request could have written (zizmor's cache-poisoning audit). The compile is minutes.
       - run: bun install --frozen-lockfile
 
+      # The shell's own decisions, checked before a release is built out of them. Here rather than in
+      # CI because CI runs on Linux, where this crate cannot build without a pile of system webkit
+      # packages it will never ship against; these runners are the platforms it actually ships on.
+      - name: Test the shell
+        working-directory: desktop/src-tauri
+        run: cargo test
+
       # Sign a throwaway file before spending the build on it. A mangled secret — the decoded text
       # pasted instead of the file, a stray carriage return — fails here in seconds with the same
       # decode path the bundler uses, instead of as a cryptic error after the compile.
