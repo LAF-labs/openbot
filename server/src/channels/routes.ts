@@ -593,10 +593,15 @@ export function createChannelRoutes(
   /** Absent in tests and wherever live updates are not wanted; the routes still work without it. */
   events?: ChannelEventHub,
   /**
-   * Reads when each message in a thread was first seen. Optional for the same reason as `events`:
-   * a deployment or a test without it serves a transcript with no separators, not an error.
+   * Reads when each message in a thread was first seen, and which Bot said it. Optional for the
+   * same reason as `events`: a deployment or a test without it serves a transcript with no
+   * separators and no names, not an error.
    */
-  readMessageTimes?: (threadId: string) => Promise<Record<string, string>>,
+  readMessageTimes?: (threadId: string) => Promise<{
+    times: Record<string, string>;
+    speakers: Record<string, string>;
+    unattributed: string[];
+  }>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -725,10 +730,10 @@ export function createChannelRoutes(
        */
       const channel = await store.get(context.var.actor, channelId);
       if (!channel) return context.json({ error: "Channel not found." }, 404);
-      const times = readMessageTimes
+      const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
-        : {};
-      const newest = Object.values(times)
+        : { times: {}, speakers: {}, unattributed: [] };
+      const newest = Object.values(marks.times)
         .map((iso) => new Date(iso).getTime())
         .filter((value) => !Number.isNaN(value))
         .reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
@@ -756,10 +761,25 @@ export function createChannelRoutes(
       if (!channel) {
         return context.json({ error: "Channel not found." }, 404);
       }
-      const times = readMessageTimes
+      const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
-        : {};
-      return context.json({ times });
+        : { times: {}, speakers: {}, unattributed: [] };
+      /*
+       * ONE BACKFILL, FOR ROWS WRITTEN BEFORE SPEAKERS WERE RECORDED, AND ONLY WHERE IT IS A FACT.
+       *
+       * In a room with several Bots, every turn used to be pinned to `agentIds[0]` — the client
+       * had no way to run any other — and a routine only ever delivers into a Bot's own solo room.
+       * So an assistant message in a group room that carries no speaker was said by the first
+       * member: that is what the old code did, not a guess about what it might have done. It stops
+       * applying the moment a message carries its own, which every message written from here on
+       * does.
+       */
+      const speakers = { ...marks.speakers };
+      const first = channel.agentIds[0];
+      if (channel.agentIds.length > 1 && first) {
+        for (const id of marks.unattributed) speakers[id] = first;
+      }
+      return context.json({ times: marks.times, speakers });
     } catch (error) {
       return mapStoreError(context, error);
     }

@@ -66,7 +66,18 @@ function parseMessages(stored: unknown): Message[] {
  * so a key the client attaches is deleted before a run ever reaches this class. Stamping here, on
  * the server, is also the only way the two sides of a conversation share one clock.
  */
-type StampedMessage = Message & { lafAt?: string };
+type StampedMessage = Message & {
+  lafAt?: string;
+  /**
+   * Which Bot said it, for a room where more than one can.
+   *
+   * The same trick and the same reason as `lafAt`: it survives because `messages` is jsonb and the
+   * read path casts rather than validates, and it cannot ride AG-UI's message type because every
+   * message schema is zod `strip`. A run is the only place a message and the Bot producing it are
+   * both in scope, so this is written there and nowhere else.
+   */
+  lafAgentId?: string;
+};
 
 /**
  * Merge stamps onto a message list, FIRST SEEN WINS.
@@ -139,6 +150,36 @@ export function stampsOf(messages: Message[]): Map<string, string> {
   return times;
 }
 
+/** The speakers a snapshot already carries, for the same reason `stampsOf` exists. */
+export function speakersOf(messages: Message[]): Map<string, string> {
+  const speakers = new Map<string, string>();
+  for (const message of messages) {
+    const by = (message as StampedMessage).lafAgentId;
+    if (typeof by === "string") speakers.set(message.id, by);
+  }
+  return speakers;
+}
+
+/**
+ * Merge speakers onto a message list, FIRST WRITER WINS and NO FALLBACK.
+ *
+ * The absence of a fallback is the difference from `stamp`, and it is deliberate. A time can be
+ * approximated — "we first saw this now" is true even if it was said earlier. A speaker cannot: a
+ * message whose Bot nobody recorded belongs to no particular Bot, and filling it in with whoever
+ * happens to be running would put one colleague's words under another's name for the life of the
+ * conversation. Unattributed is the honest state, and the transcript knows how to draw it.
+ */
+export function attribute(
+  messages: Message[],
+  known: Map<string, string>,
+): StampedMessage[] {
+  return messages.map((message) => {
+    const existing =
+      (message as StampedMessage).lafAgentId ?? known.get(message.id);
+    return existing ? { ...message, lafAgentId: existing } : { ...message };
+  });
+}
+
 function recordFromRow(row: SnapshotRow): InMemoryThread {
   return {
     id: row.threadId,
@@ -164,6 +205,8 @@ function assistantMessagesFrom(
   events: BaseEvent[],
   /** When each assistant message STARTED streaming, captured live — see `run`. */
   startedAt: Map<string, string>,
+  /** The Bot this run belongs to. Null for a run whose agent the request did not name. */
+  agentId: string | null,
 ): StampedMessage[] {
   const order: string[] = [];
   const parts = new Map<string, { role: string; content: string }>();
@@ -199,6 +242,10 @@ function assistantMessagesFrom(
         role: part.role,
         content: part.content,
         ...(at === undefined ? {} : { lafAt: at }),
+        // Only the assistant's own words. A `user` message the events replay is the person's.
+        ...(agentId && part.role === "assistant"
+          ? { lafAgentId: agentId }
+          : {}),
       } as StampedMessage,
     ];
   });
@@ -491,7 +538,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     try {
       const messages = [
         ...inputMessages,
-        ...assistantMessagesFrom(events, startedAt),
+        ...assistantMessagesFrom(events, startedAt, agentId),
       ];
       await this.saveSnapshot(threadId, agentId, messages);
       await this.database
@@ -521,11 +568,19 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      * one's time to now — the conversation would claim to have happened all at once, every time.
      */
     const previous = this.restored.get(threadId)?.messages ?? [];
-    const messages = stamp(
-      mergeKeepingStoredOnly(previous, incoming),
-      stampsOf(previous),
-      new Set(previous.map((message) => message.id)),
-      updatedAt.toISOString(),
+    /*
+     * And who said it, kept the same way and for the same reason: the input arrives stripped, so
+     * without the merge every reply in a group room would lose its colleague's name the moment
+     * anybody else took a turn.
+     */
+    const messages = attribute(
+      stamp(
+        mergeKeepingStoredOnly(previous, incoming),
+        stampsOf(previous),
+        new Set(previous.map((message) => message.id)),
+        updatedAt.toISOString(),
+      ),
+      speakersOf(previous),
     );
     // `::text::jsonb`, measured, not guessed. A top-level JS array must not reach
     // the driver as itself (postgres-js reads it as a Postgres array) nor as a

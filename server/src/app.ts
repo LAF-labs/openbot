@@ -121,13 +121,18 @@ export function createApp(
   /** Instructions on a clock. Absent leaves the surface unmounted, exactly like the watch. */
   routineService?: RoutineService,
   /**
-   * When each message in a thread was first seen, for the transcript's date separators.
+   * When each message in a thread was first seen and which Bot said it: the date separators, and
+   * the name above a reply in a room where more than one Bot can answer.
    *
    * A reader rather than the database, because this module takes services and never a connection.
-   * Absent serves an empty map, and the transcript then draws no separators — which is the right
-   * degraded behaviour: a conversation with no times is still a readable conversation.
+   * Absent serves empty maps, and the transcript then draws no separators and no names — which is
+   * the right degraded behaviour: a conversation with neither is still a readable conversation.
    */
-  messageTimeReader?: (threadId: string) => Promise<Record<string, string>>,
+  messageTimeReader?: (threadId: string) => Promise<{
+    times: Record<string, string>;
+    speakers: Record<string, string>;
+    unattributed: string[];
+  }>,
   /** Which of a person's Bots are mid-run, for the roster. Absent answers "none". */
   readWorking?: (userId: string) => Promise<
     Array<{

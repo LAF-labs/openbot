@@ -12,6 +12,12 @@ export type VisibleChatItem =
       text: string;
       /** ISO-8601, when this message was first seen. Absent for anything said before stamping. */
       at?: string;
+      /**
+       * The name to draw above it, in a room where more than one Bot can answer. Assistant
+       * messages only, and absent whenever the room has one Bot or the record does not say who
+       * spoke — a name guessed would be one colleague's words under another's.
+       */
+      speaker?: string;
     }
   | {
       kind: "tool";
@@ -37,6 +43,11 @@ export function toVisibleChatItems(
    * not something said, and a separator drawn above one would split a turn in half.
    */
   times: Readonly<Record<string, string>> = {},
+  /**
+   * Message id to the NAME of the Bot that said it, already resolved by the caller. Empty in a
+   * room with one Bot, where the header already says whose room it is.
+   */
+  speakers: Readonly<Record<string, string>> = {},
 ): VisibleChatItem[] {
   // Gather results first so calls render with their current completion state in the same pass.
   const results = new Map<string, string | undefined>();
@@ -54,6 +65,7 @@ export function toVisibleChatItems(
           role: "assistant",
           text: message.content,
           ...(times[message.id] ? { at: times[message.id] } : {}),
+          ...(speakers[message.id] ? { speaker: speakers[message.id] } : {}),
         });
       }
       for (const toolCall of message.toolCalls ?? []) {

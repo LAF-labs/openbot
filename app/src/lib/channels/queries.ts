@@ -49,29 +49,40 @@ export function channelListQueryOptions() {
   });
 }
 
+/** What the server records about each message beside its text: when, and by whom. */
+export type ThreadMarks = {
+  /** Message id to ISO-8601. */
+  times: Record<string, string>;
+  /** Message id to the id of the Bot that said it. Only assistant messages carry one. */
+  speakers: Record<string, string>;
+};
+
+const NO_MARKS: ThreadMarks = { times: {}, speakers: {} };
+
 /**
- * When each message in a channel was first seen: message id to ISO-8601.
+ * When each message in a channel was first seen, and which Bot said it.
  *
  * A separate request from the transcript, because the transcript does not come from us — it comes
  * out of CopilotKit's agent, whose message shape is a fixed whitelist that drops any field we add.
  * Fetched once when a channel opens; messages that arrive after that are stamped on arrival by the
- * browser, which is the same clock to within a round trip.
+ * browser, which is the same clock to within a round trip, and attributed by the room's own record
+ * of which Bot the turn was sent to.
  */
 export function messageTimesQueryOptions(channelId: string) {
   return queryOptions({
     queryKey: channelKeys.messageTimes(channelId),
-    queryFn: async (): Promise<Record<string, string>> => {
+    queryFn: async (): Promise<ThreadMarks> => {
       const response = await fetch(
         `/api/channels/${encodeURIComponent(channelId)}/message-times`,
         { credentials: "include" },
       );
       // A transcript with no times is a transcript with no separators, which is survivable; a
       // throw here would take the conversation down with it.
-      if (!response.ok) return {};
-      return ((await response.json()) as { times: Record<string, string> })
-        .times;
+      if (!response.ok) return NO_MARKS;
+      const body = (await response.json()) as Partial<ThreadMarks>;
+      return { times: body.times ?? {}, speakers: body.speakers ?? {} };
     },
-    // The stamps for a message never change once written, so a refetch on focus buys nothing.
+    // What the server records about a message never changes once written, so a refetch buys nothing.
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

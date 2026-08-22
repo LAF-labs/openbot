@@ -52,12 +52,13 @@ type ChatTranscriptProps = {
    */
   readWindow?: { from: string; until: string };
   /**
-   * Who the Bot side of this transcript is, shown above each of its turns. Only a room with more
-   * than one Bot passes it: there, a grey bubble with no name does not say which of them spoke,
-   * and the honest answer today is "the room's first member, every time" — so that is the name.
-   * A room with one Bot has its name in the header and needs nothing on the bubbles.
+   * Message id to the NAME of the Bot that said it, for a room where more than one can answer.
+   *
+   * Per message rather than one name for the room, because a group room's turns are not all the
+   * same Bot's: the name comes from what the server recorded for that message. Empty in a room
+   * with one Bot, whose name is in the header and does not need repeating over every bubble.
    */
-  speaker?: string;
+  speakers?: Readonly<Record<string, string>>;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -607,6 +608,9 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 /** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
+/** The same, for a room with one Bot, where no bubble carries a name. */
+const EMPTY_SPEAKERS: Readonly<Record<string, string>> = Object.freeze({});
+
 /**
  * The line that says "you had read up to here".
  *
@@ -653,8 +657,13 @@ function TimeSeparator({ at }: { at: Date }) {
 function continues(
   neighbour: ReturnType<typeof toVisibleChatItems>[number] | undefined,
   role: "user" | "assistant",
+  /** The speaker of the message being drawn. Two Bots in one room are not one run. */
+  speaker: string | undefined,
 ): boolean {
-  return neighbour?.kind === "text" && neighbour.role === role;
+  if (neighbour?.kind !== "text" || neighbour.role !== role) return false;
+  // Joined bubbles suppress the name line, so joining two colleagues' replies would put the
+  // second Bot's words under the first Bot's name with nothing to say otherwise.
+  return neighbour.speaker === speaker;
 }
 
 export function ChatTranscript({
@@ -663,7 +672,7 @@ export function ChatTranscript({
   messageTimes = EMPTY_TIMES,
   messages,
   readWindow,
-  speaker,
+  speakers = EMPTY_SPEAKERS,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   stopped,
@@ -678,7 +687,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from. This runs per render and is not worth guarding.
    */
-  const items = toVisibleChatItems(messages, messageTimes);
+  const items = toVisibleChatItems(messages, messageTimes, speakers);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -842,7 +851,7 @@ export function ChatTranscript({
                   <MessageScrollerItem
                     className={
                       // A row that opens a sitting already has the separator's 8px above it.
-                      continues(items[index - 1], item.role) &&
+                      continues(items[index - 1], item.role, item.speaker) &&
                       !separators.has(item.id)
                         ? "py-0.5"
                         : "py-0.5 pt-3"
@@ -853,10 +862,18 @@ export function ChatTranscript({
                     <TranscriptMessage
                       commandNames={commandNames}
                       delay={delays.delayFor(item.id, index, items.length)}
-                      joinedNext={continues(items[index + 1], item.role)}
-                      joinedPrev={continues(items[index - 1], item.role)}
+                      joinedNext={continues(
+                        items[index + 1],
+                        item.role,
+                        item.speaker,
+                      )}
+                      joinedPrev={continues(
+                        items[index - 1],
+                        item.role,
+                        item.speaker,
+                      )}
                       role={item.role}
-                      {...(speaker ? { speaker } : {})}
+                      {...(item.speaker ? { speaker: item.speaker } : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>

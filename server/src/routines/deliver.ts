@@ -32,6 +32,8 @@ type StampedMessage = {
   role: string;
   content: string;
   lafAt?: string;
+  /** Which Bot said it. See `laf-runner.ts` for why this rides the jsonb rather than the type. */
+  lafAgentId?: string;
 };
 
 export type RoutineDelivery = {
@@ -137,6 +139,9 @@ export function createRoutineDelivery(
       role: "assistant",
       content: `**${delivery.routineName}**\n\n${delivery.answer}`,
       lafAt: at,
+      // The Bot whose routine it was. This is the second writer into the snapshot, and a message
+      // it left unattributed would be a hole in a record the transcript reads as complete.
+      lafAgentId: delivery.agentId,
     };
     const one = sql`${JSON.stringify([message])}::text::jsonb`;
 

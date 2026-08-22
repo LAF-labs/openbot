@@ -5,7 +5,7 @@ import {
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
@@ -43,6 +43,9 @@ const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
+/** The same, for a room with one Bot: nothing to name, and one identity to hand down. */
+const EMPTY_SPEAKERS: Readonly<Record<string, string>> = Object.freeze({});
+
 /**
  * One channel's conversation with one coworker.
  *
@@ -61,11 +64,6 @@ export function ChannelChat({
   // Mentions are scoped to the channel's permitted agents.
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
-  // Named on the bubbles only where a name is needed: a room with more than one Bot in it.
-  const speaker =
-    channel.agentIds.length > 1
-      ? agentProfiles?.find((profile) => profile.id === runtimeAgentId)?.name
-      : undefined;
   // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
   const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
 
@@ -464,7 +462,32 @@ export function ChannelChat({
    * The refetch below is what closes the gap: the server writes a message's stamp as its run
    * begins and ends, so asking again when a turn finishes gets the real time within a round trip.
    */
-  const messageTimes = storedTimes.data ?? EMPTY_TIMES;
+  const messageTimes = storedTimes.data?.times ?? EMPTY_TIMES;
+
+  /*
+   * Names on the bubbles, and only where a name is needed: a room with more than one Bot in it.
+   *
+   * Resolved here, from ids the server recorded per message, because the transcript should be
+   * handed strings and not asked to look anybody up. Memoised on the two things it reads: without
+   * it every streamed chunk would hand the transcript a new object and undo the memo on every
+   * message in the history.
+   */
+  const speakers = useMemo(() => {
+    if (channel.agentIds.length < 2) return EMPTY_SPEAKERS;
+    const names = new Map(
+      (agentProfiles ?? []).map((profile) => [profile.id, profile.name]),
+    );
+    const resolved: Record<string, string> = {};
+    for (const [messageId, agentId] of Object.entries(
+      storedTimes.data?.speakers ?? {},
+    )) {
+      const name = names.get(agentId);
+      // A Bot that has left the roster keeps its id off the bubble rather than showing an id:
+      // "agent_f89904c2" over a sentence is worse than no name at all.
+      if (name) resolved[messageId] = name;
+    }
+    return resolved;
+  }, [agentProfiles, channel.agentIds.length, storedTimes.data?.speakers]);
 
   return (
     <ConversationProvider ask={askFromComponent}>
@@ -483,7 +506,7 @@ export function ChannelChat({
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
         messageTimes={messageTimes}
-        {...(speaker ? { speaker } : {})}
+        speakers={speakers}
         {...(readWindow ? { readWindow } : {})}
         messages={transcriptMessages(agent.messages, seed)}
         notice={
