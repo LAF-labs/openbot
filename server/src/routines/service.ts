@@ -171,6 +171,24 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
   throw new RoutineError("The schedule must be interval or daily.", 400);
 }
 
+/**
+ * A routine row as the API may publish it.
+ *
+ * `.returning()` hands back `integer[]` columns as `{ "0": 1, "1": 3 }` where a plain SELECT of the
+ * same row gives `[1, 3]` — verified against the live server, and the reason the create response
+ * and the list disagreed about the same routine's days. Normalised here, once, for every row that
+ * leaves the service.
+ */
+function published<Row extends { dailyDays: unknown }>(row: Row): Row {
+  const days = row.dailyDays;
+  const dailyDays = Array.isArray(days)
+    ? days
+    : days && typeof days === "object"
+      ? Object.values(days as Record<string, number>)
+      : null;
+  return { ...row, dailyDays };
+}
+
 function scheduleOf(row: typeof lafRoutines.$inferSelect): RoutineSchedule {
   if (row.scheduleKind !== "daily") {
     return { kind: "interval", minutes: row.intervalMinutes ?? 60 };
@@ -224,7 +242,29 @@ export function createRoutineService(options: RoutineServiceOptions) {
   const runTimeoutMs = options.runTimeoutMs ?? ROUTINE_RUN_TIMEOUT_MS;
   let timer: ReturnType<typeof setInterval> | undefined;
 
-  async function execute(row: typeof lafRoutines.$inferSelect) {
+  /**
+   * One unattended run per Bot at a time.
+   *
+   * The tick is sequential, but Run now is not the tick, and two routines can name the same Bot.
+   * With one shared computer, two tool loops on one Bot drive one browser at once — each one's
+   * snapshot goes stale under the other, and a click meant for one page lands on the other's.
+   * A promise chain per Bot makes the second wait for the first; it costs nothing when there is
+   * no second.
+   */
+  const inFlight = new Map<string, Promise<void>>();
+  function execute(row: typeof lafRoutines.$inferSelect): Promise<void> {
+    const previous = inFlight.get(row.agentId) ?? Promise.resolve();
+    const run = previous.then(() => executeNow(row));
+    inFlight.set(
+      row.agentId,
+      run.catch(() => {}),
+    );
+    return run.finally(() => {
+      if (inFlight.get(row.agentId) === run) inFlight.delete(row.agentId);
+    });
+  }
+
+  async function executeNow(row: typeof lafRoutines.$inferSelect) {
     const startedAt = now();
     const runId = randomUUID();
     let ok = false;
@@ -431,7 +471,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
           .returning();
         if (!row)
           throw new RoutineError("The routine could not be created.", 409);
-        return { ...row, triggerToken };
+        return { ...published(row), triggerToken };
       });
     },
 
@@ -472,9 +512,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
           .set({ nextRunAt: next })
           .where(eq(lafRoutines.id, id))
           .returning();
-        return rearmed ?? row;
+        return published(rearmed ?? row);
       }
-      return row;
+      return published(row);
     },
 
     async remove(id: string) {

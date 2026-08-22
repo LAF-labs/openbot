@@ -52,7 +52,7 @@ export type UnattendedToolkit = {
 export type LoopAgent = Pick<
   AbstractAgent,
   "runAgent" | "setMessages" | "addMessage" | "messages"
->;
+> & { abortRun?: () => void };
 
 export type UnattendedRunOptions = {
   toolkit: UnattendedToolkit;
@@ -141,12 +141,21 @@ export async function runUnattended(
     { id: randomUUID(), role: "user", content: instruction },
   ]);
 
+  /*
+   * The deadline ABORTS, not just rejects. Racing a timer against the run and walking away left
+   * the agent's stream open and a built-in Bot still generating after the routine had been marked
+   * failed and its ledger row closed — cost and work continuing past the point anything reported
+   * them. `abortRun` is AG-UI's own cancellation; the fake agent in tests has none, hence optional.
+   */
   const withDeadline = <T>(promise: Promise<T>): Promise<T> =>
     Promise.race([
       promise,
       new Promise<never>((_, reject) => {
         setTimeout(
-          () => reject(new RunDeadline()),
+          () => {
+            target.abortRun?.();
+            reject(new RunDeadline());
+          },
           Math.max(0, deadline - Date.now()),
         ).unref?.();
       }),
@@ -189,6 +198,32 @@ export async function runUnattended(
         content: JSON.stringify(outcome),
       });
     }
+
+    /*
+     * The budget round told the model to answer with what it has. It has to be RUN for that to
+     * happen: ending the loop here left the refusals as the last thing in the thread and the
+     * promised answer never written. One more turn, with no tools on offer, so it can only speak.
+     */
+    if (outOfSteps) {
+      await withDeadline(target.runAgent({ tools: [] }));
+      /*
+       * A model offered no tools can still emit a tool call — some do, out of habit. Those get the
+       * same refusal and are never executed: the invariant that every call in the thread has an
+       * answer holds all the way to the last message, whatever the model did with its last turn.
+       */
+      for (const call of unanswered(target.messages)) {
+        toolCalls.push({ name: call.name, ok: false });
+        target.addMessage({
+          id: randomUUID(),
+          role: "tool",
+          toolCallId: call.id,
+          content: JSON.stringify({
+            ok: false,
+            reason: "This run is over. Nothing more will be executed.",
+          }),
+        });
+      }
+    }
   }
 
   const answer = target.messages
@@ -215,7 +250,7 @@ export async function runUnattended(
  * model told "refused" for an ask-rule would learn to give up on exactly the actions the
  * deployment was willing to permit.
  */
-function outcomeOfError(error: unknown): ToolOutcome {
+export function outcomeOfError(error: unknown): ToolOutcome {
   if (
     error instanceof ActionNeedsApprovalError ||
     error instanceof PluginNeedsApprovalError

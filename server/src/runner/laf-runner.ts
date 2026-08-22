@@ -98,6 +98,37 @@ export function stamp(
   });
 }
 
+/**
+ * The client's history, plus anything the store holds that the client never saw.
+ *
+ * Every run hands back the caller's copy of the thread as its input, and that copy is the truth
+ * about what the caller said. It is not the truth about what else happened to the thread: a
+ * routine can deliver an answer into it while no tab is open, and a tab that hydrated before that
+ * delivery would, on its next turn, overwrite the thread with a history that never had it. Nothing
+ * in this product deletes messages, so a stored message missing from the input is one the client
+ * did not know about, not one it removed — and it is kept, at its place: right after the nearest
+ * stored neighbour the client does know.
+ */
+export function mergeKeepingStoredOnly(
+  stored: Message[],
+  incoming: Message[],
+): Message[] {
+  const incomingIds = new Set(incoming.map((message) => message.id));
+  const result = [...incoming];
+  let insertAfter = -1;
+  for (const message of stored) {
+    const at = result.findIndex((candidate) => candidate.id === message.id);
+    if (at !== -1) {
+      insertAfter = at;
+      continue;
+    }
+    if (incomingIds.has(message.id)) continue;
+    result.splice(insertAfter + 1, 0, message);
+    insertAfter += 1;
+  }
+  return result;
+}
+
 /** The stamps a snapshot already carries, so a save can preserve them. */
 export function stampsOf(messages: Message[]): Map<string, string> {
   const times = new Map<string, string>();
@@ -315,10 +346,25 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      * The superset test is what keeps this safe in the other direction: mid-run the live copy holds
      * messages the snapshot has not been written for yet, and then live is the newer of the two.
      */
-    const liveIds = new Set(live.map((message) => message.id));
     const storedIds = new Set(stored.map((message) => message.id));
-    const storedHasAllLive = [...liveIds].every((id) => storedIds.has(id));
-    return storedHasAllLive && stored.length > live.length ? stored : live;
+    /*
+     * Only messages the snapshot would ever HOLD count against it. `assistantMessagesFrom` keeps
+     * assistant text and drops an assistant message that only carried tool calls, so after a
+     * tool-using turn the live copy has ids the store never will — and a rule that demanded every
+     * live id would hand the live copy the win until the next turn, hiding anything delivered in
+     * between.
+     */
+    const storable = live.filter(
+      (message) =>
+        !(
+          message.role === "assistant" &&
+          !(typeof message.content === "string" && message.content.length > 0)
+        ),
+    );
+    const storedHasAllLive = storable.every((message) =>
+      storedIds.has(message.id),
+    );
+    return storedHasAllLive && stored.length > storable.length ? stored : live;
   }
 
   /**
@@ -327,10 +373,33 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
    * Keeps the rehydrated copy in step with Postgres when a writer outside this class appends —
    * see `getThreadMessages` for why the two can disagree and which one wins.
    */
-  adoptSnapshot(threadId: string, messages: Message[]): void {
+  adoptSnapshot(
+    threadId: string,
+    agentId: string | null,
+    messages: Message[],
+  ): void {
     const existing = this.restored.get(threadId);
-    if (!existing) return;
-    this.restored.set(threadId, { ...existing, messages });
+    const updatedAt = new Date().toISOString();
+    /*
+     * Created when missing, not skipped. `restored` is filled at boot and by saveSnapshot, so a
+     * channel that exists but has never had a run has no entry — and a delivery into it was being
+     * written to Postgres and then not shown until the next restart.
+     */
+    this.restored.set(threadId, {
+      messages,
+      record: existing
+        ? { ...existing.record, updatedAt }
+        : {
+            id: threadId,
+            name: null,
+            agentId: agentId ?? "",
+            organizationId: "",
+            createdById: "",
+            archived: false,
+            createdAt: updatedAt,
+            updatedAt,
+          },
+    });
   }
 
   /** The user's side, written the moment a run starts: a crash mid-turn keeps it. */
@@ -418,7 +487,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      */
     const previous = this.restored.get(threadId)?.messages ?? [];
     const messages = stamp(
-      incoming,
+      mergeKeepingStoredOnly(previous, incoming),
       stampsOf(previous),
       new Set(previous.map((message) => message.id)),
       updatedAt.toISOString(),

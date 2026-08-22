@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AbstractAgent } from "@ag-ui/client";
-import type { AuditEventInput } from "../src/audit";
 import {
   CoworkerCallError,
   createCoworkerCall,
 } from "../src/agents/coworker-call";
+import type { AuditEventInput } from "../src/audit";
 
 /**
  * What the briefing path promises: the right coworker answers, the wrong requests are refused with

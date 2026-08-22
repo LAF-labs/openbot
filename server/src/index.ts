@@ -384,6 +384,9 @@ const computerGateway = computerClient
     })
   : undefined;
 
+// One ledger for every run path — chat, routine, handoff — so the roster reads one table.
+const runLedger = createRunLedger(database);
+
 // One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
 // a revoked key or a deleted coworker takes effect on the next question rather than on restart.
 const coworkerCall = createCoworkerCall({
@@ -402,8 +405,7 @@ const coworkerCall = createCoworkerCall({
       stallGuard,
     ),
   auditStore: bootAuditStore,
-  // Scheduled work is in the same ledger a chat turn is, so the roster can show it in flight.
-  ledger: createRunLedger(database),
+  ledger: runLedger,
 });
 
 // Instructions on a clock, running through the same server-side path a coworker answer does.
@@ -424,11 +426,10 @@ const routineService = createRoutineService({
       stallGuard,
     ),
   auditStore: bootAuditStore,
-  // Scheduled work is in the same ledger a chat turn is, so the roster can show it in flight.
-  ledger: createRunLedger(database),
+  ledger: runLedger,
   // And the answer lands in the Bot's own conversation, where a person already reads.
-  deliver: createRoutineDelivery(database, (threadId, messages) =>
-    lafRunner.adoptSnapshot(threadId, messages as never),
+  deliver: createRoutineDelivery(database, (threadId, agentId, messages) =>
+    lafRunner.adoptSnapshot(threadId, agentId, messages as never),
   ),
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({

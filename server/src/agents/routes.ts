@@ -1,18 +1,18 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditStore } from "../audit";
-import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { testAgentConnection } from "./connection-test";
+import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
 import { canManageAgent } from "./profile-policy";
 import {
   AgentNotFoundError,
-  RosterFullError,
   AgentNotManageableError,
   type AgentProfileStore,
   ProtectedAgentError,
+  RosterFullError,
 } from "./profile-store";
 import type {
   AgentActor,
@@ -468,9 +468,7 @@ function boundedText(
  */
 function parsePreferencePatch(
   body: unknown,
-):
-  | { ok: true; value: AgentPreferencePatch }
-  | { ok: false; error: string } {
+): { ok: true; value: AgentPreferencePatch } | { ok: false; error: string } {
   if (typeof body !== "object" || body === null) {
     return { ok: false, error: "A preference patch is required." };
   }

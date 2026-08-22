@@ -1,4 +1,5 @@
 import { and, count, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -7,7 +8,6 @@ import {
   agents,
   deploymentPackages,
 } from "../db/schema";
-import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
 import { authFromConfiguration, storeAgentAuth } from "./auth-header";
 import { canManageAgent } from "./profile-policy";
 import type {
@@ -450,8 +450,10 @@ export function createAgentProfileStore(
          */
         const now = new Date();
         const changes: Partial<typeof agentPreferences.$inferInsert> = {};
-        if (patch.hidden !== undefined) changes.hiddenAt = patch.hidden ? now : null;
-        if (patch.pinned !== undefined) changes.pinnedAt = patch.pinned ? now : null;
+        if (patch.hidden !== undefined)
+          changes.hiddenAt = patch.hidden ? now : null;
+        if (patch.pinned !== undefined)
+          changes.pinnedAt = patch.pinned ? now : null;
         if (patch.notify !== undefined) changes.notify = patch.notify;
         if (Object.keys(changes).length === 0) return;
 

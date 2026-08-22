@@ -83,7 +83,8 @@ export function instantOf(
   const target = Date.UTC(day.year, day.month - 1, day.day, hour, minute);
   let instant = new Date(target);
   for (let pass = 0; pass < 2; pass += 1) {
-    const drift = asUtcMillis(wallClockAt(instant, timeZone)) - instant.getTime();
+    const drift =
+      asUtcMillis(wallClockAt(instant, timeZone)) - instant.getTime();
     instant = new Date(target - drift);
   }
   return instant;

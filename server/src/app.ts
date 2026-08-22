@@ -1,5 +1,6 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { CoworkerCall } from "./agents/coworker-call";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
 import { type AuditReader, type AuditStore, auditQueryFromUrl } from "./audit";
@@ -30,12 +31,11 @@ import type { ConnectorAdminService } from "./connectors";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
 import { createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
+import { createRoutineRoutes } from "./routines/routes";
+import type { RoutineService } from "./routines/service";
 import type { PackageStatusReader } from "./tenant-package";
 import type { DigestService } from "./watch/digest-service";
 import type { WatchService } from "./watch/poller";
-import type { CoworkerCall } from "./agents/coworker-call";
-import { createRoutineRoutes } from "./routines/routes";
-import type { RoutineService } from "./routines/service";
 import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(

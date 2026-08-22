@@ -92,7 +92,11 @@ export function createRoutineDelivery(
    * Told what the thread now holds, so the runner's rehydrated copy stays in step with Postgres.
    * Absent in tests; the row is still written and read correctly on the next boot.
    */
-  onAppended?: (threadId: string, messages: StampedMessage[]) => void,
+  onAppended?: (
+    threadId: string,
+    agentId: string,
+    messages: StampedMessage[],
+  ) => void,
 ) {
   return async (delivery: RoutineDelivery): Promise<void> => {
     const target = await soloChannelFor(
@@ -125,23 +129,41 @@ export function createRoutineDelivery(
       content: `**${delivery.routineName}**\n\n${delivery.answer}`,
       lafAt: at,
     };
-    const messages = [...existing, message];
-    const json = sql`${JSON.stringify(messages)}::text::jsonb`;
+    const one = sql`${JSON.stringify([message])}::text::jsonb`;
 
-    await database
+    /*
+     * APPENDED IN SQL, NOT READ-MODIFIED-WRITTEN.
+     *
+     * A chat run can save this thread between a read here and a write here — the person may be
+     * mid-turn with the same Bot when its routine fires — and whichever wrote second would erase
+     * the other's message. `jsonb || jsonb` appends atomically against whatever the row holds at
+     * that instant, so neither side can lose the other's. The read above is only for the copy the
+     * runner is told about.
+     */
+    const [written] = await database
       .insert(lafThreadSnapshots)
       .values({
         threadId: target.threadId,
         agentId: delivery.agentId,
-        messages: json,
+        messages: one,
         updatedAt: delivery.at,
       })
       .onConflictDoUpdate({
         target: lafThreadSnapshots.threadId,
-        set: { messages: json, updatedAt: delivery.at },
-      });
+        set: {
+          messages: sql`${lafThreadSnapshots.messages} || ${one}`,
+          updatedAt: delivery.at,
+        },
+      })
+      .returning({ messages: lafThreadSnapshots.messages });
 
-    onAppended?.(target.threadId, messages);
+    onAppended?.(
+      target.threadId,
+      delivery.agentId,
+      Array.isArray(written?.messages)
+        ? (written.messages as StampedMessage[])
+        : [...existing, message],
+    );
 
     /*
      * And the roster row, which is the half a person actually notices. `lastMessageAgentId` being

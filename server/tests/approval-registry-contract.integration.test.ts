@@ -107,9 +107,9 @@ for (const [name, build] of REGISTRIES) {
       const registry = build();
       const pending = await registry.request(SUBJECT);
 
-      expect((await registry.answer(pending.id, SUBJECT.botId, "boss", true)).ok).toBe(
-        true,
-      );
+      expect(
+        (await registry.answer(pending.id, SUBJECT.botId, "boss", true)).ok,
+      ).toBe(true);
       const second = await registry.answer(
         pending.id,
         SUBJECT.botId,
@@ -181,7 +181,9 @@ describe("two processes over one registry", () => {
 
     expect(outcome.ok).toBe(true);
     // And the process holding the turn can spend what the other process's answer granted.
-    expect((await raised.consume(pending.id, SUBJECT.fingerprint)).ok).toBe(true);
+    expect((await raised.consume(pending.id, SUBJECT.fingerprint)).ok).toBe(
+      true,
+    );
   });
 
   test("let only one of them spend a grant", async () => {

@@ -38,7 +38,9 @@ describeDb("run ledger", () => {
 
   afterAll(async () => {
     for (const runId of started) {
-      await database.delete(lafThreadRuns).where(eq(lafThreadRuns.runId, runId));
+      await database
+        .delete(lafThreadRuns)
+        .where(eq(lafThreadRuns.runId, runId));
     }
   });
 
@@ -62,15 +64,15 @@ describeDb("run ledger", () => {
   test("the roster sees it while it runs and not after", async () => {
     const runId = await begin({ agentId: "inbox-triage" });
 
-    expect(
-      (await working(owner)).map((run) => run.agentId),
-    ).toContain("inbox-triage");
+    expect((await working(owner)).map((run) => run.agentId)).toContain(
+      "inbox-triage",
+    );
 
     await ledger.finish(runId);
 
-    expect(
-      (await working(owner)).map((run) => run.agentId),
-    ).not.toContain("inbox-triage");
+    expect((await working(owner)).map((run) => run.agentId)).not.toContain(
+      "inbox-triage",
+    );
   });
 
   test("a failed run closes with its reason rather than staying open", async () => {

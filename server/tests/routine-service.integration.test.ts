@@ -72,16 +72,16 @@ describe("the schedule arithmetic", () => {
 
   test("a daily time later today fires today", () => {
     const from = new Date("2026-08-20T05:00:00Z");
-    expect(nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString()).toBe(
-      "2026-08-20T07:30:00.000Z",
-    );
+    expect(
+      nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString(),
+    ).toBe("2026-08-20T07:30:00.000Z");
   });
 
   test("a daily time already past fires tomorrow", () => {
     const from = new Date("2026-08-20T23:50:00Z");
-    expect(nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString()).toBe(
-      "2026-08-21T07:30:00.000Z",
-    );
+    expect(
+      nextRunAt({ kind: "daily", time: "07:30" }, from).toISOString(),
+    ).toBe("2026-08-21T07:30:00.000Z");
   });
 
   test("a time is a wall clock in its own zone, not an instant", () => {

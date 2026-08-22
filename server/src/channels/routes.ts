@@ -685,7 +685,9 @@ export function createChannelRoutes(
           channelId,
           new Date(),
         );
-        return context.json({ previousReadAt: previous?.toISOString() ?? null });
+        return context.json({
+          previousReadAt: previous?.toISOString() ?? null,
+        });
       }
       /*
        * THE BOUNDARY COMES FROM THE MESSAGE STAMPS, NOT FROM `last_message_at`.

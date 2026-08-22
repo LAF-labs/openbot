@@ -44,48 +44,48 @@ export const lafThreadSnapshots = pgTable("laf_thread_snapshots", {
 export const lafThreadRuns = pgTable(
   "laf_thread_runs",
   {
-  runId: text("run_id").primaryKey(),
-  /**
-   * Nullable, because not every run belongs to a conversation.
-   *
-   * A routine firing at 6am is a run with no thread: nobody typed it, and its answer goes to the
-   * routine's own history rather than into a transcript. It was `notNull` while chat was the only
-   * writer, and that is exactly why scheduled work — the case where "is this Bot busy?" matters
-   * most — had no in-flight record anywhere.
-   */
-  threadId: text("thread_id"),
-  agentId: text("agent_id"),
-  /**
-   * Whose run it is, so "which of my Bots are working" is one indexed read.
-   *
-   * Nullable for runs that predate this column and for anything the system starts on nobody's
-   * behalf; a run with no owner is simply invisible to the roster rather than visible to everyone.
-   */
-  userId: text("user_id"),
-  /** What it is doing, in the person's own words where there are any — a routine's name. */
-  label: text("label"),
-  /**
-   * `running` | `done` | `error` | `unknown`. A run still `running` when a new
-   * process boots cannot still be running — this build is one process — so
-   * boot reconciles it to `unknown`: the crash suspect the digest names.
-   */
-  status: text("status").notNull(),
-  /** What started it: `chat` for a person's turn, `wake` for the watcher. */
-  origin: text("origin").notNull().default("chat"),
-  /**
-   * Machine-initiated runs carry one; a second run with the same key must not
-   * happen. Webhook redeliveries and watcher re-polls are the reason — a
-   * duplicate wake that sends a message twice is the bug this column exists
-   * to make impossible. Null for human turns: a person repeating themselves
-   * is not a duplicate.
-   */
-  dedupeKey: text("dedupe_key").unique(),
-  error: text("error"),
-  eventCount: integer("event_count").notNull().default(0),
-  startedAt: timestamp("started_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  finishedAt: timestamp("finished_at", { withTimezone: true }),
+    runId: text("run_id").primaryKey(),
+    /**
+     * Nullable, because not every run belongs to a conversation.
+     *
+     * A routine firing at 6am is a run with no thread: nobody typed it, and its answer goes to the
+     * routine's own history rather than into a transcript. It was `notNull` while chat was the only
+     * writer, and that is exactly why scheduled work — the case where "is this Bot busy?" matters
+     * most — had no in-flight record anywhere.
+     */
+    threadId: text("thread_id"),
+    agentId: text("agent_id"),
+    /**
+     * Whose run it is, so "which of my Bots are working" is one indexed read.
+     *
+     * Nullable for runs that predate this column and for anything the system starts on nobody's
+     * behalf; a run with no owner is simply invisible to the roster rather than visible to everyone.
+     */
+    userId: text("user_id"),
+    /** What it is doing, in the person's own words where there are any — a routine's name. */
+    label: text("label"),
+    /**
+     * `running` | `done` | `error` | `unknown`. A run still `running` when a new
+     * process boots cannot still be running — this build is one process — so
+     * boot reconciles it to `unknown`: the crash suspect the digest names.
+     */
+    status: text("status").notNull(),
+    /** What started it: `chat` for a person's turn, `wake` for the watcher. */
+    origin: text("origin").notNull().default("chat"),
+    /**
+     * Machine-initiated runs carry one; a second run with the same key must not
+     * happen. Webhook redeliveries and watcher re-polls are the reason — a
+     * duplicate wake that sends a message twice is the bug this column exists
+     * to make impossible. Null for human turns: a person repeating themselves
+     * is not a duplicate.
+     */
+    dedupeKey: text("dedupe_key").unique(),
+    error: text("error"),
+    eventCount: integer("event_count").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (table) => [
     /*

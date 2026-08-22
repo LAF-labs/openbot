@@ -182,3 +182,104 @@ describe("an unattended run", () => {
     ).rejects.toThrow("did not finish in time");
   });
 });
+
+import {
+  ActionNeedsApprovalError,
+  ActionRefusedError,
+} from "../src/computer/gateway";
+import { outcomeOfError } from "../src/runner/unattended";
+
+describe("what a failed tool tells the model", () => {
+  test("an ask-rule is a pause with the question, never a refusal", () => {
+    const outcome = outcomeOfError(
+      new ActionNeedsApprovalError({
+        id: "appr-1",
+        question: "Open bank.example?",
+        rule: "ask: banking",
+      } as never),
+    );
+    expect(outcome).toMatchObject({
+      ok: false,
+      awaitingApproval: true,
+      approvalId: "appr-1",
+      question: "Open bank.example?",
+      rule: "ask: banking",
+    });
+    expect(outcome.refused).toBeUndefined();
+  });
+
+  test("a deny-rule is final and names the rule", () => {
+    const outcome = outcomeOfError(
+      new ActionRefusedError("Never submit a form.", "deny: submit"),
+    );
+    expect(outcome).toMatchObject({
+      ok: false,
+      refused: true,
+      reason: "Never submit a form.",
+      rule: "deny: submit",
+    });
+    expect(outcome.awaitingApproval).toBeUndefined();
+  });
+
+  test("anything else is an ordinary failure with its message", () => {
+    expect(outcomeOfError(new Error("The computer is asleep."))).toEqual({
+      ok: false,
+      reason: "The computer is asleep.",
+    });
+    expect(outcomeOfError("???")).toEqual({
+      ok: false,
+      reason: "That did not work.",
+    });
+  });
+});
+
+describe("the ends of an unattended run", () => {
+  test("after the budget, the model is run once more to answer", async () => {
+    // Tool rounds past the budget, then — offered no tools — a sentence. Refusals alone are not
+    // an answer, and the model has to be RUN to give one.
+    const turns: Array<Message | Message[]> = Array.from(
+      { length: 4 },
+      (_, i) => call(`t${i}`, "computer_navigate", { url: `https://x/${i}` }),
+    );
+    turns.push(say("Here is what I found before I ran out of steps."));
+    const agent = fakeAgent(turns);
+    const offered: number[] = [];
+    (agent as { runAgent: unknown }).runAgent = async (parameters?: {
+      tools?: unknown[];
+    }) => {
+      offered.push(parameters?.tools?.length ?? -1);
+      const turn = turns[agent.runs] ?? [];
+      agent.runs += 1;
+      const added = Array.isArray(turn) ? turn : [turn];
+      agent.messages.push(...added);
+      return { result: undefined, newMessages: added };
+    };
+
+    const result = await runUnattended(agent, "loop", {
+      toolkit: toolkit(async () => ({ ok: true })),
+      timeoutMs: 5_000,
+      maxSteps: 3,
+    });
+
+    expect(result.answer).toBe(
+      "Here is what I found before I ran out of steps.",
+    );
+    expect(offered.at(-1)).toBe(0);
+  });
+
+  test("the deadline aborts the run it gave up on", async () => {
+    const agent = fakeAgent([]);
+    let aborted = false;
+    (agent as { runAgent: unknown }).runAgent = () => new Promise(() => {});
+    agent.abortRun = () => {
+      aborted = true;
+    };
+    await expect(
+      runUnattended(agent, "hang", {
+        toolkit: toolkit(async () => ({ ok: true })),
+        timeoutMs: 30,
+      }),
+    ).rejects.toThrow("did not finish in time");
+    expect(aborted).toBe(true);
+  });
+});

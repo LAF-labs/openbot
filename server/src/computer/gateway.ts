@@ -29,8 +29,8 @@ import {
   type ActionPolicy,
   evaluateActionPolicy,
   type PolicyContext,
-  policyDecidesOnSnapshot,
   type PolicyDecision,
+  policyDecidesOnSnapshot,
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
 import type {
