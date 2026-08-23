@@ -22,10 +22,13 @@
  * Enforced where Bots are created rather than where computers are resolved: a sixth Bot must fail
  * to exist, not exist and fail to reach a computer.
  *
- * Read from the environment so a deployment can be given a different number without a build, and so
- * the test suite can stop competing with real rows for the same five seats: integration tests write
- * to a real database, and once four Bots existed in it, tests that create two of their own began
- * failing with a roster-full error that had nothing to do with what they were testing.
+ * Read from the environment so a deployment can be given a different number without a build.
+ *
+ * It was also how the test suite stopped competing with real rows for the same five seats, and that
+ * reason is gone: the seats were counted across the whole deployment, so a few Bots existing for
+ * any other reason really did starve a test that made two of its own. They are counted per person
+ * now — one VM each, see docs/laf/deployment-model.md — and a test that creates its own person
+ * starts from nothing.
  */
 export const MAX_BOTS_PER_COMPUTER = seatsPerAccount();
 

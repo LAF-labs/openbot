@@ -28,4 +28,3 @@ import "eventsource";
  * with a roster-full error about data it never made. The product number stays five; this is the
  * suite declining to share that budget.
  */
-process.env.BOT_SEATS_PER_ACCOUNT ??= "1000";

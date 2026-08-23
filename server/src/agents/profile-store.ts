@@ -293,7 +293,25 @@ export function createAgentProfileStore(
           .select({ count: count() })
           .from(agents)
           .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-          .where(isNull(agentProfiles.deletedAt));
+          /*
+           * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md),
+           * so the five seats are theirs and nobody else's Bots can take one.
+           *
+           * It counted every undeleted profile in the deployment. Measured on a development
+           * machine: five profiles, two of them this person's, and their sixth Bot refused with
+           * "all five seats are taken" — the other three were Bots a package had shipped, owned by
+           * nobody, quietly holding seats. On a shared deployment it is worse: somebody else making
+           * a Bot takes one of yours.
+           *
+           * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a
+           * Bot the deployment shipped is not something this person chose to spend a seat on.
+           */
+          .where(
+            and(
+              isNull(agentProfiles.deletedAt),
+              eq(agentProfiles.ownerUserId, actor.id),
+            ),
+          );
         if (Number(seated?.count ?? 0) >= seats) {
           throw new RosterFullError();
         }
@@ -428,7 +446,25 @@ export function createAgentProfileStore(
           .select({ count: count() })
           .from(agents)
           .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-          .where(isNull(agentProfiles.deletedAt));
+          /*
+           * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md),
+           * so the five seats are theirs and nobody else's Bots can take one.
+           *
+           * It counted every undeleted profile in the deployment. Measured on a development
+           * machine: five profiles, two of them this person's, and their sixth Bot refused with
+           * "all five seats are taken" — the other three were Bots a package had shipped, owned by
+           * nobody, quietly holding seats. On a shared deployment it is worse: somebody else making
+           * a Bot takes one of yours.
+           *
+           * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a
+           * Bot the deployment shipped is not something this person chose to spend a seat on.
+           */
+          .where(
+            and(
+              isNull(agentProfiles.deletedAt),
+              eq(agentProfiles.ownerUserId, actor.id),
+            ),
+          );
         if (Number(seated?.count ?? 0) >= seats) {
           throw new RosterFullError();
         }

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   AgentNotFoundError,
   AgentNotManageableError,
@@ -669,29 +669,24 @@ describe("agent profile store integration", () => {
  */
 describe("the seat cap", () => {
   test("refuses the Bot that would need one seat too many, and seats one after a deletion", async () => {
-    const owner = await createUser();
     /*
-     * A STORE WITH ITS OWN CAP, counted from whatever this database already holds. The rule under
-     * test is "one past the cap must fail to exist", and expressing it against the product's five
-     * meant first arranging for a shared database to contain exactly the right number of unrelated
-     * Bots — which stopped being true the moment anything else in the deployment made one.
+     * A FRESH PERSON, so the count starts at nothing.
+     *
+     * This used to count every undeleted profile in the database and set the cap two above it,
+     * because the seats were counted deployment-wide and the test had to work around whatever else
+     * happened to exist. Seats are this person's now, so the arrangement is the whole test: two
+     * seats, two Bots, and the third must fail to exist.
      */
-    const [{ occupied }] = (await database
-      .select({ occupied: sql<number>`count(*)::int` })
-      .from(agents)
-      .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-      .where(isNull(agentProfiles.deletedAt))) as [{ occupied: number }];
-
-    const seats = occupied + 2;
+    const owner = await createUser();
     const capped = createAgentProfileStore(
       database,
       managedAgentAgUiUrl,
       undefined,
-      seats,
+      2,
     );
 
     const seeded: string[] = [];
-    for (let seat = occupied; seat < seats; seat += 1) {
+    for (let seat = 0; seat < 2; seat += 1) {
       seeded.push(
         (await createProfileFixture({ owner, visibility: "private" })).agentId,
       );
@@ -707,10 +702,42 @@ describe("the seat cap", () => {
 
     // A freed seat is a usable seat: soft-delete one and the same create goes through.
     const [freed] = seeded;
-    if (!freed) throw new Error("the deployment already held five seats");
+    if (!freed) throw new Error("the fixtures did not seat anybody");
     await capped.softDelete(owner, freed);
     const created = await capped.create(owner, input);
     createdAgentIds.push(created.id);
     expect(created.name).toBe(input.name);
+  });
+
+  test("somebody else's Bots do not take your seats", async () => {
+    /*
+     * THE BUG THIS PAIR EXISTS FOR. The count had no owner filter, so every undeleted profile in
+     * the deployment held a seat. Measured on a development machine: five profiles, two of them
+     * this person's, and their sixth Bot refused with "all five seats are taken" — three of the
+     * five belonged to nobody, shipped by a package. On a shared deployment it is worse, and the
+     * person it happens to has no way to see why.
+     */
+    const owner = await createUser();
+    const stranger = await createUser();
+    const capped = createAgentProfileStore(
+      database,
+      managedAgentAgUiUrl,
+      undefined,
+      2,
+    );
+
+    // The stranger fills their own two seats, and a Bot owned by nobody sits beside them.
+    await createProfileFixture({ owner: stranger, visibility: "private" });
+    await createProfileFixture({ owner: stranger, visibility: "public" });
+    await createProfileFixture({ owner: null, visibility: "public" });
+
+    const created = await capped.create(owner, {
+      name: `Mine ${randomUUID()}`,
+      title: "",
+      roleDescription: "",
+      visibility: "private",
+    });
+    createdAgentIds.push(created.id);
+    expect(created.name).toContain("Mine");
   });
 });
