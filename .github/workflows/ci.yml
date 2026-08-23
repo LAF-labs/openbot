@@ -3,7 +3,11 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # laf/** because development lands on long-lived laf branches by direct push, not by pull
+    # request. Without it those pushes run nothing at all, and every guarantee below — the test
+    # floor, the fresh-database run, the typecheck — is only as good as the last time somebody
+    # happened to open a PR.
+    branches: [main, "laf/**"]
 
 # Least privilege by default. Jobs that need more must declare it locally.
 permissions:
