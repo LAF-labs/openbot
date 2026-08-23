@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { channels, lafThreadSnapshots } from "../src/db/schema";
+import { agents, channels, lafThreadSnapshots } from "../src/db/schema";
 import {
   appendRoomMessage,
   readRoomLines,
@@ -21,10 +28,37 @@ const database = createDatabase(
   TEST_POOL,
 );
 
-const made: { channels: string[]; threads: string[] } = {
+const made: { agents: string[]; channels: string[]; threads: string[] } = {
+  agents: [],
   channels: [],
   threads: [],
 };
+
+/*
+ * The two members whose messages this file appends. `channels.last_message_agent_id` is a real
+ * foreign key onto `agents`, so an append under an id no `agents` row carries fails on the
+ * reference instead of exercising what the test is about. On a development machine the rows exist
+ * because the app seeded them; on a clean database — CI's, a fresh checkout's — nothing has, which
+ * is how this suite came to pass only on the machine it was written on. Create what is missing,
+ * remember only what this file created, and delete only that: the app's own rows are not this
+ * suite's to remove.
+ */
+beforeAll(async () => {
+  for (const [id, name] of names) {
+    const created = await database
+      .insert(agents)
+      .values({ id, name, type: "remote_ag_ui", configuration: {} })
+      .onConflictDoNothing()
+      .returning({ id: agents.id });
+    if (created.length > 0) made.agents.push(id);
+  }
+});
+
+afterAll(async () => {
+  if (made.agents.length > 0) {
+    await database.delete(agents).where(inArray(agents.id, made.agents));
+  }
+});
 
 // Only this file's rows: the suite runs against whatever DATABASE_URL names, which on a
 // development machine is the database the app is using.
