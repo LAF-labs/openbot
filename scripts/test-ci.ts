@@ -11,7 +11,10 @@
  * that has to be edited for every new test is a check people learn to edit without thinking.
  */
 
-const MINIMUM_TESTS = 400;
+// Raised from 400 with the suite at 1,147: a floor a third of the suite's size would wave through
+// the silent loss of whole areas — rooms, boundaries and the computer gateway together are more
+// tests than the old floor. Re-raise it when the suite outgrows this one by the same margin.
+const MINIMUM_TESTS = 1100;
 
 // `bun run test` rather than `bun test`, so the pretest hook fires and the generated application
 // config exists before route imports need it.
