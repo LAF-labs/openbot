@@ -131,8 +131,11 @@ export function createModelAutoReviewer(
     });
     // No credential, a dead provider, a timeout. All of them mean nobody has decided this, which is
     // the same as a no — and it is why nothing here is retried: the person is right there.
-    if (answer === null) return { allowed: false, reason: "" };
-    return verdictFrom(answer);
+    // Every kind of no-answer is a no here, and for one reason: nobody has decided this. The
+    // difference between a refusal and a timeout matters to somebody reading a log, and not at all
+    // to a boundary — which asks a person either way.
+    if (!answer.ok) return { allowed: false, reason: "" };
+    return verdictFrom(answer.text);
   };
 }
 

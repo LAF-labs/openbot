@@ -53,9 +53,12 @@ describe("writing a recording up", () => {
       }),
     );
     expect(await writeUp(RECORDING)).toEqual({
-      title: "매출 내려받기",
-      summary: "주문 페이지에서 기간별 매출을 엑셀로 받는다.",
-      instructions: "1. 주문 페이지를 연다\n2. 기간별 조회를 누른다",
+      ok: true,
+      draft: {
+        title: "매출 내려받기",
+        summary: "주문 페이지에서 기간별 매출을 엑셀로 받는다.",
+        instructions: "1. 주문 페이지를 연다\n2. 기간별 조회를 누른다",
+      },
     });
   });
 
@@ -68,7 +71,12 @@ describe("writing a recording up", () => {
       { title: "  ", instructions: "1. 뭔가" },
     ]) {
       const { writeUp } = writerSaying(JSON.stringify(half));
-      expect(await writeUp(RECORDING)).toBeNull();
+      // "unreadable", not "busy": something arrived and could not be used, so pressing again may
+      // well work — which is a different sentence in front of the person.
+      expect(await writeUp(RECORDING)).toEqual({
+        ok: false,
+        because: "unreadable",
+      });
     }
   });
 
@@ -76,7 +84,10 @@ describe("writing a recording up", () => {
     const { writeUp } = writerSaying(
       "Sure! Here is the procedure you asked for.",
     );
-    expect(await writeUp(RECORDING)).toBeNull();
+    expect(await writeUp(RECORDING)).toEqual({
+      ok: false,
+      because: "unreadable",
+    });
   });
 
   test("fenced JSON is still JSON", () => {
@@ -99,7 +110,10 @@ describe("writing a recording up", () => {
 
   test("an empty recording is not sent to a model at all", async () => {
     const { writeUp, seen } = writerSaying('{"title":"t","instructions":"i"}');
-    expect(await writeUp({ ...RECORDING, steps: [] })).toBeNull();
+    expect(await writeUp({ ...RECORDING, steps: [] })).toEqual({
+      ok: false,
+      because: "nothing recorded",
+    });
     expect(seen).toHaveLength(0);
   });
 });
@@ -135,5 +149,48 @@ describe("what the model is told about the recording", () => {
     // `into` and nothing else. There is no field here that could carry what was typed, which is why
     // the procedure has to ask for the value instead of containing it.
     expect(Object.keys(typed ?? {}).sort()).toEqual(["at", "into", "kind"]);
+  });
+});
+
+/**
+ * A provider refusing and a reply that could not be used are different sentences.
+ *
+ * They were one, and it showed: four attempts in a row gave one draft at twenty-four seconds, a
+ * timeout at sixty, and two refusals in under a second — and all four told the person to try again.
+ * Somebody watching a button fail instantly, twice, is watching a broken feature.
+ */
+describe("why there is no draft", () => {
+  function writerRefusing(status: number) {
+    return createWriteUp({
+      baseUrl: "http://model.test/v1",
+      model: "laf-1",
+      apiKey: async () => "test-key",
+      fetch: (async () => new Response("no", { status })) as never,
+    });
+  }
+
+  test("a provider that refuses is busy, not unreadable", async () => {
+    // What a rate limit looks like: a 429 that arrives immediately. Pressing again straight away
+    // does the same thing, so the surface says to wait rather than to retry.
+    expect(await writerRefusing(429)(RECORDING)).toEqual({
+      ok: false,
+      because: "busy",
+    });
+    expect(await writerRefusing(503)(RECORDING)).toEqual({
+      ok: false,
+      because: "busy",
+    });
+  });
+
+  test("no credential is busy too, because pressing again cannot help", async () => {
+    const writeUp = createWriteUp({
+      baseUrl: "http://model.test/v1",
+      model: "laf-1",
+      apiKey: async () => null,
+      fetch: (async () => {
+        throw new Error("must not be called");
+      }) as never,
+    });
+    expect(await writeUp(RECORDING)).toEqual({ ok: false, because: "busy" });
   });
 });

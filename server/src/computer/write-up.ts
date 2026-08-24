@@ -65,7 +65,18 @@ const SYSTEM = [
   '"instructions": "<the numbered procedure>"}.',
 ].join("\n");
 
-export type WriteUp = (recording: Demonstration) => Promise<WrittenUp | null>;
+/**
+ * A draft, or why there is not one.
+ *
+ * Told apart because a person acts on them differently: a provider that refused wants waiting, and
+ * an answer that could not be read wants pressing again. They were one outcome, and four attempts
+ * in a row produced one draft, one timeout and two instant refusals, all four saying "try again".
+ */
+export type WriteUpResult =
+  | { ok: true; draft: WrittenUp }
+  | { ok: false; because: "busy" | "unreadable" | "nothing recorded" };
+
+export type WriteUp = (recording: Demonstration) => Promise<WriteUpResult>;
 
 /**
  * Write one up, or answer null.
@@ -81,7 +92,9 @@ export function createWriteUp(
   const timeoutMs = options.timeoutMs ?? WRITE_UP_TIMEOUT_MS;
 
   return async (recording) => {
-    if (recording.steps.length === 0) return null;
+    if (recording.steps.length === 0) {
+      return { ok: false, because: "nothing recorded" };
+    }
 
     const answer = await askModel(options, {
       system: SYSTEM,
@@ -90,11 +103,22 @@ export function createWriteUp(
         JSON.stringify({ steps: recording.steps }),
       ].join("\n"),
       timeoutMs,
-      // A procedure is a page at most. Enough that a long one is not cut off mid-step, and little
-      // enough that a model which decided to write an essay does not get to bill for it.
-      maxTokens: 1_200,
+      // NO CEILING. A procedure is a page at most, so twelve hundred tokens looked generous — and
+      // this deployment's model is a reasoning one that spent the whole budget thinking and
+      // returned an empty message. Measured: mostly empty with the cap, answers without it. The
+      // minute above is the bound that matters.
     });
-    return writtenUpFrom(answer);
+    if (!answer.ok) {
+      // A credential that is missing, a provider refusing and a request that ran out of patience
+      // are all "not now" to the person waiting; only a reply that arrived and could not be used is
+      // worth pressing again straight away.
+      return {
+        ok: false,
+        because: answer.because === "unreadable" ? "unreadable" : "busy",
+      };
+    }
+    const draft = writtenUpFrom(answer.text);
+    return draft ? { ok: true, draft } : { ok: false, because: "unreadable" };
   };
 }
 

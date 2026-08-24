@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type Draft,
   type Recording,
@@ -49,6 +49,25 @@ export function TeachATask({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  /*
+   * The count while somebody is driving.
+   *
+   * The events are recorded on the server as they pass through the proxy, so this component never
+   * sees one and has nothing to count. Without asking, the number is whatever it was when the wheel
+   * was taken — which is zero, for as long as the demonstration lasts. A counter that says nothing
+   * is happening while somebody works is worse than no counter: it reads as a feature that is not
+   * running.
+   *
+   * A second is plenty. Nothing acts on this number; it is there so a person can see the recording
+   * keeping up with them.
+   */
+  const live = Boolean(recording && !recording.finished);
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => void onRefresh(), 1_000);
+    return () => clearInterval(timer);
+  }, [live, onRefresh]);
 
   const forget = async () => {
     await discardRecording(computerId);
@@ -208,15 +227,21 @@ export function TeachATask({
             setProblem(null);
             const written = await writeUpRecording(computerId);
             setBusy(false);
-            if (!written) {
-              // The recording is still there, so the honest offer is to say so and let them press
-              // it again rather than to show a procedure nobody wrote.
+            if (!written.ok) {
+              /*
+               * The recording is still there either way, so the offer is always to press again —
+               * but not always now. A provider refusing in under a second will refuse the next
+               * press too, and "try again" in front of that is how a working feature comes to look
+               * broken.
+               */
               setProblem(
-                t("The recording could not be written up. Try again."),
+                written.retryLater
+                  ? t("The model is busy. Try again in a moment.")
+                  : t("The recording could not be written up. Try again."),
               );
               return;
             }
-            setDraft(written);
+            setDraft(written.draft);
           }}
           type="button"
         >

@@ -926,4 +926,6 @@ export const ko: Record<string, string> = {
   "Typed into {name}": "{name}에 입력",
   "Typed something": "무언가 입력",
   "Pressed the {key} key": "{key} 키 누르기",
+  "The model is busy. Try again in a moment.":
+    "모델이 바쁩니다. 잠시 후 다시 시도해 주세요.",
 };

@@ -30,22 +30,53 @@ export type Ask = {
   system: string;
   user: string;
   timeoutMs: number;
-  maxTokens: number;
+  /**
+   * A ceiling on the reply, or none.
+   *
+   * OMITTING IT IS SOMETIMES THE ONLY WAY TO GET AN ANSWER. A reasoning model spends this budget on
+   * thinking before it writes anything, so a cap sized for the answer is spent before the answer
+   * starts and what comes back is an empty message. Measured against this deployment's model: a
+   * twelve-hundred-token ceiling produced empty content most tries, including one that came back in
+   * a second, and the same request without a ceiling answered.
+   *
+   * The timeout is the real bound. A cap is a cost control, and one that silently turns answers
+   * into nothing is a worse trade than the tokens it saves.
+   */
+  maxTokens?: number;
 };
 
 /**
- * The model's answer as text, or null.
+ * Why there is no answer.
  *
- * Null covers every way there is no answer — no credential, a refusal, a timeout, a body that is
- * not what an OpenAI-compatible endpoint returns. They are one outcome here because the callers
- * treat them as one: nobody has answered this.
+ * They were one outcome — null — on the argument that the callers treat them the same. Measured,
+ * they do not: four write-ups in a row gave one answer at twenty-four seconds, one timeout at
+ * sixty, and two refusals at under a second, and all four said the same sentence to the person.
+ * Somebody watching a button fail instantly, twice, is watching a broken feature; somebody told
+ * the provider is busy knows to come back. The kinds also read differently in a log.
  */
-export async function askModel(
-  call: ModelCall,
-  ask: Ask,
-): Promise<string | null> {
+export type NoAnswer =
+  /** Nothing is configured to answer. Pressing again will do the same thing. */
+  | "no credential"
+  /** The provider said no — out of quota, rate limited, having an outage. Later, not again now. */
+  | "refused"
+  /** It took longer than the caller was willing to wait. */
+  | "took too long"
+  /** It answered, and the answer was not usable. Pressing again may well work. */
+  | "unreadable";
+
+export type Answer =
+  | { ok: true; text: string }
+  | { ok: false; because: NoAnswer };
+
+/**
+ * The model's answer, or why there is not one.
+ *
+ * Nothing is retried. Both callers have a good answer for "nobody said anything", and the one
+ * failure worth retrying least is the one that arrives in a second because a provider is refusing.
+ */
+export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
   const apiKey = await call.apiKey().catch(() => null);
-  if (!apiKey) return null;
+  if (!apiKey) return { ok: false, because: "no credential" };
   const send = call.fetch ?? globalThis.fetch;
 
   try {
@@ -62,7 +93,7 @@ export async function askModel(
           // Deterministic. A boundary that answers differently on a retry is one nobody can reason
           // about, and a write-up that changed every time it was asked would be a lottery.
           temperature: 0,
-          max_tokens: ask.maxTokens,
+          ...(ask.maxTokens === undefined ? {} : { max_tokens: ask.maxTokens }),
           messages: [
             { role: "system", content: ask.system },
             { role: "user", content: ask.user },
@@ -71,16 +102,30 @@ export async function askModel(
         signal: AbortSignal.timeout(ask.timeoutMs),
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Said out loud, because a refusal that arrives in under a second is the one failure a person
+      // will otherwise read as the feature being broken.
+      console.error(
+        JSON.stringify({
+          type: "model-call-refused",
+          model: call.model,
+          status: response.status,
+        }),
+      );
+      return { ok: false, because: "refused" };
+    }
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: unknown } }>;
     };
     const content = body.choices?.[0]?.message?.content;
-    return typeof content === "string" ? content : null;
-  } catch {
-    // A timeout, a dead provider, a body that is not JSON. Nothing is retried: both callers have a
-    // good answer for "nobody said anything", and neither is improved by waiting twice as long.
-    return null;
+    return typeof content === "string" && content.trim()
+      ? { ok: true, text: content }
+      : { ok: false, because: "unreadable" };
+  } catch (error) {
+    const timedOut =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError");
+    return { ok: false, because: timedOut ? "took too long" : "refused" };
   }
 }
 

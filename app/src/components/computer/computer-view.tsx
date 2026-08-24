@@ -65,6 +65,14 @@ type Props = {
   aspectRatio?: number;
   minWidth?: number;
   minHeight?: number;
+  /**
+   * Whether this instance offers to be taught.
+   *
+   * One instance does. This component draws beside the conversation and again on the line of every
+   * computer tool call in it, and a teaching panel per past action is four ways into the same
+   * recording with four separate drafts.
+   */
+  teachable?: boolean;
 };
 
 export function ComputerView({
@@ -74,6 +82,7 @@ export function ComputerView({
   aspectRatio = DEFAULT_ASPECT_RATIO,
   minWidth = DEFAULT_MIN_WIDTH,
   minHeight = DEFAULT_MIN_HEIGHT,
+  teachable = false,
 }: Props) {
   const [shot, setShot] = useState<Screenshot | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -118,6 +127,18 @@ export function ComputerView({
     // the moment the panel has something to offer.
     await refreshRecording();
   }, [computerId, refreshRecording]);
+
+  /*
+   * Read once on arrival, because a recording outlives the page that made it.
+   *
+   * It lives on the server for as long as the wheel is held and until somebody keeps or discards
+   * it, so a reload — or coming back to the tab later — must not look like nothing was recorded.
+   * Measured: after a reload the panel offered "teach a task" while a finished recording sat on the
+   * server with nothing pointing at it, which loses somebody's demonstration without saying so.
+   */
+  useEffect(() => {
+    void refreshRecording();
+  }, [refreshRecording]);
 
   const teach = useCallback(async () => {
     const state = await takeControl(computerId, true);
@@ -387,13 +408,22 @@ export function ComputerView({
          * Teaching, below the wheel and above the Bot's request for help. It is the same browser
          * and the same wheel; what differs is why somebody took it, and the panel says so.
          */}
-        <TeachATask
-          computerId={computerId}
-          driving={driving}
-          onRefresh={refreshRecording}
-          onStart={teach}
-          recording={recording}
-        />
+        {/*
+         * IN THE PANE, AND NOWHERE ELSE. This component draws once beside the conversation and
+         * again on the line of every computer tool call in it, so a thread with four actions in it
+         * has five of these — and each holds its own draft, so pressing in one leaves the others
+         * showing what they showed before. Teaching is a standing control of the workspace, not a
+         * thing that belongs on the line of one action that has already happened.
+         */}
+        {teachable ? (
+          <TeachATask
+            computerId={computerId}
+            driving={driving}
+            onRefresh={refreshRecording}
+            onStart={teach}
+            recording={recording}
+          />
+        ) : null}
 
         {control?.requested && !driving ? (
           <div className="flex items-start justify-between gap-3 border-t bg-warning/10 px-3 py-2 text-sm">

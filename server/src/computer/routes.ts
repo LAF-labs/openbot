@@ -322,11 +322,22 @@ export function createComputerRoutes(
           501,
         );
       }
-      const draft = await writeUp(recording);
-      // Null is every way a model did not answer. The recording is still there, so the honest offer
-      // is to say so and let them press it again rather than to invent a procedure.
-      return draft
-        ? context.json({ draft })
+      const written = await writeUp(recording);
+      if (written.ok) return context.json({ draft: written.draft });
+      /*
+       * The recording survives every one of these, so the offer is always to try again — but not
+       * always straight away. A provider that refused in under a second is not going to do better
+       * on the next press, and telling somebody to press it again is how a working feature comes to
+       * look broken. 503 for that, 502 for a reply that arrived and could not be used.
+       */
+      return written.because === "busy"
+        ? context.json(
+            {
+              error: "The model is busy. Try again in a moment.",
+              retryLater: true,
+            },
+            503,
+          )
         : context.json(
             { error: "The recording could not be written up." },
             502,

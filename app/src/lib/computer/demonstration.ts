@@ -72,19 +72,30 @@ export async function discardRecording(computerId: string): Promise<void> {
  * recording with nothing in it. The recording survives all of them, so the honest offer is to say
  * so and let the person press it again.
  */
+export type WriteUpResult =
+  | { ok: true; draft: Draft }
+  /** The provider refused or ran out of patience. Pressing again now does the same thing. */
+  | { ok: false; retryLater: true }
+  /** Something came back and could not be used. Pressing again may well work. */
+  | { ok: false; retryLater: false };
+
 export async function writeUpRecording(
   computerId: string,
-): Promise<Draft | null> {
+): Promise<WriteUpResult> {
   try {
     const response = await fetch(
       `/api/computers/${encodeURIComponent(computerId)}/demonstration/write-up`,
       { method: "POST", credentials: "include" },
     );
-    if (!response.ok) return null;
-    const body = (await response.json()) as { draft?: Draft };
-    return body.draft ?? null;
+    const body = (await response.json().catch(() => null)) as {
+      draft?: Draft;
+      retryLater?: boolean;
+    } | null;
+    if (response.ok && body?.draft) return { ok: true, draft: body.draft };
+    return { ok: false, retryLater: body?.retryLater === true };
   } catch {
-    return null;
+    // The request never landed, which is the same thing to press: not now.
+    return { ok: false, retryLater: true };
   }
 }
 

@@ -39,7 +39,7 @@ export function BotPanel({
          * its padding, so the thumbnail pushed the pane out to 400px from the inside. It scales to
          * whatever it is given; the floor exists for the full-size view, not for a preview.
          */}
-        <ComputerView active computerId={agentId} minWidth={0} />
+        <ComputerView active computerId={agentId} minWidth={0} teachable />
         <p className="text-center text-muted-foreground text-xs">
           {name ? t("{name}'s screen", { name }) : t("The assistant's screen")}
         </p>
