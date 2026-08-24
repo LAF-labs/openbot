@@ -28,6 +28,7 @@ import {
 } from "./computer/auto-review";
 import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
+import { createWriteUp } from "./computer/write-up";
 import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
@@ -283,11 +284,18 @@ const demonstrations = createDemonstrationRecorder({
   namePoint: async (botId, point) => {
     if (!config.computer) return null;
     const response = await fetch(
-      `${config.computer.baseUrl.replace(/\/$/, "")}/describe-point?bot=${encodeURIComponent(botId)}`,
+      `${config.computer.baseUrl.replace(/\/$/, "")}/describe-point`,
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          /*
+           * THE HEADER, NOT A QUERY. `agent-computer` reads the Bot from `x-openbot-bot-id` and
+           * falls back to a default when it is absent — so a query string is not a different Bot,
+           * it is silently the wrong one. Measured: every press came back unnameable, because every
+           * lookup was asking about a blank page belonging to nobody.
+           */
+          "x-openbot-bot-id": botId,
           ...(config.computer.token
             ? { authorization: `Bearer ${config.computer.token}` }
             : {}),
@@ -324,6 +332,26 @@ const demonstrations = createDemonstrationRecorder({
 const reviewModel = createModelAutoReviewer({
   baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
   model: tenantPackage.model.reviewModel,
+  apiKey: () =>
+    resolveModelApiKey({
+      encryptionKey: config.keyEncryptionKey,
+      reader: credentialStore,
+      provider: tenantPackage.model.provider,
+      keyId: tenantPackage.model.credentialSecretRef,
+      environment: process.env,
+    }),
+});
+
+/**
+ * A finished recording, written up as a procedure.
+ *
+ * The deployment's own model rather than the review one: this runs once, with the person watching
+ * and knowing they asked for it, so a slow careful answer is the right trade — the opposite of the
+ * judgement that sits in front of every action a Bot takes.
+ */
+const writeUpDemonstration = createWriteUp({
+  baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+  model: tenantPackage.model.defaultModel,
   apiKey: () =>
     resolveModelApiKey({
       encryptionKey: config.keyEncryptionKey,
@@ -653,6 +681,7 @@ const app = createApp(
   standingApprovals,
   tenantPackage.model.supportsEffort,
   demonstrations,
+  writeUpDemonstration,
 );
 
 /**

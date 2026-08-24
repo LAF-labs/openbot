@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { TeachATask } from "@/components/computer/teach-a-task";
+import { readRecording, type Recording } from "@/lib/computer/demonstration";
 import { t } from "@/lib/i18n";
 import { LiveScreen } from "./live-screen";
 import {
@@ -77,6 +79,13 @@ export function ComputerView({
   const [problem, setProblem] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [control, setControl] = useState<ControlState | null>(null);
+  /**
+   * What the server has recorded while somebody teaches, or null when nobody is.
+   *
+   * Read from the server rather than counted here: the events are recorded as they pass through the
+   * proxy on their way to the browser, and this component never sees one.
+   */
+  const [recording, setRecording] = useState<Recording | null>(null);
   /** Held only until it is sent. Never lifted into a URL, a log, or anything that outlives this form. */
   const [secret, setSecret] = useState("");
   const [secretProblem, setSecretProblem] = useState<string | null>(null);
@@ -98,10 +107,23 @@ export function ComputerView({
    *
    * Stable, because the Escape handler below depends on it and must not re-bind every render.
    */
+  const refreshRecording = useCallback(async () => {
+    setRecording(await readRecording(computerId));
+  }, [computerId]);
+
   const handBack = useCallback(async () => {
     const state = await releaseControl(computerId);
     if (state) setControl(state);
-  }, [computerId]);
+    // Handing back is what ends a recording, so what was kept is read straight afterwards — that is
+    // the moment the panel has something to offer.
+    await refreshRecording();
+  }, [computerId, refreshRecording]);
+
+  const teach = useCallback(async () => {
+    const state = await takeControl(computerId, true);
+    if (state) setControl(state);
+    await refreshRecording();
+  }, [computerId, refreshRecording]);
   /** Secret prompts keep the screen live even though the human does not hold the wheel. */
   const secretPending = Boolean(control?.secretWanted);
   const secretPendingRef = useRef(false);
@@ -360,6 +382,18 @@ export function ComputerView({
             </span>
           </div>
         ) : null}
+
+        {/*
+         * Teaching, below the wheel and above the Bot's request for help. It is the same browser
+         * and the same wheel; what differs is why somebody took it, and the panel says so.
+         */}
+        <TeachATask
+          computerId={computerId}
+          driving={driving}
+          onRefresh={refreshRecording}
+          onStart={teach}
+          recording={recording}
+        />
 
         {control?.requested && !driving ? (
           <div className="flex items-start justify-between gap-3 border-t bg-warning/10 px-3 py-2 text-sm">

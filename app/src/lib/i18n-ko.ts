@@ -899,4 +899,31 @@ export const ko: Record<string, string> = {
     "위 규칙에 걸리는 행동은 매번 사람 앞에 놓입니다. 넓게 허용하는 버튼도 없고, 봇에 적어둔 지시도 보지 않으며, 이미 허용된 항목도 효력이 없습니다 — 아래에 그대로 남아 있고, 다시 켜면 되살아납니다.",
   "These are not in force. Getting past without asking is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.":
     "지금은 효력이 없습니다. 위에서 “묻지 않고 넘어가기”가 꺼져 있어, 여기 해당하는 행동도 매번 다시 묻습니다 — 다시 켜면 누군가 내린 결정이 그대로 되살아나도록 남겨둡니다.",
+  "Record yourself doing a task, and this Bot can do it next time.":
+    "한 번만 직접 해 보이면, 다음부터는 이 봇이 합니다.",
+  "Teach a task": "이 작업 가르치기",
+  Recording: "기록 중",
+  "{count} steps so far. Hand back when you are done.":
+    "지금까지 {count}단계. 끝나면 제어를 돌려주세요.",
+  "Discard recording": "기록 버리기",
+  "Saved. Type /{slug} to ask for it.":
+    "저장했습니다. /{slug} 를 입력하면 불러옵니다.",
+  "Recorded {count} steps.": "{count}단계를 기록했습니다.",
+  "What to call it": "이름",
+  "What the Bot should do": "봇이 할 일",
+  "Read it before you save it. It was written from a recording of somebody working, so anything you did by mistake is in there too.":
+    "저장하기 전에 읽어보세요. 실제로 일한 기록에서 옮겨 적은 것이라, 잘못 누른 것도 그대로 들어 있습니다.",
+  "That could not be saved. Try again.":
+    "저장하지 못했습니다. 다시 시도해 주세요.",
+  "Save as a skill": "스킬로 저장",
+  "The recording could not be written up. Try again.":
+    "기록을 글로 옮기지 못했습니다. 다시 시도해 주세요.",
+  "Writing it up…": "글로 옮기는 중…",
+  "Turn this into a skill": "스킬로 만들기",
+  "Opened {url}": "{url} 열기",
+  "Pressed {name}": "{name} 누르기",
+  "Pressed something with no name": "이름 없는 것을 누름",
+  "Typed into {name}": "{name}에 입력",
+  "Typed something": "무언가 입력",
+  "Pressed the {key} key": "{key} 키 누르기",
 };

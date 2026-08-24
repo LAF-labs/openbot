@@ -845,17 +845,40 @@ serve<StreamData>({
               "option",
               "switch",
             ]);
-            let node = document.elementFromPoint(x, y);
-            // Five is enough to escape the usual span-inside-a-span-inside-a-button, and few enough
-            // that a click on the page background does not get attributed to the whole document.
+            const under = document.elementFromPoint(x, y);
+            if (!under) return null;
+            /*
+             * Climb to the nearest thing a person would name, and KEEP WHAT WAS UNDER THE CURSOR IF
+             * THERE IS NONE. The first version returned nothing in that case, walking to `<html>`
+             * and past it, so a click on a heading or a paragraph — most of a page — was recorded
+             * as unnameable. Measured against a real page: ten points across the content, ten nulls.
+             *
+             * Five steps is enough to escape the usual span-inside-a-span-inside-a-button and few
+             * enough that a click on the page background is not attributed to the whole document.
+             */
+            let node: Element | null = under;
+            let named: Element | null = null;
             for (let step = 0; node && step < 5; step += 1) {
               const role = node.getAttribute("role") ?? "";
               const tag = node.tagName.toLowerCase();
-              if (NAMED.has(tag) || NAMED_ROLES.has(role)) break;
+              if (NAMED.has(tag) || NAMED_ROLES.has(role)) {
+                named = node;
+                break;
+              }
               node = node.parentElement;
             }
-            if (!node) return null;
-            const element = node as HTMLElement;
+            /*
+             * The page is not a thing that was pressed. Falling back to whatever was under the
+             * cursor is right for a heading or a paragraph and wrong for `<html>` and `<body>`,
+             * whose text is the whole document — measured, a press on the background came back
+             * named with the entire page. A press on nothing nameable is a real thing that happens,
+             * and saying so is what lets the step be written as one.
+             */
+            const backdrop = under.tagName.toLowerCase();
+            if (!named && (backdrop === "html" || backdrop === "body")) {
+              return null;
+            }
+            const element = (named ?? under) as HTMLElement;
             const label =
               element.getAttribute("aria-label") ??
               element.getAttribute("title") ??

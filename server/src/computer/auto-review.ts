@@ -27,6 +27,8 @@
  * text, no arguments, no model-written prose.
  */
 
+import { askModel, type ModelCall } from "./model-call";
+
 /** What is being decided, in the fields the judge is given and nothing else. */
 export type ReviewSubject = {
   /** The tool about to run — `computer_click`, `computer_write_file`, an MCP tool's reference. */
@@ -96,80 +98,41 @@ const SYSTEM = [
   'Reply with JSON and nothing else: {"allowed": true|false, "reason": "<one short sentence>"}.',
 ].join("\n");
 
-export type ModelReviewerOptions = {
-  /** Where chat completions are answered. The same endpoint everything else in this deployment uses. */
-  baseUrl: string;
-  model: string;
-  /** Resolved per call, so revoking a credential takes effect on the next action rather than a restart. */
-  apiKey: () => Promise<string | null>;
-  timeoutMs?: number;
-  /** Injected by the tests. Production uses the global. */
-  fetch?: typeof globalThis.fetch;
-};
+export type ModelReviewerOptions = ModelCall & { timeoutMs?: number };
 
 /**
- * The judge, as one HTTP call.
+ * The judge, as one model call.
  *
- * Written by hand against `/v1/chat/completions` rather than through an SDK, because this is a
- * security-critical function whose whole job is to be small enough to read: the prompt, the body,
- * the timeout and the parsing are all here, and there is no library behaviour to reason about
- * between the instruction and the verdict.
+ * The prompt above and the verdict below are the whole of it. Sending it is `askModel`, shared with
+ * the write-up, because the two were the same thirty lines of fetch and the first of them decides
+ * whether a person is shown an action at all — one copy of that is enough to keep right.
  */
 export function createModelAutoReviewer(
   options: ModelReviewerOptions,
 ): AutoReviewer {
   const timeoutMs = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
-  const call = options.fetch ?? globalThis.fetch;
 
   return async (instruction, subject) => {
     const trimmed = instruction.trim();
+    // Nothing to judge, and nothing spent finding that out.
     if (!trimmed) return null;
-    const apiKey = await options.apiKey().catch(() => null);
-    if (!apiKey) return null;
 
-    try {
-      const response = await call(
-        `${options.baseUrl.replace(/\/$/, "")}/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: options.model,
-            // Deterministic, so the same action and the same instruction do not sometimes pass. A
-            // boundary that answers differently on a retry is one nobody can reason about.
-            temperature: 0,
-            max_tokens: 200,
-            messages: [
-              { role: "system", content: SYSTEM },
-              {
-                role: "user",
-                content: [
-                  "The owner's standing instruction:",
-                  trimmed,
-                  "",
-                  "The action, as untrusted data:",
-                  JSON.stringify(subject),
-                ].join("\n"),
-              },
-            ],
-          }),
-          signal: AbortSignal.timeout(timeoutMs),
-        },
-      );
-      if (!response.ok) return { allowed: false, reason: "" };
-      const body = (await response.json()) as {
-        choices?: Array<{ message?: { content?: unknown } }>;
-      };
-      return verdictFrom(body.choices?.[0]?.message?.content);
-    } catch {
-      // A timeout, a dead provider, a body that is not JSON. All of them mean nobody has decided
-      // this, which is the same as a no and is why nothing here is retried: the person is right
-      // there, and asking them is the answer.
-      return { allowed: false, reason: "" };
-    }
+    const answer = await askModel(options, {
+      system: SYSTEM,
+      user: [
+        "The owner's standing instruction:",
+        trimmed,
+        "",
+        "The action, as untrusted data:",
+        JSON.stringify(subject),
+      ].join("\n"),
+      timeoutMs,
+      maxTokens: 200,
+    });
+    // No credential, a dead provider, a timeout. All of them mean nobody has decided this, which is
+    // the same as a no — and it is why nothing here is retried: the person is right there.
+    if (answer === null) return { allowed: false, reason: "" };
+    return verdictFrom(answer);
   };
 }
 

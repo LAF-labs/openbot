@@ -24,6 +24,7 @@ import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
 import type { DemonstrationRecorder } from "./computer/demonstration";
+import type { WriteUp } from "./computer/write-up";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { ComputerClient } from "./computer/client";
 import type { ComputerGateway } from "./computer/gateway";
@@ -191,6 +192,8 @@ export function createApp(
    * Absent leaves taking the wheel exactly as it was — see the `teaching` note on `control/take`.
    */
   demonstrations?: DemonstrationRecorder,
+  /** Turns a finished recording into a procedure. Absent leaves it readable and nothing more. */
+  writeUp?: WriteUp,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -435,6 +438,7 @@ export function createApp(
         computerPolicy,
         requireUser,
         demonstrations,
+        writeUp,
       ),
     );
   }

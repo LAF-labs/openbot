@@ -12,6 +12,7 @@ import {
   WorkspaceRequestError,
 } from "./client";
 import type { DemonstrationRecorder } from "./demonstration";
+import type { WriteUp } from "./write-up";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -43,6 +44,11 @@ export function createComputerRoutes(
    * there is nothing to show. A deployment with no computer has no wheel to take either.
    */
   demonstrations?: DemonstrationRecorder,
+  /**
+   * Turns a finished recording into a procedure. Absent leaves the recording readable and nothing
+   * more, which is what a deployment without a model can honestly offer.
+   */
+  writeUp?: WriteUp,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -288,6 +294,44 @@ export function createComputerRoutes(
       demonstration:
         demonstrations?.read(context.req.param("botId") ?? "") ?? null,
     }),
+  );
+
+  /**
+   * Write the recording up as a procedure, for the person to read and edit.
+   *
+   * A POST because it costs a model call, not because it changes anything: nothing is stored and no
+   * Bot is touched. What the person does with the draft — edit it, name it, save it as a skill — is
+   * theirs, and it goes through the skills surface like any other skill somebody wrote.
+   *
+   * Not audited. Nothing happened to a Bot, and the recording it read never leaves this process.
+   */
+  routes.post(
+    "/:botId/demonstration/write-up",
+    requireUser,
+    async (context) => {
+      const recording = demonstrations?.read(context.req.param("botId") ?? "");
+      if (!recording || recording.steps.length === 0) {
+        return context.json(
+          { error: "There is nothing recorded to write up." },
+          409,
+        );
+      }
+      if (!writeUp) {
+        return context.json(
+          { error: "This deployment cannot write a recording up." },
+          501,
+        );
+      }
+      const draft = await writeUp(recording);
+      // Null is every way a model did not answer. The recording is still there, so the honest offer
+      // is to say so and let them press it again rather than to invent a procedure.
+      return draft
+        ? context.json({ draft })
+        : context.json(
+            { error: "The recording could not be written up." },
+            502,
+          );
+    },
   );
 
   /** Thrown away. What somebody decides not to keep should stop existing. */
