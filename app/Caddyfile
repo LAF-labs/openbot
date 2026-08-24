@@ -30,3 +30,13 @@
 		file_server
 	}
 }
+
+# People type www out of habit, and a name that resolves but cannot complete a TLS handshake reads
+# as "the site is broken", not "use the other name" — measured as ERR_SSL_PROTOCOL_ERROR on the
+# first real sign-in attempt. This block takes its own certificate and hands every request to the
+# apex. A redirect rather than a second copy of the app, because the API's cookie origin is ONE
+# string: an app served from two hosts is two origins to a browser, and the www copy would offer
+# sign-in forever without ever holding a session.
+{$PUBLIC_WWW_ORIGIN:http://www.localhost} {
+	redir {$PUBLIC_ORIGIN:http://localhost}{uri} permanent
+}

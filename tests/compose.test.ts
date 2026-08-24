@@ -88,6 +88,31 @@ test("draws the sign-in button exactly when the API can answer it", () => {
   );
 });
 
+/**
+ * The www name redirects to the apex instead of serving a second copy of the app.
+ *
+ * Found live: www resolved (a CNAME existed) but Caddy held no certificate for it, so the first
+ * person to type www got ERR_SSL_PROTOCOL_ERROR mid sign-in. And the tempting fix — serving the
+ * app on both names — is worse than the error: the cookie origin is one string, so the www copy
+ * would offer sign-in forever without ever holding a session.
+ */
+test("redirects the www name to the apex rather than serving it", () => {
+  const caddyfile = readFileSync(
+    join(import.meta.dir, "..", "app", "Caddyfile"),
+    "utf8",
+  );
+  expect(caddyfile).toContain("{$PUBLIC_WWW_ORIGIN:http://www.localhost} {");
+  expect(caddyfile).toContain("redir {$PUBLIC_ORIGIN:http://localhost}{uri}");
+
+  const compose = readFileSync(
+    join(import.meta.dir, "..", "docker-compose.yml"),
+    "utf8",
+  );
+  expect(compose).toContain(
+    "PUBLIC_WWW_ORIGIN: ${PUBLIC_WWW_ORIGIN:-http://www.localhost}",
+  );
+});
+
 test("enables pgvector before creating vector columns", () => {
   const migration = readFileSync(
     join(import.meta.dir, "..", "server", "drizzle", "0000_schema.sql"),

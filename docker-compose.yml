@@ -109,6 +109,9 @@ services:
     environment:
       # Caddy's site address and the API's cookie origin are the same value, so they cannot drift.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
+      # The www name only ever redirects to the apex. The default is at this layer, not just in
+      # the Caddyfile, so an empty value from a bare `.env` line cannot become an empty site block.
+      PUBLIC_WWW_ORIGIN: ${PUBLIC_WWW_ORIGIN:-http://www.localhost}
     volumes:
       # Certificates and the ACME account. Without this volume a restart re-requests the same
       # certificate, and five of those in a week is a Let's Encrypt rate limit measured in days.
