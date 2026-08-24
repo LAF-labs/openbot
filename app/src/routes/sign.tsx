@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
-import { currentUserQueryOptions } from "../lib/auth/queries";
+import { loadCurrentUser } from "../lib/auth/load-current-user";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
@@ -19,9 +19,7 @@ export const Route = createFileRoute("/sign")({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
     typeof search.redirect === "string" ? { redirect: search.redirect } : {},
   beforeLoad: async ({ context, search }) => {
-    const user = await context.queryClient.ensureQueryData(
-      currentUserQueryOptions(),
-    );
+    const user = await loadCurrentUser(context.queryClient);
     if (user) {
       throw redirect({ to: safeRedirect(search.redirect) });
     }

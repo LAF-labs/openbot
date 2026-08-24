@@ -1,13 +1,11 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { currentUserQueryOptions } from "../../../lib/auth/queries";
+import { loadCurrentUser } from "../../../lib/auth/load-current-user";
 
 export const Route = createFileRoute("/_authed/admin")({
   beforeLoad: async ({ context }) => {
-    const user = await context.queryClient.ensureQueryData(
-      currentUserQueryOptions(),
-    );
+    const user = await loadCurrentUser(context.queryClient);
     if (user?.role !== "admin") {
       throw redirect({ to: "/" });
     }

@@ -360,6 +360,9 @@ export const ko: Record<string, string> = {
     "작업 공간 전체에 설치된 스킬과 도구.",
   "Skip to the conversation": "대화로 건너뛰기",
   Snail: "달팽이",
+  "Cannot reach the server.": "서버에 닿지 못했습니다.",
+  "This usually clears on its own. Nothing your Bots are doing has stopped.":
+    "대개 저절로 풀립니다. 봇이 하던 일은 멈추지 않았습니다.",
   "Something went wrong.": "문제가 생겼습니다.",
   "Sort my email into what needs me, what can wait, and what is noise. Draft replies in my voice for the ones that need one, and never send without asking.":
     "메일을 내가 봐야 할 것, 미뤄도 될 것, 잡음으로 분류해줘. 답장이 필요한 건 내 말투로 초안을 써두되, 묻지 않고 보내지는 마.",

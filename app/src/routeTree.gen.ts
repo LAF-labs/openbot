@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SignRouteImport } from './routes/sign'
+import { Route as UnreachableRouteImport } from './routes/unreachable'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
@@ -41,6 +42,11 @@ const AuthedRoute = AuthedRouteImport.update({
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnreachableRoute = UnreachableRouteImport.update({
+  id: '/unreachable',
+  path: '/unreachable',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedAppRoute = AuthedAppRouteImport.update({
@@ -159,6 +165,7 @@ const AuthedAdminConnectorsGoogleDriveRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
   '/sign': typeof SignRoute
+  '/unreachable': typeof UnreachableRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/welcome': typeof AuthedWelcomeRoute
@@ -183,6 +190,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
   '/sign': typeof SignRoute
+  '/unreachable': typeof UnreachableRoute
   '/welcome': typeof AuthedWelcomeRoute
   '/bot': typeof AuthedAppBotRoute
   '/routines': typeof AuthedAppRoutinesRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/sign': typeof SignRoute
+  '/unreachable': typeof UnreachableRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sign'
+    | '/unreachable'
     | '/admin'
     | '/settings'
     | '/welcome'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/sign'
+    | '/unreachable'
     | '/welcome'
     | '/bot'
     | '/routines'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/sign'
+    | '/unreachable'
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
@@ -307,6 +319,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   SignRoute: typeof SignRoute
+  UnreachableRoute: typeof UnreachableRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -323,6 +336,13 @@ declare module '@tanstack/react-router' {
       path: '/sign'
       fullPath: '/sign'
       preLoaderRoute: typeof SignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unreachable': {
+      id: '/unreachable'
+      path: '/unreachable'
+      fullPath: '/unreachable'
+      preLoaderRoute: typeof UnreachableRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/_app': {
@@ -566,6 +586,7 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   SignRoute: SignRoute,
+  UnreachableRoute: UnreachableRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

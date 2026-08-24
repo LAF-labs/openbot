@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { currentUserQueryOptions } from "../lib/auth/queries";
+import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { handleShellLinks } from "../lib/notifications/shell-links";
@@ -8,9 +8,7 @@ import { useBotNotifications } from "../lib/notifications/use-bot-notifications"
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
-    const user = await context.queryClient.ensureQueryData(
-      currentUserQueryOptions(),
-    );
+    const user = await loadCurrentUser(context.queryClient);
     if (!user) {
       /*
        * WHERE THEY WERE GOING, CARRIED THROUGH THE DOOR.
