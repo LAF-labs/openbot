@@ -35,6 +35,18 @@ async function currentUser(): Promise<CurrentUser | null> {
   if (response.status === 401) {
     return null;
   }
+  /*
+   * NOT SIGNED IN AND CANNOT BE ARE THE SAME ANSWER HERE.
+   *
+   * A deployment with no sign-in configured answers 503 on every authenticated route, which is
+   * exactly the state a first deployment is in before its OAuth client exists. Throwing sends the
+   * router's beforeLoad into an unhandled rejection and renders nothing at all: the first thing
+   * anybody saw after standing a deployment up was a blank white page. The sign-in screen already
+   * knows how to say that no providers are configured, so the job here is only to let them reach it.
+   */
+  if (response.status === 503) {
+    return null;
+  }
   if (!response.ok) {
     throw new Error(`Could not load the current user (${response.status})`);
   }
