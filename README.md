@@ -1,13 +1,12 @@
 <div align="center">
 
-# OpenBot
+# LAF Agent
 
-**AI coworkers you can hand real work to, and actually trust with the access.** Each gets a computer of its own: a real browser with its own logins, its own files, and only the tools you grant. Every action decided before it happens and recorded after.
+**Bots you can hand real work to, and actually trust with the access.** Each one starts knowing nothing and becomes whatever you tell it. It works on a real browser with your logins, and every action it takes is decided before it happens and recorded after.
 
-[**copilotkit.ai/openbot**](https://copilotkit.ai/openbot) · [**Quick start**](#quick-start) · [**Features**](#features) · [**Bring your own agent**](#bring-your-own-agent) · [**Architecture**](#architecture) · [**Docs**](docs/README.md)
+[**Quick start**](#quick-start) · [**What we changed**](#what-we-changed) · [**Features**](#features) · [**Architecture**](#architecture) · [**Docs**](docs/README.md)
 
-[![CI](https://github.com/CopilotKit/openbot/actions/workflows/ci.yml/badge.svg)](https://github.com/CopilotKit/openbot/actions/workflows/ci.yml)
-[![security](https://github.com/CopilotKit/openbot/actions/workflows/security_zizmor.yml/badge.svg)](https://github.com/CopilotKit/openbot/actions/workflows/security_zizmor.yml)
+[![CI](https://github.com/LAF-labs/openbot/actions/workflows/ci.yml/badge.svg)](https://github.com/LAF-labs/openbot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
@@ -17,31 +16,58 @@ https://github.com/user-attachments/assets/535ef7ee-1631-4a69-b839-564c56cf90b4
 
 <div align="center">
 
-Bring any AG-UI agent, written on a framework or by hand, and it arrives as a
-coworker with a channel of its own. Watch it work on its own screen, take the
-wheel when it reaches something it should not do alone, then hand it back. It
-answers with components rather than only prose, and the whole thing runs on
-your own machine.
+Make a Bot with nothing but a name, tell it what you want, and it writes down
+what it is for. Watch it work on its own screen, take the wheel when it reaches
+something it should not do alone, then hand it back — or show it how the task is
+done once, and keep that as something you can ask for by name.
 
 </div>
 
-> **Alpha, and under active development.** OpenBot is early. Expect rough edges and bugs, and expect things to move. Issues and pull requests are welcome.
+> **Alpha, and under active development.** Expect rough edges, and expect things to move.
 
-> **Runs on your machine.** Everything below is written for a laptop. Out of the box OpenBot runs with `OPENBOT_DEV_NO_AUTH`, which skips signing in and admits every request as one administrator. [Google sign-in](#sign-in-with-google) can be wired up instead.
+> **A fork.** LAF Agent is built on [CopilotKit's OpenBot](https://github.com/CopilotKit/openbot) (MIT) and keeps its architecture: AG-UI Bots, one governed gateway, an audit row for everything. What we changed is [below](#what-we-changed). Upstream is synced by picking commits, never by merging — see [the deployment model](docs/laf/deployment-model.md) for why.
 
 ## What it is
 
-An agent platform that runs inside your own infrastructure. Docker Compose brings up every part of it, the data sits in your PostgreSQL, and the model is yours to choose: no model ships in the box, and an administrator supplies the credential, which is encrypted at rest and never logged.
+A Bot is a colleague you can hand a job to. It has a browser of its own with
+your logins in it, it can read and write files, and it keeps working when you
+close the window.
 
-Three coworkers ship in the example package, and they are configuration rather than code: **General Assistant** for everyday work, **Knowledge** for company questions, **Risk Analyst** for risk and compliance. Add your own by editing `agents.yaml` or from `/agents` in the UI.
+**One VM per person.** However many Bots you make, they share it — and nobody
+else's Bots are on it. That decision shapes the code, and it is written down in
+[`docs/laf/deployment-model.md`](docs/laf/deployment-model.md).
 
-Anything a Bot does to a computer, a file, an MCP server or a component goes through one gateway that decides and records it. That is the difference between an agent that can use your tools and an agent you can let near them.
+**A Bot starts blank.** No personas ship in the box. You make one with a name,
+and either say what it is for or leave it to ask you itself. Up to five.
 
-More at [copilotkit.ai/openbot](https://copilotkit.ai/openbot).
+**You do not choose a model.** The deployment serves one. What you choose is how
+hard a Bot thinks before it answers — quick, balanced or thorough — because how
+long you are willing to wait is a question only you can answer.
+
+Anything a Bot does to a browser, a file, an MCP server or a component goes
+through one gateway that decides it and records it. That is the difference
+between an agent that can use your tools and an agent you can let near them.
+
+## What we changed
+
+Everything below is ours; the rest of this README describes what we inherited
+and still runs.
+
+| | |
+| --- | --- |
+| **Blank Bots, and onboarding** | No shipped personas. A first run that ends with one Bot of your own. |
+| **A Bot shapes itself** | `update_state` — it writes its own name, its job, its routines, and how hard it thinks, from inside the conversation. |
+| **Suggestions, not a catalogue** | Thirty-two jobs to start from, dealt a handful at a time, one per kind of work. |
+| **Answering a boundary for good** | `Always allow`, scoped to a site, a file or a tool — and the scope is on the button, so what you agree to is what happens. |
+| **"Do not ask me about…"** | A sentence you write once; a model applies it to each stopped action. Everything it lets through is recorded as seen by nobody. |
+| **One switch over both** | A deployment can refuse to have its boundary settled without a person, and it covers both of the above. |
+| **Teaching by demonstration** | Do the task once in the Bot's browser. It is written up as a procedure you edit, name, and invoke with `/`. It never records what you typed. |
+| **Effort** | The one model setting, per Bot, carried into every run — chat, rooms and routines. |
+| **Korean first** | Every user-facing string, enforced by a test. |
 
 ## Built on AG-UI
 
-A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, so OpenBot is not tied to a framework and neither are you. Agents built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand all arrive the same way, and the governance rides the protocol rather than the framework.
+A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, so LAF Agent is not tied to a framework and neither are you. Agents built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand all arrive the same way, and the governance rides the protocol rather than the framework.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
@@ -174,7 +200,7 @@ Settings worth knowing:
 
 | Variable                             | Use                                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------- |
-| `OPENBOT_DEV_NO_AUTH`                | Admits every request as one administrator. How OpenBot runs today.        |
+| `OPENBOT_DEV_NO_AUTH`                | Admits every request as one administrator. How it runs today.             |
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
 | `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
 | `COMPUTER_TOKEN`                     | Secret every Bot computer request must present. `start.sh` sets one.      |
@@ -255,7 +281,15 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 
 ## Documentation
 
-- [copilotkit.ai/openbot](https://copilotkit.ai/openbot)
+Ours:
+
+- [docs/laf/deployment-model.md](docs/laf/deployment-model.md) — one VM per person, and what follows from it
+- [docs/laf/onboarding-guide.md](docs/laf/onboarding-guide.md)
+- [docs/laf/mcp-contract.md](docs/laf/mcp-contract.md)
+- [CLAUDE.md](CLAUDE.md) — how to work in this repository
+
+Inherited, and still accurate:
+
 - [docs/README.md](docs/README.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/configuration.md](docs/configuration.md)
@@ -264,6 +298,7 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 
 ## Contributing
 
+- Read [CLAUDE.md](CLAUDE.md) first. It is short, and most of it is there because something went wrong once.
 - Open an issue or coordinate before starting substantial work.
 - Keep changes focused and update docs when setup, configuration, architecture, or user behavior changes.
 - Keep secrets, service-account JSON, customer data, and local transcripts out of the repository.
