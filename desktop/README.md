@@ -66,8 +66,14 @@ The script is `bundle`, not `build`, on purpose: the root `bun run build`
 runs every workspace's `build`, and CI runs that on a Linux runner where a
 Tauri bundle cannot be produced.
 
-The updater's public key and endpoint are carried over from the previous
-shell; releases publish `latest.json` beside the installers.
+The updater's endpoint is this repository's latest release, which publishes
+`latest.json` beside the installers. The pubkey in `tauri.conf.json` was
+carried over from the retired `LAF-labs/prime` shell and **its private half no
+longer exists**: it lived only as an Actions secret on that repository, and a
+GitHub secret cannot be read back out by anyone, its owner included. So the
+first release here has to generate a fresh pair and replace the pubkey in the
+same change. That costs nothing today — nothing signed by the old key was ever
+published, so no installed app is holding it.
 
 ## Releasing
 
@@ -87,7 +93,10 @@ only — publishing the draft is what offers the update to installed apps.
 The workflow needs `TAURI_SIGNING_PRIVATE_KEY` (the private half of the
 updater pubkey in `tauri.conf.json`, as the base64 file `tauri signer
 generate` writes) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the
-repository secrets, entered by a person. Apple Developer ID secrets are
+repository secrets, entered by a person. Neither is set yet, and the pubkey
+currently in `tauri.conf.json` has no matching private half — generate a pair,
+paste the secrets, and commit the new pubkey together, or the release builds
+signed updates that installed apps will reject. Apple Developer ID secrets are
 optional; without them the dmg is ad-hoc signed, which Gatekeeper accepts
 only on the Mac that built it. Windows code signing is not set up; SmartScreen
 will warn until it is.
