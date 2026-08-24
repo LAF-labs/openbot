@@ -66,6 +66,13 @@ The script is `bundle`, not `build`, on purpose: the root `bun run build`
 runs every workspace's `build`, and CI runs that on a Linux runner where a
 Tauri bundle cannot be produced.
 
+`dev` passes `src-tauri/tauri.dev.conf.json`, which points the window at
+`localhost:3010` instead of the deployed origin. It repeats the whole window
+object rather than only the URL because Tauri replaces arrays when it merges
+configs — a partial window would build fine and open at the wrong size. The
+two files are the one place in this shell where a value is duplicated on
+purpose; change the window's shape in both or neither.
+
 The updater's endpoint is this repository's latest release, which publishes
 `latest.json` beside the installers. The pubkey in `tauri.conf.json` was
 carried over from the retired `LAF-labs/prime` shell and **its private half no

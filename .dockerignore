@@ -1,0 +1,31 @@
+# What the build context must not carry.
+#
+# Two separate costs, and the second one is the expensive kind.
+#
+# Size: without this file every `docker compose build` ships the whole working tree to the daemon,
+# which today is 5.8 GB of Rust build output no image references. On a 2-OCPU VM that is the
+# difference between a build and an afternoon.
+#
+# Correctness: `node_modules` is copied in AFTER `bun install` has already resolved the workspace,
+# so a host tree's symlinks — pointing at macOS paths that do not exist in the image — land on top
+# of a correct install. The build then fails somewhere unrelated, with an error about a module.
+#
+# And `.env` is here because an image is a thing you push. A secret that reaches a layer has been
+# published, whether or not any process ever reads it.
+
+**/node_modules
+**/dist
+**/.DS_Store
+
+desktop/src-tauri/target
+desktop/src-tauri/gen
+
+# Regenerated during the build from the tenant package, so a host copy can only be stale.
+app/src/lib/generated
+
+.git
+.github
+.logs
+.env
+.env.*
+!.env.example

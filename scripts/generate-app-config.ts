@@ -13,13 +13,25 @@ const tenantPackageDirectory = configuredTenantPackageDirectory
     : resolve(projectRoot, "server", configuredTenantPackageDirectory)
   : resolve(projectRoot, "examples/fintech");
 const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
+/*
+ * Which sign-in providers the surface offers, decided here because the answer is compiled in.
+ *
+ * AUTH_PROVIDERS is the explicit form, and it exists for the container build: passing the real
+ * credentials as build args writes them into the image's history, and a build only ever needed to
+ * know WHETHER a provider is configured. Unset — a local `bun run dev` — it falls back to reading
+ * the credentials, so nothing about developing here changed.
+ */
 const providers =
-  process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
-  process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() &&
-  process.env.BETTER_AUTH_SECRET?.trim() &&
-  process.env.BETTER_AUTH_URL?.trim()
-    ? ["google"]
-    : [];
+  process.env.AUTH_PROVIDERS !== undefined
+    ? process.env.AUTH_PROVIDERS.split(",")
+        .map((provider) => provider.trim())
+        .filter(Boolean)
+    : process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() &&
+        process.env.BETTER_AUTH_SECRET?.trim() &&
+        process.env.BETTER_AUTH_URL?.trim()
+      ? ["google"]
+      : [];
 const applicationConfiguration = createApplicationConfiguration(
   tenantPackage,
   providers,

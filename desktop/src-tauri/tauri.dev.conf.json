@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "LAF Agent",
+        "url": "http://localhost:3010",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "visible": false,
+        "zoomHotkeysEnabled": false
+      }
+    ]
+  }
+}

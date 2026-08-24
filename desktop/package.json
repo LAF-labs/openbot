@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "typecheck": "echo 'desktop: Rust only; checked by cargo'",
     "bundle": "tauri build"
   },

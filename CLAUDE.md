@@ -9,7 +9,15 @@ Bots, each starting with nothing set, and shapes them by talking to them.
 
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no
-product logic. An earlier local-agent client (`LAF-labs/prime`) was retired in
+product logic.
+
+**The installed app is the product. The order is PC app, then mobile app, then
+the browser as a bonus on top.** The repository makes the opposite reading easy
+— the shell holds nothing and the SPA is same-origin by construction, so it
+looks like the web is the product and the shell is packaging. It is the other
+way round: same-origin is how one codebase reaches all three surfaces, not
+evidence that the browser comes first. When a change forces a choice between
+the two, the shell wins. An earlier local-agent client (`LAF-labs/prime`) was retired in
 2026-08; do not resurrect that shape.
 
 ## The deployment decides the architecture
@@ -26,6 +34,10 @@ it is the decision record, and it is why:
   deletes the foundation everything under boundaries is built on. `472ad43`
   records that refusal; take security and protocol fixes only.
 - **Seats are counted per person.** Somebody else's Bots never take yours.
+
+`docs/laf/deploying.md` is how one is actually stood up, including the three
+things that must be true before `docker compose up` can work and are not in
+this repository: DNS, the cloud's ingress rules, and the host's own firewall.
 
 ## Tech
 

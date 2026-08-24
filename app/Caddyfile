@@ -1,0 +1,32 @@
+# The deployment's front door: TLS, the built app, and the one proxy to the API.
+#
+# PUBLIC_ORIGIN is the address this deployment answers as, and it is the whole TLS setup. Caddy
+# takes a certificate for any name here that is not localhost, which needs three things true at
+# once: the name's A record reaches this machine, ports 80 and 443 are open to the internet, and
+# nothing else already holds them. Miss one and Caddy retries an ACME challenge that cannot
+# complete, which looks like a server that never finishes starting.
+#
+# It carries a scheme on purpose. The same value is the API's cookie origin, and the two must be
+# the same string down to the scheme or sign-in issues a cookie the next request will not send.
+
+{$PUBLIC_ORIGIN:http://localhost} {
+	encode zstd gzip
+
+	# Everything the API owns, including the live screen's WebSocket. `reverse_proxy` passes an
+	# upgrade through without being told to; the socket arrives here as an ordinary /api path
+	# because the app builds its URL from window.location rather than from a configured host.
+	handle /api/* {
+		reverse_proxy server:3001
+	}
+
+	handle {
+		root * /srv
+
+		# The router runs in the browser, so a deep link asks for a path no file matches. Without
+		# this line every reload anywhere but / is a 404 — and it is invisible in development,
+		# where Vite does the same fallback on its own.
+		try_files {path} /index.html
+
+		file_server
+	}
+}

@@ -38,28 +38,54 @@ test("publishes every service on a settable port with the documented default", (
 });
 
 /**
- * Both Bots are reachable at whatever `OPENAI_BASE_URL` names.
+ * Everything that calls a model is reachable at whatever `OPENAI_BASE_URL` names.
  *
- * The API server reads that variable from `.env` directly, so it moves with the deployment. The
- * Bots run in containers and see only what compose hands them, and a deployment that moved its
- * models to a gateway and found half of itself still calling OpenAI would have no way to tell.
+ * This used to say "both Bots", because the API server was not a compose service and read the
+ * variable out of `.env` itself. Now that a deployment runs it here too, it sees only what compose
+ * hands it — and a deployment that moved its models to a gateway and found part of itself still
+ * calling OpenAI would have no way to tell.
  */
-test("gives both shipped Bots the OpenAI-compatible endpoint", () => {
+test("gives everything that calls a model the OpenAI-compatible endpoint", () => {
   const compose = readFileSync(
     join(import.meta.dir, "..", "docker-compose.yml"),
     "utf8",
   );
 
-  // Both Bots speak OpenAI; only the framework Bot can be pointed at the other two.
+  // The API server and both Bots. Only the framework Bot can be pointed at the other two providers.
   expect(
     compose.match(/OPENAI_BASE_URL: \$\{OPENAI_BASE_URL:-?\}/g),
-  ).toHaveLength(2);
+  ).toHaveLength(3);
   for (const variable of [
     "ANTHROPIC_BASE_URL",
     "GOOGLE_GENERATIVE_AI_BASE_URL",
   ]) {
     expect(compose).toContain(`${variable}: \${${variable}:-}`);
   }
+});
+
+/**
+ * The sign-in button and the server that answers it are decided by one setting.
+ *
+ * Whether the button exists is compiled into the app, so it is a build input; whether sign-in works
+ * is a run-time setting on the API. Two conditions meant two ways to be half-configured — a server
+ * accepting sign-ins the surface never offered, or a button that posted into a 503. Both are keyed
+ * off GOOGLE_OAUTH_CLIENT_ID so the two halves cannot disagree.
+ */
+test("draws the sign-in button exactly when the API can answer it", () => {
+  const compose = readFileSync(
+    join(import.meta.dir, "..", "docker-compose.yml"),
+    "utf8",
+  );
+
+  expect(compose).toContain(
+    "AUTH_PROVIDERS: ${GOOGLE_OAUTH_CLIENT_ID:+google}",
+  );
+  expect(compose).toContain(
+    "BETTER_AUTH_URL: ${GOOGLE_OAUTH_CLIENT_ID:+${PUBLIC_ORIGIN}}",
+  );
+  expect(compose).toContain(
+    "BETTER_AUTH_SECRET: ${GOOGLE_OAUTH_CLIENT_ID:+${BETTER_AUTH_SECRET}}",
+  );
 });
 
 test("enables pgvector before creating vector columns", () => {

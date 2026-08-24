@@ -14,6 +14,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # A person's VM reboots; their Bots are supposed to still be there when it does.
+    restart: unless-stopped
 
   migrate:
     build:
@@ -26,6 +28,96 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+
+  # The API. Deliberately unpublished: the only way in is the web service's proxy, so a deployment
+  # opens exactly one pair of ports however many services it runs.
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      # Arms two refusals that are otherwise only warnings: the public example encryption key, and
+      # OPENBOT_DEV_NO_AUTH. Both are survivable mistakes locally and neither is survivable here,
+      # so a deployment says which one it is rather than hoping nobody copied a development .env.
+      NODE_ENV: production
+      DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
+      KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY:-}
+      TENANT_PACKAGE_DIR: ${TENANT_PACKAGE_DIR:-../tenant/laf}
+      # Every Bot a person creates is answered here. Only package-shipped Bots are built in.
+      MANAGED_AGENT_AG_UI_URL: http://agent-bot:4200/ag-ui
+      # The Bot's browser. Absent, the failure waits until somebody presses hand-over.
+      AGENT_COMPUTER_URL: http://agent-computer:4100
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:-}
+      # Sign-in issues cookies for this exact string, scheme included: to a browser https://host
+      # and host are different origins, and the mismatch reads as a session that never sticks.
+      #
+      # Both appear only when Google does, because the API treats a partial auth configuration as
+      # more dangerous than none — somebody meant to configure it and got it wrong. Passing the
+      # origin unconditionally is how this file first refused to start a deployment that had simply
+      # not set up OAuth yet, with an error naming Google rather than the value actually at fault.
+      BETTER_AUTH_URL: ${GOOGLE_OAUTH_CLIENT_ID:+${PUBLIC_ORIGIN}}
+      BETTER_AUTH_SECRET: ${GOOGLE_OAUTH_CLIENT_ID:+${BETTER_AUTH_SECRET}}
+      TRUSTED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
+      # Google is the only sign-in this deployment has — there is no email-and-password path — so
+      # without these nobody can get in at all. The redirect URI to register is the origin plus
+      # /api/auth/callback/google.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
+      INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
+      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:-}
+      INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:-}
+      COPILOTKIT_LICENSE_TOKEN: ${COPILOTKIT_LICENSE_TOKEN:-}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      BOT_MODEL: ${BOT_MODEL:-}
+      AGENT_STALL_TIMEOUT_MS: ${AGENT_STALL_TIMEOUT_MS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      agent-bot:
+        condition: service_healthy
+      agent-computer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:3001/health'); process.exit(r.ok ? 0 : 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # The only service with published ports: TLS, the built app, and the proxy to the API.
+  #
+  # It starts as soon as the API's container exists rather than waiting for it to be healthy. A
+  # front door that refuses to open while the kitchen warms up is worse than one that answers 502
+  # — and the certificate cannot be issued at all until this is listening on 80.
+  web:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      args:
+        # Whether the sign-in button exists is compiled into the app, so it is a build input and
+        # not a setting. Keyed off the same variable that gates BETTER_AUTH_URL below: configure
+        # Google and rebuild, or the server accepts sign-ins the surface never offers.
+        AUTH_PROVIDERS: ${GOOGLE_OAUTH_CLIENT_ID:+google}
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Caddy's site address and the API's cookie origin are the same value, so they cannot drift.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
+    volumes:
+      # Certificates and the ACME account. Without this volume a restart re-requests the same
+      # certificate, and five of those in a week is a Let's Encrypt rate limit measured in days.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_started
+    restart: unless-stopped
 
   # The Bot's computer is long-lived so browser sessions remain signed in across turns.
   agent-computer:
@@ -53,6 +145,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # A person's VM reboots; their Bots are supposed to still be there when it does.
+    restart: unless-stopped
 
   # Bot identity is attested by SPIRE when these optional services run.
   #
@@ -172,6 +266,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # A person's VM reboots; their Bots are supposed to still be there when it does.
+    restart: unless-stopped
 
   # The same Bot behavior on a framework, exposed as another AG-UI endpoint and registry row.
   agent-langgraph:
@@ -199,6 +295,8 @@ services:
       retries: 5
 
 volumes:
+  caddy-data:
+  caddy-config:
   postgres-data:
   agent-workspace:
   spire-server-data:
