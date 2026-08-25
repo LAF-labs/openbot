@@ -141,6 +141,8 @@ describe("deployment configuration", () => {
       },
       trustedOrigins: ["http://localhost:3000"],
       initialAdminEmails: ["admin@openbot.test", "owner@openbot.test"],
+      // Unset stays open: the lock arms only when a deployment sets SIGN_IN_ALLOWED_EMAILS.
+      allowedEmails: [],
     });
   });
 

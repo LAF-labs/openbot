@@ -62,6 +62,11 @@ export type DeploymentConfig = {
     google: { clientId: string; clientSecret: string };
     trustedOrigins: string[];
     initialAdminEmails: string[];
+    /**
+     * Who may sign in. Empty means open — the pre-lock behavior every existing setup relies on.
+     * Set, it is the door: see auth/allowlist.ts. Admin emails are always admitted on top.
+     */
+    allowedEmails: string[];
   };
   /**
    * Local development only: admit everybody as a fixed administrator instead of requiring sign-in.
@@ -235,6 +240,7 @@ function authConfig(
       ? commaSeparated(environment, "TRUSTED_ORIGINS")
       : ["http://localhost:3000"],
     initialAdminEmails: commaSeparated(environment, "INITIAL_ADMIN_EMAILS"),
+    allowedEmails: commaSeparated(environment, "SIGN_IN_ALLOWED_EMAILS"),
   };
 }
 

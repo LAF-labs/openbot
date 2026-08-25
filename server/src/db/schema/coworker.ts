@@ -160,9 +160,9 @@ export const agentMemories = pgTable(
      * Whose memory this is, beside which Bot holds it.
      *
      * A deployment serves one person — one VM each, see docs/laf/deployment-model.md — so on a
-     * correct one this column has a single value and never does any work. It is here because
-     * nothing yet ENFORCES that: no allowlist gates sign-in, so a second account is a thing the
-     * code permits even though the product does not want it.
+     * correct one this column has a single value and never does any work. It is here as defence
+     * in depth: SIGN_IN_ALLOWED_EMAILS (auth/allowlist.ts) is the door now, but a deployment that
+     * leaves it unset is open, and this column is what keeps that mistake survivable.
      *
      * And because narrowing is the direction you cannot take later. A row written without an owner
      * cannot be given one afterwards — there is nobody left to ask which person it belonged to —
