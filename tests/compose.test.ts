@@ -130,3 +130,34 @@ test("runs migrations after PostgreSQL becomes healthy", () => {
   expect(compose).toContain("condition: service_healthy");
   expect(compose).toContain('"drizzle-kit", "migrate"');
 });
+
+/**
+ * A deployment pulls; only development builds.
+ *
+ * The images are published by .github/workflows/images.yml, and the external provisioner's whole
+ * contract with this repository is these names: write an .env, `docker compose pull`, `up -d`.
+ * A service that lost its image coordinate would silently fall back to building on the customer's
+ * one small OCPU, which is the twenty-minute failure this arrangement exists to prevent.
+ */
+test("every built service names its published image, on one switchable channel", () => {
+  const compose = readFileSync(
+    join(import.meta.dir, "..", "docker-compose.yml"),
+    "utf8",
+  );
+
+  for (const service of ["server", "web", "agent-bot"]) {
+    expect(compose).toContain(
+      `image: ghcr.io/laf-labs/openbot-${service}:\${IMAGE_TAG:-stable}`,
+    );
+  }
+  // The computer keeps its override for a deployment that must pin a different build outright.
+  expect(compose).toContain(
+    "image: ${COMPUTER_IMAGE:-ghcr.io/laf-labs/openbot-agent-computer:${IMAGE_TAG:-stable}}",
+  );
+  // The migration one-shot runs the server image, so a pull-mode deployment builds nothing at all.
+  expect(
+    compose.match(
+      /image: ghcr\.io\/laf-labs\/openbot-server:\$\{IMAGE_TAG:-stable\}/g,
+    ),
+  ).toHaveLength(2);
+});

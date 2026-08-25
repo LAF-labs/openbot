@@ -90,6 +90,10 @@ restarting the container changes nothing. `docker compose build agent-computer`
 first. And it refuses to start without `COMPUTER_TOKEN`, which compose does not
 supply on its own.
 
+Deployments never build: CI publishes all four images to GHCR (`images.yml`)
+and compose pulls them by `IMAGE_TAG` (stable/edge/vX.Y.Z). Local `compose up`
+may pull too — build first when you need your local edits in the container.
+
 ## Rules
 
 ### Verify by using it, not by reading it

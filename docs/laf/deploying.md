@@ -75,6 +75,43 @@ The symptom of getting this wrong is not an error. Caddy retries an ACME
 challenge that cannot complete, so the container comes up and the site never
 answers, which looks like a server that is still starting.
 
+## Images: CI bakes, deployments pull
+
+The four deployment images are published to GHCR by
+`.github/workflows/images.yml` — on every `v*` tag (`:vX.Y.Z` + `:stable`),
+and on manual dispatch (`:edge`, optionally promoting `:stable`). The compose
+file names them with one channel switch:
+
+```
+IMAGE_TAG=stable   # released (default) · edge = main · vX.Y.Z = pinned
+```
+
+So a deployment — human or the external provisioner — never compiles:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+and an upgrade is the same two commands after the channel moves. Building
+locally still works (`docker compose build` produces the same names), which is
+what development does; the point is that a customer's one small OCPU never
+spends twenty minutes on vite.
+
+This is also the contract the external control plane (separate repository)
+holds with this one: clone, write `.env` (the required values are all in
+`.env.example`), `pull`, `up`, wait for healthy. Nothing else here is load-
+bearing for unattended provisioning.
+
+Recommended VM for one person: **1 OCPU / 6GB + a 4GB swapfile** (measured:
+the whole stack idles at 1.1GB; Chromium spikes are what the swap absorbs).
+The swapfile is the deployment's to create — cloud-init or by hand:
+
+```bash
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
 ## Standing it up
 
 ```bash

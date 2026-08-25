@@ -18,6 +18,7 @@ services:
     restart: unless-stopped
 
   migrate:
+    image: ghcr.io/laf-labs/openbot-server:${IMAGE_TAG:-stable}
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -32,6 +33,11 @@ services:
   # The API. Deliberately unpublished: the only way in is the web service's proxy, so a deployment
   # opens exactly one pair of ports however many services it runs.
   server:
+    # Built by CI and pulled here: a deployment runs `docker compose pull` and never compiles.
+    # The build block stays for development — `docker compose build` produces the same name, so
+    # the two workflows share one file. IMAGE_TAG names the channel: stable (released), edge
+    # (main), or a version tag.
+    image: ghcr.io/laf-labs/openbot-server:${IMAGE_TAG:-stable}
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -103,6 +109,7 @@ services:
   # front door that refuses to open while the kitchen warms up is worse than one that answers 502
   # — and the certificate cannot be issued at all until this is listening on 80.
   web:
+    image: ghcr.io/laf-labs/openbot-web:${IMAGE_TAG:-stable}
     build:
       context: .
       dockerfile: app/Dockerfile
@@ -135,7 +142,7 @@ services:
     build:
       context: .
       dockerfile: agent-computer/Dockerfile
-    image: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
+    image: ${COMPUTER_IMAGE:-ghcr.io/laf-labs/openbot-agent-computer:${IMAGE_TAG:-stable}}
     ports:
       # Loopback only. This process drives a browser holding real logins; COMPUTER_TOKEN is the
       # request control, and loopback keeps the surface off routed networks.
@@ -159,6 +166,7 @@ services:
 
   # The built-in Bot is an AG-UI endpoint registered the same way as a customer-provided Bot.
   agent-bot:
+    image: ghcr.io/laf-labs/openbot-agent-bot:${IMAGE_TAG:-stable}
     build:
       context: .
       dockerfile: agent-bot/Dockerfile

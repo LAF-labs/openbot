@@ -1,0 +1,132 @@
+name: Images
+
+# Builds the four deployment images and publishes them to GHCR, so a deployment PULLS instead of
+# compiling. This is the half of unattended provisioning that lives in this repository: the external
+# control plane (a separate repo) clones nothing heavy and builds nothing — it writes an .env,
+# `docker compose pull`, `up -d`, and the VM never spends its one small OCPU on a 20-minute build.
+#
+# Channels, chosen by how the run started:
+#   a `v*` tag      → :vX.Y.Z and :stable — a release moves the fleet's default channel
+#   manual dispatch → :edge from the default branch; tick `promote_stable` to also move :stable,
+#                     which exists so the very first :stable can be minted before any release tag
+#
+# Both architectures are built on NATIVE runners (amd64 on ubuntu-latest, arm64 on the free public
+# ARM runners) and merged into one manifest per image — QEMU emulation would turn the app build
+# into a half-hour job. No build cache, same reason as release.yml: a workflow that publishes must
+# not restore what a pull request could have written.
+#
+# The one value baked into an image that could differ per deployment is AUTH_PROVIDERS (which
+# sign-in buttons the web surface compiles in). The fleet is deliberately uniform: the repository
+# variable IMAGE_AUTH_PROVIDERS names the set, and changing it is a fleet decision followed by a
+# rebuild, not a per-customer knob.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      promote_stable:
+        description: "Also move :stable to this build"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/laf-labs
+
+jobs:
+  build:
+    name: ${{ matrix.service }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [server, web, agent-bot, agent-computer]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sign in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # The channel a per-arch tag belongs to. Merged tags are minted in the merge job.
+      - name: Decide the channel
+        id: channel
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "channel=$REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=edge" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push (per-arch)
+        env:
+          SERVICE: ${{ matrix.service }}
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          # Names only, never credentials: a build arg is readable in the image history.
+          AUTH_PROVIDERS: ${{ vars.IMAGE_AUTH_PROVIDERS || 'google' }}
+        run: |
+          case "$SERVICE" in
+            server)         DOCKERFILE=server/Dockerfile ;;
+            web)            DOCKERFILE=app/Dockerfile ;;
+            agent-bot)      DOCKERFILE=agent-bot/Dockerfile ;;
+            agent-computer) DOCKERFILE=agent-computer/Dockerfile ;;
+          esac
+          docker buildx build \
+            --platform "linux/$ARCH" \
+            --file "$DOCKERFILE" \
+            --build-arg AUTH_PROVIDERS="$AUTH_PROVIDERS" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --tag "${{ env.REGISTRY }}/openbot-$SERVICE:$CHANNEL-$ARCH" \
+            --push \
+            .
+
+  merge:
+    name: manifest ${{ matrix.service }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [server, web, agent-bot, agent-computer]
+    steps:
+      - name: Sign in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Merge the architectures into one tag
+        env:
+          SERVICE: ${{ matrix.service }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          PROMOTE: ${{ github.event.inputs.promote_stable }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/openbot-$SERVICE"
+          if [ "$REF_TYPE" = "tag" ]; then
+            CHANNEL="$REF_NAME"
+            EXTRA=(-t "$IMAGE:stable")
+          else
+            CHANNEL=edge
+            EXTRA=()
+            if [ "$PROMOTE" = "true" ]; then EXTRA=(-t "$IMAGE:stable"); fi
+          fi
+          docker buildx imagetools create \
+            -t "$IMAGE:$CHANNEL" "${EXTRA[@]}" \
+            "$IMAGE:$CHANNEL-amd64" "$IMAGE:$CHANNEL-arm64"
+          docker buildx imagetools inspect "$IMAGE:$CHANNEL" | head -20
