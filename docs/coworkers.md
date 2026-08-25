@@ -10,7 +10,7 @@ A coworker is a Bot with a durable profile and standing role. The role is sent w
 | Profile              | `agent_profiles`                | Name, title, role, avatar seed, owner, visibility, and soft deletion. |
 | Personal roster      | `agent_preferences`             | Per-user hidden state.                                                |
 | Channel              | `channels`                      | Conversation membership and coworker binding.                         |
-| Intelligence mapping | `intelligence_channel_mappings` | Channel-to-thread mapping.                                            |
+| Thread mapping       | `intelligence_channel_mappings` | Channel-to-thread mapping (name predates the fork; threads are local). |
 
 Package-provided agents are public and ownerless. User-created coworkers are owned by the creator.
 
@@ -39,7 +39,7 @@ Filtering happens in server/database queries. Package-provided agents cannot be 
 
 ## Channels
 
-Starting a channel creates a new conversation and Intelligence thread. Two channels with the same coworker stay separate.
+Starting a channel creates a new conversation and thread, stored in PostgreSQL. Two channels with the same coworker stay separate.
 
 Each channel routes through a channel-local proxy agent id, pinned to that channel's thread id, then forwards to the coworker runtime id.
 

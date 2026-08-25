@@ -74,13 +74,14 @@ two files are the one place in this shell where a value is duplicated on
 purpose; change the window's shape in both or neither.
 
 The updater's endpoint is this repository's latest release, which publishes
-`latest.json` beside the installers. The pubkey in `tauri.conf.json` was
-carried over from the retired `LAF-labs/prime` shell and **its private half no
-longer exists**: it lived only as an Actions secret on that repository, and a
-GitHub secret cannot be read back out by anyone, its owner included. So the
-first release here has to generate a fresh pair and replace the pubkey in the
-same change. That costs nothing today — nothing signed by the old key was ever
-published, so no installed app is holding it.
+`latest.json` beside the installers. The pubkey in `tauri.conf.json` is the
+pair generated 2026-08-25 (key id `3E9A4235FEC7D535`); its private half and
+password live in this repository's Actions secrets and with the owner, outside
+any repository. Lose both and no installed app will ever accept another
+update — the recovery is a new pair, a new pubkey commit, and every user
+reinstalling by hand. (The previous pubkey came from the retired prime shell
+with its private half already unrecoverable, which is why the first release
+rotated it: nothing signed by that key was ever published.)
 
 ## Releasing
 

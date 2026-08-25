@@ -161,21 +161,21 @@ policy — console work, still open.
 The installed app is a separate release and needs one thing this repository
 cannot carry: a signing key.
 
-The pubkey in `tauri.conf.json` came from the retired `LAF-labs/prime` shell
-and its private half no longer exists — it lived only as an Actions secret
-there, and a GitHub secret cannot be read back out by anyone, its owner
-included. So the first release generates a fresh pair:
+Done 2026-08-25: the pair whose pubkey sits in `tauri.conf.json` (key id
+`3E9A4235FEC7D535`) was generated fresh — the previous pubkey's private half
+was unrecoverable from the retired prime shell — and its private half and
+password are this repository's `TAURI_SIGNING_PRIVATE_KEY` /
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Actions secrets. The owner holds the key
+file outside any repository; losing it means a new pair, a new pubkey commit,
+and every installed app reinstalling by hand, because an installed app refuses
+a manifest signed by anything but the key its config names.
+
+To rotate again:
 
 ```bash
-bunx tauri signer generate -w ~/.tauri/laf-agent.key
+bunx tauri signer generate -w <somewhere-private>/laf-agent.key
 ```
 
-The private half goes into this repository's secrets as
-`TAURI_SIGNING_PRIVATE_KEY` (and its password as
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), entered by a person. The public half
-replaces the `pubkey` in `tauri.conf.json`, committed in the same change — a
-release signed by a key the config does not name builds and publishes fine and
-is then rejected by every installed app.
-
-Doing this now costs nothing: nothing signed by the old key was ever published,
-so no installed app is holding it.
+then replace the secrets and the `pubkey` in `tauri.conf.json` in the same
+change — a release signed by a key the config does not name builds and
+publishes fine and is then rejected by every installed app.

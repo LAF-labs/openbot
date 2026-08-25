@@ -1,4 +1,4 @@
-# OpenBot docs
+# LAF Agent docs
 
 Start with the root [README](../README.md), then use these references:
 
