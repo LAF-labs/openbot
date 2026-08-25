@@ -11,12 +11,14 @@
 
 ## 순서
 
-1. **템플릿 복사** — `examples/watch-server-template/` 를 자사 레포로.
-   `collectSignals()` 하나만 채우면 `laf.watch`가 완성된다.
+1. **템플릿에서 시작** — [LAF-labs/laf-mcp-template](https://github.com/LAF-labs/laf-mcp-template)의
+   **Use this template**로 자사 레포를 만든다. `collectSignals()` 하나만
+   채우면 `laf.watch`가 완성되고, 검사기와 CI가 같이 따라온다.
 2. **자유 툴 추가** — 봇에게 시킬 일 단위로. 툴마다 어노테이션을 선언한다
    (계약 §2). 쓰기 툴은 처음부터 만들지 말고, 읽기만으로 한 주 굴려본 뒤
    필요해진 것만 추가하는 쪽이 실제로 빠르다.
-3. **검사** — `bun server/scripts/laf-mcp-check.ts <url>` 통과까지 수정.
+3. **검사** — `bun run check`(템플릿 동봉) 통과까지 수정. 템플릿의 CI가
+   매 푸시마다 같은 검사를 돌린다.
 4. **배포** — 자사 인프라에. 코드 리뷰·비밀 관리·가용성은 자사 책임이다.
    플랫폼에는 URL과 Bearer 토큰만 전달된다.
 5. **등록** — LAF 관리 화면(`/api/watch/sources`, kind=mcp)에 URL 등록.

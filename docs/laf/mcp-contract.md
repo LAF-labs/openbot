@@ -11,7 +11,8 @@ LAF 봇 플랫폼에 자사 서비스를 연결하려는 **고객사 개발자**
 - 표준 툴 **`laf.watch` 하나는 필수**, 나머지 툴은 자유.
 - 모든 툴은 **표준 어노테이션**으로 위험도를 선언한다. 선언하지 않은 툴은
   등록 시 **최고 위험(destructive)으로 취급**된다.
-- 제출 전 `bun server/scripts/laf-mcp-check.ts <url>` 을 통과해야 한다.
+- 제출 전 검사기를 통과해야 한다 — 템플릿 저장소에 동봉:
+  [LAF-labs/laf-mcp-template](https://github.com/LAF-labs/laf-mcp-template).
 
 ## 1. `laf.watch` — 표준 툴
 
@@ -82,11 +83,14 @@ DB·업스트림이 죽었을 때 프로토콜 에러를 내지 말고 **신호�
 ## 4. 제출 전 체크
 
 ```bash
-bun server/scripts/laf-mcp-check.ts https://your-host/mcp [--token <bearer>]
+bun laf-mcp-check.ts https://your-host/mcp [--token <bearer>]
 ```
 
 등록 화면이 하는 검사와 같다: 핸드셰이크 → 툴 목록 → `laf.watch` 존재와
 어노테이션 → 실호출 → 신호 스키마 → 크기·지연. exit 0이면 등록 가능.
+(검사기 원본은 이 저장소의 `server/scripts/laf-mcp-check.ts`이고, 거울
+테스트가 등록 표면의 검증 코드와 어긋나지 않게 붙들고 있다.)
 
-시작점: [`examples/watch-server-template/`](../../examples/watch-server-template/) —
-계약 전 요소를 시연하는 실행 가능한 최소 서버.
+시작점: [LAF-labs/laf-mcp-template](https://github.com/LAF-labs/laf-mcp-template) —
+계약 전 요소를 시연하는 실행 가능한 최소 서버 + 검사기 + CI.
+**Use this template**로 자사 레포를 만들고 `collectSignals()`만 채우면 된다.
