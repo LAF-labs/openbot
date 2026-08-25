@@ -21,7 +21,8 @@
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
     "test:smoke": "OPENBOT_SMOKE=1 bun test tests/smoke",
-    "diagram": "bun scripts/architecture-diagram.ts"
+    "diagram": "bun scripts/architecture-diagram.ts",
+    "eval:model": "bun --env-file=.env evals/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",

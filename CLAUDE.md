@@ -150,6 +150,9 @@ and asserting the password is nowhere in it.
 
 ### Model calls
 
+Swapping the model is a ritual, not a debate: `bun run eval:model` drives the
+real agent-bot stack against a candidate and verdicts it (docs/laf/eval-pack.md).
+
 `askModel` in `server/src/computer/model-call.ts` is the one place. Two traps
 measured here:
 
