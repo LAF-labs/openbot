@@ -134,9 +134,16 @@ const identifyActor: IdentifyActor = async (request) => {
 const config = loadConfig();
 const port = Number.parseInt(process.env.PORT ?? "3001", 10);
 const database = createDatabase(config.databaseUrl);
+/*
+ * The boot audit store, built first because the runner tees model usage into it.
+ *
+ * Not awaited and never fatal anywhere it is used: a deployment must not fail to start because
+ * its audit trail is unavailable.
+ */
+const bootAuditStore = createAuditStore(database);
 // The durable runner behind local mode. Built before the app because construction
 // is a read: it rehydrates every thread snapshot so restarts do not lose history.
-const lafRunner = await LafPostgresRunner.create(database);
+const lafRunner = await LafPostgresRunner.create(database, bootAuditStore);
 // The laf.watch poller: pure code on a clock, a model only on change (see watch/poller.ts).
 const watchService = createWatchService(database, { port });
 // The morning card. Hour and timezone are wall-clock, read at every check.
@@ -213,17 +220,6 @@ const policyStore = createPolicyStore(
 // A boundary an administrator set is read back before the first action is decided, so a restart no
 // longer silently returns to the configured default.
 const policySource = await policyStore.load();
-
-/*
- * Record which boundary this process started with.
- *
- * The trail records the boundary a process starts with, so later audit reads can distinguish the
- * configured default from any administrator-updated policy that was persisted before restart.
- *
- * Not awaited and never fatal. A deployment must not fail to start because its audit trail is
- * unavailable, and the row is a note for a reader rather than something the server depends on.
- */
-const bootAuditStore = createAuditStore(database);
 
 /**
  * What a Bot can reach beyond its own computer.
@@ -320,6 +316,27 @@ const demonstrations = createDemonstrationRecorder({
  * resolved per call for the same reason the runtime's is — revoking a credential then takes effect
  * on the next action rather than on the next restart.
  */
+/**
+ * Server-side model calls land in the same ledger as Bot turns, tagged by purpose.
+ *
+ * The per-Bot monthly cost is a sum over `model.usage` rows; a deployment whose auto-review burns
+ * tokens invisibly would undercount its own KPI. Counts only, never content.
+ */
+const recordModelUsage =
+  (source: "auto-review" | "write-up") =>
+  (usage: {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }) => {
+    void recordAuditEvent(bootAuditStore, {
+      eventType: "model.usage",
+      targetType: "model",
+      payload: { ...usage, source },
+    }).catch(() => undefined);
+  };
+
 const reviewModel = createModelAutoReviewer({
   baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
   model: tenantPackage.model.reviewModel,
@@ -331,6 +348,7 @@ const reviewModel = createModelAutoReviewer({
       keyId: tenantPackage.model.credentialSecretRef,
       environment: process.env,
     }),
+  onUsage: recordModelUsage("auto-review"),
 });
 
 /**
@@ -351,6 +369,7 @@ const writeUpDemonstration = createWriteUp({
       keyId: tenantPackage.model.credentialSecretRef,
       environment: process.env,
     }),
+  onUsage: recordModelUsage("write-up"),
 });
 
 const autoReviewFor = async (botId: string, subject: ReviewSubject) => {
@@ -372,6 +391,13 @@ const pluginStore = createPluginStore({
   standing: standingApprovals,
 });
 
+/*
+ * Record which boundary this process started with.
+ *
+ * The trail records the boundary a process starts with, so later audit reads can distinguish the
+ * configured default from any administrator-updated policy that was persisted before restart.
+ * Not awaited and never fatal: the row is a note for a reader, not something the server depends on.
+ */
 void recordAuditEvent(bootAuditStore, {
   eventType: "computer.policy_loaded",
   targetType: "policy",

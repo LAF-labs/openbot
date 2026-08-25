@@ -24,6 +24,19 @@ export type ModelCall = {
   apiKey: () => Promise<string | null>;
   /** Injected by the tests. Production uses the global. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Told what a call cost, when the provider says. Counts only — the caller decides where they
+   * land (the audit trail, in production). Never awaited and never allowed to fail the call:
+   * metering must not be able to break the feature it measures.
+   */
+  onUsage?: (usage: ModelUsage) => void;
+};
+
+export type ModelUsage = {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 };
 
 export type Ask = {
@@ -116,7 +129,24 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
     }
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: unknown } }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
     };
+    if (call.onUsage && body.usage) {
+      try {
+        call.onUsage({
+          model: call.model,
+          promptTokens: body.usage.prompt_tokens ?? 0,
+          completionTokens: body.usage.completion_tokens ?? 0,
+          totalTokens: body.usage.total_tokens ?? 0,
+        });
+      } catch {
+        // Metering must not break the call it measures.
+      }
+    }
     const content = body.choices?.[0]?.message?.content;
     return typeof content === "string" && content.trim()
       ? { ok: true, text: content }

@@ -162,6 +162,15 @@ export const auditEventTypes = [
    */
   "computer.isolation_loaded",
   /**
+   * What a model call cost, in tokens.
+   *
+   * The per-Bot monthly cost — the KPI the pricing floor and the funding numbers rest on — is
+   * computed from these rows and from nowhere else, because nothing else in this deployment sees
+   * the provider's counts. Counts only, never content: the payload carries token numbers, the
+   * model's name and where the call came from, and nothing of what was said.
+   */
+  "model.usage",
+  /**
    * The Bot declined something it was asked to do.
    *
    * Every event above records an action a Bot took, decided on by the gateway. A model that refuses

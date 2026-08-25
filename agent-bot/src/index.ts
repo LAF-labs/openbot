@@ -187,6 +187,10 @@ export async function runAgent(
           messages: toProviderMessages(input),
           tools: toProviderTools(input),
           stream: true,
+          // The final chunk then carries token counts. Part of the OpenAI spec since 2024 and
+          // answered by every compatible endpoint measured here; a provider that ignores it
+          // simply sends no usage chunk, and the run proceeds without a usage event.
+          stream_options: { include_usage: true },
           // Omitted rather than sent as a default: a model that does not reason answers a request
           // carrying this with a 400 on some providers and silence on others, and a deployment that
           // has not said its model reasons must get the request it always got.
@@ -217,7 +221,10 @@ export async function runAgent(
           }
         >();
 
+        let usage: OpenAI.CompletionUsage | null = null;
         for await (const chunk of completion) {
+          // The usage chunk has no choices; read it before the delta guard skips it.
+          if (chunk.usage) usage = chunk.usage;
           const delta = chunk.choices[0]?.delta;
           if (!delta) continue;
 
@@ -313,6 +320,25 @@ export async function runAgent(
             }
           }
           send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+        }
+
+        /*
+         * What this turn cost, said inside the stream because that is the only channel this
+         * service has: it holds no server URL and no database, on purpose. The runner tees every
+         * run's events and writes this one to the audit trail — the number the per-Bot monthly
+         * cost KPI is computed from. Counts only, never content.
+         */
+        if (usage) {
+          send({
+            type: "CUSTOM",
+            name: "laf.model.usage",
+            value: {
+              model: MODEL,
+              promptTokens: usage.prompt_tokens,
+              completionTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            },
+          } as BaseEvent);
         }
 
         send({

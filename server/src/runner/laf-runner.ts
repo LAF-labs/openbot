@@ -28,6 +28,7 @@ import {
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
 import { eq, sql } from "drizzle-orm";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import {
   intelligenceChannelMappings,
@@ -194,6 +195,36 @@ function recordFromRow(row: SnapshotRow): InMemoryThread {
 }
 
 /**
+ * The usage the Bot's stream reported, shaped for the trail.
+ *
+ * Counts only, with non-numbers read as zero rather than trusted: the event crossed a service
+ * boundary, and a ledger row that throws on a malformed count is a run that fails on metering.
+ */
+export function modelUsageOf(events: ReadonlyArray<BaseEvent>): Array<{
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}> {
+  const found: ReturnType<typeof modelUsageOf> = [];
+  for (const raw of events) {
+    const event = raw as BaseEvent & { name?: string; value?: unknown };
+    if (String(event.type) !== "CUSTOM" || event.name !== "laf.model.usage")
+      continue;
+    const value = (event.value ?? {}) as Record<string, unknown>;
+    const count = (key: string) =>
+      typeof value[key] === "number" ? (value[key] as number) : 0;
+    found.push({
+      model: typeof value.model === "string" ? value.model : "unknown",
+      promptTokens: count("promptTokens"),
+      completionTokens: count("completionTokens"),
+      totalTokens: count("totalTokens"),
+    });
+  }
+  return found;
+}
+
+/**
  * The assistant's side of a finished run, rebuilt from its text-message events.
  *
  * Only TEXT_MESSAGE_* is read. Tool calls and their results are not reconstructed
@@ -291,6 +322,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   private constructor(
     private readonly database: Database,
     private readonly restored: Map<string, RestoredThread>,
+    private readonly auditStore: AuditStore | null,
   ) {
     // `supersede` matches the hosted posture upstream documents for its own
     // listener: a fast follow-up turn replaces a wedged one instead of erroring.
@@ -298,7 +330,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   }
 
   /** Async because construction is a read: boot rehydrates every snapshot. */
-  static async create(database: Database): Promise<LafPostgresRunner> {
+  static async create(
+    database: Database,
+    auditStore: AuditStore | null = null,
+  ): Promise<LafPostgresRunner> {
     /*
      * Boot reconciliation: a run still `running` now cannot still be running,
      * because the process that ran it is the one that just died. Marked
@@ -325,7 +360,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         },
       ]),
     );
-    return new LafPostgresRunner(database, restored);
+    return new LafPostgresRunner(database, restored, auditStore);
   }
 
   override run(request: AgentRunnerRunRequest) {
@@ -549,8 +584,40 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           finishedAt: new Date(),
         })
         .where(eq(lafThreadRuns.runId, runId));
+      await this.recordUsage(runId, threadId, agentId, events);
     } catch (error) {
       console.error("[laf-runner] persisting run end failed:", error);
+    }
+  }
+
+  /**
+   * The turn's token counts, out of the stream and into the trail.
+   *
+   * The Bot service reports what a turn cost as a CUSTOM `laf.model.usage` event — the only
+   * channel it has, since it holds no server URL and no database on purpose — and this tee is the
+   * one place every run's events already pass through, whatever surface started the run: chat,
+   * rooms and routines alike. The per-Bot monthly cost KPI is a sum over these rows.
+   */
+  private async recordUsage(
+    runId: string,
+    threadId: string,
+    agentId: string | null,
+    events: BaseEvent[],
+  ): Promise<void> {
+    if (!this.auditStore) return;
+    for (const usage of modelUsageOf(events)) {
+      await recordAuditEvent(this.auditStore, {
+        eventType: "model.usage",
+        targetType: "agent",
+        targetId: agentId ?? undefined,
+        payload: {
+          runId,
+          threadId,
+          ...(agentId ? { botId: agentId } : {}),
+          ...usage,
+          source: "bot-turn",
+        },
+      }).catch(() => undefined);
     }
   }
 

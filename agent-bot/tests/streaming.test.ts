@@ -11,7 +11,14 @@ import { describe, expect, test } from "bun:test";
  * loop that reads the provider's stream and nothing below that layer would have caught it.
  */
 
-type Chunk = { choices: Array<{ delta: Record<string, unknown> }> };
+type Chunk = {
+  choices: Array<{ delta: Record<string, unknown> }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+};
 
 /** A provider that streams a `send_message` call the way OpenAI-compatible endpoints do. */
 function fakeCompletion(chunks: Chunk[]) {
@@ -178,5 +185,61 @@ describe("how hard to think", () => {
     expect(await requestFor({ effort: "maximum" })).not.toHaveProperty(
       "reasoning_effort",
     );
+  });
+});
+
+describe("what a turn cost", () => {
+  test("the provider's counts leave as one usage event, before the finish", async () => {
+    const events = (
+      await eventsFor([
+        {
+          choices: [{ delta: { content: "안녕하세요" } }],
+        },
+        // The way OpenAI-compatible endpoints send it: a final chunk with no choices at all.
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 120,
+            completion_tokens: 8,
+            total_tokens: 128,
+          },
+        },
+      ])
+    ).map(
+      (line) =>
+        JSON.parse(line) as {
+          type: string;
+          name?: string;
+          value?: Record<string, unknown>;
+        },
+    );
+
+    const kinds = events.map((event) => event.type);
+    expect(kinds).toEqual([
+      "RUN_STARTED",
+      "TEXT_MESSAGE_START",
+      "TEXT_MESSAGE_CONTENT",
+      "TEXT_MESSAGE_END",
+      "CUSTOM",
+      "RUN_FINISHED",
+    ]);
+
+    const usage = events.find((event) => event.type === "CUSTOM");
+    expect(usage?.name).toBe("laf.model.usage");
+    expect(usage?.value).toMatchObject({
+      promptTokens: 120,
+      completionTokens: 8,
+      totalTokens: 128,
+    });
+    // Counts and a model name only. The turn's words must not ride the metering event.
+    expect(JSON.stringify(usage?.value)).not.toContain("안녕");
+  });
+
+  test("a provider that reports no usage produces no usage event", async () => {
+    const kinds = (
+      await eventsFor([{ choices: [{ delta: { content: "네" } }] }])
+    ).map((line) => (JSON.parse(line) as { type: string }).type);
+    expect(kinds).not.toContain("CUSTOM");
+    expect(kinds.at(-1)).toBe("RUN_FINISHED");
   });
 });
