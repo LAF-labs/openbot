@@ -17,7 +17,7 @@ import { roleForEmail } from "./roles";
 export function createAuth(config: DeploymentConfig, database: Database) {
   const authConfig = config.auth;
   if (!authConfig) {
-    throw new Error("Google authentication is not configured.");
+    throw new Error("Authentication is not configured.");
   }
 
   const allowlist = createSignInAllowlist({
@@ -41,8 +41,18 @@ export function createAuth(config: DeploymentConfig, database: Database) {
       usePlural: true,
       schema: { users, sessions, accounts, verifications },
     }),
+    // Only the configured ones: better-auth mounts a callback route per entry, and a mounted
+    // provider with empty credentials is a sign-in that fails at the redirect, not at startup.
     socialProviders: {
-      google: authConfig.google,
+      ...(authConfig.providers.google
+        ? { google: authConfig.providers.google }
+        : {}),
+      ...(authConfig.providers.kakao
+        ? { kakao: authConfig.providers.kakao }
+        : {}),
+      ...(authConfig.providers.naver
+        ? { naver: authConfig.providers.naver }
+        : {}),
     },
     databaseHooks: {
       user: {

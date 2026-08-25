@@ -2,14 +2,16 @@ import { createAuthClient } from "better-auth/react";
 
 export const authClient = createAuthClient();
 
-export async function signInWithGoogle(next = "/") {
+export type SignInProvider = "google" | "kakao" | "naver";
+
+export async function signInWithProvider(provider: SignInProvider, next = "/") {
   const result = await authClient.signIn.social({
-    provider: "google" as never,
+    provider: provider as never,
     // Resolved against our own origin by the caller; this only joins it to the host.
     callbackURL: new URL(next, window.location.origin).toString(),
   });
 
   if (result.error) {
-    throw new Error(result.error.message ?? "Could not start Google sign-in.");
+    throw new Error(result.error.message ?? "Could not start sign-in.");
   }
 }

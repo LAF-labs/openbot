@@ -52,7 +52,7 @@ describe("authentication availability", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
-      error: "Google authentication is not configured.",
+      error: "Authentication is not configured.",
     });
   });
 

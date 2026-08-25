@@ -69,14 +69,14 @@ test("draws the sign-in button exactly when the API can answer it", () => {
     "utf8",
   );
 
+  // The web build and the server read the same declaration, so the buttons and the API cannot
+  // disagree; the server validates the declaration against the credentials at startup.
+  expect(compose).toContain("AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}");
   expect(compose).toContain(
-    "AUTH_PROVIDERS: ${GOOGLE_OAUTH_CLIENT_ID:+google}",
+    "BETTER_AUTH_URL: ${AUTH_PROVIDERS:+${PUBLIC_ORIGIN}}",
   );
   expect(compose).toContain(
-    "BETTER_AUTH_URL: ${GOOGLE_OAUTH_CLIENT_ID:+${PUBLIC_ORIGIN}}",
-  );
-  expect(compose).toContain(
-    "BETTER_AUTH_SECRET: ${GOOGLE_OAUTH_CLIENT_ID:+${BETTER_AUTH_SECRET}}",
+    "BETTER_AUTH_SECRET: ${AUTH_PROVIDERS:+${BETTER_AUTH_SECRET}}",
   );
 });
 

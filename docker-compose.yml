@@ -51,18 +51,25 @@ services:
       # Sign-in issues cookies for this exact string, scheme included: to a browser https://host
       # and host are different origins, and the mismatch reads as a session that never sticks.
       #
-      # Both appear only when Google does, because the API treats a partial auth configuration as
-      # more dangerous than none — somebody meant to configure it and got it wrong. Passing the
-      # origin unconditionally is how this file first refused to start a deployment that had simply
-      # not set up OAuth yet, with an error naming Google rather than the value actually at fault.
-      BETTER_AUTH_URL: ${GOOGLE_OAUTH_CLIENT_ID:+${PUBLIC_ORIGIN}}
-      BETTER_AUTH_SECRET: ${GOOGLE_OAUTH_CLIENT_ID:+${BETTER_AUTH_SECRET}}
+      # Both appear only when a provider is declared, because the API treats a partial auth
+      # configuration as more dangerous than none — somebody meant to configure it and got it
+      # wrong. Passing the origin unconditionally is how this file first refused to start a
+      # deployment that had simply not set up OAuth yet, with an error naming the wrong value.
+      BETTER_AUTH_URL: ${AUTH_PROVIDERS:+${PUBLIC_ORIGIN}}
+      BETTER_AUTH_SECRET: ${AUTH_PROVIDERS:+${BETTER_AUTH_SECRET}}
       TRUSTED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
-      # Google is the only sign-in this deployment has — there is no email-and-password path — so
-      # without these nobody can get in at all. The redirect URI to register is the origin plus
-      # /api/auth/callback/google.
+      # Which sign-ins this deployment offers — there is no email-and-password path, so without at
+      # least one nobody can get in at all. AUTH_PROVIDERS declares the set (e.g. "google,kakao"),
+      # the same value the web build compiles the buttons from, and the server refuses to start if
+      # the declaration and the credentials disagree. Redirect URI per provider: the origin plus
+      # /api/auth/callback/<provider>.
+      AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      KAKAO_OAUTH_CLIENT_ID: ${KAKAO_OAUTH_CLIENT_ID:-}
+      KAKAO_OAUTH_CLIENT_SECRET: ${KAKAO_OAUTH_CLIENT_SECRET:-}
+      NAVER_OAUTH_CLIENT_ID: ${NAVER_OAUTH_CLIENT_ID:-}
+      NAVER_OAUTH_CLIENT_SECRET: ${NAVER_OAUTH_CLIENT_SECRET:-}
       INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
       SIGN_IN_ALLOWED_EMAILS: ${SIGN_IN_ALLOWED_EMAILS:-}
       INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
@@ -100,10 +107,10 @@ services:
       context: .
       dockerfile: app/Dockerfile
       args:
-        # Whether the sign-in button exists is compiled into the app, so it is a build input and
-        # not a setting. Keyed off the same variable that gates BETTER_AUTH_URL below: configure
-        # Google and rebuild, or the server accepts sign-ins the surface never offers.
-        AUTH_PROVIDERS: ${GOOGLE_OAUTH_CLIENT_ID:+google}
+        # Which sign-in buttons exist is compiled into the app, so it is a build input and not a
+        # setting. The same declaration the server validates against its credentials: change the
+        # set and rebuild, or the two halves disagree.
+        AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}
     ports:
       - "80:80"
       - "443:443"

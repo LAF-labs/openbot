@@ -21,16 +21,20 @@ const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
  * know WHETHER a provider is configured. Unset — a local `bun run dev` — it falls back to reading
  * the credentials, so nothing about developing here changed.
  */
+const authReady =
+  process.env.BETTER_AUTH_SECRET?.trim() && process.env.BETTER_AUTH_URL?.trim();
+const credentialled = (["google", "kakao", "naver"] as const).filter(
+  (provider) =>
+    process.env[`${provider.toUpperCase()}_OAUTH_CLIENT_ID`]?.trim() &&
+    process.env[`${provider.toUpperCase()}_OAUTH_CLIENT_SECRET`]?.trim(),
+);
 const providers =
   process.env.AUTH_PROVIDERS !== undefined
     ? process.env.AUTH_PROVIDERS.split(",")
         .map((provider) => provider.trim())
         .filter(Boolean)
-    : process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
-        process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() &&
-        process.env.BETTER_AUTH_SECRET?.trim() &&
-        process.env.BETTER_AUTH_URL?.trim()
-      ? ["google"]
+    : authReady
+      ? credentialled
       : [];
 const applicationConfiguration = createApplicationConfiguration(
   tenantPackage,

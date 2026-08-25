@@ -3,7 +3,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { Button } from "@/components/ui/button";
-import { signInWithGoogle } from "@/lib/auth/client";
+import { type SignInProvider, signInWithProvider } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
@@ -44,24 +44,65 @@ function safeRedirect(target: string | undefined): string {
   }
 }
 
+/*
+ * One literal t() call per provider, never t(variable): the i18n coverage test only sees literal
+ * strings, and a table it cannot see is a table that ships English to a Korean screen.
+ */
+const PROVIDER_BUTTONS: Array<{
+  provider: SignInProvider;
+  idle: () => string;
+  opening: () => string;
+  /**
+   * Each platform's own button rules, as Tailwind classes.
+   *
+   * Kakao and Naver publish exact colors (#FEE500 with near-black text; #03C75A with white) and
+   * both review the button when the app is submitted, so these are their values, not our palette.
+   * Google is our default button — its guidelines allow a neutral form.
+   */
+  className: string;
+}> = [
+  {
+    provider: "kakao",
+    idle: () => t("Continue with Kakao"),
+    opening: () => t("Opening Kakao…"),
+    className:
+      "bg-[#FEE500] text-[#191919] hover:bg-[#FEE500]/90 focus-visible:ring-[#FEE500]/40",
+  },
+  {
+    provider: "naver",
+    idle: () => t("Continue with Naver"),
+    opening: () => t("Opening Naver…"),
+    className:
+      "bg-[#03C75A] text-white hover:bg-[#03C75A]/90 focus-visible:ring-[#03C75A]/40",
+  },
+  {
+    provider: "google",
+    idle: () => t("Continue with Google"),
+    opening: () => t("Opening Google…"),
+    className: "",
+  },
+];
+
 function SignScreen() {
   const { redirect: wanted } = Route.useSearch();
-  const [isPending, setIsPending] = useState(false);
+  const [pendingProvider, setPendingProvider] = useState<SignInProvider | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
-  async function handleGoogleSignIn() {
+  async function handleSignIn(provider: SignInProvider) {
     setError(null);
-    setIsPending(true);
+    setPendingProvider(provider);
 
     try {
-      await signInWithGoogle(safeRedirect(wanted));
+      await signInWithProvider(provider, safeRedirect(wanted));
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : t("Could not start Google sign-in."),
+          : t("Could not start sign-in."),
       );
-      setIsPending(false);
+      setPendingProvider(null);
     }
   }
 
@@ -125,15 +166,24 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          {appConfig.auth.providers.includes("google") ? (
-            <Button
-              className="h-10 w-full tracking-tight"
-              disabled={isPending}
-              onClick={handleGoogleSignIn}
-              size="lg"
-            >
-              {isPending ? t("Opening Google…") : t("Continue with Google")}
-            </Button>
+          {PROVIDER_BUTTONS.some(({ provider }) =>
+            appConfig.auth.providers.includes(provider),
+          ) ? (
+            <div className="flex flex-col gap-2">
+              {PROVIDER_BUTTONS.filter(({ provider }) =>
+                appConfig.auth.providers.includes(provider),
+              ).map(({ provider, idle, opening, className }) => (
+                <Button
+                  className={`h-10 w-full tracking-tight ${className}`}
+                  disabled={pendingProvider !== null}
+                  key={provider}
+                  onClick={() => void handleSignIn(provider)}
+                  size="lg"
+                >
+                  {pendingProvider === provider ? opening() : idle()}
+                </Button>
+              ))}
+            </div>
           ) : (
             <p className="text-center text-sm text-muted-foreground">
               {t("No auth providers are configured.")}

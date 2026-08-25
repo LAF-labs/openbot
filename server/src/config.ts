@@ -53,13 +53,15 @@ export type DeploymentConfig = {
    * deployment does not acquire it without being asked.
    */
   agentStallTimeoutMs: number;
-  oauth: {
-    google?: { clientId: string; clientSecret: string };
-  };
   auth?: {
     baseUrl: string;
     secret: string;
-    google: { clientId: string; clientSecret: string };
+    /** The sign-in routes better-auth mounts. At least one, or `auth` is absent entirely. */
+    providers: {
+      google?: OAuthClient;
+      kakao?: OAuthClient;
+      naver?: OAuthClient;
+    };
     trustedOrigins: string[];
     initialAdminEmails: string[];
     /**
@@ -183,10 +185,12 @@ function requiredHttpUrl(environment: Environment, name: string): URL {
   return parsed;
 }
 
+export type OAuthClient = { clientId: string; clientSecret: string };
+
 function oauthClient(
   environment: Environment,
-  provider: "GOOGLE",
-): { clientId: string; clientSecret: string } | undefined {
+  provider: "GOOGLE" | "KAKAO" | "NAVER",
+): OAuthClient | undefined {
   const clientId = optional(environment, `${provider}_OAUTH_CLIENT_ID`);
   const clientSecret = optional(environment, `${provider}_OAUTH_CLIENT_SECRET`);
 
@@ -194,7 +198,7 @@ function oauthClient(
   // than at start-up, which is the worst moment to discover it.
   if (Boolean(clientId) !== Boolean(clientSecret)) {
     throw new Error(
-      "Google OAuth configuration requires both client ID and client secret",
+      `${provider}_OAUTH configuration requires both client ID and client secret`,
     );
   }
 
@@ -208,34 +212,73 @@ function commaSeparated(environment: Environment, name: string): string[] {
     .filter(Boolean);
 }
 
+const PROVIDER_NAMES = ["google", "kakao", "naver"] as const;
+type ProviderName = (typeof PROVIDER_NAMES)[number];
+
 function authConfig(
   environment: Environment,
-  google: { clientId: string; clientSecret: string } | undefined,
+  providers: Partial<Record<ProviderName, OAuthClient>>,
 ): DeploymentConfig["auth"] {
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
-  if (!google) {
+  const configured = PROVIDER_NAMES.filter((name) => providers[name]);
+
+  /*
+   * AUTH_PROVIDERS is the deployment's declaration, and it must agree with the credentials.
+   *
+   * The declaration exists because two other things are keyed off it and cannot read the
+   * credentials: the compose file decides whether to pass BETTER_AUTH_* at all, and the web image
+   * bakes the sign-in buttons at build time. A declaration that names a provider with no
+   * credentials would draw a button that posts into an error; credentials without the declaration
+   * would accept sign-ins the surface never offers. Both are refused by name rather than served.
+   */
+  const declared = commaSeparated(environment, "AUTH_PROVIDERS");
+  if (declared.length > 0) {
+    for (const name of declared) {
+      if (!(PROVIDER_NAMES as readonly string[]).includes(name)) {
+        throw new Error(
+          `AUTH_PROVIDERS names '${name}', which is not a provider this deployment knows (${PROVIDER_NAMES.join(", ")})`,
+        );
+      }
+      if (!providers[name as ProviderName]) {
+        throw new Error(
+          `AUTH_PROVIDERS names '${name}' but ${name.toUpperCase()}_OAUTH_CLIENT_ID is not set`,
+        );
+      }
+    }
+    for (const name of configured) {
+      if (!declared.includes(name)) {
+        throw new Error(
+          `${name.toUpperCase()}_OAUTH_CLIENT_ID is set but AUTH_PROVIDERS does not name '${name}'. ` +
+            "The sign-in buttons are compiled from AUTH_PROVIDERS, and the API must not accept a " +
+            "sign-in the surface never offers: add it there, or remove the credentials.",
+        );
+      }
+    }
+  }
+
+  if (configured.length === 0) {
     if (secret || baseUrl) {
       throw new Error(
-        "Google authentication requires GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET",
+        "Authentication requires at least one OAuth client: set GOOGLE_, KAKAO_ or NAVER_OAUTH_CLIENT_ID and _SECRET",
       );
     }
     return undefined;
   }
   if (!secret) {
-    throw new Error("Google authentication requires BETTER_AUTH_SECRET");
+    throw new Error("Authentication requires BETTER_AUTH_SECRET");
   }
   if (secret.length < 32) {
     throw new Error("BETTER_AUTH_SECRET must be at least 32 characters");
   }
   if (!baseUrl) {
-    throw new Error("Google authentication requires BETTER_AUTH_URL");
+    throw new Error("Authentication requires BETTER_AUTH_URL");
   }
 
   return {
     baseUrl,
     secret,
-    google,
+    providers,
     trustedOrigins: commaSeparated(environment, "TRUSTED_ORIGINS").length
       ? commaSeparated(environment, "TRUSTED_ORIGINS")
       : ["http://localhost:3000"],
@@ -392,7 +435,17 @@ function agentStallTimeoutMs(environment: Environment): number {
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
-  const google = oauthClient(environment, "GOOGLE");
+  const providers = {
+    ...(oauthClient(environment, "GOOGLE")
+      ? { google: oauthClient(environment, "GOOGLE") }
+      : {}),
+    ...(oauthClient(environment, "KAKAO")
+      ? { kakao: oauthClient(environment, "KAKAO") }
+      : {}),
+    ...(oauthClient(environment, "NAVER")
+      ? { naver: oauthClient(environment, "NAVER") }
+      : {}),
+  };
 
   return {
     databaseUrl: required(environment, "DATABASE_URL"),
@@ -406,8 +459,7 @@ export function loadConfig(
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../tenant/laf",
     runtime: runtimeCapabilities(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
-    oauth: { google },
-    auth: authConfig(environment, google),
+    auth: authConfig(environment, providers),
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),
   };

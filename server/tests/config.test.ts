@@ -91,7 +91,7 @@ describe("deployment configuration", () => {
         GOOGLE_OAUTH_CLIENT_SECRET: "",
       }),
     ).toThrow(
-      "Google OAuth configuration requires both client ID and client secret",
+      "GOOGLE_OAUTH configuration requires both client ID and client secret",
     );
   });
 
@@ -135,9 +135,11 @@ describe("deployment configuration", () => {
     expect(config.auth).toEqual({
       baseUrl: "http://localhost:3001",
       secret: "a-long-enough-local-development-auth-secret",
-      google: {
-        clientId: "google-client-id",
-        clientSecret: "google-client-secret",
+      providers: {
+        google: {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+        },
       },
       trustedOrigins: ["http://localhost:3000"],
       initialAdminEmails: ["admin@openbot.test", "owner@openbot.test"],
@@ -155,7 +157,71 @@ describe("deployment configuration", () => {
         BETTER_AUTH_SECRET: "",
         BETTER_AUTH_URL: "http://localhost:3001",
       }),
-    ).toThrow("Google authentication requires BETTER_AUTH_SECRET");
+    ).toThrow("Authentication requires BETTER_AUTH_SECRET");
+  });
+
+  test("enables Kakao and Naver beside Google when their contracts are present", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      KAKAO_OAUTH_CLIENT_ID: "kakao-client-id",
+      KAKAO_OAUTH_CLIENT_SECRET: "kakao-client-secret",
+      NAVER_OAUTH_CLIENT_ID: "naver-client-id",
+      NAVER_OAUTH_CLIENT_SECRET: "naver-client-secret",
+    });
+
+    expect(Object.keys(config.auth?.providers ?? {}).sort()).toEqual([
+      "google",
+      "kakao",
+      "naver",
+    ]);
+  });
+
+  /*
+   * AUTH_PROVIDERS is the declaration two other things are keyed off — the compose gate and the
+   * compiled sign-in buttons — so it must agree with the credentials, in both directions, or the
+   * surface and the API drift apart.
+   */
+  test("refuses a declaration that names a provider with no credentials", () => {
+    expect(() =>
+      loadConfig({ ...baseEnvironment, AUTH_PROVIDERS: "google,kakao" }),
+    ).toThrow(
+      "AUTH_PROVIDERS names 'kakao' but KAKAO_OAUTH_CLIENT_ID is not set",
+    );
+  });
+
+  test("refuses credentials the declaration does not name", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        AUTH_PROVIDERS: "google",
+        NAVER_OAUTH_CLIENT_ID: "naver-client-id",
+        NAVER_OAUTH_CLIENT_SECRET: "naver-client-secret",
+      }),
+    ).toThrow(
+      "NAVER_OAUTH_CLIENT_ID is set but AUTH_PROVIDERS does not name 'naver'",
+    );
+  });
+
+  test("refuses a provider name it does not know", () => {
+    expect(() =>
+      loadConfig({ ...baseEnvironment, AUTH_PROVIDERS: "google,facebook" }),
+    ).toThrow("AUTH_PROVIDERS names 'facebook'");
+  });
+
+  test("a declaration matching the credentials is accepted", () => {
+    const config = loadConfig({ ...baseEnvironment, AUTH_PROVIDERS: "google" });
+    expect(Object.keys(config.auth?.providers ?? {})).toEqual(["google"]);
+  });
+
+  test("refuses auth settings with no provider at all", () => {
+    expect(() =>
+      loadConfig({
+        DATABASE_URL: baseEnvironment.DATABASE_URL,
+        KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+        MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+        BETTER_AUTH_SECRET: baseEnvironment.BETTER_AUTH_SECRET,
+      }),
+    ).toThrow("Authentication requires at least one OAuth client");
   });
 
   // A turn that is ended is a turn somebody loses, so an unset variable leaves every stream alone

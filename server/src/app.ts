@@ -217,10 +217,7 @@ export function createApp(
   );
   app.on(["GET", "POST"], "/api/auth/*", (context) => {
     if (!auth) {
-      return context.json(
-        { error: "Google authentication is not configured." },
-        503,
-      );
+      return context.json({ error: "Authentication is not configured." }, 503);
     }
 
     return auth.handler(context.req.raw);
@@ -229,7 +226,7 @@ export function createApp(
   const authenticationUnavailable: MiddlewareHandler<{
     Variables: AppVariables;
   }> = async (context) =>
-    context.json({ error: "Google authentication is not configured." }, 503);
+    context.json({ error: "Authentication is not configured." }, 503);
   // Local development can stand in a fixed administrator so the product is reachable before the
   // authentication slice is built. It is checked first so a machine with the flag set does not also
   // need Google credentials configured just to boot.
