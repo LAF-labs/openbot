@@ -9,17 +9,8 @@ cp .env.example .env
 bun install
 ```
 
-Provision CopilotKit Intelligence after `.env` exists:
-
-```sh
-npx --yes copilotkit@latest login
-npx --yes copilotkit@latest project select
-npx --yes copilotkit@latest license --write
-```
-
-Put the `cpk-...` runtime key from `project select` in `.env` as
-`INTELLIGENCE_API_KEY`. `license --write` writes `COPILOTKIT_LICENSE_TOKEN`.
-Then add `OPENAI_API_KEY`.
+Add `OPENAI_API_KEY` (or point `OPENAI_BASE_URL` at any endpoint speaking the same API). Threads
+and memory are stored in PostgreSQL; no external thread service is involved.
 
 Start the stack:
 
@@ -39,8 +30,6 @@ Use `bun run dev` only when you want the app and API server without starting the
 | `server`          | 3001                       |
 | `agent-computer`  | 4100                       |
 | `agent-bot`       | 4200                       |
-| `agent-langgraph` | 4201                       |
-| `supervisor`      | 4500 host / 4300 container |
 | PostgreSQL        | 5432                       |
 
 `start.sh` leaves existing matching services alone and reports when a port is held by another process.
@@ -128,7 +117,7 @@ bun run test:smoke
 ```
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
-suite cannot reach: server to supervisor to computer, the gateway deciding before the browser acts,
+suite cannot reach: server to computer, the gateway deciding before the browser acts,
 and the audit row landing. Point it elsewhere with `OPENBOT_API_URL`. Without a deployment it is
 skipped by `bun run test` and says what to start when asked for by name.
 

@@ -55,8 +55,10 @@ tenant/laf/       The package: model, brand, agents, channels
 docs/laf/         Our decisions. Everything else in docs/ is upstream's.
 ```
 
-`agent-langgraph/`, `supervisor/`, `worker/` and the `spire-*` compose services
-exist and are not run. Leave them; do not build on them without asking.
+Upstream's per-Bot container plane (`supervisor/`, `spire/`, `agent-langgraph/`,
+`worker/`) was removed in 2026-08: it contradicted the one-shared-computer
+decision and none of it ran. It lives in git history; do not cherry-pick it
+back without asking.
 
 ## The gate
 

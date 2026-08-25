@@ -1,5 +1,5 @@
 /**
- * Draws the OpenBot architecture as a hand-drawn SVG, one file per colour scheme.
+ * Draws the LAF Agent architecture as a hand-drawn SVG, one file per colour scheme.
  *
  * rough.js is the same engine Excalidraw draws with, so the shapes get the wobble of a whiteboard
  * rather than the machine-perfect boxes of a Mermaid render. The seed is fixed, so regenerating
@@ -227,7 +227,7 @@ function render(t: Theme): string {
   out.push(`<rect width="${W}" height="${H}" fill="${t.paper}"/>`);
 
   // ---- title -------------------------------------------------------------
-  text(64, 56, "OpenBot", { size: 26, weight: 700, fill: t.ink });
+  text(64, 56, "LAF Agent", { size: 26, weight: 700, fill: t.ink });
   text(
     64,
     82,
@@ -242,9 +242,8 @@ function render(t: Theme): string {
   const botY = 126;
   const botH = 92;
   const bots: [number, number, string, string, boolean][] = [
-    [372, 212, "agent-bot :4200", "proof-of-concept AG-UI Bot", false],
-    [606, 212, "agent-langgraph :4201", "LangGraph AG-UI Bot", false],
-    [840, 250, "your agent", "any AG-UI endpoint, any framework", true],
+    [372, 260, "agent-bot :4200", "every Bot you make runs here", false],
+    [672, 260, "your agent", "any AG-UI endpoint, any framework", true],
   ];
   text(372, botY - 14, "BOTS", {
     size: 11.5,
@@ -355,55 +354,46 @@ function render(t: Theme): string {
     fill: t.faint,
   });
 
-  // ---- the computers, on the right --------------------------------------
+  // ---- the computer, on the right ----------------------------------------
   const cX = 1076;
   const cY = 296;
   const cW = 300;
-  text(cX, cY - 14, "A COMPUTER EACH", {
+  text(cX, cY - 14, "THE ACCOUNT'S COMPUTER", {
     size: 11.5,
     weight: 700,
     fill: t.faint,
     spacing: 1.6,
   });
-  const computers = ["risk-analyst", "knowledge", "your agent"];
-  computers.forEach((name, i) => {
-    const y = cY + i * 100;
-    box(cX, y, cW, 84, t, { stroke: t.ink });
-    text(cX + 18, y + 30, name, { size: 15, weight: 650, fill: t.ink });
-    text(cX + 18, y + 52, "Chromium · its own logins", {
-      size: 12.5,
-      fill: t.muted,
-    });
-    text(cX + 18, y + 70, "/workspace · its own files", {
-      size: 12.5,
-      fill: t.muted,
-    });
-  });
-
-  // ---- supervisor --------------------------------------------------------
-  const supX = cX;
-  const supY = 656;
-  box(supX, supY, cW, 90, t, { stroke: t.ink, dashed: true });
-  text(supX + 18, supY + 30, "supervisor :4500", {
-    size: 14.5,
+  box(cX, cY, cW, 150, t, { stroke: t.ink });
+  text(cX + 18, cY + 34, "one computer", {
+    size: 15,
     weight: 650,
     fill: t.ink,
   });
-  text(supX + 18, supY + 54, "the only process that", {
+  text(cX + 18, cY + 62, "Chromium · your logins", {
     size: 12.5,
     fill: t.muted,
   });
-  text(supX + 18, supY + 72, "creates a computer", {
+  text(cX + 18, cY + 82, "/workspace · your files", {
+    size: 12.5,
+    fill: t.muted,
+  });
+  text(cX + 18, cY + 102, "one container, always on", {
     size: 12.5,
     fill: t.muted,
   });
 
-  text(cX, 782, "no Bot can read another's files", {
+  text(cX, cY + 186, "every Bot you make shares it,", {
     size: 12.5,
     fill: t.muted,
     italic: true,
   });
-  text(cX, 802, "or reuse another's sign-ins", {
+  text(cX, cY + 206, "so work carries from Bot to Bot —", {
+    size: 12.5,
+    fill: t.muted,
+    italic: true,
+  });
+  text(cX, cY + 226, "the gateway is the boundary", {
     size: 12.5,
     fill: t.muted,
     italic: true,
@@ -412,7 +402,7 @@ function render(t: Theme): string {
   // ---- stores, along the bottom -----------------------------------------
   const dbX = 372;
   const dbY = 660;
-  box(dbX, dbY, 226, 118, t, { stroke: t.ink });
+  box(dbX, dbY, 476, 118, t, { stroke: t.ink });
   text(dbX + 18, dbY + 32, "PostgreSQL :5432", {
     size: 14.5,
     weight: 650,
@@ -421,23 +411,10 @@ function render(t: Theme): string {
   lines(
     dbX + 18,
     dbY + 58,
-    ["the audit trail", "policy, grants", "credentials, encrypted"],
-    t,
-    12.5,
-    19,
-  );
-
-  const intX = 622;
-  box(intX, dbY, 226, 118, t, { stroke: t.ink });
-  text(intX + 18, dbY + 32, "CopilotKit Intelligence", {
-    size: 14.5,
-    weight: 650,
-    fill: t.ink,
-  });
-  lines(
-    intX + 18,
-    dbY + 58,
-    ["durable threads", "memory", "external service"],
+    [
+      "the audit trail · policy, grants",
+      "threads, memory · credentials, encrypted",
+    ],
     t,
     12.5,
     19,
@@ -462,7 +439,7 @@ function render(t: Theme): string {
   });
   label(svX + 390, svY - 36, "a tool call", t.muted);
   // the one you bring plugs in exactly the same way
-  arrow(940, botY + botH + 8, svX + svW - 40, svY - 8, {
+  arrow(802, botY + botH + 8, svX + svW - 40, svY - 8, {
     colour: t.bring,
     dashed: true,
     width: 1.5,
@@ -511,28 +488,20 @@ function render(t: Theme): string {
   label(gX + 72, (svY + svH + dbY) / 2 + 4, "always", t.gate, "end");
 
   // threads and memory, both ways
-  arrow(intX + 113, svY + svH + 8, intX + 113, dbY - 8, {
+  arrow(dbX + 340, svY + svH + 8, dbX + 340, dbY - 8, {
     colour: t.ink,
     dashed: true,
     tailHead: true,
   });
 
-  // the supervisor builds each computer
-  arrow(supX + 150, supY - 8, cX + 150, cY + 2 * 100 + 92, {
-    colour: t.ink,
-    dashed: true,
-  });
-  label(supX + 166, supY - 22, "creates one each", t.muted, "start");
-
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`,
-    `<title>OpenBot architecture</title>`,
+    `<title>LAF Agent architecture</title>`,
     `<desc>A turn goes from the app to the server, which sends it to a Bot over AG-UI. Every tool call ` +
       `the Bot makes returns through the gateway, which resolves the target, decides it against the ` +
       `configured policy, records an audit row, and only then acts, or refuses and names the rule. ` +
-      `Allowed actions reach that Bot's own computer, one container each holding its own Chromium, ` +
-      `logins and workspace, created by the supervisor. Every decision lands in PostgreSQL; threads ` +
-      `and memory live in CopilotKit Intelligence.</desc>`,
+      `Allowed actions reach the account's computer, one container holding Chromium, logins and a ` +
+      `workspace shared by every Bot. Decisions, threads and memory land in PostgreSQL.</desc>`,
     ...out,
     `</svg>`,
   ].join("\n");

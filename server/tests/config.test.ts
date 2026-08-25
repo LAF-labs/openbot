@@ -35,7 +35,7 @@ describe("deployment configuration", () => {
     expect(config.managedAgentAgUiUrl).toEqual(
       new URL("http://localhost:4200/ag-ui"),
     );
-    expect(config.tenantPackageDirectory).toBe("../examples/fintech");
+    expect(config.tenantPackageDirectory).toBe("../tenant/laf");
   });
 
   test("allows deployment without an authentication provider", () => {

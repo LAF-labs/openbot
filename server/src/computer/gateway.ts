@@ -111,19 +111,6 @@ export type ActionActor = {
 };
 
 export type ComputerGatewayOptions = {
-  /**
-   * The container supervisor, when each Bot has a computer of its own.
-   *
-   * Stop and reset prefer it: a computer that is wedged cannot be asked to stop itself, and that is
-   * exactly the state where a person reaches for the button. Without a supervisor these stay profile
-   * operations performed by the computer itself, which fits the single-computer deployment where
-   * nothing else holds the Docker socket.
-   */
-  supervisor?: {
-    stop(botId: string): Promise<void>;
-    reset(botId: string): Promise<void>;
-    list?(): Promise<{ botId: string; status: string; startedAt?: string }[]>;
-  };
   client: ComputerClient;
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -185,7 +172,7 @@ type CachedSnapshot = {
 };
 
 export function createComputerGateway(options: ComputerGatewayOptions) {
-  const { client, auditStore, supervisor } = options;
+  const { client, auditStore } = options;
   const snapshots = new Map<string, CachedSnapshot>();
   const approvals = options.approvals ?? createApprovalRegistry();
   const repeat = options.repeat ?? createRepeatDetector();
@@ -688,27 +675,11 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     /**
      * The computers, for the admin surface. A read, so no audit row.
      *
-     * With a supervisor the list is the containers, because that is what a computer is: one per
-     * Bot, each with its own storage, and the page's Stop and Reset act on those. Asking a single
-     * computer for its profiles would answer for the one shared browser instead, which is the older
-     * arrangement and no longer what an administrator is looking at.
+     * Said, not inferred: every Bot shares the account's one browser, which looks identical on
+     * every screen to each having its own — same cards, same trail, same screenshots. A reader has
+     * to be told which arrangement they are looking at.
      */
     async computers() {
-      if (supervisor?.list) {
-        const running = await supervisor.list();
-        return {
-          // Said, not inferred. Without a supervisor every Bot shares one browser, which looks
-          // identical on every screen to each having its own, same cards, same trail, same
-          // screenshots. A reader has to be told which deployment they are looking at.
-          isolation: "per-bot" as const,
-          computers: running.map((computer) => ({
-            botId: computer.botId,
-            running: computer.status === "running",
-            startedAt: computer.startedAt ?? null,
-            egress: null,
-          })),
-        };
-      }
       return { isolation: "shared" as const, ...(await client.computers()) };
     },
 
@@ -721,16 +692,6 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * tried.
      */
     async stopComputer(computerId: string, botId: string, actor: ActionActor) {
-      if (supervisor) {
-        await supervisor.stop(botId);
-        await writeControlEvent(auditStore, "computer.stopped", {
-          botId,
-          actor,
-          computerId,
-          reason: "the container was stopped",
-        });
-        return { wasRunning: true };
-      }
       const result = await as(botId).stopComputer();
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
@@ -750,16 +711,6 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * row is written whatever happens next.
      */
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
-      if (supervisor) {
-        await supervisor.reset(botId);
-        await writeControlEvent(auditStore, "computer.reset", {
-          botId,
-          actor,
-          computerId,
-          reason: "the container and its profile were deleted",
-        });
-        return { cleared: true };
-      }
       const result = await as(botId).resetComputer();
       await writeControlEvent(auditStore, "computer.reset", {
         botId,

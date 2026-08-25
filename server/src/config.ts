@@ -76,12 +76,6 @@ export type DeploymentConfig = {
     baseUrl: string;
     /** The secret every computer requires of its caller. */
     token?: string;
-    /**
-     * The container supervisor, when each Bot is to get a computer of its own. Absent means one
-     * shared computer at `baseUrl`, which is what a laptop wants and is honest about being one
-     * machine.
-     */
-    supervisor?: { baseUrl: string; token?: string };
     /** True on a laptop, where browsing the deployment's own services is the point. */
     allowPrivateHosts: boolean;
     /**
@@ -302,8 +296,6 @@ function computerConfig(
    * unauthenticated callers that can reach its port.
    */
   const computerToken = optional(environment, "COMPUTER_TOKEN");
-  const supervisorUrl = url(environment, "COMPUTER_SUPERVISOR_URL");
-  const supervisorToken = optional(environment, "SUPERVISOR_TOKEN");
   const repeatWindowMs = milliseconds(environment, "COMPUTER_REPEAT_WINDOW_MS");
   return {
     baseUrl,
@@ -312,14 +304,6 @@ function computerConfig(
     ...(policy ? { policy } : {}),
     ...(repeatWindowMs ? { repeatWindowMs } : {}),
     ...(computerToken ? { token: computerToken } : {}),
-    ...(supervisorUrl
-      ? {
-          supervisor: {
-            baseUrl: supervisorUrl,
-            ...(supervisorToken ? { token: supervisorToken } : {}),
-          },
-        }
-      : {}),
   };
 }
 
@@ -413,7 +397,7 @@ export function loadConfig(
     ),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     tenantPackageDirectory:
-      optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
+      optional(environment, "TENANT_PACKAGE_DIR") ?? "../tenant/laf",
     runtime: runtimeCapabilities(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     oauth: { google },

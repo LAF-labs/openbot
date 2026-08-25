@@ -26,7 +26,10 @@ bash scripts/start.sh
 | `INTELLIGENCE_API_KEY`        | Runtime key for the Intelligence project.                                                             |
 | `COPILOTKIT_LICENSE_TOKEN`    | License token for the Intelligence project.                                                           |
 
-All four Intelligence values are required together. Missing any of them stops server startup.
+The four Intelligence values are optional and only meaningful together: with all four absent the
+server runs in local mode and stores threads and memory in PostgreSQL, which is how LAF Agent
+deploys. Setting some but not all of them stops server startup — somebody meant to configure the
+hosted mode and got it wrong.
 
 ## General variables
 
@@ -34,25 +37,17 @@ All four Intelligence values are required together. Missing any of them stops se
 | -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | `PORT`               | `3001`                             | API server port.                                                    |
 | `NODE_ENV`           | unset                              | `production` enables startup refusals for local-only settings.      |
-| `TENANT_PACKAGE_DIR` | `../examples/fintech`              | Tenant package directory, resolved from `server/`.                  |
-| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment inside a shared Intelligence project.          |
-| `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and both shipped Bots.        |
+| `TENANT_PACKAGE_DIR` | `../tenant/laf`                    | Tenant package directory, resolved from `server/`.                  |
+| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment in the thread ids it mints.                    |
+| `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and `agent-bot`.              |
 | `OPENAI_BASE_URL`    | unset                              | OpenAI-compatible endpoint that key is spent against. See below.    |
-| `BOT_PROVIDER`       | `openai`                           | Provider for `agent-langgraph`: `openai`, `anthropic`, or `google`. |
-| `ANTHROPIC_API_KEY`  | unset                              | Anthropic key when `BOT_PROVIDER=anthropic`.                        |
-| `ANTHROPIC_BASE_URL` | unset                              | Anthropic-compatible endpoint that key is spent against.            |
-| `GOOGLE_API_KEY`     | unset                              | Google key when `BOT_PROVIDER=google`.                              |
-| `GOOGLE_GENERATIVE_AI_BASE_URL` | unset                   | Google-compatible endpoint that key is spent against.               |
-| `BOT_MODEL`          | provider default from Bot code/env | Model used by the shipped Bots.                                     |
-| `BOT_RESPONSES_API`  | `false`                            | Makes `agent-langgraph` use the OpenAI Responses API.               |
+| `BOT_MODEL`          | provider default from Bot code/env | Model used by `agent-bot`.                                          |
 
 ## OpenAI-compatible endpoints
 
 `OPENAI_BASE_URL` decides where an OpenAI-shaped request is answered. Unset, that is OpenAI. Set, it is any endpoint speaking the same API: a gateway in front of several providers, a proxy, or a model on hardware you control.
 
-It moves the whole deployment rather than one Bot. The API server reads it for package built-in agents, `agent-bot` reads it for the client it constructs, and `agent-langgraph` reads it for `BOT_PROVIDER=openai`.
-
-The other two providers work the same way under their own names, because they are different APIs rather than different URLs for this one: `ANTHROPIC_BASE_URL` and `GOOGLE_GENERATIVE_AI_BASE_URL`. All three are the names the API server already reads, so one line moves the built-in agents and the Bots together and a deployment cannot end up with half of itself pointed somewhere else.
+It moves the whole deployment rather than one Bot. The API server reads it for package built-in agents, and `agent-bot` reads it for the client it constructs, so one line moves the built-in agents and the Bots together and a deployment cannot end up with half of itself pointed somewhere else.
 
 Model names travel verbatim, so use whatever the endpoint publishes. An endpoint that namespaces its catalogue wants both halves of the name, in `BOT_MODEL` and in the tenant package's `default_model` alike.
 
@@ -91,17 +86,14 @@ Two things are worth knowing before pointing a deployment at any gateway. Not ev
 
 Google OAuth client id and secret must be configured together. If Google OAuth is configured, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are also required.
 
-## Computer and supervisor
+## Computer
 
 | Variable                             | Meaning                                                                                   |
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `AGENT_COMPUTER_URL`                 | Shared computer URL. If absent, computer routes are not mounted.                          |
+| `AGENT_COMPUTER_URL`                 | The account's computer. If absent, computer routes are not mounted.                       |
 | `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.     |
-| `COMPUTER_SUPERVISOR_URL`            | Supervisor URL for per-Bot computers. If absent, Bots share `AGENT_COMPUTER_URL`.         |
-| `SUPERVISOR_TOKEN`                   | Bearer token required by the supervisor.                                                  |
 | `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Local-only private-host browsing when `true`. Cloud metadata addresses are still refused. |
 | `AGENT_COMPUTER_POLICY`              | JSON action policy: `{"mode":"enforce","deny":[...],"ask":[...],"allow":[...]}`.          |
-| `COMPUTER_RUNTIME`                   | Set to `runsc` to run supervised computers under gVisor.                                  |
 
 `agent-computer` also reads:
 
@@ -113,36 +105,7 @@ Google OAuth client id and secret must be configured together. If Google OAuth i
 - `EGRESS_PROXY_DEFAULT`
 - `EGRESS_PROXY_<BOT_ID>`
 
-The supervisor also reads:
-
-- `COMPUTER_IMAGE`
-- `COMPUTER_NAMESPACE`
-- `COMPUTER_NETWORK`
-- `COMPUTER_MEMORY_BYTES`
-- `DOCKER_SOCKET`
-
-`COMPUTER_NAMESPACE` defaults to `openbot` and names the deployment a computer belongs to. It is part
-of every container and volume name the supervisor derives, and the supervisor acts only on computers
-carrying it, so two deployments on one Docker host never adopt each other's.
-
-Per-Bot computers belong to the supervisor rather than to Compose, so `docker compose down -v` does
-not remove them: their containers keep running and their profile volumes, which hold whatever the
-Bots are signed in to, survive. Remove them by the label the supervisor sets:
-
-```sh
-docker ps -aq --filter "label=openbot.namespace=openbot" | xargs -r docker rm -f
-docker volume ls -q --filter "label=openbot.namespace=openbot" | xargs -r docker volume rm
-```
-
 Proxy credentials may appear in proxy URLs, but the computer strips them before reporting proxy status.
-
-## Attested identity
-
-When optional SPIRE services are used:
-
-- the supervisor reads `SPIRE_SOCKET`, `SPIRE_AGENT_ID`, `SPIRE_TRUST_DOMAIN`, and `SPIRE_AGENT_SOCKET_VOLUME`;
-- computers read `SPIFFE_ENDPOINT_SOCKET`;
-- Compose also uses `SPIRE_JOIN_TOKEN` and `COMPOSE_PROJECT_NAME`.
 
 ## Ports
 
@@ -152,8 +115,6 @@ When optional SPIRE services are used:
 | `server`          | 3001                       | `SERVER_PORT`     |
 | `agent-computer`  | 4100                       | `COMPUTER_PORT`   |
 | `agent-bot`       | 4200                       | `BOT_PORT`        |
-| `agent-langgraph` | 4201                       | `LANGGRAPH_PORT`  |
-| `supervisor`      | 4500 host / 4300 container | `SUPERVISOR_PORT` |
 | PostgreSQL        | 5432                       | `POSTGRES_PORT`   |
 
 Set these in `.env` or in the environment. `docker-compose.yml` publishes on them and
@@ -161,23 +122,20 @@ Set these in `.env` or in the environment. `docker-compose.yml` publishes on the
 everything that talks to it. The addresses built from them are separate settings, so a moved service
 also needs its URL changed: `DATABASE_URL`, `AGENT_COMPUTER_URL` and `MANAGED_AGENT_AG_UI_URL`.
 
-To run two deployments on one Docker host, give the second one its own `COMPOSE_PROJECT_NAME`,
-`COMPUTER_NAMESPACE` and `COMPUTER_IMAGE`. Container and volume names are global to a host, and the
-namespace is what keeps each deployment's per-Bot computers its own.
+To run two deployments on one Docker host, give the second one its own `COMPOSE_PROJECT_NAME`.
+Container and volume names are global to a host, and the project name is what keeps each
+deployment's containers and volumes its own.
 
-Give it its own `DEPLOYMENT_ID` as well when it shares an Intelligence project, which a copy made
-from the same `.env` does. Threads are listed per Bot and carry nothing else that says where a
-conversation came from, so the name goes into every thread id a deployment mints and is how its own
-conversations stay tellable from the other's.
-
-Set `OPENBOT_ONE_COMPUTER_EACH=false` when using `start.sh` to run all Bots against one shared computer.
+Give it its own `DEPLOYMENT_ID` as well. Threads are listed per Bot and carry nothing else that
+says where a conversation came from, so the name goes into every thread id a deployment mints and
+is how its own conversations stay tellable from the other's.
 
 ## Tenant package
 
 The tenant package contains five required YAML files:
 
 ```text
-examples/fintech/
+tenant/laf/
 ├── brand.yaml
 ├── agents.yaml
 ├── channels.yaml

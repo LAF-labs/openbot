@@ -1,11 +1,12 @@
 {
-  "name": "@openbot/agent-bot",
+  "name": "agent-bot",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "typecheck": "bunx tsc --noEmit -p ."
   },
   "dependencies": {
     "@ag-ui/core": "0.0.57",

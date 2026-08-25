@@ -26,7 +26,7 @@ const rootManifest = manifest(".");
 const workspaces = rootManifest.workspaces ?? [];
 
 /** Packages with their own manifest that the root install does not reach. */
-const OUTSIDE_THE_WORKSPACES = ["agent-computer", "supervisor"] as const;
+const OUTSIDE_THE_WORKSPACES = ["agent-computer"] as const;
 
 describe("a clone that has only run bun install", () => {
   test.each(OUTSIDE_THE_WORKSPACES)(
@@ -51,22 +51,19 @@ describe("a clone that has only run bun install", () => {
     },
   );
 
-  test("can read the example tenant package with nothing set", () => {
+  test("can read the default tenant package with nothing set", () => {
     // `pretest` loads this package, so a name here with no fallback fails the suite before a single
-    // test runs.
-    const agents = readFileSync(
-      join(root, "examples/fintech/agents.yaml"),
-      "utf8",
-    );
+    // test runs. model.yaml is where the environment references live in this package.
+    const model = readFileSync(join(root, "tenant/laf/model.yaml"), "utf8");
     const referenced = [
-      ...agents.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)([^}]*)\}/g),
+      ...model.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)([^}]*)\}/g),
     ];
 
     expect(referenced.length).toBeGreaterThan(0);
     for (const [, name, rest] of referenced) {
       expect(
         rest.startsWith(":-"),
-        `\${${name}} in agents.yaml has no fallback, so a clone with no .env cannot read it`,
+        `\${${name}} in model.yaml has no fallback, so a clone with no .env cannot read it`,
       ).toBe(true);
     }
   });

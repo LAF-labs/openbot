@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Start the local OpenBot stack and verify each service answers as OpenBot.
+# Start the local stack and verify each service answers. The same four pieces CLAUDE.md names:
+# postgres + agent-computer + agent-bot in Docker, then the API server and the app on the host.
 # Safe to rerun: matching services are left running, and unrelated port holders are reported.
 
 set -euo pipefail
@@ -29,11 +30,8 @@ APP_PORT="$(setting APP_PORT 3010)"
 SERVER_PORT="$(setting SERVER_PORT 3001)"
 COMPUTER_PORT="$(setting COMPUTER_PORT 4100)"
 BOT_PORT="$(setting BOT_PORT 4200)"
-LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
-SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
-ONE_COMPUTER_EACH="${OPENBOT_ONE_COMPUTER_EACH:-true}"
 export APP_PORT SERVER_PORT
-SUPERVISOR_TOKEN="$(setting SUPERVISOR_TOKEN openbot-dev-supervisor-token)"
+# The computer refuses to start without a token, and compose does not supply one on its own.
 COMPUTER_TOKEN="$(setting COMPUTER_TOKEN openbot-dev-computer-token)"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
@@ -71,15 +69,12 @@ wait_for() {
 }
 
 echo
-echo "OpenBot"
-echo "======="
+echo "LAF Agent"
+echo "========="
 
 info "1/4  Docker services"
 SERVICES=(postgres)
-if [ "$ONE_COMPUTER_EACH" = "true" ]; then
-  SERVICES+=(supervisor)
-fi
-for svc_port in "agent-computer:$COMPUTER_PORT" "agent-bot:$BOT_PORT" "agent-langgraph:$LANGGRAPH_PORT"; do
+for svc_port in "agent-computer:$COMPUTER_PORT" "agent-bot:$BOT_PORT" ; do
   svc="${svc_port%%:*}"; port="${svc_port##*:}"
   if curl -fsS --max-time 3 "http://localhost:$port/health" >/dev/null 2>&1; then
     info "  $svc: already answering on $port"
@@ -88,8 +83,7 @@ for svc_port in "agent-computer:$COMPUTER_PORT" "agent-bot:$BOT_PORT" "agent-lan
   fi
 done
 
-export SUPERVISOR_TOKEN COMPUTER_TOKEN
-export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT
+export COMPUTER_TOKEN COMPUTER_PORT BOT_PORT
 docker compose up -d --build "${SERVICES[@]}" >/dev/null
 if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."
@@ -98,7 +92,6 @@ if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
 fi
 wait_for "http://localhost:$COMPUTER_PORT/health" "agent-computer"
 wait_for "http://localhost:$BOT_PORT/health" "agent-bot"
-wait_for "http://localhost:$LANGGRAPH_PORT/health" "agent-langgraph"
 
 for table in agent_profiles agent_preferences; do
   if ! docker compose exec -T postgres \
@@ -121,33 +114,21 @@ green "  managed coworker endpoint: $MANAGED_URL"
 info "2/4  Server"
 require_free_or_ours "$SERVER_PORT" server
 if ! curl -fsS --max-time 3 "http://localhost:$SERVER_PORT/api/capabilities" >/dev/null 2>&1; then
-  if [ "$ONE_COMPUTER_EACH" = "true" ]; then
-    (cd server && PORT="$SERVER_PORT" \
-      COMPUTER_SUPERVISOR_URL="http://localhost:$SUPERVISOR_PORT" \
-      SUPERVISOR_TOKEN="$SUPERVISOR_TOKEN" \
-      COMPUTER_TOKEN="$COMPUTER_TOKEN" \
-      bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
-  else
-    (cd server && PORT="$SERVER_PORT" bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
-  fi
+  (cd server && PORT="$SERVER_PORT" \
+    AGENT_COMPUTER_URL="http://localhost:$COMPUTER_PORT" \
+    COMPUTER_TOKEN="$COMPUTER_TOKEN" \
+    bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
 fi
 wait_for "http://localhost:$SERVER_PORT/api/capabilities" "server"
 
 info "3/4  Runtime health"
-INFO="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/copilotkit/info")"
-python3 - "$INFO" <<'PY'
+# /api/copilotkit has no GET surface (the routes are agent/{id}/run and threads/*), so the runtime
+# is asked through /api/capabilities, which reports the mode actually loaded.
+CAPS="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/capabilities")"
+python3 - "$CAPS" <<'PY'
 import json, sys
-info = json.loads(sys.argv[1])
-status, agents = info.get("licenseStatus"), list(info.get("agents", {}))
-if status != "valid":
-    print(f"\033[31m  licence is '{status}', not 'valid'.\033[0m")
-    print("\033[31m  Run: npx copilotkit@latest login && npx copilotkit@latest license --write\033[0m")
-    print("\033[31m  See README.md for Intelligence setup.\033[0m")
-    raise SystemExit(1)
-if not agents:
-    print("\033[31m  No Bots registered.\033[0m")
-    raise SystemExit(1)
-print(f"\033[32m  licence valid · mode {info.get('mode')} · Bots: {', '.join(agents)}\033[0m")
+caps = json.loads(sys.argv[1])
+print(f"\033[32m  mode {caps.get('mode')} · durable history: {caps.get('durableHistory')}\033[0m")
 PY
 
 info "4/4  App"
@@ -169,13 +150,6 @@ Next steps:
   - Boundaries/policy:     http://localhost:$APP_PORT/admin/boundaries
   - Setup docs:            README.md
   - Configuration docs:    docs/configuration.md
-
-Try:
-
-  1. Open /bot and ask: Open news.ycombinator.com and tell me the top story.
-  2. Create a coworker in /agents and start a channel with it.
-  3. Review browser/file actions in /admin/audit.
-  4. Add a deny rule in /admin/boundaries, then retry the same action.
 
 Logs: $LOGS
 Stop Docker services: docker compose down

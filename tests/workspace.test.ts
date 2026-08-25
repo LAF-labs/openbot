@@ -14,7 +14,7 @@ function packageManifest(path: string) {
 }
 
 describe("OpenBot workspace", () => {
-  test("defines the app, server, worker and desktop packages", () => {
+  test("defines the app, server, agent-bot and desktop packages", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { workspaces: string[] };
@@ -27,7 +27,7 @@ describe("OpenBot workspace", () => {
     expect(rootManifest.workspaces).toEqual([
       "app",
       "server",
-      "worker",
+      "agent-bot",
       "desktop",
     ]);
 

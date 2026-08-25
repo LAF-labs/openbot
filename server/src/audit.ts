@@ -152,15 +152,13 @@ export const auditEventTypes = [
    */
   "computer.policy_loaded",
   /**
-   * Whether this deployment gives each Bot a computer of its own, said out loud at boot.
+   * That every Bot shares the account's one computer, said out loud at boot.
    *
-   * Without a supervisor every Bot shares one browser, which is a legitimate way to run on a laptop
-   * and the opposite of what per-Bot isolation promises. The difference is invisible: the screens look
-   * identical, the trail looks identical, and a Bot acting on another Bot's session looks exactly like
-   * a Bot acting on its own. Nothing in the product distinguishes them, so nothing would.
-   *
-   * So the deployment states which one it is, once, where it cannot be argued with later. Same reason
-   * as `computer.policy_loaded`: the trail records the boundary that is actually in force.
+   * The sharing is a product decision (computer/assignment.ts), and it is invisible: the screens
+   * look identical to each Bot having its own, and a Bot acting on another Bot's session looks
+   * exactly like a Bot acting on its own. So the deployment states the arrangement once, where it
+   * cannot be argued with later. Same reason as `computer.policy_loaded`: the trail records the
+   * boundary that is actually in force.
    */
   "computer.isolation_loaded",
   /**

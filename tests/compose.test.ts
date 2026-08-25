@@ -27,9 +27,7 @@ test("publishes every service on a settable port with the documented default", (
   const published = [
     ["POSTGRES_PORT", "5432", "5432"],
     ["COMPUTER_PORT", "4100", "4100"],
-    ["SUPERVISOR_PORT", "4500", "4300"],
     ["BOT_PORT", "4200", "4200"],
-    ["LANGGRAPH_PORT", "4201", "4201"],
   ] as const;
 
   for (const [name, host, container] of published) {
@@ -51,16 +49,10 @@ test("gives everything that calls a model the OpenAI-compatible endpoint", () =>
     "utf8",
   );
 
-  // The API server and both Bots. Only the framework Bot can be pointed at the other two providers.
+  // The API server and the Bot endpoint. Two services call a model; both must hear the same answer.
   expect(
     compose.match(/OPENAI_BASE_URL: \$\{OPENAI_BASE_URL:-?\}/g),
-  ).toHaveLength(3);
-  for (const variable of [
-    "ANTHROPIC_BASE_URL",
-    "GOOGLE_GENERATIVE_AI_BASE_URL",
-  ]) {
-    expect(compose).toContain(`${variable}: \${${variable}:-}`);
-  }
+  ).toHaveLength(2);
 });
 
 /**

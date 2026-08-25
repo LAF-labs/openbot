@@ -23,7 +23,6 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
-import { accountComputerKey } from "./computer/assignment";
 import {
   createModelAutoReviewer,
   type ReviewSubject,
@@ -37,7 +36,6 @@ import {
 } from "./computer/policy-store";
 import { createDatabaseRepeatDetector } from "./computer/repeat";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
-import { createSupervisorClient } from "./computer/supervisor";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
 import { createConnectorAdminService } from "./connectors";
@@ -197,24 +195,13 @@ const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
 await synchronizeTenantPackage(database, tenantPackage);
 const auth = config.auth ? createAuth(config, database) : undefined;
-// One computer each, when a supervisor is configured to give them out. Without one every Bot shares
-// the computer at `baseUrl`, which is what a laptop wants and is honest about being one machine.
-const supervisor = config.computer?.supervisor
-  ? createSupervisorClient(config.computer.supervisor)
-  : undefined;
+// Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
+// (see computer/assignment.ts).
 const computerClient = config.computer
   ? createComputerClient({
       baseUrl: config.computer.baseUrl,
       allowPrivateHosts: config.computer.allowPrivateHosts,
       ...(config.computer.token ? { token: config.computer.token } : {}),
-      // The account's computer, not the Bot's: every Bot of an account shares one container, and
-      // the mapping lives in assignment.ts so the day accounts arrive there is one place to teach.
-      ...(supervisor
-        ? {
-            resolveBaseUrl: (botId: string) =>
-              supervisor.locate(accountComputerKey(botId)),
-          }
-        : {}),
     })
   : undefined;
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
@@ -404,35 +391,25 @@ void recordAuditEvent(bootAuditStore, {
 }).catch(() => undefined);
 
 /*
- * Record whether each Bot has a computer of its own.
+ * Record that every Bot shares the account's one computer.
  *
- * Without a supervisor every Bot shares the browser at `AGENT_COMPUTER_URL`. That is a fine way to
- * run on a laptop, but the shared isolation state must be visible rather than inferred.
+ * The sharing is a product decision (computer/assignment.ts), not an accident of configuration,
+ * but it must still be visible in the trail rather than inferred: sessions, files and logins are
+ * common to the roster, and a reader of the audit log has to be told that.
  */
 void recordAuditEvent(bootAuditStore, {
   eventType: "computer.isolation_loaded",
   targetType: "computer",
-  payload: supervisor
-    ? {
-        isolation: "one computer per Bot",
-        note: "Each Bot gets its own container, its own /workspace and its own browser profile.",
-      }
-    : {
-        isolation: "one shared computer",
-        note: "No supervisor is configured, so every Bot uses the same browser. Sessions, files and logins are shared between them. Set COMPUTER_SUPERVISOR_URL to give each Bot its own.",
-      },
+  payload: {
+    isolation: "one shared computer",
+    note: "Every Bot of this account uses the same browser. Sessions, files and logins are shared between them — the account's desk, by design.",
+  },
 }).catch(() => undefined);
 
 console.info(
   JSON.stringify({
     type: "computer-isolation",
-    isolation: supervisor ? "one computer per Bot" : "one shared computer",
-    ...(supervisor
-      ? {}
-      : {
-          warning:
-            "Every Bot shares one browser. Set COMPUTER_SUPERVISOR_URL for a computer each.",
-        }),
+    isolation: "one shared computer",
   }),
 );
 /**
@@ -495,8 +472,6 @@ const computerGateway = computerClient
       approvals,
       standing: standingApprovals,
       autoReview: autoReviewFor,
-      // Stop, reset and the listing act on containers when there are containers to act on.
-      ...(supervisor ? { supervisor } : {}),
       // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
       // a deployment with a second process would then split every Bot's count between them and
       // never reach a threshold. The window is still only passed when a deployment has said its
@@ -773,15 +748,9 @@ serve<SocketData>({
       if (!actor) {
         return new Response("Sign in first.", { status: 401 });
       }
-      // Located per Bot when there is a supervisor, and the one shared computer when there is not.
       let upstream: string;
       try {
-        upstream = toStreamUrl(
-          supervisor
-            ? await supervisor.locate(streamBotId)
-            : config.computer.baseUrl,
-          streamBotId,
-        );
+        upstream = toStreamUrl(config.computer.baseUrl, streamBotId);
       } catch (error) {
         // Said out loud rather than falling back to another Bot's computer, which is the failure this
         // whole path exists to prevent.

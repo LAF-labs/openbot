@@ -11,7 +11,7 @@ const tenantPackageDirectory = configuredTenantPackageDirectory
   ? isAbsolute(configuredTenantPackageDirectory)
     ? configuredTenantPackageDirectory
     : resolve(projectRoot, "server", configuredTenantPackageDirectory)
-  : resolve(projectRoot, "examples/fintech");
+  : resolve(projectRoot, "tenant/laf");
 const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
 /*
  * Which sign-in providers the surface offers, decided here because the answer is compiled in.

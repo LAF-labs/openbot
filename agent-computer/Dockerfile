@@ -22,7 +22,7 @@ ENV WORKSPACE_DIR=/workspace
 
 ENV PORT=4100
 EXPOSE 4100
-# Readiness is exposed through Docker health so the supervisor need not know the network route.
+# Readiness is exposed through Docker health so the caller need not know the network route.
 HEALTHCHECK --interval=2s --timeout=3s --start-period=2s --retries=30 \
   CMD bun -e "const r = await fetch('http://localhost:4100/health'); process.exit(r.ok ? 0 : 1)"
 

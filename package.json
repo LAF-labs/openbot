@@ -6,7 +6,7 @@
   "workspaces": [
     "app",
     "server",
-    "worker",
+    "agent-bot",
     "desktop"
   ],
   "scripts": {
@@ -17,12 +17,11 @@
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint .",
     "test": "bun test",
-    "typecheck": "bun run --filter '*' typecheck && bun run typecheck:services",
+    "typecheck": "bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
     "test:smoke": "OPENBOT_SMOKE=1 bun test tests/smoke",
-    "diagram": "bun scripts/architecture-diagram.ts",
-    "typecheck:services": "cd agent-bot && bunx tsc --noEmit -p ."
+    "diagram": "bun scripts/architecture-diagram.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",

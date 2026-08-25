@@ -41,14 +41,6 @@ export type ComputerClientOptions = {
   token?: string;
   /** Base URL of the Bot's computer, e.g. http://agent-computer:4100 */
   baseUrl: string;
-  /**
-   * Where this Bot's computer is, when each Bot has one of its own.
-   *
-   * A supervisor gives every Bot its own container, so the address stops being one fixed URL and becomes
-   * whatever the supervisor published for that Bot, which also changes when its computer is reset.
-   * Left unset, `baseUrl` answers for everyone as one shared computer.
-   */
-  resolveBaseUrl?: (botId: string) => Promise<string>;
   /** True on a laptop, where browsing the deployment's own services is the point. */
   allowPrivateHosts?: boolean;
   timeoutMs?: number;
@@ -158,17 +150,6 @@ export function createComputerClient(options: ComputerClientOptions) {
       init?: RequestInit,
       caller?: AbortSignal,
     ): Promise<unknown> {
-      // Resolved per call rather than held, because a computer that was reset comes back on a
-      // different port and a cached address would point at nothing.
-      //
-      // Outside the try below on purpose: that catch reports "the computer is not running", which is
-      // true of a computer that will not answer and misleading about a supervisor that could not be
-      // reached or refused. Those are different operator-facing problems.
-      const target =
-        botId && options.resolveBaseUrl
-          ? (await options.resolveBaseUrl(botId)).replace(/\/$/, "")
-          : base;
-
       // Already stopped before this left: do not dispatch at all. Relying on fetch to reject an
       // aborted signal makes "did the click happen" depend on how quickly the runtime notices, and
       // the answer to "the person pressed Stop first" should never be a race.
@@ -178,7 +159,7 @@ export function createComputerClient(options: ComputerClientOptions) {
 
       let response: Response;
       try {
-        response = await doFetch(`${target}${path}`, {
+        response = await doFetch(`${base}${path}`, {
           ...init,
           // The Bot's identity, as a header rather than in the path, so the computer's published routes
           // are unchanged and a caller that does not know which Bot it is still works.

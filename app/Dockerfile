@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
-COPY worker/package.json worker/package.json
+COPY agent-bot/package.json agent-bot/package.json
 # The shell is a workspace even though no image builds it, and bun refuses to install against a
 # lockfile whose workspaces it cannot all find. Omitting this builds locally, where the install
 # layer is cached, and fails the first time somebody builds on a fresh machine — which is a
@@ -24,7 +24,6 @@ RUN bun install --frozen-lockfile
 COPY app app
 COPY server server
 COPY tenant tenant
-COPY examples examples
 COPY scripts scripts
 # Every workspace's tsconfig extends this one, and vite resolves the chain while building. Missing,
 # the build fails on index.html with a message about "extends" that names no missing file.

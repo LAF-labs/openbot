@@ -1,10 +1,10 @@
 # Architecture
 
-OpenBot combines a React app, a Hono API server, PostgreSQL, CopilotKit Intelligence, AG-UI Bot endpoints, and governed browser computers.
+LAF Agent combines a React app, a Hono API server, PostgreSQL, AG-UI Bot endpoints, and a governed browser computer. Threads and memory are stored in PostgreSQL by the server itself.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/architecture-dark.svg">
-  <img src="../assets/architecture-light.svg" alt="A turn goes from the app to the server, which sends it to a Bot over AG-UI. Every tool call the Bot makes returns through the gateway, which resolves the target, decides it against the configured policy, records an audit row, and only then acts, or refuses and names the rule. Allowed actions reach that Bot's own computer, one container each holding its own Chromium, logins and workspace, created by the supervisor. Every decision lands in PostgreSQL; threads and memory live in CopilotKit Intelligence.">
+  <img src="../assets/architecture-light.svg" alt="A turn goes from the app to the server, which sends it to a Bot over AG-UI. Every tool call the Bot makes returns through the gateway, which resolves the target, decides it against the configured policy, records an audit row, and only then acts, or refuses and names the rule. Allowed actions reach the account's computer, one container holding Chromium, logins and a workspace shared by every Bot. Decisions, threads and memory land in PostgreSQL.">
 </picture>
 
 Regenerate it with `bun run diagram` after changing anything it shows.
@@ -16,15 +16,10 @@ Regenerate it with `bun run diagram` after changing anything it shows.
 | `app`                    | 3010                       | React/Vite interface for channels, Bot chat, live screen, settings, and admin pages.                                                        |
 | `server`                 | 3001                       | API, CopilotKit runtime, auth, roles, tenant package, coworkers, channels, policy, audit, credentials, plugins, components, and connectors. |
 | `agent-computer`         | 4100                       | Chromium, `/workspace`, browser profile, screenshots, snapshots, and file tools.                                                            |
-| `agent-bot`              | 4200                       | Proof-of-concept AG-UI Bot.                                                                                                                     |
-| `agent-langgraph`        | 4201                       | LangGraph AG-UI Bot.                                                                                                                        |
-| `supervisor`             | 4500 host / 4300 container | Creates, stops, resets, and lists per-Bot computer containers.                                                                              |
-| PostgreSQL with pgvector | 5432                       | Product data, audit rows, credentials, policy, grants, channels, components, connector state, and knowledge records.                        |
-| CopilotKit Intelligence  | external                   | Durable threads, memory, and realtime gateway.                                                                                              |
+| `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                                                                      |
+| PostgreSQL with pgvector | 5432                       | Product data, threads, memory, audit rows, credentials, policy, grants, channels, components, connector state, and knowledge records.       |
 
-`scripts/start.sh` starts PostgreSQL, `agent-computer`, `agent-bot`, `agent-langgraph`, and the supervisor through Docker Compose, then starts `server` and `app` on the host.
-
-The compose file also defines optional SPIRE services. `start.sh` does not start them.
+`scripts/start.sh` starts PostgreSQL, `agent-computer`, and `agent-bot` through Docker Compose, then starts `server` and `app` on the host.
 
 ## Runtime flow
 
@@ -33,7 +28,7 @@ The compose file also defines optional SPIRE services. `start.sh` does not start
 3. CopilotKit runtime sends the turn to the configured AG-UI endpoint.
 4. The surface registers available frontend tools: browser tools, MCP tools, and components granted to that Bot.
 5. Acting browser/file/MCP calls return to the server for authorization and audit.
-6. The server streams results back to the app and Intelligence thread.
+6. The server streams results back to the app and persists the thread in PostgreSQL.
 
 ## Browser action governance
 
@@ -100,9 +95,7 @@ process today.
 
 `agent-computer` requires `COMPUTER_TOKEN` and permits only `/health` without it. Docker Compose binds it to `127.0.0.1:4100`.
 
-With `COMPUTER_SUPERVISOR_URL`, each Bot gets its own computer container, workspace volume, and browser profile. Without it, all Bots share `AGENT_COMPUTER_URL`.
-
-The supervisor exposes only ensure, stop, reset, and list operations. It holds the Docker socket, so do not expose it outside the deployment network. Set `COMPUTER_RUNTIME=runsc` to run computers under gVisor on hosts that support it.
+Every Bot of an account shares the computer at `AGENT_COMPUTER_URL` — the account's desk, by decision (`server/src/computer/assignment.ts`). Files, logins and browser sessions carry between Bots; the boundary is the gateway in front of the computer, not the roster.
 
 ## Human control and secrets
 
@@ -124,7 +117,7 @@ A coworker is a durable Bot profile:
 - `agent_profiles` stores name, title, role, owner, visibility, and deletion state.
 - `agent_preferences` stores per-user roster state.
 
-A channel is a conversation with one coworker and a CopilotKit Intelligence thread mapping. Starting a new channel creates a new thread.
+A channel is a conversation with one coworker and a thread mapping. Starting a new channel creates a new thread, stored in PostgreSQL.
 
 See [coworkers.md](coworkers.md).
 
@@ -159,7 +152,7 @@ Every MCP call checks the grant first, then evaluates the same action policy eng
 
 ## Tenant package and knowledge
 
-`TENANT_PACKAGE_DIR` points at the tenant package. The default is `../examples/fintech`.
+`TENANT_PACKAGE_DIR` points at the tenant package. The default is `../tenant/laf`.
 
 Required package files:
 
@@ -181,4 +174,4 @@ Connector credentials are stored through the credential vault and referenced by 
 - Credential plaintext is encrypted at rest, never returned by APIs, and redacted from audit events.
 - Browser navigation allows `http` and `https`; cloud metadata addresses are refused under every configuration.
 - `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` is for local development only.
-- Computer tokens and supervisor tokens must be long random values outside local development.
+- `COMPUTER_TOKEN` must be a long random value outside local development.

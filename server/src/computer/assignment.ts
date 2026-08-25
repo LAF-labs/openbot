@@ -11,9 +11,9 @@
  * a login one Bot performed is there when the next Bot needs it — the point of the desk — and the
  * cost of an account is one computer, whatever its roster looks like.
  *
- * This deployment is single-account until AUTH lands (M1-2), so the mapping is a constant. When
- * accounts arrive this function takes the Bot's account instead; it is the only place that decides,
- * which is why it exists as a module rather than as an inline lambda in index.ts.
+ * This deployment is single-account until AUTH lands (M1-2), so the mapping is a constant: every
+ * Bot resolves to the computer at `AGENT_COMPUTER_URL`. When accounts arrive, this module is where
+ * a Bot's account starts deciding which computer answers.
  */
 
 /**
@@ -38,12 +38,4 @@ function seatsPerAccount(): number {
     10,
   );
   return Number.isFinite(configured) && configured > 0 ? configured : 5;
-}
-
-/** The supervisor key for the one account this deployment serves. */
-const SINGLE_ACCOUNT_COMPUTER = "account-default";
-
-/** The supervisor key of the computer this Bot drives: its account's, never its own. */
-export function accountComputerKey(_botId: string): string {
-  return SINGLE_ACCOUNT_COMPUTER;
 }

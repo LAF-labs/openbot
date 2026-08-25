@@ -71,15 +71,14 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
-  <img src="assets/architecture-light.svg" alt="You talk to the server, which sends the turn to a Bot over AG-UI. Every tool call the Bot makes comes back through the gateway, which resolves the target, decides it against your policy, records an audit row, and only then acts, or refuses and names the rule. Allowed browser and file actions reach that Bot's own computer, one container each with its own Chromium, logins and workspace, built by the supervisor. Decisions land in PostgreSQL and threads in CopilotKit Intelligence.">
+  <img src="assets/architecture-light.svg" alt="You talk to the server, which sends the turn to a Bot over AG-UI. Every tool call the Bot makes comes back through the gateway, which resolves the target, decides it against your policy, records an audit row, and only then acts, or refuses and names the rule. Allowed browser and file actions reach the account's computer — one container with its own Chromium, logins and workspace, shared by every Bot you make. Decisions, threads and memory land in PostgreSQL.">
 </picture>
 
 ## Requirements
 
-- Docker, for PostgreSQL, browser computers, the supervisor, and the shipped Bots.
+- Docker, for PostgreSQL, the Bot's computer, and the Bot endpoint.
 - [Bun](https://bun.sh) 1.3+, for the app and API server.
-- A CopilotKit Intelligence project and license.
-- A model key. The proof-of-concept Bot uses OpenAI; the LangGraph Bot can use OpenAI, Anthropic, or Google.
+- A model key: `OPENAI_API_KEY`, or any endpoint speaking the same API via `OPENAI_BASE_URL`.
 
 ## Quick start
 
@@ -89,36 +88,26 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
    cp .env.example .env
    ```
 
-2. Get CopilotKit Intelligence credentials:
+2. Fill the required values:
 
-   ```sh
-   npx --yes copilotkit@latest login
-   npx --yes copilotkit@latest project select
-   npx --yes copilotkit@latest license --write
-   ```
+   - `OPENAI_API_KEY` — or point `OPENAI_BASE_URL` at any endpoint speaking the same API.
 
-   Put the `cpk-...` runtime key from `project select` in `.env` as
-   `INTELLIGENCE_API_KEY`. `license --write` writes
-   `COPILOTKIT_LICENSE_TOKEN` into the existing `.env`.
-
-3. Fill the remaining required values:
-
-   - `OPENAI_API_KEY`
-
-   Keep the managed Intelligence URLs from `.env.example` unless you run Intelligence yourself. The example `KEY_ENCRYPTION_KEY` is public and fine locally; generate your own with:
+   Threads and memory are stored in PostgreSQL; no external thread service is
+   involved. The example `KEY_ENCRYPTION_KEY` is public and fine locally;
+   generate your own with:
 
    ```sh
    openssl rand -base64 32
    ```
 
-4. Install and run:
+3. Install and run:
 
    ```sh
    bun install
    bash scripts/start.sh
    ```
 
-5. Open <http://localhost:3010>.
+4. Open <http://localhost:3010>.
 
 `scripts/start.sh` starts Docker services, applies migrations, starts the API server on port 3001, starts the app on port 3010, and checks that the services answer their own health routes before printing next steps.
 
@@ -150,7 +139,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Features
 
-- **A computer per Bot**: the supervisor gives each Bot its own container, its own `/workspace` volume and its own browser profile. Set `COMPUTER_RUNTIME=runsc` to run them under gVisor where the host supports it.
+- **One computer per account**: every Bot you make shares your computer — files, logins and browser sessions carry from one Bot to the next, which is what lets them hand work to each other. Bots are not a security boundary; the gateway in front of the computer is.
 - **The gateway is the only way in**: it resolves the target from a server-held snapshot, evaluates the policy, writes the audit row, and only then calls the computer. There is no path that acts without the record existing first.
 - **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `file.*` and `mcp.*`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
 - **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
@@ -162,7 +151,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 - **An audit trail you can read**: `/admin/audit` lists what was permitted, what was refused and what failed, and every refusal carries the rule that caused it.
 - **Credentials encrypted at rest**: stored through `/admin/credentials`, never returned by an API, and redacted from audit events.
 - **Loopback by default**: computers bind to `127.0.0.1` and require a per-container token, so nothing reaches a logged-in browser by knowing its port.
-- **Durable threads and memory**: conversations survive restarts through CopilotKit Intelligence, and each deployment stamps the threads it owns.
+- **Durable threads and memory**: conversations and per-Bot memory survive restarts in PostgreSQL, and each deployment stamps the threads it owns.
 
 ## Bring your own agent
 
@@ -204,13 +193,10 @@ Settings worth knowing:
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
 | `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
 | `COMPUTER_TOKEN`                     | Secret every Bot computer request must present. `start.sh` sets one.      |
-| `SUPERVISOR_TOKEN`                   | Secret the supervisor requires. `start.sh` sets one.                      |
-| `COMPUTER_SUPERVISOR_URL`            | Gives each Bot a computer of its own instead of one shared computer.      |
-| `COMPUTER_RUNTIME`                   | Set to `runsc` to run computers under gVisor, where the host has it.      |
 | `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                  |
 | `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                             |
-| `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../examples/fintech`.      |
-| `DEPLOYMENT_ID`                      | Names this deployment when two share one Intelligence project.            |
+| `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.            |
+| `DEPLOYMENT_ID`                      | Names this deployment in the thread ids it mints.                         |
 
 Full reference: [docs/configuration.md](docs/configuration.md).
 
@@ -221,11 +207,8 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 | `app`                    | 3010                       | React/Vite UI.                                                                                   |
 | `server`                 | 3001                       | Hono API, CopilotKit runtime, auth, policy, audit, plugins, components, coworkers, and channels. |
 | `agent-computer`         | 4100                       | Chromium plus `/workspace` and browser profile.                                                  |
-| `agent-bot`              | 4200                       | Proof-of-concept AG-UI Bot.                                                                          |
-| `agent-langgraph`        | 4201                       | LangGraph AG-UI Bot.                                                                             |
-| `supervisor`             | 4500 host / 4300 container | Creates and manages one computer per Bot.                                                        |
-| PostgreSQL with pgvector | 5432                       | Product data, policy, audit, credentials, grants, channels, knowledge, and component metadata.   |
-| CopilotKit Intelligence  | external                   | Durable threads and memory.                                                                      |
+| `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                           |
+| PostgreSQL with pgvector | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and knowledge.      |
 
 The server gateway is the product/API path for Bot browser and file tool calls.
 It resolves the target, evaluates policy, writes an audit row, and then calls
