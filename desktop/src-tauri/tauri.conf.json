@@ -42,7 +42,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxQjVFODZBQzg4NjhENTgKUldSWWpZYklhdWkxWVltbXBSL0JuRUQ3VXpFM2N5eTJmZWtlT3dyOE41RVZjYzRvQTR1amtkYlUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFOUE0MjM1RkVDN0Q1MzUKUldRMTFjZitOVUthUHQxSjVrWlFCekRiN00zakl5WnR1KzdNWDFoYkhLZHkwWTVOUXdETk4zWDEK",
       "endpoints": [
         "https://github.com/LAF-labs/openbot/releases/latest/download/latest.json"
       ]

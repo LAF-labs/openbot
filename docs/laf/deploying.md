@@ -131,6 +131,31 @@ worked — the whole chain in one line. `docker compose ps` should show `server`
 healthy; if it is restarting, its logs name the missing setting directly,
 because `config.ts` refuses by name rather than crashing on an undefined.
 
+## Backups
+
+The trail is the product — audit rows, Bot memory, encrypted credentials all
+live in the one Postgres volume — so the VM carries its own dump schedule,
+installed by hand (2026-08-25) because nothing in the repository runs on the
+VM's crontab:
+
+```bash
+# /etc/cron.d/laf-db-backup
+0 4 * * * root /usr/bin/flock -n /run/lock/laf-backup.lock /usr/local/sbin/laf-backup-db
+```
+
+`/usr/local/sbin/laf-backup-db` pipes `pg_dump` out of the compose Postgres
+into `/var/backups/laf/` (gzip, `umask 077`) and keeps the newest fourteen.
+Restore is the reverse:
+
+```bash
+zcat /var/backups/laf/laf-<stamp>.sql.gz |   docker compose exec -T postgres psql -U openbot openbot
+```
+
+Known limit, on purpose: the dumps live on the same disk as the database.
+They survive a bad migration or a fat-fingered delete, not the VM burning
+down. Shipping them to OCI Object Storage needs a bucket and an instance
+policy — console work, still open.
+
 ## The shell
 
 The installed app is a separate release and needs one thing this repository
