@@ -159,9 +159,14 @@ export const agentMemories = pgTable(
     /**
      * Whose memory this is, beside which Bot holds it.
      *
-     * A public Bot is talked to by more than one person, and what it learned from one of them is
-     * not a fact about the others. Scoped here so a shared Bot cannot leak one person's business
-     * into another's conversation — the same reason `agent_preferences` is keyed this way.
+     * A deployment serves one person — one VM each, see docs/laf/deployment-model.md — so on a
+     * correct one this column has a single value and never does any work. It is here because
+     * nothing yet ENFORCES that: no allowlist gates sign-in, so a second account is a thing the
+     * code permits even though the product does not want it.
+     *
+     * And because narrowing is the direction you cannot take later. A row written without an owner
+     * cannot be given one afterwards — there is nobody left to ask which person it belonged to —
+     * so the column costs a text field now or costs the data later.
      */
     ownerUserId: text("owner_user_id")
       .notNull()

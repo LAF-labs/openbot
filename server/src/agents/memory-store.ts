@@ -32,10 +32,11 @@ export type AgentMemoryStore = {
     content: string,
   ): Promise<AgentMemory | null>;
   /**
-   * Stop carrying one fact. Scoped by owner so somebody can only forget their own.
+   * Stop carrying one fact.
    *
-   * Returns whether a row was actually cleared, so a caller can tell "forgotten" from "was never
-   * yours" rather than reporting success for an id belonging to somebody else's conversation.
+   * Returns whether a row was actually cleared rather than resolving either way, so a caller can
+   * tell "forgotten" from "no such row" — reporting success for an id that matched nothing is how
+   * a Forget button convinces somebody a thing is gone when it is still being read every turn.
    */
   forget(id: string, ownerUserId: string): Promise<boolean>;
 };

@@ -77,9 +77,9 @@ export function createRuntimeAgentLoader(
 /**
  * What each of this person's Bots has learned about them.
  *
- * Scoped by owner as well as by Bot: a public coworker is talked to by more than one person, and
- * what it worked out about one of them is not a fact about the others. Reading it any other way
- * would leak one person's business into another's conversation through the Bot they share.
+ * Scoped by owner as well as by Bot. On a correct deployment that is one person and the clause does
+ * nothing; it is here because nothing yet enforces one person, and because a read written without
+ * it is the kind that nobody notices is wrong until there is a second account.
  */
 async function selectMemories(
   database: Database,

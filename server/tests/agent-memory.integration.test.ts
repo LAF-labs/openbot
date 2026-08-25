@@ -109,9 +109,10 @@ describe("what a Bot remembers", () => {
   /**
    * THE FAILURE THIS MUST NOT HAVE.
    *
-   * A public Bot is talked to by more than one person. What it worked out about one of them is not
-   * a fact about the others, and a shared coworker is the easiest way for one person's business to
-   * arrive in somebody else's conversation without anybody doing anything wrong.
+   * A deployment is supposed to serve one person, so on a correct one this can never happen. It is
+   * asserted anyway because nothing enforces that yet — no allowlist gates sign-in — and because
+   * the day one does, this test is what says the scoping was there all along rather than something
+   * anybody has to go back and verify.
    */
   test("never carries one person's memory into another person's run", async () => {
     const owner = await createUser();

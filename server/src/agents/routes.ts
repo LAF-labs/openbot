@@ -505,8 +505,9 @@ export function createAgentRoutes(
    * about somebody's business is the ordinary case, not the edge one, and it has to be fixable in
    * the time it takes to read the sentence.
    *
-   * Every one is scoped to the person asking. A public Bot is talked to by more than one person,
-   * and what it worked out about one of them is not the others' to read or to delete.
+   * Every one is scoped to the person asking, which on a one-person deployment is every row there
+   * is. It is written that way because sign-in is not yet restricted to one person, and because an
+   * endpoint that reads by Bot alone is the shape that quietly becomes wrong the day one is.
    */
   routes.get("/:agentId/memories", requireUser, async (context) => {
     if (!memoryStore) return context.json({ error: "Not found." }, 404);

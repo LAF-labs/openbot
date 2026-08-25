@@ -191,10 +191,22 @@ export function SelfTools() {
 
   useFrontendTool({
     name: "update_state",
+    /*
+     * THE LINE BETWEEN THIS AND `remember`, DRAWN IN BOTH DESCRIPTIONS.
+     *
+     * Measured on a real deployment: told "our shop is closed on Sundays, remember that", the Bot
+     * called this and wrote the shop's hours into its own job description. It was not wrong to —
+     * this description used to claim the whole job with "so it survives past this conversation",
+     * which is exactly the phrase a model reaches for when asked to remember something. The two
+     * tools competed for one sentence and the profile won, so nothing was ever remembered and the
+     * job description grew a fact that is not a job.
+     */
     description:
-      "Change your own standing state: your profile, or the routines you run on a schedule. " +
-      "Use it the moment the person tells you what you are for or asks for something regular, so " +
-      "it survives past this conversation. Send only what changes. This edits you and no one else.",
+      "Change what you ARE: your own profile, or the routines you run on a schedule. " +
+      "Use it when the person tells you what you are for or asks for something regular. " +
+      "NOT for facts you learn about them — their hours, their suppliers, their preferences go to " +
+      "`remember`, which is what you KNOW rather than what you are. Send only what changes. " +
+      "This edits you and no one else.",
     parameters: z.object({
       target: z
         .enum(["profile", "routine"])
@@ -398,8 +410,10 @@ export function SelfTools() {
     name: "remember",
     description:
       "Record one durable fact about the person you work for, so you still know it in later " +
-      "conversations. Use it for things that stay true — how their business runs, who they deal " +
-      "with, what they have told you to always or never do. One fact per call, in your own words. " +
+      "conversations. This is the tool for anything they ask you to remember. Use it for things " +
+      "that stay true — how their business runs, its hours, who they deal with, what they have " +
+      "told you to always or never do. One fact per call, in your own words. NOT for changing your " +
+      "own name, job or routines; that is `update_state`. " +
       "Do not record passwords, card numbers, or anything they typed into a login.",
     parameters: z.object({
       fact: z

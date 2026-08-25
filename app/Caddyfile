@@ -19,6 +19,23 @@
 		reverse_proxy server:3001
 	}
 
+	# Hashed filenames, so the bytes at one of these paths never change. A year is what lets a
+	# returning person load the app without asking about a single asset.
+	@immutable path /assets/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# index.html is the one file whose name never changes and whose contents always do: it is what
+	# names the hashed bundles. Cached, it pins somebody to the build they first visited — measured,
+	# after a deploy the browser was still running a bundle that no longer existed in the image, and
+	# the new feature was simply absent with nothing on screen to say so. A shipped update that
+	# reaches nobody is the worst shape of all: it looks deployed from every side except the user's.
+	#
+	# Written as "everything that is not an asset" rather than as a list of pages, because the SPA
+	# fallback serves index.html for paths no file matches — a matcher naming `/index.html` would
+	# miss every deep link, which is most of the ways anybody arrives.
+	@page not path /assets/* /api/*
+	header @page Cache-Control "no-cache"
+
 	handle {
 		root * /srv
 
