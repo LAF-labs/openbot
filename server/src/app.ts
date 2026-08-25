@@ -1,11 +1,11 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { CoworkerCall } from "./agents/coworker-call";
+import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
 import { type AuditReader, type AuditStore, auditQueryFromUrl } from "./audit";
 import { createDevRequireUser } from "./auth/dev-actor";
-import type { OnboardingStore } from "./auth/onboarding";
 import {
   type AppVariables,
   type AuthService,
@@ -13,6 +13,7 @@ import {
   type RoleRepository,
   requireAdmin,
 } from "./auth/guards";
+import type { OnboardingStore } from "./auth/onboarding";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -23,13 +24,13 @@ import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
-import type { DemonstrationRecorder } from "./computer/demonstration";
-import type { WriteUp } from "./computer/write-up";
-import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { ComputerClient } from "./computer/client";
+import type { DemonstrationRecorder } from "./computer/demonstration";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
+import type { StandingApprovalStore } from "./computer/standing-approvals";
+import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import type { ConnectorAdminService } from "./connectors";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
@@ -194,6 +195,13 @@ export function createApp(
   demonstrations?: DemonstrationRecorder,
   /** Turns a finished recording into a procedure. Absent leaves it readable and nothing more. */
   writeUp?: WriteUp,
+  /**
+   * What each Bot has learned about each person. Last, like everything new here.
+   *
+   * Absent leaves the three memory endpoints unmounted, so a deployment without the store answers
+   * 404 rather than drawing a list that is empty for a reason nobody can see.
+   */
+  agentMemoryStore?: AgentMemoryStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -471,6 +479,8 @@ export function createApp(
         coworkerCall,
         // What the roster shows as busy, read from the one ledger every run path writes.
         readWorking,
+        // What each Bot has learned, and the three endpoints that let a person read and undo it.
+        agentMemoryStore,
       ),
     );
   }

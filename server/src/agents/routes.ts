@@ -6,6 +6,7 @@ import type { AppVariables } from "../auth/guards";
 import { testAgentConnection } from "./connection-test";
 import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
+import { type AgentMemoryStore, MAX_MEMORY_LENGTH } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
 import {
   AgentNotFoundError,
@@ -218,6 +219,14 @@ export function createAgentRoutes(
       startedAt: string;
     }>
   >,
+  /**
+   * What each Bot has learned about the person talking to it.
+   *
+   * Absent leaves the endpoints off entirely rather than answering empty, so a deployment without
+   * the store says "this Bot cannot remember" by 404 instead of by drawing an always-empty list —
+   * a screen that shows nothing is indistinguishable from a Bot that has learned nothing.
+   */
+  memoryStore?: AgentMemoryStore,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -486,6 +495,89 @@ export function createAgentRoutes(
       return mapStoreError(context, error);
     }
   });
+
+  /**
+   * WHAT THIS BOT REMEMBERS, AND HOW TO MAKE IT STOP.
+   *
+   * The competing product stores this and cannot show it — its own documentation says you cannot
+   * inspect, correct, export, or delete individual memories. That is the whole reason these three
+   * endpoints exist and the reason memories are rows: a Bot that quietly learned something wrong
+   * about somebody's business is the ordinary case, not the edge one, and it has to be fixable in
+   * the time it takes to read the sentence.
+   *
+   * Every one is scoped to the person asking. A public Bot is talked to by more than one person,
+   * and what it worked out about one of them is not the others' to read or to delete.
+   */
+  routes.get("/:agentId/memories", requireUser, async (context) => {
+    if (!memoryStore) return context.json({ error: "Not found." }, 404);
+    try {
+      // Through the store, so a Bot this person cannot see cannot have its memories read by id.
+      await store.get(context.var.actor, context.req.param("agentId"));
+      const memories = await memoryStore.list(
+        context.req.param("agentId"),
+        context.var.actor.id,
+      );
+      return context.json({ memories });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /**
+   * The Bot appends one thing it learned.
+   *
+   * `autoReview` IS NOT REACHABLE FROM HERE, and the reason is the same one that keeps it off the
+   * profile endpoint: a Bot that could write the rule deciding whether it gets asked about has no
+   * boundary at all. This writes prose the Bot reads back to itself; nothing here is consulted by
+   * the gateway, and "remember that payments under fifty are fine to send" changes no decision.
+   */
+  routes.post("/:agentId/memories", requireUser, async (context) => {
+    if (!memoryStore) return context.json({ error: "Not found." }, 404);
+    const body = (await context.req.json().catch(() => null)) as {
+      content?: unknown;
+    } | null;
+    const content = typeof body?.content === "string" ? body.content : "";
+    try {
+      await store.get(context.var.actor, context.req.param("agentId"));
+      const memory = await memoryStore.remember(
+        context.req.param("agentId"),
+        context.var.actor.id,
+        content,
+      );
+      return memory
+        ? context.json({ memory }, 201)
+        : context.json(
+            {
+              error: `A memory must be between 1 and ${MAX_MEMORY_LENGTH} characters.`,
+            },
+            400,
+          );
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.delete(
+    "/:agentId/memories/:memoryId",
+    requireUser,
+    async (context) => {
+      if (!memoryStore) return context.json({ error: "Not found." }, 404);
+      try {
+        await store.get(context.var.actor, context.req.param("agentId"));
+        const forgotten = await memoryStore.forget(
+          context.req.param("memoryId"),
+          context.var.actor.id,
+        );
+        // 404 rather than 204 for an id that was never theirs: "done" would tell somebody probing
+        // ids which of them exist.
+        return forgotten
+          ? context.body(null, 204)
+          : context.json({ error: "Not found." }, 404);
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    },
+  );
 
   routes.post("/:agentId/duplicate", requireUser, async (context) => {
     try {

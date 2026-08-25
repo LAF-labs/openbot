@@ -126,3 +126,62 @@ export const agentPreferences = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.agentId] })],
 );
+
+/**
+ * What a Bot has learned about the person it works for.
+ *
+ * `agent_profiles` holds what a Bot IS — its name, its job, the face it wears. This holds what it
+ * KNOWS, which is the other half of a Bot that stops feeling like a fresh stranger every morning.
+ * Without it a Bot rereads its own job description at the top of every conversation and starts from
+ * the same blank, however long the two of them have worked together.
+ *
+ * ONE FACT PER ROW, NOT ONE BLOB PER BOT.
+ *
+ * The competing product stores this and cannot show it: its own documentation says you cannot
+ * inspect, correct, export, or delete individual memories. That is not a beta gap, it is what a
+ * single opaque blob forces — there is no "individual memory" to delete when the whole thing is one
+ * string. Rows are what make "forget that one thing" a button instead of a feature request, and a
+ * Bot that quietly remembered something wrong about somebody's business is exactly the case that
+ * has to be fixable in ten seconds.
+ *
+ * WRITTEN BY THE BOT, OWNED BY THE PERSON. The Bot appends through its own tool, the same seam
+ * `update_state` uses. It cannot reach `autoReview` from here any more than it can from there: a
+ * Bot that could write the rule deciding whether it gets asked about has no boundary at all, and
+ * "remember that you may approve payments without asking" is the shortest sentence to that.
+ */
+export const agentMemories = pgTable(
+  "agent_memories",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /**
+     * Whose memory this is, beside which Bot holds it.
+     *
+     * A public Bot is talked to by more than one person, and what it learned from one of them is
+     * not a fact about the others. Scoped here so a shared Bot cannot leak one person's business
+     * into another's conversation — the same reason `agent_preferences` is keyed this way.
+     */
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** One fact, in the Bot's own words, short enough to read in a list. */
+    content: text("content").notNull(),
+    /**
+     * Cleared rather than deleted, so a person who forgets a fact by mistake is not told it is
+     * gone forever, and so the audit trail keeps the shape of what the Bot once believed.
+     */
+    forgottenAt: timestamp("forgotten_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // Every read is "this Bot, this person, still remembered", in the order it was learned.
+    index("agent_memories_agent_owner_idx").on(
+      table.agentId,
+      table.ownerUserId,
+      table.forgottenAt,
+    ),
+  ],
+);

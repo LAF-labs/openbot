@@ -363,6 +363,8 @@ export const ko: Record<string, string> = {
   "Cannot reach the server.": "서버에 닿지 못했습니다.",
   "This usually clears on its own. Nothing your Bots are doing has stopped.":
     "대개 저절로 풀립니다. 봇이 하던 일은 멈추지 않았습니다.",
+  "Remembered something": "기억해 두었습니다",
+  Remembering: "기억하는 중",
   "Something went wrong.": "문제가 생겼습니다.",
   "Sort my email into what needs me, what can wait, and what is noise. Draft replies in my voice for the ones that need one, and never send without asking.":
     "메일을 내가 봐야 할 것, 미뤄도 될 것, 잡음으로 분류해줘. 답장이 필요한 건 내 말투로 초안을 써두되, 묻지 않고 보내지는 마.",
@@ -424,6 +426,11 @@ export const ko: Record<string, string> = {
   "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
     "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
   "The wheel was handed back": "제어를 돌려줌",
+  "There is no Bot to remember this.": "이걸 기억할 봇이 없습니다.",
+  "What it remembers": "기억하고 있는 것",
+  "Things this Bot worked out about you and keeps between conversations. Only you see yours.":
+    "이 봇이 당신에 대해 알아낸 것들이고, 대화가 끝나도 남습니다. 내 것은 나만 봅니다.",
+  Forget: "잊기",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They are still there. This was a problem reaching us.":
     "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",

@@ -4,6 +4,7 @@ import { type ReactNode, useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
+import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,10 +24,13 @@ import {
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
-import { agentQueryOptions } from "@/lib/agents/queries";
+import {
+  agentKeys,
+  agentMemoriesQueryOptions,
+  agentQueryOptions,
+} from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
-import { NotificationPermission } from "@/components/notifications/notification-permission";
 
 function Tag({ children }: { children: ReactNode }) {
   return (
@@ -260,6 +264,8 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         <AutoReviewCard agentId={agentId} instruction={profile.autoReview} />
       ) : null}
 
+      <MemoriesCard agentId={agentId} />
+
       <NotifyCard
         agentId={agentId}
         name={profile.name}
@@ -469,6 +475,75 @@ function EffortCard({
  * PATCH, not `/profile`. The merging endpoint is what a Bot's own tool posts to, and this is the
  * one field a Bot must never write.
  */
+/**
+ * WHAT THIS BOT HAS LEARNED, AND THE BUTTON THAT UNDOES IT.
+ *
+ * The competing product keeps the same thing and its own documentation says you cannot inspect,
+ * correct, export, or delete individual memories. This card is the whole disagreement: a Bot that
+ * quietly learned something wrong about somebody's business is the ordinary case, not the edge one,
+ * and it has to be fixable in the time it takes to read the sentence.
+ *
+ * Shown to everybody who can see the Bot rather than only to whoever manages it, because these are
+ * the reader's own — a shared coworker keeps what it learned from each person separately, and
+ * nobody else's is on this list.
+ */
+function MemoriesCard({ agentId }: { agentId: string }) {
+  const queryClient = useQueryClient();
+  const { data: memories, isPending } = useQuery(
+    agentMemoriesQueryOptions(agentId),
+  );
+  const [forgetting, setForgetting] = useState<string | null>(null);
+
+  const forget = async (memoryId: string) => {
+    setForgetting(memoryId);
+    try {
+      await fetch(
+        `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
+        { method: "DELETE", credentials: "include" },
+      );
+      await queryClient.invalidateQueries({
+        queryKey: agentKeys.memories(agentId),
+      });
+    } finally {
+      setForgetting(null);
+    }
+  };
+
+  // Nothing learned yet is not a card worth drawing: an empty heading reads as a broken feature.
+  if (isPending || !memories || memories.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-medium text-base">{t("What it remembers")}</h2>
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "Things this Bot worked out about you and keeps between conversations. Only you see yours.",
+          )}
+        </p>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {memories.map((memory) => (
+          <li
+            className="flex items-start gap-2 rounded-lg bg-background px-3 py-2"
+            key={memory.id}
+          >
+            <p className="flex-1 text-pretty text-sm">{memory.content}</p>
+            <Button
+              disabled={forgetting === memory.id}
+              onClick={() => void forget(memory.id)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("Forget")}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function AutoReviewCard({
   agentId,
   instruction,

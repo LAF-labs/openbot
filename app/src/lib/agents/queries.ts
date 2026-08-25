@@ -69,7 +69,40 @@ export const agentKeys = {
   all: ["agents"] as const,
   list: (hidden = false) => ["agents", "list", { hidden }] as const,
   detail: (agentId: string) => ["agents", "detail", agentId] as const,
+  memories: (agentId: string) => ["agents", "memories", agentId] as const,
 };
+
+/** One thing a Bot has learned about the person reading the list. */
+export type AgentMemory = {
+  id: string;
+  content: string;
+  createdAt: string;
+};
+
+/**
+ * What this Bot remembers, as a list somebody can actually act on.
+ *
+ * A list rather than a paragraph because the point of the screen is the button beside each line:
+ * the competing product stores the same thing and its own documentation says you cannot inspect,
+ * correct, export, or delete individual memories. A Bot that learned something wrong about
+ * somebody's business is the ordinary case, and it has to be fixable in the time it takes to read.
+ */
+export function agentMemoriesQueryOptions(agentId: string) {
+  return queryOptions({
+    queryKey: agentKeys.memories(agentId),
+    queryFn: async (): Promise<AgentMemory[]> => {
+      const response = await fetch(
+        `/api/agents/${encodeURIComponent(agentId)}/memories`,
+        { credentials: "include" },
+      );
+      // A deployment with nowhere to record memories answers 404, and a Bot that simply has not
+      // learned anything answers an empty list. Neither is an error worth a red screen.
+      if (response.status === 404) return [];
+      if (!response.ok) throw new Error("Could not load what this Bot knows");
+      return ((await response.json()) as { memories: AgentMemory[] }).memories;
+    },
+  });
+}
 
 export function agentListQueryOptions(hidden = false) {
   return queryOptions({

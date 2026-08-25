@@ -1,8 +1,8 @@
 import "./telemetry-off";
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
-import { agentProfiles } from "./db/schema";
 import { createCoworkerCall } from "./agents/coworker-call";
+import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
@@ -10,6 +10,7 @@ import { createAuditReader, createAuditStore, recordAuditEvent } from "./audit";
 import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
+import { createOnboardingStore } from "./auth/onboarding";
 import type { OpenBotRole } from "./auth/roles";
 import {
   createChannelEventHub,
@@ -22,22 +23,22 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import { accountComputerKey } from "./computer/assignment";
 import {
   createModelAutoReviewer,
   type ReviewSubject,
 } from "./computer/auto-review";
-import { createDemonstrationRecorder } from "./computer/demonstration";
-import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
-import { createWriteUp } from "./computer/write-up";
-import { accountComputerKey } from "./computer/assignment";
 import { createComputerClient } from "./computer/client";
+import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createComputerGateway } from "./computer/gateway";
 import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
 import { createDatabaseRepeatDetector } from "./computer/repeat";
+import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createSupervisorClient } from "./computer/supervisor";
+import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
 import { createConnectorAdminService } from "./connectors";
 import {
@@ -51,14 +52,14 @@ import {
   createCredentialStore,
   resolveModelApiKey,
 } from "./credentials";
-import { createOnboardingStore } from "./auth/onboarding";
 import { createDatabase } from "./db/client";
+import { agentProfiles } from "./db/schema";
 import { createPluginStore } from "./plugins/store";
-import { createRoutineDelivery } from "./routines/deliver";
-import { createRoutineService } from "./routines/service";
+import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
 import { createApprovalWaiter } from "./rooms/wait-for-approval";
-import { createThreadMessageReader } from "./rooms/messages";
+import { createRoutineDelivery } from "./routines/deliver";
+import { createRoutineService } from "./routines/service";
 import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
@@ -157,6 +158,9 @@ const agentVault = {
   reader: credentialStore,
   encryptionKey: config.keyEncryptionKey,
 };
+/** What each Bot has learned about each person, and the rows that let them undo it. */
+const agentMemoryStore = createAgentMemoryStore(database);
+
 const agentProfileStore = createAgentProfileStore(
   database,
   config.managedAgentAgUiUrl,
@@ -682,6 +686,7 @@ const app = createApp(
   tenantPackage.model.supportsEffort,
   demonstrations,
   writeUpDemonstration,
+  agentMemoryStore,
 );
 
 /**

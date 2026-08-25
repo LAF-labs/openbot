@@ -3,10 +3,10 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
-import { agentKeys } from "@/lib/agents/queries";
-import { routineKeys } from "@/lib/routines/queries";
 import { type AgentEffort, effortLabel } from "@/lib/agents/effort-label";
+import { agentKeys } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
+import { routineKeys } from "@/lib/routines/queries";
 import { useActiveBotHolder } from "./active-bot";
 
 /**
@@ -375,6 +375,94 @@ export function SelfTools() {
         <ToolLine
           failed={entry?.failed === true}
           label={label}
+          running={running}
+        >
+          {entry?.note ? <p>{entry.note}</p> : null}
+        </ToolLine>
+      );
+    },
+  });
+
+  /**
+   * ONE THING IT LEARNED, KEPT PAST THIS CONVERSATION.
+   *
+   * `update_state` writes what the Bot IS. This writes what it KNOWS, and the two are deliberately
+   * separate tools: a Bot told "we close on Sundays" should not have to decide whether that belongs
+   * in its job description, and a job description that grows a paragraph every time somebody
+   * mentions a supplier stops being a job description.
+   *
+   * Append only. Forgetting is the person's, on the Bot's own screen — a Bot that could quietly
+   * drop what it knows is a Bot whose memory nobody can audit, which is the thing being fixed here.
+   */
+  useFrontendTool({
+    name: "remember",
+    description:
+      "Record one durable fact about the person you work for, so you still know it in later " +
+      "conversations. Use it for things that stay true — how their business runs, who they deal " +
+      "with, what they have told you to always or never do. One fact per call, in your own words. " +
+      "Do not record passwords, card numbers, or anything they typed into a login.",
+    parameters: z.object({
+      fact: z
+        .string()
+        .describe(
+          "The one thing to remember, written as a short sentence to your future self",
+        ),
+    }),
+    handler: async (
+      args: { fact: string },
+      call: { toolCall?: { id?: string } } = {},
+    ) => {
+      const botId = bot.current;
+      const note = (text: string, failed?: boolean) => {
+        const id = call.toolCall?.id;
+        if (id) {
+          changes.current.set(id, {
+            done: t("Remembered something"),
+            doing: t("Remembering"),
+            note: text,
+            ...(failed ? { failed: true } : {}),
+          });
+        }
+      };
+
+      if (!botId) {
+        note(t("There is no Bot to remember this."), true);
+        return "There is no Bot in this conversation to remember that.";
+      }
+
+      const response = await fetch(
+        `/api/agents/${encodeURIComponent(botId)}/memories`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: args.fact }),
+        },
+      );
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        note(args.fact, true);
+        // Back to the model as text, the same as the profile tool: a thrown error reaches the
+        // person as runtime noise instead of as something their Bot can explain.
+        return `That could not be remembered: ${body?.error ?? response.statusText}`;
+      }
+
+      note(args.fact);
+      // The Bot's own screen lists these, and it is open while somebody is talking to it.
+      await queryClient.invalidateQueries({
+        queryKey: agentKeys.memories(botId),
+      });
+      return "Remembered. You will still know this in later conversations.";
+    },
+    render: ({ status, toolCallId }) => {
+      const entry = changes.current.get(toolCallId ?? "");
+      const running = status !== "complete";
+      return (
+        <ToolLine
+          failed={entry?.failed === true}
+          label={running ? t("Remembering") : t("Remembered something")}
           running={running}
         >
           {entry?.note ? <p>{entry.note}</p> : null}

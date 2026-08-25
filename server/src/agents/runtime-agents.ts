@@ -1,14 +1,16 @@
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
 import type { Database } from "../db/client";
 import {
+  agentMemories,
   agentProfiles,
   agents,
   channelAgents,
   channelMemberships,
 } from "../db/schema";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
+import { MAX_MEMORIES_CARRIED } from "./memory-store";
 import type { AgentActor } from "./profile-types";
 
 /**
@@ -29,11 +31,22 @@ export function createRuntimeAgentLoader(
       selectTombstoneAgents(database, actor),
     ]);
 
+    // One query for every Bot rather than one per Bot: this runs on every single turn, and a
+    // round trip per coworker is a cost the person pays as latency before anything is answered.
+    const remembered = await selectMemories(
+      database,
+      actor,
+      active.map((row) => row.id),
+    );
+
     // A row whose configuration cannot be understood is skipped rather than mounted as a broken
     // agent. Tombstones are appended after, and never overwrite a live agent of the same id.
     const registered = new Map<string, RegisteredAgent>();
     for (const row of active) {
-      const agent = registeredAgentFromRow(row);
+      const agent = registeredAgentFromRow({
+        ...row,
+        memories: remembered.get(row.id) ?? [],
+      });
       if (!agent) continue;
       // The key is resolved per load, rather than being cached on the row: revoking a
       // credential then takes effect on the next run rather than on the next restart.
@@ -59,6 +72,47 @@ export function createRuntimeAgentLoader(
 
     return [...registered.values()];
   };
+}
+
+/**
+ * What each of this person's Bots has learned about them.
+ *
+ * Scoped by owner as well as by Bot: a public coworker is talked to by more than one person, and
+ * what it worked out about one of them is not a fact about the others. Reading it any other way
+ * would leak one person's business into another's conversation through the Bot they share.
+ */
+async function selectMemories(
+  database: Database,
+  actor: AgentActor,
+  agentIds: string[],
+): Promise<Map<string, string[]>> {
+  const byAgent = new Map<string, string[]>();
+  if (agentIds.length === 0) return byAgent;
+
+  const rows = await database
+    .select({
+      agentId: agentMemories.agentId,
+      content: agentMemories.content,
+    })
+    .from(agentMemories)
+    .where(
+      and(
+        inArray(agentMemories.agentId, agentIds),
+        eq(agentMemories.ownerUserId, actor.id),
+        isNull(agentMemories.forgottenAt),
+      ),
+    )
+    .orderBy(asc(agentMemories.createdAt));
+
+  for (const row of rows) {
+    const carried = byAgent.get(row.agentId) ?? [];
+    // Bounded per Bot, not across the account: one talkative coworker must not spend another's
+    // budget. Oldest kept, because the cap drops what is least likely to still be true.
+    if (carried.length >= MAX_MEMORIES_CARRIED) continue;
+    carried.push(row.content);
+    byAgent.set(row.agentId, carried);
+  }
+  return byAgent;
 }
 
 function selectActiveAgents(database: Database, actor: AgentActor) {
