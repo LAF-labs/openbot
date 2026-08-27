@@ -182,6 +182,11 @@ VM's crontab:
 
 `/usr/local/sbin/laf-backup-db` pipes `pg_dump` out of the compose Postgres
 into `/var/backups/laf/` (gzip, `umask 077`) and keeps the newest fourteen.
+
+**Ubuntu Minimal ships no cron daemon** — `apt-get install -y cron` first, or
+the schedule silently never fires. Learned the measured way: the entry sat for
+two days doing nothing until the fleet monitor read the backup age, because
+running the script by hand had proven the script, not the schedule.
 Restore is the reverse:
 
 ```bash
