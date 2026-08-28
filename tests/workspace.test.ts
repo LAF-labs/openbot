@@ -13,7 +13,7 @@ function packageManifest(path: string) {
   };
 }
 
-describe("OpenBot workspace", () => {
+describe("LAF Agent workspace", () => {
   test("defines the app, server, agent-bot and desktop packages", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),

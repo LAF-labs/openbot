@@ -12,7 +12,7 @@ import type { AppVariables, AuthenticatedActor } from "./guards";
  *
  * Two independent locks:
  *
- *  1. `OPENBOT_DEV_NO_AUTH=true` must be set. Absent, nothing here runs.
+ *  1. `LAF_DEV_NO_AUTH=true` must be set. Absent, nothing here runs.
  *  2. `NODE_ENV` must not be `production`. A deployment that sets the flag by accident still refuses,
  *     and it refuses by refusing to start rather than by ignoring the flag, because a
  *     deployment believing it has authentication when it does not is the worst of the three states.
@@ -23,7 +23,7 @@ import type { AppVariables, AuthenticatedActor } from "./guards";
 
 export const DEV_ACTOR: AuthenticatedActor = {
   id: "dev-local-user",
-  email: "dev@openbot.local",
+  email: "dev@laf.local",
   role: "admin",
 };
 
@@ -59,15 +59,17 @@ export async function initializeDevActorUser(
 export function devAuthEnabled(
   environment: Record<string, string | undefined>,
 ): boolean {
-  if (environment.OPENBOT_DEV_NO_AUTH?.trim() !== "true") {
-    return false;
-  }
-  if (environment.NODE_ENV === "production") {
+  // The pre-rename spelling no longer ENABLES anything, but in production it
+  // still REFUSES: a stale deployment .env that meant "no auth" must fail
+  // loudly, not fall through to an authentication state nobody chose.
+  const legacy = environment.OPENBOT_DEV_NO_AUTH?.trim() === "true";
+  const enabled = environment.LAF_DEV_NO_AUTH?.trim() === "true";
+  if ((enabled || legacy) && environment.NODE_ENV === "production") {
     throw new Error(
-      "OPENBOT_DEV_NO_AUTH cannot be used with NODE_ENV=production. Refusing to start without authentication.",
+      "LAF_DEV_NO_AUTH cannot be used with NODE_ENV=production. Refusing to start without authentication.",
     );
   }
-  return true;
+  return enabled;
 }
 
 /** A guard that admits everybody as {@link DEV_ACTOR}. Only ever mounted when devAuthEnabled(). */

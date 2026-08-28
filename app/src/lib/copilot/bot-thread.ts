@@ -11,11 +11,17 @@ import { useEffect, useState } from "react";
  * each other's conversation.
  */
 
-const KEY = "openbot.bot-thread";
+const KEY = "laf.bot-thread";
+/** The pre-rename key. Losing it would OPEN A NEW THREAD, so it is migrated, not dropped. */
+const LEGACY_KEY = "openbot.bot-thread";
 
 function remembered(agentId: string): string | null {
   try {
-    return window.localStorage.getItem(`${KEY}.${agentId}`);
+    const current = window.localStorage.getItem(`${KEY}.${agentId}`);
+    if (current) return current;
+    const legacy = window.localStorage.getItem(`${LEGACY_KEY}.${agentId}`);
+    if (legacy) remember(agentId, legacy);
+    return legacy;
   } catch {
     // Storage can be unavailable or full. A thread for this visit is better than no chat at all.
     return null;

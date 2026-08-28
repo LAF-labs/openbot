@@ -35,7 +35,7 @@ import { testEnvironment } from "./support/environment";
 
 const actor = {
   id: "user-1",
-  email: "member@openbot.test",
+  email: "member@laf.test",
   role: "user",
 } as const;
 
@@ -144,12 +144,12 @@ describe("channel routes", () => {
       Promise.resolve(context.json({ error: "denied" }, 401));
     const app = appFor(store, denied);
 
-    const created = await app.request("http://openbot.test/", {
+    const created = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentIds: ["agent-1"] }),
     });
-    const fetched = await app.request("http://openbot.test/channel-1");
+    const fetched = await app.request("http://laf.test/channel-1");
 
     expect(created.status).toBe(401);
     expect(fetched.status).toBe(401);
@@ -160,12 +160,12 @@ describe("channel routes", () => {
     const store = fakeStore();
     const app = appFor(store);
 
-    const created = await app.request("http://openbot.test/", {
+    const created = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentIds: [" agent-2 ", "agent-1"] }),
     });
-    const fetched = await app.request("http://openbot.test/channel-1");
+    const fetched = await app.request("http://laf.test/channel-1");
 
     expect(created.status).toBe(201);
     expect(fetched.status).toBe(200);
@@ -186,12 +186,12 @@ describe("channel routes", () => {
     });
     const app = appFor(store);
 
-    const created = await app.request("http://openbot.test/", {
+    const created = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentIds: ["agent-1"] }),
     });
-    const fetched = await app.request("http://openbot.test/channel-1");
+    const fetched = await app.request("http://laf.test/channel-1");
 
     expect(created.status).toBe(201);
     expect(await json(created)).toEqual({
@@ -215,7 +215,7 @@ describe("channel routes", () => {
     "returns safe validation errors for malformed POST bodies",
     async (body, error) => {
       const store = fakeStore();
-      const response = await appFor(store).request("http://openbot.test/", {
+      const response = await appFor(store).request("http://laf.test/", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body,
@@ -230,7 +230,7 @@ describe("channel routes", () => {
   test("returns 404 when get returns null", async () => {
     const store = fakeStore({ get: async () => null });
 
-    const response = await appFor(store).request("http://openbot.test/missing");
+    const response = await appFor(store).request("http://laf.test/missing");
 
     expect(response.status).toBe(404);
     expect(await json(response)).toEqual({ error: "Channel not found." });
@@ -258,12 +258,12 @@ describe("channel routes", () => {
       const app = appFor(store);
       const response =
         method === "create"
-          ? await app.request("http://openbot.test/", {
+          ? await app.request("http://laf.test/", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ agentIds: ["agent-1"] }),
             })
-          : await app.request("http://openbot.test/channel-1");
+          : await app.request("http://laf.test/channel-1");
 
       expect(response.status).toBe(status);
       expect(await json(response)).toEqual({ error: message });
@@ -281,7 +281,7 @@ describe("channel routes", () => {
       context.json({ sentinel: error.message }, 599),
     );
 
-    const response = await app.request("http://openbot.test/", {
+    const response = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentIds: ["agent-1"] }),
@@ -321,7 +321,7 @@ describe("channel route composition", () => {
     );
 
     const unauthenticated = await app.request(
-      "http://openbot.test/api/channels/channel-1",
+      "http://laf.test/api/channels/channel-1",
     );
     expect(unauthenticated.status).toBe(401);
     expect(store.calls).toEqual([]);
@@ -330,12 +330,12 @@ describe("channel route composition", () => {
       user: {
         id: actor.id,
         email: actor.email,
-        name: "OpenBot Member",
+        name: "LAF Member",
         image: "https://example.test/member.png",
       },
     };
     const authenticated = await app.request(
-      "http://openbot.test/api/channels/channel-1",
+      "http://laf.test/api/channels/channel-1",
     );
 
     expect(authenticated.status).toBe(200);
@@ -344,7 +344,7 @@ describe("channel route composition", () => {
         "get",
         {
           ...actor,
-          name: "OpenBot Member",
+          name: "LAF Member",
           image: "https://example.test/member.png",
         },
         "channel-1",
@@ -356,7 +356,7 @@ describe("channel route composition", () => {
     const app = createApp(loadConfig(testEnvironment()));
 
     const response = await app.request(
-      "http://openbot.test/api/channels/channel-1",
+      "http://laf.test/api/channels/channel-1",
     );
 
     expect(response.status).toBe(404);
@@ -537,7 +537,7 @@ describe("channel store integration", () => {
 
     expect(await persistentStore.get(otherUser, created.id)).toBeNull();
     const response = await appFor(persistentStore, otherUserMiddleware).request(
-      `http://openbot.test/${created.id}`,
+      `http://laf.test/${created.id}`,
     );
     expect(response.status).toBe(404);
     expect(await json(response)).toEqual({ error: "Channel not found." });

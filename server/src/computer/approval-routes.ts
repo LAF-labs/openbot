@@ -34,7 +34,7 @@ import type {
  * Compared against rather than imported from `auth/dev-actor` because this must not depend on the
  * authentication module's internals; this is the one fact about it that matters here.
  */
-const DEV_ACTOR_EMAIL = "dev@openbot.local";
+const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 export function createApprovalRoutes(
   approvals: ApprovalRegistry,

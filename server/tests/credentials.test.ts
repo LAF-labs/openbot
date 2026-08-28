@@ -312,7 +312,7 @@ describe("admin credential API", () => {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
-            user: { id: "admin", email: "admin@openbot.test" },
+            user: { id: "admin", email: "admin@laf.test" },
           }),
         },
       },
@@ -333,7 +333,7 @@ describe("admin credential API", () => {
     );
 
     const response = await app.request(
-      "http://openbot.local/api/admin/credentials",
+      "http://laf.local/api/admin/credentials",
     );
 
     expect(response.status).toBe(200);
@@ -359,7 +359,7 @@ describe("admin credential API", () => {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
-            user: { id: "admin", email: "admin@openbot.test" },
+            user: { id: "admin", email: "admin@laf.test" },
           }),
         },
       },
@@ -382,7 +382,7 @@ describe("admin credential API", () => {
     );
 
     const response = await app.request(
-      "http://openbot.local/api/admin/credentials",
+      "http://laf.local/api/admin/credentials",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -427,7 +427,7 @@ describe("admin credential API", () => {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
-            user: { id: "admin", email: "admin@openbot.test" },
+            user: { id: "admin", email: "admin@laf.test" },
           }),
         },
       },
@@ -457,7 +457,7 @@ describe("admin credential API", () => {
     );
 
     const rotate = await app.request(
-      "http://openbot.local/api/admin/credentials/credential-old/rotate",
+      "http://laf.local/api/admin/credentials/credential-old/rotate",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -471,7 +471,7 @@ describe("admin credential API", () => {
       },
     );
     const revoke = await app.request(
-      "http://openbot.local/api/admin/credentials/credential-new/revoke",
+      "http://laf.local/api/admin/credentials/credential-new/revoke",
       { method: "POST" },
     );
 

@@ -47,7 +47,7 @@ describe("authoring a component without a rebuild", () => {
       jsFunctions: "",
       argumentSchema: { type: "object" },
       sampleArguments: { a: 1 },
-      by: "admin@openbot.local",
+      by: "admin@laf.local",
     });
 
     expect(saved.name).toBe(name);
@@ -69,7 +69,7 @@ describe("authoring a component without a rebuild", () => {
   });
 
   test("publishing releases the source and the description together", async () => {
-    const published = await store.publish(name, "admin@openbot.local");
+    const published = await store.publish(name, "admin@laf.local");
     expect(published.published).toBe(true);
     expect(published.publishedHtml).toBe("<p>draft</p>");
     expect(published.revision).toBe(1);
@@ -106,7 +106,7 @@ describe("authoring a component without a rebuild", () => {
       jsFunctions: "",
       argumentSchema: { type: "object" },
       sampleArguments: { a: 1 },
-      by: "admin@openbot.local",
+      by: "admin@laf.local",
     });
 
     const drawable = await store.published();
@@ -130,13 +130,13 @@ describe("authoring a component without a rebuild", () => {
         jsFunctions: "",
         argumentSchema: {},
         sampleArguments: {},
-        by: "admin@openbot.local",
+        by: "admin@laf.local",
       }),
     ).rejects.toThrow();
   });
 
   test("deleting takes the governance row with it", async () => {
-    await store.remove(name, "admin@openbot.local");
+    await store.remove(name, "admin@laf.local");
     const [governance] = await database
       .select()
       .from(components)

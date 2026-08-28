@@ -1,6 +1,6 @@
 # Configuration
 
-OpenBot is configured with environment variables and a tenant package. The API server validates both at startup.
+LAF Agent is configured with environment variables and a tenant package. The API server validates both at startup.
 
 ## Environment setup
 
@@ -76,7 +76,7 @@ Two things are worth knowing before pointing a deployment at any gateway. Not ev
 
 | Variable                     | Meaning                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `OPENBOT_DEV_NO_AUTH`        | Local-only fixed administrator when set to `true`. Refused with `NODE_ENV=production`. |
+| `LAF_DEV_NO_AUTH`        | Local-only fixed administrator when set to `true`. Refused with `NODE_ENV=production`. |
 | `GOOGLE_OAUTH_CLIENT_ID`     | Google OAuth client id.                                                                |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret.                                                            |
 | `BETTER_AUTH_SECRET`         | At least 32 characters. Required with Google OAuth.                                    |
@@ -148,7 +148,7 @@ tenant/laf/
 ```yaml
 tenant:
   id: openbot
-  product_name: OpenBot
+  product_name: LAF Agent
 ```
 
 Optional theme:

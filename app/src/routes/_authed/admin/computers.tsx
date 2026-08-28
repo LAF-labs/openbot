@@ -35,7 +35,7 @@ type ComputerProfile = {
 };
 
 /** API placeholder id; the list endpoint returns all computers. */
-const COMPUTER_ID = "openbot-computer";
+const COMPUTER_ID = "shared";
 
 export const Route = createFileRoute("/_authed/admin/computers")({
   component: ComputersPage,

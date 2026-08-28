@@ -19,7 +19,7 @@ import { testEnvironment } from "./support/environment";
 
 const actor = {
   id: "user-1",
-  email: "member@openbot.test",
+  email: "member@laf.test",
   role: "user",
 } as const;
 
@@ -244,7 +244,7 @@ describe("agent lifecycle routes", () => {
     ];
 
     for (const [path, init] of requests) {
-      const response = await app.request(`http://openbot.test${path}`, init);
+      const response = await app.request(`http://laf.test${path}`, init);
       expect(response.status).toBe(401);
     }
     expect(store.calls).toEqual([]);
@@ -261,9 +261,7 @@ describe("agent lifecycle routes", () => {
       "?hidden=1",
       "?hidden=true",
     ]) {
-      expect((await app.request(`http://openbot.test/${query}`)).status).toBe(
-        200,
-      );
+      expect((await app.request(`http://laf.test/${query}`)).status).toBe(200);
     }
 
     expect(store.calls).toEqual([
@@ -279,31 +277,28 @@ describe("agent lifecycle routes", () => {
     const store = fakeStore();
     const app = appFor(store);
 
-    const list = await app.request("http://openbot.test/");
-    const detail = await app.request("http://openbot.test/agent-1");
-    const created = await app.request("http://openbot.test/", {
+    const list = await app.request("http://laf.test/");
+    const detail = await app.request("http://laf.test/agent-1");
+    const created = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
-    const updated = await app.request("http://openbot.test/agent-1", {
+    const updated = await app.request("http://laf.test/agent-1", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
-    const duplicated = await app.request(
-      "http://openbot.test/agent-1/duplicate",
-      {
-        method: "POST",
-      },
-    );
-    const hidden = await app.request("http://openbot.test/agent-1/hide", {
+    const duplicated = await app.request("http://laf.test/agent-1/duplicate", {
       method: "POST",
     });
-    const unhidden = await app.request("http://openbot.test/agent-1/unhide", {
+    const hidden = await app.request("http://laf.test/agent-1/hide", {
       method: "POST",
     });
-    const deleted = await app.request("http://openbot.test/agent-1", {
+    const unhidden = await app.request("http://laf.test/agent-1/unhide", {
+      method: "POST",
+    });
+    const deleted = await app.request("http://laf.test/agent-1", {
       method: "DELETE",
     });
 
@@ -343,7 +338,7 @@ describe("agent lifecycle routes", () => {
       },
     });
 
-    const response = await appFor(store).request("http://openbot.test/");
+    const response = await appFor(store).request("http://laf.test/");
 
     expect(await json(response)).toEqual({
       agents: [
@@ -402,7 +397,7 @@ describe("agent lifecycle routes", () => {
   test("separates ownership from permission for an administrator", async () => {
     const administrator: AuthenticatedActor = {
       id: "admin-1",
-      email: "admin@openbot.test",
+      email: "admin@laf.test",
       role: "admin",
     };
     const requireAdministrator: MiddlewareHandler<{
@@ -421,7 +416,7 @@ describe("agent lifecycle routes", () => {
     });
 
     const body = (await json(
-      await appFor(store, requireAdministrator).request("http://openbot.test/"),
+      await appFor(store, requireAdministrator).request("http://laf.test/"),
     )) as { agents: { id: string; canManage: boolean; mine: boolean }[] };
 
     // An administrator may manage everybody's coworkers but only created their own. A roster that
@@ -453,7 +448,7 @@ describe("agent lifecycle routes", () => {
       ["/", "POST"],
       ["/agent-1", "PATCH"],
     ] as const) {
-      const response = await app.request(`http://openbot.test${path}`, {
+      const response = await app.request(`http://laf.test${path}`, {
         method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -480,12 +475,12 @@ describe("agent lifecycle routes", () => {
   ])("requires a valid full JSON object for %s %s", async (method, path) => {
     const store = fakeStore();
     const app = appFor(store);
-    const malformed = await app.request(`http://openbot.test${path}`, {
+    const malformed = await app.request(`http://laf.test${path}`, {
       method,
       headers: { "content-type": "application/json" },
       body: "{",
     });
-    const partial = await app.request(`http://openbot.test${path}`, {
+    const partial = await app.request(`http://laf.test${path}`, {
       method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Only a name" }),
@@ -512,7 +507,7 @@ describe("agent lifecycle routes", () => {
     const store = fakeStore();
     const app = appFor(store);
 
-    const response = await app.request("http://openbot.test/", {
+    const response = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "새 봇", visibility: "private" }),
@@ -531,7 +526,7 @@ describe("agent lifecycle routes", () => {
   test("returns 404 when get returns null", async () => {
     const store = fakeStore({ get: async () => null });
 
-    const response = await appFor(store).request("http://openbot.test/missing");
+    const response = await appFor(store).request("http://laf.test/missing");
 
     expect(response.status).toBe(404);
     expect(await json(response)).toEqual({ error: "Agent not found." });
@@ -556,14 +551,11 @@ describe("agent lifecycle routes", () => {
       },
     });
 
-    const response = await appFor(store).request(
-      "http://openbot.test/agent-1",
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(validInput),
-      },
-    );
+    const response = await appFor(store).request("http://laf.test/agent-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(validInput),
+    });
 
     expect(response.status).toBe(status);
     expect(await json(response)).toEqual({ error: message });
@@ -580,12 +572,9 @@ describe("agent lifecycle routes", () => {
       context.json({ sentinel: error.message }, 599),
     );
 
-    const response = await app.request(
-      "http://openbot.test/agent-1/duplicate",
-      {
-        method: "POST",
-      },
-    );
+    const response = await app.request("http://laf.test/agent-1/duplicate", {
+      method: "POST",
+    });
 
     expect(response.status).toBe(599);
     expect(await json(response)).toEqual({ sentinel: "database disconnected" });
@@ -619,7 +608,7 @@ describe("agent route composition", () => {
       store,
     );
 
-    const unauthenticated = await app.request("http://openbot.test/api/agents");
+    const unauthenticated = await app.request("http://laf.test/api/agents");
     expect(unauthenticated.status).toBe(401);
     expect(store.calls).toEqual([]);
 
@@ -627,11 +616,11 @@ describe("agent route composition", () => {
       user: {
         id: actor.id,
         email: actor.email,
-        name: "OpenBot Member",
+        name: "LAF Member",
         image: "https://example.test/member.png",
       },
     };
-    const authenticated = await app.request("http://openbot.test/api/agents");
+    const authenticated = await app.request("http://laf.test/api/agents");
 
     expect(authenticated.status).toBe(200);
     expect(store.calls).toEqual([
@@ -639,7 +628,7 @@ describe("agent route composition", () => {
         "list",
         {
           ...actor,
-          name: "OpenBot Member",
+          name: "LAF Member",
           image: "https://example.test/member.png",
         },
         false,
@@ -650,7 +639,7 @@ describe("agent route composition", () => {
   test("leaves agent routes unmounted when createApp has no store", async () => {
     const app = createApp(loadConfig(testEnvironment()));
 
-    const response = await app.request("http://openbot.test/api/agents");
+    const response = await app.request("http://laf.test/api/agents");
 
     expect(response.status).toBe(404);
   });

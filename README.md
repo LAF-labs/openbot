@@ -189,7 +189,7 @@ Settings worth knowing:
 
 | Variable                             | Use                                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------- |
-| `OPENBOT_DEV_NO_AUTH`                | Admits every request as one administrator. How it runs today.             |
+| `LAF_DEV_NO_AUTH`                | Admits every request as one administrator. How it runs today.             |
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
 | `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
 | `COMPUTER_TOKEN`                     | Secret every Bot computer request must present. `start.sh` sets one.      |
@@ -219,7 +219,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Sign in with Google
 
-`OPENBOT_DEV_NO_AUTH` is the default because it needs no OAuth credentials and no consent screen. To sign in for real instead, create a Google OAuth client and set all four of these together:
+`LAF_DEV_NO_AUTH` is the default because it needs no OAuth credentials and no consent screen. To sign in for real instead, create a Google OAuth client and set all four of these together:
 
 ```sh
 BETTER_AUTH_URL=http://localhost:3001
@@ -233,7 +233,7 @@ Then set the two that decide who gets in and from where:
 - `TRUSTED_ORIGINS` — where the app is served from, `http://localhost:3010` locally. It defaults to `http://localhost:3000`, which is not where `start.sh` serves the app.
 - `INITIAL_ADMIN_EMAILS` — comma separated. An address listed here becomes an administrator the first time it signs in; everybody else becomes a user.
 
-Remove `OPENBOT_DEV_NO_AUTH`, then restart: the sign-in button is written into the app's generated config at startup, so it appears only once all four settings are present. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
+Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in button is written into the app's generated config at startup, so it appears only once all four settings are present. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
 
 A partial set is refused rather than ignored: the server will not start with `BETTER_AUTH_SECRET` or `BETTER_AUTH_URL` but no client credentials, or with a secret shorter than 32 characters.
 

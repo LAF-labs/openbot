@@ -16,7 +16,9 @@
       (() => {
         let stored = null;
         try {
-          stored = window.localStorage.getItem("openbot-theme");
+          stored =
+            window.localStorage.getItem("laf-theme") ??
+            window.localStorage.getItem("openbot-theme");
         } catch {
           // Private browsing throws on read; an unreadable store means no choice was made.
         }

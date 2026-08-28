@@ -118,7 +118,7 @@ bun run test:smoke
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
 suite cannot reach: server to computer, the gateway deciding before the browser acts,
-and the audit row landing. Point it elsewhere with `OPENBOT_API_URL`. Without a deployment it is
+and the audit row landing. Point it elsewhere with `LAF_API_URL`. Without a deployment it is
 skipped by `bun run test` and says what to start when asked for by name.
 
 ## Contribution checklist

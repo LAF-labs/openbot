@@ -421,7 +421,7 @@ export function createApp(
   );
 
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
-  // its own routing under /api/copilotkit cannot shadow an OpenBot route declared above.
+  // its own routing under /api/copilotkit cannot shadow a LAF Agent route declared above.
   if (copilotHandler) {
     // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
     // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees

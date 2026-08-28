@@ -43,7 +43,7 @@ services:
       dockerfile: server/Dockerfile
     environment:
       # Arms two refusals that are otherwise only warnings: the public example encryption key, and
-      # OPENBOT_DEV_NO_AUTH. Both are survivable mistakes locally and neither is survivable here,
+      # LAF_DEV_NO_AUTH. Both are survivable mistakes locally and neither is survivable here,
       # so a deployment says which one it is rather than hoping nobody copied a development .env.
       NODE_ENV: production
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot

@@ -12,7 +12,7 @@ import { testAgentConnection } from "../src/agents/connection-test";
  * test that matters is one where an implementation we did not write answers.
  *
  * `@copilotkit/aimock` is ours, which is the point: it is the org's deterministic backend for
- * exactly this, it tracks the protocol as the protocol moves, and using it here means OpenBot finds
+ * exactly this, it tracks the protocol as the protocol moves, and using it here means LAF Agent finds
  * out about a drift in the same week as everything else that depends on it rather than in a
  * customer's integration.
  *

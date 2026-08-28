@@ -12,13 +12,13 @@ import { createThreadRoutes } from "../src/channels/thread-routes";
  * names itself is one nothing can later attribute to this deployment.
  */
 
-const identity = createThreadIdentity("openbot-test");
+const identity = createThreadIdentity("laf-test");
 
 const asSignedIn: MiddlewareHandler<{ Variables: AppVariables }> = async (
   context,
   next,
 ) => {
-  context.set("actor", { id: "u1", email: "someone@openbot.test" });
+  context.set("actor", { id: "u1", email: "someone@laf.test" });
   return next();
 };
 
@@ -27,7 +27,7 @@ function app() {
 }
 
 async function mint() {
-  const response = await app().request("http://openbot.local/threads/mint", {
+  const response = await app().request("http://laf.local/threads/mint", {
     method: "POST",
   });
   return (await response.json()) as { threadId: string };
@@ -51,7 +51,7 @@ describe("minting a thread", () => {
     ) => context.json({ error: "Unauthorized." }, 401);
     const response = await new Hono()
       .route("/threads", createThreadRoutes(identity, refusing))
-      .request("http://openbot.local/threads/mint", { method: "POST" });
+      .request("http://laf.local/threads/mint", { method: "POST" });
     expect(response.status).toBe(401);
   });
 });

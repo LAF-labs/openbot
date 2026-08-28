@@ -51,13 +51,13 @@ const DRIVER = { id: "dev-local-user" };
 /** Answering is the owner's: in this build that means an administrator. */
 const MANAGER = {
   id: "manager-user",
-  email: "manager@openbot.test",
+  email: "manager@laf.test",
   role: "admin",
 } as const;
 
 const BYSTANDER = {
   id: "bystander-user",
-  email: "bystander@openbot.test",
+  email: "bystander@laf.test",
   role: "user",
 } as const;
 

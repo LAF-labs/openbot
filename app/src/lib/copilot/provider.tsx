@@ -11,7 +11,7 @@ import { SelfTools } from "./self-tools";
 /**
  * The CopilotKit client, wrapped once for the whole authenticated app.
  *
- * `credentials: "include"` is the load-bearing part. OpenBot authenticates with a Better Auth
+ * `credentials: "include"` is the load-bearing part. LAF Agent authenticates with a Better Auth
  * session cookie, and the runtime endpoint sits behind the same guard as every other API route, so
  * without it every run is rejected as anonymous while the rest of the app looks signed in.
  *

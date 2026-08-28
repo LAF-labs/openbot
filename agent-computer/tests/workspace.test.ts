@@ -23,7 +23,7 @@ let root: string;
 let outside: string;
 
 beforeEach(async () => {
-  const base = await mkdtemp(join(tmpdir(), "openbot-workspace-"));
+  const base = await mkdtemp(join(tmpdir(), "laf-workspace-"));
   root = join(base, "workspace");
   outside = join(base, "outside");
   await mkdir(root, { recursive: true });

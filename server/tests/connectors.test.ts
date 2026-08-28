@@ -15,7 +15,7 @@ describe("admin connectors API", () => {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
-            user: { id: "admin", email: "admin@openbot.test" },
+            user: { id: "admin", email: "admin@laf.test" },
           }),
         },
       },
@@ -42,7 +42,7 @@ describe("admin connectors API", () => {
       private_key: "secret",
     });
     const response = await app.request(
-      "http://openbot.local/api/admin/connectors/google-drive/setup",
+      "http://laf.local/api/admin/connectors/google-drive/setup",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -94,7 +94,7 @@ describe("admin connectors API", () => {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
-            user: { id: "admin", email: "admin@openbot.test" },
+            user: { id: "admin", email: "admin@laf.test" },
           }),
         },
       },
@@ -115,9 +115,7 @@ describe("admin connectors API", () => {
       },
     );
 
-    const response = await app.request(
-      "http://openbot.local/api/admin/connectors",
-    );
+    const response = await app.request("http://laf.local/api/admin/connectors");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({

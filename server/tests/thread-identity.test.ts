@@ -9,8 +9,8 @@ import { createThreadIdentity } from "../src/channels/thread-identity";
  * deployment minted it, and it says that to a deployment that has never seen the thread before.
  */
 
-const here = createThreadIdentity("openbot-production");
-const elsewhere = createThreadIdentity("openbot-staging");
+const here = createThreadIdentity("laf-production");
+const elsewhere = createThreadIdentity("laf-staging");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -42,9 +42,7 @@ describe("a thread id carries the deployment that minted it", () => {
   test("the same name recognises threads minted by another process", () => {
     // Nothing is remembered between runs: a deployment that restarts, or a second copy of the same
     // deployment, has to reach the same answer from the name alone.
-    expect(createThreadIdentity("openbot-production").owns(here.mint())).toBe(
-      true,
-    );
+    expect(createThreadIdentity("laf-production").owns(here.mint())).toBe(true);
   });
 
   test("ids differ, so the tag has not eaten the randomness", () => {
@@ -62,7 +60,7 @@ describe("a thread id carries the deployment that minted it", () => {
     for (const value of [
       "",
       "not-a-uuid",
-      "openbot-connection-test-123",
+      "laf-connection-test-123",
       "377529b0-9a52-4fe3-bfaa-b99a3886710",
       "377529b0-9a52-4fe3-bfaa-b99a3886710e-extra",
       "zzzzzzzz-9a52-4fe3-bfaa-b99a3886710e",

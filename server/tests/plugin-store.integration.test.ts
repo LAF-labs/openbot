@@ -139,7 +139,7 @@ describe("a grant is the permission", () => {
         ref,
         args: {},
         botId: strangerId,
-        actorId: "someone@openbot.local",
+        actorId: "someone@laf.local",
       }),
     ).rejects.toBeInstanceOf(PluginRefusedError);
 
@@ -156,20 +156,20 @@ describe("a grant is the permission", () => {
   });
 
   test("granting lets the same Bot past the grant check", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     const decision = await store.decide("mcp", ref, holderId);
     expect(decision.allowed).toBe(true);
   });
 
   test("revoking takes it away again", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
-    await store.revoke("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
+    await store.revoke("mcp", ref, holderId, "admin@laf.local");
     const decision = await store.decide("mcp", ref, holderId);
     expect(decision.allowed).toBe(false);
   });
 
   test("a Bot is offered exactly what it holds", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     const held = await store.listForAgent(holderId);
     expect(held.tools.map((tool) => tool.ref)).toEqual([ref]);
     // The name the model is offered, which may not contain a slash.
@@ -183,7 +183,7 @@ describe("a grant is the permission", () => {
 
 describe("the policy is asked as well as the grant", () => {
   test("a granted tool is still refused by a deny rule, and the rule is named", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       mode: "enforce",
       deny: ['mcp.server == "atlassian"'],
@@ -196,7 +196,7 @@ describe("the policy is asked as well as the grant", () => {
         ref,
         args: {},
         botId: holderId,
-        actorId: "someone@openbot.local",
+        actorId: "someone@laf.local",
       });
     } catch (error) {
       thrown = error;
@@ -221,7 +221,7 @@ describe("the policy is asked as well as the grant", () => {
   });
 
   test("a rule can speak about effect rather than about tool names", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     // `searchJiraIssues` is advertised and is not in the vendor's write list, so it is a read and
     // this deny rule must NOT catch it. The assertion is that the call gets past the policy, which
     // it proves by failing at the network instead of as a refusal.
@@ -237,7 +237,7 @@ describe("the policy is asked as well as the grant", () => {
         ref,
         args: {},
         botId: holderId,
-        actorId: "someone@openbot.local",
+        actorId: "someone@laf.local",
       });
     } catch (error) {
       thrown = error;
@@ -251,7 +251,7 @@ describe("the policy is asked as well as the grant", () => {
 
 describe("a boundary written about the browser does not refuse tool calls", () => {
   test("an unguarded rule about a page element does not refuse a tool call", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     /**
      * This engine treats an expression it cannot evaluate as a MATCH, which is right for a browser
      * action on an element the server could not resolve and catastrophic for a tool call: with
@@ -275,7 +275,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
         ref,
         args: {},
         botId: holderId,
-        actorId: "someone@openbot.local",
+        actorId: "someone@laf.local",
       });
     } catch (error) {
       thrown = error;
@@ -298,7 +298,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
  */
 describe("a boundary can ask a person about a tool call", () => {
   test("stops the call and asks, rather than refusing it", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       mode: "enforce",
       deny: [],
@@ -312,7 +312,7 @@ describe("a boundary can ask a person about a tool call", () => {
         ref,
         args: { query: "open bugs" },
         botId: holderId,
-        actorId: "someone@openbot.local",
+        actorId: "someone@laf.local",
       });
     } catch (error) {
       thrown = error;
@@ -352,7 +352,7 @@ describe("a boundary can ask a person about a tool call", () => {
   });
 
   test("an answer is good for the call it was given for, and not for another", async () => {
-    await store.grant("mcp", ref, holderId, "admin@openbot.local");
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       mode: "enforce",
       deny: [],
@@ -363,19 +363,14 @@ describe("a boundary can ask a person about a tool call", () => {
       ref,
       args: { query: "open bugs" },
       botId: holderId,
-      actorId: "someone@openbot.local",
+      actorId: "someone@laf.local",
     };
 
     try {
       const asked = (await store
         .callTool(call)
         .catch((error: unknown) => error)) as PluginNeedsApprovalError;
-      approvals.answer(
-        asked.approvalId,
-        holderId,
-        "manager@openbot.local",
-        true,
-      );
+      approvals.answer(asked.approvalId, holderId, "manager@laf.local", true);
 
       // The arguments are inside the binding, so a person who allowed one message to one channel has
       // not allowed a different one. This asks again rather than going through.
@@ -404,7 +399,7 @@ describe("a boundary can ask a person about a tool call", () => {
           (row) =>
             row.eventType === "mcp.call_succeeded" &&
             (row.payload as { decision?: { approvedBy?: string } }).decision
-              ?.approvedBy === "manager@openbot.local",
+              ?.approvedBy === "manager@laf.local",
         ),
       ).toBe(true);
     } finally {

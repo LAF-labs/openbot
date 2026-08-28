@@ -1,5 +1,5 @@
 {
-  "name": "openbot",
+  "name": "laf-agent",
   "license": "MIT",
   "private": true,
   "packageManager": "bun@1.3.14",

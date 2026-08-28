@@ -1,4 +1,4 @@
-export const THEME_STORAGE_KEY = "openbot-theme";
+export const THEME_STORAGE_KEY = "laf-theme";
 
 /**
  * What a person chose, which is not the same as what is on screen.

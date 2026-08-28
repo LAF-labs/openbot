@@ -11,7 +11,7 @@ const app = createApp(
 
 describe("health endpoint", () => {
   test("reports the server as healthy", async () => {
-    const response = await app.request("http://openbot.local/health");
+    const response = await app.request("http://laf.local/health");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ status: "ok" });
@@ -20,7 +20,7 @@ describe("health endpoint", () => {
 
 describe("runtime capabilities", () => {
   test("reports the Intelligence runtime without exposing configuration secrets", async () => {
-    const response = await app.request("http://openbot.local/api/capabilities");
+    const response = await app.request("http://laf.local/api/capabilities");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -32,7 +32,7 @@ describe("runtime capabilities", () => {
   // The runtime object holds the Intelligence API key and licence token. This endpoint has no
   // authentication, so a projection bug here publishes deployment secrets to anyone who asks.
   test("never serves the Intelligence credentials", async () => {
-    const response = await app.request("http://openbot.local/api/capabilities");
+    const response = await app.request("http://laf.local/api/capabilities");
     const body = await response.text();
     const parsed = (await new Response(body).json()) as Record<string, unknown>;
 
@@ -46,7 +46,7 @@ describe("runtime capabilities", () => {
 describe("authentication availability", () => {
   test("fails loudly when Google authentication has not been configured", async () => {
     const response = await app.request(
-      "http://openbot.local/api/auth/sign-in/social",
+      "http://laf.local/api/auth/sign-in/social",
       { method: "POST" },
     );
 
@@ -67,7 +67,7 @@ describe("authentication availability", () => {
     );
 
     const response = await authenticatedApp.request(
-      "http://openbot.local/api/auth/callback/google",
+      "http://laf.local/api/auth/callback/google",
     );
 
     expect(response.status).toBe(204);
@@ -87,7 +87,7 @@ describe("authentication availability", () => {
     );
 
     const response = await authenticatedApp.request(
-      "http://openbot.local/api/auth/sign-out",
+      "http://laf.local/api/auth/sign-out",
       { method: "POST" },
     );
 

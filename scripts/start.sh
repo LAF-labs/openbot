@@ -32,7 +32,7 @@ COMPUTER_PORT="$(setting COMPUTER_PORT 4100)"
 BOT_PORT="$(setting BOT_PORT 4200)"
 export APP_PORT SERVER_PORT
 # The computer refuses to start without a token, and compose does not supply one on its own.
-COMPUTER_TOKEN="$(setting COMPUTER_TOKEN openbot-dev-computer-token)"
+COMPUTER_TOKEN="$(setting COMPUTER_TOKEN laf-dev-computer-token)"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 red()   { printf '\033[31m%s\033[0m\n' "$1"; }

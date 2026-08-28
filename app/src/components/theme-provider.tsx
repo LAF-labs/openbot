@@ -36,7 +36,12 @@ function systemPrefersDark(): boolean {
 /** Private browsing throws on read; an unreadable store means no choice was made. */
 function storedPreference(): ThemePreference {
   try {
-    return parseThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+    return parseThemePreference(
+      // The pre-rename key keeps an existing person's choice; the next change
+      // they make writes it under the new one.
+      window.localStorage.getItem(THEME_STORAGE_KEY) ??
+        window.localStorage.getItem("openbot-theme"),
+    );
   } catch {
     return "system";
   }

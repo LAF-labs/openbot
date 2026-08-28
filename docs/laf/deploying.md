@@ -16,7 +16,7 @@ app to anybody:
   proxy, so a deployment opens 80 and 443 and nothing else.
 
 `server` sets `NODE_ENV=production`, which arms two refusals that are otherwise
-only warnings: the public example encryption key, and `OPENBOT_DEV_NO_AUTH`.
+only warnings: the public example encryption key, and `LAF_DEV_NO_AUTH`.
 A development `.env` copied onto a VM fails loudly instead of quietly serving
 the internet as one signed-in administrator.
 
@@ -130,7 +130,7 @@ Then edit `.env` by hand. The values that have no usable default:
 | `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` | see below |
 | `INITIAL_ADMIN_EMAILS` | who is an administrator on first sign-in |
 
-Remove `OPENBOT_DEV_NO_AUTH` while you are in there. It is refused in
+Remove `LAF_DEV_NO_AUTH` while you are in there. It is refused in
 production, so leaving it in is a failed start rather than a security hole, but
 a failed start at 2am is still a bad trade for a line nobody needed.
 

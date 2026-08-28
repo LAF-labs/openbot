@@ -11,7 +11,7 @@ import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
-import type { OpenBotRole } from "./auth/roles";
+import type { UserRole } from "./auth/roles";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -83,7 +83,7 @@ import { createWatchService } from "./watch/poller";
 async function resolveRequestActor(request: Request): Promise<{
   id: string;
   name: string;
-  role: OpenBotRole;
+  role: UserRole;
 }> {
   if (config.devNoAuth) {
     return { id: DEV_ACTOR.id, name: DEV_ACTOR.email, role: DEV_ACTOR.role };
@@ -852,7 +852,7 @@ serve<SocketData>({
 if (config.devNoAuth) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
   console.warn(
-    "OPENBOT_DEV_NO_AUTH is on: every request is treated as " +
+    "LAF_DEV_NO_AUTH is on: every request is treated as " +
       `${DEV_ACTOR.email} (administrator). Local development only.`,
   );
 }
@@ -865,7 +865,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`OpenBot server listening on http://localhost:${port}`);
+console.info(`LAF Agent server listening on http://localhost:${port}`);
 // Zero disables the clock; sources can still be polled by hand from the surface.
 const watchTickMs = Number.parseInt(
   process.env.LAF_WATCH_TICK_MS ?? "60000",

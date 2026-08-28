@@ -26,7 +26,7 @@ import {
   verifications,
 } from "../src/db/schema";
 
-describe("OpenBot database schema", () => {
+describe("LAF Agent database schema", () => {
   test("defines the core runtime records", () => {
     expect(
       [

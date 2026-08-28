@@ -129,7 +129,7 @@ describe("deployment configuration", () => {
       GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
       BETTER_AUTH_SECRET: "a-long-enough-local-development-auth-secret",
       BETTER_AUTH_URL: "http://localhost:3001",
-      INITIAL_ADMIN_EMAILS: "admin@openbot.test, owner@openbot.test",
+      INITIAL_ADMIN_EMAILS: "admin@laf.test, owner@laf.test",
     });
 
     expect(config.auth).toEqual({
@@ -142,7 +142,7 @@ describe("deployment configuration", () => {
         },
       },
       trustedOrigins: ["http://localhost:3000"],
-      initialAdminEmails: ["admin@openbot.test", "owner@openbot.test"],
+      initialAdminEmails: ["admin@laf.test", "owner@laf.test"],
       // Unset stays open: the lock arms only when a deployment sets SIGN_IN_ALLOWED_EMAILS.
       allowedEmails: [],
     });

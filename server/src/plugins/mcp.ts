@@ -64,7 +64,7 @@ async function withClient<T>(
       ? { headers: { Authorization: `Bearer ${connection.token}` } }
       : undefined,
   });
-  const client = new Client({ name: "openbot", version: "1.0.0" });
+  const client = new Client({ name: "laf-agent", version: "1.0.0" });
 
   try {
     await client.connect(transport);

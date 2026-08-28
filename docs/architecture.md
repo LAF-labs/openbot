@@ -66,7 +66,7 @@ Rules use CEL expressions plus case-insensitive `contains()` and `matches()`.
 Rules are evaluated in three lists, in order: `deny`, then `ask`, then `allow`.
 The policy engine fails closed: a missing or empty policy permits nothing, a
 broken deny rule denies, a broken ask rule asks, and a broken allow rule does not
-permit. OpenBot's shipped startup default is explicit: `deny: []`, `ask: []` and
+permit. LAF Agent's shipped startup default is explicit: `deny: []`, `ask: []` and
 `allow: ["true"]`, unless `AGENT_COMPUTER_POLICY` or a saved administrator policy
 replaces it. A malformed configured policy stops server startup.
 
@@ -169,7 +169,7 @@ Connector credentials are stored through the credential vault and referenced by 
 ## Security boundaries
 
 - Server routes enforce auth and roles; admin pages are backed by server-side administrator checks.
-- `OPENBOT_DEV_NO_AUTH=true` is local-only and is refused with `NODE_ENV=production`.
+- `LAF_DEV_NO_AUTH=true` is local-only and is refused with `NODE_ENV=production`.
 - `KEY_ENCRYPTION_KEY` must be a base64-encoded 32-byte value. The example key is refused with `NODE_ENV=production`.
 - Credential plaintext is encrypted at rest, never returned by APIs, and redacted from audit events.
 - Browser navigation allows `http` and `https`; cloud metadata addresses are refused under every configuration.

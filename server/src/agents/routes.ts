@@ -196,7 +196,7 @@ function isAgentInputObject(input: unknown): input is AgentInputObject {
  * The audit table has a foreign key to that table, so writing this id would fail the constraint and
  * lose the row entirely. Who it was is in the payload either way.
  */
-const DEV_ACTOR_EMAIL = "dev@openbot.local";
+const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 export function createAgentRoutes(
   store: AgentProfileStore,

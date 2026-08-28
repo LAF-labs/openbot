@@ -30,7 +30,7 @@ const CURRENT = "current";
  * an explicit `allow` rather than a special "unconfigured" case, because a Bot that can look at a page
  * and touch nothing is not a product, and the first thing a person does is ask it to fill something in.
  *
- * Out of the box, OpenBot lets a Bot act, records every action and gives an administrator somewhere
+ * Out of the box, LAF Agent lets a Bot act, records every action and gives an administrator somewhere
  * to write the first restriction.
  */
 export const DEFAULT_ACTION_POLICY: ActionPolicy = {
