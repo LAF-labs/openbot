@@ -9,11 +9,21 @@ the shape is a single VM; this is how to stand one up.
 Two services that did not exist before, because until now nothing served the
 app to anybody:
 
-- **`web`** — the only service with published ports. Terminates TLS, serves the
-  built app out of the image, and proxies `/api/*` to the API. Its certificates
-  live in the `caddy-data` volume.
+- **`web`** — the only service published to the internet. Terminates TLS, serves
+  the built app out of the image, and proxies `/api/*` to the API. Its
+  certificates live in the `caddy-data` volume.
 - **`server`** — the API. Deliberately unpublished. The only route in is the
-  proxy, so a deployment opens 80 and 443 and nothing else.
+  proxy, so the API is reachable on 80 and 443 and nowhere else.
+
+`web` is not the only service with a published port, though, and on a VM that
+difference is worth knowing: `postgres` (`POSTGRES_PORT`, 5432) and `agent-bot`
+(`BOT_PORT`, 4200) publish on every interface, and only `agent-computer` binds
+to `127.0.0.1`. Neither of those two is meant to be reachable from outside, and
+what keeps them off the internet is the cloud ingress list below, which opens
+22, 80 and 443 and nothing else. So a rule there that widens a range rather than naming a port
+reaches Postgres directly, and a host firewall written as `INPUT` rules is not
+a dependable second lock: Docker publishes by DNAT and the packet is forwarded,
+not delivered locally.
 
 `server` sets `NODE_ENV=production`, which arms two refusals that are otherwise
 only warnings: the public example encryption key, and `LAF_DEV_NO_AUTH`.
@@ -26,13 +36,19 @@ the internet as one signed-in administrator.
 PUBLIC_ORIGIN=https://sajuhook.com
 ```
 
-It does three jobs: Caddy takes a certificate for it, the API issues cookies
-for it, and the installed shell is built pointing at it. The scheme is part of
-it — to a browser `https://host` and `host` are different origins, and a
-mismatch reads as a session that never sticks rather than as a configuration
-error.
+It does two jobs: Caddy takes a certificate for it, and the API issues cookies
+for it and trusts it as an origin. The scheme is part of it — to a browser
+`https://host` and `host` are different origins, and a mismatch reads as a
+session that never sticks rather than as a configuration error.
 
-The shell's copy of it is **two more values**, in `desktop/src-tauri`:
+**The installed shell no longer carries a copy of it.** Since 0.2.0 the window
+opens the product's entry page, `https://agent.laf-co.com`, and
+`capabilities/default.json` grants `https://*.agent.laf-co.com` alongside it, so
+a deployment born at a subdomain there is reached by signing in at the entry —
+one build for the whole fleet rather than a binary per deployment.
+
+An origin outside that wildcard — an apex of its own, the way `sajuhook.com` is
+— is **two values in `desktop/src-tauri`, and they move together**:
 
 1. `tauri.conf.json` → `app.windows[0].url`
 2. `capabilities/default.json` → `remote.urls`
@@ -40,6 +56,9 @@ The shell's copy of it is **two more values**, in `desktop/src-tauri`:
 Change the first without the second and the window loads, the app works, and
 notifications and the badge silently stop. The bridge feature-detects, so there
 is no error anywhere — just an app that quietly stopped being an app.
+`tests/desktop-shell.test.ts` fails the build when the window's own origin is
+not granted; an origin that is only granted, never opened, is a hand edit
+nothing checks.
 
 ## Before compose can work
 
@@ -47,7 +66,10 @@ None of this is in the repository, and all of it has to be true at once.
 
 **1. DNS.** An `A` record for the name pointing at the VM's public IP. Caddy
 cannot get a certificate for an IP address — Let's Encrypt does not issue them
-— so the name has to exist before the first start, not after.
+— so the name has to exist before the first start, not after. A deployment the
+control plane provisions gets its own name under `agent.laf-co.com` and the
+record written for it; one stood up by hand needs the record written by hand,
+and needs it to have propagated.
 
 **2. Cloud ingress.** In OCI, the VCN's security list (or NSG) needs ingress
 rules for TCP 80 and 443 from `0.0.0.0/0`. A fresh instance has 22 and nothing
@@ -127,31 +149,67 @@ Then edit `.env` by hand. The values that have no usable default:
 | `KEY_ENCRYPTION_KEY` | `openssl rand -base64 32` — the example value is public and refused here |
 | `COMPUTER_TOKEN` | any high-entropy string; the Bot's browser refuses to start without one |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`, at least 32 characters |
-| `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` | see below |
+| `AUTH_PROVIDERS` | which sign-ins this deployment offers, comma separated: `google`, `kakao`, `naver`, `laf` — see below |
+| the credentials naming them | `<PROVIDER>_OAUTH_CLIENT_ID` / `_SECRET` per direct provider, or `LAF_OIDC_ISSUER` + `LAF_OIDC_CLIENT_ID` for the broker |
 | `INITIAL_ADMIN_EMAILS` | who is an administrator on first sign-in |
+| `SIGN_IN_ALLOWED_EMAILS` | who may sign in at all. Unset means anyone the provider authenticates gets an account here, which on a one-person VM is the wrong default |
 
 Remove `LAF_DEV_NO_AUTH` while you are in there. It is refused in
 production, so leaving it in is a failed start rather than a security hole, but
 a failed start at 2am is still a bad trade for a line nobody needed.
 
-**Google is the only way in.** There is no email-and-password path, so a
-deployment without OAuth configured is one nobody can sign into — including
-you. Register the client in Google Cloud Console with the redirect URI:
+**OAuth is the only way in.** There is no email-and-password path, so a
+deployment with no provider configured is one nobody can sign into — including
+you. There are two shapes, and `AUTH_PROVIDERS` declares whichever is used:
+
+**Direct apps** — `google`, `kakao`, `naver`. Register each one in its own
+console with the redirect URI `{PUBLIC_ORIGIN}/api/auth/callback/<provider>`:
 
 ```
 https://sajuhook.com/api/auth/callback/google
 ```
 
+**The fleet's broker** — `laf`, one generic OIDC provider that fronts all three,
+so the consoles are registered once for the fleet instead of once per
+deployment:
+
+```
+AUTH_PROVIDERS=laf
+LAF_OIDC_ISSUER=https://auth.agent.laf-co.com
+LAF_OIDC_CLIENT_ID=<this deployment's fqdn>
+```
+
+There is no secret to set: the client is public on purpose and PKCE carries the
+proof, so the pair travels together or not at all — one without the other stops
+the server by name. Its callback is `/api/auth/oauth2/callback/laf`, not
+`/api/auth/callback/laf`, and the broker registers it when the deployment is
+provisioned rather than a person doing it in a console.
+
+Either way the declaration and the credentials must agree, and the server
+refuses to start when they do not: `AUTH_PROVIDERS` naming a provider with no
+credentials would draw a button that posts into an error, and credentials
+without the declaration would accept a sign-in the surface never offers.
+
+The other half of that agreement is **baked into the web image**, not read from
+`.env`: the sign-in buttons are compiled at build time from the `AUTH_PROVIDERS`
+build arg, which `images.yml` fills from the repository variable
+`IMAGE_AUTH_PROVIDERS` (`google` if it is unset). A deployment whose `.env` says
+`laf` while the image it pulled was built for `google` starts cleanly and shows
+the wrong buttons: nothing at run time compares the baked set with the
+deployment's. Changing which sign-ins the fleet offers is that variable and a
+rebuild, not a per-deployment setting.
+
 Then:
 
 ```bash
-docker compose build
+docker compose pull
 docker compose up -d
 ```
 
-Building on a 2-OCPU ARM instance takes a while, and the app build is the
-memory-hungry part. Oracle's images ship without swap; if `docker compose
-build` dies without a message, that is what happened.
+`docker compose build` is for development. A build on a small ARM instance takes
+a while and the app build is the memory-hungry part — Oracle's images ship
+without swap, and a `docker compose build` that dies without a message is what
+that looks like.
 
 ## Checking it worked
 
@@ -171,9 +229,10 @@ because `config.ts` refuses by name rather than crashing on an undefined.
 ## Backups
 
 The trail is the product — audit rows, Bot memory, encrypted credentials all
-live in the one Postgres volume — so the VM carries its own dump schedule,
-installed by hand (2026-08-25) because nothing in the repository runs on the
-VM's crontab:
+live in the one Postgres volume — so the VM carries its own dump schedule.
+Nothing in this repository runs on the VM's crontab: the control plane's
+provisioning installs the script and this line, and the first one (2026-08-25)
+was installed by hand.
 
 ```bash
 # /etc/cron.d/laf-db-backup
@@ -193,10 +252,15 @@ Restore is the reverse:
 zcat /var/backups/laf/laf-<stamp>.sql.gz |   docker compose exec -T postgres psql -U openbot openbot
 ```
 
-Known limit, on purpose: the dumps live on the same disk as the database.
-They survive a bad migration or a fat-fingered delete, not the VM burning
-down. Shipping them to OCI Object Storage needs a bucket and an instance
-policy — console work, still open.
+The same dump also goes off the machine, when — and only when —
+`/etc/laf-backup-remote` exists: a root-only file holding a **write-only**
+upload URL for that deployment's own object-storage bucket, which the control
+plane mints and installs. Absent, the script keeps its local copies and says
+nothing, so one script serves a fresh VM and a fully wired one. An upload that
+fails logs and does not fail the run: the local dump already succeeded, and the
+alarm for a broken upload is the fleet monitor reading the bucket, not the
+script grading itself. A VM without that file is back to the old limit — the
+dumps survive a bad migration or a fat-fingered delete, not the machine.
 
 ## The shell
 

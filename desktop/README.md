@@ -10,14 +10,20 @@ apps, and updates that install themselves. It holds no product logic.
 The app is same-origin by construction (cookie auth, relative `/api`, a
 socket built from `window.location`). Loading it from `tauri://` would break
 all of that at once, so the window's `url` in `src-tauri/tauri.conf.json` IS
-the origin and the app runs there exactly as in a browser. Today that is the
-development server, `http://localhost:3010`.
+the origin and the app runs there exactly as in a browser. Since 0.2.0 that is
+the product's entry page, `https://agent.laf-co.com`: the person signs in
+there once and is walked to their own deployment, so one build opens every
+store instead of a binary per customer. `tauri.dev.conf.json` points the same
+window at `http://localhost:3010` for development.
 
 Changing it is TWO values, and they must move together: the window's `url`,
 and `remote.urls` in `capabilities/default.json`. Change only the first and
 everything appears to work — the window loads, the app runs — while the badge,
 the notifications and outward links silently stop, because the bridge
-feature-detects and finds nothing. A phone build will use the same address.
+feature-detects and finds nothing. The grant carries the wildcard
+`https://*.agent.laf-co.com` for the deployments the entry hands people to,
+plus `sajuhook.com`, which predates the product domain and lives on an apex of
+its own. A phone build will use the same address.
 
 `withGlobalTauri` is on: the page is not bundled, so it cannot `import`
 `@tauri-apps/api` — the global is the only way the SPA can ask the shell for
@@ -101,10 +107,9 @@ only — publishing the draft is what offers the update to installed apps.
 The workflow needs `TAURI_SIGNING_PRIVATE_KEY` (the private half of the
 updater pubkey in `tauri.conf.json`, as the base64 file `tauri signer
 generate` writes) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the
-repository secrets, entered by a person. Neither is set yet, and the pubkey
-currently in `tauri.conf.json` has no matching private half — generate a pair,
-paste the secrets, and commit the new pubkey together, or the release builds
-signed updates that installed apps will reject. Apple Developer ID secrets are
-optional; without them the dmg is ad-hoc signed, which Gatekeeper accepts
-only on the Mac that built it. Windows code signing is not set up; SmartScreen
-will warn until it is.
+repository secrets, entered by a person. Both are set (2026-08-25) and match
+the pubkey committed here. Rotating is a pair, two secrets and a pubkey commit
+in one change, or the release builds signed updates that installed apps will
+reject. Apple Developer ID secrets are optional; without them the dmg is
+ad-hoc signed, which Gatekeeper accepts only on the Mac that built it. Windows
+code signing is not set up; SmartScreen will warn until it is.

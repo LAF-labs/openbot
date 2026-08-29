@@ -180,10 +180,12 @@ See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/
 - `DATABASE_URL`
 - `KEY_ENCRYPTION_KEY`
 - `MANAGED_AGENT_AG_UI_URL`
-- `INTELLIGENCE_API_URL`
-- `INTELLIGENCE_GATEWAY_WS_URL`
-- `INTELLIGENCE_API_KEY`
-- `COPILOTKIT_LICENSE_TOKEN`
+
+CopilotKit Intelligence is optional here and off by default: durable threads and
+memory live in this deployment's own PostgreSQL. Set all four of
+`INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`
+and `COPILOTKIT_LICENSE_TOKEN` to use it instead. A partial set is refused
+rather than quietly ignored — somebody meant to configure it and got it wrong.
 
 Settings worth knowing:
 
@@ -217,23 +219,29 @@ endpoints; keep them private and do not use them to bypass the gateway.
 
 More detail: [docs/architecture.md](docs/architecture.md).
 
-## Sign in with Google
+## Sign in
 
-`LAF_DEV_NO_AUTH` is the default because it needs no OAuth credentials and no consent screen. To sign in for real instead, create a Google OAuth client and set all four of these together:
+`LAF_DEV_NO_AUTH` is the default because it needs no OAuth credentials and no consent screen. To sign in for real instead, declare the providers and set the values that back them:
 
 ```sh
+AUTH_PROVIDERS=google      # google, kakao, naver — comma separated
 BETTER_AUTH_URL=http://localhost:3001
 BETTER_AUTH_SECRET=        # openssl rand -base64 32, at least 32 characters
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
 ```
 
+`AUTH_PROVIDERS` is what the sign-in buttons are compiled from, so it must agree with the credentials: a name with no credentials, or credentials nobody declared, stops the server rather than serving a button that posts into an error. Each provider's redirect URI is the origin plus `/api/auth/callback/<provider>`.
+
+A deployment can also sign people in through a shared OIDC broker instead of its own provider apps, as `AUTH_PROVIDERS=laf` plus `LAF_OIDC_ISSUER` and `LAF_OIDC_CLIENT_ID` — a public client with PKCE, so there is no secret to configure. See [docs/laf/deploying.md](docs/laf/deploying.md).
+
 Then set the two that decide who gets in and from where:
 
 - `TRUSTED_ORIGINS` — where the app is served from, `http://localhost:3010` locally. It defaults to `http://localhost:3000`, which is not where `start.sh` serves the app.
 - `INITIAL_ADMIN_EMAILS` — comma separated. An address listed here becomes an administrator the first time it signs in; everybody else becomes a user.
+- `SIGN_IN_ALLOWED_EMAILS` — comma separated, and the actual door: unset, anybody the provider authenticates gets an account. Admin emails are admitted on top of it, so listing staff cannot lock the owner out.
 
-Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in button is written into the app's generated config at startup, so it appears only once all four settings are present. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
+Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in buttons are written into the app's generated config when it is built, from `AUTH_PROVIDERS` — or, with that unset locally, from whichever credentials are present alongside `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
 
 A partial set is refused rather than ignored: the server will not start with `BETTER_AUTH_SECRET` or `BETTER_AUTH_URL` but no client credentials, or with a secret shorter than 32 characters.
 
@@ -267,6 +275,7 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 Ours:
 
 - [docs/laf/deployment-model.md](docs/laf/deployment-model.md) — one VM per person, and what follows from it
+- [docs/laf/deploying.md](docs/laf/deploying.md) — how one is actually stood up, and what goes wrong at each step
 - [docs/laf/onboarding-guide.md](docs/laf/onboarding-guide.md)
 - [docs/laf/mcp-contract.md](docs/laf/mcp-contract.md)
 - [CLAUDE.md](CLAUDE.md) — how to work in this repository
