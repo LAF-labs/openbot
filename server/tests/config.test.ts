@@ -290,3 +290,50 @@ describe("deployment configuration", () => {
     },
   );
 });
+
+describe("the broker provider (laf)", () => {
+  const withoutDirect = { ...baseEnvironment } as Record<string, string>;
+  delete withoutDirect.GOOGLE_OAUTH_CLIENT_ID;
+  delete withoutDirect.GOOGLE_OAUTH_CLIENT_SECRET;
+
+  test("issuer and client id travel together or not at all", () => {
+    expect(() =>
+      loadConfig({
+        ...withoutDirect,
+        LAF_OIDC_ISSUER: "https://auth.agent.test",
+      }),
+    ).toThrow("both LAF_OIDC_ISSUER and LAF_OIDC_CLIENT_ID");
+  });
+
+  test("declaring laf without the pair is refused by name", () => {
+    expect(() =>
+      loadConfig({ ...withoutDirect, AUTH_PROVIDERS: "laf" }),
+    ).toThrow("LAF_OIDC_ISSUER and LAF_OIDC_CLIENT_ID are not set");
+  });
+
+  test("the pair without the declaration is refused, like every provider", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        AUTH_PROVIDERS: "google",
+        LAF_OIDC_ISSUER: "https://auth.agent.test",
+        LAF_OIDC_CLIENT_ID: "shop1.agent.test",
+      }),
+    ).toThrow("does not name 'laf'");
+  });
+
+  test("declared and configured, the broker stands alone — no secret anywhere", () => {
+    const config = loadConfig({
+      ...withoutDirect,
+      AUTH_PROVIDERS: "laf",
+      // A trailing slash would double up in the discovery URL; it is trimmed.
+      LAF_OIDC_ISSUER: "https://auth.agent.test/",
+      LAF_OIDC_CLIENT_ID: "shop1.agent.test",
+    });
+    expect(config.auth?.lafOidc).toEqual({
+      issuer: "https://auth.agent.test",
+      clientId: "shop1.agent.test",
+    });
+    expect(config.auth?.providers).toEqual({});
+  });
+});

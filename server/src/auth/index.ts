@@ -2,6 +2,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
+import { genericOAuth } from "better-auth/plugins";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import {
@@ -54,6 +55,55 @@ export function createAuth(config: DeploymentConfig, database: Database) {
         ? { naver: authConfig.providers.naver }
         : {}),
     },
+    /*
+     * The fleet's broker, as ONE generic OIDC client. The three branded
+     * buttons stay: each sign-in carries its pick in additionalData, the
+     * authorize URL gains provider_hint, and the broker (which allows that
+     * extra param) walks the person straight to the provider they pressed —
+     * the broker's own picker is only the no-hint fallback. Public client on
+     * purpose: PKCE is the proof and the broker's registry holds no secrets.
+     */
+    plugins: authConfig.lafOidc
+      ? [
+          genericOAuth({
+            config: [
+              {
+                providerId: "laf",
+                discoveryUrl: `${authConfig.lafOidc.issuer}/.well-known/openid-configuration`,
+                clientId: authConfig.lafOidc.clientId,
+                pkce: true,
+                scopes: ["openid", "email", "profile"],
+                // better-auth refuses an account with no name (measured:
+                // name_is_missing). The broker sends the social profile's
+                // name; if a claim set ever arrives without one, the email
+                // stands in rather than the sign-in falling over.
+                mapProfileToUser: (profile) => ({
+                  name:
+                    typeof profile.name === "string" && profile.name
+                      ? profile.name
+                      : (profile.email as string),
+                }),
+                authorizationUrlParams: (ctx) => {
+                  const wanted = (
+                    ctx.body as
+                      | { additionalData?: { provider?: unknown } }
+                      | undefined
+                  )?.additionalData?.provider;
+                  const params: Record<string, string> = {};
+                  if (
+                    wanted === "kakao" ||
+                    wanted === "naver" ||
+                    wanted === "google"
+                  ) {
+                    params.provider_hint = wanted;
+                  }
+                  return params;
+                },
+              },
+            ],
+          }),
+        ]
+      : [],
     databaseHooks: {
       user: {
         create: {

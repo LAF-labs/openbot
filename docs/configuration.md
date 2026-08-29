@@ -76,6 +76,8 @@ Two things are worth knowing before pointing a deployment at any gateway. Not ev
 
 | Variable                     | Meaning                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `LAF_OIDC_ISSUER`            | The fleet broker's origin, for `AUTH_PROVIDERS=laf`. Travels with the client id or not at all. |
+| `LAF_OIDC_CLIENT_ID`         | This deployment's public broker client (its own fqdn). No secret exists — PKCE is the proof. |
 | `LAF_DEV_NO_AUTH`        | Local-only fixed administrator when set to `true`. Refused with `NODE_ENV=production`. |
 | `GOOGLE_OAUTH_CLIENT_ID`     | Google OAuth client id.                                                                |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret.                                                            |

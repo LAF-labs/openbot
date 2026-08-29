@@ -90,12 +90,21 @@ function SignScreen() {
   );
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * With the broker declared, every branded button is on offer and every
+   * press routes through it — the button's provider becomes the hint that
+   * skips the broker's own picker. Direct declarations keep the old path.
+   */
+  const viaBroker = appConfig.auth.providers.includes("laf");
+  const offered = (provider: SignInProvider) =>
+    viaBroker || appConfig.auth.providers.includes(provider);
+
   async function handleSignIn(provider: SignInProvider) {
     setError(null);
     setPendingProvider(provider);
 
     try {
-      await signInWithProvider(provider, safeRedirect(wanted));
+      await signInWithProvider(provider, safeRedirect(wanted), viaBroker);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -166,23 +175,21 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          {PROVIDER_BUTTONS.some(({ provider }) =>
-            appConfig.auth.providers.includes(provider),
-          ) ? (
+          {PROVIDER_BUTTONS.some(({ provider }) => offered(provider)) ? (
             <div className="flex flex-col gap-2">
-              {PROVIDER_BUTTONS.filter(({ provider }) =>
-                appConfig.auth.providers.includes(provider),
-              ).map(({ provider, idle, opening, className }) => (
-                <Button
-                  className={`h-10 w-full tracking-tight ${className}`}
-                  disabled={pendingProvider !== null}
-                  key={provider}
-                  onClick={() => void handleSignIn(provider)}
-                  size="lg"
-                >
-                  {pendingProvider === provider ? opening() : idle()}
-                </Button>
-              ))}
+              {PROVIDER_BUTTONS.filter(({ provider }) => offered(provider)).map(
+                ({ provider, idle, opening, className }) => (
+                  <Button
+                    className={`h-10 w-full tracking-tight ${className}`}
+                    disabled={pendingProvider !== null}
+                    key={provider}
+                    onClick={() => void handleSignIn(provider)}
+                    size="lg"
+                  >
+                    {pendingProvider === provider ? opening() : idle()}
+                  </Button>
+                ),
+              )}
             </div>
           ) : (
             <p className="text-center text-sm text-muted-foreground">

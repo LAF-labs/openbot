@@ -62,6 +62,14 @@ export type DeploymentConfig = {
       kakao?: OAuthClient;
       naver?: OAuthClient;
     };
+    /**
+     * The fleet's login broker (auth.<product domain>), as a generic OIDC
+     * provider named `laf`. A PUBLIC client on purpose: the broker's registry
+     * holds no secrets, the code is bound by PKCE, and the redirect is pinned
+     * to this deployment's own callback — so there is no secret to configure
+     * here either. Issuer and client id travel together or not at all.
+     */
+    lafOidc?: { issuer: string; clientId: string };
     trustedOrigins: string[];
     initialAdminEmails: string[];
     /**
@@ -205,6 +213,23 @@ function oauthClient(
   return clientId && clientSecret ? { clientId, clientSecret } : undefined;
 }
 
+/** The broker pair: both or neither, like every half-configured sign-in. */
+function lafOidcClient(
+  environment: Environment,
+): { issuer: string; clientId: string } | undefined {
+  const issuer = optional(environment, "LAF_OIDC_ISSUER");
+  const clientId = optional(environment, "LAF_OIDC_CLIENT_ID");
+  if (Boolean(issuer) !== Boolean(clientId)) {
+    throw new Error(
+      "LAF_OIDC configuration requires both LAF_OIDC_ISSUER and LAF_OIDC_CLIENT_ID",
+    );
+  }
+  if (!issuer || !clientId) return undefined;
+  requiredHttpUrl({ LAF_OIDC_ISSUER: issuer }, "LAF_OIDC_ISSUER");
+  // No trailing slash: the discovery URL is assembled from this.
+  return { issuer: issuer.replace(/\/+$/, ""), clientId };
+}
+
 function commaSeparated(environment: Environment, name: string): string[] {
   return (optional(environment, name) ?? "")
     .split(",")
@@ -233,12 +258,24 @@ function authConfig(
    * would accept sign-ins the surface never offers. Both are refused by name rather than served.
    */
   const declared = commaSeparated(environment, "AUTH_PROVIDERS");
+  const lafOidc = lafOidcClient(environment);
+  // `laf` is declared like the direct providers but keyed by its own pair —
+  // the broker's issuer and a public client id, no secret anywhere.
+  const declarable = [...PROVIDER_NAMES, "laf"];
   if (declared.length > 0) {
     for (const name of declared) {
-      if (!(PROVIDER_NAMES as readonly string[]).includes(name)) {
+      if (!declarable.includes(name)) {
         throw new Error(
-          `AUTH_PROVIDERS names '${name}', which is not a provider this deployment knows (${PROVIDER_NAMES.join(", ")})`,
+          `AUTH_PROVIDERS names '${name}', which is not a provider this deployment knows (${declarable.join(", ")})`,
         );
+      }
+      if (name === "laf") {
+        if (!lafOidc) {
+          throw new Error(
+            "AUTH_PROVIDERS names 'laf' but LAF_OIDC_ISSUER and LAF_OIDC_CLIENT_ID are not set",
+          );
+        }
+        continue;
       }
       if (!providers[name as ProviderName]) {
         throw new Error(
@@ -255,12 +292,19 @@ function authConfig(
         );
       }
     }
+    if (lafOidc && !declared.includes("laf")) {
+      throw new Error(
+        "LAF_OIDC_ISSUER is set but AUTH_PROVIDERS does not name 'laf'. " +
+          "The sign-in buttons are compiled from AUTH_PROVIDERS, and the API must not accept a " +
+          "sign-in the surface never offers: add it there, or remove the broker settings.",
+      );
+    }
   }
 
-  if (configured.length === 0) {
+  if (configured.length === 0 && !lafOidc) {
     if (secret || baseUrl) {
       throw new Error(
-        "Authentication requires at least one OAuth client: set GOOGLE_, KAKAO_ or NAVER_OAUTH_CLIENT_ID and _SECRET",
+        "Authentication requires at least one OAuth client: set GOOGLE_, KAKAO_ or NAVER_OAUTH_CLIENT_ID and _SECRET, or the broker's LAF_OIDC_ISSUER and LAF_OIDC_CLIENT_ID",
       );
     }
     return undefined;
@@ -279,6 +323,7 @@ function authConfig(
     baseUrl,
     secret,
     providers,
+    ...(lafOidc ? { lafOidc } : {}),
     trustedOrigins: commaSeparated(environment, "TRUSTED_ORIGINS").length
       ? commaSeparated(environment, "TRUSTED_ORIGINS")
       : ["http://localhost:3000"],
