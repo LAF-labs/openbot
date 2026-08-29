@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LAF Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.lafco.lafagent",
   "build": {
     "frontendDist": "../public",
@@ -12,7 +12,7 @@
       {
         "label": "main",
         "title": "LAF Agent",
-        "url": "https://sajuhook.com",
+        "url": "https://agent.laf-co.com",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

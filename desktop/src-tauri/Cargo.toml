@@ -1,6 +1,6 @@
 [package]
 name = "laf-desktop"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # The installable shell around the cloud service: a window onto the deployed origin, and nothing
