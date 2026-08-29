@@ -6,7 +6,13 @@ services:
       POSTGRES_USER: openbot
       POSTGRES_PASSWORD: openbot
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only. Nothing off this host has any business here: the API reaches the database as
+      # `postgres:5432` on the compose network, and a person on the VM reaches it through the tunnel
+      # they are already in. Published on every interface, the sole lock was the cloud ingress list,
+      # and a rule there widened by a range rather than a port reaches the credential vault. A host
+      # `INPUT` firewall is no second lock either — Docker publishes by DNAT, so the packet is
+      # forwarded rather than delivered locally and never meets those rules.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -107,7 +113,9 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # The only service with published ports: TLS, the built app, and the proxy to the API.
+  # The only service published to the internet: TLS, the built app, and the proxy to the API.
+  # `postgres`, `agent-bot` and `agent-computer` publish too, but each binds 127.0.0.1, so 80 and
+  # 443 here are the whole of this deployment's routed surface.
   #
   # It starts as soon as the API's container exists rather than waiting for it to be healthy. A
   # front door that refuses to open while the kitchen warms up is worse than one that answers 502
@@ -175,7 +183,11 @@ services:
       context: .
       dockerfile: agent-bot/Dockerfile
     ports:
-      - "${BOT_PORT:-4200}:4200"
+      # Loopback only, for the same reason as the computer: this endpoint answers with the
+      # deployment's model key and asks nobody who they are. The API calls it as `agent-bot:4200`
+      # on the compose network, which a publish bind does not touch, and the only other caller is
+      # `scripts/start.sh` health-checking `localhost` on the host itself.
+      - "127.0.0.1:${BOT_PORT:-4200}:4200"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       # Unset means OpenAI. Set, it is any endpoint speaking the same API, and BOT_MODEL is sent

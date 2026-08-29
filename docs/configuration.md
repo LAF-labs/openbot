@@ -121,7 +121,9 @@ Proxy credentials may appear in proxy URLs, but the computer strips them before 
 
 Set these in `.env` or in the environment. `docker-compose.yml` publishes on them and
 `scripts/start.sh` reads the same names to decide where to look, so one setting moves a service and
-everything that talks to it. The addresses built from them are separate settings, so a moved service
+everything that talks to it. The three compose publishes — Postgres, `agent-computer`, `agent-bot`
+— bind `127.0.0.1`, so the port reaches the host and not the network; only `web` (80 and 443) is
+published to every interface. The addresses built from them are separate settings, so a moved service
 also needs its URL changed: `DATABASE_URL`, `AGENT_COMPUTER_URL` and `MANAGED_AGENT_AG_UI_URL`.
 
 To run two deployments on one Docker host, give the second one its own `COMPOSE_PROJECT_NAME`.

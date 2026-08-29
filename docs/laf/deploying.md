@@ -16,14 +16,18 @@ app to anybody:
   proxy, so the API is reachable on 80 and 443 and nowhere else.
 
 `web` is not the only service with a published port, though, and on a VM that
-difference is worth knowing: `postgres` (`POSTGRES_PORT`, 5432) and `agent-bot`
-(`BOT_PORT`, 4200) publish on every interface, and only `agent-computer` binds
-to `127.0.0.1`. Neither of those two is meant to be reachable from outside, and
-what keeps them off the internet is the cloud ingress list below, which opens
-22, 80 and 443 and nothing else. So a rule there that widens a range rather than naming a port
-reaches Postgres directly, and a host firewall written as `INPUT` rules is not
-a dependable second lock: Docker publishes by DNAT and the packet is forwarded,
-not delivered locally.
+difference is worth knowing: `postgres` (`POSTGRES_PORT`, 5432), `agent-bot`
+(`BOT_PORT`, 4200) and `agent-computer` (`COMPUTER_PORT`, 4100) all publish —
+but all three bind `127.0.0.1`, so what they publish to is the host and not the
+network. 80 and 443 on `web` are the whole of a deployment's routed surface.
+
+They did not always. Until then the only thing keeping Postgres off the internet
+was the cloud ingress list below, which opens 22, 80 and 443 and nothing else —
+so a rule there that widened a range rather than naming a port reached the
+credential vault directly. The host's own firewall was no second lock either: a
+rule written as `INPUT` never sees the packet, because Docker publishes by DNAT
+and the packet is forwarded rather than delivered locally. The loopback bind is
+the lock that does not depend on either of them being written correctly.
 
 `server` sets `NODE_ENV=production`, which arms two refusals that are otherwise
 only warnings: the public example encryption key, and `LAF_DEV_NO_AUTH`.

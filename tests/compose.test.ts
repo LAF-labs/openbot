@@ -10,15 +10,24 @@ test("provides PostgreSQL with pgvector for local development", () => {
 
   expect(compose).toContain("postgres:");
   expect(compose).toContain("pgvector/pgvector:");
-  expect(compose).toContain("${POSTGRES_PORT:-5432}:5432");
+  expect(compose).toContain("127.0.0.1:${POSTGRES_PORT:-5432}:5432");
 });
 
 /**
- * Every published port is settable, and defaults to the number the documentation gives.
+ * Every published port is settable, defaults to the number the documentation gives, and is bound
+ * to loopback.
  *
  * `scripts/start.sh` reads these same names to decide where to look for each service.
+ *
+ * The bind address is the property under test, and it is asserted here because nothing else can
+ * see it. On a VM the only thing that ever kept Postgres off the internet was the cloud ingress
+ * list; a rule there widened by a range rather than a port reaches the database directly, and the
+ * host's own `INPUT` firewall is not a second lock because Docker publishes by DNAT. Dropping
+ * `127.0.0.1:` from a line here breaks nothing anybody would notice — in-compose traffic goes by
+ * service name and local development goes over loopback either way — so the mistake is silent
+ * until it is somebody's credential vault.
  */
-test("publishes every service on a settable port with the documented default", () => {
+test("publishes every service on loopback, on a settable port with the documented default", () => {
   const compose = readFileSync(
     join(import.meta.dir, "..", "docker-compose.yml"),
     "utf8",
@@ -31,8 +40,12 @@ test("publishes every service on a settable port with the documented default", (
   ] as const;
 
   for (const [name, host, container] of published) {
-    expect(compose).toContain(`\${${name}:-${host}}:${container}`);
+    expect(compose).toContain(`127.0.0.1:\${${name}:-${host}}:${container}`);
   }
+
+  // `web` is the exception and the only one: the front door has to answer the internet.
+  expect(compose).toContain('- "80:80"');
+  expect(compose).toContain('- "443:443"');
 });
 
 /**
