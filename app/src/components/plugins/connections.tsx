@@ -45,6 +45,31 @@ const refusalText = (thrown: Error): string => {
 };
 
 /**
+ * Where a vendor's consent screen is opened, and what that leaves this window doing.
+ *
+ * IN THE DESKTOP SHELL IT GOES TO THE REAL BROWSER. The installed app is the product here, and a
+ * webview is the one place an OAuth consent cannot be relied on to work: Google refuses embedded
+ * user agents outright (`disallowed_useragent`), and a vendor that does allow one leaves the person
+ * in a window with no address bar, no password manager and no session they are already signed into.
+ *
+ * Safe precisely because of how the callback is built: identity comes from the SEALED STATE and
+ * never from the session on the request, so finishing in a different browser still attaches the
+ * grant to the person who started it — the state is the only thing that could say who that is.
+ *
+ * A pure decision with the navigation injected, because the property worth pinning is which of the
+ * two happened: in the shell this window must NOT navigate, or the person loses the app behind a
+ * consent screen that was handed to their browser anyway.
+ */
+export async function openConsent(
+  authorizationUrl: string,
+  navigate: (url: string) => void,
+): Promise<"browser" | "here"> {
+  if (await openExternal(authorizationUrl)) return "browser";
+  navigate(authorizationUrl);
+  return "here";
+}
+
+/**
  * The OAuth client an administrator registered at the vendor by hand.
  *
  * Only for a vendor that will not register one itself. The redirect address is shown rather than
@@ -193,26 +218,12 @@ export const ConnectionStrip = ({
   const connect = useMutation({
     mutationFn: () => beginConnect(server.id, returnTo),
     onSuccess: async (authorizationUrl) => {
-      /*
-       * IN THE DESKTOP SHELL, THE CONSENT SCREEN GOES TO THE REAL BROWSER.
-       *
-       * The installed app is the product here, and a webview is the one place an OAuth consent
-       * cannot be relied on to work: Google refuses embedded user agents outright
-       * (`disallowed_useragent`), and a vendor that does allow one leaves the person stranded
-       * inside a window with no address bar, no password manager and no existing session.
-       *
-       * Safe precisely because of how the callback is built: identity comes from the SEALED STATE,
-       * never from the session on the request, so finishing the consent in a different browser
-       * still attaches the grant to the person who started it — and the state is the only thing
-       * that could. In a browser tab `openExternal` answers false and this is the same
-       * whole-page navigation it always was.
-       */
-      if (await openExternal(authorizationUrl)) {
-        setWaitingInBrowser(true);
-        return;
-      }
-      // A whole-page navigation, not a router one: the next screen belongs to the vendor.
-      window.location.assign(authorizationUrl);
+      // A whole-page navigation, not a router one: the next screen belongs to the vendor — unless
+      // the shell handed it to the person's own browser, which is what `openConsent` decides.
+      const where = await openConsent(authorizationUrl, (url) =>
+        window.location.assign(url),
+      );
+      if (where === "browser") setWaitingInBrowser(true);
     },
     onError: (thrown: Error) => {
       setError(refusalText(thrown));
