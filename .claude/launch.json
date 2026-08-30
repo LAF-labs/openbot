@@ -2,9 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--cwd", "server", "--env-file=../.env", "src/index.ts"],
+      "port": 3001
+    },
+    {
       "name": "app",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "--cwd=app", "dev"],
       "port": 3010
     }
   ]

@@ -661,8 +661,6 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
   return async (
     botId: string,
     actor: ActionActor,
-    /** Who to write on the plugin audit row. The browser sends the person's email. */
-    actorLabel: string,
   ): Promise<UnattendedToolkit> => {
     const { gateway, pluginStore } = options;
     const granted = pluginStore
@@ -692,7 +690,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             ref,
             args,
             botId,
-            actorId: actorLabel,
+            /*
+             * The USER ID, not the label. A `user-oauth` server answers with the asker's own
+             * grant, and the grant is keyed on `users.id` — a label here would refuse every such
+             * call for want of a connection that actually exists. Rooms and routines both put the
+             * person's id in `actor.id`.
+             */
+            actorId: actor.id,
             ...(approvalId ? { approvalId } : {}),
           });
           return { ok: !result.isError, text: result.text };

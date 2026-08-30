@@ -34,7 +34,7 @@ import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import type { ConnectorAdminService } from "./connectors";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
-import { createPluginRoutes } from "./plugins/routes";
+import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
@@ -202,6 +202,15 @@ export function createApp(
    * 404 rather than drawing a list that is empty for a reason nobody can see.
    */
   agentMemoryStore?: AgentMemoryStore,
+  /**
+   * What the OAuth connect flow needs: the deployment's public URL, and whether the person a
+   * consent was started for still has access when the callback lands. Last, like everything new
+   * here.
+   *
+   * Absent leaves the connect and callback routes answering that the deployment cannot complete a
+   * consent flow, which is the honest degraded behaviour for a deployment with no public URL.
+   */
+  pluginConnect?: ConnectConfig,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -504,7 +513,10 @@ export function createApp(
   }
 
   if (pluginStore) {
-    app.route("/api/plugins", createPluginRoutes(pluginStore, requireUser));
+    app.route(
+      "/api/plugins",
+      createPluginRoutes(pluginStore, requireUser, pluginConnect),
+    );
   }
 
   if (sandboxedStore) {
@@ -565,6 +577,12 @@ function credentialInput(
     return null;
   }
   const body = value as Record<string, unknown>;
+  /*
+   * `mcp_oauth_client` and `mcp_user_token` are deliberately NOT accepted here. Both are minted by
+   * the code that owns their acts — the client by registration, the token by a person's consent —
+   * and a hand-typed one would be a secret whose provenance nothing can vouch for, attached to a
+   * flow that treats provenance as the security property.
+   */
   if (
     (body.kind !== "model" &&
       body.kind !== "connector" &&

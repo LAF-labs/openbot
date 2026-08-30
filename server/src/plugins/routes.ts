@@ -2,14 +2,45 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
-import { CATALOGUE } from "./catalogue";
+import { CATALOGUE, catalogueEntry } from "./catalogue";
+import {
+  authorizationUrlFor,
+  challengeFor,
+  connectedAccountsUrlFor,
+  createVerifier,
+  readConnectState,
+  redeemAuthorizationCode,
+  redirectUriFor,
+  sealConnectState,
+} from "./oauth";
 import {
   CatalogueEntryUnknownError,
   CustomServerRefusedError,
+  type OAuthClient,
   PluginNeedsApprovalError,
   PluginRefusedError,
   type PluginStore,
 } from "./store";
+
+/**
+ * What the connect flow needs from the deployment, and nothing else.
+ *
+ * `publicUrl` is where a vendor sends the browser back — it has to match what was registered with
+ * the vendor character for character, so it comes from configuration and never from a request.
+ * `appUrl` is where a person lands afterwards, for the local split where the app and this server
+ * are two origins; absent means same-origin and relative redirects are right.
+ *
+ * `personHasAccess` is asked when the callback lands, not when the flow began: the callback carries
+ * no session — identity comes from the sealed state — and access can end inside the state's ten
+ * minutes. Without it, a consent finishing after an offboarding writes a fresh refresh token for
+ * somebody who no longer has access.
+ */
+export type ConnectConfig = {
+  publicUrl?: string | undefined;
+  appUrl?: string | undefined;
+  encryptionKey: string;
+  personHasAccess: (userId: string) => Promise<boolean>;
+};
 
 /**
  * The Plugins surface: what this deployment has added, and which Bots may use it.
@@ -31,6 +62,7 @@ import {
 export function createPluginRoutes(
   store: PluginStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  connect?: ConnectConfig,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -71,7 +103,14 @@ export function createPluginRoutes(
         vendor: entry.vendor,
         summary: entry.summary,
         docsUrl: entry.docsUrl,
-        needsCredential: entry.needsCredential,
+        /** Whose credential reaches it, so the surface offers the right gesture: a token field for
+         * `deployment-bearer`, a connect button for `user-oauth`, nothing for `none`. */
+        auth: entry.auth.kind,
+        /** Whether the deployment registers its own OAuth client, so the screen can hide the
+         * paste-a-client form where there is nothing for it to collect. */
+        dynamicClient:
+          entry.auth.kind === "user-oauth" &&
+          entry.auth.clientRegistration === "dynamic",
         perInstance: entry.host === null,
       })),
       servers: await store.listServers(),
@@ -192,7 +231,12 @@ export function createPluginRoutes(
     if (forbidden) return forbidden;
 
     try {
-      const result = await store.refreshTools(context.req.param("id"));
+      // The refresher's own id: a `user-oauth` server's tool list is asked for on the grant of
+      // whoever pressed refresh, because the deployment holds no credential of its own to ask with.
+      const result = await store.refreshTools(
+        context.req.param("id"),
+        context.var.actor.id,
+      );
       const servers = await store.listServers();
       return context.json({
         tools: result.tools,
@@ -204,6 +248,239 @@ export function createPluginRoutes(
       }
       throw error;
     }
+  });
+
+  /** Which `user-oauth` servers this person has connected, for their own settings surface. */
+  routes.get("/connections", requireUser, async (context) => {
+    const connections = await store.connectionsFor(context.var.actor.id);
+    return context.json({
+      connections,
+      // Shown to an administrator so they can register a client at the vendor with the exact value
+      // this deployment will send. Null means the deployment has no public URL and cannot connect.
+      redirectUri: connect?.publicUrl
+        ? redirectUriFor(connect.publicUrl)
+        : null,
+    });
+  });
+
+  /**
+   * Store an OAuth client an administrator registered at the vendor by hand.
+   *
+   * For vendors without dynamic registration (Google). Admin-only, because the client identifies
+   * the whole deployment, and replacing it invalidates every existing consent.
+   */
+  routes.post("/servers/:id/oauth-client", requireUser, async (context) => {
+    const forbidden = requireAdmin(context);
+    if (forbidden) return forbidden;
+
+    const body = (await context.req.json().catch(() => null)) as {
+      clientId?: string;
+      clientSecret?: string;
+    } | null;
+    if (!body?.clientId) {
+      return context.json({ error: "A client id is required." }, 400);
+    }
+
+    try {
+      await store.registerOAuthClient({
+        serverId: context.req.param("id"),
+        client: {
+          clientId: body.clientId.trim(),
+          clientSecret: body.clientSecret?.trim() ?? "",
+        },
+        by: actorEmail(context),
+      });
+      return context.json({ ok: true });
+    } catch (error) {
+      if (
+        error instanceof CustomServerRefusedError ||
+        error instanceof CatalogueEntryUnknownError
+      ) {
+        return context.json({ error: error.message }, 400);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Begin connecting one person's own account.
+   *
+   * Answers with a URL rather than redirecting, so the browser decides when to leave the page. The
+   * state is minted here, from the session, and the person's identity never comes off the callback.
+   */
+  routes.post("/servers/:id/connect", requireUser, async (context) => {
+    const serverId = context.req.param("id");
+    if (!connect?.publicUrl) {
+      return context.json(
+        {
+          error:
+            "This deployment has no public URL configured, so it cannot complete a consent flow. Set BETTER_AUTH_URL.",
+        },
+        503,
+      );
+    }
+
+    const entry = catalogueEntry(serverId);
+    if (entry?.auth.kind !== "user-oauth") {
+      return context.json(
+        { error: `${serverId} is not connected as an individual person.` },
+        400,
+      );
+    }
+
+    /*
+     * A dynamic entry introduces the deployment itself on first use; a manual one still waits for
+     * an administrator. Registration lives here, on the one handler that already refuses without a
+     * public URL — the redirect URI it registers is guaranteed to exist.
+     *
+     * A vendor in the catalogue that nobody has added to this deployment reaches here, gets past
+     * every check above — the entry is real — and then asks the store for a client it cannot have,
+     * because there is no server row to hold one. `ensureOAuthClient` says so by throwing, and
+     * unhandled that was a 500 on the one path where a person is trying to connect their account.
+     */
+    let client: OAuthClient | null;
+    try {
+      client =
+        (await store.oauthClientFor(serverId)) ??
+        (entry.auth.clientRegistration === "dynamic"
+          ? await store.ensureOAuthClient(serverId, actorEmail(context))
+          : null);
+    } catch (error) {
+      if (error instanceof CatalogueEntryUnknownError) {
+        return context.json(
+          {
+            error: `${entry.title} has not been added to this deployment yet. An administrator has to add it first.`,
+          },
+          409,
+        );
+      }
+      throw error;
+    }
+    if (!client) {
+      if (entry.auth.clientRegistration === "dynamic") {
+        return context.json(
+          {
+            error: `${entry.title} refused this deployment's registration. Try again, and check the vendor's status if it persists.`,
+          },
+          502,
+        );
+      }
+      return context.json(
+        {
+          error: `${entry.title} has no OAuth client registered yet. An administrator has to add one first.`,
+        },
+        409,
+      );
+    }
+
+    /*
+     * Where to come back to, as one of two names rather than a URL the caller chose.
+     *
+     * Read from the query and narrowed immediately, so an unrecognised value is the default rather
+     * than something carried into a sealed state. See {@link ConnectOrigin} in oauth.ts: a
+     * destination that could name another origin is an open redirect with a consent screen in
+     * front of it.
+     */
+    const returnTo =
+      context.req.query("returnTo") === "admin" ? "admin" : "settings";
+
+    const verifier = createVerifier();
+    return context.json({
+      authorizationUrl: authorizationUrlFor({
+        auth: entry.auth,
+        clientId: client.clientId,
+        redirectUri: redirectUriFor(connect.publicUrl),
+        state: await sealConnectState(
+          { userId: context.var.actor.id, serverId, verifier, returnTo },
+          connect.encryptionKey,
+        ),
+        codeChallenge: challengeFor(verifier),
+      }),
+    });
+  });
+
+  /** One person disconnecting their own account from one server. */
+  routes.post("/servers/:id/disconnect", requireUser, async (context) => {
+    const outcome = await store.disconnectAccount({
+      serverId: context.req.param("id"),
+      userId: context.var.actor.id,
+    });
+    return context.json(outcome);
+  });
+
+  /**
+   * Where the vendor sends somebody back.
+   *
+   * Deliberately not behind `requireUser`. The person arrives on a redirect from another company's
+   * server, and whose connection this is comes from the sealed state rather than from whatever
+   * session the browser happens to be carrying — which is what stops a callback delivered to the
+   * wrong browser from attaching one person's account to another person's row.
+   *
+   * Having no session is what makes the access check below necessary. Every other route asks the
+   * question by being behind a guard; this one has to ask it out loud.
+   *
+   * Every failure ends the same way: back at the app with a word about what happened, and nothing
+   * written. There is no useful distinction here for the person between a forged state and an
+   * expired one, and spelling out which is which tells anybody probing this endpoint how far they
+   * got.
+   */
+  routes.get("/oauth/callback", async (context) => {
+    const failed = connectedAccountsUrlFor(connect?.appUrl, { failed: true });
+    if (!connect?.publicUrl) return context.redirect(failed);
+
+    const code = context.req.query("code");
+    const state = await readConnectState(
+      context.req.query("state") ?? "",
+      connect.encryptionKey,
+    );
+    if (!code || !state) return context.redirect(failed);
+
+    /*
+     * Is the person in the state still somebody here?
+     *
+     * Asked here, before the code is redeemed and before anything is written, because a state is
+     * good for ten minutes and access can end inside them. Without this, a consent finishing after
+     * an offboarding writes a fresh, live refresh token belonging to somebody who no longer has
+     * access, which nothing downstream will ever revoke because nothing knows it was created.
+     *
+     * The same anonymous failure as an unreadable state. Whether somebody has access is not a fact
+     * this endpoint owes an unauthenticated caller.
+     */
+    if (!(await connect.personHasAccess(state.userId))) {
+      return context.redirect(failed);
+    }
+
+    const entry = catalogueEntry(state.serverId);
+    if (entry?.auth.kind !== "user-oauth") return context.redirect(failed);
+
+    const client = await store.oauthClientFor(state.serverId);
+    if (!client) return context.redirect(failed);
+
+    const grant = await redeemAuthorizationCode({
+      tokenUrl: entry.auth.tokenUrl,
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
+      code,
+      redirectUri: redirectUriFor(connect.publicUrl),
+      verifier: state.verifier,
+    });
+    if (!grant) return context.redirect(failed);
+
+    await store.recordConnection({
+      serverId: state.serverId,
+      userId: state.userId,
+      refreshToken: grant.refreshToken,
+      scope: grant.scope,
+    });
+
+    return context.redirect(
+      connectedAccountsUrlFor(
+        connect.appUrl,
+        { serverId: state.serverId },
+        // From the sealed state, so the destination is one this deployment chose, not the browser.
+        state.returnTo,
+      ),
+    );
   });
 
   /**
@@ -384,7 +661,11 @@ export function createPluginRoutes(
         ref: body.ref,
         args: body.args ?? {},
         botId: body.agentId,
-        actorId: actorEmail(context),
+        /*
+         * The user id, not the email. A `user-oauth` server is answered with the asker's own
+         * grant, keyed on `users.id`; the email stays what configuration acts are signed with.
+         */
+        actorId: context.var.actor.id,
         // Passed through without being looked at. An approval means something only against the call
         // the store is about to make, and a route that judged it would be a second place deciding.
         ...(typeof body.approvalId === "string" && body.approvalId

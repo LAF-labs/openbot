@@ -27,6 +27,20 @@ const NEVER_ALLOWED_HOSTNAMES = new Set([
   "metadata.goog",
 ]);
 
+/**
+ * Is this a hostname that holds the deployment's own cloud credentials?
+ *
+ * Exported for the MCP catalogue's custom-URL check, so browsing and "add an MCP server" refuse the
+ * same list: an alias somebody adds to the set above should not have to be remembered twice. The
+ * caller passes a bare hostname; case and a trailing root dot are normalised here rather than
+ * trusted to every caller.
+ */
+export function isNeverAllowedHostname(hostname: string): boolean {
+  return NEVER_ALLOWED_HOSTNAMES.has(
+    hostname.toLowerCase().replace(/\.+$/, ""),
+  );
+}
+
 /** Hostnames inside the deployment. Reachable only when a deployment opts in. */
 const INTERNAL_HOSTNAMES = new Set([
   "localhost",

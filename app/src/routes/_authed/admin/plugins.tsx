@@ -2,12 +2,17 @@ import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { z } from "zod";
 import {
   PageEmpty,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import {
+  ConnectionStrip,
+  ConnectOutcome,
+} from "@/components/plugins/connections";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +30,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
+import { catalogueSummaryKey } from "@/lib/plugins/catalogue-copy";
 import {
+  type CatalogueItem,
   type PluginServer,
   type PluginSkill,
   pluginKeys,
@@ -35,7 +42,20 @@ import {
 /**
  * Account-wide plugin and skill installation, with separate per-Bot grants.
  */
+
+/**
+ * Where a vendor's consent screen sends an administrator back to.
+ *
+ * `failed`, or the id of the server that was connected. `.catch({})` so an unrecognised value is
+ * ignored rather than thrown out of validateSearch, which would take the whole page down over a
+ * query string somebody pasted.
+ */
+const pluginsSearchSchema = z
+  .object({ connected: z.string().optional() })
+  .catch({});
+
 export const Route = createFileRoute("/_authed/admin/plugins")({
+  validateSearch: pluginsSearchSchema,
   component: PluginsPage,
 });
 
@@ -44,8 +64,19 @@ function PluginsPage() {
   const { data, isPending, isError } = useQuery(pluginsPageQueryOptions());
   const { data: agents } = useQuery(agentListQueryOptions());
   const nameFor = useBotNames();
+  const { connected } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [tab, setTab] = useState<"catalogue" | "yours" | "skills">("catalogue");
   const [error, setError] = useState<string | null>(null);
+
+  // Replaced rather than pushed: the URL a vendor sent somebody back to is not a step anybody
+  // should be able to walk back into.
+  const handleClearConnected = useCallback(() => {
+    void navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, connected: undefined }),
+    });
+  }, [navigate]);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: pluginKeys.all });
@@ -141,9 +172,9 @@ function PluginsPage() {
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ["catalogue", "Catalogue"],
-              ["yours", "Yours"],
-              ["skills", "Skills"],
+              ["catalogue", t("Catalogue")],
+              ["yours", t("Yours")],
+              ["skills", t("Skills")],
             ] as const
           ).map(([key, label]) => (
             <Button
@@ -157,6 +188,15 @@ function PluginsPage() {
             </Button>
           ))}
         </div>
+
+        <ConnectOutcome
+          connected={connected}
+          onClear={handleClearConnected}
+          titleFor={(serverId) =>
+            data?.servers.find((server) => server.id === serverId)?.title ??
+            serverId
+          }
+        />
 
         {error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
@@ -253,15 +293,7 @@ function Catalogue({
   onAdd,
   onAddCustom,
 }: {
-  items: {
-    key: string;
-    title: string;
-    vendor: string;
-    summary: string;
-    docsUrl: string;
-    needsCredential: boolean;
-    perInstance: boolean;
-  }[];
+  items: CatalogueItem[];
   added: Set<string>;
   onAdd: (key: string, instanceHost?: string, token?: string) => void;
   onAddCustom: (input: {
@@ -297,7 +329,12 @@ function Catalogue({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-medium">{item.title}</div>
-                <p className="text-sm text-muted-foreground">{item.summary}</p>
+                {/* Through the copy table, because the API's summary is English facts: known
+                    entries get this surface's Korean, an unknown one falls back visibly. The
+                    walking test in plugin-catalogue-copy.test.ts is what keeps the table honest. */}
+                <p className="text-sm text-muted-foreground">
+                  {t(catalogueSummaryKey(item.key, item.summary))}
+                </p>
               </div>
               <Button
                 className="shrink-0"
@@ -313,7 +350,7 @@ function Catalogue({
                 type="button"
                 variant="outline"
               >
-                {added.has(item.key) ? "Added" : "Add"}
+                {added.has(item.key) ? t("Added") : t("Add")}
               </Button>
             </div>
             {item.perInstance ? (
@@ -330,7 +367,13 @@ function Catalogue({
                 value={instanceHost[item.key] ?? ""}
               />
             ) : null}
-            {item.needsCredential ? (
+            {/*
+             * A token field only where a token is what reaches the server. A `user-oauth` entry is
+             * answered with each person's own grant, so there is nothing an administrator could
+             * type here — the connecting happens per person, on the Yours tab or in Settings, after
+             * this button has done its one job of adding the server.
+             */}
+            {item.auth === "deployment-bearer" ? (
               /* Mask tokens before they are stored in the credential vault. */
               <Input
                 aria-label={`Access token for ${item.title}`}
@@ -512,7 +555,22 @@ function Yours({
               <div className="break-all font-mono text-muted-foreground text-xs">
                 {server.url}
               </div>
-              {server.lastError ? (
+              {/*
+               * Before anybody has connected, a `user-oauth` server's `lastError` can only ever be
+               * the refusal its own listing produces — no token is sent before a connection exists,
+               * so no other failure can have happened. Showing that English refusal on every fresh
+               * add read as something broken; this surface owns the words, and in exactly that
+               * state the honest sentence is an invitation. Once tools have listed at least once,
+               * an error is a real vendor failure again and is shown as the server said it.
+               */}
+              {server.authKind === "user-oauth" &&
+              server.toolsRefreshedAt === null ? (
+                <div className="mt-1 text-muted-foreground text-xs">
+                  {t(
+                    "Connect your account below, then refresh to load what this server offers.",
+                  )}
+                </div>
+              ) : server.lastError ? (
                 <div className="mt-1 text-xs text-destructive">
                   {server.lastError}
                 </div>
@@ -537,6 +595,40 @@ function Yours({
               </Button>
             </div>
           </div>
+
+          {/*
+           * WHOSE ACCOUNT, ON THE PAGE THAT ADDED THE SERVER. Adding one of these reaches nothing
+           * on its own: a `user-oauth` server is answered with the asker's own grant, so until a
+           * person consents for themselves every tool below refuses. An administrator seeing the
+           * server here and no way to connect it would read that as broken.
+           */}
+          {server.authKind === "user-oauth" ? (
+            <div className="border-border border-b px-4 py-3">
+              <ConnectionStrip
+                canRegisterClient
+                returnTo="admin"
+                server={server}
+              />
+            </div>
+          ) : null}
+
+          {/*
+           * A grant pointing at a tool this server stopped offering. Two honest readings — the
+           * vendor withdrew it, or a transport swap renamed it — and both belong to whoever is
+           * looking at this page, so it is said out loud rather than quietly dropped from the list.
+           */}
+          {server.withdrawn.length > 0 ? (
+            <div className="border-border border-b bg-warning/10 px-4 py-3">
+              <p className="text-warning text-xs">
+                {t(
+                  "These tools are still granted to Bots, but this server no longer offers them:",
+                )}
+              </p>
+              <p className="mt-1 break-all font-mono text-warning text-xs">
+                {server.withdrawn.map((grant) => grant.name).join(", ")}
+              </p>
+            </div>
+          ) : null}
 
           {/*
            * A ROW PER TOOL, NOT A GRID OF TOOLS AGAINST BOTS. The matrix put one checkbox column per

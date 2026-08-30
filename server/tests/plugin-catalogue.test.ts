@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   CATALOGUE,
+  type CatalogueEntry,
   catalogueEntry,
   classifyTool,
   customUrlRefusal,
   hostAdmissible,
   resolveServerUrl,
+  serverCredentialKind,
 } from "../src/plugins/catalogue";
+import { unlistedAdvertisedTools } from "../src/plugins/store";
 
 /**
  * The catalogue decides two things that are worth being sure about: which addresses this deployment
@@ -19,40 +22,53 @@ import {
 
 describe("which servers this deployment will talk to", () => {
   test("a pinned host matches only itself", () => {
-    const atlassian = catalogueEntry("atlassian");
-    expect(atlassian).not.toBeNull();
-    expect(hostAdmissible(atlassian!, "https://mcp.atlassian.com")).toBe(true);
+    const notion = catalogueEntry("notion");
+    expect(notion).not.toBeNull();
+    expect(hostAdmissible(notion!, "https://mcp.notion.com")).toBe(true);
     // A prefix, a suffix and a lookalike are each refused. The suffix case is the one that matters:
     // a check written with endsWith rather than equality would accept it.
-    expect(
-      hostAdmissible(atlassian!, "https://mcp.atlassian.com.evil.test"),
-    ).toBe(false);
-    expect(
-      hostAdmissible(atlassian!, "https://evil.test/mcp.atlassian.com"),
-    ).toBe(false);
-    expect(hostAdmissible(atlassian!, "http://mcp.atlassian.com")).toBe(false);
-  });
-
-  test("a per-instance vendor accepts its own instances and nothing else", () => {
-    const servicenow = catalogueEntry("servicenow");
-    expect(servicenow).not.toBeNull();
-    expect(hostAdmissible(servicenow!, "https://acme.service-now.com")).toBe(
-      true,
-    );
-    expect(
-      hostAdmissible(servicenow!, "https://acme-dev1.service-now.com"),
-    ).toBe(true);
-    // Anchored at both ends, so neither a prefix nor a suffix gets in.
-    expect(
-      hostAdmissible(servicenow!, "https://acme.service-now.com.evil.test"),
-    ).toBe(false);
-    expect(
-      hostAdmissible(servicenow!, "https://evil.test#acme.service-now.com"),
-    ).toBe(false);
-    // A subdomain of an instance is not an instance.
-    expect(hostAdmissible(servicenow!, "https://a.b.service-now.com")).toBe(
+    expect(hostAdmissible(notion!, "https://mcp.notion.com.evil.test")).toBe(
       false,
     );
+    expect(hostAdmissible(notion!, "https://evil.test/mcp.notion.com")).toBe(
+      false,
+    );
+    expect(hostAdmissible(notion!, "http://mcp.notion.com")).toBe(false);
+  });
+
+  /**
+   * No current entry is per-instance (ServiceNow's shape is in the history), and what must hold
+   * while none is: the pattern map is compiled from the FROZEN catalogue and from nothing else, so
+   * an entry value a caller constructed — however plausible its pattern reads — is refused
+   * wholesale. That is the fail-closed floor a request-forgery attempt would have to get past.
+   */
+  const perInstance: CatalogueEntry = {
+    key: "per-instance-test",
+    title: "Per-instance",
+    vendor: "Example",
+    summary: "",
+    host: null,
+    hostPattern:
+      "^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\\.example-vendor\\.com$",
+    path: "/mcp",
+    auth: { kind: "deployment-bearer" },
+    writeTools: Object.freeze([]),
+    docsUrl: "",
+  };
+
+  test("a per-instance entry outside the frozen catalogue is refused wholesale", () => {
+    // Even its own legitimate-looking instance: the compiled pattern map is the authority, and this
+    // key is not in it, so every branch that cannot prove admissibility answers no.
+    expect(hostAdmissible(perInstance, "https://acme.example-vendor.com")).toBe(
+      false,
+    );
+    expect(
+      hostAdmissible(perInstance, "https://acme.example-vendor.com.evil.test"),
+    ).toBe(false);
+    expect(resolveServerUrl(perInstance.key)).toBeNull();
+    expect(
+      resolveServerUrl(perInstance.key, "https://acme.example-vendor.com"),
+    ).toBeNull();
   });
 
   test("a server not in the catalogue resolves to nothing", () => {
@@ -61,22 +77,16 @@ describe("which servers this deployment will talk to", () => {
   });
 
   test("the path is the catalogue's, never the caller's", () => {
-    // A per-instance vendor is the only case where a caller supplies any part of the address, and
-    // even then the path is fixed, so an admissible host cannot reach another endpoint.
-    const resolved = resolveServerUrl(
-      "servicenow",
-      "https://acme.service-now.com",
+    const resolved = resolveServerUrl("notion");
+    expect(resolved?.url).toBe("https://mcp.notion.com/mcp");
+    // The Drive entry rides its REST transport, and the URL is still pinned code.
+    expect(resolveServerUrl("google-drive")?.url).toBe(
+      "https://www.googleapis.com/drive/v3",
     );
-    expect(resolved?.url).toBe(
-      "https://acme.service-now.com/sncapps/mcp-server",
-    );
-  });
-
-  test("a per-instance vendor with no instance supplied resolves to nothing", () => {
-    expect(resolveServerUrl("servicenow")).toBeNull();
   });
 
   test("every catalogue entry pins a host or an anchored pattern", () => {
+    expect(CATALOGUE.length).toBeGreaterThan(0);
     for (const entry of CATALOGUE) {
       if (entry.host === null) {
         expect(entry.hostPattern).toBeDefined();
@@ -88,22 +98,40 @@ describe("which servers this deployment will talk to", () => {
       }
     }
   });
+
+  test("every OAuth address is pinned https, and dynamic entries name their registration endpoint", () => {
+    for (const entry of CATALOGUE) {
+      if (entry.auth.kind !== "user-oauth") continue;
+      expect(entry.auth.authorizationUrl.startsWith("https://")).toBe(true);
+      expect(entry.auth.tokenUrl.startsWith("https://")).toBe(true);
+      expect(entry.auth.revokeUrl.startsWith("https://")).toBe(true);
+      if (entry.auth.clientRegistration === "dynamic") {
+        expect(entry.auth.registrationUrl?.startsWith("https://")).toBe(true);
+      }
+    }
+  });
+
+  test("a user-oauth entry takes no pasted credential; a bearer one takes the server's own kind", () => {
+    expect(serverCredentialKind(catalogueEntry("notion")!)).toBeNull();
+    expect(serverCredentialKind(catalogueEntry("google-drive")!)).toBeNull();
+    expect(serverCredentialKind(perInstance)).toBe("mcp");
+  });
 });
 
 describe("what a tool does", () => {
-  const atlassian = catalogueEntry("atlassian")!;
+  const notion = catalogueEntry("notion")!;
 
   test("a named write is a write", () => {
-    expect(classifyTool(atlassian, "createJiraIssue", true)).toBe("write");
+    expect(classifyTool(notion, "notion-create-pages", true)).toBe("write");
   });
 
   test("an advertised tool that is not a named write is a read", () => {
-    expect(classifyTool(atlassian, "searchJiraIssues", true)).toBe("read");
+    expect(classifyTool(notion, "notion-search", true)).toBe("read");
   });
 
   test("a tool the server never advertised is a write", () => {
     // The only thing that produced this name was a model, so nothing has vouched for it.
-    expect(classifyTool(atlassian, "searchJiraIssues", false)).toBe("write");
+    expect(classifyTool(notion, "notion-search", false)).toBe("write");
   });
 
   test("every tool on a server nobody reviewed is a write", () => {
@@ -111,12 +139,35 @@ describe("what a tool does", () => {
   });
 
   test("a tool that edits rather than creates is still a write", () => {
-    // The naming does not carry it: "update" and "create" both change somebody else's system, and a
+    // The naming does not carry it: "update" and "move" both change somebody else's system, and a
     // list built by reading verbs off tool names lets the edits through.
-    const slack = catalogueEntry("slack")!;
-    expect(classifyTool(slack, "slack_update_canvas", true)).toBe("write");
-    expect(classifyTool(slack, "slack_create_canvas", true)).toBe("write");
-    expect(classifyTool(slack, "slack_read_canvas", true)).toBe("read");
+    expect(classifyTool(notion, "notion-update-page", true)).toBe("write");
+    expect(classifyTool(notion, "notion-move-pages", true)).toBe("write");
+    expect(classifyTool(notion, "notion-get-comments", true)).toBe("read");
+  });
+
+  test("Drive's writes are named even though its scope refuses them", () => {
+    // Belt and braces: the read-only scope is what stops them at Google, and the list is what
+    // keeps a boundary written about writes covering them if the scope is ever widened.
+    const drive = catalogueEntry("google-drive")!;
+    expect(classifyTool(drive, "create_file", true)).toBe("write");
+    expect(classifyTool(drive, "search_files", true)).toBe("read");
+  });
+});
+
+describe("the write-list reconciliation trail", () => {
+  test("only a scope-less user-oauth vendor is reconciled, and only unlisted names are reported", () => {
+    const notion = catalogueEntry("notion")!;
+    const drive = catalogueEntry("google-drive")!;
+    // Notion has no scope strings, so the write list is the whole barrier: an advertised name it
+    // does not carry is worth a row.
+    expect(
+      unlistedAdvertisedTools(notion, ["notion-search", "notion-create-pages"]),
+    ).toEqual(["notion-search"]);
+    // Drive expresses a read-only scope, so there is a second barrier and nothing is reported.
+    expect(unlistedAdvertisedTools(drive, ["search_files"])).toEqual([]);
+    // A custom server has no reviewed list at all; everything is already a write.
+    expect(unlistedAdvertisedTools(null, ["anything"])).toEqual([]);
   });
 });
 
@@ -143,6 +194,45 @@ describe("a URL an administrator typed", () => {
     expect(customUrlRefusal("https://database/mcp")).not.toBeNull();
     expect(customUrlRefusal("https://vault.internal/mcp")).not.toBeNull();
     expect(customUrlRefusal("https://printer.local/mcp")).not.toBeNull();
+    // How a Kubernetes service is addressed from inside a cluster: dots, no refused suffix above.
+    expect(customUrlRefusal("https://vault.ns.svc/mcp")).not.toBeNull();
+  });
+
+  test("the metadata endpoint is refused by name, in every spelling", () => {
+    expect(customUrlRefusal("https://metadata.goog/computeMetadata")).toContain(
+      "cloud credentials",
+    );
+    expect(
+      customUrlRefusal("https://metadata.google.internal/computeMetadata"),
+    ).not.toBeNull();
+    // The root-anchored spelling resolves to the same place and must not walk through.
+    expect(customUrlRefusal("https://metadata.goog./x")).toContain(
+      "cloud credentials",
+    );
+    expect(customUrlRefusal("https://localhost./mcp")).not.toBeNull();
+  });
+
+  test("a credential written into the address is refused wherever it hides", () => {
+    // Userinfo is stored and audited verbatim with the rest of the string.
+    expect(customUrlRefusal("https://user:secret@mcp.example.com/")).toContain(
+      "token field",
+    );
+    // The query, by parameter name — and one word away from the obvious spelling still counts.
+    expect(
+      customUrlRefusal("https://mcp.example.com/mcp?api_token=abc"),
+    ).toContain("token field");
+    expect(
+      customUrlRefusal("https://mcp.example.com/mcp?apiKey=abc"),
+    ).toContain("token field");
+    // The fragment never reaches the server and is still stored, which is the concern.
+    expect(
+      customUrlRefusal("https://mcp.example.com/mcp#access_token=abc"),
+    ).toContain("token field");
+    // Ordinary routing parameters are left alone; a floor an operator works around is a gap.
+    expect(customUrlRefusal("https://mcp.example.com/mcp?version=2")).toBe(
+      null,
+    );
+    expect(customUrlRefusal("https://mcp.example.com/mcp#section")).toBe(null);
   });
 
   test("nonsense is refused rather than thrown", () => {

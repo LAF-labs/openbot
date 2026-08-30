@@ -28,9 +28,11 @@ export const ko: Record<string, string> = {
   Account: "계정",
   "Acorn cat": "도토리 모자 고양이",
   "Actions for /{slug}": "/{slug} 작업",
+  Add: "추가",
   "Add a server by URL": "URL로 서버 추가",
   "Add another…": "다른 봇 추가…",
   "Add credential": "자격증명 추가",
+  Added: "추가됨",
   "Added to file": "파일에 추가함",
   "Add rule": "규칙 추가",
   "Add server": "서버 추가",
@@ -148,11 +150,15 @@ export const ko: Record<string, string> = {
   "Capabilities and interface pieces available across Bots.":
     "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
   Cat: "고양이",
+  Catalogue: "카탈로그",
   "Channel coworker": "채널의 봇",
+  "Checking the connection…": "연결 상태를 확인하는 중…",
   "Choose a coworker": "봇 선택",
   "Choose a coworker…": "봇 선택…",
   "Choosing a report…": "보고서 선택 중…",
   Clicked: "클릭함",
+  "Client ID": "클라이언트 ID",
+  "Client secret": "클라이언트 시크릿",
   Close: "닫기",
   "Close the assistant's screen": "어시스턴트 화면 닫기",
   Cloud: "구름",
@@ -164,8 +170,20 @@ export const ko: Record<string, string> = {
   "Computers in this deployment": "이 배포의 컴퓨터",
   "Configuration changed": "설정이 바뀜",
   "Configured credentials": "등록된 자격증명",
+  Connect: "연결하기",
   "Connect an organization service account with domain-wide delegation.":
     "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
+  Connected: "연결됨",
+  "Connect your account below, then refresh to load what this server offers.":
+    "아래에서 내 계정을 연결한 뒤, 새로고침하면 이 서버가 제공하는 툴을 불러옵니다.",
+  "Files in the Drive of whoever is asking.":
+    "질문하는 사람의 구글 드라이브 파일.",
+  "Pages and databases of whoever is asking.":
+    "질문하는 사람의 노션 페이지와 데이터베이스.",
+  "Connected accounts": "연결된 계정",
+  "Connected accounts could not be loaded.":
+    "연결된 계정을 불러오지 못했습니다.",
+  "Connected to {name}.": "{name}에 연결했습니다.",
   Connector: "커넥터",
   Connectors: "커넥터",
   "Continue with Google": "Google로 계속하기",
@@ -209,6 +227,7 @@ export const ko: Record<string, string> = {
   "Deleting…": "삭제 중…",
   Deny: "거부",
   "Did not happen": "실행되지 않음",
+  Disconnect: "연결 해제",
   Doll: "인형",
   Dolphin: "돌고래",
   "Draft description": "설명 초안",
@@ -256,6 +275,7 @@ export const ko: Record<string, string> = {
     "이 봇에게 시간표대로 할 일을 하나 맡겨보세요.",
   "Going in circles": "같은 일 반복",
   Gorilla: "고릴라",
+  "Granted access": "가져온 권한",
   "Granted to this Bot": "이 봇에게 부여됨",
   "Helping another Bot": "다른 봇을 돕는 중",
   Hidden: "숨김",
@@ -390,6 +410,8 @@ export const ko: Record<string, string> = {
   "Testing…": "확인 중…",
   "That could not be sent to the page. Try again.":
     "페이지로 전달하지 못했습니다. 다시 시도하세요.",
+  "That client could not be saved. Please try again.":
+    "클라이언트를 저장하지 못했습니다. 다시 시도해 주세요.",
   "That did not go through. Try again.":
     "전달되지 않았습니다. 다시 시도하세요.",
   "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
@@ -416,6 +438,12 @@ export const ko: Record<string, string> = {
   "The computer was reset": "컴퓨터를 초기화함",
   "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했습니다.",
   "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
+  "The connection could not be removed. Please try again.":
+    "연결을 해제하지 못했습니다. 다시 시도해 주세요.",
+  "The connection could not be started. Please try again.":
+    "연결을 시작하지 못했습니다. 다시 시도해 주세요.",
+  "The connection did not finish, and nothing was saved. Please try again.":
+    "연결에 실패했습니다. 저장된 것은 없습니다. 다시 시도해 주세요.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":
     "초안 설명은 모델이 이 컴포넌트를 부를지 판단할 때 읽는 글입니다. 게시하기 전까지는 아무것도 바뀌지 않습니다.",
   "The machines Bots run their tools on.": "봇이 도구를 실행하는 컴퓨터.",
@@ -430,11 +458,15 @@ export const ko: Record<string, string> = {
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
   "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
   "The server did not answer": "서버가 응답하지 않음",
+  "The service refused this deployment's registration. Please try again in a moment.":
+    "해당 서비스가 이 배포의 등록을 거절했습니다. 잠시 후 다시 시도해 주세요.",
   "The services Bots can read from, and who connected them.":
     "봇이 읽을 수 있는 서비스와, 누가 연결했는지.",
   "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
     "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
   "The wheel was handed back": "제어를 돌려줌",
+  "These tools are still granted to Bots, but this server no longer offers them:":
+    "봇에 아직 권한이 남아 있지만, 이 서버가 더 이상 제공하지 않는 툴입니다:",
   "There is no Bot to remember this.": "이걸 기억할 봇이 없습니다.",
   "What it remembers": "기억하고 있는 것",
   "Things this Bot worked out about you and keeps between conversations. Only you see yours.":
@@ -447,11 +479,19 @@ export const ko: Record<string, string> = {
     "로그인, 파일, 세션을 공유하므로 한 봇이 다른 봇이 로그인한 곳에 접근할 수 있습니다. 각 봇에게 따로 주려면 {variable}을 설정하세요.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
+  "This cannot be connected yet. An administrator has to finish setting it up first.":
+    "아직 연결할 수 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
   "This channel has no coworker in it.": "이 채널에는 봇이 없습니다.",
   "This coworker has been deleted. The conversation stays readable, but it can no longer reply.":
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
+  "This deployment has no public address yet, so there is no address to register.":
+    "이 배포에는 아직 공개 주소가 없어 등록할 주소가 없습니다.",
+  "This deployment has no public address, so a connection cannot be finished here.":
+    "이 배포에는 공개 주소가 없어 연결을 마칠 수 없습니다.",
   "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
     "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 어시스턴트도 받지 않습니다.",
+  "This service does not register clients on its own. Register one in the service's console with exactly the address below, then paste what it gives you.":
+    "이 서비스는 클라이언트를 자동으로 등록하지 않습니다. 서비스 콘솔에서 아래 주소를 그대로 사용해 등록한 뒤, 받은 값을 붙여넣어 주세요.",
   Time: "시각",
   "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
@@ -585,6 +625,8 @@ export const ko: Record<string, string> = {
     "툴 목록이 비어 있습니다. 새로고침으로 서버에 다시 물어보세요.",
   "Not in this build, nothing can draw it": "이 빌드에는 없어 그릴 수 없습니다",
   "Not shown": "표시 안 됨",
+  "Nothing to connect yet. A service appears here once an administrator has added it on the Plugins page.":
+    "아직 연결할 서비스가 없습니다. 관리자가 플러그인 화면에서 추가하면 여기에 나타납니다.",
   "Nothing yet.": "아직 없습니다.",
   On: "켬",
   "One line": "한 줄",
@@ -634,6 +676,10 @@ export const ko: Record<string, string> = {
   "Search...": "검색...",
   Secret: "비밀 값",
   "Service account JSON key": "서비스 계정 JSON 키",
+  "Services you have connected with your own account. A Bot answers with what your account can see, and nothing it cannot.":
+    "내 계정으로 직접 연결한 서비스입니다. 봇은 내 계정이 볼 수 있는 것으로 답하고, 그 밖의 것은 답하지 못합니다.",
+  "Services you have connected with your own account, so a Bot can answer with what you can see.":
+    "내 계정으로 직접 연결한 서비스입니다. 봇이 내가 볼 수 있는 것으로 답할 수 있습니다.",
   "Set up": "설정",
   Settings: "설정",
   "Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences.":
@@ -715,6 +761,7 @@ export const ko: Record<string, string> = {
   "Your channels could not be loaded.": "채널을 불러오지 못했습니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
+  Yours: "추가한 서버",
   "Typed here, never shown to the assistant":
     "여기 입력한 값은 어시스턴트에게 절대 보이지 않습니다",
   "Unpublished, no Bot may use it": "미게시 — 어떤 봇도 쓸 수 없음",

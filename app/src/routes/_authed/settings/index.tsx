@@ -1,5 +1,6 @@
+import { IconChevronRight } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   PageRows,
@@ -93,6 +94,27 @@ function RouteComponent() {
                 {signOut.isPending ? t("Logging out…") : t("Log out")}
               </Button>
             </ItemActions>
+          </Item>
+          {/*
+           * The whole row is the link, the way every other row that goes exactly one place is
+           * drawn. It sits under the account it belongs to: which services this deployment can
+           * reach is an administrator's, but whether YOUR account is behind one of them is yours.
+           */}
+          <Item
+            render={(props) => (
+              <Link to="/settings/connected-accounts" {...props} />
+            )}
+            size="sm"
+          >
+            <ItemContent>
+              <ItemTitle>{t("Connected accounts")}</ItemTitle>
+              <ItemDescription>
+                {t(
+                  "Services you have connected with your own account, so a Bot can answer with what you can see.",
+                )}
+              </ItemDescription>
+            </ItemContent>
+            <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Item>
           {signOutError ? (
             <p className="px-1 text-destructive text-sm" role="alert">

@@ -60,6 +60,9 @@ describe("credential encryption", () => {
             return { id: "credential-1", revokedAt: null };
           },
           revoke: async () => new Date(),
+          // No live credential for the key, so this is a creation rather than the rotation the
+          // store now performs when one exists.
+          findLiveByKey: async () => null,
         },
         auditStore: {
           insert: async (event) => {
@@ -108,6 +111,12 @@ describe("credential encryption", () => {
       encryptionKey: key,
       store: {
         create: async () => ({ id: "credential-new", revokedAt: null }),
+        // The store owns atomicity now: retiring the old row and inserting the new one are one
+        // write, so the double records the retirement where the transaction would perform it.
+        rotate: async (input: { previousCredentialId: string }) => {
+          revoked.push(input.previousCredentialId);
+          return { id: "credential-new", revokedAt: null };
+        },
         revoke: async (id: string) => {
           revoked.push(id);
           return new Date("2026-08-13T12:00:00.000Z");
@@ -215,44 +224,40 @@ describe("model credential resolution", () => {
 });
 
 describe("model credential store lookup", () => {
-  test("selects the newest active matching model credential with id as the timestamp tie-breaker", async () => {
-    const matchingOldId = randomUUID();
-    const matchingLowerId = "00000000-0000-4000-8000-000000000001";
-    const matchingHigherId = "00000000-0000-4000-8000-000000000002";
-    const ignoredIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
-    const allIds = [
-      matchingOldId,
-      matchingLowerId,
-      matchingHigherId,
-      ...ignoredIds,
-    ];
-    credentialIds.push(...allIds);
+  /*
+   * This used to assert a created_at-then-id tie-break BETWEEN LIVE ROWS, and that scenario is now
+   * impossible by construction: `credentials_active_key_idx` holds one live credential per key, so
+   * what is left to pin is that the lookup picks the live row over revoked history and over every
+   * near-miss key — and that the index actually refuses a second live row.
+   *
+   * The key id is suite-scoped rather than the real `openai-api-key`, because these tests share the
+   * development database with the app and a deployment's genuine model credential now legitimately
+   * OWNS that key under the unique index.
+   */
+  test("selects the live matching model credential over revoked history and near-miss keys", async () => {
+    const keyId = `test-openai-key-${randomUUID().slice(0, 8)}`;
+    const liveId = randomUUID();
+    const retiredId = randomUUID();
+    const ignoredIds = [randomUUID(), randomUUID(), randomUUID()];
+    credentialIds.push(liveId, retiredId, ...ignoredIds);
 
     await database.insert(credentials).values([
       {
-        id: matchingOldId,
+        id: retiredId,
         kind: "model",
         provider: "openai",
-        keyId: "openai-api-key",
-        encryptedValue: "old-matching-value",
+        keyId,
+        encryptedValue: "retired-value",
         metadata: {},
+        revokedAt: new Date("2026-03-01T00:00:00.000Z"),
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
       {
-        id: matchingLowerId,
+        id: liveId,
         kind: "model",
         provider: "openai",
-        keyId: "openai-api-key",
-        encryptedValue: "lower-id-value",
-        metadata: {},
-        createdAt: new Date("2026-02-01T00:00:00.000Z"),
-      },
-      {
-        id: matchingHigherId,
-        kind: "model",
-        provider: "openai",
-        keyId: "openai-api-key",
-        encryptedValue: "higher-id-value",
+        keyId,
+        encryptedValue: "live-value",
         metadata: {},
         createdAt: new Date("2026-02-01T00:00:00.000Z"),
       },
@@ -260,7 +265,7 @@ describe("model credential store lookup", () => {
         id: ignoredIds[0]!,
         kind: "connector",
         provider: "openai",
-        keyId: "openai-api-key",
+        keyId,
         encryptedValue: "wrong-kind-value",
         metadata: {},
         createdAt: new Date("2026-03-01T00:00:00.000Z"),
@@ -269,7 +274,7 @@ describe("model credential store lookup", () => {
         id: ignoredIds[1]!,
         kind: "model",
         provider: "other",
-        keyId: "openai-api-key",
+        keyId,
         encryptedValue: "wrong-provider-value",
         metadata: {},
         createdAt: new Date("2026-03-01T00:00:00.000Z"),
@@ -278,19 +283,9 @@ describe("model credential store lookup", () => {
         id: ignoredIds[2]!,
         kind: "model",
         provider: "openai",
-        keyId: "other-api-key",
+        keyId: `${keyId}-other`,
         encryptedValue: "wrong-key-value",
         metadata: {},
-        createdAt: new Date("2026-03-01T00:00:00.000Z"),
-      },
-      {
-        id: ignoredIds[3]!,
-        kind: "model",
-        provider: "openai",
-        keyId: "openai-api-key",
-        encryptedValue: "revoked-value",
-        metadata: {},
-        revokedAt: new Date("2026-03-01T00:00:00.000Z"),
         createdAt: new Date("2026-03-01T00:00:00.000Z"),
       },
     ]);
@@ -298,9 +293,30 @@ describe("model credential store lookup", () => {
     await expect(
       createCredentialStore(database).readModelSecret({
         provider: "openai",
-        keyId: "openai-api-key",
+        keyId,
       }),
-    ).resolves.toEqual({ encryptedValue: "higher-id-value" });
+    ).resolves.toEqual({ encryptedValue: "live-value" });
+
+    // The invariant the lookup now leans on: a second live row for the same key cannot exist.
+    // Drizzle wraps the refusal, so the index's name is on the CAUSE rather than the message.
+    const refused = await database
+      .insert(credentials)
+      .values({
+        id: randomUUID(),
+        kind: "model",
+        provider: "openai",
+        keyId,
+        encryptedValue: "second-live-value",
+        metadata: {},
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(refused).not.toBeNull();
+    expect(String((refused as { cause?: unknown }).cause ?? refused)).toContain(
+      "credentials_active_key_idx",
+    );
   });
 });
 

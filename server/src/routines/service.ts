@@ -241,11 +241,7 @@ export type RoutineServiceOptions = {
    * Absent, a routine runs as it always did: toolless, able to think and not to look. Present, it
    * is an agent turn. See runner/unattended.ts for why the loop lives on the server.
    */
-  tools?: (
-    botId: string,
-    actor: ActionActor,
-    actorLabel: string,
-  ) => Promise<UnattendedToolkit>;
+  tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   now?: () => Date;
   runTimeoutMs?: number;
   /**
@@ -324,11 +320,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
             ? {}
             : { userId: row.createdById }),
         };
-        const toolkit = await options.tools(
-          row.agentId,
-          actor,
-          row.createdById,
-        );
+        const toolkit = await options.tools(row.agentId, actor);
         const run = await runUnattended(target, row.instruction, {
           toolkit,
           timeoutMs: runTimeoutMs,

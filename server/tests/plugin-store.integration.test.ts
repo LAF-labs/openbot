@@ -37,20 +37,20 @@ const database = createDatabase(
 const suite = randomUUID().slice(0, 8);
 const holderId = `agent_plugin_holder_${suite}`;
 const strangerId = `agent_plugin_stranger_${suite}`;
-const serverId = `atlassian`;
-const toolName = "searchJiraIssues";
+/**
+ * A CUSTOM server, suite-scoped, at an address that resolves nowhere.
+ *
+ * Custom on purpose, twice over. A first-party row whose key the catalogue no longer carries is
+ * refused outright (the pinned host that made it admissible is gone), so a made-up first-party
+ * fixture would test that refusal and nothing else. And a custom server classifies its tools by
+ * their own declared annotations under the LAF contract — which is this fork's path, and the one
+ * these tests should hold still.
+ */
+const serverId = `plugtest-${suite}`;
+const toolName = "search_things";
 const ref = `${serverId}/${toolName}`;
 
 let policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
-
-/**
- * Whether this deployment already had the server before the test ran.
- *
- * The id is a real catalogue key rather than a suite-scoped one, because what is under test includes
- * the vendor's own read/write classification. On a database somebody is using, that key is their
- * configured server, so it is removed only when the test is what created it.
- */
-let serverWasAlreadyConfigured = false;
 
 /** The deployment's one registry, shared with the computer in a real deployment. */
 const approvals = createApprovalRegistry();
@@ -61,10 +61,22 @@ const store = createPluginStore({
   credentials: {
     // No credential is ever read in these tests, because every call is refused before the vault.
     readSecret: async () => null,
-  },
+  } as never,
   encryptionKey: "x".repeat(44),
   policy: () => policy,
   approvals,
+  /*
+   * The vendor, injected to fail — not left to the network.
+   *
+   * Another suite `mock.module`s the mcp module PROCESS-WIDE (bun's mocks are not per file), so
+   * "the call fails at the network" was true alone and false in a full run, where the leaked stub
+   * answered it with success. The injectable exists for exactly this: what these tests prove is
+   * that a call got PAST the boundary, and an attempt that then fails proves it as well as one
+   * that succeeds — deterministically.
+   */
+  callVendor: async () => {
+    throw new Error("the test vendor is unreachable");
+  },
 });
 
 async function auditRowsFor(targetId: string) {
@@ -95,39 +107,35 @@ beforeAll(async () => {
       .onConflictDoNothing();
   }
 
-  serverWasAlreadyConfigured =
-    (
-      await database
-        .select({ id: mcpServers.id })
-        .from(mcpServers)
-        .where(eq(mcpServers.id, serverId))
-    ).length > 0;
-
   // The server row is written directly rather than through addServer, so the test needs no vendor
   // to be reachable. What is under test is the decision, not the listing.
   await database
     .insert(mcpServers)
     .values({
       id: serverId,
-      title: "Atlassian",
-      vendor: "Atlassian",
-      url: "https://mcp.atlassian.com/v1/mcp/authv2",
-      provenance: "first-party",
+      title: "Plugin test server",
+      vendor: "mcp.test.invalid",
+      url: "https://mcp.test.invalid/mcp",
+      provenance: "custom",
     })
     .onConflictDoNothing();
   await database
     .insert(mcpTools)
-    .values({ serverId, name: toolName, description: "Search issues." })
+    .values({
+      serverId,
+      name: toolName,
+      description: "Search things.",
+      // Declared read-only under the LAF contract, so the call path classifies it as a read with
+      // no guard floor — which is what lets a rule about effect be the thing under test below.
+      annotations: { readOnlyHint: true },
+    })
     .onConflictDoNothing();
 });
 
 afterAll(async () => {
   await database.delete(pluginGrants).where(eq(pluginGrants.ref, ref));
-  // A server row is deployment configuration, so it belongs to the deployment rather than here.
-  if (!serverWasAlreadyConfigured) {
-    await database.delete(mcpTools).where(eq(mcpTools.serverId, serverId));
-    await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
-  }
+  await database.delete(mcpTools).where(eq(mcpTools.serverId, serverId));
+  await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
   await database.delete(agents).where(eq(agents.id, holderId));
   await database.delete(agents).where(eq(agents.id, strangerId));
 });
@@ -173,7 +181,7 @@ describe("a grant is the permission", () => {
     const held = await store.listForAgent(holderId);
     expect(held.tools.map((tool) => tool.ref)).toEqual([ref]);
     // The name the model is offered, which may not contain a slash.
-    expect(held.tools[0].toolName).toBe("mcp__atlassian__searchJiraIssues");
+    expect(held.tools[0].toolName).toBe(`mcp__${serverId}__${toolName}`);
 
     const nothing = await store.listForAgent(strangerId);
     expect(nothing.tools).toEqual([]);
@@ -186,7 +194,7 @@ describe("the policy is asked as well as the grant", () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       mode: "enforce",
-      deny: ['mcp.server == "atlassian"'],
+      deny: [`mcp.server == "${serverId}"`],
       allow: ["true"],
     };
 
@@ -207,7 +215,7 @@ describe("the policy is asked as well as the grant", () => {
     expect(thrown).toBeInstanceOf(PluginRefusedError);
     // The rule that decided it, so an operator reading the refusal knows what to edit.
     expect((thrown as PluginRefusedError).rule).toBe(
-      'mcp.server == "atlassian"',
+      `mcp.server == "${serverId}"`,
     );
 
     const rows = await auditRowsFor(ref);
@@ -215,14 +223,14 @@ describe("the policy is asked as well as the grant", () => {
       (row) =>
         row.eventType === "mcp.call_rejected" &&
         (row.payload as { decision?: { rule?: string } }).decision?.rule ===
-          'mcp.server == "atlassian"',
+          `mcp.server == "${serverId}"`,
     );
     expect(refusedByPolicy.length).toBeGreaterThan(0);
   });
 
   test("a rule can speak about effect rather than about tool names", async () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
-    // `searchJiraIssues` is advertised and is not in the vendor's write list, so it is a read and
+    // The tool declares `readOnlyHint: true`, so the LAF contract classifies it as a read and
     // this deny rule must NOT catch it. The assertion is that the call gets past the policy, which
     // it proves by failing at the network instead of as a refusal.
     policy = {
@@ -302,7 +310,7 @@ describe("a boundary can ask a person about a tool call", () => {
     policy = {
       mode: "enforce",
       deny: [],
-      ask: ['mcp.server == "atlassian"'],
+      ask: [`mcp.server == "${serverId}"`],
       allow: ["true"],
     };
 
@@ -327,9 +335,9 @@ describe("a boundary can ask a person about a tool call", () => {
     // The question names the tool and the server. It used to read "The Bot wants to call ." here,
     // because the neutral file path this context carries was mistaken for a real one.
     expect(asked.question).toBe(
-      "The Bot wants to call searchJiraIssues on atlassian.",
+      `The Bot wants to call ${toolName} on ${serverId}.`,
     );
-    expect(asked.rule).toBe('mcp.server == "atlassian"');
+    expect(asked.rule).toBe(`mcp.server == "${serverId}"`);
 
     const rows = await auditRowsFor(ref);
     const question = rows.filter(
@@ -356,7 +364,7 @@ describe("a boundary can ask a person about a tool call", () => {
     policy = {
       mode: "enforce",
       deny: [],
-      ask: ['mcp.server == "atlassian"'],
+      ask: [`mcp.server == "${serverId}"`],
       allow: ["true"],
     };
     const call = {
@@ -392,12 +400,18 @@ describe("a boundary can ask a person about a tool call", () => {
       expect(allowed).not.toBeInstanceOf(PluginRefusedError);
 
       const rows = await auditRowsFor(ref);
-      // The row for the allowed call names who stood behind it, so the trail reads as "somebody was
-      // asked and said yes" rather than as an ordinary permission nobody ever questioned.
+      /*
+       * The row for the allowed call names who stood behind it, so the trail reads as "somebody was
+       * asked and said yes" rather than as an ordinary permission nobody ever questioned.
+       *
+       * `mcp.call_failed`, deliberately: the trail now records what HAPPENED rather than what was
+       * permitted, this fixture's address resolves nowhere, and an attempt that died at the network
+       * still carries the approval that let it be attempted.
+       */
       expect(
         rows.some(
           (row) =>
-            row.eventType === "mcp.call_succeeded" &&
+            row.eventType === "mcp.call_failed" &&
             (row.payload as { decision?: { approvedBy?: string } }).decision
               ?.approvedBy === "manager@laf.local",
         ),

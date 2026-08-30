@@ -32,6 +32,23 @@ export const credentialKind = pgEnum("credential_kind", [
   // A token for an MCP server. Same vault and same revocation as everything else, so the server row
   // holds a pointer and never the secret.
   "mcp",
+  /*
+   * A deployment's OAuth client for an MCP server: the id and the secret this deployment registered
+   * with the vendor, whether an administrator pasted it in or the deployment registered itself.
+   *
+   * Its own kind rather than another `mcp`, because it is a different thing with different reach. A
+   * client identifies this deployment to a vendor and can read nobody's data on its own; it is the
+   * thing you must have before anybody can consent, and the thing you rotate when it leaks.
+   */
+  "mcp_oauth_client",
+  /*
+   * One person's refresh token for one MCP server.
+   *
+   * The far end of the same flow and the opposite risk: this reaches everything that person can see.
+   * Distinct from the client so that "what does this deployment hold" stays answerable — one row
+   * that speaks for the deployment, and one row per person that speaks for them.
+   */
+  "mcp_user_token",
 ]);
 export const connectorType = pgEnum("connector_type", [
   "google_drive",
@@ -255,17 +272,28 @@ export const channelAgents = pgTable(
   (table) => [primaryKey({ columns: [table.channelId, table.agentId] })],
 );
 
-export const credentials = pgTable("credentials", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  kind: credentialKind("kind").notNull(),
-  provider: text("provider").notNull(),
-  encryptedValue: text("encrypted_value").notNull(),
-  keyId: text("key_id").notNull(),
-  metadata: jsonb("metadata").notNull(),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const credentials = pgTable(
+  "credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: credentialKind("kind").notNull(),
+    provider: text("provider").notNull(),
+    encryptedValue: text("encrypted_value").notNull(),
+    keyId: text("key_id").notNull(),
+    metadata: jsonb("metadata").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // At most one live credential per (kind, provider, key_id). Revoked rows are
+    // excluded so history is preserved, and two writers racing to rotate the
+    // same secret cannot both insert a live row.
+    uniqueIndex("credentials_active_key_idx")
+      .on(table.kind, table.provider, table.keyId)
+      .where(sql`${table.revokedAt} IS NULL`),
+  ],
+);
 
 export const connectorInstances = pgTable("connector_instances", {
   id: uuid("id").primaryKey().defaultRandom(),

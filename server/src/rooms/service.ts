@@ -57,11 +57,7 @@ export type RoomServiceOptions = {
     role: "admin" | "user";
   }) => Promise<Record<string, AbstractAgent>>;
   /** The member's tools: the same gateway, grants, policy and audit a routine gets. */
-  tools?: (
-    botId: string,
-    actor: ActionActor,
-    actorLabel: string,
-  ) => Promise<UnattendedToolkit>;
+  tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   /** Push a frame to whoever is watching this room. */
   emit: (frame: RoomFrame) => void;
   /** Keep the runner's rehydrated copy of the thread in step with what we wrote. */
@@ -298,16 +294,12 @@ export function createRoomService(options: RoomServiceOptions) {
         runMember: async ({ member, windingDown }) => {
           try {
             const base: UnattendedToolkit = options.tools
-              ? await options.tools(
-                  member.id,
-                  {
-                    id: input.actor.id,
-                    ...(input.actor.id.startsWith("dev-")
-                      ? {}
-                      : { userId: input.actor.id }),
-                  },
-                  input.actorLabel,
-                )
+              ? await options.tools(member.id, {
+                  id: input.actor.id,
+                  ...(input.actor.id.startsWith("dev-")
+                    ? {}
+                    : { userId: input.actor.id }),
+                })
               : { tools: [], execute: async () => ({ ok: false }) };
 
             /*

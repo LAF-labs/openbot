@@ -29,6 +29,7 @@ import { Route as AuthedAdminCredentialsRouteImport } from './routes/_authed/adm
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/plugins'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
@@ -133,6 +134,12 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsConnectedAccountsRoute =
+  AuthedSettingsConnectedAccountsRouteImport.update({
+    id: '/connected-accounts',
+    path: '/connected-accounts',
+    getParentRoute: () => AuthedSettingsRouteRoute,
+  } as any)
 const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   id: '/agents/',
   path: '/agents/',
@@ -179,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
@@ -202,6 +210,7 @@ export interface FileRoutesByTo {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
@@ -229,6 +238,7 @@ export interface FileRoutesById {
   '/_authed/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/_authed/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/connected-accounts'
     | '/admin/'
     | '/settings/'
     | '/channel/$channelId'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/connected-accounts'
     | '/admin'
     | '/settings'
     | '/channel/$channelId'
@@ -306,6 +318,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/credentials'
     | '/_authed/admin/playground'
     | '/_authed/admin/plugins'
+    | '/_authed/settings/connected-accounts'
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
@@ -464,6 +477,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/connected-accounts': {
+      id: '/_authed/settings/connected-accounts'
+      path: '/connected-accounts'
+      fullPath: '/settings/connected-accounts'
+      preLoaderRoute: typeof AuthedSettingsConnectedAccountsRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/_app/agents/': {
       id: '/_authed/_app/agents/'
       path: '/agents'
@@ -532,10 +552,12 @@ const AuthedAdminRouteRouteWithChildren =
   AuthedAdminRouteRoute._addFileChildren(AuthedAdminRouteRouteChildren)
 
 interface AuthedSettingsRouteRouteChildren {
+  AuthedSettingsConnectedAccountsRoute: typeof AuthedSettingsConnectedAccountsRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
+  AuthedSettingsConnectedAccountsRoute: AuthedSettingsConnectedAccountsRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
 

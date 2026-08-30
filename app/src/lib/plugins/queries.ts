@@ -25,6 +25,29 @@ export type PluginTool = {
   guard: "money" | "external" | "destructive" | "unannotated" | null;
 };
 
+/**
+ * Whose credential reaches a server.
+ *
+ * `deployment-bearer` is one token an administrator holds for everybody. `user-oauth` is the
+ * asker's own grant, so the same question gets each person the answer their own account can see —
+ * which is why the surface has to phrase these two differently rather than just say "connected".
+ */
+export type PluginAuthKind = "none" | "deployment-bearer" | "user-oauth";
+
+/**
+ * A grant on a tool its server no longer advertises.
+ *
+ * Empty for a healthy connector. Non-empty is a discrepancy an administrator should read about,
+ * not a state to tidy away, so it is drawn rather than filtered out.
+ */
+export type WithdrawnGrant = {
+  /** `<serverId>/<name>`, exactly as the grant is stored. */
+  ref: string;
+  /** The tool half, for a screen that already knows the server. */
+  name: string;
+  grantedTo: string[];
+};
+
 export type PluginServer = {
   id: string;
   title: string;
@@ -38,7 +61,14 @@ export type PluginServer = {
   toolsRefreshedAt: string | null;
   lastError: string | null;
   addedBy: string | null;
+  authKind: PluginAuthKind;
+  /**
+   * Whether the deployment registers its own OAuth client rather than waiting for an administrator
+   * to paste one in. False is what makes the paste-a-client form worth drawing.
+   */
+  dynamicClient: boolean;
   tools: PluginTool[];
+  withdrawn: WithdrawnGrant[];
 };
 
 export type PluginSkill = {
@@ -60,9 +90,32 @@ export type CatalogueItem = {
   vendor: string;
   summary: string;
   docsUrl: string;
-  needsCredential: boolean;
+  /** Which gesture this entry wants: a token field, a connect button, or nothing at all. */
+  auth: PluginAuthKind;
+  dynamicClient: boolean;
   /** True for a vendor that gives every customer their own hostname. */
   perInstance: boolean;
+};
+
+/** One person's own connection to a `user-oauth` server. */
+export type PluginConnection = {
+  serverId: string;
+  /**
+   * The scope string exactly as the vendor granted it, shown rather than interpreted. Empty for a
+   * vendor whose consent screen is the scoping, where inventing words for it would assert a
+   * control that does not exist.
+   */
+  scope: string;
+  connectedAt: string;
+};
+
+export type PluginConnections = {
+  connections: PluginConnection[];
+  /**
+   * The address a vendor sends the browser back to, for an administrator registering a client by
+   * hand. Null means this deployment has no public URL and no connection can be completed.
+   */
+  redirectUri: string | null;
 };
 
 export type PluginsPage = {
@@ -90,6 +143,7 @@ export type GrantedPlugins = {
 export const pluginKeys = {
   all: ["plugins"] as const,
   page: () => ["plugins", "page"] as const,
+  connections: () => ["plugins", "connections"] as const,
   forAgent: (agentId: string) => ["plugins", "for-agent", agentId] as const,
 };
 
@@ -102,6 +156,109 @@ export function pluginsPageQueryOptions() {
       return response.json();
     },
   });
+}
+
+/**
+ * Which servers the signed-in person has connected with their own account.
+ *
+ * Separate from the page query because it answers a different question about the same list: that
+ * one is "what can this deployment reach", this one is "what have I personally consented to". An
+ * administrator looking at the Plugins page sees both, and they are not the same fact.
+ */
+export function connectionsQueryOptions() {
+  return queryOptions({
+    queryKey: pluginKeys.connections(),
+    queryFn: async (): Promise<PluginConnections> => {
+      const response = await fetch("/api/plugins/connections", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Connections could not be loaded.");
+      return response.json();
+    },
+  });
+}
+
+/**
+ * A connect the server would not start, carrying the status alongside the message.
+ *
+ * The status is the whole difference between three things a person needs told apart: an
+ * administrator has paperwork left to do (409), this deployment cannot complete a consent flow at
+ * all (503), and the vendor refused us (502). Without it the surface can only say "that did not
+ * work", which is how a connector that is one console entry away looks broken.
+ */
+export class ConnectRefusedError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ConnectRefusedError";
+    this.status = status;
+  }
+}
+
+/**
+ * Ask for the vendor's consent URL. The browser, not the server, decides when to leave the page.
+ *
+ * `returnTo` is one of two names rather than a URL, because the server seals it into the state it
+ * sends the vendor and a destination a caller chose would be an open redirect with a consent screen
+ * in front of it.
+ */
+export async function beginConnect(
+  serverId: string,
+  returnTo: "admin" | "settings",
+): Promise<string> {
+  const response = await fetch(
+    `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${returnTo}`,
+    { method: "POST", credentials: "include" },
+  );
+  const body = (await response.json().catch(() => null)) as {
+    authorizationUrl?: string;
+    error?: string;
+  } | null;
+  if (!response.ok || !body?.authorizationUrl) {
+    throw new ConnectRefusedError(
+      body?.error ?? "The connection could not be started.",
+      response.status,
+    );
+  }
+  return body.authorizationUrl;
+}
+
+/** One person dropping their own connection to one server. */
+export async function disconnectServer(serverId: string): Promise<boolean> {
+  const response = await fetch(
+    `/api/plugins/servers/${encodeURIComponent(serverId)}/disconnect`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) throw new Error("That connection could not be removed.");
+  const body = (await response.json().catch(() => null)) as {
+    disconnected?: boolean;
+  } | null;
+  return body?.disconnected === true;
+}
+
+/**
+ * Store an OAuth client an administrator registered at the vendor by hand.
+ *
+ * For a vendor that does not register clients on its own. The secret is optional because a public
+ * client has none — PKCE carries the proof instead — so an empty one is sent as empty rather than
+ * refused here.
+ */
+export async function saveOauthClient(
+  serverId: string,
+  clientId: string,
+  clientSecret: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/plugins/servers/${encodeURIComponent(serverId)}/oauth-client`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientId, clientSecret }),
+    },
+  );
+  if (!response.ok) throw new Error("That client could not be saved.");
 }
 
 /**

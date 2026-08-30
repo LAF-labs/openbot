@@ -36,6 +36,10 @@ export const auditEventTypes = [
   "configuration.changed",
   "credential.created",
   "credential.rotated",
+  // A rotation the vault refused — aimed at a revoked, missing or mismatched credential. Each is a
+  // caller with a bug or an attempt to retire a key nobody asked about, and each used to leave no
+  // row while only successes were recorded.
+  "credential.rotation_refused",
   "credential.revoked",
   "connector.sync_succeeded",
   "connector.sync_failed",
@@ -57,6 +61,18 @@ export const auditEventTypes = [
   "agent.stream_stalled",
   "mcp.call_succeeded",
   "mcp.call_rejected",
+  // Permitted, attempted, and did not succeed — the vendor failed it, or the connection could not
+  // be built. Its own type for the same reason the computer's `action_failed` is: "allowed" reads
+  // as "happened", and a per-person connector fails precisely between the permission and the call.
+  "mcp.call_failed",
+  // The deployment's OAuth client for one vendor: registered by an administrator's paste or by the
+  // deployment introducing itself (RFC 7591). The id is in the payload, never the secret.
+  "mcp.oauth_client_registered",
+  // One person connected their own account to one vendor, and the scope the vendor actually
+  // granted. The pair below is its end: disconnected by themselves, by an administrator removing
+  // the server, or by an offboarding — the payload's `reason` says which.
+  "mcp.account_connected",
+  "mcp.account_disconnected",
   // A tool's definition — schema, description or annotations — changed after a
   // person consented to it, and the moment it was consented to again. The pair
   // is what makes a quiet downgrade a visible pause instead of an escalation.

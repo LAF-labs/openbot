@@ -51,7 +51,8 @@ import {
   resolveModelApiKey,
 } from "./credentials";
 import { createDatabase } from "./db/client";
-import { agentProfiles } from "./db/schema";
+import { agentProfiles, users } from "./db/schema";
+import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
@@ -381,6 +382,13 @@ const autoReviewFor = async (botId: string, subject: ReviewSubject) => {
   return row?.instruction ? reviewModel(row.instruction, subject) : null;
 };
 
+/**
+ * Where vendors send people back after a consent, derived from the one public URL every real
+ * deployment already declares. No new fleet configuration: BETTER_AUTH_URL is required wherever
+ * sign-in works, and sign-in is required wherever plugins are reachable.
+ */
+const pluginPublicUrl = config.auth?.baseUrl;
+
 const pluginStore = createPluginStore({
   database,
   auditStore: bootAuditStore,
@@ -389,6 +397,12 @@ const pluginStore = createPluginStore({
   policy: () => policyStore.get(),
   approvals,
   standing: standingApprovals,
+  /*
+   * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
+   * public URL, and self-registration then simply does not happen — registering a redirect URI
+   * that resolves to nothing would leave behind a client that can never complete a consent flow.
+   */
+  redirectUri: pluginPublicUrl ? redirectUriFor(pluginPublicUrl) : undefined,
 });
 
 /*
@@ -688,6 +702,29 @@ const app = createApp(
   demonstrations,
   writeUpDemonstration,
   agentMemoryStore,
+  /*
+   * The OAuth connect flow: where vendors send people back, and whether the person a consent was
+   * started for still has access when the callback lands. This fork has no removal ledger, so
+   * "still has access" is what sign-in itself would answer: the user row exists, and the address
+   * is still on the allow-list when one is configured.
+   */
+  pluginPublicUrl
+    ? {
+        publicUrl: pluginPublicUrl,
+        appUrl: config.auth?.trustedOrigins[0],
+        encryptionKey: config.keyEncryptionKey,
+        personHasAccess: async (userId: string) => {
+          const [person] = await database
+            .select({ email: users.email })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+          if (!person) return false;
+          const allowed = config.auth?.allowedEmails ?? [];
+          return allowed.length === 0 || allowed.includes(person.email);
+        },
+      }
+    : undefined,
 );
 
 /**
