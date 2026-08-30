@@ -1,5 +1,6 @@
 /** 한국어 사전 — 영어 원문이 키다. 항목이 없으면 영어로 그대로 나온다. */
 export const ko: Record<string, string> = {
+  ", reported by the Bot itself": " — 봇이 스스로 알린 내용",
   "1 item in the workspace": "작업 공간에 항목 1개",
   "A Bot carrying this offers /{slug} in its composer.":
     "이 스킬을 가진 봇은 입력창에서 /{slug}를 제공합니다.",
@@ -11,6 +12,7 @@ export const ko: Record<string, string> = {
   "A password box the page labels something else is not covered, the rule matches the label.":
     "페이지가 다른 이름을 붙인 비밀번호 칸은 잡히지 않습니다. 규칙은 라벨을 봅니다.",
   "A person allowed it": "사람이 허용함",
+  "A person connected their own account": "사람이 자기 계정을 연결함",
   "A person declined it": "사람이 거절함",
   "A person pressed stop": "사람이 정지를 누름",
   "A person supplied a secret": "사람이 비밀값을 입력함",
@@ -18,6 +20,7 @@ export const ko: Record<string, string> = {
   "A reason, if you want to give one": "이유 (선택)",
   "A routine is work this Bot repeats on a schedule.":
     "루틴은 이 봇이 일정에 따라 반복하는 작업이에요.",
+  "A routine ran": "루틴이 실행됨",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",
@@ -44,6 +47,26 @@ export const ko: Record<string, string> = {
   Agents: "에이전트",
   Allow: "허용",
   Allowed: "허용됨",
+  "Allowed by {person}": "{person}이(가) 허용함",
+  "An account is no longer connected": "계정 연결이 끊김",
+  "Approved as it now is": "지금 상태 그대로 승인됨",
+  Blocked: "차단됨",
+  "Could not be replaced": "교체하지 못함",
+  "Credential replaced": "자격증명이 교체됨",
+  "Credential retired": "자격증명이 폐기됨",
+  "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
+  "Knowledge searched": "지식을 검색함",
+  "Model usage recorded": "모델 사용량이 기록됨",
+  "One Bot asked another": "봇이 다른 봇에게 요청함",
+  "Paused until somebody reviews it": "검토할 때까지 멈춤",
+  Refused: "거부됨",
+  "Sync failed": "동기화 실패",
+  "Sync finished": "동기화 완료",
+  "The Bot was asked": "봇이 요청을 받음",
+  "The whole connector was removed": "커넥터 자체가 제거됨",
+  "They disconnected it themselves": "본인이 직접 연결을 해제함",
+  "They were removed from this deployment": "이 배포에서 제외된 사람입니다",
+  "This deployment registered itself": "이 배포가 스스로 등록함",
   "Updating its own profile": "자기 프로필을 바꾸는 중",
   "Changing its own settings": "자기 설정을 바꾸는 중",
   "Changed its own settings": "자기 설정을 바꿨습니다",
@@ -103,6 +126,7 @@ export const ko: Record<string, string> = {
   "Deny: {question}": "거부: {question}",
   "That answer could not be recorded. Try again.":
     "답을 기록하지 못했어요. 다시 시도해 주세요.",
+  "{count} times within a few minutes": "몇 분 사이에 {count}회",
   "{name} is waiting for your answer: {question}":
     "{name}이(가) 답을 기다리고 있어요: {question}",
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
@@ -136,7 +160,6 @@ export const ko: Record<string, string> = {
     "회의 전에 필요한 걸 모아줘 — 누가 오는지, 지난번에 무슨 얘기를 했는지, 그 뒤로 바뀐 문서. 한 장 넘기지 말고.",
   Bird: "새",
   "Black cat": "검은 고양이",
-  Blocked: "차단됨",
   Bot: "봇",
   Boundaries: "경계",
   "Boundary at start-up": "시작 시 경계 적용",
@@ -152,6 +175,9 @@ export const ko: Record<string, string> = {
   Cat: "고양이",
   Catalogue: "카탈로그",
   "Channel coworker": "채널의 봇",
+  "Finish in the browser that just opened, then come back.":
+    "방금 열린 브라우저에서 동의를 마친 뒤 돌아와 주세요.",
+  "Check again": "다시 확인",
   "Checking the connection…": "연결 상태를 확인하는 중…",
   "Choose a coworker": "봇 선택",
   "Choose a coworker…": "봇 선택…",
@@ -174,8 +200,8 @@ export const ko: Record<string, string> = {
   "Connect an organization service account with domain-wide delegation.":
     "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
   Connected: "연결됨",
-  "Connect your account below, then refresh to load what this server offers.":
-    "아래에서 내 계정을 연결한 뒤, 새로고침하면 이 서버가 제공하는 툴을 불러옵니다.",
+  "Connect your account below, and this server's tools load with it.":
+    "아래에서 내 계정을 연결하면 이 서버가 제공하는 툴을 함께 불러옵니다.",
   "Files in the Drive of whoever is asking.":
     "질문하는 사람의 구글 드라이브 파일.",
   "Pages and databases of whoever is asking.":
@@ -356,7 +382,6 @@ export const ko: Record<string, string> = {
   Rabbit: "토끼",
   "Read real data": "실제 데이터를 읽음",
   "Refreshing…": "새로고침 중…",
-  Refused: "거부됨",
   "Remove {name}": "{name} 제외",
   "Reply: {text}": "답장: {text}",
   "Reset it": "초기화",

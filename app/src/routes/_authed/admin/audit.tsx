@@ -179,10 +179,24 @@ function Row({
   // decision, because no decision was reached: the policy stopped and waited for a person.
   const approval = event.eventType.startsWith("approval.");
   const stalled = event.eventType === "agent.stream_stalled";
-  // Allowed by policy but not carried out. A stalled turn belongs in the same family: the Bot was
-  // asked and the answer never arrived. Colour is how this table is read, and a row left in the
-  // muted foreground reads as "Allowed", which a turn nobody ever got an answer to was not.
-  const failed = event.eventType === "computer.action_failed" || stalled;
+  /*
+   * Allowed by policy but not carried out. A stalled turn belongs in the same family: the Bot was
+   * asked and the answer never arrived. Colour is how this table is read, and a row left in the
+   * muted foreground reads as "Allowed", which a turn nobody ever got an answer to was not.
+   *
+   * The four beyond the computer's own were each drawn as an ordinary allowed row: a tool call that
+   * died at the vendor, a component function that could not be read, a connector sync that failed,
+   * and a credential replacement the vault refused. Every one of them is the same complaint —
+   * permitted, attempted, did not happen — and the colour is what a person skimming this table
+   * actually reads.
+   */
+  const failed =
+    event.eventType === "computer.action_failed" ||
+    event.eventType === "mcp.call_failed" ||
+    event.eventType === "component.function_failed" ||
+    event.eventType === "connector.sync_failed" ||
+    event.eventType === "credential.rotation_refused" ||
+    stalled;
   const silence = stalled ? silenceOf(payload) : null;
 
   return (
@@ -256,7 +270,11 @@ function Row({
           {/* The map is data; it is translated where it is drawn, English as the key. */}
           {t(
             DECISIONS[event.eventType] ??
-              (refused ? "Blocked" : failed ? "Did not happen" : "Allowed"),
+              (refused
+                ? UNLABELLED_OUTCOMES[0]
+                : failed
+                  ? UNLABELLED_OUTCOMES[1]
+                  : UNLABELLED_OUTCOMES[2]),
           )}
         </span>
         {/* Refusal reasons mirror the conversation-facing reason. */}
@@ -272,13 +290,23 @@ function Row({
         typeof payload.reason === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {payload.reason}
-            <span className="italic">, reported by the Bot itself</span>
+            <span className="italic">{t(", reported by the Bot itself")}</span>
+          </div>
+        ) : null}
+        {/* Which of the three ways this access ended. See DISCONNECT_REASONS. */}
+        {event.eventType === "mcp.account_disconnected" &&
+        typeof payload.reason === "string" &&
+        DISCONNECT_REASONS[payload.reason] ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {t(DISCONNECT_REASONS[payload.reason] as string)}
           </div>
         ) : null}
         {event.eventType === "computer.action_repeated" &&
         typeof payload.count === "number" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {payload.count} times within a few minutes
+            {t("{count} times within a few minutes", {
+              count: payload.count,
+            })}
           </div>
         ) : null}
         {failed && typeof payload.failure === "string" ? (
@@ -313,12 +341,12 @@ function Row({
         {/* Who stood behind an action, when the boundary asked and somebody said yes. */}
         {typeof decision.approvedBy === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            allowed by {decision.approvedBy}
+            {t("Allowed by {person}", { person: decision.approvedBy })}
           </div>
         ) : null}
         {decision.mode === "dry-run" && decision.carriedOut ? (
           <div className="text-xs text-muted-foreground">
-            dry-run: recorded, not enforced
+            {t("Dry run: recorded, not enforced")}
           </div>
         ) : null}
       </td>
@@ -339,7 +367,21 @@ const NAMED_TARGETS = new Set([
   "credential",
 ]);
 
-const DECISIONS: Record<string, string> = {
+/**
+ * What a row says when no label names its event type: refused, failed, or neither.
+ *
+ * Named and exported rather than written inline, because these three are the WHOLE risk of the
+ * table below being incomplete — an unlabelled type lands on the third of them and reads as a
+ * permission that was granted. `audit-labels.test.ts` asserts that only the three event types this
+ * fallback was written about ever reach it.
+ */
+export const UNLABELLED_OUTCOMES = [
+  "Blocked",
+  "Did not happen",
+  "Allowed",
+] as const;
+
+export const DECISIONS: Record<string, string> = {
   "bot.declined": "The Bot declined",
   // Not a refusal, so not the refusal colour: nothing was blocked. The Bot was asked and never
   // answered, which is the same complaint as an action that was allowed and then did not happen.
@@ -380,9 +422,47 @@ const DECISIONS: Record<string, string> = {
   "mcp.call_succeeded": "Called on this Bot's behalf",
   "mcp.call_rejected": "Blocked",
   "mcp.call_failed": "The server did not answer",
+  // A tool whose definition moved after somebody consented to it, and the moment somebody looked at
+  // what it now says. The first is a pause and not a refusal: nothing was blocked, the tool simply
+  // stops running until the pair is closed.
+  "mcp.tool_definition_changed": "Paused until somebody reviews it",
+  "mcp.tool_definition_approved": "Approved as it now is",
+  // The connector flow's three acts. Written as things PEOPLE did, because that is what they are:
+  // the deployment introducing itself to a vendor, and somebody putting their own account behind it.
+  "mcp.oauth_client_registered": "This deployment registered itself",
+  "mcp.account_connected": "A person connected their own account",
+  "mcp.account_disconnected": "An account is no longer connected",
+
+  "connector.sync_succeeded": "Sync finished",
+  "connector.sync_failed": "Sync failed",
+  "knowledge.searched": "Knowledge searched",
+  "agent.invoked": "The Bot was asked",
+  "coworker.asked": "One Bot asked another",
+  "routine.ran": "A routine ran",
+  "model.usage": "Model usage recorded",
 
   "configuration.changed": "Configuration changed",
   "credential.created": "Credential saved",
+  "credential.rotated": "Credential replaced",
+  // The vault declining a replacement: aimed at a credential already revoked, missing, or belonging
+  // to another key. Nothing was blocked by a boundary, so it reads as a failure rather than a
+  // refusal — but it is emphatically not the "Allowed" every unlabelled row used to fall back to.
+  "credential.rotation_refused": "Could not be replaced",
+  "credential.revoked": "Credential retired",
+};
+
+/**
+ * Why an account stopped being connected, in the three ways it can happen.
+ *
+ * The server records which one and the reasons are genuinely different events — somebody changing
+ * their mind, an offboarding, or an administrator taking the whole connector away. An auditor
+ * asking "what happened to their access" is asking exactly this, so the row says it rather than
+ * leaving the distinction in a payload nobody reads.
+ */
+export const DISCONNECT_REASONS: Record<string, string> = {
+  person_disconnected: "They disconnected it themselves",
+  person_removed: "They were removed from this deployment",
+  mcp_server_removed: "The whole connector was removed",
 };
 
 function hostOf(url: string): string {

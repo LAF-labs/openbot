@@ -66,7 +66,17 @@ function PluginsPage() {
   const nameFor = useBotNames();
   const { connected } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [tab, setTab] = useState<"catalogue" | "yours" | "skills">("catalogue");
+  /*
+   * Arriving back from a consent opens the tab the connection is on.
+   *
+   * The catalogue is the right first tab for somebody who came here to add something, and the wrong
+   * one for somebody a vendor just sent back: the notice said "connected" while the screen showed
+   * the Add list, and the connector they had just set up was one unmarked click away. Read from the
+   * parameter as the INITIAL state rather than in an effect, so the first paint is already right.
+   */
+  const [tab, setTab] = useState<"catalogue" | "yours" | "skills">(
+    connected && connected !== "failed" ? "yours" : "catalogue",
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Replaced rather than pushed: the URL a vendor sent somebody back to is not a step anybody
@@ -156,6 +166,17 @@ function PluginsPage() {
     onError: (thrown: Error) => setError(thrown.message),
   });
 
+  /*
+   * Fired on the way back from a consent that worked. Not wrapped in `useCallback`: what makes it
+   * run once is the latch inside `ConnectOutcome`, which has already recorded the outcome by the
+   * time this identity could change — a memo here would be guarding something already guarded.
+   */
+  const handleConnected = (serverId: string) => {
+    mutate.mutate(() =>
+      post(`/servers/${encodeURIComponent(serverId)}/refresh`, {}),
+    );
+  };
+
   const bots = (agents ?? []).map((agent: { id: string }) => ({
     id: agent.id,
     name: nameFor(agent.id),
@@ -192,6 +213,12 @@ function PluginsPage() {
         <ConnectOutcome
           connected={connected}
           onClear={handleClearConnected}
+          /*
+           * Ask the vendor what it offers, now that somebody can. Until this runs the connector
+           * holds no tools, so there is nothing to grant to a Bot — the state a person lands in
+           * straight after connecting, with no sign that one more press was needed.
+           */
+          onConnected={handleConnected}
           titleFor={(serverId) =>
             data?.servers.find((server) => server.id === serverId)?.title ??
             serverId
@@ -567,7 +594,7 @@ function Yours({
               server.toolsRefreshedAt === null ? (
                 <div className="mt-1 text-muted-foreground text-xs">
                   {t(
-                    "Connect your account below, then refresh to load what this server offers.",
+                    "Connect your account below, and this server's tools load with it.",
                   )}
                 </div>
               ) : server.lastError ? (

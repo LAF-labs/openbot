@@ -168,6 +168,15 @@ export function pluginsPageQueryOptions() {
 export function connectionsQueryOptions() {
   return queryOptions({
     queryKey: pluginKeys.connections(),
+    /*
+     * Re-asked when the window comes back, against this app's global default of not doing that.
+     *
+     * A consent finishes somewhere else — another tab, or in the desktop shell the person's own
+     * browser — and the only signal this window gets that it is over is the person returning to it.
+     * Without this the strip keeps offering Connect to somebody who has just connected, which reads
+     * as the press having done nothing.
+     */
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<PluginConnections> => {
       const response = await fetch("/api/plugins/connections", {
         credentials: "include",

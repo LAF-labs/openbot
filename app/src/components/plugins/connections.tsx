@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { activeLocale, t } from "@/lib/i18n";
+import { openExternal } from "@/lib/notifications/shell";
 import {
   beginConnect,
   ConnectRefusedError,
@@ -180,14 +181,39 @@ export const ConnectionStrip = ({
    * reads as present in the list, and only the refusal knows it cannot be spent.
    */
   const [clientRefused, setClientRefused] = useState(false);
+  /*
+   * The consent screen was handed to the person's own browser, so this window is not going to
+   * navigate anywhere and the strip has to say what is happening. See the shell branch below.
+   */
+  const [waitingInBrowser, setWaitingInBrowser] = useState(false);
 
   const connection =
     data?.connections.find((row) => row.serverId === server.id) ?? null;
 
   const connect = useMutation({
     mutationFn: () => beginConnect(server.id, returnTo),
-    // A whole-page navigation, not a router one: the next screen belongs to the vendor.
-    onSuccess: (authorizationUrl) => window.location.assign(authorizationUrl),
+    onSuccess: async (authorizationUrl) => {
+      /*
+       * IN THE DESKTOP SHELL, THE CONSENT SCREEN GOES TO THE REAL BROWSER.
+       *
+       * The installed app is the product here, and a webview is the one place an OAuth consent
+       * cannot be relied on to work: Google refuses embedded user agents outright
+       * (`disallowed_useragent`), and a vendor that does allow one leaves the person stranded
+       * inside a window with no address bar, no password manager and no existing session.
+       *
+       * Safe precisely because of how the callback is built: identity comes from the SEALED STATE,
+       * never from the session on the request, so finishing the consent in a different browser
+       * still attaches the grant to the person who started it — and the state is the only thing
+       * that could. In a browser tab `openExternal` answers false and this is the same
+       * whole-page navigation it always was.
+       */
+      if (await openExternal(authorizationUrl)) {
+        setWaitingInBrowser(true);
+        return;
+      }
+      // A whole-page navigation, not a router one: the next screen belongs to the vendor.
+      window.location.assign(authorizationUrl);
+    },
     onError: (thrown: Error) => {
       setError(refusalText(thrown));
       if (thrown instanceof ConnectRefusedError && thrown.status === 409) {
@@ -238,6 +264,30 @@ export const ConnectionStrip = ({
               variant="ghost"
             >
               {t("Disconnect")}
+            </Button>
+          </>
+        ) : waitingInBrowser ? (
+          /*
+           * The consent is happening in another window, so this one has nothing to report until the
+           * person comes back. The query re-asks on focus, which covers the ordinary path; the
+           * button is for a browser that never took focus away from this window.
+           */
+          <>
+            <span className="text-muted-foreground text-xs">
+              {t("Finish in the browser that just opened, then come back.")}
+            </span>
+            <Button
+              onClick={() => {
+                setWaitingInBrowser(false);
+                void queryClient.invalidateQueries({
+                  queryKey: pluginKeys.connections(),
+                });
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {t("Check again")}
             </Button>
           </>
         ) : (
@@ -292,21 +342,35 @@ export const ConnectOutcome = ({
   connected,
   onClear,
   titleFor,
+  onConnected,
 }: {
   connected: string | undefined;
   onClear: () => void;
   /** The server's title, so the notice names what was connected rather than its slug. */
   titleFor: (serverId: string) => string;
+  /**
+   * What to do once, on the way back from a consent that worked.
+   *
+   * The admin page asks the server for its tool list here, and that is not a nicety: a `user-oauth`
+   * server has no tools until somebody who has connected asks it for them, so the page a person
+   * lands on after connecting said "Connected" above a connector offering nothing, with a button
+   * they had no reason to know they must press. Absent on the personal page, where refreshing is an
+   * administrator's endpoint and there is nothing this person could do with it.
+   */
+  onConnected?: (serverId: string) => void;
 }) => {
   const [outcome, setOutcome] = useState<string | null>(null);
 
   useEffect(() => {
     // `outcome !== null` and not just the parameter: clearing takes a navigation, and without this
-    // every render in between would fire another one.
+    // every render in between would fire another one. It is also what makes `onConnected` fire once
+    // whatever identity the parent passes — in development StrictMode remounts this component, so
+    // the latch is rebuilt and the effect genuinely does run twice there and once in a build.
     if (!connected || outcome !== null) return;
     setOutcome(connected);
     onClear();
-  }, [connected, outcome, onClear]);
+    if (connected !== "failed") onConnected?.(connected);
+  }, [connected, outcome, onClear, onConnected]);
 
   if (outcome === null) return null;
   return outcome === "failed" ? (
