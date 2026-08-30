@@ -136,6 +136,17 @@ function Welcome() {
               )}
             </p>
             {/*
+             * The invitation before the caution: xAI's guides all open with
+             * "connect your daily tools first", and it is the one setup act
+             * that turns an empty Bot into a useful one. Ours is a sign-in,
+             * not an integration — said as a first move, not a chore.
+             */}
+            <p className="text-muted-foreground text-sm">
+              {t(
+                "A good first move: sign the Bot's browser into the sites you check every day. From then on, that screen's work is work you can hand over.",
+              )}
+            </p>
+            {/*
              * Said plainly, here, once. The Bots share a desk: a site one of them signed into is
              * signed in for all of them. That is what makes the desk useful and it is also the
              * thing a person would be upset to discover later.
@@ -176,6 +187,13 @@ function Welcome() {
               <p className="text-muted-foreground text-sm">
                 {t(
                   "It starts with nothing set and can become anything. You can make up to five.",
+                )}
+              </p>
+              {/* The other teaching door, named once at the start: not every
+                  job survives being written down, and showing is allowed. */}
+              <p className="text-muted-foreground text-sm">
+                {t(
+                  "Anything hard to explain in words, you can teach by doing it once in front of the Bot.",
                 )}
               </p>
             </div>

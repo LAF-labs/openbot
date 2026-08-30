@@ -69,6 +69,10 @@ export const ko: Record<string, string> = {
     "봇은 진짜 브라우저에서 일합니다 — 페이지를 열고, 읽고, 입력합니다.",
   "It is one computer for all of them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.":
     "모든 봇이 한 대를 함께 쓰기 때문에, 한 봇이 로그인한 사이트는 다른 봇들도 로그인된 상태가 됩니다. 팀 전체에 줘도 괜찮은 접근 권한만 주세요.",
+  "A good first move: sign the Bot's browser into the sites you check every day. From then on, that screen's work is work you can hand over.":
+    "좋은 첫걸음은 매일 확인하는 사이트에 봇의 브라우저로 한 번 로그인해 두는 것 — 그때부터 그 화면의 일을 맡길 수 있습니다.",
+  "Anything hard to explain in words, you can teach by doing it once in front of the Bot.":
+    "말로 설명하기 어려운 일은, 봇 앞에서 한 번 직접 해 보이면 가르칠 수 있습니다.",
   "Make your first Bot": "첫 봇을 만들어 보세요",
   "It starts with nothing set and can become anything. You can make up to five.":
     "아무것도 정해지지 않은 상태로 시작하고, 무엇이든 될 수 있습니다. 최대 다섯 개까지 만들 수 있어요.",
