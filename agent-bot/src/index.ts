@@ -144,6 +144,24 @@ function reasoningEffortOf(
   return undefined;
 }
 
+/**
+ * The closed set a failed run may report, and how a provider failure lands in it.
+ *
+ * `laf:` because the surface translates exactly these and shows anything else verbatim — a prefix
+ * an English sentence can never accidentally carry is what keeps the two apart. The stall guard's
+ * own sentences (server-side) deliberately stay sentences; this only covers what THIS service's
+ * provider throws.
+ */
+export function runErrorCodeOf(error: unknown): string {
+  const status =
+    typeof error === "object" && error !== null && "status" in error
+      ? (error as { status?: unknown }).status
+      : undefined;
+  if (status === 429) return "laf:model_rate_limited";
+  if (typeof status === "number") return "laf:model_unavailable";
+  return "laf:model_failed";
+}
+
 export async function runAgent(
   input: RunAgentInput,
   provider: CompletionProvider = liveProvider,
@@ -347,14 +365,23 @@ export async function runAgent(
           runId: input.runId,
         } as BaseEvent);
       } catch (error) {
-        // Reported as a run error rather than a dropped connection, so the transcript can say what
-        // went wrong. A stream that simply ends leaves the surface waiting forever with no reason.
+        /*
+         * Reported as a run error rather than a dropped connection, so the transcript can say what
+         * went wrong — but as a FACT CODE, never the provider's sentence. The provider's error body
+         * names its vendor, its model catalogue and its URLs ("This model was ZAI's GLM-5.3
+         * Flash… openrouter.ai/…", measured on the wire the day the stealth alpha died), and this
+         * stream ends on a customer's screen. The product's model is served under a name only we
+         * choose (tenant model.yaml), and one leaked refusal undoes that.
+         *
+         * Three codes because there are three different next steps, and collapsing them is the trap
+         * model-call.ts documents: a rate limit wants WAITING, and telling somebody "try again" in
+         * front of an instant refusal is how a working feature looks broken. The full error still
+         * goes to this service's own log, where an operator reads it and no customer does.
+         */
+        console.error("[agent-bot] run failed:", error);
         send({
           type: "RUN_ERROR",
-          message:
-            error instanceof Error
-              ? error.message
-              : "The Bot could not answer.",
+          message: runErrorCodeOf(error),
         } as BaseEvent);
       } finally {
         clearInterval(heartbeat);

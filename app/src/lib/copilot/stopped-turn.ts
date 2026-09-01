@@ -1,5 +1,6 @@
 import { useAgent } from "@copilotkit/react-core/v2";
 import { useEffect, useState } from "react";
+import { t } from "@/lib/i18n";
 
 /**
  * Why the last turn ended without an answer, for a surface that has to say so itself.
@@ -22,6 +23,20 @@ import { useEffect, useState } from "react";
  * why" is honest about that; inventing a cause would not be, and this is the one moment a person has
  * no other way to find out what went wrong.
  */
+/**
+ * The three ways the model service itself can fail, translated here because the code is a fact and
+ * this surface owns the words (agent-bot emits the code, logs the vendor's sentence for operators,
+ * and a customer never reads either vendor prose or English). Three, not one: a rate limit wants
+ * waiting and says so, where "try again" in front of a refusal makes a working product look broken.
+ */
+export const MODEL_FAILURES: Record<string, string> = {
+  "laf:model_rate_limited":
+    "Answers are coming faster than the model can take right now. Give it a moment and ask again.",
+  "laf:model_unavailable":
+    "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.",
+  "laf:model_failed": "The Bot could not reach its model. Ask again.",
+};
+
 export function stoppedReason(reported: unknown): string {
   const said =
     reported instanceof Error
@@ -29,7 +44,9 @@ export function stoppedReason(reported: unknown): string {
       : typeof reported === "string"
         ? reported
         : "";
-  return said.trim() || "The Bot stopped without saying why.";
+  const known = MODEL_FAILURES[said.trim()];
+  if (known) return t(known);
+  return said.trim() || t("The Bot stopped without saying why.");
 }
 
 /**

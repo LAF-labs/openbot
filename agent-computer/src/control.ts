@@ -57,8 +57,15 @@ export class ControlRequestError extends Error {
 }
 
 export const NO_SECRET_PENDING = "Nothing is waiting for a secret.";
+/**
+ * Said to a MODEL, so it forbids the loop by name. "Wait before acting" alone
+ * left retrying the same click a legal reading — and the eval pack measured a
+ * reasoning model taking it, one refused click in six, the day glm-5.3-flash
+ * was judged. The gateway refuses the retry anyway; this sentence exists so
+ * the Bot spends its turn SAYING it is waiting instead of proving it cannot act.
+ */
 export const HUMAN_HAS_CONTROL =
-  "A person has control of the computer right now. Wait for them to hand it back before acting.";
+  "A person has control of the computer right now. Do not retry this action — the same refusal will answer. Say you are waiting, and act again only after you are told control is back.";
 export const TAKE_CONTROL_FIRST =
   "Take control before driving the computer yourself.";
 

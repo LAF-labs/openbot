@@ -200,10 +200,19 @@ export function SelfTools() {
      * which is exactly the phrase a model reaches for when asked to remember something. The two
      * tools competed for one sentence and the profile won, so nothing was ever remembered and the
      * job description grew a fact that is not a job.
+     *
+     * AND THE SAME SEAM LEAKS THE OTHER WAY UNDER REASONING. Measured in the eval pack the day
+     * glm-5.3-flash was judged (2026-09-01): "영수증 정리를 맡아줘" — a duty, this tool's clearest
+     * case — went to `remember` three times out of three WITH effort on, and zero out of three
+     * without. A model that deliberates finds `remember`'s "what they told you to always do" and
+     * builds a case on it; a duty IS something you always do, so the phrase claims it unless the
+     * boundary is drawn on duties by name, in both descriptions.
      */
     description:
       "Change what you ARE: your own profile, or the routines you run on a schedule. " +
       "Use it when the person tells you what you are for or asks for something regular. " +
+      "A duty handed to you — 'take charge of X', 'from now on you handle X' — is what you are " +
+      "FOR, so it belongs here even when it sounds like something to remember. " +
       "NOT for facts you learn about them — their hours, their suppliers, their preferences go to " +
       "`remember`, which is what you KNOW rather than what you are. Send only what changes. " +
       "This edits you and no one else.",
@@ -211,7 +220,7 @@ export function SelfTools() {
       target: z
         .enum(["profile", "routine"])
         .describe(
-          "'profile' for who you are and how hard you think; 'routine' for work you repeat on a schedule",
+          "'profile' for who you are — your name, your job, how hard you think. 'routine' ONLY when they named an actual schedule (a time, a day, an interval); a duty with no time attached is your profile, not a routine",
         ),
       action: z
         .enum(["set", "create", "delete", "pause", "resume"])
@@ -411,9 +420,10 @@ export function SelfTools() {
     description:
       "Record one durable fact about the person you work for, so you still know it in later " +
       "conversations. This is the tool for anything they ask you to remember. Use it for things " +
-      "that stay true — how their business runs, its hours, who they deal with, what they have " +
-      "told you to always or never do. One fact per call, in your own words. NOT for changing your " +
-      "own name, job or routines; that is `update_state`. " +
+      "that stay true — how their business runs, its hours, who they deal with, their standing " +
+      "preferences about how they want things done. One fact per call, in your own words. NOT for " +
+      "a duty they hand YOU — 'take charge of X' is a change to your own job, and your name, job " +
+      "and routines are `update_state`. " +
       "Do not record passwords, card numbers, or anything they typed into a login.",
     parameters: z.object({
       fact: z

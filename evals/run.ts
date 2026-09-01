@@ -82,7 +82,16 @@ async function runOnce(scenario: (typeof SCENARIOS)[number], attempt: number) {
       tools: scenario.tools,
       context: [],
       state: {},
-      forwardedProps: {},
+      /*
+       * THE PRODUCT'S SHAPE, NOT AN EMPTY ONE. Every Bot a person creates carries an effort and
+       * its default is `balanced` (coworker schema), which agent-bot turns into a reasoning
+       * setting on the wire. An eval that sent nothing was certifying a run no customer has:
+       * caught the day glm-5.3-flash was judged, when the Korean-arithmetic scenarios failed on
+       * the empty shape — a verdict about a run that does not exist in the product. Until the eval
+       * sends what production sends, "the model cannot do the work" and "the eval was not running
+       * the product" are indistinguishable. EVAL_EFFORT overrides for comparisons.
+       */
+      forwardedProps: { effort: process.env.EVAL_EFFORT ?? "balanced" },
     } as never);
     const body = await Promise.race([
       response.text(),

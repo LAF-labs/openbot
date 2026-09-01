@@ -243,3 +243,54 @@ describe("what a turn cost", () => {
     expect(kinds.at(-1)).toBe("RUN_FINISHED");
   });
 });
+
+describe("a provider failure on a customer's screen", () => {
+  /*
+   * The RUN_ERROR message is a fact code from a closed set, never the provider's sentence. The day
+   * the stealth alpha died, the provider's 404 body named its vendor, the real model and a URL —
+   * and that stream ends on a customer's screen. The full error still goes to this service's log;
+   * what leaves the building is only which of the three next steps applies.
+   */
+  async function runErrorFor(thrown: unknown): Promise<string> {
+    process.env.OPENAI_API_KEY ??= "test-key";
+    const { runAgent } = await import("../src/index");
+    const response = await runAgent(
+      {
+        threadId: "t-err",
+        runId: "r-err",
+        messages: [{ id: "m1", role: "user", content: "인사해줘" }],
+        tools: [],
+        context: [],
+        forwardedProps: {},
+        state: {},
+      } as never,
+      async () => {
+        throw thrown;
+      },
+    );
+    const body = await response.text();
+    const line = body.split("\n").find((entry) => entry.includes("RUN_ERROR"));
+    return JSON.parse((line ?? "").replace(/^data: /, "")).message;
+  }
+
+  test("a rate limit says to wait, not that something broke", async () => {
+    const limited = Object.assign(new Error("429 slow down"), { status: 429 });
+    expect(await runErrorFor(limited)).toBe("laf:model_rate_limited");
+  });
+
+  test("any other refusal is the deployment's problem, in one word", async () => {
+    const dead = Object.assign(
+      new Error(
+        "404 Thank you for participating in the Stealth Ox Alpha testing period.",
+      ),
+      { status: 404 },
+    );
+    expect(await runErrorFor(dead)).toBe("laf:model_unavailable");
+  });
+
+  test("a network failure carries no status and no vendor words", async () => {
+    const message = await runErrorFor(new Error("fetch failed: ECONNRESET"));
+    expect(message).toBe("laf:model_failed");
+    expect(message).not.toContain("ECONNRESET");
+  });
+});

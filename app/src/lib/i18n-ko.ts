@@ -49,6 +49,8 @@ export const ko: Record<string, string> = {
   Allowed: "허용됨",
   "Allowed by {person}": "{person}이(가) 허용함",
   "An account is no longer connected": "계정 연결이 끊김",
+  "Answers are coming faster than the model can take right now. Give it a moment and ask again.":
+    "지금은 답변 요청이 몰려 모델이 잠시 벅찹니다. 조금 기다렸다가 다시 물어봐 주세요.",
   "Approved as it now is": "지금 상태 그대로 승인됨",
   Blocked: "차단됨",
   "Could not be replaced": "교체하지 못함",
@@ -62,7 +64,12 @@ export const ko: Record<string, string> = {
   Refused: "거부됨",
   "Sync failed": "동기화 실패",
   "Sync finished": "동기화 완료",
+  "The Bot could not reach its model. Ask again.":
+    "봇이 모델에 닿지 못했습니다. 다시 물어봐 주세요.",
+  "The Bot stopped without saying why.": "봇이 이유를 말하지 않고 멈췄습니다.",
   "The Bot was asked": "봇이 요청을 받음",
+  "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.":
+    "봇의 모델이 요청을 받지 않았습니다. 계속 반복되면 배포 점검이 필요합니다.",
   "The whole connector was removed": "커넥터 자체가 제거됨",
   "They disconnected it themselves": "본인이 직접 연결을 해제함",
   "They were removed from this deployment": "이 배포에서 제외된 사람입니다",

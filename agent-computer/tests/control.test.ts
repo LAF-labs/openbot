@@ -90,7 +90,9 @@ describe("the crappy paths: two drivers, one page", () => {
     control.take();
     expect(() => control.assertBotMayAct()).toThrow(ControlError);
     // Refused with a reason the Bot can act on, wait, rather than a bare failure.
-    expect(() => control.assertBotMayAct()).toThrow(/hand it back/);
+    // The sentence now forbids the retry loop by name (see HUMAN_HAS_CONTROL);
+    // what this pins is that the refusal still tells the Bot what to do next.
+    expect(() => control.assertBotMayAct()).toThrow(/Do not retry/);
   });
 
   test("the refusal lifts the moment the person hands back", () => {
