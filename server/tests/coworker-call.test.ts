@@ -38,8 +38,18 @@ function fakeAgent(reply: string | Error, delayMs = 0) {
   };
 }
 
+type Exchange = {
+  actorId: string;
+  callerId: string;
+  targetId: string;
+  question: string;
+  answer: string;
+  at: Date;
+};
+
 function harness(agents: Record<string, AbstractAgent>, timeoutMs?: number) {
   const rows: AuditEventInput[] = [];
+  const recorded: Exchange[] = [];
   const call = createCoworkerCall({
     resolveAgents: async () => agents,
     auditStore: {
@@ -47,9 +57,12 @@ function harness(agents: Record<string, AbstractAgent>, timeoutMs?: number) {
         rows.push(event);
       },
     },
+    recordExchange: async (exchange) => {
+      recorded.push(exchange);
+    },
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
-  return { call, rows };
+  return { call, rows, recorded };
 }
 
 describe("one Bot asking another", () => {
@@ -69,9 +82,89 @@ describe("one Bot asking another", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.eventType).toBe("coworker.asked");
     expect(rows[0]?.payload).toMatchObject({
+      // Both: the Bot the request CLAIMED was asking, and the person who was actually signed in.
+      // `from` is not authorisation (see the route), so a trail carrying only the claim cannot
+      // answer "who set this off" on a deployment with more than one person in it.
+      actor: ACTOR.id,
       caller: "general-assistant",
       ok: true,
     });
+  });
+
+  test("the answering Bot gets its own record of what it was asked", async () => {
+    /*
+     * The gap this closes: a handoff lived in the caller's window and one audit row, and the Bot
+     * that ANSWERED kept nothing — ask it tomorrow what it told its colleague and it had never
+     * heard of it. Borrowed from Hermes Bot Mode, whose A2A replies land in each agent's own chat
+     * "so conversations between agents are durable and inspectable, not fire-and-forget".
+     */
+    const knowledge = fakeAgent("The Q3 numbers are in the wiki.");
+    const { call, recorded } = harness({ knowledge: knowledge.agent });
+
+    await call.ask(
+      ACTOR,
+      "general-assistant",
+      "knowledge",
+      "Where are the Q3 numbers?",
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      actorId: ACTOR.id,
+      callerId: "general-assistant",
+      targetId: "knowledge",
+      question: "Where are the Q3 numbers?",
+      answer: "The Q3 numbers are in the wiki.",
+    });
+  });
+
+  test("a coworker that said nothing leaves no record to read", async () => {
+    // An empty answer is not a conversation, and a transcript entry holding a question and a blank
+    // would read as the Bot having ignored somebody.
+    const silent = fakeAgent("");
+    const { call, recorded } = harness({ knowledge: silent.agent });
+
+    await call.ask(ACTOR, "general-assistant", "knowledge", "Anything?");
+
+    expect(recorded).toEqual([]);
+  });
+
+  test("recording the exchange never costs the answer", async () => {
+    // The same stance the audit row and the ledger take: losing the record must not lose the work.
+    const knowledge = fakeAgent("Filed under Q3.");
+    const call = createCoworkerCall({
+      resolveAgents: async () => ({ knowledge: knowledge.agent }),
+      recordExchange: async () => {
+        throw new Error("the thread write failed");
+      },
+    });
+
+    await expect(
+      call.ask(ACTOR, "general-assistant", "knowledge", "Where?"),
+    ).resolves.toBe("Filed under Q3.");
+  });
+
+  test("refuses a question too long to be a question", async () => {
+    const knowledge = fakeAgent("never reached");
+    const { call } = harness({ knowledge: knowledge.agent });
+
+    await expect(
+      call.ask(ACTOR, "a", "knowledge", "x".repeat(8_001)),
+    ).rejects.toThrow(/8000/);
+    // Refused before the coworker was woken: nothing is spent on a question that cannot be sent.
+    expect(knowledge.question()).toBeUndefined();
+  });
+
+  test("cuts an answer that would spend the caller's whole window, and says so", async () => {
+    const flood = fakeAgent("y".repeat(20_050));
+    const { call } = harness({ knowledge: flood.agent });
+
+    const answer = await call.ask(ACTOR, "a", "knowledge", "Everything?");
+
+    // Truncated rather than refused: the work is done, and throwing it away would be worse than
+    // handing back most of it with a mark that says what happened.
+    expect(answer.length).toBeLessThan(20_200);
+    expect(answer).toContain("[truncated: the coworker answered with 20050");
   });
 
   test("refuses a Bot asking itself", async () => {

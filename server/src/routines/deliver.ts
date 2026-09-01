@@ -40,25 +40,48 @@ export type RoutineDelivery = {
   at: Date;
 };
 
-export function createRoutineDelivery(
+/** One thing a Bot said, appended to the one conversation it has with this person. */
+export type SoloAppend = {
+  agentId: string;
+  userId: string;
+  /** The bold line above the body: a routine's name, or who asked. Never a sentence — see below. */
+  heading: string;
+  body: string;
+  at: Date;
+};
+
+/**
+ * Write a message into a Bot's own conversation, and say nothing else about it.
+ *
+ * The half that two callers share: a routine delivering what it found, and a coworker recording
+ * what it was asked. What they do NOT share is the roster row — a routine is news and rings the
+ * bell, a handoff is a receipt for something the person watched happen a second ago in the other
+ * Bot's window. Ringing for that would send them to read what they had just read.
+ *
+ * THE HEADING CARRIES NAMES, NEVER PROSE. Everything written here lands in a transcript, and the
+ * server does not own the words on this surface (CLAUDE.md). A routine's name and a Bot's name are
+ * facts the person authored; a sentence explaining them would be the server writing Korean.
+ *
+ * Returns the thread it wrote to, or null when the Bot has no conversation with this person yet —
+ * creating one as a side effect of a schedule or a handoff is a surprise, not a feature.
+ */
+export async function appendToSoloConversation(
   database: Database,
-  /**
-   * Told what the thread now holds, so the runner's rehydrated copy stays in step with Postgres.
-   * Absent in tests; the row is still written and read correctly on the next boot.
-   */
+  append: SoloAppend,
   onAppended?: (
     threadId: string,
     agentId: string,
     messages: StampedMessage[],
   ) => void,
-) {
-  return async (delivery: RoutineDelivery): Promise<void> => {
+): Promise<{ channelId: string; threadId: string } | null> {
+  const delivery = append;
+  {
     const target = await soloChannelFor(
       database,
       delivery.userId,
       delivery.agentId,
     );
-    if (!target) return;
+    if (!target) return null;
 
     const [snapshot] = await database
       .select({ messages: lafThreadSnapshots.messages })
@@ -80,7 +103,7 @@ export function createRoutineDelivery(
     const message: StampedMessage = {
       id: randomUUID(),
       role: "assistant",
-      content: `**${delivery.routineName}**\n\n${delivery.answer}`,
+      content: `**${delivery.heading}**\n\n${delivery.body}`,
       lafAt: at,
       // The Bot whose routine it was. This is the second writer into the snapshot, and a message
       // it left unattributed would be a hole in a record the transcript reads as complete.
@@ -121,6 +144,37 @@ export function createRoutineDelivery(
         ? (written.messages as StampedMessage[])
         : [...existing, message],
     );
+
+    return target;
+  }
+}
+
+export function createRoutineDelivery(
+  database: Database,
+  /**
+   * Told what the thread now holds, so the runner's rehydrated copy stays in step with Postgres.
+   * Absent in tests; the row is still written and read correctly on the next boot.
+   */
+  onAppended?: (
+    threadId: string,
+    agentId: string,
+    messages: StampedMessage[],
+  ) => void,
+) {
+  return async (delivery: RoutineDelivery): Promise<void> => {
+    const target = await appendToSoloConversation(
+      database,
+      {
+        agentId: delivery.agentId,
+        userId: delivery.userId,
+        // The routine's name, which is the "why is this here" the instruction would have carried.
+        heading: delivery.routineName,
+        body: delivery.answer,
+        at: delivery.at,
+      },
+      onAppended,
+    );
+    if (!target) return;
 
     /*
      * And the roster row, which is the half a person actually notices. `lastMessageAgentId` being

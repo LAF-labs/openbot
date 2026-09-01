@@ -57,7 +57,10 @@ import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
 import { createApprovalWaiter } from "./rooms/wait-for-approval";
-import { createRoutineDelivery } from "./routines/deliver";
+import {
+  appendToSoloConversation,
+  createRoutineDelivery,
+} from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
 import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner } from "./runner/laf-runner";
@@ -547,6 +550,39 @@ const coworkerCall = createCoworkerCall({
     ),
   auditStore: bootAuditStore,
   ledger: runLedger,
+  /**
+   * The answering Bot's own copy of what it was asked, written where that person reads it.
+   *
+   * The names are looked up rather than passed through, because the heading is what a person sees
+   * and an id is not a name. Both Bots are in this person's roster by construction — the call
+   * resolved the target from it — and `get` is scoped to the actor, so a Bot they cannot see is a
+   * Bot this cannot name.
+   */
+  recordExchange: async (exchange) => {
+    const actor = { id: exchange.actorId, role: "user" as const };
+    const [caller, target] = await Promise.all([
+      agentProfileStore.get(actor, exchange.callerId).catch(() => null),
+      agentProfileStore.get(actor, exchange.targetId).catch(() => null),
+    ]);
+    await appendToSoloConversation(
+      database,
+      {
+        agentId: exchange.targetId,
+        userId: exchange.actorId,
+        // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
+        heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
+        // The question quoted line by line, so a multi-line ask stays one block rather than
+        // becoming a quote and then loose prose.
+        body: `${exchange.question
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n")}\n\n${exchange.answer}`,
+        at: exchange.at,
+      },
+      (threadId, agentId, messages) =>
+        lafRunner.adoptSnapshot(threadId, agentId, messages as never),
+    );
+  },
 });
 
 /**

@@ -40,6 +40,21 @@ export class CoworkerCallError extends Error {
 export const COWORKER_ANSWER_TIMEOUT_MS = 90_000;
 
 /**
+ * The most a Bot may say to a coworker in one question, and the most it gets back.
+ *
+ * Every other thing that crosses into a model's context on this deployment is bounded — a webhook
+ * payload rides in cut, an MCP result is truncated visibly at 20,000 characters, a recorded failure
+ * at 400 — and this path was the one that was not. The question is written by a model, which is
+ * exactly the writer that will one day paste a whole page into it, and the answer is a second Bot's
+ * unbounded prose landing in the caller's window. Two different treatments on purpose: a question
+ * that is too long is REFUSED, because the caller can ask again more briefly and nothing has been
+ * spent yet; an answer that is too long is TRUNCATED, because the work is already done and throwing
+ * it away would be worse than handing back most of it with a mark saying so.
+ */
+export const COWORKER_QUESTION_MAX_CHARS = 8_000;
+export const COWORKER_ANSWER_MAX_CHARS = 20_000;
+
+/**
  * One server-side run: the message in, the assistant's text out, or a timeout.
  *
  * A Bot running once from a fresh instance with no tools in the room. This is still what a
@@ -91,13 +106,44 @@ export type CoworkerCallOptions = {
    * handoff can take a minute and a half, and for that minute and a half the roster was silent.
    */
   ledger?: RunLedger;
+  /**
+   * Where the exchange is written down, in the answering Bot's own conversation.
+   *
+   * WHAT THIS FIXES. A handoff used to exist in exactly two places: the caller's window, where the
+   * person watched it, and one audit row saying it happened. The Bot that ANSWERED kept nothing —
+   * ask it tomorrow what it told its colleague and it has never heard of it, because its answer
+   * went into somebody else's context and nowhere else. A colleague who cannot remember what they
+   * were asked is not a colleague.
+   *
+   * Optional and always `.catch`ed by the caller below, exactly like the audit row and the ledger:
+   * losing the record must not lose the answer.
+   */
+  recordExchange?: (exchange: {
+    /** The person who set this off. Whose conversation with the answering Bot gets the record. */
+    actorId: string;
+    callerId: string;
+    targetId: string;
+    question: string;
+    answer: string;
+    at: Date;
+  }) => Promise<void>;
   timeoutMs?: number;
 };
 
 export function createCoworkerCall(options: CoworkerCallOptions) {
   const timeoutMs = options.timeoutMs ?? COWORKER_ANSWER_TIMEOUT_MS;
 
+  /**
+   * The trail row for one exchange.
+   *
+   * `actor` is the authenticated person and `caller` is the Bot the REQUEST said was asking — the
+   * route's own comment is explicit that the second one is not authorisation. Recording only the
+   * claim left the trail unable to answer "who set this off" on a deployment with more than one
+   * person in it, which is the question a trail exists for. Both, so a reader can see the claim
+   * and who made it.
+   */
   async function record(
+    actor: string,
     caller: string,
     target: string,
     payload: Record<string, unknown>,
@@ -108,7 +154,7 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         eventType: "coworker.asked",
         targetType: "agent",
         targetId: target,
-        payload: { caller, ...payload },
+        payload: { actor, caller, ...payload },
       });
     } catch {
       // The audit store being down is its own incident; this exchange is not it.
@@ -126,6 +172,14 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
       const question = message.trim();
       if (!question) {
         throw new CoworkerCallError("Ask the coworker something.", 400);
+      }
+      if (question.length > COWORKER_QUESTION_MAX_CHARS) {
+        // Says what to do instead. A refusal a model cannot act on is a refusal it will retry
+        // unchanged, which spends the turn twice and ends in the same place.
+        throw new CoworkerCallError(
+          `That question is ${question.length} characters, and a coworker takes at most ${COWORKER_QUESTION_MAX_CHARS}. Ask for what you actually need, and point at the rest rather than pasting it.`,
+          400,
+        );
       }
       if (callerId === targetId) {
         throw new CoworkerCallError(
@@ -159,7 +213,7 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         if (runId) await options.ledger?.finish(runId, reason).catch(() => {});
-        await record(callerId, targetId, { ok: false, reason });
+        await record(actor.id, callerId, targetId, { ok: false, reason });
         if (error instanceof CoworkerCallError) throw error;
         // An UnavailableAgent's refusal and a dead endpoint both land here: the coworker exists in
         // the roster and could not answer, which is the upstream's failure, not the request's.
@@ -167,13 +221,37 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
       }
 
       if (runId) await options.ledger?.finish(runId).catch(() => {});
-      await record(callerId, targetId, {
+      if (answer.length > 0) {
+        await options
+          .recordExchange?.({
+            actorId: actor.id,
+            callerId,
+            targetId,
+            question,
+            answer,
+            at: new Date(),
+          })
+          .catch(() => {
+            // The record is the point of this call and still not worth the answer. A person who
+            // asked and got an answer must not be told it failed because a second write did.
+          });
+      }
+      await record(actor.id, callerId, targetId, {
         ok: true,
         answered: answer.length > 0,
       });
-      return answer.length > 0
-        ? answer
-        : "The coworker finished without saying anything.";
+      if (answer.length === 0) {
+        return "The coworker finished without saying anything.";
+      }
+      /*
+       * Cut where it is read, and visibly. The same shape an MCP result takes for the same reason:
+       * a second Bot's answer is somebody else's prose deciding how much of this run's window to
+       * spend, and a model handed a silent truncation reports the missing half as absent rather
+       * than as cut off.
+       */
+      return answer.length > COWORKER_ANSWER_MAX_CHARS
+        ? `${answer.slice(0, COWORKER_ANSWER_MAX_CHARS)}\n\n[truncated: the coworker answered with ${answer.length} characters]`
+        : answer;
     },
   };
 }

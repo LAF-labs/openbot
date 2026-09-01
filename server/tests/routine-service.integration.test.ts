@@ -197,6 +197,83 @@ describe("a routine on the clock", () => {
     expect(await service.tick()).toBe(0);
   });
 
+  test("the second run is told what the first one reported", async () => {
+    /*
+     * A routine that cannot remember repeating itself is the failure the whole feature walks into:
+     * the 8am briefing reports Tuesday's three orders again on Wednesday and the person stops
+     * reading. The answers were already in `laf_routine_runs` — every run writes one — and nothing
+     * read them back. Borrowed from Hermes cron `continuity=true`.
+     */
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { agents, asked } = fakeAgents("Two reviews came in overnight.");
+    const { service } = serviceWith(agents, () => clock);
+
+    const routine = await service.create(ACTOR, {
+      agentId: "morning-bot",
+      name: "아침 리뷰 요약",
+      instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+
+    clock = new Date("2026-08-20T07:31:00Z");
+    expect(await service.tick()).toBe(1);
+    // Nothing to carry on the first run — there is no previous report to not repeat.
+    expect(asked[0]).toBe("스토어 리뷰 확인하고 새 것만 요약해줘");
+
+    clock = new Date("2026-08-20T08:02:00Z");
+    expect(await service.tick()).toBe(1);
+
+    // The instruction is still the person's, with the last report appended as context after it.
+    expect(asked[1]?.startsWith("스토어 리뷰 확인하고 새 것만 요약해줘")).toBe(
+      true,
+    );
+    expect(asked[1]).toContain("Two reviews came in overnight.");
+  });
+
+  test("a failed run is not what the next one is told it reported", async () => {
+    // Only a run that SUCCEEDED and said something: carrying a failure forward would have the next
+    // run answer a question about an error message.
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const failing = {
+      setMessages() {},
+      async runAgent() {
+        throw new Error("the model was unreachable");
+      },
+    } as unknown as AbstractAgent;
+    const asked: string[] = [];
+    const recovering = {
+      setMessages(messages: { content?: string }[]) {
+        asked.push(messages[0]?.content ?? "");
+      },
+      async runAgent() {
+        return {
+          result: undefined,
+          newMessages: [{ id: "m", role: "assistant", content: "All quiet." }],
+        };
+      },
+    } as unknown as AbstractAgent;
+
+    const broken = serviceWith({ "morning-bot": failing }, () => clock);
+    const routine = await broken.service.create(ACTOR, {
+      agentId: "morning-bot",
+      name: "점검",
+      instruction: "확인해줘",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+
+    clock = new Date("2026-08-20T07:31:00Z");
+    expect(await broken.service.tick()).toBe(1);
+
+    const healed = serviceWith({ "morning-bot": recovering }, () => clock);
+    clock = new Date("2026-08-20T08:02:00Z");
+    expect(await healed.service.tick()).toBe(1);
+
+    expect(asked[0]).toBe("확인해줘");
+    expect(asked[0]).not.toContain("unreachable");
+  });
+
   test("two processes over one table run a due routine once", async () => {
     let clock = new Date("2026-08-20T07:00:00Z");
     const { agents } = fakeAgents("only once");

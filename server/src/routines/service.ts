@@ -252,6 +252,32 @@ export type RoutineServiceOptions = {
   lane?: BotLane;
 };
 
+/**
+ * How much of the last run's answer rides into the next one.
+ *
+ * Enough for a morning briefing or a monitor's last verdict; short enough that a routine whose
+ * answer is a wall of text cannot spend the whole window on its own past. Cut with a mark, like
+ * every other bound in this deployment, so the model reads it as an excerpt rather than as
+ * everything that was said.
+ */
+const CARRIED_ANSWER_MAX_CHARS = 1_500;
+
+/**
+ * What the Bot is told about the last time this routine ran.
+ *
+ * WHY THIS EXISTS. A routine is repeated work by definition, and a routine that cannot remember
+ * repeating it is the failure the whole feature walks into: the 8am briefing reports Tuesday's
+ * three orders again on Wednesday, the monitor announces the same outage every hour, and the
+ * person learns to stop reading. The answers were already in `laf_routine_runs` — every run writes
+ * one — and nothing was reading them back.
+ *
+ * The instruction stays the person's. This is appended after it, as context and not as an order,
+ * because a standing instruction that quietly grew a paragraph nobody wrote is a routine that no
+ * longer does what its author can see it doing.
+ */
+const carriedInstruction = (instruction: string, previous: string): string =>
+  `${instruction}\n\nWhat you reported the last time this routine ran, so you can say what has changed and not repeat it:\n\n${previous}`;
+
 export function createRoutineService(options: RoutineServiceOptions) {
   const { database } = options;
   const now = options.now ?? (() => new Date());
@@ -312,6 +338,35 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (!target) {
         throw new Error(`The Bot "${row.agentId}" is no longer in the roster.`);
       }
+
+      /*
+       * The last thing this routine actually reported, read back out of its own receipts.
+       *
+       * Only a run that SUCCEEDED and said something: a failure is not what the person was told,
+       * and carrying it forward would have the next run answer a question about an error message.
+       * Read here rather than held in memory because a routine outlives any process that runs it.
+       */
+      const [last] = await database
+        .select({ answer: lafRoutineRuns.answer })
+        .from(lafRoutineRuns)
+        .where(
+          and(
+            eq(lafRoutineRuns.routineId, row.id),
+            eq(lafRoutineRuns.ok, true),
+          ),
+        )
+        .orderBy(desc(lafRoutineRuns.startedAt))
+        .limit(1);
+      const previous = (last?.answer ?? "").trim();
+      const instruction = previous
+        ? carriedInstruction(
+            row.instruction,
+            previous.length > CARRIED_ANSWER_MAX_CHARS
+              ? `${previous.slice(0, CARRIED_ANSWER_MAX_CHARS)}\n\n[truncated]`
+              : previous,
+          )
+        : row.instruction;
+
       if (options.tools) {
         const actor: ActionActor = {
           id: row.createdById,
@@ -321,7 +376,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
             : { userId: row.createdById }),
         };
         const toolkit = await options.tools(row.agentId, actor);
-        const run = await runUnattended(target, row.instruction, {
+        const run = await runUnattended(target, instruction, {
           toolkit,
           timeoutMs: runTimeoutMs,
         });
@@ -336,7 +391,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
           answer = `${answer}\n\n⏸ ${run.awaiting}`.trim();
         }
       } else {
-        answer = await runAgentOnce(target, row.instruction, runTimeoutMs);
+        answer = await runAgentOnce(target, instruction, runTimeoutMs);
       }
       ok = true;
     } catch (error) {
