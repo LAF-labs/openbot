@@ -46,9 +46,8 @@ export const ko: Record<string, string> = {
   "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.":
     "명령을 쓰면 실행에 더해집니다. 봇에게 내리는 지시문으로 쓰세요 — 지시문에 대한 설명이 아니라.",
   Admin: "관리",
-  "Agent Skills": "에이전트 스킬",
   "Agent endpoint (optional)": "에이전트 엔드포인트 (선택)",
-  Agents: "에이전트",
+  Bots: "봇",
   Allow: "허용",
   Allowed: "허용됨",
   "Allowed by {person}": "{person}이(가) 허용함",
@@ -111,8 +110,8 @@ export const ko: Record<string, string> = {
   title: "직함",
   "what it is for": "무엇을 하는 봇인지",
   "Your team of always-on Bots": "언제나 켜져 있는 당신의 봇 팀",
-  "Each one is a colleague you can hand real work to. They keep working when this window is closed.":
-    "각자 실제로 일을 맡길 수 있는 동료입니다. 이 창을 닫아도 계속 일합니다.",
+  "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.":
+    "각자 실제로 일을 맡길 수 있는 동료입니다. 루틴과 여러 봇이 있는 대화방은 창을 닫아도 계속 돌고, 지금 같은 일대일 대화는 창이 열려 있는 동안 진행됩니다.",
   "They share one computer": "봇들은 컴퓨터 한 대를 함께 씁니다",
   "Your Bots work on a real browser of their own — they open pages, read them, and fill things in.":
     "봇은 진짜 브라우저에서 일합니다 — 페이지를 열고, 읽고, 입력합니다.",
@@ -138,13 +137,13 @@ export const ko: Record<string, string> = {
     "봇이 무엇을 하는 존재인지입니다. 비워 두면 봇이 직접 물어봅니다. 언제든 바꿀 수 있어요.",
   "Nobody had anything to add this time.":
     "이번에는 아무도 덧붙일 말이 없었어요.",
-  "A coworker": "봇",
+  "A Bot": "봇",
   "This room is no longer available.": "이 대화방은 더 이상 사용할 수 없어요.",
   "That message could not be sent. It may be too long.":
     "메시지를 보내지 못했어요. 너무 길 수 있어요.",
   "The room could not be stopped. Try again.":
     "대화를 멈추지 못했어요. 다시 시도해 주세요.",
-  "{count} of the coworkers could not answer this time.":
+  "{count} of the Bots could not answer this time.":
     "이번에는 봇 {count}명이 답하지 못했어요.",
   "Allow: {question}": "허용: {question}",
   "Deny: {question}": "거부: {question}",
@@ -194,19 +193,19 @@ export const ko: Record<string, string> = {
     "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
   Cat: "고양이",
   Catalogue: "카탈로그",
-  "Channel coworker": "채널의 봇",
+  "Bot in this conversation": "이 대화의 봇",
   "Finish in the browser that just opened, then come back.":
     "방금 열린 브라우저에서 동의를 마친 뒤 돌아와 주세요.",
   "Check again": "다시 확인",
   "Checking the connection…": "연결 상태를 확인하는 중…",
-  "Choose a coworker": "봇 선택",
-  "Choose a coworker…": "봇 선택…",
+  "Choose a Bot": "봇 선택",
+  "Choose a Bot…": "봇 선택…",
   "Choosing a report…": "보고서 선택 중…",
   Clicked: "클릭함",
   "Client ID": "클라이언트 ID",
   "Client secret": "클라이언트 시크릿",
   Close: "닫기",
-  "Close the assistant's screen": "어시스턴트 화면 닫기",
+  "Close the Bot's screen": "봇의 화면 닫기",
   Cloud: "구름",
   Command: "명령",
   Components: "컴포넌트",
@@ -238,7 +237,7 @@ export const ko: Record<string, string> = {
   "Could not be read": "읽지 못함",
   "Could not load credentials.": "자격증명을 불러오지 못했습니다.",
   "Could not load this channel.": "채널을 불러오지 못했습니다.",
-  "Could not load this coworker.": "봇을 불러오지 못했습니다.",
+  "Could not load this Bot.": "봇을 불러오지 못했습니다.",
   "Could not log out.": "로그아웃하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
@@ -298,7 +297,7 @@ export const ko: Record<string, string> = {
     "봇이 이 앱 밖에서 건드릴 수 있는 모든 것과 그 한계.",
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
-  "Explore agents": "에이전트 둘러보기",
+  "Explore Bots": "다른 사람의 봇 둘러보기",
   Channel: "채널",
   "Finance operations": "재무 운영",
   "Following something up": "확인하는 중",
@@ -313,8 +312,8 @@ export const ko: Record<string, string> = {
   "Granted to this Bot": "이 봇에게 부여됨",
   "Helping another Bot": "다른 봇을 돕는 중",
   Hidden: "숨김",
-  "Hidden from your agents list. This changes nothing for anyone else.":
-    "내 에이전트 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
+  "Hidden from your Bot list. This changes nothing for anyone else.":
+    "내 봇 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
   "Hide from sidebar": "사이드바에서 숨기기",
   "Hide hidden Bots": "숨긴 봇 감추기",
@@ -336,7 +335,7 @@ export const ko: Record<string, string> = {
     "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 에이전트면 무엇이든 됩니다. 서버가 에이전트 쪽으로 접속하므로, 내 컴퓨터에서 도는 에이전트는 여기서 접근할 수 있어야 합니다.",
   Light: "라이트",
   "Little ghost": "꼬마 유령",
-  "Loading coworkers…": "봇 불러오는 중…",
+  "Loading Bots…": "봇 불러오는 중…",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
   "Mark as unread": "읽지 않음으로 표시",
@@ -355,7 +354,7 @@ export const ko: Record<string, string> = {
   "Night Shift": "야간 근무",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No Bots yet.": "아직 봇이 없습니다.",
-  "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
+  "No public Bots to explore yet.": "아직 둘러볼 공개 봇이 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
   "Nobody matches that.": "일치하는 봇이 없습니다.",
@@ -440,12 +439,48 @@ export const ko: Record<string, string> = {
     "클라이언트를 저장하지 못했습니다. 다시 시도해 주세요.",
   "That did not go through. Try again.":
     "전달되지 않았습니다. 다시 시도하세요.",
+  "All {seats} Bot seats on this account are taken. Delete one to make room.":
+    "이 계정의 봇 자리 {seats}개가 모두 찼습니다. 하나를 지우면 자리가 납니다.",
+  Advanced: "고급",
+  "That did not work.": "잘 되지 않았습니다.",
+  "The connection could not be tested.": "연결을 시험해 보지 못했습니다.",
+  "Could not start the conversation.": "대화를 시작하지 못했습니다.",
+  "No Bots in this conversation": "이 대화에 봇이 없습니다",
+  "No matching commands": "일치하는 명령이 없습니다",
+  "Send message": "메시지 보내기",
+  "Queue message": "메시지 대기열에 넣기",
+  "Send to the page": "페이지로 보내기",
+  "Sending…": "보내는 중…",
+  "A command cannot be changed. To rename a skill, write a new one and delete this.":
+    "명령은 바꿀 수 없습니다. 이름을 바꾸려면 새로 하나 만들고 이것을 지우세요.",
+  "What you type after a slash, like /standup.":
+    "빗금 뒤에 입력하는 말입니다. 예: /standup",
+  "Shown beside the command in this list and in the / menu. Optional.":
+    "이 목록과 / 메뉴에서 명령 옆에 표시됩니다. 선택 사항입니다.",
+  "The skill could not be saved.": "스킬을 저장하지 못했습니다.",
+  "That skill no longer exists, or it is not yours to edit.":
+    "그 스킬은 더 이상 없거나, 내가 고칠 수 있는 것이 아닙니다.",
+  "Changes apply the next time {command} is used. Bots already carrying it keep it.":
+    "고친 내용은 다음에 {command} 를 쓸 때부터 적용됩니다. 이미 가지고 있는 봇은 그대로 가지고 있습니다.",
+  "Delete {command}?": "{command} 를 지울까요?",
+  "The command stops working and any Bot carrying it loses it. This cannot be undone.":
+    "그 명령은 더 이상 동작하지 않고, 가지고 있던 봇에서도 사라집니다. 되돌릴 수 없습니다.",
+  "Only for pointing this Bot at something you host yourself. Leave it alone and it runs here.":
+    "직접 운영하는 곳에 이 봇을 연결할 때만 씁니다. 건드리지 않으면 이 서버에서 그대로 돕니다.",
+  "That change could not be read. Try again.":
+    "그 변경 내용을 읽지 못했습니다. 다시 시도하세요.",
+  "Nothing was changed.": "바뀐 것이 없습니다.",
+  "That Bot is no longer there.": "그 봇은 더 이상 없습니다.",
+  "That looks like a password, so it was not saved.":
+    "비밀번호처럼 보여서 저장하지 않았습니다.",
+  "That is too long to remember.": "기억해 두기에는 너무 깁니다.",
+  "There was nothing to remember.": "기억할 내용이 없습니다.",
   "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
-  "The assistant may still be working. An administrator can check whether its computer is running.":
-    "어시스턴트는 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
-  "The assistant's screen, live": "어시스턴트의 화면 — 실시간",
+  "The Bot may still be working. An administrator can check whether its computer is running.":
+    "봇은 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
+  "The assistant's screen, live": "봇의 화면 — 실시간",
   "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
-    "어시스턴트의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
+    "봇의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
   "The Bot asked for a secret": "봇이 비밀값을 요청함",
   "The Bot asked for help": "봇이 도움을 요청함",
   "The Bot declined": "봇이 거절함",
@@ -499,15 +534,15 @@ export const ko: Record<string, string> = {
     "봇이 당신을 기다립니다. 화면을 여세요",
   "This cannot be connected yet. An administrator has to finish setting it up first.":
     "아직 연결할 수 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
-  "This channel has no coworker in it.": "이 채널에는 봇이 없습니다.",
-  "This coworker has been deleted. The conversation stays readable, but it can no longer reply.":
+  "This conversation has no Bot in it.": "이 대화에는 봇이 없습니다.",
+  "This Bot has been deleted. The conversation stays readable, but it can no longer reply.":
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
   "This deployment has no public address yet, so there is no address to register.":
     "이 배포에는 아직 공개 주소가 없어 등록할 주소가 없습니다.",
   "This deployment has no public address, so a connection cannot be finished here.":
     "이 배포에는 공개 주소가 없어 연결을 마칠 수 없습니다.",
-  "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.":
-    "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 어시스턴트도 받지 않습니다.",
+  "This goes straight to the page. It is not shown in the conversation and the Bot never receives it.":
+    "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 봇도 받지 않습니다.",
   "This service does not register clients on its own. Register one in the service's console with exactly the address below, then paste what it gives you.":
     "이 서비스는 클라이언트를 자동으로 등록하지 않습니다. 서비스 콘솔에서 아래 주소를 그대로 사용해 등록한 뒤, 받은 값을 붙여넣어 주세요.",
   Time: "시각",
@@ -529,8 +564,8 @@ export const ko: Record<string, string> = {
   "Watch this Bot's screen": "이 봇의 화면 보기",
   "Asking {name}": "{name}에게 물어보는 중",
   "Asked {name}": "{name}에게 물었습니다",
-  "Asking a coworker": "코워커에게 물어보는 중",
-  "Asked a coworker": "코워커에게 물었습니다",
+  "Asking another Bot": "다른 봇에게 물어보는 중",
+  "Asked another Bot": "다른 봇에게 물었습니다",
   "Weekdays at {time}": "평일 {time}",
   Whale: "고래",
   "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
@@ -547,9 +582,8 @@ export const ko: Record<string, string> = {
   "What should the team take off your hands?": "팀에게 무엇을 맡기시겠어요?",
   "Click and type on the page as you normally would.":
     "평소처럼 페이지를 클릭하고 입력하세요.",
-  "The assistant's screen, updating live": "어시스턴트의 화면 — 실시간 갱신 중",
-  "Take control — the assistant asked for you":
-    "제어 잡기 — 어시스턴트가 도움을 요청했어요",
+  "The Bot's screen, updating live": "봇의 화면 — 실시간 갱신 중",
+  "Take control — the Bot asked for you": "제어 잡기 — 봇이 도움을 요청했어요",
   "Click anywhere or press Escape to close":
     "아무 곳이나 클릭하거나 Esc를 누르면 닫힙니다",
   "Webhook trigger — shown only once": "웹훅 트리거 — 지금 한 번만 표시됩니다",
@@ -567,7 +601,6 @@ export const ko: Record<string, string> = {
     "무엇을 할까요? 예: 스토어 리뷰를 확인하고 새 리뷰만 요약해줘.",
   Daily: "매일",
   "Every N minutes": "N분마다",
-  "Time (UTC)": "시각 (UTC)",
   Minutes: "분",
   "Every {minutes} minutes": "{minutes}분마다",
   Ran: "성공",
@@ -588,7 +621,7 @@ export const ko: Record<string, string> = {
   "Finance Operations": "재무 운영",
   General: "일반",
   "Hand back": "제어 반환",
-  "Hand back to the assistant": "어시스턴트에게 제어 돌려주기",
+  "Hand back to the Bot": "봇에게 제어 돌려주기",
   "Held for this deployment and never shown again once saved.":
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않습니다.",
   "How {product} looks and behaves for you. These apply to your account alone, on every deployment you sign in to.":
@@ -615,9 +648,9 @@ export const ko: Record<string, string> = {
   "More message options unavailable": "추가 메시지 옵션 없음",
   "My standup skill": "나의 스탠드업 스킬",
   Name: "이름",
-  "New agent": "새 에이전트",
+  "New Bot": "새 봇",
   "New skill": "새 스킬",
-  "No agents found.": "에이전트가 없습니다.",
+  "No Bots found.": "봇이 없습니다.",
   "No auth providers are configured.": "설정된 로그인 제공자가 없습니다.",
   "No computers yet. One appears the first time a Bot opens a page.":
     "아직 컴퓨터가 없습니다. 봇이 처음 페이지를 열면 나타납니다.",
@@ -636,15 +669,15 @@ export const ko: Record<string, string> = {
     "툴 목록이 비어 있습니다. 새로고침으로 서버에 다시 물어보세요.",
   "Not in this build, nothing can draw it": "이 빌드에는 없어 그릴 수 없습니다",
   "Not shown": "표시 안 됨",
-  "Nothing to connect yet. A service appears here once an administrator has added it on the Plugins page.":
-    "아직 연결할 서비스가 없습니다. 관리자가 플러그인 화면에서 추가하면 여기에 나타납니다.",
+  "Nothing to connect yet. An administrator has to set one up first.":
+    "아직 연결할 서비스가 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
   "Nothing yet.": "아직 없습니다.",
   On: "켬",
   "One line": "한 줄",
   "One-liner": "한 줄 요약",
   Open: "열기",
   "Open full size": "전체 크기로 열기",
-  "Open the assistant's screen full size": "어시스턴트 화면을 전체 크기로 열기",
+  "Open the Bot's screen full size": "봇의 화면을 전체 크기로 열기",
   "Otherwise it may": "그 외에는 허용",
   Overview: "개요",
   Playground: "플레이그라운드",
@@ -703,11 +736,10 @@ export const ko: Record<string, string> = {
   Summary: "요약",
   "System owned": "시스템 소유",
   "Take control": "제어 가져오기",
-  "The assistant has not opened a page yet.":
-    "어시스턴트가 아직 페이지를 열지 않았습니다.",
-  "The assistant needs": "어시스턴트에게 필요합니다",
-  "The assistant needs you.": "어시스턴트가 당신을 기다립니다.",
-  "The assistant's screen": "어시스턴트의 화면",
+  "The Bot has not opened a page yet.": "봇이 아직 페이지를 열지 않았습니다.",
+  "The Bot needs": "봇에게 필요합니다",
+  "The Bot needs you.": "봇이 당신을 기다립니다.",
+  "The Bot's screen": "봇의 화면",
   "The audit trail could not be loaded.": "감사 기록을 불러오지 못했습니다.",
   "The list could not be loaded.": "목록을 불러오지 못했습니다.",
   "There are no Bots yet.": "아직 봇이 없습니다.",
@@ -725,14 +757,14 @@ export const ko: Record<string, string> = {
   Untitled: "제목 없음",
   "Vendor documentation": "공급자 문서",
   Visibility: "공개 범위",
-  "Waiting for the assistant's screen…": "어시스턴트 화면을 기다리는 중…",
+  "Waiting for the Bot's screen…": "봇의 화면을 기다리는 중…",
   "Waiting on you": "당신을 기다리는 중",
   What: "무엇을",
   "What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit.":
     "봇이 답에 쓸 수 있는 것들입니다. 게시된 컴포넌트는 모든 봇이 쓸 수 있고, 여기서 끄면 그 봇은 존재조차 모릅니다. 모든 변경과 거부는 감사 기록에 한 줄로 남습니다.",
   "What the Bot should do when this skill is used.":
     "이 스킬이 쓰일 때 봇이 해야 할 일.",
-  "What the assistant is looking at": "어시스턴트가 보고 있는 것",
+  "What the Bot is looking at": "봇이 보고 있는 것",
   "What the model is told about it": "모델에게 전달되는 설명",
   "What this deployment can reach, and which Bots may reach it. Adding is account-wide; enabling is per Bot.":
     "이 배포가 닿을 수 있는 곳과, 어느 봇이 닿아도 되는지. 추가는 계정 단위, 부여는 봇 단위입니다.",
@@ -750,19 +782,19 @@ export const ko: Record<string, string> = {
   "You already have a skill called /{slug}. Saving would replace it — open it from the list to edit it instead.":
     "이미 /{slug} 스킬이 있습니다. 저장하면 덮어씁니다 — 목록에서 열어 수정하세요.",
   "You cannot see the screen right now": "지금은 화면을 볼 수 없습니다",
-  "You do not own an Agent to put this on yet.":
-    "이것을 붙일 내 에이전트가 아직 없습니다.",
-  "You don't have any agents created.": "만든 에이전트가 없습니다.",
+  "You do not own a Bot to put this on yet.":
+    "이것을 붙일 내 봇이 아직 없습니다.",
+  "You have not made a Bot yet.": "아직 만든 봇이 없습니다.",
   "You have control of this browser.":
     "이 브라우저는 당신이 제어하고 있습니다.",
   "You have control.": "제어 중입니다.",
-  "Your agents": "내 에이전트",
-  "Your agents could not be loaded.": "에이전트를 불러오지 못했습니다.",
+  "Your Bots": "내 봇",
+  "Your Bots could not be loaded.": "봇 목록을 불러오지 못했습니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
   Yours: "추가한 서버",
-  "Typed here, never shown to the assistant":
-    "여기 입력한 값은 어시스턴트에게 절대 보이지 않습니다",
+  "Typed here, never shown to the Bot":
+    "여기 입력한 값은 봇에게 절대 보이지 않습니다",
   "Unpublished, no Bot may use it": "미게시 — 어떤 봇도 쓸 수 없음",
   Language: "언어",
   "Which language the interface uses.": "인터페이스가 사용할 언어.",
@@ -808,27 +840,17 @@ export const ko: Record<string, string> = {
   "Review Watch": "리뷰 모니터",
   "Booking Desk": "예약 관리",
   "Customer List": "고객 명부",
-  "Note Taker": "회의록 정리",
   "Weekly Report": "주간 보고",
   "Competitor Watch": "경쟁사 모니터",
-  "Research Desk": "리서치 담당",
   "Price Check": "가격 조사",
   "News Briefing": "뉴스 브리핑",
   "Stock Check": "재고 관리",
   "Supplier Chase": "발주 관리",
-  "Hiring Screen": "채용 서류 검토",
   "Social Posts": "SNS 게시물",
-  "Product Pages": "상품 상세",
-  Newsletter: "뉴스레터",
-  "Blog Drafts": "블로그 초안",
   "Contract Review": "계약서 검토",
   "Document Digest": "문서 요약",
-  Translator: "번역 담당",
   "File Keeper": "파일 정리",
-  "Trip Planner": "여행 계획",
   "To-do Wrangler": "할 일 정리",
-  "Study Coach": "학습 코치",
-  "Errand Runner": "잡무 처리",
   "Tax and filings": "세무·신고",
   "Accounts receivable": "미수금",
   "Quotes and invoices": "견적·청구서",
@@ -836,27 +858,17 @@ export const ko: Record<string, string> = {
   Reputation: "평판 관리",
   Appointments: "예약",
   Records: "고객 기록",
-  "Meeting notes": "회의록",
   Reporting: "보고",
   "Market intelligence": "시장 조사",
-  Research: "조사",
   Sourcing: "구매 조사",
   "Daily news": "데일리 뉴스",
   Inventory: "재고",
   Purchasing: "구매",
-  Recruiting: "채용",
   Marketing: "마케팅",
-  "Ecommerce copy": "상품 문구",
-  "Email marketing": "이메일 마케팅",
-  Writing: "글쓰기",
   "Legal admin": "법무 사무",
   Reading: "읽기",
-  Languages: "언어",
   Filing: "파일 관리",
-  Travel: "여행",
   "Personal admin": "개인 일정",
-  Learning: "학습",
-  Errands: "잡무",
   "Keep the paperwork a filing needs in one place as it arrives, and tell me each month what is still missing. Never file anything yourself.":
     "신고에 필요한 서류가 생길 때마다 한곳에 모아두고, 매달 아직 빠진 게 뭔지 알려줘. 신고 자체는 절대 네가 하지 마.",
   "Track which invoices have been paid and which are late. Draft the reminder for the late ones in a tone that keeps the customer, and show it to me before it goes.":
@@ -871,14 +883,10 @@ export const ko: Record<string, string> = {
     "그날 예약을 정리해줘 — 새 예약은 확정하고, 전날 리마인드를 보내고, 빈 시간이나 중복 예약은 아직 손볼 수 있을 때 알려줘.",
   "Keep the customer list tidy — merge duplicates, fill in what is missing, and note who we last spoke to and about what. Ask before deleting anybody.":
     "고객 명부를 정돈해줘 — 중복은 합치고, 빠진 항목은 채우고, 누구와 마지막으로 무슨 얘기를 했는지 적어둬. 누굴 지우기 전에는 나한테 물어봐.",
-  "Turn my rough meeting notes into something readable: what was decided, what was left open, and who agreed to do what by when. Keep my wording where it matters.":
-    "내가 대충 적은 회의 메모를 읽을 만하게 정리해줘 — 무엇을 정했고, 무엇이 남았고, 누가 언제까지 뭘 하기로 했는지. 중요한 표현은 내가 쓴 말 그대로 둬.",
   "Every Friday, write the week up: what moved, what the numbers did, and what is stuck. Short enough to read standing up, and say plainly when a week was quiet.":
     "매주 금요일에 한 주를 정리해줘 — 무엇이 진행됐고, 숫자는 어떻게 움직였고, 무엇이 막혀 있는지. 서서도 읽을 만큼 짧게, 조용한 주였으면 조용했다고 그대로 써.",
   "Watch the handful of companies we compete with — prices, launches, hiring, anything they announce — and tell me what changed and why it might matter to us.":
     "우리와 경쟁하는 몇 군데를 지켜봐줘 — 가격, 신제품, 채용, 발표하는 건 뭐든. 무엇이 바뀌었고 그게 우리한테 왜 중요할 수 있는지 알려줘.",
-  "When I ask a question, go and find out properly: read the sources, say what they actually claim, and tell me where they disagree. Always link where it came from.":
-    "내가 물으면 제대로 알아봐줘 — 출처를 직접 읽고, 그 출처가 실제로 뭐라고 하는지 말하고, 서로 엇갈리는 지점을 짚어줘. 출처 링크는 항상 붙여.",
   "Find what something costs from several sellers, with delivery and lead time included, and lay them side by side. Say which you would pick and why. Never buy anything.":
     "여러 판매처의 가격을 배송비와 소요 기간까지 포함해 찾아 나란히 놓아줘. 네가 고른다면 어디를 왜 고를지도 말해줘. 구매는 절대 하지 마.",
   "Each morning, brief me on the news for our industry: five items at most, one line each, and skip the day entirely if nothing happened.":
@@ -887,34 +895,72 @@ export const ko: Record<string, string> = {
     "떨어져 가는 게 뭔지 지켜보다가 다 떨어지기 전에 알려줘, 떨어진 뒤 말고. 정해둔 수량이 아니라 실제로 얼마나 빨리 나가는지를 기준으로 봐.",
   "Keep track of what we have ordered and when it was promised, and chase anything late. Draft the message; let me send it.":
     "무엇을 언제까지 받기로 하고 발주했는지 챙기고, 늦어지는 건 확인해줘. 메시지는 초안까지만, 보내는 건 내가 할게.",
-  "Read applications against what the role actually needs and sort them into worth meeting, maybe, and no — with a reason for each. Judge the work, never the person.":
-    "그 자리에 정말 필요한 게 뭔지를 기준으로 지원서를 읽고 만나볼 만함·보류·아님으로 나눠줘. 각각 이유를 붙이고, 사람이 아니라 일한 결과를 봐.",
   "Draft our posts for the week from what is actually happening here, in our voice rather than an advertisement's. Nothing goes out until I have seen it.":
     "이번 주 게시물을 여기서 실제로 일어난 일을 가지고 초안 잡아줘. 광고 말투 말고 우리 말투로. 내가 보기 전에는 아무것도 올리지 마.",
-  "Write product descriptions that say what the thing is and who it suits. No superlatives, no invented specifications — ask me when you do not know something.":
-    "그 물건이 무엇이고 누구에게 맞는지 말하는 상품 설명을 써줘. 과장된 수식어 금지, 없는 사양 지어내기 금지 — 모르는 건 나한테 물어봐.",
-  "Put together the newsletter from the month's news and drafts, in an order that makes sense. Show me the whole thing before it is scheduled.":
-    "이번 달 소식과 초안을 가지고 뉴스레터를 말이 되는 순서로 엮어줘. 예약 발송하기 전에 전체를 나한테 보여줘.",
-  "Take a rough idea and write it out properly: an argument that goes somewhere, examples that are real, and a length the idea deserves. Leave the publishing to me.":
-    "거친 아이디어를 제대로 글로 풀어줘 — 어디론가 이어지는 논지, 실제 사례, 그 아이디어에 걸맞은 분량으로. 발행은 내가 할게.",
   "Read a contract and tell me in plain language what it commits us to, what is unusual, and what the dates are. You are not a lawyer — say so when something needs one.":
     "계약서를 읽고 우리가 무엇을 약속하게 되는지, 이상한 조항은 뭔지, 날짜는 언제인지 쉬운 말로 알려줘. 너는 변호사가 아니니, 변호사가 필요한 대목은 그렇다고 말해.",
   "Read the long documents I do not have time for and give me the argument, the numbers that matter, and anything that contradicts what we already believed.":
     "내가 볼 시간이 없는 긴 문서를 읽고 논지와 중요한 숫자, 그리고 우리가 지금까지 믿어온 것과 어긋나는 대목을 알려줘.",
-  "Translate what I give you so it reads as though it were written that way, not word by word. Flag anything where the meaning could go two ways.":
-    "내가 주는 글을 단어 대 단어가 아니라 원래 그 언어로 쓴 것처럼 읽히게 번역해줘. 뜻이 두 갈래로 갈릴 수 있는 부분은 표시해줘.",
   "Keep our files in an order I can find things in: sensible names, the right folders, duplicates pointed out. Move things freely, but never delete without asking.":
     "내가 찾을 수 있는 순서로 파일을 정리해줘 — 알아볼 만한 이름, 맞는 폴더, 중복은 표시. 옮기는 건 마음대로 해도 되지만 묻지 않고 지우지는 마.",
-  "Plan the trip end to end — routes, times, places to stay, what it costs — and give me one itinerary rather than a list of options. Book nothing; I will do that.":
-    "여행을 처음부터 끝까지 짜줘 — 동선, 시간, 숙소, 비용까지. 선택지 목록 말고 일정표 하나로 줘. 예약은 하지 마, 내가 할게.",
   "Keep my list honest: what is actually due, what I have been avoiding, and what can be dropped. Ask me each morning for the three things that matter today.":
     "내 할 일 목록을 솔직하게 유지해줘 — 진짜 기한이 온 것, 내가 피하고 있던 것, 그냥 버려도 되는 것. 매일 아침 오늘 중요한 세 가지를 나한테 물어봐.",
-  "Teach me what I am trying to learn a little at a time, ask me questions instead of giving answers, and come back to whatever I got wrong last time.":
-    "내가 배우려는 걸 조금씩 가르쳐줘. 답을 주는 대신 질문을 하고, 지난번에 틀린 건 다시 짚어줘.",
-  "Handle the small things that pile up — forms, renewals, appointments, comparing two options. Tell me what you did and what still needs me.":
-    "쌓이는 자잘한 일을 처리해줘 — 서류, 갱신, 예약, 두 가지 비교 같은 것. 무엇을 했고 아직 내가 해야 할 게 뭔지 알려줘.",
   "Show me others": "다른 제안 보기",
   "Or start from one of these": "아니면 이 중에서 시작하세요",
+
+  // 업무 패턴 여덟과, 그 일이 주로 기대는 연결.
+  "Night watch": "당직·감시",
+  "Approval helper": "승인 보조",
+  "Settlement and reconciliation": "정산·대조",
+  "Enquiry replies": "문의 응대",
+  "Bookings and schedule": "예약·일정",
+  "Stock and ordering": "재고·발주",
+  "Reviews and reputation": "리뷰·평판",
+  "Receipts and paperwork": "증빙·서류",
+  Browser: "브라우저",
+  Sheets: "시트",
+  "Connected apps": "연결된 앱",
+
+  "Notice Watch": "공고 지킴이",
+  Announcements: "공지 확인",
+  "Check the places that post notices about us — the district office, the platform, the trade association — and tell me the same day when something new affects us. Say so plainly when nothing did.":
+    "우리와 관련된 공지가 올라오는 곳들을 확인해줘 — 구청, 입점한 플랫폼, 협회 같은 곳. 새로 올라온 것 중 우리한테 영향이 있으면 그날 바로 알려주고, 없으면 없다고 그대로 말해줘.",
+  "Outgoing Check": "나가는 글 검토",
+  "Before it goes out": "보내기 전 확인",
+  "Anything that leaves under our name — a message, a notice, a reply — comes to me first, with what you changed and why. Send nothing yourself.":
+    "우리 이름으로 나가는 것은 메시지든 공지든 답글이든 먼저 나한테 보여줘. 무엇을 고쳤고 왜 그랬는지 같이 적어주고, 직접 보내지는 마.",
+  "Daily Settlement": "일일 정산",
+  "Sales against deposits": "매출과 입금 대조",
+  "Match the day's sales against what actually reached the account and bring me only the lines that disagree. Never move money, and never write anything off.":
+    "그날 매출과 실제로 통장에 들어온 금액을 맞춰보고, 맞지 않는 줄만 골라서 가져와. 돈을 옮기거나 차액을 그냥 털어내는 일은 절대 하지 마.",
+  "Platform Payouts": "플랫폼 정산 확인",
+  "Marketplace settlements": "판매 채널 정산",
+  "Check what each sales channel says it will pay us and when, put its fees beside it, and tell me when a payout is late or smaller than the orders say it should be.":
+    "판매 채널마다 얼마를 언제 정산해 준다고 하는지 확인하고 수수료를 나란히 적어줘. 정산이 늦거나 주문 내역보다 적게 들어왔으면 알려줘.",
+  "FAQ Answers": "자주 묻는 질문",
+  "Repeat questions": "반복되는 문의",
+  "Collect the questions we are asked over and over, write one good answer for each, and correct them when prices or opening hours change. Show me an answer before it is used.":
+    "반복해서 들어오는 질문을 모아 각각에 좋은 답을 하나씩 써줘. 가격이나 영업시간이 바뀌면 답도 같이 고치고, 쓰기 전에 나한테 보여줘.",
+  "Shift Roster": "근무표",
+  "Who works when": "누가 언제 나오는지",
+  "Keep next week's roster straight: who is in, who has asked for time off, and where a shift is uncovered. Tell me about a gap while there is still time to fill it.":
+    "다음 주 근무표를 정리해줘 — 누가 나오는지, 누가 쉬겠다고 했는지, 빈 시간이 어디인지. 아직 채울 수 있을 때 빈 자리를 알려줘.",
+  "Reorder Sheet": "발주서",
+  "Purchase orders": "발주",
+  "Turn what we are short of into one order per supplier, at the prices we last paid, and show me the whole sheet before anything is sent.":
+    "부족한 것들을 거래처별 발주서 하나씩으로 만들어줘. 지난번에 준 가격을 기준으로 정리하고, 보내기 전에 전체를 나한테 보여줘.",
+  "Supplier Prices": "매입가 비교",
+  "Buying prices": "매입 가격",
+  "Watch what our suppliers charge for the things we buy most often, and tell me when one of them changes a price or when the same thing is cheaper elsewhere.":
+    "우리가 자주 사는 품목의 거래처 가격을 지켜보다가, 어느 한 곳이 가격을 바꾸거나 같은 물건을 더 싸게 파는 곳이 있으면 알려줘.",
+  "Review Replies": "리뷰 답글",
+  "Answering reviews": "리뷰 응대",
+  "Draft a reply to each new review in our voice — thank the kind ones briefly, and answer an unhappy one with what we will actually do about it. Post nothing until I have read it.":
+    "새 리뷰마다 우리 말투로 답글 초안을 써줘 — 좋은 리뷰에는 짧게 감사하고, 불만에는 실제로 무엇을 하겠다는지 적어줘. 내가 읽기 전에는 아무것도 올리지 마.",
+  "Mention Watch": "언급 확인",
+  "What people say": "사람들이 하는 말",
+  "Look for where our name comes up — communities, blogs, social — and tell me what was said and where. Bring me anything unhappy the same day.":
+    "우리 이름이 언급된 곳을 찾아줘 — 커뮤니티, 블로그, SNS. 무슨 말이 어디에 있었는지 알려주고, 불만은 그날 바로 가져와.",
   "Allow once": "이번만 허용",
   "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.":
     "이 규칙 때문에 묻습니다. 이번만 허용은 이 행동 하나에만 적용되고, 다른 하나는 경계 설정에서 취소할 때까지 같은 종류를 모두 허용합니다.",

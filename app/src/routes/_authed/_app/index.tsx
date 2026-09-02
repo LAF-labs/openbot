@@ -127,7 +127,7 @@ function RouteComponent() {
             size="sm"
             variant="outline"
           >
-            {t("New agent")}
+            {t("New Bot")}
           </Button>
         </div>
       ) : null}
@@ -161,7 +161,7 @@ function RouteComponent() {
               setError(
                 caught instanceof Error
                   ? caught.message
-                  : "Could not start the conversation.",
+                  : t("Could not start the conversation."),
               );
               throw caught;
             }

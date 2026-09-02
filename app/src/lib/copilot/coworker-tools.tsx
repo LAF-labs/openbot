@@ -141,8 +141,8 @@ export function CoworkerTools() {
             ? t("Asking {name}", { name: entry.coworker })
             : t("Asked {name}", { name: entry.coworker })
           : running
-            ? t("Asking a coworker")
-            : t("Asked a coworker");
+            ? t("Asking another Bot")
+            : t("Asked another Bot");
         return (
           <ToolLine
             label={label}

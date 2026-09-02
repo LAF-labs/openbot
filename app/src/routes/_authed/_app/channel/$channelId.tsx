@@ -268,7 +268,7 @@ function RouteComponent() {
               ) : null}
             </Button>
             <Button
-              aria-label={t("Channel coworker")}
+              aria-label={t("Bot in this conversation")}
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
@@ -332,7 +332,7 @@ function ChannelBody({
   if (!defaultAgentId) {
     return (
       <p className="p-8 text-muted-foreground text-sm">
-        {t("This channel has no coworker in it.")}
+        {t("This conversation has no Bot in it.")}
       </p>
     );
   }

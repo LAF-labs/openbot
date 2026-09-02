@@ -12,7 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
-import { type AgentPreset, pickSuggestions } from "@/lib/agents/presets";
+import {
+  type AgentPreset,
+  pickSuggestions,
+  workPattern,
+} from "@/lib/agents/presets";
 import { t } from "@/lib/i18n";
 
 /**
@@ -190,33 +194,45 @@ export function NewAgent() {
           </button>
         </div>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
-          {suggestions.map((preset) => (
-            <button
-              className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-ring/40"
-              key={preset.id}
-              onClick={() => applyPreset(preset)}
-              type="button"
-            >
-              <span
-                className="inline-flex size-8 shrink-0 overflow-hidden rounded-lg"
-                style={{ background: mascotBackground(preset.avatarSeed) }}
+          {suggestions.map((preset) => {
+            const pattern = workPattern(preset.pattern);
+            return (
+              <button
+                className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-ring/40"
+                key={preset.id}
+                onClick={() => applyPreset(preset)}
+                type="button"
               >
-                <Mascot
-                  className="size-full"
-                  seed={preset.avatarSeed}
-                  size={32}
-                />
-              </span>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate font-medium text-[13px]">
-                  {t(preset.name)}
+                <span
+                  className="inline-flex size-8 shrink-0 overflow-hidden rounded-lg"
+                  style={{ background: mascotBackground(preset.avatarSeed) }}
+                >
+                  <Mascot
+                    className="size-full"
+                    seed={preset.avatarSeed}
+                    size={32}
+                  />
                 </span>
-                <span className="line-clamp-2 text-[12px] text-muted-foreground leading-snug">
-                  {t(preset.roleDescription)}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  {/*
+                   * THE PATTERN, ABOVE THE NAME. "지출 관리" is a name somebody has to imagine a job
+                   * for; "정산·대조 · 시트" is the job, in the words the business plan uses and a
+                   * shop owner already thinks in. The connection beside it answers the question
+                   * that always follows — what would it be using to do that.
+                   */}
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {t(pattern.name)} · {t(pattern.connection)}
+                  </span>
+                  <span className="truncate font-medium text-[13px]">
+                    {t(preset.name)}
+                  </span>
+                  <span className="line-clamp-2 text-[12px] text-muted-foreground leading-snug">
+                    {t(preset.roleDescription)}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </section>
     </form>

@@ -77,12 +77,12 @@ function AgentsScreen() {
             )}
           >
             <IconPlus />
-            {t("New agent")}
+            {t("New Bot")}
           </Button>
         }
-        title={t("Agents")}
+        title={t("Bots")}
       >
-        <PageSection title={t("Your agents")}>
+        <PageSection title={t("Your Bots")}>
           <div className="flex flex-row">
             {!!mine?.length && (
               /*
@@ -118,7 +118,7 @@ function AgentsScreen() {
             {isError && (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-destructive text-sm" role="alert">
-                  {t("Your agents could not be loaded.")}
+                  {t("Your Bots could not be loaded.")}
                 </p>
                 <Button
                   onClick={() => void refetch()}
@@ -141,7 +141,7 @@ function AgentsScreen() {
                     />
                   </span>
                   <EmptyTitle className="text-muted-foreground">
-                    {t("You don't have any agents created.")}
+                    {t("You have not made a Bot yet.")}
                   </EmptyTitle>
                 </EmptyHeader>
               </Empty>
@@ -150,7 +150,7 @@ function AgentsScreen() {
         </PageSection>
         {/* Hidden entirely on error: the page-level line above already said what went wrong once. */}
         {isError ? null : (
-          <PageSection title={t("Explore agents")}>
+          <PageSection title={t("Explore Bots")}>
             <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
               {isPending
                 ? [0, 1, 2].map((slot) => (
@@ -166,7 +166,7 @@ function AgentsScreen() {
             </div>
             {!isPending && !explore?.length ? (
               <p className="mt-4 text-muted-foreground text-sm">
-                {t("No public agents to explore yet.")}
+                {t("No public Bots to explore yet.")}
               </p>
             ) : null}
           </PageSection>

@@ -152,7 +152,20 @@ export function scheduleLabel(routine: Routine): string {
   const zone = routine.dailyTimeZone ?? "UTC";
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const suffix = zone === here ? "" : ` ${zone}`;
-  const days = routine.dailyDays ?? [];
+  /*
+   * ONE BAD ROW MUST NOT TAKE THE WHOLE ROUTINES SCREEN DOWN, AND ONE DID.
+   *
+   * Measured on a development database: a routine stored `daily_days` as `{}` rather than as an
+   * array — an empty jsonb object, which `?? []` waves straight through because it is not null.
+   * `{}.length` is undefined, so both early returns miss, and the spread below threw "days is not
+   * iterable" out of a LABEL. The error boundary caught it at the page, so every routine somebody
+   * had disappeared behind "문제가 생겼습니다" because one of them had a shape nobody expected.
+   *
+   * A label is the last place that should be able to fail. An unreadable day list reads as "every
+   * day", which is what an empty one already means and is the honest degradation: the routine is
+   * still listed, still switchable, still deletable.
+   */
+  const days = Array.isArray(routine.dailyDays) ? routine.dailyDays : [];
 
   if (days.length === 0 || days.length === 7) {
     return `${t("Daily at {time}", { time })}${suffix}`;

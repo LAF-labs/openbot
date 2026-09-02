@@ -1,6 +1,11 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import {
+  ShellTitleBar,
+  shellTopInset,
+} from "@/components/layout/shell-titlebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { loadCurrentUser } from "../../../lib/auth/load-current-user";
 
 export const Route = createFileRoute("/_authed/admin")({
@@ -27,8 +32,10 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
-      <AdminSidebar />
-      <main className="min-w-0 flex-1">
+      <ShellTitleBar />
+      {/* The rail is `fixed inset-y-0`: the inset goes on it, not on the layout around it. */}
+      <AdminSidebar className={shellTopInset()} />
+      <main className={cn("min-w-0 flex-1", shellTopInset())}>
         <Outlet />
       </main>
     </SidebarProvider>

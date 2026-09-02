@@ -99,7 +99,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   if (agent.error || !agent.data) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        {t("Could not load this coworker.")}
+        {t("Could not load this Bot.")}
       </p>
     );
   }
@@ -321,7 +321,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         {profile.hidden ? (
           <p className="-mt-1 text-xs text-muted-foreground">
             {t(
-              "Hidden from your agents list. This changes nothing for anyone else.",
+              "Hidden from your Bot list. This changes nothing for anyone else.",
             )}
           </p>
         ) : null}

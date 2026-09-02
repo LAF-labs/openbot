@@ -59,7 +59,7 @@ export function RosterStrip({
           </button>
         );
       })}
-      {/* `new: true` — the tile is labelled "New agent" and so it opens the form, not the list. */}
+      {/* `new: true` — the tile is labelled "New Bot" and so it opens the form, not the list. */}
       <Link
         className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
         search={{ new: true }}
@@ -69,7 +69,7 @@ export function RosterStrip({
           +
         </span>
         <span className="max-w-full truncate text-[11px] text-muted-foreground leading-tight">
-          {t("New agent")}
+          {t("New Bot")}
         </span>
       </Link>
     </div>
