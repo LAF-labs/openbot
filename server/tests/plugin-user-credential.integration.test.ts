@@ -98,7 +98,7 @@ const REDIRECT_URI = "https://laf.example/api/plugins/oauth/callback";
 /** The address Notion's entry pins for self-registration, asserted rather than assumed. */
 const REGISTRATION_URL = "https://mcp.notion.com/register";
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], allow: ["true"] };
 
 /* ── the seams ───────────────────────────────────────────────────────────────────────────────── */
 

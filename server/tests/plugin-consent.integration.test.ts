@@ -61,7 +61,7 @@ describeDb("plugin definition consent", () => {
     auditStore: createAuditStore(database),
     credentials: { read: async () => null },
     encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    policy: () => ({ mode: "enforce", deny: [], ask: [], allow: ["true"] }),
+    policy: () => ({ deny: [], ask: [], allow: ["true"] }),
     approvals: createApprovalRegistry(),
   });
 

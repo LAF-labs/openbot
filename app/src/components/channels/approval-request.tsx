@@ -140,7 +140,16 @@ export function ApprovalRequest({
           ? t(
               "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
             )
-          : t("Asked because of this rule. Allowing covers this one action.")}
+          : t(
+              "Asked because of this rule. Allowing covers this one action.",
+            )}{" "}
+        {/*
+         * SAID ON THE CARD, because it changes what the Deny button means. A no used to last until
+         * the Bot tried again, which could be seconds; now it stands, and somebody deciding needs
+         * to know that before they press it rather than afterwards. No new control — this is what
+         * the existing button already does.
+         */}
+        {t("Saying no stops it being asked again for a while.")}
       </p>
       {problem ? (
         <p className="mt-2 text-destructive text-xs" role="alert">

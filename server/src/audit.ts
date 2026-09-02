@@ -164,6 +164,16 @@ export const auditEventTypes = [
    */
   "computer.policy_loaded",
   /**
+   * Somebody changed the boundary, and why.
+   *
+   * The table holds what is in force now and who saved it last, which answers "what are the rules"
+   * and never "what were they, and what was the argument for loosening them". This row is that
+   * second question: it carries the reason the administrator gave, and it names the switch that
+   * decides whether a question can be settled without a person seeing the action, because that is
+   * the one change on the page that can stand the whole boundary down.
+   */
+  "computer.policy_changed",
+  /**
    * That every Bot shares the account's one computer, said out loud at boot.
    *
    * The sharing is a product decision (computer/assignment.ts), and it is invisible: the screens

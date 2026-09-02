@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { AuditEventInput, AuditStore } from "../src/audit";
-import { createApprovalRegistry } from "../src/computer/approvals";
+import {
+  createApprovalRegistry,
+  fingerprintOf,
+} from "../src/computer/approvals";
 import type { ComputerClient } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
@@ -111,7 +114,6 @@ const ACTOR = { id: "dev-local-user" };
 /** A second person, with a real users row, so the approval rows can be told apart by who wrote them. */
 const MANAGER = { id: "manager-user", userId: "manager-user" };
 const PERMISSIVE: ActionPolicy = {
-  mode: "enforce",
   deny: [],
   ask: [],
   allow: ["true"],
@@ -247,24 +249,25 @@ describe("the computer gateway", () => {
     expect(rows[0]?.eventType).toBe("computer.action_refused");
   });
 
-  test("dry-run records the refusal and still carries the action out", async () => {
+  test("a policy that still names dry-run refuses anyway", async () => {
+    // The mode is gone (§7-10). A saved policy that still carries it must not be honoured: a
+    // deployment that had switched its boundary off would go on having it off, silently, past the
+    // release that removed the way to say so.
     const { gateway, calls, rows } = await gatewayWith({
       mode: "dry-run",
       deny: ['contains(element.name, "submit")'],
       ask: [],
       allow: ["true"],
-    });
+    } as unknown as ActionPolicy);
 
-    await gateway.click("default", "bot-1", ACTOR, {
-      ref: "e9",
-      snapshotId: 7,
-    });
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(ActionRefusedError);
 
-    expect(calls).toEqual(["click"]);
+    expect(calls).toEqual([]);
     const decision = rows[0]?.payload.decision as { carriedOut?: boolean };
     expect(rows[0]?.eventType).toBe("computer.action_refused");
-    // Without this flag the row reads as a contradiction: refused, yet the work happened.
-    expect(decision.carriedOut).toBe(true);
+    expect(decision.carriedOut).toBe(false);
   });
 
   test("the local development actor is kept out of the audit foreign key", async () => {
@@ -437,7 +440,6 @@ describe("the computer gateway", () => {
  */
 describe("the gateway when the boundary asks a person", () => {
   const ASKING: ActionPolicy = {
-    mode: "enforce",
     deny: [],
     ask: ['contains(element.name, "submit")'],
     allow: ["true"],
@@ -609,28 +611,92 @@ describe("the gateway when the boundary asks a person", () => {
     expect(calls).toEqual([]);
   });
 
-  test("a declined request asks again rather than acting", async () => {
+  /**
+   * THE FAILURE THIS PAIR REPLACES.
+   *
+   * A decline used to leave the row and nothing else, so the next attempt found no approval to spend
+   * and opened a fresh question. A Bot could ask the same thing indefinitely and the only thing
+   * standing between somebody and being worn down was their patience — which is not what pressing
+   * Deny means. Both halves are tested: the same action is refused without a question, and a
+   * different action is untouched by it.
+   */
+  test("a declined request is refused rather than asked again", async () => {
     const { gateway, approvals, calls, rows } = await gatewayWith(ASKING);
     const asked = (await gateway
       .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
     await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, false);
-    await expect(
-      gateway.click(
-        "default",
-        "bot-1",
-        ACTOR,
-        { ref: "e9", snapshotId: 7 },
-        undefined,
-        asked.approvalId,
-      ),
-    ).rejects.toThrow(ActionNeedsApprovalError);
+    const refused = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionRefusedError;
 
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(refused.code).toBe("laf:declined_recently");
     expect(calls).toEqual([]);
-    // A No leaves a second question rather than a refusal row: nobody has agreed to this, and the
-    // trail says so where it happened.
-    expect(rows[1]?.eventType).toBe("approval.requested");
+    // And the trail says which kind of refusal it was, rather than naming a rule that did not fire.
+    expect(rows.at(-1)?.eventType).toBe("computer.action_refused");
+    expect(
+      (rows.at(-1)?.payload.decision as { code?: string } | undefined)?.code,
+    ).toBe("laf:declined_recently");
+    // No second question was opened. Answering one and being asked it again is the shape being fixed.
+    expect(
+      rows.filter((row) => row.eventType === "approval.requested"),
+    ).toHaveLength(1);
+  });
+
+  test("a declined action does not refuse the Bot's other work", async () => {
+    const { gateway, approvals, calls } = await gatewayWith({
+      ...PERMISSIVE,
+      ask: ['intent == "activate"'],
+    });
+    const asked = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, false);
+
+    // A different element, so a different fingerprint: still a question, not a refusal.
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e1", snapshotId: 7 }),
+    ).rejects.toThrow(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+  });
+
+  test("a fresh yes gets past a No that is still standing", async () => {
+    // The sticky refusal is a bound on the Bot asking again, never on the person changing their
+    // mind: a grant presented for this exact action is spent as it always was.
+    const { gateway, approvals, calls } = await gatewayWith(ASKING);
+    const first = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await approvals.answer(first.approvalId, "bot-1", MANAGER.id, false);
+
+    // What the surface does when somebody answers a question raised on another line: the person's
+    // yes is bound to the same action by fingerprint.
+    const second = await approvals.request({
+      botId: "bot-1",
+      actor: ACTOR.id,
+      rule: ASKING.ask[0] as string,
+      question: "again",
+      fingerprint: fingerprintOf({
+        botId: "bot-1",
+        toolName: "computer_click",
+        ref: "e9",
+        pageUrl: SNAPSHOT.url,
+      }),
+      target: { type: "computer", id: "default" },
+    });
+    await approvals.answer(second.id, "bot-1", MANAGER.id, true);
+
+    await gateway.click(
+      "default",
+      "bot-1",
+      ACTOR,
+      { ref: "e9", snapshotId: 7 },
+      undefined,
+      second.id,
+    );
+    expect(calls).toEqual(["click"]);
   });
 
   test("a type call that will press Enter is judged as one that submits", async () => {
@@ -704,28 +770,22 @@ describe("the gateway when the boundary asks a person", () => {
     expect(await approvals.pending("bot-2")).toEqual([]);
   });
 
-  test("dry-run records the question and lets the action through", async () => {
-    // Dry-run promises a policy that changes nothing, so an ask rule under it interrupts nobody. The
-    // row is what an operator switched dry-run on to read.
+  test("an ask under a policy that still names dry-run stops anyway", async () => {
+    // The mode used to turn every question into a note in the trail while the action went through.
+    // A deployment upgrading with that field still saved gets asked, which is what the rule it
+    // wrote says on the page.
     const { gateway, calls, rows } = await gatewayWith({
       ...ASKING,
       mode: "dry-run",
-    });
+    } as unknown as ActionPolicy);
 
-    await gateway.click("default", "bot-1", ACTOR, {
-      ref: "e9",
-      snapshotId: 7,
-    });
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(ActionNeedsApprovalError);
 
-    expect(calls).toEqual(["click"]);
+    expect(calls).toEqual([]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.eventType).toBe("computer.action_refused");
-    const decision = rows[0]?.payload.decision as {
-      source?: string;
-      carriedOut?: boolean;
-    };
-    expect(decision.source).toBe("ask");
-    expect(decision.carriedOut).toBe(true);
+    expect(rows[0]?.eventType).toBe("approval.requested");
   });
 
   test("a deny beats an ask on the same action", async () => {
@@ -745,7 +805,6 @@ describe("the gateway when the boundary asks a person", () => {
 
   test("a file write can be held back the same way a click can", async () => {
     const { gateway, calls, rows } = await gatewayWith({
-      mode: "enforce",
       deny: [],
       ask: ['intent == "write_file" && !matches(file.path, "^notes/")'],
       allow: ["true"],
@@ -1052,19 +1111,24 @@ describe("a process holding no snapshot", () => {
     ).rejects.toThrow(ActionRefusedError);
   });
 
-  test("dry-run changes nothing, here as everywhere else", async () => {
+  test("a file call is decided without one, because no snapshot would describe it", async () => {
+    // The shipped policy now mentions the page and the element, so this guard applies to every
+    // deployment rather than only to one that wrote such a rule. Without the workspace exemption a
+    // Bot that only reads files would be refused for not having looked at a web page — and told to
+    // take a snapshot of a screen it was never using.
     const { gateway, calls } = blindGateway({
       ...PERMISSIVE,
-      mode: "dry-run",
-      deny: ['page.host == "example.com"'],
+      ask: ['intent == "activate" && contains(element.name, "pay")'],
     });
 
-    await gateway.click("default", "bot-1", ACTOR, {
-      ref: "e9",
-      snapshotId: 7,
+    await gateway.readFile("default", "bot-1", ACTOR, { path: "notes.md" });
+    await gateway.writeFile("default", "bot-1", ACTOR, {
+      path: "notes.md",
+      contents: "kept",
+      append: false,
     });
 
-    expect(calls).toEqual(["click"]);
+    expect(calls).toEqual(["readFile", "writeFile"]);
   });
 });
 
@@ -1082,7 +1146,6 @@ describe("a process holding no snapshot", () => {
  */
 describe("when the boundary refuses to be answered for good", () => {
   const NO_STANDING: ActionPolicy = {
-    mode: "enforce",
     deny: [],
     ask: ['contains(element.name, "submit")'],
     allow: ["true"],
@@ -1167,7 +1230,6 @@ describe("when the boundary refuses to be answered for good", () => {
  */
 describe("when a Bot has an instruction of its own", () => {
   const ASKING_ONLY: ActionPolicy = {
-    mode: "enforce",
     deny: [],
     ask: ['contains(element.name, "submit")'],
     allow: ["true"],
@@ -1301,7 +1363,6 @@ describe("when a Bot has an instruction of its own", () => {
     const { gateway, calls, asked } = await gatewayJudging(
       { allowed: true, reason: "Reading is fine." },
       {
-        mode: "enforce",
         deny: ['contains(element.name, "submit")'],
         ask: ["true"],
         allow: ["true"],

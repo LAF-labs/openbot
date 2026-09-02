@@ -107,6 +107,78 @@ for (const [name, build] of REGISTRIES) {
       if (!declined.ok) expect(declined.reason).toBe("declined");
     });
 
+    /**
+     * A No OUTLIVES THE QUESTION IT ANSWERED, which it did not.
+     *
+     * The refusal above was the whole of it: the next attempt found no approval to spend and the
+     * gateway opened a fresh question. So a Bot that had been told no could ask again immediately,
+     * and the only thing between somebody and being worn down was their patience. Deny has to mean
+     * "not this", not "not this second".
+     */
+    test("remembers a No against the action it was about", async () => {
+      const registry = build();
+      const pending = await registry.request(SUBJECT);
+      await registry.answer(pending.id, SUBJECT.botId, "boss", false);
+
+      expect(
+        await registry.recentlyDeclined(SUBJECT.botId, SUBJECT.fingerprint),
+      ).toBe(true);
+    });
+
+    test("keeps a No to the Bot and the action it was about, and nothing else", async () => {
+      const registry = build();
+      const pending = await registry.request(SUBJECT);
+      await registry.answer(pending.id, SUBJECT.botId, "boss", false);
+
+      // A person told one Bot not to press one button. Everything else it was doing carries on, and
+      // so does every other Bot — a refusal that spread would be a Bot stopped by somebody else's
+      // decision about something else.
+      expect(
+        await registry.recentlyDeclined(SUBJECT.botId, "fp-delete-account"),
+      ).toBe(false);
+      expect(
+        await registry.recentlyDeclined("research-bot", SUBJECT.fingerprint),
+      ).toBe(false);
+    });
+
+    test("does not treat a Yes as something to refuse later", async () => {
+      const registry = build();
+      const pending = await registry.request(SUBJECT);
+      await registry.answer(pending.id, SUBJECT.botId, "boss", true);
+
+      expect(
+        await registry.recentlyDeclined(SUBJECT.botId, SUBJECT.fingerprint),
+      ).toBe(false);
+    });
+
+    test("lets a No expire, so it is a pause and not a rule", async () => {
+      // Half an hour later the same action asks again. Somebody who wants a thing stopped for good
+      // writes it into the boundary, where everybody can read it — a refusal buried in a registry
+      // is not a rule anybody can find.
+      let clock = 1_000_000;
+      const registry =
+        name === "in memory"
+          ? createApprovalRegistry({
+              now: () => clock,
+              declineStickyMs: 60_000,
+            })
+          : createDatabaseApprovalRegistry(database, {
+              now: () => clock,
+              declineStickyMs: 60_000,
+            });
+      const pending = await registry.request(SUBJECT);
+      await registry.answer(pending.id, SUBJECT.botId, "boss", false);
+
+      clock += 59_000;
+      expect(
+        await registry.recentlyDeclined(SUBJECT.botId, SUBJECT.fingerprint),
+      ).toBe(true);
+      clock += 2_000;
+      expect(
+        await registry.recentlyDeclined(SUBJECT.botId, SUBJECT.fingerprint),
+      ).toBe(false);
+    });
+
     test("cannot be answered twice, so a decision cannot be overturned", async () => {
       const registry = build();
       const pending = await registry.request(SUBJECT);

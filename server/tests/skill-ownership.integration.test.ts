@@ -24,7 +24,7 @@ const database = createDatabase(
   TEST_POOL,
 );
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], allow: ["true"] };
 
 const store = createPluginStore({
   database,

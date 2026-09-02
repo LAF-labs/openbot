@@ -93,3 +93,22 @@ export function requireAdmin(context: Context<{ Variables: AppVariables }>) {
 
   return undefined;
 }
+
+/**
+ * The same rule, as a middleware, for routes where it is the whole of the guard.
+ *
+ * `requireAdmin` returns a response the handler has to remember to return, and a handler that forgets
+ * runs anyway — the check is a line of code in the middle of a function that does something else,
+ * which is exactly where an unrelated edit drops it. As a middleware it sits in the route's own
+ * declaration, beside `requireUser`, where it can be read without opening the body.
+ *
+ * MUST COME AFTER `requireUser`, which is what puts the actor on the context. Registered before it,
+ * this reads an actor that is not there.
+ */
+export const requireAdminRoute: MiddlewareHandler<{
+  Variables: AppVariables;
+}> = async (context, next) => {
+  const denied = requireAdmin(context);
+  if (denied) return denied;
+  await next();
+};

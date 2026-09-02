@@ -39,6 +39,21 @@ import type { AllowanceScope } from "./standing-approvals";
 export const APPROVAL_TTL_MS = 10 * 60_000;
 
 /**
+ * How long a person's No goes on meaning no.
+ *
+ * Thirty minutes, and the number is a compromise with what this layer can see. What the boundary
+ * wants is "for the rest of this conversation": a Bot told no should not be able to come back at the
+ * same thing five seconds later with the same request, and a person should not have to answer the
+ * same question until they give in. Nothing here knows about conversations — a registry entry is a
+ * Bot, an action and a fingerprint — so the bound is a clock, set long enough to outlast the turn
+ * that was refused and short enough that tomorrow's work is not shaped by yesterday's no.
+ *
+ * It is not a way to forbid something. Half an hour later the same action asks again, and a person
+ * who wants it stopped for good writes it into the boundary where everybody can read it.
+ */
+export const DECLINE_STICKS_MS = 30 * 60_000;
+
+/**
  * The action an approval is about, in the fields a fingerprint is taken over.
  *
  * Everything here is known to the caller before it acts and is derived from the request it is
@@ -250,17 +265,60 @@ export type ApprovalRegistry = {
   ) => Promise<ApprovalAnswer>;
   /** Spend an approval on one action. Single use: a successful consumption removes it. */
   consume: (id: string, fingerprint: string) => Promise<ApprovalConsumption>;
+  /**
+   * Whether somebody's No to this exact action still stands.
+   *
+   * Asked before a question is opened, so that a Bot which has been refused cannot simply raise the
+   * same question again — see DECLINE_STICKS_MS for why that mattered enough to be its own state.
+   * Keyed on the fingerprint, so it is the action that was refused rather than the Bot: a Bot told
+   * no about one button carries on with the rest of its work.
+   */
+  recentlyDeclined: (botId: string, fingerprint: string) => Promise<boolean>;
 };
+
+/**
+ * The Nos, remembered for both registries by one piece of code.
+ *
+ * In memory in both, deliberately. A pending question is already in memory in the variant this
+ * deployment runs (docs/laf/deployment-model.md, and decision §7-1), so a decline outliving a
+ * restart while the question it answered does not would be the odd half: the Bot would be refused
+ * for something nobody in this process ever asked about. A restart forgets both, the Bot asks again,
+ * and a person answers again — which is the behaviour a restart is allowed to have.
+ */
+function createDeclineMemory(now: () => number, stickyMs: number) {
+  const until = new Map<string, number>();
+  const key = (botId: string, fingerprint: string) => `${botId} ${fingerprint}`;
+
+  return {
+    record(botId: string, fingerprint: string) {
+      until.set(key(botId, fingerprint), now() + stickyMs);
+    },
+    stands(botId: string, fingerprint: string) {
+      const at = now();
+      // Swept on read, like the questions themselves: nothing here matters until somebody looks.
+      for (const [entry, expires] of until) {
+        if (expires <= at) until.delete(entry);
+      }
+      return (until.get(key(botId, fingerprint)) ?? 0) > at;
+    },
+  };
+}
 
 export function createApprovalRegistry(
   options: {
     /** Injectable so expiry can be tested without a test that sleeps for ten minutes. */
     now?: () => number;
     ttlMs?: number;
+    /** How long a decline stands. See DECLINE_STICKS_MS. */
+    declineStickyMs?: number;
   } = {},
 ): ApprovalRegistry {
   const now = options.now ?? (() => Date.now());
   const ttlMs = options.ttlMs ?? APPROVAL_TTL_MS;
+  const declines = createDeclineMemory(
+    now,
+    options.declineStickyMs ?? DECLINE_STICKS_MS,
+  );
   const open = new Map<string, PendingApproval>();
 
   /**
@@ -324,6 +382,8 @@ export function createApprovalRegistry(
         answeredBy: actor,
       };
       open.set(id, answered);
+      // A No outlives the question it answered. See DECLINE_STICKS_MS.
+      if (!granted) declines.record(approval.botId, approval.fingerprint);
       return { ok: true, approval: answered };
     },
 
@@ -347,6 +407,9 @@ export function createApprovalRegistry(
       open.delete(id);
       return { ok: true, approval };
     },
+
+    recentlyDeclined: async (botId, fingerprint) =>
+      declines.stands(botId, fingerprint),
   };
 }
 
@@ -368,10 +431,25 @@ export function createApprovalRegistry(
  */
 export function createDatabaseApprovalRegistry(
   database: Database,
-  options: { now?: () => number; ttlMs?: number } = {},
+  options: {
+    now?: () => number;
+    ttlMs?: number;
+    declineStickyMs?: number;
+  } = {},
 ): ApprovalRegistry {
   const now = options.now ?? (() => Date.now());
   const ttlMs = options.ttlMs ?? APPROVAL_TTL_MS;
+  /*
+   * The one part of this variant that is not in the table, and the honest place to say so: a decline
+   * sticks within the process that recorded it. Giving it a column is a migration in aid of a module
+   * that is being deleted — the deployment runs the Map above (decision §7-1) — and a decline that
+   * did not stick at all was the failure being fixed, so the shared implementation goes in both and
+   * the same contract test proves it in both.
+   */
+  const declines = createDeclineMemory(
+    now,
+    options.declineStickyMs ?? DECLINE_STICKS_MS,
+  );
 
   /** Drop what has run out, on every read, exactly as the in-memory registry does. */
   const sweep = async () => {
@@ -459,6 +537,8 @@ export function createDatabaseApprovalRegistry(
         )
         .returning();
       if (!row) return { ok: false, reason: "no longer open" };
+      // A No outlives the question it answered. See DECLINE_STICKS_MS.
+      if (!granted) declines.record(row.botId, row.fingerprint);
       return { ok: true, approval: asApproval(row) };
     },
 
@@ -491,5 +571,8 @@ export function createDatabaseApprovalRegistry(
       if (!spent) return { ok: false, reason: "unknown" };
       return { ok: true, approval: asApproval(spent) };
     },
+
+    recentlyDeclined: async (botId, fingerprint) =>
+      declines.stands(botId, fingerprint),
   };
 }

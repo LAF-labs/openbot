@@ -28,6 +28,7 @@ import type { ComputerClient } from "./client";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
+  type FactCode,
   type PolicyContext,
   type PolicyDecision,
   policyDecidesOnSnapshot,
@@ -59,11 +60,24 @@ import type {
 export class ActionRefusedError extends Error {
   /** The rule that refused it, so the surface can show which one and an operator can find it. */
   readonly rule: string | null;
+  /**
+   * What kind of refusal this was, as a code the surface can phrase itself.
+   *
+   * Null for the ordinary case, where the rule is the whole story. Set where there is a next move
+   * worth naming — a password box the Bot should be asking a person to fill, an answer somebody
+   * already gave. See `FactCode`.
+   */
+  readonly code: FactCode | null;
 
-  constructor(reason: string, rule: string | null) {
+  constructor(
+    reason: string,
+    rule: string | null,
+    code: FactCode | null = null,
+  ) {
     super(reason);
     this.name = "ActionRefusedError";
     this.rule = rule;
+    this.code = code;
   }
 }
 
@@ -279,28 +293,45 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       targetUrl: subject.targetUrl,
     });
 
+    /*
+     * EVERY FIELD, ON EVERY ACTION, EMPTY WHERE THERE IS NOTHING TO SAY.
+     *
+     * cel-js throws on a field that is not in the context, `matches` returns a broken deny as a
+     * refusal and a broken ask as a question — so an absent field does not make a rule inert, it
+     * makes it fire on everything. Left optional, `element` was absent on every keypress the server
+     * could not attach to a control and on every file call, which turned one rule about button
+     * labels into a deployment that stopped Enter and refused the workspace. The plugin store has
+     * filled every field with empty strings since it was written (`plugins/store.ts`) for exactly
+     * this reason; this is the same context, built the same way, so a rule means one thing on both
+     * paths.
+     *
+     * Blank is not a lie here. A file call has no element and no key, and a rule about element names
+     * should be false against it rather than unevaluable. What blank must never mean is "the server
+     * could not see the page" — that is decided separately, below, and refuses.
+     */
     const context: PolicyContext = {
       tool: { name: toolName },
       bot: { id: botId },
       actor: { id: actor.id },
       page: { url: pageUrl, host: hostOf(pageUrl) },
       repeat: { count: repetition.count },
-      // Always a boolean, unlike `key`, so a rule about form submission needs no guard to stay
-      // evaluable on the actions that cannot submit anything. See PolicyContext.submit.
+      // Always a boolean, unlike `key` once was, so a rule about form submission needs no guard to
+      // stay evaluable on the actions that cannot submit anything. See PolicyContext.submit.
       submit: subject.submit === true,
       ...(intent ? { intent } : {}),
-      ...(subject.key ? { key: subject.key } : {}),
-      ...(element
-        ? {
-            element: {
-              ref: element.ref,
-              role: element.role,
-              name: element.name,
-              ...(element.type ? { type: element.type } : {}),
-            },
-          }
-        : {}),
-      ...(filePath ? { file: describeFile(filePath) } : {}),
+      key: subject.key ?? "",
+      element: {
+        // The RESOLVED ref, blank when nothing resolved — never the one the caller sent. Nothing
+        // in this object may come from the request, or "do not click Submit" is evaded by calling
+        // it something else, and the blank is the honest answer: this server issued no such handle.
+        ref: element?.ref ?? "",
+        role: element?.role ?? "",
+        name: element?.name ?? "",
+        type: element?.type ?? "",
+      },
+      file: filePath
+        ? describeFile(filePath)
+        : { path: "", name: "", extension: "" },
     };
 
     if (repetition.threshold !== null && repetition.fingerprint) {
@@ -354,18 +385,26 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * passes this guard. So does a deployment whose refusing rules never mention either field, which
      * is why the policy is consulted rather than the snapshot alone — a boundary that says nothing
      * about pages loses nothing by not having one.
+     *
+     * AND SO DOES THE WORKSPACE. A file call has nothing to do with whatever the browser is showing:
+     * its element and page are structurally empty, not unknown, and no snapshot would fill them in.
+     * Refusing those was harmless while the shipped policy mentioned neither field — it now mentions
+     * both, and without this line every deployment would refuse `computer_read_file` until somebody
+     * had looked at a web page first, with a message about a screen the Bot was never using.
      */
     const policy = options.policy();
-    const blind = !cached && subject.targetUrl === undefined;
+    const aboutThePage =
+      intent !== "read_file" &&
+      intent !== "write_file" &&
+      intent !== "list_files";
+    const blind = !cached && subject.targetUrl === undefined && aboutThePage;
     const decision =
       blind && policyDecidesOnSnapshot(policy)
         ? ({
             allowed: false,
-            mode: policy?.mode ?? "enforce",
             matched: null,
             source: "deny",
-            // dry-run changes nothing, here as everywhere else in this boundary.
-            forward: (policy?.mode ?? "enforce") === "dry-run",
+            forward: false,
             reason:
               "This server has not seen the computer's screen, so a rule about the page or the " +
               "element could not be decided. Take a snapshot and try the action again.",
@@ -414,6 +453,52 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       const presented = subject.approvalId
         ? await approvals.consume(subject.approvalId, fingerprint)
         : undefined;
+
+      /*
+       * A NO THAT STICKS.
+       *
+       * Declining used to leave the row and nothing else: the next attempt found no approval to
+       * spend and opened a fresh question, so a model that had been told no could ask again, and
+       * again, and the only thing standing between somebody and being worn down was their patience.
+       * "Deny" has to mean "not this", not "not this second".
+       *
+       * Refused rather than asked, before anything is opened, and before the standing allowance and
+       * the auto-review are consulted — a person's own answer about THIS action outranks both.
+       * Presenting a fresh grant is the one way past it, which is what makes the row on the surface
+       * still work if somebody changes their mind.
+       */
+      if (
+        !presented?.ok &&
+        (await approvals.recentlyDeclined(botId, fingerprint))
+      ) {
+        const refusal: PolicyDecision = {
+          ...decision,
+          allowed: false,
+          forward: false,
+          source: "deny",
+          reason:
+            "Somebody was asked about this and said no, so it will not be asked again for now. " +
+            "Do something else, or ask them to allow it.",
+          code: "laf:declined_recently",
+        };
+        await write(auditStore, {
+          toolName,
+          botId,
+          actor,
+          computerId,
+          element,
+          ref,
+          ...(subject.key ? { key: subject.key } : {}),
+          filePath,
+          pageUrl,
+          decision: refusal,
+        });
+        throw new ActionRefusedError(
+          refusal.reason,
+          refusal.matched,
+          "laf:declined_recently",
+        );
+      }
 
       /*
        * What a standing allowance for this action would have to cover.
@@ -563,7 +648,11 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     });
 
     if (!settled.forward) {
-      throw new ActionRefusedError(settled.reason, settled.matched);
+      throw new ActionRefusedError(
+        settled.reason,
+        settled.matched,
+        settled.code ?? null,
+      );
     }
 
     let result: T;
@@ -1122,9 +1211,11 @@ async function write(
       ...(entry.failure ? { failure: entry.failure } : {}),
       decision: {
         allowed: entry.decision.allowed,
-        mode: entry.decision.mode,
         source: entry.decision.source,
         rule: entry.decision.matched,
+        // What kind of refusal, where there is more to say than the rule. Queryable, unlike the
+        // sentence beside it, which is why the trail carries both.
+        ...(entry.decision.code ? { code: entry.decision.code } : {}),
         ...(entry.approvedBy ? { approvedBy: entry.approvedBy } : {}),
         // Structured rather than folded into the reason, so "everything an allowance let through"
         // is a query somebody can actually run.
@@ -1135,7 +1226,13 @@ async function write(
             }
           : {}),
         ...(entry.autoReviewed ? { autoReviewed: entry.autoReviewed } : {}),
-        /** Present so the trail explains a dry-run row that was recorded as refused but still ran. */
+        /**
+         * Whether the action actually went on to run.
+         *
+         * The same as `allowed` now that everything enforces, and kept because the rows written
+         * before that are not: a reader filtering on it finds the dry-run era's refusals that ran
+         * anyway, and a future third answer would land here rather than in a new field.
+         */
         carriedOut: entry.decision.forward,
       },
     },

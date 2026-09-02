@@ -1,8 +1,9 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import { requireAdminRoute } from "../auth/guards";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -50,6 +51,14 @@ export function createComputerRoutes(
    * more, which is what a deployment without a model can honestly offer.
    */
   writeUp?: WriteUp,
+  /**
+   * Where a change to the boundary itself is recorded.
+   *
+   * Last, and optional, like everything else here: without it the policy still saves and the trail
+   * simply does not say who widened it or why. Every acting route already writes through the
+   * gateway's own store — this one is for the edit to the rules, which no gateway call goes through.
+   */
+  auditStore?: AuditStore,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -104,7 +113,17 @@ export function createComputerRoutes(
         return awaitingApproval(context, error);
       }
       if (error instanceof ActionRefusedError) {
-        return context.json({ error: error.message, rule: error.rule }, 403);
+        return context.json(
+          {
+            error: error.message,
+            rule: error.rule,
+            // What kind of refusal, where there is more to say than the rule — a password box the Bot
+            // should be asking a person to fill, an answer somebody already gave. The surface owns
+            // the words for it; this sends the fact.
+            ...(error.code ? { code: error.code } : {}),
+          },
+          403,
+        );
       }
       // A refusal is the rules working, not a fault, so it is a 403 with the reason a person reads.
       // Collapsing it into the same 5xx as an unreachable computer would send somebody looking for
@@ -250,9 +269,22 @@ export function createComputerRoutes(
     act(context, (botId, actor) => gateway.stopComputer(botId, botId, actor)),
   );
 
-  /** Delete the profile. Every login goes with it, which is the point and also the danger. */
-  routes.post("/:botId/computers/reset", requireUser, (context) =>
-    act(context, (botId, actor) => gateway.resetComputer(botId, botId, actor)),
+  /**
+   * Delete the profile. Every login goes with it, which is the point and also the danger.
+   *
+   * ADMINISTRATORS ONLY, unlike stopping. Stopping a browser costs somebody the page they were on;
+   * this destroys every login on the one computer all of this account's Bots share, with no undo,
+   * and it sat behind the same guard as reading a screenshot. Nothing about it is a Bot's own
+   * business, so it is not a Bot's own decision either.
+   */
+  routes.post(
+    "/:botId/computers/reset",
+    requireUser,
+    requireAdminRoute,
+    (context) =>
+      act(context, (botId, actor) =>
+        gateway.resetComputer(botId, botId, actor),
+      ),
   );
 
   /**
@@ -416,8 +448,12 @@ export function createComputerRoutes(
     try {
       return context.json(
         await gateway.humanInput(context.req.param("botId"), {
-          kind,
+          // The body first and the validated `kind` LAST. Spread the other way round, a body
+          // carrying `kind: "secret"` overwrote the one this route checked, and the person's own
+          // input became a secret being supplied — down a path this route does not audit and whose
+          // whole design is that there is exactly one door into it.
           ...(body ?? {}),
+          kind,
         } as Parameters<typeof gateway.humanInput>[1]),
       );
     } catch (error) {
@@ -486,21 +522,32 @@ export function createComputerRoutes(
    * takes one appended line per mount. The storage underneath is durable, so administrator rules
    * remain active after a restart.
    */
-  routes.get("/policy", requireUser, (context) => {
-    const denied = requireAdmin(context);
-    return denied ?? context.json({ policy: policyStore.get() });
-  });
+  routes.get("/policy", requireUser, requireAdminRoute, (context) =>
+    context.json({ policy: policyStore.get() }),
+  );
 
-  routes.put("/policy", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-
-    const parsed = parseActionPolicy(
-      await context.req.json().catch(() => null),
-    );
+  routes.put("/policy", requireUser, requireAdminRoute, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    const parsed = parseActionPolicy(body);
     if (!parsed.ok) {
       return context.json({ error: parsed.error }, 400);
     }
+    /*
+     * WHY, WHERE THE CHANGE IS ONE THAT STANDS THE BOUNDARY DOWN.
+     *
+     * `settleWithoutAsking` decides whether a question may be answered by an allowance or by a
+     * model instead of by a person, so switching it is a decision about the deployment rather than
+     * about one action, and it has to be arguable with afterwards. The reason travels beside the
+     * policy, is never enforced on, and is required by the surface rather than here: a route that
+     * refused a boundary change over a missing sentence would be a route that leaves a deployment
+     * unable to tighten its own rules.
+     */
+    const before = policyStore.get();
+    const reason =
+      typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) : "";
     try {
       await policyStore.set(parsed.policy, context.var.actor.email);
     } catch {
@@ -516,6 +563,41 @@ export function createComputerRoutes(
         },
         503,
       );
+    }
+    /*
+     * Written after the save, so the trail records boundaries that are actually in force. Its
+     * failure is swallowed for the opposite reason to everywhere else in this area: the rule IS
+     * saved by now, and throwing here would tell an administrator their change failed while it was
+     * being enforced — the one lie worse than a missing row.
+     */
+    if (auditStore) {
+      await recordAuditEvent(auditStore, {
+        eventType: "computer.policy_changed",
+        targetType: "computer",
+        payload: {
+          actor: context.var.actor.email,
+          ...(reason ? { reason } : {}),
+          settleWithoutAsking: parsed.policy.settleWithoutAsking ?? "allowed",
+          // Named only when it moved. A row for every rule edit that said the switch was on would
+          // bury the handful of rows where somebody actually changed it.
+          ...((before.settleWithoutAsking ?? "allowed") !==
+          (parsed.policy.settleWithoutAsking ?? "allowed")
+            ? {
+                settleWithoutAskingWas: before.settleWithoutAsking ?? "allowed",
+              }
+            : {}),
+          deny: parsed.policy.deny.length,
+          ask: parsed.policy.ask.length,
+          allow: parsed.policy.allow.length,
+        },
+      }).catch((error) => {
+        console.error(
+          JSON.stringify({
+            type: "computer-policy-row-lost",
+            error: String(error),
+          }),
+        );
+      });
     }
     // Echoed back so a caller can see exactly what is now in force rather than assuming its request
     // was stored verbatim.
@@ -593,7 +675,17 @@ async function act(
     // A policy refusal is the product working. 403 with the rule that refused it, so the surface can
     // tell the person which boundary they met rather than reporting a malfunction.
     if (error instanceof ActionRefusedError) {
-      return context.json({ error: error.message, rule: error.rule }, 403);
+      return context.json(
+        {
+          error: error.message,
+          rule: error.rule,
+          // What kind of refusal, where there is more to say than the rule — a password box the Bot
+          // should be asking a person to fill, an answer somebody already gave. The surface owns
+          // the words for it; this sends the fact.
+          ...(error.code ? { code: error.code } : {}),
+        },
+        403,
+      );
     }
     // The computer refused the path itself, which is a different thing from the policy refusing this
     // Bot. Same status, no rule attached, because there is no rule to go and edit.

@@ -12,6 +12,7 @@ import {
 import type { ComputerClient } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
+  ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
@@ -39,7 +40,6 @@ const SNAPSHOT: SnapshotResult = {
 };
 
 const ASKING: ActionPolicy = {
-  mode: "enforce",
   deny: [],
   ask: ['contains(element.name, "submit")'],
   allow: ["true"],
@@ -296,12 +296,12 @@ describe("answering a question", () => {
     expect(theirs.approvals).toEqual([]);
   });
 
-  test("a declined answer stops the action without pretending it was refused by a rule", async () => {
+  test("a No answered on the surface stops the action from being asked again", async () => {
     const { app, ask, rows, gateway, calls } = await surface();
     const asked = await ask("bot-1");
 
     await answer(app)("bot-1", asked.approvalId, false);
-    // Presenting a No asks again rather than going through, and nothing reached the computer.
+    // Presenting the spent No does not open a second question: it is refused, and the row says why.
     await expect(
       gateway.click(
         "bot-1",
@@ -311,13 +311,16 @@ describe("answering a question", () => {
         undefined,
         asked.approvalId,
       ),
-    ).rejects.toThrow(ActionNeedsApprovalError);
+    ).rejects.toThrow(ActionRefusedError);
     expect(calls).toEqual([]);
     expect(rows.map((row) => row.eventType)).toEqual([
       "approval.requested",
       "approval.denied",
-      "approval.requested",
+      "computer.action_refused",
     ]);
+    expect(
+      (rows.at(-1)?.payload.decision as { code?: string } | undefined)?.code,
+    ).toBe("laf:declined_recently");
   });
 
   test("an answer is spendable only on the action it was given for", async () => {

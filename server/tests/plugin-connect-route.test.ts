@@ -72,7 +72,7 @@ const CALLBACK = `${PUBLIC_URL}/api/plugins/oauth/callback`;
 /** What the injected registration hands back, so a test can say which client the URL is asking as. */
 const REGISTERED: OAuthClient = { clientId: "dyn-connect", clientSecret: "" };
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], allow: ["true"] };
 
 /** Every self-registration this deployment attempted, so "once, not twice" is assertable. */
 const registrations: { registrationUrl: string; redirectUri: string }[] = [];

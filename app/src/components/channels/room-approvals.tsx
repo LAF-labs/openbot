@@ -89,6 +89,8 @@ export function RoomApprovals({
                 : t(
                     "Asked because of this rule. Allowing covers this one action.",
                   )}{" "}
+              {/* The same fact as on the line-level card: a no stands. See approval-request.tsx. */}
+              {t("Saying no stops it being asked again for a while.")}{" "}
               <code>{approval.rule}</code>
             </p>
           ) : null}

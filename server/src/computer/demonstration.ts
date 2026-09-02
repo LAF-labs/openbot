@@ -11,6 +11,10 @@
  * into the name of the thing that was clicked, and the result is a trace of what happened rather
  * than a sequence to replay. A procedure survives a site redesign; a macro does not.
  *
+ * AND IT IS ONLY WHAT THE PERSON DID, never what the page did about it. The socket carries presses
+ * and keystrokes; it carries no notice that a page changed, so where somebody went is not in here
+ * and is not inferable from what is. See `DemonstrationStep`.
+ *
  * IT NEVER RECORDS WHAT WAS TYPED, and that is not a preference. Every keystroke a person makes in
  * that browser passes through this module, including the password they use to sign in to their own
  * bank — the surface sends `text` on printable keys and pastes arrive whole. So typing is recorded
@@ -23,10 +27,18 @@
  * describes, which is why it is not a table.
  */
 
-/** One thing that happened, in the terms a procedure would be written from. */
+/**
+ * One thing that happened, in the terms a procedure would be written from.
+ *
+ * THERE IS NO "a page was opened" STEP, and there was one for a while that nothing could ever
+ * produce. Everything here is read off the messages the surface sends into the browser — a press, a
+ * keystroke, a paste — and a page opening is not one of those: it is what the page does after a
+ * press, and nothing on that socket says it happened. The step existed, `opened()` decided whether a
+ * URL was worth recording, no caller ever called it, and the write-up's prompt went on telling a
+ * model to leave out "the pages they opened and immediately left" as though it would see any. A
+ * recording that cannot see navigation should say so rather than keep a field for it.
+ */
 export type DemonstrationStep =
-  /** A page was opened. The URL is the step. */
-  | { kind: "opened"; url: string; at: number }
   /** Something was pressed. Named where the page had a name for it. */
   | {
       kind: "pressed";
@@ -236,22 +248,4 @@ function lastPressed(session: Demonstration): string | null {
     if (step?.kind === "pressed") return step.element?.name ?? null;
   }
   return null;
-}
-
-/** Whether a URL is worth recording as a step, or the same page again. */
-export function opened(
-  session: Demonstration,
-  url: string,
-): DemonstrationStep | null {
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-  for (let index = session.steps.length - 1; index >= 0; index -= 1) {
-    const step = session.steps[index];
-    if (step?.kind !== "opened") continue;
-    // The same address again is a reload, not a step in a procedure.
-    return step.url === trimmed
-      ? null
-      : { kind: "opened", url: trimmed, at: 0 };
-  }
-  return { kind: "opened", url: trimmed, at: 0 };
 }
