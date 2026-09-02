@@ -1,5 +1,5 @@
 import { IconRefresh } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { auditEventsQueryOptions } from "@/lib/audit/queries";
+import { type AuditEvent, auditEventsQueryOptions } from "@/lib/audit/queries";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 
@@ -19,17 +19,6 @@ import { activeLocale, t } from "@/lib/i18n";
 export const Route = createFileRoute("/_authed/admin/audit")({
   component: AuditPage,
 });
-
-/** One row as the API returns it. */
-type AuditEvent = {
-  id: string;
-  actorUserId: string | null;
-  eventType: string;
-  targetType: string;
-  targetId: string | null;
-  payload: Record<string, unknown>;
-  createdAt: string;
-};
 
 const FILTERS = [
   { label: "Everything", search: "" },
@@ -68,8 +57,8 @@ const FILTERS = [
 
 function AuditPage() {
   const [search, setSearch] = useState<string>(FILTERS[0].search);
-  const events = useQuery(auditEventsQueryOptions(search));
-  const rows = (events.data?.events ?? []) as AuditEvent[];
+  const events = useInfiniteQuery(auditEventsQueryOptions(search));
+  const rows = (events.data?.pages ?? []).flatMap((page) => page.events);
   const nameFor = useBotNames();
 
   return (
@@ -84,7 +73,7 @@ function AuditPage() {
         <Button
           // A refresh that takes a second looked ignored: nothing moved until the answer landed.
           disabled={events.isFetching}
-          onClick={() => events.refetch()}
+          onClick={() => void events.refetch()}
           size="sm"
           variant="ghost"
         >
@@ -145,6 +134,34 @@ function AuditPage() {
             </table>
           </div>
         )}
+
+        {/*
+         * Under the table, not inside it. The count says what has been read so far rather than how
+         * much there is: the server answers with a page and a cursor, never a total, and inventing
+         * "100 of 3,412" from a cursor is a number nobody counted.
+         */}
+        {rows.length > 0 ? (
+          <div className="mt-3 flex items-center gap-3">
+            {events.hasNextPage ? (
+              <Button
+                disabled={events.isFetchingNextPage}
+                onClick={() => void events.fetchNextPage()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {events.isFetchingNextPage ? t("Loading…") : t("Load more")}
+              </Button>
+            ) : null}
+            <p className="text-muted-foreground text-xs">
+              {events.hasNextPage
+                ? t("{count} events so far", { count: rows.length })
+                : t("{count} events, and that is all of them", {
+                    count: rows.length,
+                  })}
+            </p>
+          </div>
+        ) : null}
       </PageSection>
     </PageShell>
   );

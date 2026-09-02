@@ -29,6 +29,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import {
   type Routine,
   type RoutineRun,
+  routineKeys,
   routineListQueryOptions,
   runShape,
   routineRequest,
@@ -46,7 +47,7 @@ import {
 
 function RunHistory({ routineId }: { routineId: string }) {
   const runs = useQuery({
-    queryKey: ["routine-runs", routineId],
+    queryKey: routineKeys.runs(routineId),
     queryFn: async () =>
       (await routineRequest(`/api/routines/${routineId}/runs`))
         ?.runs as RoutineRun[],
@@ -108,7 +109,7 @@ function RoutineRow({ routine }: { routine: Routine }) {
   const [showRuns, setShowRuns] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["routines"] });
+    queryClient.invalidateQueries({ queryKey: routineKeys.all });
 
   /*
    * THE SWITCH MOVES WHEN IT IS CLICKED. It was driven straight off server state, so nothing
@@ -123,16 +124,16 @@ function RoutineRow({ routine }: { routine: Routine }) {
         body: JSON.stringify({ enabled }),
       }),
     onMutate: async (enabled: boolean) => {
-      await queryClient.cancelQueries({ queryKey: ["routines"] });
-      const previous = queryClient.getQueryData<Routine[]>(["routines"]);
-      queryClient.setQueryData<Routine[]>(["routines"], (rows) =>
+      await queryClient.cancelQueries({ queryKey: routineKeys.all });
+      const previous = queryClient.getQueryData<Routine[]>(routineKeys.all);
+      queryClient.setQueryData<Routine[]>(routineKeys.all, (rows) =>
         rows?.map((row) => (row.id === routine.id ? { ...row, enabled } : row)),
       );
       return { previous };
     },
     onError: (_error, _enabled, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(["routines"], context.previous);
+        queryClient.setQueryData(routineKeys.all, context.previous);
       }
     },
     onSettled: invalidate,
@@ -143,7 +144,7 @@ function RoutineRow({ routine }: { routine: Routine }) {
     onSuccess: () => {
       invalidate();
       void queryClient.invalidateQueries({
-        queryKey: ["routine-runs", routine.id],
+        queryKey: routineKeys.runs(routine.id),
       });
     },
   });
@@ -576,7 +577,9 @@ function RoutinesPage() {
           <NewRoutine
             onDone={() => {
               setCreating(false);
-              void queryClient.invalidateQueries({ queryKey: ["routines"] });
+              void queryClient.invalidateQueries({
+                queryKey: routineKeys.all,
+              });
             }}
           />
         </div>

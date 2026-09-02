@@ -44,6 +44,28 @@ const SCREEN_PANEL_WIDTH = 320;
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
+  /**
+   * THE TWO REQUESTS THIS SCREEN CANNOT DRAW WITHOUT, STARTED TOGETHER AND BEFORE IT MOUNTS.
+   *
+   * On mount, the channel was fetched first; the Bot's id only exists once it lands; the header's
+   * name comes from the roster; and the settings pane's profile comes from the Bot. That is a
+   * three-deep waterfall on a screen somebody just clicked a roster row to reach, and it is three
+   * round trips of a spinner rather than one.
+   *
+   * The two that do not depend on each other start here, in parallel, while the router is still
+   * navigating. `ensureQueryData` is a cache read when the roster already fetched the list, which
+   * is the common case — opening a second channel costs one request, not two.
+   *
+   * Deliberately not awaited as a pair that can fail the navigation: a channel that cannot be read
+   * still has a screen to draw, and the roster is not worth blocking on at all.
+   */
+  loader: async ({ context, params }) => {
+    const channel = context.queryClient.ensureQueryData(
+      channelQueryOptions(params.channelId),
+    );
+    const roster = context.queryClient.ensureQueryData(agentListQueryOptions());
+    await Promise.allSettled([channel, roster]);
+  },
   component: RouteComponent,
 });
 
