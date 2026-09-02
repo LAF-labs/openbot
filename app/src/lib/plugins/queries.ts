@@ -273,14 +273,17 @@ export async function saveOauthClient(
 /**
  * Polled grant snapshot for what the active Bot should be offered; call-time checks still enforce.
  */
-export function agentPluginsQueryOptions(agentId: string) {
+export function agentPluginsQueryOptions(agentId: string | undefined) {
   return queryOptions({
-    queryKey: pluginKeys.forAgent(agentId),
-    enabled: agentId.length > 0,
+    queryKey: pluginKeys.forAgent(agentId ?? ""),
+    // No Bot in front of the person is not a Bot with no plugins; it is nothing to ask about.
+    enabled: Boolean(agentId),
     refetchInterval: 15_000,
+    // A hidden tab cannot act on a revoked tool, and its throttled timers only bank up requests.
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<GrantedPlugins> => {
       const response = await fetch(
-        `/api/plugins/for/${encodeURIComponent(agentId)}`,
+        `/api/plugins/for/${encodeURIComponent(agentId ?? "")}`,
         { credentials: "include" },
       );
       if (!response.ok)

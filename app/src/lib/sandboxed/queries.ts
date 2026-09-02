@@ -59,10 +59,14 @@ export function sandboxedListQueryOptions() {
  * not what enforces anything: whether this Bot may use the component at all is the grant, which the
  * server is asked about separately and at call time.
  */
-export function publishedSandboxedQueryOptions() {
+export function publishedSandboxedQueryOptions(enabled = true) {
   return queryOptions({
     queryKey: sandboxedKeys.published(),
+    // Nothing renders a sandboxed component while no surface has declared a Bot to render it for.
+    enabled,
     refetchInterval: 30_000,
+    // Publishing takes effect in an OPEN conversation; a hidden tab is not one.
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<PublishedSandboxed[]> => {
       const response = await fetch("/api/sandboxed/published", {
         credentials: "include",

@@ -104,26 +104,27 @@ function rosterTime(iso: string | null): string | undefined {
 }
 
 /**
- * The right-click menu on a roster row.
+ * What the roster's right-click menu can do, made once for the whole roster.
  *
- * Every item here is something the product could already do and had buried: pin lives on the new
- * per-person preference, and hide, duplicate and delete were three buttons stacked at the bottom of
- * a side panel you had to open the Bot to reach. A roster is a list of things you act on, and the
- * gesture for acting on a row in a list is a right-click.
+ * THE MUTATIONS ARE NOT PER ROW. `BotRowMenu` wraps every `BotRow`, and it used to call
+ * `useMutation` five times inside itself — so a roster of twelve Bots stood up sixty mutation
+ * subscriptions to the query cache, all of them subscribed to the same five mutation keys, and
+ * every one of them re-rendered its row's wrapper on any mutation anywhere. `BotRow` is memoised
+ * and its props are all primitives, so the row itself was never the cost; its wrapper was.
  *
- * "Mark unread" and "Move to section" are deliberately absent rather than disabled: neither has any
- * state behind it — there is no read tracking and there are no sections — and a menu item that
- * cannot do anything is a promise the product does not keep.
+ * One set at the list level, handed down. The menu below is now a plain function component with no
+ * hooks at all, which is as cheap as an element tree gets.
  */
-function BotRowMenu({
-  agent,
-  channelId,
-  children,
-}: {
-  agent: AgentProfile;
-  channelId: string | undefined;
-  children: React.ReactNode;
-}) {
+type RowActions = {
+  setPinned: (agentId: string, pinned: boolean) => void;
+  markUnread: (channelId: string) => void;
+  editProfile: (agentId: string) => void;
+  duplicate: (agentId: string) => void;
+  setHidden: (agentId: string, hidden: boolean) => void;
+  remove: (agentId: string, channelId: string | undefined) => void;
+};
+
+function useRowActions(): RowActions {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const preferences = useMutation(
@@ -133,20 +134,73 @@ function BotRowMenu({
   const duplicate = useMutation(duplicateAgentMutationOptions(queryClient));
   const remove = useMutation(deleteAgentMutationOptions(queryClient));
   const setRead = useMutation(setChannelReadMutationOptions(queryClient));
+
+  const preferencesMutate = preferences.mutate;
+  const setHiddenMutate = setHidden.mutate;
+  const setReadMutate = setRead.mutate;
+  const duplicateAsync = duplicate.mutateAsync;
+  const removeAsync = remove.mutateAsync;
+
+  return useMemo(
+    () => ({
+      setPinned: (agentId, pinned) =>
+        preferencesMutate({ agentId, patch: { pinned } }),
+      markUnread: (channelId) => setReadMutate({ channelId, read: false }),
+      editProfile: (agentId) => {
+        void navigate({ search: { agent: agentId }, to: "/agents" });
+      },
+      duplicate: (agentId) => {
+        void duplicateAsync(agentId).then((copy) =>
+          navigate({ search: { agent: copy.id }, to: "/agents" }),
+        );
+      },
+      setHidden: (agentId, hidden) => setHiddenMutate({ agentId, hidden }),
+      remove: (agentId, channelId) => {
+        void removeAsync(agentId).then(() => {
+          if (channelId) void navigate({ to: "/" });
+        });
+      },
+    }),
+    [
+      duplicateAsync,
+      navigate,
+      preferencesMutate,
+      removeAsync,
+      setHiddenMutate,
+      setReadMutate,
+    ],
+  );
+}
+
+/**
+ * The right-click menu on a roster row.
+ *
+ * Every item here is something the product could already do and had buried: pin lives on the new
+ * per-person preference, and hide, duplicate and delete were three buttons stacked at the bottom of
+ * a side panel you had to open the Bot to reach. A roster is a list of things you act on, and the
+ * gesture for acting on a row in a list is a right-click.
+ *
+ * "Move to section" is deliberately absent rather than disabled: it has no state behind it — there
+ * are no sections — and a menu item that cannot do anything is a promise the product does not keep.
+ */
+function BotRowMenu({
+  actions,
+  agent,
+  channelId,
+  children,
+}: {
+  actions: RowActions;
+  agent: AgentProfile;
+  channelId: string | undefined;
+  children: React.ReactNode;
+}) {
   const pinned = agent.pinnedAt !== null;
 
   return (
     <ContextMenu>
       <ContextMenuTrigger render={<div />}>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem
-          onClick={() => {
-            preferences.mutate({
-              agentId: agent.id,
-              patch: { pinned: !pinned },
-            });
-          }}
-        >
+        <ContextMenuItem onClick={() => actions.setPinned(agent.id, !pinned)}>
           {pinned ? <IconPinnedOff /> : <IconPin />}
           {pinned ? t("Unpin") : t("Pin")}
         </ContextMenuItem>
@@ -156,31 +210,18 @@ function BotRowMenu({
          * an item that silently does nothing is worse than one that is not offered.
          */}
         {channelId ? (
-          <ContextMenuItem
-            onClick={() => {
-              setRead.mutate({ channelId, read: false });
-            }}
-          >
+          <ContextMenuItem onClick={() => actions.markUnread(channelId)}>
             <IconMailOpened />
             {t("Mark as unread")}
           </ContextMenuItem>
         ) : null}
 
-        <ContextMenuItem
-          onClick={() => {
-            void navigate({ search: { agent: agent.id }, to: "/agents" });
-          }}
-        >
+        <ContextMenuItem onClick={() => actions.editProfile(agent.id)}>
           <IconPencil />
           {t("Edit profile")}
         </ContextMenuItem>
 
-        <ContextMenuItem
-          onClick={async () => {
-            const copy = await duplicate.mutateAsync(agent.id);
-            await navigate({ search: { agent: copy.id }, to: "/agents" });
-          }}
-        >
+        <ContextMenuItem onClick={() => actions.duplicate(agent.id)}>
           <IconCopy />
           {t("Duplicate")}
         </ContextMenuItem>
@@ -188,9 +229,7 @@ function BotRowMenu({
         <ContextMenuSeparator />
 
         <ContextMenuItem
-          onClick={() => {
-            setHidden.mutate({ agentId: agent.id, hidden: !agent.hidden });
-          }}
+          onClick={() => actions.setHidden(agent.id, !agent.hidden)}
         >
           {agent.hidden ? <IconEye /> : <IconEyeOff />}
           {agent.hidden ? t("Unhide") : t("Hide from sidebar")}
@@ -202,10 +241,7 @@ function BotRowMenu({
          */}
         {agent.canManage ? (
           <ContextMenuItem
-            onClick={async () => {
-              await remove.mutateAsync(agent.id);
-              if (channelId) await navigate({ to: "/" });
-            }}
+            onClick={() => actions.remove(agent.id, channelId)}
             variant="destructive"
           >
             <IconTrash />
@@ -235,6 +271,7 @@ export function BotSidebar() {
   const hidden = useQuery(agentListQueryOptions(true));
   const working = useQuery(workingQueryOptions());
   const searchId = useId();
+  const rowActions = useRowActions();
 
   /** A Bot's conversation, once it has one. Single-Bot channels only; a group is not a colleague. */
   const channelFor = useMemo(() => {
@@ -483,7 +520,11 @@ export function BotSidebar() {
             ))
           : rows.map(({ agent, channel, subtitle, at }) => (
               <li key={agent.id}>
-                <BotRowMenu agent={agent} channelId={channel?.id}>
+                <BotRowMenu
+                  actions={rowActions}
+                  agent={agent}
+                  channelId={channel?.id}
+                >
                   <BotRow
                     agentId={agent.id}
                     avatarSeed={agent.avatarSeed}
@@ -504,6 +545,7 @@ export function BotSidebar() {
           ? (hidden.data ?? []).map((agent) => (
               <li className="opacity-50" key={`hidden:${agent.id}`}>
                 <BotRowMenu
+                  actions={rowActions}
                   agent={agent}
                   channelId={channelFor.get(agent.id)?.id}
                 >

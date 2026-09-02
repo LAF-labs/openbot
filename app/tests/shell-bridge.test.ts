@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   inShell,
+  requestShellNoticePermission,
   setShellBadge,
+  shellNoticePermission,
   showShellNotice,
 } from "../src/lib/notifications/shell";
 
@@ -25,6 +27,9 @@ describe("in a browser tab", () => {
     expect(await showShellNotice({ title: "x", body: "y", silent: true })).toBe(
       false,
     );
+    // Null rather than a permission word: the browser's own `Notification` is what answers there.
+    expect(await shellNoticePermission()).toBeNull();
+    expect(await requestShellNoticePermission()).toBeNull();
   });
 });
 
@@ -88,6 +93,49 @@ describe("in the shell", () => {
     expect(
       await showShellNotice({ title: "x", body: "y", silent: false }),
     ).toBe(false);
+  });
+
+  /**
+   * The half of this the shell could not answer for itself.
+   *
+   * WKWebView has no `Notification`, so the app's synchronous check calls the whole feature
+   * unsupported and never drew the control that turns it on — in the one surface this product
+   * leads with. These two are what the control asks instead.
+   */
+  test("permission is readable and askable through the bridge", async () => {
+    let granted = false;
+    let asked = 0;
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      notification: {
+        isPermissionGranted: async () => granted,
+        requestPermission: async () => {
+          asked += 1;
+          granted = true;
+          return "granted";
+        },
+        sendNotification: () => {},
+      },
+    };
+
+    // Not-granted is "worth asking", never "denied": the plugin has no third answer, and reporting
+    // a refusal that never happened would draw the one state with no way out of it.
+    expect(await shellNoticePermission()).toBe("ask");
+    expect(await requestShellNoticePermission()).toBe("granted");
+    expect(await shellNoticePermission()).toBe("granted");
+    // Already granted, so nothing is asked a second time.
+    expect(await requestShellNoticePermission()).toBe("granted");
+    expect(asked).toBe(1);
+  });
+
+  test("a permission the person refuses is reported as refused", async () => {
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      notification: {
+        isPermissionGranted: async () => false,
+        requestPermission: async () => "denied",
+        sendNotification: () => {},
+      },
+    };
+    expect(await requestShellNoticePermission()).toBe("denied");
   });
 
   test("a shell whose command throws is reported as no badge, not as an error", async () => {

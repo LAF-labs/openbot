@@ -23,7 +23,13 @@
  * `components/notifications/notification-permission.tsx` for why it is not the mute switch.
  */
 
-import { inShell, setShellBadge, showShellNotice } from "./shell";
+import {
+  inShell,
+  requestShellNoticePermission,
+  setShellBadge,
+  shellNoticePermission,
+  showShellNotice,
+} from "./shell";
 
 export type NotificationSupport = "unsupported" | "granted" | "denied" | "ask";
 
@@ -39,12 +45,33 @@ export function notificationSupport(): NotificationSupport {
 }
 
 /**
+ * The same question, asked of whatever is actually going to show the notice.
+ *
+ * IN THE DESKTOP SHELL THE SYNCHRONOUS ANSWER IS A LIE. WKWebView has no `Notification` at all, so
+ * `notificationSupport()` says "unsupported" and the control that offers to turn notifications on
+ * was never drawn in the installed app — while `showShellNotice` worked the whole time and the
+ * shell was the reason somebody installed it. The shell's answer is a promise, so this is one too,
+ * and the browser path is unchanged.
+ */
+export async function readNotificationSupport(): Promise<NotificationSupport> {
+  if (inShell()) {
+    const answer = await shellNoticePermission();
+    if (answer) return answer;
+  }
+  return notificationSupport();
+}
+
+/**
  * Ask, once, from a gesture.
  *
  * Safari's older signature hands the answer to a callback instead of a promise, so both are
  * accepted; `Notification.requestPermission()` returning undefined is what that looks like here.
  */
 export async function requestNotificationPermission(): Promise<NotificationSupport> {
+  if (inShell()) {
+    const answer = await requestShellNoticePermission();
+    if (answer) return answer;
+  }
   if (notificationSupport() === "unsupported") return "unsupported";
   if (Notification.permission !== "default") return notificationSupport();
   const answer = await new Promise<NotificationPermission>((resolve) => {

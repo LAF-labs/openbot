@@ -162,6 +162,68 @@ describe("admin audit API", () => {
     ]);
   });
 
+  /**
+   * The page size is the server's decision, not the caller's.
+   *
+   * The table on the admin screen reads a page at a time now, and asks for 100. Its "load more"
+   * carries the cursor back, so a caller could otherwise ask for the whole trail in one request
+   * simply by putting a big number in the query string — on an account with months of computer
+   * actions behind it, that is one query that reads every row and one response that renders them
+   * all. A default is what an old caller gets; the ceiling is what stops a new one.
+   */
+  test("clamps the page size, whatever the caller asks for", async () => {
+    const asked: number[] = [];
+    const app = createApp(
+      config,
+      adminAuth,
+      { rolesForUser: async () => ["admin"] },
+      {
+        list: async (query) => {
+          asked.push(query.limit);
+          return { events: [] };
+        },
+      },
+    );
+
+    for (const search of [
+      "",
+      "?limit=100",
+      "?limit=1000",
+      "?limit=0",
+      "?limit=-5",
+      "?limit=every",
+    ]) {
+      const response = await app.request(
+        `http://laf.local/api/admin/audit-events${search}`,
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(asked).toEqual([50, 100, 100, 1, 1, 50]);
+  });
+
+  test("carries a cursor through to the reader", async () => {
+    const asked: (string | undefined)[] = [];
+    const app = createApp(
+      config,
+      adminAuth,
+      { rolesForUser: async () => ["admin"] },
+      {
+        list: async (query) => {
+          asked.push(query.cursor);
+          return { events: [], nextCursor: "page-2" };
+        },
+      },
+    );
+
+    await app.request("http://laf.local/api/admin/audit-events");
+    await app.request(
+      "http://laf.local/api/admin/audit-events?limit=100&cursor=page-2",
+    );
+
+    expect(asked).toEqual([undefined, "page-2"]);
+  });
+
   test("denies a non-admin caller", async () => {
     const app = createApp(
       config,
