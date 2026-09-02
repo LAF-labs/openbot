@@ -1,8 +1,10 @@
 /**
  * What a Bot in this box knows about its own hands.
  *
- * Shared by `agent-bot` and `agent-langgraph` so the implementations differ by framework, not by
- * instructions or available computer behavior.
+ * Lives in `shared/` rather than in `agent-bot` because it once had a second reader: an upstream
+ * LangGraph runtime, deleted in 2026-08 along with the rest of the per-Bot container plane. The
+ * file stays here so the instructions and the computer tools they describe are one thing that a
+ * future second runtime would have to adopt whole, rather than paraphrase.
  */
 /**
  * The order of operations that makes the computer tools usable.

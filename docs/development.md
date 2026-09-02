@@ -88,15 +88,16 @@ Review generated migration files before sharing them. `start.sh` applies existin
 
 ## Quality checks
 
-Run these before opening a pull request:
+The gate. A change is not done until all four pass:
 
 ```sh
-bun run format:check
-bun run lint
 bun run typecheck
-bun run test
-bun run build
+bunx biome lint .
+bun run format:check
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
+
+`bun run build` as well, for anything that touches how the app is built.
 
 Integration tests expect a PostgreSQL 17 database. Use `start.sh` or point `DATABASE_URL` at a compatible database.
 
@@ -149,9 +150,20 @@ bun run test:smoke
 ```
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
-suite cannot reach: server to computer, the gateway deciding before the browser acts,
-and the audit row landing. Point it elsewhere with `LAF_API_URL`. Without a deployment it is
-skipped by `bun run test` and says what to start when asked for by name.
+suite cannot reach: server to computer, the gateway deciding before the browser acts, and the audit
+row landing. What it needs is a whole deployment — Docker, a model key, and a computer that answers
+— plus a way in: it sends no credentials and reads `/api/admin/audit-events`, so the deployment has
+to be admitting it, which locally means `LAF_DEV_NO_AUTH=true`.
+
+| Variable        | Default                 | Meaning                                                                                    |
+| --------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `LAF_SMOKE`     | unset                   | `1` runs it. `bun run test:smoke` sets it; without it every test skips, so `bun run test` stays honest on a machine with nothing running. |
+| `LAF_API_URL`   | `http://localhost:3001` | The deployment to drive.                                                                   |
+| `LAF_SMOKE_BOT` | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has five seats and a smoke run per deploy would eat them all. |
+
+It used to drive `risk-analyst`, a Bot the tenant package shipped. The package ships none — a Bot
+starts with nothing set and belongs to the person who made it — so making its own is what keeps the
+test about the joins it is checking.
 
 ## Contribution checklist
 

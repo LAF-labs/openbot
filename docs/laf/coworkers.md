@@ -36,7 +36,9 @@ The message is ordinary AG-UI system content, so it works with any AG-UI-compati
 | `private`  | Owner and administrators.   |
 | `public`   | Everyone in the deployment. |
 
-Filtering happens in server/database queries. Package-provided agents cannot be edited or deleted through the product.
+Filtering happens in server/database queries. A Bot a package shipped (`built_in`) cannot be edited
+or deleted through the product; this package ships none, so in practice every Bot is
+`remote_ag_ui`, made by a person and answered by `agent-bot`.
 
 ## Channels
 
@@ -88,7 +90,7 @@ A coworker's role does not grant capabilities. Capabilities are governed separat
 - personal skills can be attached only to Bots the author owns;
 - deployment skills are managed by administrators.
 
-See [architecture.md](architecture.md).
+See [architecture.md](../architecture.md).
 
 ## The account's computer, and coworkers asking each other
 
