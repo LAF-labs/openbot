@@ -79,6 +79,9 @@ jobs:
         working-directory: server
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
+      # The browser suite (agent-computer/tests/korean-*.test.ts) skips itself when Playwright
+      # has no Chromium; without this step CI would report those tests as passing by absence.
+      - run: bunx playwright install --with-deps chromium
       - run: bun run test:ci
 
   build:
