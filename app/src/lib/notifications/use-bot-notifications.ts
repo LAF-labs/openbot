@@ -2,7 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { openQuestions, watchQuestions } from "@/lib/approvals";
+import {
+  describeSubject,
+  openQuestions,
+  watchQuestions,
+} from "@/lib/approvals";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   CHANNEL_ACTIVITY,
@@ -175,7 +179,11 @@ export function useBotNotifications(): void {
           },
           {
             title: t("{name} needs you", { name: bot?.name ?? question.botId }),
-            body: question.question,
+            // Written here, from the facts, like the card the person will land on — a lock screen is
+            // no place to discover that one surface says it differently.
+            body: question.subject
+              ? describeSubject(question.subject)
+              : t("It is waiting on your answer."),
             tag: `laf-approval:${question.approvalId}`,
             destination: { kind: "approve", id: question.approvalId },
           },

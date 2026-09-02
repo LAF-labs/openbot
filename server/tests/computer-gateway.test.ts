@@ -17,6 +17,7 @@ import {
 } from "../src/computer/repeat";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import type { SnapshotResult } from "../src/computer/schema";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * What the gateway must guarantee, tested as properties rather than as call sequences.
@@ -508,7 +509,7 @@ describe("the gateway when the boundary asks a person", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "example.com" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -543,7 +544,7 @@ describe("the gateway when the boundary asks a person", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "elsewhere.test" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -562,7 +563,7 @@ describe("the gateway when the boundary asks a person", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "example.com" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -677,7 +678,7 @@ describe("the gateway when the boundary asks a person", () => {
       botId: "bot-1",
       actor: ACTOR.id,
       rule: ASKING.ask[0] as string,
-      question: "again",
+      subject: A_CLICK,
       fingerprint: fingerprintOf({
         botId: "bot-1",
         toolName: "computer_click",
@@ -765,7 +766,22 @@ describe("the gateway when the boundary asks a person", () => {
     const waiting = await approvals.pending("bot-1");
     expect(waiting).toHaveLength(1);
     expect(waiting[0]?.id).toBe(asked.approvalId);
-    expect(waiting[0]?.question).toContain("Submit order");
+    /*
+     * FACTS, NOT A SENTENCE. This used to assert the question contained "Submit order", which it did
+     * — inside "The Bot wants to press “Submit order” on example.com.", assembled in English by the
+     * policy and drawn as-is on a Korean screen. What travels now is what the server resolved, and
+     * `app/src/lib/approvals.ts` writes the sentence.
+     */
+    expect(waiting[0]?.subject).toEqual({
+      kind: "browser",
+      intent: "activate",
+      host: "example.com",
+      // The path, and never the query string: an order id or an email address in a URL is exactly
+      // as sensitive as typed text, and this goes on a screen and into an audit payload.
+      path: "/order",
+      element: { role: "button", name: "Submit order" },
+      reason: "policy_ask",
+    });
     // Another Bot's screen must not offer somebody a question about this one's computer.
     expect(await approvals.pending("bot-2")).toEqual([]);
   });
@@ -1080,10 +1096,17 @@ describe("a process holding no snapshot", () => {
       deny: ['page.host == "example.com"'],
     });
 
-    await expect(
-      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
-    ).rejects.toThrow(/has not seen the computer's screen/);
+    // The fact, not the sentence about it: "take a snapshot and try again" is said to the model in
+    // `shared/prompt/tool-results.ko.ts` and to the person in `i18n-ko.ts`, from this one code.
+    const refusal = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionRefusedError;
+    expect(refusal).toBeInstanceOf(ActionRefusedError);
+    expect(refusal.code).toBe("laf:blind_action");
     expect(rows[0]?.eventType).toBe("computer.action_refused");
+    expect(
+      (rows[0]?.payload.decision as { code?: string } | undefined)?.code,
+    ).toBe("laf:blind_action");
   });
 
   test("lets a deployment that never mentions the page carry on", async () => {
@@ -1172,7 +1195,7 @@ describe("when the boundary refuses to be answered for good", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "example.com" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -1202,7 +1225,7 @@ describe("when the boundary refuses to be answered for good", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "example.com" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -1310,12 +1333,21 @@ describe("when a Bot has an instruction of its own", () => {
 
     // The element comes from this server's own snapshot. A judge shown a label the caller supplied
     // would be deciding on the attacker's description of the attacker's button.
+    //
+    // And it is shown EXACTLY what the person would have been shown — the same subject the card is
+    // drawn from — because the judge stands in for somebody reading that card.
     expect(asked[0]?.botId).toBe("bot-1");
-    expect(asked[0]?.subject.element).toEqual({
-      role: "button",
-      name: "Submit order",
+    expect(asked[0]?.subject).toEqual({
+      action: "computer_click",
+      subject: {
+        kind: "browser",
+        intent: "activate",
+        host: "example.com",
+        path: "/order",
+        element: { role: "button", name: "Submit order" },
+        reason: "policy_ask",
+      },
     });
-    expect(asked[0]?.subject.host).toBe("example.com");
   });
 
   test("a standing allowance answers first, and no model is asked", async () => {
@@ -1327,7 +1359,7 @@ describe("when a Bot has an instruction of its own", () => {
       botId: "bot-1",
       rule: 'contains(element.name, "submit")',
       scope: { kind: "host", value: "example.com" },
-      question: "Place the order?",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 

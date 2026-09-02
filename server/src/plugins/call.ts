@@ -1,14 +1,19 @@
 import { and, eq } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
+import type { AskSubject } from "../computer/approvals";
 import { fingerprintOf } from "../computer/approvals";
-import { evaluateActionPolicy, type PolicyContext } from "../computer/policy";
-import { allowanceFor, scopeKeyOf } from "../computer/standing-approvals";
+import {
+  evaluateActionPolicy,
+  type PolicyContext,
+  type PolicyDecision,
+} from "../computer/policy";
+import { settle, type SettleResult } from "../computer/settle";
+import { allowanceFor } from "../computer/standing-approvals";
 import { mcpTools } from "../db/schema";
 import { type CatalogueEntry, classifyTool } from "./catalogue";
 import type { Connections } from "./connections";
 import {
   classifyDeclaredTool,
-  guardQuestion,
   type LafGuard,
   type ToolAnnotations,
 } from "./laf-contract";
@@ -42,6 +47,48 @@ import { transportFor } from "./transport";
  */
 const reachedAsFor = (entry: CatalogueEntry | null, actorId: string): string =>
   entry?.auth.kind === "user-oauth" ? actorId : "deployment";
+
+/** What a settled question hands back when the call may go ahead. See `computer/settle.ts`. */
+type SettledAllowed = Extract<SettleResult, { outcome: "allowed" }>;
+
+/**
+ * What is about to happen, as the facts a person is shown.
+ *
+ * The guard travels rather than a sentence about it: `guardQuestion` in `laf-contract.ts` wrote four
+ * Korean sentences into the same field the browser path filled with English ones, so one field held
+ * two languages depending on which subsystem had stopped (docs/laf/redesign-2026-09.md §3.1). Both
+ * paths now send the facts and the surface writes the sentence.
+ */
+function askSubjectOf(input: {
+  serverId: string;
+  toolName: string;
+  guard: LafGuard | null;
+  /** The expression that asked, to tell a question about repetition from any other. */
+  matched: string | null;
+  repeatCount: number;
+  floorAsks: boolean;
+}): AskSubject {
+  const reason: AskSubject["reason"] = input.floorAsks
+    ? // A tool that declared nothing is its own reason: what is wrong is not what it does but that
+      // it did not say, and a person deciding needs to be told which of those they are looking at.
+      input.guard === "unannotated"
+      ? "unannotated"
+      : "guard_floor"
+    : input.matched !== null && /\brepeat\s*\./.test(input.matched)
+      ? "repeat"
+      : "policy_ask";
+  return {
+    kind: "tool",
+    intent: "call_tool",
+    tool: {
+      server: input.serverId,
+      name: input.toolName,
+      ...(input.guard ? { guard: input.guard } : {}),
+    },
+    ...(reason === "repeat" ? { repeatCount: input.repeatCount } : {}),
+    reason,
+  };
+}
 
 /**
  * Optional arguments the model filled in with an empty string, removed.
@@ -80,16 +127,23 @@ export function createCallPath(
   /**
    * Spend a person's answer on this call, or stop and ask them.
    *
+   * THE SEQUENCE IS NOT HERE ANY MORE. It is in `computer/settle.ts`, and this hands it the two
+   * things only this path knows: what the fingerprint is taken over, and whether the contract's
+   * floor is asking. The gateway's copy and this one differed in ways nobody had decided — no
+   * auto-review here, and a repeat count nailed to one — because they were two sequences that had to
+   * be kept in agreement by hand (docs/laf/redesign-2026-09.md §3.1, §5.1(c)).
+   *
    * The fingerprint covers the arguments as well as the tool, which is the difference between this
    * and the browser actions. A click is identified by the thing it lands on; a call to somebody
    * else's server is identified by what it says, and an approval for "post the release note in the
    * team channel" that could be spent on any other message to any other channel would be a
    * confirmation prompt wearing a governance feature's clothes.
    *
-   * Returns who allowed it. Throws when nobody has, which every unsuccessful presentation counts as:
-   * an expired id, one already spent, a No being replayed and an approval given for a different call
-   * all mean that nobody has agreed to THIS, and asking again is both the safe answer and the one a
-   * person can act on.
+   * Returns HOW it was allowed, never a bare yes: by a person, by an allowance they granted for the
+   * tool, or by the Bot's own instruction with nobody looking — three different amounts of attention,
+   * and the row below has to be able to say which. Throws when a person is being asked, which every
+   * unsuccessful presentation counts as: an expired id, one already spent, a No being replayed and
+   * an approval given for a different call all mean that nobody has agreed to THIS.
    */
   async function askAbout(question: {
     approvalId: string | undefined;
@@ -101,53 +155,66 @@ export function createCallPath(
     effect: "read" | "write";
     args: Record<string, unknown>;
     rule: string;
-    question: string;
-  }): Promise<string> {
-    const fingerprint = fingerprintOf({
-      botId: question.botId,
-      toolName: toolNameFor(question.ref),
-      arguments: question.args,
-    });
-    const presented = question.approvalId
-      ? await options.approvals.consume(question.approvalId, fingerprint)
-      : undefined;
-    // An approval with nobody's name on it asks again rather than being credited to whoever was
-    // driving the Bot, which is the one attribution this record must never make.
-    if (presented?.ok && presented.approval.answeredBy) {
-      return presented.approval.answeredBy;
+    subject: AskSubject;
+    verdict: PolicyDecision;
+    forcedAsk: boolean;
+  }): Promise<SettledAllowed> {
+    const settled = await settle(
+      {
+        botId: question.botId,
+        actorId: question.actorId,
+        subject: question.subject,
+        action: question.ref,
+        fingerprint: fingerprintOf({
+          botId: question.botId,
+          toolName: toolNameFor(question.ref),
+          arguments: question.args,
+        }),
+        /*
+         * A call to somebody else's server has no host and no path, only a name, so an allowance
+         * here is always about the tool. Note what that widens: the approval it stands in for is
+         * bound to the arguments and this is not. It is the broadest grant this product can produce
+         * from one button, which is why the button says the tool's name out loud.
+         */
+        allowance: allowanceFor({ tool: question.ref }),
+        rule: question.rule,
+        // Filed against the tool, so the answer's row lands beside the call's own row rather than
+        // under whichever surface the person happened to press the button on.
+        target: { type: "mcp_tool", id: question.ref },
+        ...(question.approvalId
+          ? { presentedApprovalId: question.approvalId }
+          : {}),
+        policyVerdict: question.verdict,
+        forcedAsk: question.forcedAsk,
+      },
+      {
+        policy: options.policy,
+        approvals: options.approvals,
+        standing: options.standing,
+        autoReview: options.autoReview,
+      },
+    );
+
+    if (settled.outcome === "refused") {
+      await recordAuditEvent(auditStore, {
+        eventType: "mcp.call_rejected",
+        targetType: "mcp_tool",
+        targetId: question.ref,
+        payload: {
+          bot: question.botId,
+          actor: question.actorId,
+          server: question.serverId,
+          tool: question.toolName,
+          effect: question.effect,
+          refusal: settled.code,
+          rule: question.rule,
+        },
+      });
+      throw new PluginRefusedError(settled.code, question.rule || null);
     }
 
-    /*
-     * A call to somebody else's server has no host and no path, only a name, so an allowance here is
-     * always about the tool. Note what that widens: the approval it stands in for is bound to the
-     * arguments — see the fingerprint above — and this is not. It is the broadest grant this product
-     * can produce from one button, which is why the button says the tool's name out loud.
-     */
-    const allowance = allowanceFor({ tool: question.ref });
-    // The same switch the computer's gateway reads, and it does the same two things here: nothing
-    // standing is honoured, and the question goes out without a scope so there is nothing to grant.
-    const mayStand =
-      (options.policy()?.settleWithoutAsking ?? "allowed") === "allowed";
-    const already = mayStand
-      ? await options.standing?.find(
-          question.botId,
-          question.rule,
-          scopeKeyOf(allowance),
-        )
-      : undefined;
-    if (already) return already.grantedBy;
+    if (settled.outcome === "allowed") return settled;
 
-    const pending = await options.approvals.request({
-      botId: question.botId,
-      actor: question.actorId,
-      rule: question.rule,
-      question: question.question,
-      fingerprint,
-      ...(mayStand ? { scope: allowance } : {}),
-      // Filed against the tool, so the answer's row lands beside the call's own row rather than
-      // under whichever surface the person happened to press the button on.
-      target: { type: "mcp_tool", id: question.ref },
-    });
     await recordAuditEvent(auditStore, {
       eventType: "approval.requested",
       targetType: "mcp_tool",
@@ -155,15 +222,26 @@ export function createCallPath(
       payload: {
         bot: question.botId,
         actor: question.actorId,
-        approval: pending.id,
-        rule: pending.rule,
-        reason: pending.question,
+        approval: settled.approvalId,
+        rule: settled.approval.rule,
+        // The facts, not a sentence: the card is Korean, the trail is queried, and one field cannot
+        // be both. See AskSubject.
+        subject: settled.approval.subject,
         server: question.serverId,
         tool: question.toolName,
         effect: question.effect,
+        // An empty reason is the judge having failed rather than having decided, and the two are
+        // said differently — the same distinction the computer's own row makes.
+        ...(settled.autoReview
+          ? {
+              autoReview: settled.autoReview.reason
+                ? `declined: ${settled.autoReview.reason}`
+                : "could not be reached",
+            }
+          : {}),
       },
     });
-    throw new PluginNeedsApprovalError(pending);
+    throw new PluginNeedsApprovalError(settled.approval);
   }
 
   return {
@@ -297,17 +375,32 @@ export function createCallPath(
        * phrased in reads them as absent rather than as an empty file path, or somebody would be
        * asked to approve "The Bot wants to call ."
        */
+      /*
+       * COUNTED, AT LAST, AND BY THE SAME COUNTER THE BROWSER USES.
+       *
+       * This was `repeat: { count: 1 }` with a comment admitting the gap: nothing counted a Bot
+       * calling the same tool on somebody else's server over and over, so `repeat.count >= 5` — a
+       * rule this deployment ships by default — was false here on every call, however many times a
+       * stuck model made it. The detector keys on the tool plus the thing it acted on
+       * (`computer/repeat.ts`), and for a tool call the thing acted on is the tool itself: the
+       * arguments are deliberately not in the key there, for the same reason typed text is not.
+       *
+       * Absent leaves a count of one, which is what a rule about repetition reads as a first
+       * attempt — a number nobody can substantiate must never be the reason a Bot is refused.
+       */
+      const repetition = options.repeat
+        ? await options.repeat.observe(input.botId, {
+            tool: toolNameFor(input.ref),
+            ref: input.ref,
+          })
+        : { count: 1 };
+
       const policyContext: PolicyContext = {
         tool: { name: toolNameFor(input.ref) },
         bot: { id: input.botId },
         actor: { id: input.actorId },
         page: { url: "", host: "" },
-        // One, for the same reason as the empty strings, and with a cost worth naming: repetition is
-        // counted by the computer gateway, and nothing counts a Bot calling the same MCP tool over
-        // and over. A rule about repetition is therefore false here rather than unevaluable, which
-        // keeps a browser rule from refusing every tool call, and leaves a Bot looping through
-        // somebody else's server as a gap this deployment cannot yet see.
-        repeat: { count: 1 },
+        repeat: { count: repetition.count },
         element: { ref: "", role: "", name: "", type: "" },
         key: "",
         submit: false,
@@ -336,7 +429,15 @@ export function createCallPath(
       // The contract floor: the policy allowed it, and a person still answers.
       // A deny stays a deny — the floor never softens the written boundary.
       const floorAsks = guard !== null && verdict.forward;
-      const approved =
+      /*
+       * The rule the question is filed under, and it is what a standing allowance is keyed on.
+       *
+       * `laf:<guard>` for a floor, because there is no written expression to name: a person who
+       * presses "always allow this tool" on a money guard is answering the floor, and rewriting the
+       * boundary must not silently withdraw that. Unchanged from what this path already did.
+       */
+      const rule = policyAsks ? (verdict.matched ?? "") : `laf:${guard}`;
+      const settled =
         policyAsks || floorAsks
           ? await askAbout({
               approvalId: input.approvalId,
@@ -347,10 +448,17 @@ export function createCallPath(
               toolName,
               effect,
               args,
-              rule: policyAsks ? (verdict.matched ?? "") : `laf:${guard}`,
-              question: policyAsks
-                ? verdict.reason
-                : guardQuestion(guard as LafGuard, toolName),
+              rule,
+              subject: askSubjectOf({
+                serverId,
+                toolName,
+                guard,
+                matched: verdict.matched,
+                repeatCount: repetition.count,
+                floorAsks,
+              }),
+              verdict,
+              forcedAsk: floorAsks,
             })
           : undefined;
 
@@ -358,7 +466,7 @@ export function createCallPath(
       // the row reads as "allowed, because somebody was asked and said yes" rather than as an
       // ordinary permission nobody ever questioned.
       const carriedOut =
-        policyAsks || floorAsks ? approved !== undefined : verdict.forward;
+        policyAsks || floorAsks ? settled !== undefined : verdict.forward;
 
       /*
        * The parts of the row that are known before the attempt, held rather than written.
@@ -383,11 +491,27 @@ export function createCallPath(
          */
         reachedAs: reachedAsFor(entry, input.actorId),
         decision: {
-          allowed: verdict.allowed || approved !== undefined,
+          allowed: verdict.allowed || settled !== undefined,
           rule: verdict.matched,
           source: verdict.source,
           carriedOut,
-          ...(approved ? { approvedBy: approved } : {}),
+          ...(settled?.approvedBy ? { approvedBy: settled.approvedBy } : {}),
+          /*
+           * WHICH KIND OF YES, structured, the way the computer's own rows have said it since
+           * allowances existed. A person pressing Allow, an allowance they granted for this tool
+           * last week and the Bot's own instruction are three different amounts of attention, and
+           * this path could only report the first — so an allowance quietly waving calls through
+           * read on the row exactly like somebody having looked at each one.
+           */
+          ...(settled?.allowance
+            ? {
+                allowance: settled.allowance.id,
+                allowanceScope: settled.allowance.scope,
+              }
+            : {}),
+          ...(settled?.autoReviewed
+            ? { autoReviewed: settled.autoReviewed.reason }
+            : {}),
         },
       };
 
@@ -401,9 +525,14 @@ export function createCallPath(
           eventType: "mcp.call_rejected",
           targetType: "mcp_tool",
           targetId: input.ref,
-          payload: decided,
+          payload: { ...decided, refusal: verdict.code ?? "laf:policy_denied" },
         });
-        throw new PluginRefusedError(verdict.reason, verdict.matched);
+        // The code, not a sentence: the model reads Korean out of
+        // `shared/prompt/tool-results.ko.ts` and the person reads Korean out of the dictionary.
+        throw new PluginRefusedError(
+          verdict.code ?? "laf:policy_denied",
+          verdict.matched,
+        );
       }
 
       /*

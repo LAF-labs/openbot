@@ -14,7 +14,11 @@
  * would then put a stale question in front of somebody on an unrelated line, record their Allow
  * against an action nobody is waiting for, and leave the action they were actually looking at
  * waiting out the full ten minutes.
+ *
+ * IT IS ALSO WHERE THE QUESTION BECOMES A SENTENCE. The server sends what the action is; the words
+ * are chosen here, once, for every card that asks. See `describeSubject`.
  */
+import { t } from "@/lib/i18n";
 
 /**
  * How long the surface holds a tool call open for an answer, and how often it looks.
@@ -54,13 +58,52 @@ export function allowanceScopeOf(value: unknown): AllowanceScope | undefined {
   return { kind, value: scoped };
 }
 
+/**
+ * WHAT THE BOT IS ABOUT TO DO, AS FACTS. The sentence is written here and nowhere else.
+ *
+ * The server used to send a finished English sentence in a field called `question`, assembled by
+ * `describeAsk` in `server/src/computer/policy.ts`, and three screens rendered it as it arrived —
+ * while the MCP guard's questions in that same field were Korean. One field, two languages, and a
+ * Korean reader shown "The Bot wants to press “결제하기”" whatever the dictionary said
+ * (docs/laf/redesign-2026-09.md §3.1, §5.1(b)).
+ *
+ * Mirrors `AskSubject` on the server. Every field is what the SERVER resolved — the element off its
+ * own snapshot of the page, the host off the address it is about to open — never anything the model
+ * said it was doing, which is the property that makes the question worth answering at all.
+ */
+export type AskSubject = {
+  kind: "browser" | "file" | "tool";
+  intent:
+    | "navigate"
+    | "activate"
+    | "type"
+    | "read"
+    | "read_file"
+    | "write_file"
+    | "list_files"
+    | "upload"
+    | "call_tool"
+    | "act";
+  host?: string;
+  path?: string;
+  element?: { role: string; name: string };
+  file?: { path: string };
+  tool?: {
+    server: string;
+    name: string;
+    guard?: "money" | "external" | "destructive" | "unannotated";
+  };
+  repeatCount?: number;
+  reason: "policy_ask" | "guard_floor" | "repeat" | "unannotated";
+};
+
 export type PendingApproval = {
   id: string;
   botId: string;
   /** The expression that asked, shown as a rule so a person can see which boundary they are at. */
   rule: string;
-  /** What is about to happen, in one sentence. */
-  question: string;
+  /** What is about to happen, in facts. `describeSubject` turns it into a sentence. */
+  subject: AskSubject;
   /** Absent when nothing durable could be derived; the card then offers "this once" alone. */
   scope?: AllowanceScope;
   requestedAt: string;
@@ -69,6 +112,251 @@ export type PendingApproval = {
   granted?: boolean;
   answeredBy?: string;
 };
+
+/**
+ * The subject out of a pause reply, or undefined if there was not one.
+ *
+ * Checked rather than cast. It arrives as JSON over HTTP and a card that trusted the shape would
+ * render "undefined" into the sentence somebody is being asked to consent to; not knowing what the
+ * question is about is a thing to say plainly rather than to paper over.
+ */
+export function askSubjectOf(value: unknown): AskSubject | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { kind, intent, reason } = value as Record<string, unknown>;
+  if (kind !== "browser" && kind !== "file" && kind !== "tool")
+    return undefined;
+  if (
+    !INTENTS.has(intent as AskSubject["intent"]) ||
+    !REASONS.has(reason as AskSubject["reason"])
+  ) {
+    return undefined;
+  }
+  return value as AskSubject;
+}
+
+const INTENTS = new Set<AskSubject["intent"]>([
+  "navigate",
+  "activate",
+  "type",
+  "read",
+  "read_file",
+  "write_file",
+  "list_files",
+  "upload",
+  "call_tool",
+  "act",
+]);
+
+const REASONS = new Set<AskSubject["reason"]>([
+  "policy_ask",
+  "guard_floor",
+  "repeat",
+  "unannotated",
+]);
+
+/**
+ * The 을/를 that follows a label, decided by the label's last letter.
+ *
+ * Korean picks the object particle by whether the preceding syllable ends in a consonant, and an
+ * element's label is a variable, so the sentence cannot carry it. It is passed in as a parameter
+ * instead and the dictionary entry places it: "‘출금 승인’{particle} 누르려 합니다".
+ *
+ * Anything not ending in Hangul — "Submit", a number, an icon's label — gets the form Korean writing
+ * uses when the reading is not known. It is slightly stiff and it is never wrong, which is the right
+ * way round for a sentence somebody is being asked to consent to.
+ */
+function objectParticle(word: string): string {
+  const last = [...word].at(-1) ?? "";
+  const code = last.codePointAt(0) ?? 0;
+  if (code < 0xac00 || code > 0xd7a3) return "을(를)";
+  return (code - 0xac00) % 28 === 0 ? "를" : "을";
+}
+
+/** One sentence to say, as a dictionary key and the values that go into it. */
+type Phrase = { key: string; params: Record<string, string | number> };
+
+/**
+ * THE WORDS FOR ONE QUESTION, chosen from the facts and never sent by a server.
+ *
+ * Exported as keys rather than as finished text so a test can walk every intent and reason the
+ * server can emit and check the dictionary has each one — `t()` on a variable is invisible to
+ * `i18n-coverage.test.ts`, which is why `approval-subject.test.ts` exists (the arrangement
+ * `agent-presets.test.ts` set up for the presets).
+ */
+export function subjectPhrases(subject: AskSubject): {
+  action: Phrase;
+  /** Why it stopped, where that is not already obvious from the rule. */
+  reason?: Phrase;
+} {
+  return {
+    action: actionPhrase(subject),
+    ...(reasonPhrase(subject) ? { reason: reasonPhrase(subject) } : {}),
+  };
+}
+
+function actionPhrase(subject: AskSubject): Phrase {
+  const host = subject.host ?? "";
+  const name = subject.element?.name ?? "";
+  const named = { name, host, particle: objectParticle(name) };
+  switch (subject.intent) {
+    case "activate":
+      if (name && host) {
+        return { key: "It wants to press “{name}” on {host}.", params: named };
+      }
+      if (name) return { key: "It wants to press “{name}”.", params: named };
+      return host
+        ? { key: "It wants to press something on {host}.", params: { host } }
+        : {
+            key: "It wants to press something on the page it has open.",
+            params: {},
+          };
+    case "type":
+      if (name && host) {
+        return {
+          key: "It wants to type into “{name}” on {host}.",
+          params: named,
+        };
+      }
+      if (name)
+        return { key: "It wants to type into “{name}”.", params: named };
+      return host
+        ? { key: "It wants to type into a field on {host}.", params: { host } }
+        : {
+            key: "It wants to type into a field on the page it has open.",
+            params: {},
+          };
+    case "navigate":
+      if (host && subject.path) {
+        return {
+          key: "It wants to open {host}{path}.",
+          params: { host, path: subject.path },
+        };
+      }
+      return host
+        ? { key: "It wants to open {host}.", params: { host } }
+        : { key: "It wants to open a page.", params: {} };
+    case "read":
+      return host
+        ? { key: "It wants to look at {host}.", params: { host } }
+        : { key: "It wants to look at the page it has open.", params: {} };
+    case "read_file":
+      return {
+        key: "It wants to read the file {path}.",
+        params: { path: subject.file?.path ?? "" },
+      };
+    case "write_file":
+      return {
+        key: "It wants to write to the file {path}.",
+        params: { path: subject.file?.path ?? "" },
+      };
+    case "list_files": {
+      // The workspace root arrives as ".", which is a path nobody would recognise as their folder.
+      const path = subject.file?.path ?? "";
+      return path && path !== "."
+        ? { key: "It wants to list what is in {path}.", params: { path } }
+        : { key: "It wants to list what is in the workspace.", params: {} };
+    }
+    case "upload": {
+      // A workspace file handed to a site: the file is what a person recognises, the host is where
+      // it goes.
+      const path = subject.file?.path ?? "";
+      return host
+        ? {
+            key: "It wants to upload the file {path} to {host}.",
+            params: { path, host },
+          }
+        : { key: "It wants to upload the file {path}.", params: { path } };
+    }
+    case "call_tool":
+      return {
+        key: "It wants to use the “{tool}” tool on {server}.",
+        params: {
+          tool: subject.tool?.name ?? "",
+          server: subject.tool?.server ?? "",
+        },
+      };
+    default:
+      return host
+        ? { key: "It wants to do something on {host}.", params: { host } }
+        : {
+            key: "It wants to do something on the page it has open.",
+            params: {},
+          };
+  }
+}
+
+function reasonPhrase(subject: AskSubject): Phrase | undefined {
+  if (subject.reason === "repeat") {
+    return {
+      key: "It has just done the same thing {count} times.",
+      params: { count: subject.repeatCount ?? 0 },
+    };
+  }
+  if (subject.reason === "unannotated") {
+    return {
+      key: "The tool declared no risk at all, so it is treated as the most dangerous thing it could be.",
+      params: {},
+    };
+  }
+  if (subject.reason !== "guard_floor") return undefined;
+  switch (subject.tool?.guard) {
+    case "money":
+      return {
+        key: "The tool is declared as one that moves money.",
+        params: {},
+      };
+    case "external":
+      return {
+        key: "The tool is declared as one that sends something outward.",
+        params: {},
+      };
+    case "destructive":
+      return {
+        key: "The tool is declared as one that can destroy something.",
+        params: {},
+      };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * How long is left to answer, in words, or null once there is nothing left to say.
+ *
+ * A question expires after ten minutes and the card simply vanished when it did — no clock, no
+ * sentence, nothing to explain why the buttons a person was about to press were gone
+ * (docs/laf/redesign-2026-09.md §5.6(g)-7). Seconds only under a minute, because "1분 남음" sitting
+ * there while the last thirty seconds run out is the part that reads as broken.
+ *
+ * Null for an approval that carries no expiry — an older reply, or a room frame from a server that
+ * has not been restarted — rather than a guess at one.
+ */
+export function timeLeftToAnswer(
+  expiresAt: string,
+  now: number = Date.now(),
+): string | null {
+  const at = Date.parse(expiresAt);
+  if (!expiresAt || Number.isNaN(at)) return null;
+  const left = Math.max(0, at - now);
+  if (left === 0) return t("Time is up");
+  const seconds = Math.ceil(left / 1000);
+  if (seconds < 60) return t("{seconds}s left", { seconds });
+  return t("{minutes}m left", { minutes: Math.ceil(seconds / 60) });
+}
+
+/**
+ * The question, in one sentence, in the language the person reads.
+ *
+ * One function for every surface that asks — the line-level card, the room's card and the admin
+ * list — because the same press has to mean the same thing on all three, and two copies of this
+ * would be two descriptions of one grant.
+ */
+export function describeSubject(subject: AskSubject): string {
+  const said = subjectPhrases(subject);
+  const action = t(said.action.key, said.action.params);
+  if (!said.reason) return action;
+  return `${action} ${t(said.reason.key, said.reason.params)}`;
+}
 
 /**
  * A pause reply, read once, in one place.
@@ -88,16 +376,13 @@ export function pauseFrom(
   if (body?.awaitingApproval !== true) return null;
   return {
     approvalId: typeof body.approvalId === "string" ? body.approvalId : "",
-    // The error is the question in different clothes — the pause error's message IS the question —
-    // so a reply that carried only one of them still names what is being asked about.
-    question:
-      typeof body.question === "string" && body.question
-        ? body.question
-        : typeof body.error === "string"
-          ? body.error
-          : "",
+    // Undefined where the reply carried no subject or one this build does not recognise. The card
+    // then says it is being asked about something it cannot name, which is the honest failure: the
+    // alternative is a sentence somebody consents to that describes an action nobody sent.
+    subject: askSubjectOf(body.subject),
     rule: typeof body.rule === "string" ? body.rule : null,
     scope: allowanceScopeOf(body.scope),
+    expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : "",
   };
 }
 
@@ -105,10 +390,13 @@ export function pauseFrom(
 export type OpenQuestion = {
   approvalId: string;
   botId: string;
-  question: string;
+  /** What it is about, in facts. Undefined when the reply did not carry a subject we understand. */
+  subject: AskSubject | undefined;
   rule: string | null;
   /** What answering "always" would cover, or undefined when only this once is on offer. */
   scope?: AllowanceScope | undefined;
+  /** When the question stops being answerable, so the card can count down. Empty when unknown. */
+  expiresAt: string;
 };
 
 const open = new Map<string, OpenQuestion>();

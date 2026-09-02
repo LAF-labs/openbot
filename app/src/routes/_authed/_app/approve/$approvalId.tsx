@@ -122,9 +122,10 @@ function ApprovePage() {
     openQuestion(key, {
       approvalId: waiting.id,
       botId: waiting.botId,
-      question: waiting.question,
+      subject: waiting.subject,
       rule: waiting.rule,
       scope: waiting.scope,
+      expiresAt: waiting.expiresAt,
     });
     return () => closeQuestion(key);
   }, [key, waiting, isSettled]);

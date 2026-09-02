@@ -17,7 +17,7 @@
  *
  *   the surface prints the scope on the button, so the widening is what was agreed to rather than
  *   what was inferred;
- *   the row keeps who granted it, when, and the sentence they were reading at the time;
+ *   the row keeps who granted it, when, and what the Bot was about to do at the time;
  *   `deny` never gets here. Only an `ask` can be answered this way, so nothing a deployment has
  *   forbidden can be un-forbidden by somebody pressing a button at the end of a long task.
  *
@@ -26,6 +26,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import type { AskSubject } from "./approvals";
 import type { Database } from "../db/client";
 import { computerStandingApprovals } from "../db/schema/computer";
 
@@ -85,8 +86,13 @@ export type StandingApproval = {
   scope: string;
   scopeKind: AllowanceScope["kind"];
   scopeValue: string;
-  /** The sentence the person was reading when they granted it. */
-  question: string;
+  /**
+   * What the Bot was about to do when they granted it, in facts.
+   *
+   * Absent on rows granted before the sentence became a subject (migration 0026), and the surface
+   * says what it can from the scope alone rather than inventing one.
+   */
+  subject?: AskSubject;
   grantedBy: string;
   grantedAt: string;
   revokedAt?: string;
@@ -97,7 +103,8 @@ export type StandingGrant = {
   botId: string;
   rule: string;
   scope: AllowanceScope;
-  question: string;
+  /** The action that raised the question they answered with "always". */
+  subject: AskSubject;
   grantedBy: string;
 };
 
@@ -173,7 +180,7 @@ export function createStandingApprovalStore(
         scope,
         scopeKind: input.scope.kind,
         scopeValue: input.scope.value,
-        question: input.question,
+        subject: input.subject,
         grantedBy: input.grantedBy,
         grantedAt: new Date(now()).toISOString(),
       };
@@ -233,7 +240,7 @@ export function createDatabaseStandingApprovalStore(
     // Written by `grant` from an `AllowanceScope`, so the column only ever holds one of the three.
     scopeKind: row.scopeKind as AllowanceScope["kind"],
     scopeValue: row.scopeValue,
-    question: row.question,
+    ...(row.subject ? { subject: row.subject } : {}),
     grantedBy: row.grantedBy,
     grantedAt: row.grantedAt.toISOString(),
     ...(row.revokedAt === null
@@ -271,7 +278,7 @@ export function createDatabaseStandingApprovalStore(
           scope,
           scopeKind: input.scope.kind,
           scopeValue: input.scope.value,
-          question: input.question,
+          subject: input.subject,
           grantedBy: input.grantedBy,
           grantedAt: new Date(now()),
         })

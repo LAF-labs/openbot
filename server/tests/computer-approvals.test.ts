@@ -4,6 +4,7 @@ import {
   createApprovalRegistry,
   fingerprintOf,
 } from "../src/computer/approvals";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * What an approval has to mean, tested as properties rather than as a call sequence.
@@ -33,7 +34,7 @@ async function ask(
     botId: subject.botId,
     actor: "someone@example.test",
     rule: 'contains(element.name, "submit")',
-    question: "The Bot wants to press “Submit order” on example.com.",
+    subject: A_CLICK,
     fingerprint: fingerprintOf(subject),
     target: { type: "computer", id: subject.botId },
   });

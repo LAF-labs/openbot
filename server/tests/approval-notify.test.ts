@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import { withApprovalNotifications } from "../src/notifications/notify";
+import { A_CLICK } from "./support/subjects";
 
 const ask = (registry: ReturnType<typeof createApprovalRegistry>) =>
   registry.request({
     botId: "bot-1",
     actor: "driver",
     rule: "r",
-    question: "결제를 진행할까요?",
+    subject: A_CLICK,
     fingerprint: "f",
     target: { type: "mcp_tool", id: "s/t" },
   });

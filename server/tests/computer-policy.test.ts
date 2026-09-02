@@ -64,9 +64,11 @@ describe("evaluateActionPolicy", () => {
     expect(decision.allowed).toBe(false);
     expect(decision.forward).toBe(false);
     expect(decision.source).toBe("deny");
-    // The reason is read by a person and names both the thing and the rule.
-    expect(decision.reason).toContain("Submit order");
-    expect(decision.reason).toContain("example.com");
+    // The rule is named as a rule, and what KIND of refusal it was as a code. It used to be an
+    // English sentence naming the button and the host, which is what the surface reads — so a
+    // Korean screen showed English, and the trail could not be queried on the kind of refusal.
+    expect(decision.matched).toBe('contains(element.name, "submit")');
+    expect(decision.code).toBe("laf:policy_denied");
   });
 
   test("a deny rule leaves unrelated elements alone", () => {
@@ -522,21 +524,30 @@ describe("asking a person", () => {
     expect(decision.forward).toBe(false);
   });
 
-  test("the question names what is about to happen, and not the rule", () => {
-    // The rule travels as its own field. A person answering a question about a button should not
-    // have to read CEL to work out what they are agreeing to.
-    const decision = evaluateActionPolicy(
-      asking,
-      context({ intent: "activate" }),
-    );
-    expect(decision.reason).toContain("Submit order");
-    expect(decision.reason).toContain("example.com");
-    expect(decision.reason).not.toContain("contains(");
-  });
+  /*
+   * NOT ONE WORD OF ENGLISH LEAVES THIS FILE.
+   *
+   * These three replace four tests that asserted the opposite — that a decision's `reason` named the
+   * button and the host, the file, or the tool and its server. It did, in English sentences this
+   * module assembled, and `approval-request.tsx` drew them verbatim on a Korean screen while the MCP
+   * path filled the same field with Korean (docs/laf/redesign-2026-09.md §3.1, §5.1(b)).
+   *
+   * What a decision may now carry is a rule (which is CEL, written by an administrator, and shown as
+   * one), a source, two booleans and a `laf:` code. Anything else is prose on its way to a surface,
+   * and this is what notices.
+   */
+  const SAYS_NOTHING = new Set([
+    "allowed",
+    "matched",
+    "source",
+    "forward",
+    "code",
+  ]);
 
-  test("a file question names the file rather than whatever page is open", () => {
-    const decision = evaluateActionPolicy(
-      { ...permissive, ask: ['intent == "write_file"'] },
+  const CONTEXTS = [
+    ["a browser action", context({ intent: "activate" })],
+    [
+      "a file action",
       context({
         tool: { name: "computer_write_file" },
         intent: "write_file",
@@ -547,57 +558,46 @@ describe("asking a person", () => {
           extension: "csv",
         },
       }),
-    );
-    expect(decision.reason).toContain("reports/august.csv");
-    expect(decision.reason).not.toContain("example.com");
-  });
-
-  test("a question about a tool call names the tool and the server", () => {
-    // The context a tool call is judged in fills the browser fields with empty strings on purpose,
-    // so that a rule about element names evaluates to false rather than becoming unevaluable. Read
-    // as though a file were present, that produced "The Bot wants to call ." in front of a person,
-    // with two buttons under it.
-    const decision = evaluateActionPolicy(
-      { ...permissive, ask: ['intent == "write_tool"'] },
+    ],
+    [
+      "a tool call",
       {
         tool: { name: "mcp__jira__editJiraIssue" },
         bot: { id: "b" },
         actor: { id: "a" },
         page: { url: "", host: "" },
+        repeat: { count: 1 },
         element: { ref: "", role: "", name: "", type: "" },
         key: "",
         submit: false,
         file: { path: "", name: "", extension: "" },
-        intent: "write_tool",
-        mcp: { server: "jira", tool: "editJiraIssue", effect: "write" },
+        intent: "write_tool" as const,
+        mcp: {
+          server: "jira",
+          tool: "editJiraIssue",
+          effect: "write" as const,
+        },
       },
-    );
-    expect(decision.source).toBe("ask");
-    expect(decision.reason).toBe(
-      "The Bot wants to call editJiraIssue on jira.",
-    );
-  });
+    ],
+  ] as const;
 
-  test("a refusal of a tool call names it the same way", () => {
-    const decision = evaluateActionPolicy(
-      { ...permissive, deny: ['mcp.server == "jira"'] },
-      {
-        tool: { name: "mcp__jira__editJiraIssue" },
-        bot: { id: "b" },
-        actor: { id: "a" },
-        page: { url: "", host: "" },
-        element: { ref: "", role: "", name: "", type: "" },
-        key: "",
-        submit: false,
-        file: { path: "", name: "", extension: "" },
-        intent: "write_tool",
-        mcp: { server: "jira", tool: "editJiraIssue", effect: "write" },
-      },
-    );
-    expect(decision.reason).toContain("editJiraIssue on jira");
-    // Nothing about a file, and nothing about whatever page a browser happens to be showing.
-    expect(decision.reason).not.toContain("the file");
-  });
+  for (const [what, judged] of CONTEXTS) {
+    test(`${what} is decided in facts, never in words`, () => {
+      for (const policy of [
+        { ...permissive, ask: ["true"] },
+        { ...permissive, deny: ["true"] },
+        permissive,
+      ]) {
+        const decision = evaluateActionPolicy(policy, judged);
+        expect(
+          Object.keys(decision).filter((key) => !SAYS_NOTHING.has(key)),
+        ).toEqual([]);
+        // A code is a fact somebody can look up, and only a refusal has one to give.
+        if (decision.code) expect(decision.code).toMatch(/^laf:[a-z_]+$/);
+        if (decision.source === "ask") expect(decision.code).toBeUndefined();
+      }
+    });
+  }
 
   test("an empty allow list still refuses what nobody asked about", () => {
     // The floor is unchanged. An ask list is a third answer, not a way of turning default-deny into

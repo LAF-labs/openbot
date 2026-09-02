@@ -120,7 +120,11 @@ describe("the boundary a deployment starts with", () => {
       .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
 
     expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
-    expect(asked.question).toContain("출금 승인");
+    // The label the SERVER resolved off its own snapshot, on its way to a card that will say it in
+    // Korean. It used to be checked inside an English sentence this server assembled around it.
+    expect(asked.subject.element?.name).toBe("출금 승인");
+    expect(asked.subject.intent).toBe("activate");
+    expect(asked.subject.reason).toBe("policy_ask");
     // And it did not happen while somebody was being asked about it.
     expect(calls).toEqual([]);
   });

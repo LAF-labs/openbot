@@ -701,12 +701,15 @@ export function createPluginRoutes(
       if (error instanceof PluginNeedsApprovalError) {
         return context.json(
           {
+            // A code rather than a sentence, and the facts beside it: the card is Korean and this
+            // server does not write Korean. See `computer/approvals.ts` AskSubject.
             error: error.message,
             awaitingApproval: true,
             approvalId: error.approvalId,
-            question: error.question,
+            subject: error.subject,
             rule: error.rule,
             scope: error.scope,
+            expiresAt: error.expiresAt,
           },
           409,
         );

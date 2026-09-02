@@ -20,6 +20,7 @@ export const ko: Record<string, string> = {
   "A person supplied a secret": "사람이 비밀값을 입력함",
   "A person took the wheel": "사람이 제어를 가져감",
   "A reason, if you want to give one": "이유 (선택)",
+  "A rule refused it": "규칙이 막았음",
   "A secret was not written down.": "비밀값이라 적지 않았습니다.",
   "A routine is work this Bot repeats on a schedule.":
     "루틴은 이 봇이 일정에 따라 반복하는 작업이에요.",
@@ -55,13 +56,55 @@ export const ko: Record<string, string> = {
   "Answers are coming faster than the model can take right now. Give it a moment and ask again.":
     "지금은 답변 요청이 몰려 모델이 잠시 벅찹니다. 조금 기다렸다가 다시 물어봐 주세요.",
   "Approved as it now is": "지금 상태 그대로 승인됨",
+  "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.":
+    "이 규칙 때문에 물었습니다. 한 번 허용은 이 행동에만, 다른 하나는 누군가 취소할 때까지 같은 행동 전부에 적용됩니다.",
   Blocked: "차단됨",
   "Could not be replaced": "교체하지 못함",
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
   "Give the routine a name.": "루틴 이름을 지어 주세요.",
+  "It asked for a secret instead": "대신 비밀값을 요청함",
+  "It is waiting on your answer.": "답을 기다리고 있습니다.",
+  "It is waiting on an answer about something this screen cannot name.":
+    "이 화면이 이름을 알 수 없는 일에 대해 답을 기다리고 있습니다.",
+  "It has just done the same thing {count} times.":
+    "같은 행동을 {count}번째 반복하는 중입니다.",
+  "It wants to do something on the page it has open.":
+    "열어 둔 페이지에서 무언가 하려 합니다.",
+  "It wants to do something on {host}.": "{host}에서 무언가 하려 합니다.",
+  "It wants to use the “{tool}” tool on {server}.":
+    "{server}의 ‘{tool}’ 도구를 쓰려 합니다.",
+  "It wants to list what is in the workspace.":
+    "작업 공간에 무엇이 있는지 보려 합니다.",
+  "It wants to list what is in {path}.":
+    "{path} 안에 무엇이 있는지 보려 합니다.",
+  "It wants to write to the file {path}.": "{path} 파일을 쓰려 합니다.",
+  "It wants to upload the file {path} to {host}.":
+    "{host}에 {path} 파일을 올리려 합니다.",
+  "It wants to upload the file {path}.": "{path} 파일을 올리려 합니다.",
+  "It wants to read the file {path}.": "{path} 파일을 읽으려 합니다.",
+  "It wants to look at the page it has open.": "열어 둔 페이지를 보려 합니다.",
+  "It wants to look at {host}.": "{host} 사이트를 보려 합니다.",
+  "It wants to open a page.": "어떤 페이지를 열려 합니다.",
+  "It wants to open {host}.": "{host} 사이트를 열려 합니다.",
+  "It wants to open {host}{path}.": "{host}{path} 페이지를 열려 합니다.",
+  "It wants to type into a field on the page it has open.":
+    "열어 둔 페이지의 어떤 칸에 입력하려 합니다.",
+  "It wants to type into a field on {host}.":
+    "{host}의 어떤 칸에 입력하려 합니다.",
+  "It wants to type into “{name}”.": "‘{name}’ 칸에 입력하려 합니다.",
+  "It wants to type into “{name}” on {host}.":
+    "{host}의 ‘{name}’ 칸에 입력하려 합니다.",
+  "It wants to press something on the page it has open.":
+    "열어 둔 페이지에서 무언가를 누르려 합니다.",
+  "It wants to press something on {host}.":
+    "{host}에서 무언가를 누르려 합니다.",
+  "It wants to press “{name}”.": "‘{name}’{particle} 누르려 합니다.",
+  "It wants to press “{name}” on {host}.":
+    "{host}에서 ‘{name}’{particle} 누르려 합니다.",
   "Model usage recorded": "모델 사용량이 기록됨",
+  "No rule allows it": "허용하는 규칙이 없음",
   "Nobody answered in time": "아무도 답하지 않음",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
@@ -85,10 +128,20 @@ export const ko: Record<string, string> = {
   "The model took too long and the turn was ended. Ask again, or ask for less at once.":
     "모델이 너무 오래 걸려 이번 차례를 끝냈습니다. 다시 물어보거나, 한 번에 조금만 시켜 보세요.",
   "The request was cancelled": "요청이 취소됨",
+  "The screen had not been read yet": "화면을 아직 읽지 않음",
+  "The tool is declared as one that can destroy something.":
+    "무언가를 지울 수 있는 도구라고 선언돼 있습니다.",
+  "The tool is declared as one that sends something outward.":
+    "밖으로 무언가를 보내는 도구라고 선언돼 있습니다.",
+  "The tool is declared as one that moves money.":
+    "돈을 움직이는 도구라고 선언돼 있습니다.",
+  "The tool declared no risk at all, so it is treated as the most dangerous thing it could be.":
+    "이 도구는 위험도를 선언하지 않아 가장 위험한 것으로 취급합니다.",
   "The whole connector was removed": "커넥터 자체가 제거됨",
   "They disconnected it themselves": "본인이 직접 연결을 해제함",
   "They were removed from this deployment": "이 배포에서 제외된 사람입니다",
   "This deployment registered itself": "이 배포가 스스로 등록함",
+  "Time is up": "시간이 다 됐습니다",
   "Updating its own profile": "자기 프로필을 바꾸는 중",
   "Changing its own settings": "자기 설정을 바꾸는 중",
   "Changed its own settings": "자기 설정을 바꿨습니다",
@@ -106,6 +159,7 @@ export const ko: Record<string, string> = {
   "Resuming a routine": "루틴을 다시 켜는 중",
   "Resumed a routine": "루틴을 다시 켰습니다",
   "Updated its own profile": "자기 프로필을 바꿨습니다",
+  "You said no to this recently": "최근에 아니라고 답함",
   name: "이름",
   title: "직함",
   "what it is for": "무엇을 하는 봇인지",
@@ -150,6 +204,7 @@ export const ko: Record<string, string> = {
   "That answer could not be recorded. Try again.":
     "답을 기록하지 못했어요. 다시 시도해 주세요.",
   "{count} times within a few minutes": "몇 분 사이에 {count}회",
+  "{minutes}m left": "{minutes}분 남음",
   "{name} is waiting for your answer: {question}":
     "{name}이(가) 답을 기다리고 있어요: {question}",
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
@@ -1053,4 +1108,5 @@ export const ko: Record<string, string> = {
     "이미 답했거나, 10분이 지나 만료되었습니다. 멈춰 있는 일은 없습니다.",
   "Go to your Bots": "내 봇으로 가기",
   "Open the conversation": "대화 열기",
+  "{seconds}s left": "{seconds}초 남음",
 };

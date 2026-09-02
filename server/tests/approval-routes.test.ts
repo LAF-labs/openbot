@@ -19,6 +19,7 @@ import { createStandingApprovalStore } from "../src/computer/standing-approvals"
 import { createApprovalWaiter } from "../src/rooms/wait-for-approval";
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * The surface a person answers on, exercised as the browser reaches it.
@@ -163,7 +164,7 @@ describe("answering a question", () => {
       botId: "bot-1",
       actor: DRIVER.id,
       rule: "r",
-      question: "q",
+      subject: A_CLICK,
       fingerprint: "f",
       target: { type: "computer", id: "bot-1" },
     });
@@ -246,7 +247,9 @@ describe("answering a question", () => {
       expect(record.fingerprint).toBeUndefined();
       expect(record.actor).toBeUndefined();
       expect(record.target).toBeUndefined();
-      expect(record.question).toContain("Submit order");
+      // What DOES cross is the subject, because the surface has to draw the question — as facts,
+      // in the shape `app/src/lib/approvals.ts` writes a Korean sentence from.
+      expect(record.subject).toEqual(A_CLICK);
     }
   });
 
@@ -511,7 +514,7 @@ describe("taking an allowance back", () => {
       botId: "bot-1",
       rule: "r",
       scope: { kind: "host", value: "example.com" },
-      question: "q",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 

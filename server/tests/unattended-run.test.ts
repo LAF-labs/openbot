@@ -239,37 +239,47 @@ import {
   ActionNeedsApprovalError,
   ActionRefusedError,
 } from "../src/computer/gateway";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { outcomeOfError } from "../src/runner/unattended";
+import { A_CLICK } from "./support/subjects";
 
 describe("what a failed tool tells the model", () => {
-  test("an ask-rule is a pause with the question, never a refusal", () => {
+  test("an ask-rule is a pause with the facts, never a refusal", () => {
     const outcome = outcomeOfError(
       new ActionNeedsApprovalError({
         id: "appr-1",
-        question: "Open bank.example?",
+        subject: A_CLICK,
         rule: "ask: banking",
+        expiresAt: "2026-09-03T09:10:00.000Z",
       } as never),
     );
     expect(outcome).toMatchObject({
       ok: false,
       awaitingApproval: true,
       approvalId: "appr-1",
-      question: "Open bank.example?",
+      // The facts the room's card writes its Korean from, and the clock it counts down. It used to
+      // be a finished English sentence, which a Korean member then read out into the room.
+      subject: A_CLICK,
       rule: "ask: banking",
+      expiresAt: "2026-09-03T09:10:00.000Z",
     });
     expect(outcome.refused).toBeUndefined();
   });
 
-  test("a deny-rule is final and names the rule", () => {
+  test("a deny-rule is final, names the rule, and speaks Korean to the model", () => {
     const outcome = outcomeOfError(
-      new ActionRefusedError("Never submit a form.", "deny: submit"),
+      new ActionRefusedError("deny: submit", "laf:policy_denied"),
     );
     expect(outcome).toMatchObject({
       ok: false,
       refused: true,
-      reason: "Never submit a form.",
+      code: "laf:policy_denied",
+      // The one table both tool paths read, so a Bot hears the same thing whether its turn is being
+      // driven by a person's tab or by a routine at three in the morning.
+      reason: toolResultText("laf:policy_denied"),
       rule: "deny: submit",
     });
+    expect(outcome.reason).not.toContain("laf:");
     expect(outcome.awaitingApproval).toBeUndefined();
   });
 

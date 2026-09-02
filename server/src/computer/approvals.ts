@@ -86,6 +86,82 @@ export type ApprovalSubject = {
   arguments?: Record<string, unknown> | undefined;
 };
 
+/**
+ * Why a call must stop for a person even when the written policy allows it.
+ *
+ * `money` and `external` are the plugin contract's x-laf/effect classes: actions whose target lives
+ * in their arguments, which no scope decided in advance can cover. `destructive` is the server's own
+ * declaration. `unannotated` is a tool that declared nothing — treated as the most dangerous thing
+ * it could have said. Defined here rather than in `plugins/laf-contract.ts` because it travels on
+ * the approval, and the surface phrases it; the contract module re-exports it under its own name so
+ * there is one list rather than two that agree by hand.
+ */
+export type AskGuard = "money" | "external" | "destructive" | "unannotated";
+
+/** What the action does, in the terms a person is asked about it. */
+export type AskIntent =
+  | "navigate"
+  | "activate"
+  | "type"
+  | "read"
+  | "read_file"
+  | "write_file"
+  | "list_files"
+  /** A workspace file handed to a site, which is the one browser action that sends something out. */
+  | "upload"
+  /** A tool on somebody else's server. Read and write are not phrased apart; the guard is. */
+  | "call_tool"
+  /**
+   * An acting route whose tool nothing here recognises.
+   *
+   * Nothing produces one today — every route through the gateway names a tool `intentOf` knows —
+   * and it exists so that adding a ninth one without an intent produces a vague sentence rather than
+   * a card with a hole in it. The words for it say only that the Bot wants to do something, because
+   * that is all that would be known.
+   */
+  | "act";
+
+/**
+ * Why the boundary stopped here, which is a different fact from what the action is.
+ *
+ * `policy_ask` is a rule somebody wrote. `guard_floor` and `unannotated` are the plugin contract's
+ * floors, which ask whatever the policy said. `repeat` is the same action over and over — the one
+ * case where the sentence is about the count rather than about the thing being acted on.
+ */
+export type AskReason = "policy_ask" | "guard_floor" | "repeat" | "unannotated";
+
+/**
+ * WHAT IS ABOUT TO HAPPEN, AS FACTS, FOR A SURFACE TO SAY IN ITS OWN LANGUAGE.
+ *
+ * Not to be confused with {@link ApprovalSubject} above. That one is what the FINGERPRINT is taken
+ * over — the identity of one action, hashed, compared. This is what a person is being asked about.
+ *
+ * It replaced a `question` field holding an English sentence that `describeAsk` assembled in
+ * `policy.ts` and three screens rendered verbatim, while the MCP guard's questions in the same field
+ * were Korean — one field, two languages, and a Korean reader shown "The Bot wants to press …"
+ * whatever the dictionary said. The server sends the facts and the surface owns the words
+ * (docs/laf/redesign-2026-09.md §4-2, §5.1(b)); `app/src/lib/approvals.ts` is where they become a
+ * sentence, and a test there walks every intent and reason this type can carry.
+ *
+ * Everything in it is what the SERVER resolved — the element off its own snapshot, the host off the
+ * URL it is about to open — never anything the model claimed about what it was doing.
+ */
+export type AskSubject = {
+  kind: "browser" | "file" | "tool";
+  intent: AskIntent;
+  /** The site the action lands on, absent when there is no page in it. */
+  host?: string;
+  /** The path being opened, for a navigation that names one beyond `/`. */
+  path?: string;
+  /** The control, as the server resolved it from its own snapshot. */
+  element?: { role: string; name: string };
+  file?: { path: string };
+  tool?: { server: string; name: string; guard?: AskGuard };
+  /** How many times this exact call has just been made, when that is why it stopped. */
+  repeatCount?: number;
+  reason: AskReason;
+};
+
 export type PendingApproval = {
   id: string;
   botId: string;
@@ -93,8 +169,8 @@ export type PendingApproval = {
   actor: string;
   /** The expression that asked, so the surface and the trail can name the boundary. */
   rule: string;
-  /** What is about to happen, in one sentence, as the policy phrased it. */
-  question: string;
+  /** What is about to happen, in facts. The sentence is the surface's. See {@link AskSubject}. */
+  subject: AskSubject;
   /**
    * What the question is about, in the terms the audit trail files things under.
    *
@@ -145,7 +221,7 @@ export type PresentedApproval = {
   id: string;
   botId: string;
   rule: string;
-  question: string;
+  subject: AskSubject;
   /** What "always" would cover, so the surface can say so on the button rather than beside it. */
   scope?: AllowanceScope;
   requestedAt: string;
@@ -159,7 +235,7 @@ export function presentable(approval: PendingApproval): PresentedApproval {
     id: approval.id,
     botId: approval.botId,
     rule: approval.rule,
-    question: approval.question,
+    subject: approval.subject,
     ...(approval.scope ? { scope: approval.scope } : {}),
     requestedAt: approval.requestedAt,
     expiresAt: approval.expiresAt,
@@ -237,7 +313,7 @@ export type ApprovalRegistry = {
     botId: string;
     actor: string;
     rule: string;
-    question: string;
+    subject: AskSubject;
     fingerprint: string;
     /** What answering "always" would cover. Omitted where nothing about the action is durable. */
     scope?: AllowanceScope;
@@ -312,7 +388,8 @@ export type ApprovalRegistry = {
  */
 function createDeclineMemory(now: () => number, stickyMs: number) {
   const until = new Map<string, number>();
-  const key = (botId: string, fingerprint: string) => `${botId} ${fingerprint}`;
+  const key = (botId: string, fingerprint: string) =>
+    `${botId}\u0000${fingerprint}`;
 
   return {
     record(botId: string, fingerprint: string) {
@@ -395,7 +472,7 @@ export function createApprovalRegistry(
         botId: input.botId,
         actor: input.actor,
         rule: input.rule,
-        question: input.question,
+        subject: input.subject,
         fingerprint: input.fingerprint,
         ...(input.scope ? { scope: input.scope } : {}),
         target: input.target,

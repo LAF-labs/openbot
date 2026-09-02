@@ -22,16 +22,20 @@
  * an approval that does not fit its action is a fact to report, not a thing to keep asking about.
  */
 import type { AllowanceScope } from "../computer/standing-approvals";
+import type { AskSubject } from "../computer/approvals";
 import type { ToolOutcome, UnattendedToolkit } from "../runner/unattended";
 import type { ApprovalWaiter } from "./wait-for-approval";
 
 /** A question, as the room needs to show it. */
 export type RoomQuestion = {
   approvalId: string;
-  question: string;
+  /** What is being asked about, in facts. The room's card writes the Korean. See AskSubject. */
+  subject: AskSubject | null;
   rule: string;
   /** What "always" would cover, so a room's card offers the same three answers a chat's does. */
   scope?: AllowanceScope;
+  /** When it stops being answerable, so the room's card can show how long is left. */
+  expiresAt: string;
 };
 
 /** What a member is told when the person said no. Model-facing, so it says what to do next. */
@@ -45,10 +49,24 @@ function questionOf(outcome: ToolOutcome): RoomQuestion | null {
   }
   return {
     approvalId,
-    question: typeof outcome.question === "string" ? outcome.question : "",
+    // Null rather than an invented one: a card with nothing to say says the little it knows, and a
+    // shape guessed at here would be a sentence about an action nobody described.
+    subject: isSubject(outcome.subject) ? outcome.subject : null,
     rule: typeof outcome.rule === "string" ? outcome.rule : "",
     ...(isScope(outcome.scope) ? { scope: outcome.scope } : {}),
+    expiresAt: typeof outcome.expiresAt === "string" ? outcome.expiresAt : "",
   };
+}
+
+/** The outcome map is loosely typed, so the subject is checked before it is passed on as one. */
+function isSubject(value: unknown): value is AskSubject {
+  if (!value || typeof value !== "object") return false;
+  const { kind, intent, reason } = value as Record<string, unknown>;
+  return (
+    typeof kind === "string" &&
+    typeof intent === "string" &&
+    typeof reason === "string"
+  );
 }
 
 /** The outcome map is loosely typed, so the scope is checked before it is passed on as one. */

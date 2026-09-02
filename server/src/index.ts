@@ -258,6 +258,22 @@ const approvals = withApprovalNotifications(createApprovalRegistry(), {
 const standingApprovals = createDatabaseStandingApprovalStore(database);
 
 /**
+ * ONE COUNT OF A BOT GOING ROUND IN CIRCLES, not one per subsystem.
+ *
+ * Built here rather than inside the gateway for the same reason the approval registry is: a Bot
+ * clicking the same button thirty times and a Bot calling the same tool on somebody else's server
+ * thirty times are the same Bot stuck, and a detector each would mean the shipped
+ * `repeat.count >= 5` rule counted only whichever half of its work the deployment happened to be
+ * watching. A Map in this process, which is the whole count on one process per VM
+ * (docs/laf/deployment-model.md); the window is configurable for a slow provider.
+ */
+const repeatDetector = createRepeatDetector(
+  config.computer?.repeatWindowMs
+    ? { windowMs: config.computer.repeatWindowMs }
+    : {},
+);
+
+/**
  * What somebody did while showing a Bot how a task is done.
  *
  * In this process because that is where the socket is: a demonstration belongs to one person
@@ -415,6 +431,10 @@ const pluginStore = createPluginStore({
   policy: () => policyStore.get(),
   approvals,
   standing: standingApprovals,
+  // The same instruction, the same counter and the same registry the computer gets. A boundary that
+  // held for a click and not for a call to somebody else's server was one boundary written twice.
+  autoReview: autoReviewFor,
+  repeat: repeatDetector,
   /*
    * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
    * public URL, and self-registration then simply does not happen — registering a redirect URI
@@ -530,14 +550,7 @@ const computerGateway = computerClient
       approvals,
       standing: standingApprovals,
       autoReview: autoReviewFor,
-      // Passed rather than left to the gateway's own fallback only so the configured window
-      // reaches it; the detector is the same in-process one either way, which is the whole count
-      // on a deployment of one process (docs/laf/deployment-model.md).
-      repeat: createRepeatDetector(
-        config.computer?.repeatWindowMs
-          ? { windowMs: config.computer.repeatWindowMs }
-          : {},
-      ),
+      repeat: repeatDetector,
     })
   : undefined;
 

@@ -119,12 +119,12 @@ export function createComputerRoutes(
       if (error instanceof ActionRefusedError) {
         return context.json(
           {
+            // The code twice, deliberately: `error` is what every caller of these routes already
+            // reads, and `code` is where a refusal's fact has been since the surface started owning
+            // the words. Neither is a sentence any more. See ActionRefusedError.
             error: error.message,
             rule: error.rule,
-            // What kind of refusal, where there is more to say than the rule — a password box the Bot
-            // should be asking a person to fill, an answer somebody already gave. The surface owns
-            // the words for it; this sends the fact.
-            ...(error.code ? { code: error.code } : {}),
+            code: error.code,
           },
           403,
         );
@@ -727,12 +727,10 @@ async function act(
     if (error instanceof ActionRefusedError) {
       return context.json(
         {
+          // The code, not a sentence — see the sibling handler above and ActionRefusedError.
           error: error.message,
           rule: error.rule,
-          // What kind of refusal, where there is more to say than the rule — a password box the Bot
-          // should be asking a person to fill, an answer somebody already gave. The surface owns
-          // the words for it; this sends the fact.
-          ...(error.code ? { code: error.code } : {}),
+          code: error.code,
         },
         403,
       );
@@ -780,14 +778,20 @@ function awaitingApproval(
 ) {
   return context.json(
     {
+      // A code, not a sentence. The card is Korean and the model reads Korean; neither of them is
+      // owed this server's English. See ActionRefusedError.
       error: error.message,
       awaitingApproval: true,
       approvalId: error.approvalId,
-      question: error.question,
+      // What is being asked about, in facts. `app/src/lib/approvals.ts` turns it into a sentence.
+      subject: error.subject,
       rule: error.rule,
       // Undefined drops out of the JSON, so a question with no derivable scope simply arrives
       // without one and the card offers "this once" alone.
       scope: error.scope,
+      // So the card can show how long is left. Without it the question simply disappeared after ten
+      // minutes with nothing having said it would.
+      expiresAt: error.expiresAt,
     },
     409,
   );

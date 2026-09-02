@@ -5,7 +5,14 @@
  * here; never edit core.ts or coworker.ts to do it.
  */
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import type { AskSubject } from "../../computer/approvals";
 import { agents } from "./core";
 
 /**
@@ -106,8 +113,15 @@ export const computerStandingApprovals = pgTable(
     /** The same scope split for display, so the list can be read without parsing it back apart. */
     scopeKind: text("scope_kind").notNull(),
     scopeValue: text("scope_value").notNull(),
-    /** The sentence the person was looking at when they pressed it. */
-    question: text("question").notNull(),
+    /**
+     * What the Bot was about to do when somebody widened the boundary, in facts.
+     *
+     * It was an English sentence (`question`), assembled by the policy and rendered as-is on the
+     * Boundaries page; the sentence no longer exists anywhere, so the column holding a copy of it
+     * went with it (migration 0026). Null on every row granted before that — nothing invents a
+     * subject for those, and the page falls back to what an allowance always says: the scope.
+     */
+    subject: jsonb("subject").$type<AskSubject>(),
     grantedBy: text("granted_by").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .notNull()

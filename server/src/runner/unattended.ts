@@ -429,11 +429,14 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       ok: false,
       awaitingApproval: true,
       approvalId: error.approvalId,
-      question: error.question,
+      // The facts, for the room's card to say in Korean. It was the server's English sentence, which
+      // a Korean-speaking member then read out into the room.
+      subject: error.subject,
       rule: error.rule,
       // Carried so a room can offer the wider button too. Undefined where the question had no
       // derivable scope, which the room reads the same way the one-to-one card does.
       scope: error.scope,
+      expiresAt: error.expiresAt,
       code: "laf:nobody_answered",
       reason: toolResultText("laf:nobody_answered"),
     };
@@ -442,10 +445,24 @@ export function outcomeOfError(error: unknown): ToolOutcome {
     error instanceof ActionRefusedError ||
     error instanceof PluginRefusedError
   ) {
+    /*
+     * CODE IN, KOREAN OUT, THROUGH THE ONE TABLE.
+     *
+     * The message on both of these is a `laf:` fact now, not a sentence — the policy stopped writing
+     * English the moment the surface started composing its own (§4-2). What the MODEL reads is the
+     * Korean beside that code in `shared/prompt/tool-results.ko.ts`, which is the same table the
+     * browser's tools read, so a refusal says the same thing to a Bot whether its turn is being
+     * driven by a person's tab or by a routine at three in the morning.
+     *
+     * Anything without a code passes through unchanged, and visibly: a sentence from somewhere
+     * upstream reaching a Bot is a regression, and swallowing it would hide the next one.
+     */
+    const code = error.message.startsWith("laf:") ? error.message : undefined;
     return {
       ok: false,
       refused: true,
-      reason: error.message,
+      ...(code ? { code } : {}),
+      reason: code ? toolResultText(code) : error.message,
       rule: error.rule,
     };
   }

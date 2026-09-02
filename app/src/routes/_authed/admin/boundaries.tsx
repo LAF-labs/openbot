@@ -5,6 +5,7 @@ import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { type AskSubject, describeSubject } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
 
 /**
@@ -46,7 +47,14 @@ type StandingAllowance = {
   rule: string;
   scopeKind: "host" | "file" | "tool";
   scopeValue: string;
-  question: string;
+  /**
+   * What the Bot was about to do when somebody answered "always", in facts.
+   *
+   * Absent on rows granted before the sentence became a subject (migration 0026). The line is left
+   * out for those rather than filled with a guess — the scope above it is what the allowance
+   * actually covers, and it is on the row either way.
+   */
+  subject?: AskSubject;
   grantedAt: string;
 };
 
@@ -608,10 +616,16 @@ function BoundariesPage() {
                             tool: allowance.scopeValue,
                           })}
                   </span>
-                  {/* The sentence they were reading when they granted it, and the rule it stands down. */}
-                  <span className="text-muted-foreground text-xs">
-                    {allowance.question}
-                  </span>
+                  {/*
+                   * What the Bot was doing when they granted it, said here rather than sent as a
+                   * sentence — the same composition the card they pressed used. Absent on rows
+                   * older than the subject; the scope above already says what is covered.
+                   */}
+                  {allowance.subject ? (
+                    <span className="text-muted-foreground text-xs">
+                      {describeSubject(allowance.subject)}
+                    </span>
+                  ) : null}
                   {allowance.rule ? (
                     <code className="break-all font-mono text-[11px] text-muted-foreground">
                       {allowance.rule}

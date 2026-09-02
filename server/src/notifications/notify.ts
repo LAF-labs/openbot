@@ -11,12 +11,12 @@
  * gets a log line and loses nothing else, because the question itself still
  * waits on the approvals surface.
  */
-import type { ApprovalRegistry } from "../computer/approvals";
+import type { ApprovalRegistry, AskSubject } from "../computer/approvals";
 
 const SEND_TIMEOUT_MS = 10_000;
 
 export type NotifyOptions = {
-  /** POSTed `{kind, headline, botId, approvalId, question}` as JSON. */
+  /** POSTed `{kind, headline, botId, approvalId, subject}` as JSON. */
   webhookUrl?: string;
 };
 
@@ -43,11 +43,19 @@ export function withApprovalNotifications(
   const notify = (pending: {
     id: string;
     botId: string;
-    question: string;
+    subject: AskSubject;
   }): void => {
-    const headline = lockScreenLine(
-      `[LAF] 봇이 당신을 기다립니다 — ${pending.question}`,
-    );
+    /*
+     * THE HEADLINE NAMES NO ACTION, AND THAT IS THE HONEST VERSION.
+     *
+     * It used to interpolate the approval's `question`, which was an English sentence assembled by
+     * the policy — so a lock screen said "봇이 당신을 기다립니다 — The Bot wants to press “출금 승인”".
+     * That sentence no longer exists: the server sends facts and each surface says them in its own
+     * words (docs/laf/redesign-2026-09.md §4-2). A webhook is a surface this repository does not
+     * own, so it gets the facts in `subject` and writes its own line. What is safe to say from here
+     * is the part that is true of every one of these, which is that somebody is being waited on.
+     */
+    const headline = lockScreenLine("[LAF] 봇이 당신을 기다립니다");
     if (!options.webhookUrl) {
       console.info(`[notify] ${headline}`);
       return;
@@ -61,7 +69,7 @@ export function withApprovalNotifications(
         headline,
         botId: pending.botId,
         approvalId: pending.id,
-        question: pending.question,
+        subject: pending.subject,
       }),
     }).catch((error: unknown) => {
       console.error(
@@ -78,7 +86,7 @@ export function withApprovalNotifications(
       notify({
         id: pending.id,
         botId: input.botId,
-        question: input.question,
+        subject: input.subject,
       });
       return pending;
     },

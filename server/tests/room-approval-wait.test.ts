@@ -6,6 +6,7 @@ import {
   type PendingApproval,
 } from "../src/computer/approvals";
 import { createApprovalWaiter } from "../src/rooms/wait-for-approval";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * The wait a room does and a routine does not. Every case here is one the person experiences as
@@ -27,7 +28,7 @@ async function ask(approvals: ApprovalRegistry): Promise<PendingApproval> {
     botId: BOT,
     actor: "person@example.test",
     rule: "true",
-    question: "Open wttr.in?",
+    subject: A_CLICK,
     fingerprint: fingerprintOf({ botId: BOT, toolName: "computer_navigate" }),
     target: { type: "computer", id: "c1" },
   });
