@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
@@ -48,6 +55,49 @@ const ADMIN = { id: "routine-admin", role: "admin" as const };
  */
 const TEST_ACTOR_IDS = [ACTOR.id, STRANGER.id, ADMIN.id];
 
+/** The Bot every routine below drives. `laf_routines.agent_id` is a real reference since 0026. */
+const BOT_ID = "morning-bot";
+
+/*
+ * The rows the references need, created rather than assumed.
+ *
+ * `laf_routines.agent_id` and `created_by_id` point at `agents` and `users` now, so a routine made
+ * under an id nothing carries fails on the reference instead of exercising the scheduler. Only what
+ * this file creates is removed; on a machine where the app already seeded them, nothing is touched.
+ */
+const seeded = { agents: [] as string[], users: [] as string[] };
+
+beforeAll(async () => {
+  const madeBot = await database
+    .insert(agents)
+    .values({
+      id: BOT_ID,
+      name: "Morning Bot",
+      type: "remote_ag_ui",
+      configuration: {},
+    })
+    .onConflictDoNothing()
+    .returning({ id: agents.id });
+  if (madeBot.length > 0) seeded.agents.push(BOT_ID);
+  for (const id of TEST_ACTOR_IDS) {
+    const madeUser = await database
+      .insert(users)
+      .values({ id, email: `${id}@laf.test`, name: id })
+      .onConflictDoNothing()
+      .returning({ id: users.id });
+    if (madeUser.length > 0) seeded.users.push(id);
+  }
+});
+
+afterAll(async () => {
+  if (seeded.agents.length > 0) {
+    await database.delete(agents).where(inArray(agents.id, seeded.agents));
+  }
+  if (seeded.users.length > 0) {
+    await database.delete(users).where(inArray(users.id, seeded.users));
+  }
+});
+
 afterEach(async () => {
   const mine = database
     .select({ id: lafRoutines.id })
@@ -75,7 +125,7 @@ function fakeAgents(reply: string, delayMs = 0) {
       };
     },
   } as unknown as AbstractAgent;
-  return { agents: { "morning-bot": agent }, asked };
+  return { agents: { [BOT_ID]: agent }, asked };
 }
 
 function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
@@ -186,7 +236,7 @@ describe("a routine on the clock", () => {
     const { service, rows } = serviceWith(agents, () => clock);
 
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "아침 리뷰 요약",
       instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -226,7 +276,7 @@ describe("a routine on the clock", () => {
     const { service } = serviceWith(agents, () => clock);
 
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "아침 리뷰 요약",
       instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -273,7 +323,7 @@ describe("a routine on the clock", () => {
 
     const broken = serviceWith({ "morning-bot": failing }, () => clock);
     const routine = await broken.service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "점검",
       instruction: "확인해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -298,7 +348,7 @@ describe("a routine on the clock", () => {
     const b = serviceWith(agents, () => clock).service;
 
     const routine = await a.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "once",
       instruction: "run once",
       schedule: { kind: "interval", minutes: 10 },
@@ -315,7 +365,7 @@ describe("a routine on the clock", () => {
     let clock = new Date("2026-08-20T07:00:00Z");
     const { service } = serviceWith({}, () => clock); // Roster without the Bot.
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "gone",
       instruction: "hello",
       schedule: { kind: "interval", minutes: 10 },
@@ -334,7 +384,7 @@ describe("a routine on the clock", () => {
     const { agents } = fakeAgents("hi");
     const { service } = serviceWith(agents, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "paused",
       instruction: "hello",
       schedule: { kind: "interval", minutes: 10 },
@@ -362,7 +412,7 @@ describe("a routine on the clock", () => {
      */
     for (let held = 0; held < MAX_ROUTINES; held += 1) {
       await service.create(ACTOR, {
-        agentId: "morning-bot",
+        agentId: BOT_ID,
         name: `routine ${held}`,
         instruction: "x",
         schedule: { kind: "interval", minutes: 10 },
@@ -370,7 +420,7 @@ describe("a routine on the clock", () => {
     }
     await expect(
       service.create(ACTOR, {
-        agentId: "morning-bot",
+        agentId: BOT_ID,
         name: "one too many",
         instruction: "x",
         schedule: { kind: "interval", minutes: 10 },
@@ -379,7 +429,7 @@ describe("a routine on the clock", () => {
 
     // And the next person is not out of room because of it.
     const theirs = await service.create(STRANGER, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "somebody else's first",
       instruction: "x",
       schedule: { kind: "interval", minutes: 10 },
@@ -392,7 +442,7 @@ describe("a routine on the clock", () => {
     const { agents } = fakeAgents("early");
     const { service } = serviceWith(agents, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "early",
       instruction: "x",
       schedule: { kind: "interval", minutes: 30 },
@@ -426,7 +476,7 @@ describe("a window that came and went", () => {
     const { agents, asked } = fakeAgents("caught up");
     const { service, rows } = serviceWith(agents, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "매일 아침 브리핑",
       instruction: "오늘 할 일 알려줘",
       // Due at 07:30, and then however overdue the caller asked for.
@@ -498,7 +548,7 @@ describe("two ticks over one service", () => {
     const { service } = serviceWith(agents, () => clock);
     for (const name of ["first", "second"]) {
       await service.create(ACTOR, {
-        agentId: "morning-bot",
+        agentId: BOT_ID,
         name,
         instruction: `run ${name}`,
         schedule: { kind: "interval", minutes: 10 },
@@ -573,7 +623,7 @@ describe("whose routine it is", () => {
     const { agents: roster } = fakeAgents("mine");
     const { service } = serviceWith(roster, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "mine",
       instruction: "x",
       schedule: { kind: "interval", minutes: 30 },
@@ -674,7 +724,7 @@ describe("a webhook firing a routine", () => {
     const { agents, asked } = fakeAgents(reply);
     const { service } = serviceWith(agents, clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "on event",
       instruction: "summarize the event",
       schedule: { kind: "interval", minutes: 60 },

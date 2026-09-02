@@ -1,7 +1,8 @@
+import { sql } from "drizzle-orm";
 import { customType } from "drizzle-orm/pg-core";
 
 /**
- * A `jsonb` column that actually stores JSON.
+ * A `jsonb` column that actually stores JSON — objects AND arrays.
  *
  * Drizzle's ordinary `jsonb()` serialises the value in `mapToDriverValue`, and Bun's `SQL` driver
  * serialises it again on the way to Postgres. Objects that need SQL JSON operators use this custom
@@ -17,6 +18,16 @@ import { customType } from "drizzle-orm/pg-core";
  * parameter, so this hands it the object and stays out of the way. Reads are unchanged: both paths
  * return an object, which is why this can be swapped in without touching a single call site.
  *
+ * ARRAYS TAKE THE THIRD FORM, and there were only ever three to choose between — measured on this
+ * driver, not guessed. A top-level JS array handed straight to the driver is read as a POSTGRES
+ * array (`{}`-syntax) and the insert fails; a parameter cast straight to `::jsonb` makes the jsonb
+ * serialiser stringify an already-stringified value, storing a jsonb *string* that every SQL-side
+ * `->>` and `jsonb_array_elements` then refuses. Typing the parameter as text first is the one form
+ * that lands as a real jsonb array. Three call sites used to spell that cast out by hand next to a
+ * drizzle `jsonb()` column; it belongs here, once, so a new array column cannot get it wrong —
+ * `laf_routine_runs.steps` did, and every row it ever wrote is a jsonb string (migration 0026
+ * repairs them).
+ *
  * Use this everywhere instead of `jsonb` from `drizzle-orm/pg-core`.
  */
 export const jsonb = customType<{
@@ -24,6 +35,7 @@ export const jsonb = customType<{
   driverData: unknown;
 }>({
   dataType: () => "jsonb",
-  // Straight through. The double `JSON.stringify` is the whole bug.
-  toDriver: (value) => value,
+  // Straight through for an object. The double `JSON.stringify` is the whole bug.
+  toDriver: (value) =>
+    Array.isArray(value) ? sql`${JSON.stringify(value)}::text::jsonb` : value,
 });

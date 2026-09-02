@@ -13,7 +13,8 @@ import {
   channelMemberships,
   channels,
   credentials,
-  intelligenceChannelMappings,
+  channelThreads,
+  lafThreadMessages,
   sessions,
   userRoles,
   users,
@@ -35,7 +36,7 @@ describe("LAF Agent database schema", () => {
         channelAgents,
         credentials,
         auditEvents,
-        intelligenceChannelMappings,
+        channelThreads,
       ].map(getTableName),
     ).toEqual([
       "users",
@@ -49,7 +50,119 @@ describe("LAF Agent database schema", () => {
       "channel_agents",
       "credentials",
       "audit_events",
-      "intelligence_channel_mappings",
+      "channel_threads",
+    ]);
+  });
+
+  /*
+   * The conversation store, and the shape that makes it append-only.
+   *
+   * `laf_thread_snapshots` held one jsonb array per thread and three call sites wrote it two
+   * different ways; an append landing between the runner's read and its overwrite was gone. The
+   * primary key is what says a message has a place in a thread rather than a place in an array, and
+   * the unique index on the message id is what lets the same message arrive twice — every run hands
+   * the whole history back — without becoming two.
+   */
+  test("stores a conversation as one append-only row per message", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+    expect(schema.lafThreadSnapshots).toBeUndefined();
+
+    const config = getTableConfig(lafThreadMessages);
+    expect(getTableName(lafThreadMessages)).toBe("laf_thread_messages");
+    expect(config.columns.map((column) => column.name)).toEqual([
+      "thread_id",
+      "seq",
+      "message",
+      "at",
+      "run_id",
+    ]);
+    expect(
+      config.primaryKeys.map((key) => key.columns.map((c) => c.name)),
+    ).toEqual([["thread_id", "seq"]]);
+    expect(
+      config.indexes.map((index) => ({
+        name: index.config.name,
+        unique: index.config.unique,
+      })),
+    ).toEqual([{ name: "laf_thread_messages_message_id_idx", unique: true }]);
+    // No foreign key on thread_id: a thread is an id this deployment mints, not a row.
+    expect(config.foreignKeys).toHaveLength(0);
+  });
+
+  /*
+   * The migration behind it, and the half of it that is a DATA migration.
+   *
+   * Dropping the old table without moving its rows across is every conversation in the deployment
+   * gone, and it would type-check, pass every unit test, and be discovered by somebody opening the
+   * app. The `INSERT … SELECT` and the self-heal for the double-encoded rows are what this asserts.
+   */
+  test("ships the migration that moves the conversations across", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0026_one_conversation_store.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    expect(normalized).toContain(`CREATE TABLE "laf_thread_messages"`);
+    expect(normalized).toContain(
+      `INSERT INTO "laf_thread_messages" ("thread_id", "seq", "message", "at")`,
+    );
+    // The double-encoded rows are re-parsed rather than read as an empty conversation.
+    expect(normalized).toContain(`WHEN 'string' THEN`);
+    expect(normalized).toContain(`DROP TABLE "laf_thread_snapshots" CASCADE`);
+    // And the copy happens BEFORE the drop, which is the whole difference.
+    expect(
+      normalized.indexOf(`INSERT INTO "laf_thread_messages"`),
+    ).toBeLessThan(normalized.indexOf(`DROP TABLE "laf_thread_snapshots"`));
+    expect(normalized).toContain(
+      `ALTER TABLE "intelligence_channel_mappings" RENAME TO "channel_threads"`,
+    );
+    expect(normalized).toContain(
+      `ALTER TABLE "laf_routines" RENAME COLUMN "daily_utc" TO "daily_local"`,
+    );
+  });
+
+  /*
+   * The references the `laf_*` and `computer_*` tables never had.
+   *
+   * Deleting a Bot left its routines `enabled` and claimed on every tick, and its standing
+   * allowances standing. The `onDelete` on each one is the decision, so each one is named here:
+   * a routine and an allowance go with the Bot, a run record keeps its history and loses the name,
+   * and a routine outlives the person who typed it.
+   */
+  test("names a parent for every laf_* row that has one", async () => {
+    const {
+      computerStandingApprovals,
+      lafRoutineRuns,
+      lafRoutines,
+      lafThreadRuns,
+    } = (await import("../src/db/schema")) as Record<string, never>;
+
+    const references = (table: never) =>
+      getTableConfig(table).foreignKeys.map((foreignKey) => {
+        const reference = foreignKey.reference();
+        return [
+          reference.columns.map((column) => column.name).join(","),
+          getTableName(reference.foreignTable),
+          foreignKey.onDelete,
+        ].join(" -> ");
+      });
+
+    expect(references(lafRoutines)).toEqual([
+      "agent_id -> agents -> cascade",
+      "created_by_id -> users -> set null",
+    ]);
+    expect(references(lafRoutineRuns)).toEqual([
+      "routine_id -> laf_routines -> cascade",
+    ]);
+    expect(references(lafThreadRuns)).toEqual([
+      "agent_id -> agents -> set null",
+    ]);
+    expect(references(computerStandingApprovals)).toEqual([
+      "bot_id -> agents -> cascade",
     ]);
   });
 

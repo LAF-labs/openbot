@@ -262,7 +262,7 @@ const publishedColumns = {
   instruction: lafRoutines.instruction,
   scheduleKind: lafRoutines.scheduleKind,
   intervalMinutes: lafRoutines.intervalMinutes,
-  dailyUtc: lafRoutines.dailyUtc,
+  dailyLocal: lafRoutines.dailyLocal,
   dailyTimeZone: lafRoutines.dailyTimeZone,
   dailyDays: lafRoutines.dailyDays,
   enabled: lafRoutines.enabled,
@@ -298,7 +298,7 @@ function scheduleOf(row: typeof lafRoutines.$inferSelect): RoutineSchedule {
   }
   return {
     kind: "daily",
-    time: row.dailyUtc ?? "07:30",
+    time: row.dailyLocal ?? "07:30",
     // A row written before zones existed meant UTC, because that is what it did.
     timeZone: row.dailyTimeZone ?? "UTC",
     days: row.dailyDays ?? [],
@@ -442,6 +442,17 @@ export function createRoutineService(options: RoutineServiceOptions) {
   async function executeNow(row: typeof lafRoutines.$inferSelect) {
     const startedAt = now();
     const runId = randomUUID();
+    /*
+     * The person the run is made as, and it can be missing.
+     *
+     * `created_by_id` became a real reference with `on delete set null`, because the ownership rule
+     * above says a routine outlives the person who typed it. What it cannot outlive is the
+     * VISIBILITY that person had — the Bot roster is loaded with the creator's own, so a routine
+     * with no creator has nobody to load it as, and running it under anybody else would let it
+     * reach a private coworker its author could not. It stops instead, in the one place a person
+     * reads a routine's history.
+     */
+    const author = row.createdById;
     let ok = false;
     let answer = "";
     let failure = "";
@@ -462,8 +473,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
       })
       .catch(() => null);
     try {
+      if (!author) {
+        throw new Error(
+          "The person who created this routine no longer has an account.",
+        );
+      }
       const agents = await options.resolveAgents({
-        id: row.createdById,
+        id: author,
         role: row.createdByRole === "admin" ? "admin" : "user",
       });
       const target = agents[row.agentId];
@@ -501,11 +517,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
       if (options.tools) {
         const actor: ActionActor = {
-          id: row.createdById,
-          // The local actor is not a row in `users`, and the audit table has a foreign key to it.
-          ...(row.createdById === DEV_ACTOR.id
-            ? {}
-            : { userId: row.createdById }),
+          id: author,
+          // The local actor is not a row in `users`, so it is named without claiming to be one.
+          ...(author === DEV_ACTOR.id ? {} : { userId: author }),
         };
         const toolkit = await options.tools(row.agentId, actor);
         const run = await runUnattended(target, instruction, {
@@ -535,11 +549,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (error instanceof UnattendedRunError) steps = error.steps;
     }
 
-    if (ok && answer.trim().length > 0) {
+    if (ok && author && answer.trim().length > 0) {
       try {
         await options.deliver?.({
           agentId: row.agentId,
-          userId: row.createdById,
+          userId: author,
           routineName: row.name,
           answer,
           at: now(),
@@ -736,7 +750,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
             scheduleKind: schedule.kind,
             intervalMinutes:
               schedule.kind === "interval" ? schedule.minutes : null,
-            dailyUtc: schedule.kind === "daily" ? schedule.time : null,
+            dailyLocal: schedule.kind === "daily" ? schedule.time : null,
             dailyTimeZone:
               schedule.kind === "daily" ? (schedule.timeZone ?? "UTC") : null,
             dailyDays: schedule.kind === "daily" ? (schedule.days ?? []) : null,

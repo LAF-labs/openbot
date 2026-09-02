@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
-import { stamp, stampsOf } from "../src/runner/laf-runner";
+import { stamp, stampsOf } from "../src/runner/thread-store";
 
 const message = (id: string, extra: Record<string, unknown> = {}) =>
   ({ id, role: "user", content: id, ...extra }) as Message;

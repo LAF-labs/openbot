@@ -15,7 +15,7 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
 } from "../db/schema";
 import type {
   AnnounceChannelActivity,
@@ -172,7 +172,7 @@ export function createChannelStore(
               .select({
                 id: channels.id,
                 name: channels.name,
-                threadId: intelligenceChannelMappings.threadId,
+                threadId: channelThreads.threadId,
               })
               .from(channels)
               .innerJoin(
@@ -183,10 +183,10 @@ export function createChannelStore(
                 ),
               )
               .innerJoin(
-                intelligenceChannelMappings,
+                channelThreads,
                 and(
-                  eq(intelligenceChannelMappings.channelId, channels.id),
-                  eq(intelligenceChannelMappings.userId, actor.id),
+                  eq(channelThreads.channelId, channels.id),
+                  eq(channelThreads.userId, actor.id),
                 ),
               )
               .innerJoin(
@@ -240,7 +240,7 @@ export function createChannelStore(
           await transaction
             .insert(channelAgents)
             .values(agentIds.map((agentId) => ({ channelId: id, agentId })));
-          await transaction.insert(intelligenceChannelMappings).values({
+          await transaction.insert(channelThreads).values({
             userId: actor.id,
             channelId: id,
             threadId,
@@ -258,7 +258,7 @@ export function createChannelStore(
           id: channels.id,
           name: channels.name,
           agentId: channelAgents.agentId,
-          threadId: intelligenceChannelMappings.threadId,
+          threadId: channelThreads.threadId,
           deletedAt: agentProfiles.deletedAt,
         })
         .from(channels)
@@ -270,10 +270,10 @@ export function createChannelStore(
           ),
         )
         .innerJoin(
-          intelligenceChannelMappings,
+          channelThreads,
           and(
-            eq(intelligenceChannelMappings.channelId, channels.id),
-            eq(intelligenceChannelMappings.userId, actor.id),
+            eq(channelThreads.channelId, channels.id),
+            eq(channelThreads.userId, actor.id),
           ),
         )
         .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
@@ -302,7 +302,7 @@ export function createChannelStore(
           id: channels.id,
           name: channels.name,
           agentId: channelAgents.agentId,
-          threadId: intelligenceChannelMappings.threadId,
+          threadId: channelThreads.threadId,
           deletedAt: agentProfiles.deletedAt,
           lastMessage: channels.lastMessage,
           lastMessageAt: channels.lastMessageAt,
@@ -319,10 +319,10 @@ export function createChannelStore(
           ),
         )
         .innerJoin(
-          intelligenceChannelMappings,
+          channelThreads,
           and(
-            eq(intelligenceChannelMappings.channelId, channels.id),
-            eq(intelligenceChannelMappings.userId, actor.id),
+            eq(channelThreads.channelId, channels.id),
+            eq(channelThreads.userId, actor.id),
           ),
         )
         .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))

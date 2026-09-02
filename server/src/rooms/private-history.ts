@@ -14,12 +14,11 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Message } from "@ag-ui/client";
-import { eq } from "drizzle-orm";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { Database } from "../db/client";
-import { lafThreadSnapshots } from "../db/schema";
+import { messagesFor, type StoredMessage } from "../runner/thread-store";
 import { clamp } from "./prompt";
-import { type StoredMessage, textOf } from "./transcript";
+import { textOf } from "./transcript";
 
 /** How many of the most recent things said are carried. A dozen is a conversation's last page. */
 export const HISTORY_MESSAGES = 12;
@@ -47,7 +46,7 @@ export function historyOf(stored: readonly StoredMessage[]): Message[] {
     const entry = stored[at];
     if (!entry || typeof entry !== "object") continue;
     if (entry.role !== "user" && entry.role !== "assistant") continue;
-    const text = textOf(entry.content).trim();
+    const text = textOf((entry as { content?: unknown }).content).trim();
     if (!text) continue;
     const content = clamp(text, HISTORY_MESSAGE_CHARS);
     said.push(
@@ -67,11 +66,5 @@ export async function readPrivateHistory(
 ): Promise<Message[]> {
   const solo = await soloChannelFor(database, userId, agentId);
   if (!solo) return [];
-  const [row] = await database
-    .select({ messages: lafThreadSnapshots.messages })
-    .from(lafThreadSnapshots)
-    .where(eq(lafThreadSnapshots.threadId, solo.threadId))
-    .limit(1);
-  const stored: unknown = row?.messages;
-  return Array.isArray(stored) ? historyOf(stored as StoredMessage[]) : [];
+  return historyOf(await messagesFor(database, solo.threadId));
 }

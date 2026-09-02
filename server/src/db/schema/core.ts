@@ -298,19 +298,37 @@ export const auditEvents = pgTable(
     payload: jsonb("payload").notNull(),
     createdAt: createdAt(),
   },
-  (table) => [index("audit_events_created_at_idx").on(table.createdAt)],
+  (table) => [
+    index("audit_events_created_at_idx").on(table.createdAt),
+    /*
+     * The two filters the reader actually offers, each paired with the ordering it is read in.
+     *
+     * `audit_events_created_at_idx` alone serves "the last N rows" and nothing else, and the trail
+     * page is never read that way: it is read as "what did this person do" and "show me every
+     * `computer.denied`", both narrowed and then sorted by time. On a table that only ever grows
+     * and is never pruned, those were both a scan of everything the deployment has ever recorded.
+     */
+    index("audit_events_type_created_at_idx").on(
+      table.eventType,
+      table.createdAt,
+    ),
+    index("audit_events_actor_created_at_idx").on(
+      table.actorUserId,
+      table.createdAt,
+    ),
+  ],
 );
 
 /**
  * Which thread a person is having with a channel.
  *
- * The name is a fossil: threads once lived in CopilotKit Intelligence and this table pointed at
- * them there. They live in `laf_thread_snapshots` now and nothing here reaches a hosted service,
- * but the rows are real conversations and renaming a table is a migration with no upside on its
- * own, so the name is left for the phase that is renaming several at once.
+ * It was `intelligence_channel_mappings`, after a service this fork does not use: threads once
+ * lived in CopilotKit Intelligence and this table pointed at them there. They live in
+ * `laf_thread_messages` now and nothing here reaches a hosted service, so migration 0026 renames
+ * the table to what it is.
  */
-export const intelligenceChannelMappings = pgTable(
-  "intelligence_channel_mappings",
+export const channelThreads = pgTable(
+  "channel_threads",
   {
     userId: text("user_id")
       .notNull()
@@ -324,6 +342,6 @@ export const intelligenceChannelMappings = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.channelId] }),
-    uniqueIndex("intelligence_channel_mappings_thread_idx").on(table.threadId),
+    uniqueIndex("channel_threads_thread_idx").on(table.threadId),
   ],
 );

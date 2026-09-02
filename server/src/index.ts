@@ -1,6 +1,7 @@
 import "./telemetry-off";
 import { serve } from "bun";
 import { eq, sql } from "drizzle-orm";
+import { Hono } from "hono";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -140,9 +141,16 @@ const database = createDatabase(config.databaseUrl);
  * its audit trail is unavailable.
  */
 const bootAuditStore = createAuditStore(database);
-// The durable runner every turn goes through. Built before the app because construction
-// is a read: it rehydrates every thread snapshot so restarts do not lose history.
-const lafRunner = await LafPostgresRunner.create(database, bootAuditStore);
+// One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
+// one module writes it. Built before the runner because the runner opens its rows through it.
+const runLedger = createRunLedger(database);
+// The durable runner every turn goes through. Built before the app because construction adjudicates
+// the runs the last process left open; it reads no conversation until one is asked for.
+const lafRunner = await LafPostgresRunner.create(
+  database,
+  runLedger,
+  bootAuditStore,
+);
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -533,9 +541,6 @@ const computerGateway = computerClient
     })
   : undefined;
 
-// One ledger for every run path — chat, routine, handoff — so the roster reads one table.
-const runLedger = createRunLedger(database);
-
 // One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
 // a revoked key or a deleted coworker takes effect on the next question rather than on restart.
 const coworkerCall = createCoworkerCall({
@@ -561,24 +566,19 @@ const coworkerCall = createCoworkerCall({
       agentProfileStore.get(actor, exchange.callerId).catch(() => null),
       agentProfileStore.get(actor, exchange.targetId).catch(() => null),
     ]);
-    await appendToSoloConversation(
-      database,
-      {
-        agentId: exchange.targetId,
-        userId: exchange.actorId,
-        // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
-        heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
-        // The question quoted line by line, so a multi-line ask stays one block rather than
-        // becoming a quote and then loose prose.
-        body: `${exchange.question
-          .split("\n")
-          .map((line) => `> ${line}`)
-          .join("\n")}\n\n${exchange.answer}`,
-        at: exchange.at,
-      },
-      (threadId, agentId, messages) =>
-        lafRunner.adoptSnapshot(threadId, agentId, messages as never),
-    );
+    await appendToSoloConversation(database, {
+      agentId: exchange.targetId,
+      userId: exchange.actorId,
+      // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
+      heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
+      // The question quoted line by line, so a multi-line ask stays one block rather than
+      // becoming a quote and then loose prose.
+      body: `${exchange.question
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n")}\n\n${exchange.answer}`,
+      at: exchange.at,
+    });
   },
 });
 
@@ -613,11 +613,8 @@ const routineService = createRoutineService({
   ledger: runLedger,
   lane: botLane,
   // And the answer lands in the Bot's own conversation, where a person already reads.
-  deliver: createRoutineDelivery(
-    database,
-    (threadId, agentId, messages) =>
-      lafRunner.adoptSnapshot(threadId, agentId, messages as never),
-    (event) => channelEvents.deliver(event),
+  deliver: createRoutineDelivery(database, (event) =>
+    channelEvents.deliver(event),
   ),
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({
@@ -625,6 +622,36 @@ const routineService = createRoutineService({
     pluginStore,
   }),
 });
+
+/**
+ * The runtime's own thread routes, with the thread they are about to answer for read first.
+ *
+ * CopilotKit's local thread endpoints reach the runner through SYNCHRONOUS methods —
+ * `getThreadMessages` returns a `Message[]`, and the handler maps it straight into a `Response` —
+ * so a read that has to reach Postgres cannot happen inside them. The runner used to sidestep that
+ * by loading every thread in the deployment at boot and answering from memory. This is the
+ * alternative: one read, for the one thread this request names, taken here where awaiting is
+ * allowed. `/threads` itself takes a summary read that touches no message body.
+ */
+const copilotEndpoint = new Hono()
+  .use("/api/copilotkit/threads", async (context, next) => {
+    if (context.req.method === "GET") await lafRunner.primeThreadList();
+    return next();
+  })
+  .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
+    await lafRunner.prime(context.req.param("threadId"));
+    return next();
+  })
+  .route(
+    "/",
+    mountCopilotRuntime(
+      tenantPackage.model,
+      loadAgentsForActor,
+      identifyActor,
+      stallGuard,
+      lafRunner,
+    ),
+  );
 
 const app = createApp(
   config,
@@ -638,15 +665,7 @@ const app = createApp(
   ),
   createPackageStatusReader(database),
   createOnboardingStore(database),
-  // The runtime call: the model, per-actor agent loading, and the identity
-  // function are how a run is attributed to a person.
-  mountCopilotRuntime(
-    tenantPackage.model,
-    loadAgentsForActor,
-    identifyActor,
-    stallGuard,
-    lafRunner,
-  ),
+  copilotEndpoint,
   computerClient,
   computerGateway,
   policyStore,
@@ -693,8 +712,6 @@ const app = createApp(
     announce: (event) => channelEvents.deliver(event),
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
-    onAppended: (threadId, agentId, messages) =>
-      lafRunner.adoptSnapshot(threadId, agentId, messages as never),
   }),
   createThreadMessageReader(database),
   standingApprovals,

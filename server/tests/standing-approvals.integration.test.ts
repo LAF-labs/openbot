@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { eq } from "drizzle-orm";
 import {
   allowanceFor,
@@ -8,7 +15,7 @@ import {
   type StandingApprovalStore,
 } from "../src/computer/standing-approvals";
 import { createDatabase } from "../src/db/client";
-import { computerStandingApprovals } from "../src/db/schema";
+import { agents, computerStandingApprovals } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -36,6 +43,31 @@ const GRANT = {
   question: "The Bot wants to open wttr.in.",
   grantedBy: "boss",
 };
+
+/*
+ * The Bot the allowances name, created rather than assumed: `bot_id` is a real reference since
+ * 0026, so a grant under an id no `agents` row carries fails on the reference instead of exercising
+ * the store. Removed only if this file is what created it.
+ */
+let seededBot = false;
+
+beforeAll(async () => {
+  const made = await database
+    .insert(agents)
+    .values({
+      id: BOT,
+      name: "Standing Test Bot",
+      type: "remote_ag_ui",
+      configuration: {},
+    })
+    .onConflictDoNothing()
+    .returning({ id: agents.id });
+  seededBot = made.length > 0;
+});
+
+afterAll(async () => {
+  if (seededBot) await database.delete(agents).where(eq(agents.id, BOT));
+});
 
 // This file's Bot only: unscoped, this would wipe the allowances of the database the app is using.
 afterEach(async () => {
