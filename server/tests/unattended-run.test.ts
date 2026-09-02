@@ -307,7 +307,7 @@ describe("the ends of an unattended run", () => {
     const agent = fakeAgent(turns);
     const offered: number[] = [];
     (agent as { runAgent: unknown }).runAgent = async (
-      parameters?: { tools?: unknown[] },
+      parameters?: { tools?: unknown[]; forwardedProps?: unknown },
       subscriber?: { onRunFinishedEvent?: () => unknown },
     ) => {
       offered.push(parameters?.tools?.length ?? -1);
@@ -400,9 +400,10 @@ describe("what the run reports", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(UnattendedRunError);
-    expect((thrown as Error).message).toContain(
-      "ended before the run finished",
-    );
+    // The name, like the case above: the sentence after it is our own English and rewording it
+    // must not be a failing test. What is being asserted is that a stream ending without
+    // RUN_FINISHED is the same kind of failure as one ending in RUN_ERROR.
+    expect((thrown as Error).name).toBe("RunFailed");
   });
 
   test("the answer is the last turn, not the narration before it", async () => {

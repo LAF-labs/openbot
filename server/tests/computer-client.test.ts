@@ -37,6 +37,11 @@ describe("computer client", () => {
       return ok({
         url: "https://example.com/",
         title: "Example",
+        // The page's readable text, which is the whole reason navigate returns a body at all. It
+        // was missing from both halves of this test, so the one call that carries what the model
+        // reads was asserted without it.
+        text: "Example Domain",
+        truncated: false,
         elapsedMs: 12,
       });
     });
@@ -44,6 +49,8 @@ describe("computer client", () => {
     await expect(client.navigate("https://example.com/")).resolves.toEqual({
       url: "https://example.com/",
       title: "Example",
+      text: "Example Domain",
+      truncated: false,
       elapsedMs: 12,
     });
     expect(seen).toEqual(["http://agent-computer:4100/navigate"]);

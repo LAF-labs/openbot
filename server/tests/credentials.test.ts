@@ -16,6 +16,10 @@ import {
 } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import { credentials } from "../src/db/schema";
+import {
+  credentialAdminStub,
+  credentialStoreStub,
+} from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 import { testEnvironment } from "./support/environment";
 
@@ -55,7 +59,7 @@ describe("credential encryption", () => {
     const credential = await createCredential(
       {
         encryptionKey: key,
-        store: {
+        store: credentialStoreStub({
           create: async (value) => {
             stored.push(value);
             return { id: "credential-1", revokedAt: null };
@@ -64,7 +68,7 @@ describe("credential encryption", () => {
           // No live credential for the key, so this is a creation rather than the rotation the
           // store now performs when one exists.
           findLiveByKey: async () => null,
-        },
+        }),
         auditStore: {
           insert: async (event) => {
             audited.push(event);
@@ -110,19 +114,19 @@ describe("credential encryption", () => {
     const audited: unknown[] = [];
     const service = {
       encryptionKey: key,
-      store: {
+      store: credentialStoreStub({
         create: async () => ({ id: "credential-new", revokedAt: null }),
         // The store owns atomicity now: retiring the old row and inserting the new one are one
         // write, so the double records the retirement where the transaction would perform it.
-        rotate: async (input: { previousCredentialId: string }) => {
+        rotate: async (input) => {
           revoked.push(input.previousCredentialId);
           return { id: "credential-new", revokedAt: null };
         },
-        revoke: async (id: string) => {
+        revoke: async (id) => {
           revoked.push(id);
           return new Date("2026-08-13T12:00:00.000Z");
         },
-      },
+      }),
       auditStore: {
         insert: async (event: unknown) => {
           audited.push(event);
@@ -399,7 +403,7 @@ describe("admin credential API", () => {
       },
       { rolesForUser: async () => ["admin"] },
       undefined,
-      {
+      credentialAdminStub({
         list: async () => [
           {
             id: "credential-1",
@@ -410,7 +414,7 @@ describe("admin credential API", () => {
             revokedAt: null,
           },
         ],
-      },
+      }),
     );
 
     const response = await app.request(
@@ -446,7 +450,7 @@ describe("admin credential API", () => {
       },
       { rolesForUser: async () => ["admin"] },
       undefined,
-      {
+      credentialAdminStub({
         list: async () => [],
         create: async (input) => {
           created.push(input);
@@ -459,7 +463,7 @@ describe("admin credential API", () => {
             revokedAt: null,
           };
         },
-      },
+      }),
     );
 
     const response = await app.request(

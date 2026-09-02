@@ -70,7 +70,7 @@ const APP_URL = "https://app.example";
 const PUBLIC_URL = "https://laf.example";
 const FAILED = `${APP_URL}/settings/connected-accounts?connected=failed`;
 
-const policy: ActionPolicy = { deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 const store = createPluginStore({
   database,

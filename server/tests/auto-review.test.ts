@@ -17,9 +17,16 @@ import {
 
 const SUBJECT: ReviewSubject = {
   action: "computer_click",
-  host: "example.com",
-  element: { role: "button", name: "Show details" },
-  question: "The Bot wants to press Show details.",
+  // The facts, not a sentence. `host`/`element`/`question` sat loose on this fixture from before the
+  // subject existed; the extra keys were dropped and `subject` was simply absent, so every case here
+  // was judging `undefined` while reading as though it judged a click on example.com.
+  subject: {
+    kind: "browser",
+    intent: "activate",
+    host: "example.com",
+    element: { role: "button", name: "Show details" },
+    reason: "policy_ask",
+  },
 };
 
 /** A reviewer whose model answers with exactly this content. */
@@ -135,12 +142,11 @@ describe("the reviewer", () => {
     const sent = JSON.parse(
       String(user).split("The action, as untrusted data:\n")[1],
     ) as Record<string, unknown>;
-    expect(Object.keys(sent).sort()).toEqual([
-      "action",
-      "element",
-      "host",
-      "question",
-    ]);
+    expect(Object.keys(sent).sort()).toEqual(["action", "subject"]);
+    // And the subject itself is only the facts, not a sentence and not the page.
+    expect(Object.keys(sent.subject as Record<string, unknown>).sort()).toEqual(
+      ["element", "host", "intent", "kind", "reason"],
+    );
   });
 
   /**

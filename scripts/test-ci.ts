@@ -32,30 +32,39 @@ const projectRoot = resolve(import.meta.dir, "..");
 /**
  * One floor per workspace, each about 3% under what that workspace measures today.
  *
- * Measured 2026-09-02, on the run that introduced them: server 1,020 tests across 90 files, app 178
- * across 28, agent-computer 91 across 5, root 44 across 9 — 1,333 across 132, which is the number
- * the single floor of 1,290 was watching. `root` counts its five skipped smoke tests, because bun
- * counts them and a floor that disagreed with the number on the screen would be argued with rather
- * than read.
+ * RE-RAISED 2026-09-03, on the run that typechecked the test directories. The four had been left
+ * at what they measured on 2026-09-02 while five waves landed on top of them — settle, the Korean
+ * question, the browser, the surface, the data lifecycle — and by this run the smallest gap was
+ * agent-computer's 88 against 132, a floor that would have let a third of that workspace vanish
+ * without the run going red. A floor whose margin has grown to 50% is not a floor, it is a number
+ * in a comment.
  *
- * SERVER'S FLOOR CAME DOWN ON PURPOSE, 989 → 935, on 2026-09-02. The upstream knowledge plane, the
- * connector stub, the Intelligence mode and the parked `laf.watch` poller were deleted, and with
- * them eleven suites that were green about code nothing called: knowledge-acl, knowledge-repository,
- * knowledge-agent, agent-registry, agent-invocation, connectors, connector-admin, sync-persistence,
- * watch-differ, watch-digest and dev-actor-email, plus the Intelligence and package-synchronisation
- * cases inside config, health and tenant-package. Server measures 964 after the deletion; 935 is 3%
- * under that, the same margin the other three carry. A floor left at 989 would have been a floor
- * nobody could get past honestly.
+ * Measured on this tree, four consecutive green runs of the whole gate agreeing exactly:
+ *
+ *     server           1,185 tests across 93 files   → 1,149
+ *     app                235 tests across 37 files   →   227
+ *     agent-computer     132 tests across  8 files   →   128
+ *     root                75 tests across 12 files   →    72
+ *                      ─────                            ─────
+ *                      1,627                            1,576
+ *
+ * Each floor is 3% under, rounded down, which is the same margin they were introduced with: enough
+ * that consolidating a handful of cases does not fail the run, small enough that a file which threw
+ * on import and took its tests with it does. `root` counts its seven skipped tests and
+ * `agent-computer` its two todos, because bun counts them and a floor that disagreed with the
+ * number on the screen would be argued with rather than read.
+ *
+ * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 935, roots: ["server"] },
-  { name: "app", floor: 172, roots: ["app"] },
-  { name: "agent-computer", floor: 88, roots: ["agent-computer"] },
-  { name: "root", floor: 42, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 1149, roots: ["server"] },
+  { name: "app", floor: 227, roots: ["app"] },
+  { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
+  { name: "root", floor: 72, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

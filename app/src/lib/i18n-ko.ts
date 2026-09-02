@@ -497,6 +497,21 @@ export const ko: Record<string, string> = {
     "전달되지 않았습니다. 다시 시도하세요.",
   "All {seats} Bot seats on this account are taken. Delete one to make room.":
     "이 계정의 봇 자리 {seats}개가 모두 찼습니다. 하나를 지우면 자리가 납니다.",
+  // The Bot form's own refusals, one per field. Each names the bound, because a refusal that does
+  // not say what would be accepted leaves somebody guessing at the one form everybody meets first.
+  "A Bot needs a name, of 80 characters or fewer.":
+    "봇에는 80자 이내의 이름이 필요합니다.",
+  "A job title can be up to 120 characters.":
+    "직함은 120자까지 쓸 수 있습니다.",
+  "A description can be up to 1,000 characters.":
+    "설명은 1,000자까지 쓸 수 있습니다.",
+  "Choose who can see this Bot.": "이 봇을 누가 볼 수 있는지 골라 주세요.",
+  "That address cannot be used.": "그 주소는 쓸 수 없습니다.",
+  "That face cannot be used.": "그 얼굴은 쓸 수 없습니다.",
+  "Choose how hard this Bot thinks.": "봇이 얼마나 깊이 생각할지 골라 주세요.",
+  "That instruction can be up to 1,000 characters.":
+    "그 지침은 1,000자까지 쓸 수 있습니다.",
+  "That header name cannot be used.": "그 헤더 이름은 쓸 수 없습니다.",
   Advanced: "고급",
   "That did not work.": "잘 되지 않았습니다.",
   "The connection could not be tested.": "연결을 시험해 보지 못했습니다.",
@@ -539,6 +554,7 @@ export const ko: Record<string, string> = {
     "봇의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
   "The Bot asked for a secret": "봇이 비밀값을 요청함",
   "The Bot asked for help": "봇이 도움을 요청함",
+  "The Bot called the same tool again": "봇이 같은 도구를 다시 호출함",
   "The Bot declined": "봇이 거절함",
   "The Bot repeated itself": "봇이 같은 일을 반복함",
   "The Bot stopped responding": "봇이 응답을 멈춤",

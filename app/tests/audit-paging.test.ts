@@ -4,6 +4,7 @@ import {
   type AuditPage,
   auditEventsQueryOptions,
 } from "../src/lib/audit/queries";
+import { stubFetch } from "./support/fetch";
 
 /**
  * The trail is read a page at a time, and the filters still have to work.
@@ -22,10 +23,10 @@ beforeEach(() => {
   asked = [];
   answer = { events: [] };
   originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: string) => {
+  globalThis.fetch = stubFetch(async (input) => {
     asked.push(String(input));
     return new Response(JSON.stringify(answer), { status: 200 });
-  }) as unknown as typeof fetch;
+  });
 });
 
 afterEach(() => {
@@ -63,15 +64,19 @@ describe("the audit trail's pages", () => {
 
   test("a page with no cursor is the last one", () => {
     const { getNextPageParam } = auditEventsQueryOptions("");
+    // FOUR arguments. TanStack Query hands `getNextPageParam` the page, every page, this page's
+    // param AND every param; called with three, this was calling a function of a different arity
+    // than the one the library calls, which is the whole reason `app/tests` is typechecked now.
     expect(
-      getNextPageParam({ events: [], nextCursor: "more" }, [], undefined),
+      getNextPageParam({ events: [], nextCursor: "more" }, [], undefined, []),
     ).toBe("more");
-    expect(getNextPageParam({ events: [] }, [], undefined)).toBeUndefined();
+    expect(getNextPageParam({ events: [] }, [], undefined, [])).toBeUndefined();
   });
 
   test("a failure is a rejection, not an empty trail", async () => {
-    globalThis.fetch = (async () =>
-      new Response("{}", { status: 500 })) as typeof fetch;
+    globalThis.fetch = stubFetch(
+      async () => new Response("{}", { status: 500 }),
+    );
     // An audit screen that answers "no events" to a broken request is the one lie it must not tell.
     expect(run("")).rejects.toThrow();
   });

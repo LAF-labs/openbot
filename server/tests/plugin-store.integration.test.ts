@@ -20,6 +20,7 @@ import {
   PluginNeedsApprovalError,
   PluginRefusedError,
 } from "../src/plugins/store";
+import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 import { A_TOOL_CALL } from "./support/subjects";
 
@@ -54,7 +55,7 @@ const serverId = `plugtest-${suite}`;
 const toolName = "search_things";
 const ref = `${serverId}/${toolName}`;
 
-let policy: ActionPolicy = { deny: [], allow: ["true"] };
+let policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /** The deployment's one registry, shared with the computer in a real deployment. */
 const approvals = createApprovalRegistry();
@@ -198,6 +199,7 @@ describe("the policy is asked as well as the grant", () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       deny: [`mcp.server == "${serverId}"`],
+      ask: [],
       allow: ["true"],
     };
 
@@ -212,7 +214,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginRefusedError);
@@ -238,6 +240,7 @@ describe("the policy is asked as well as the grant", () => {
     // it proves by failing at the network instead of as a refusal.
     policy = {
       deny: ['intent == "write_tool"'],
+      ask: [],
       allow: ["true"],
     };
 
@@ -252,7 +255,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).not.toBeInstanceOf(PluginRefusedError);
@@ -275,6 +278,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
      */
     policy = {
       deny: ['contains(element.name, "submit")'],
+      ask: [],
       allow: ["true"],
     };
 
@@ -289,7 +293,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     // Not a refusal. It gets as far as the network, which is where this test stops caring.
@@ -325,7 +329,7 @@ describe("a boundary can ask a person about a tool call", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginNeedsApprovalError);
@@ -423,7 +427,7 @@ describe("a boundary can ask a person about a tool call", () => {
         ),
       ).toBe(true);
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
   });
 });
@@ -643,5 +647,83 @@ describe("a tool call goes through the same settle step as a click", () => {
     const asked = third as PluginNeedsApprovalError;
     expect(asked.subject.reason).toBe("repeat");
     expect(asked.subject.repeatCount).toBe(3);
+  });
+
+  /**
+   * The row the counter was feeding nothing.
+   *
+   * The settle wave gave this path the browser's repeat detector and then wrote no threshold row
+   * with it, so a Bot stuck on somebody else's tool left five ordinary `mcp.call_succeeded` rows
+   * and nothing anywhere saying they were the same call — the exact blindness
+   * `computer.action_repeated` exists to end, on the other half of the boundary. Its own type,
+   * because the payload names a server and a tool where the browser's names a page and an element.
+   *
+   * A PERMISSIVE policy on purpose: this is an observation, not a refusal. Nothing stopped these
+   * calls, and the row has to appear anyway or it is only ever written where a rule already fired.
+   */
+  test("a threshold crossed leaves a row saying they were the same call", async () => {
+    const permissive: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
+    const watched = createPluginStore({
+      database,
+      auditStore: createAuditStore(database),
+      credentials: credentialVaultStub({ readSecret: async () => null }),
+      encryptionKey: "x".repeat(44),
+      policy: () => permissive,
+      approvals,
+      // Its own detector, so the count starts here rather than wherever the tests above left it.
+      repeat: createRepeatDetector({ windowMs: 60_000, thresholds: [3] }),
+      callVendor: async () => {
+        throw new Error("the test vendor is unreachable");
+      },
+    });
+    /*
+     * An actor of this test's own, and the rows are read back through it. Every test in this file
+     * calls the same `ref` on the same Bot, so filtering on the event type alone would find the
+     * threshold row the repetition test above now leaves behind — a test that passes or fails by
+     * where it sits in the file.
+     */
+    const watcher = `repeat-row-${suite}@laf.local`;
+    const call = () =>
+      watched
+        .callTool({
+          ref,
+          args: { query: "again" },
+          botId: holderId,
+          actorId: watcher,
+        })
+        .catch(() => undefined);
+    const rows = async () =>
+      (await auditRowsFor(ref)).filter(
+        (row) =>
+          row.eventType === "mcp.call_repeated" &&
+          (row.payload as { actor?: string }).actor === watcher,
+      );
+
+    await call();
+    await call();
+    // Twice is a retry, and a row per attempt would bury the attempts under the observation.
+    expect(await rows()).toEqual([]);
+
+    await call();
+
+    const written = await rows();
+    expect(written).toHaveLength(1);
+    expect(written[0]?.payload).toMatchObject({
+      bot: holderId,
+      actor: watcher,
+      server: serverId,
+      tool: toolName,
+      count: 3,
+    });
+    // Readable rather than hashed, like the browser's: an investigator reading "the same call three
+    // times" has to be told which call without going and decoding something.
+    expect(
+      (written[0]?.payload as { fingerprint?: string } | undefined)
+        ?.fingerprint,
+    ).toContain(ref);
+
+    // Once per threshold, not once per attempt. A fourth identical call adds nothing.
+    await call();
+    expect(await rows()).toHaveLength(1);
   });
 });

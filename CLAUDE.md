@@ -71,6 +71,12 @@ bun run format:check
 DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
 
+`typecheck` covers **`tests` as well as `src`**, in every workspace and at the
+root. It did not until 2026-09-03, and sixty-four errors were waiting: fixtures
+missing required fields, stubs cast to `never` so their callbacks took `any`,
+assertions on fields that two migrations ago stopped existing — `undefined`
+matching `undefined`, green for months. Never narrow an `include` back to `src`.
+
 `test:ci` reads `DATABASE_URL` for its server and credentials and then never
 hands it to a test — see below. It also refuses to pass below a floor of tests,
 one floor per workspace, so a suite that quietly lost an area fails instead of

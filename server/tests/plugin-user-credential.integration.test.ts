@@ -98,7 +98,7 @@ const REDIRECT_URI = "https://laf.example/api/plugins/oauth/callback";
 /** The address Notion's entry pins for self-registration, asserted rather than assumed. */
 const REGISTRATION_URL = "https://mcp.notion.com/register";
 
-const policy: ActionPolicy = { deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /* ── the seams ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -527,9 +527,9 @@ describe("a person who has not connected", () => {
 
     expect(thrown).toBeInstanceOf(PluginRefusedError);
     // A refusal, not an error. Nothing is wrong: they simply have not granted access yet, and the
-    // sentence should be one they can act on.
-    expect((thrown as Error).message).toContain("Connect it in Settings");
-    expect((thrown as Error).message).toContain("Notion");
+    // code says which fact that is. The English beside it is a placeholder until the surface writes
+    // this in Korean, so the code is what is pinned here and not the sentence.
+    expect((thrown as PluginRefusedError).code).toBe("laf:not_connected");
     /*
      * THE FALLBACK THAT MUST NOT EXIST. A deployment credential is registered above and is right
      * there to be spent. Answering from it would return a confident answer assembled from documents

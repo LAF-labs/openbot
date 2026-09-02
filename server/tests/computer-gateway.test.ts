@@ -342,7 +342,10 @@ describe("the computer gateway", () => {
     });
 
     await gateway.snapshot("sales-bot");
-    await gateway.click("sales-bot", "sales-bot", ACTOR, "e1");
+    await gateway.click("sales-bot", "sales-bot", ACTOR, {
+      ref: "e1",
+      snapshotId: 1,
+    });
     await gateway.read("research-bot");
 
     expect(addressedAs).toContain("sales-bot");
@@ -984,9 +987,11 @@ describe("a Bot going in circles", () => {
       createRepeatDetector({ thresholds: [2] }),
     );
 
-    await gateway.scroll("default", "bot-1", ACTOR, { direction: "down" });
-    await gateway.scroll("default", "bot-1", ACTOR, { direction: "down" });
-    await gateway.scroll("default", "bot-1", ACTOR, { direction: "down" });
+    // `deltaY`, which is what a scroll actually carries. `{ direction: "down" }` was a field the
+    // schema has never had: the computer got a scroll with no distance in it three times.
+    await gateway.scroll("default", "bot-1", ACTOR, { deltaY: 400 });
+    await gateway.scroll("default", "bot-1", ACTOR, { deltaY: 400 });
+    await gateway.scroll("default", "bot-1", ACTOR, { deltaY: 400 });
 
     expect(
       rows.every((row) => row.eventType === "computer.action_allowed"),

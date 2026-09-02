@@ -51,7 +51,9 @@ const FILTERS = [
     // Its own filter rather than a place in "Blocked". A Bot repeating itself has not been stopped by
     // anything, and putting it beside the refusals would make the refusals look less real.
     label: "Going in circles",
-    search: "?eventType=computer.action_repeated",
+    // Both halves of the boundary. A Bot stuck on somebody else's MCP tool is going in circles for
+    // the same reason and by the same counter as one stuck on a button.
+    search: "?eventType=computer.action_repeated,mcp.call_repeated",
   },
 ] as const;
 
@@ -316,7 +318,8 @@ function Row({
             {t(DISCONNECT_REASONS[payload.reason] as string)}
           </div>
         ) : null}
-        {event.eventType === "computer.action_repeated" &&
+        {(event.eventType === "computer.action_repeated" ||
+          event.eventType === "mcp.call_repeated") &&
         typeof payload.count === "number" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {t("{count} times within a few minutes", {
@@ -440,6 +443,10 @@ export const DECISIONS: Record<string, string> = {
   "mcp.call_succeeded": "Called on this Bot's behalf",
   "mcp.call_rejected": "Blocked",
   "mcp.call_failed": "The server did not answer",
+  // `computer.action_repeated`'s twin, and not "Blocked" for the same reason: nothing refused this,
+  // the Bot called the same tool again and the trail is saying so. Its own words rather than the
+  // browser's, because a reader filtering this row wants the server and the tool, not a page.
+  "mcp.call_repeated": "The Bot called the same tool again",
   // A tool whose definition moved after somebody consented to it, and the moment somebody looked at
   // what it now says. The first is a pause and not a refusal: nothing was blocked, the tool simply
   // stops running until the pair is closed.

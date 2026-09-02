@@ -114,7 +114,14 @@ async function grantStanding() {
     botId,
     rule: RULE,
     scope: { kind: "tool", value: ref },
-    question: `The Bot wants to call ${toolName} on ${serverId}.`,
+    // Facts, not a sentence. `question` has not been a field since migration 0026; it was dropped
+    // on the way into the row, so this fixture granted an allowance with no subject on it.
+    subject: {
+      kind: "tool",
+      intent: "call_tool",
+      tool: { server: serverId, name: toolName },
+      reason: "policy_ask",
+    },
     grantedBy: "owner@laf.local",
   });
 }

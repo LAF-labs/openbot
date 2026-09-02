@@ -283,6 +283,10 @@ describe("the second door", () => {
       bot: { id: "sales" },
       actor: { id: "someone" },
       page: { url: "https://example.com/order", host: "example.com" },
+      // `repeat` is on every context by contract — an absent field throws inside CEL and a thrown
+      // deny denies, so a fixture without it is a deployment that refuses everything the moment
+      // anybody writes a rule about repetition.
+      repeat: { count: 1 },
       element: { ref: "e6", role: "input", name: "Postcode" },
       intent: "type",
       submit,
@@ -299,6 +303,7 @@ describe("the second door", () => {
         bot: { id: "sales" },
         actor: { id: "someone" },
         page: { url: "https://example.com/order", host: "example.com" },
+        repeat: { count: 1 },
         intent: "read",
         submit: false,
       }).allowed,

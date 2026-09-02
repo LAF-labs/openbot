@@ -49,6 +49,7 @@ import {
   PluginNeedsApprovalError,
   PluginRefusedError,
 } from "../src/plugins/store";
+import { credentialVaultStub } from "./support/credentials";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
@@ -74,7 +75,7 @@ describeDb("plugin definition consent", () => {
   const store = createPluginStore({
     database,
     auditStore: createAuditStore(database),
-    credentials: { read: async () => null },
+    credentials: credentialVaultStub({ readSecret: async () => null }),
     encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     policy: () => ({ deny: [], ask: [], allow: ["true"] }),
     approvals: createApprovalRegistry(),

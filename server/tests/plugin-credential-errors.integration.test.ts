@@ -53,7 +53,7 @@ const serverId = `credtest-${suite}`;
 const toolName = "search_things";
 const ref = `${serverId}/${toolName}`;
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /** What the vault would hand back if it were asked, so only the reader's answer is under test. */
 let envelope = "";

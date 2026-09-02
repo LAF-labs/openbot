@@ -379,8 +379,11 @@ describe("answering with always", () => {
     expect(granted?.scopeValue).toBe("example.com");
     expect(granted?.rule).toBe('contains(element.name, "submit")');
     expect(granted?.grantedBy).toBe(MANAGER.id);
-    // The sentence they were reading, kept so the list can show it back to them later.
-    expect(granted?.question).toBe(asked.question);
+    // The facts they were reading, kept so the list can say it back to them later. This asserted
+    // `question` against `question` until the sentence became a subject (migration 0026) — two
+    // fields that no longer exist on either side, so it was `undefined` matching `undefined` and
+    // the row could have been stored with no subject at all without this noticing.
+    expect(granted?.subject).toEqual(asked.subject);
   });
 
   test("the body cannot name its own scope", async () => {

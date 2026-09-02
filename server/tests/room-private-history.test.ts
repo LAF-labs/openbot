@@ -36,7 +36,10 @@ describe("what a member remembers", () => {
     const novel = "가".repeat(HISTORY_MESSAGE_CHARS * 3);
     const [only] = historyOf([said("user", novel)]);
     expect(only?.content?.length).toBe(HISTORY_MESSAGE_CHARS);
-    expect(only?.content?.endsWith("…")).toBe(true);
+    // `toMatch` rather than `.endsWith`: an AG-UI `Message`'s content is a union that includes
+    // content-part arrays, so the string method is not on the type even where this path only ever
+    // produces text.
+    expect(only?.content).toMatch(/…$/);
   });
 
   test("only the last page of a long conversation", () => {

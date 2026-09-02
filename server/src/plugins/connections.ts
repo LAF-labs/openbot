@@ -202,6 +202,7 @@ export function createConnections(
       throw new PluginRefusedError(
         `You have not connected your ${entry.title} account. Connect it in Settings and ask again.`,
         null,
+        "laf:not_connected",
       );
     }
 
@@ -364,6 +365,7 @@ export function createConnections(
             throw new PluginRefusedError(
               `You have not connected your ${title} account. Connect it in Settings and ask again.`,
               null,
+              "laf:not_connected",
             );
           }
 

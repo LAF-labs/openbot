@@ -195,6 +195,10 @@ describe("authentication availability", () => {
       }),
       {
         handler: () => new Response("mounted", { status: 204 }),
+        // Nobody is signed in on this request, and the seam says so rather than being absent.
+        // Without it the stub was not an `AuthService` at all, and any guard reaching for a
+        // session would have found `api` undefined.
+        api: { getSession: async () => null },
       },
     );
 

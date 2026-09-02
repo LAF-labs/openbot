@@ -6,6 +6,7 @@ import {
   watchControl,
 } from "../src/components/computer/control-poll";
 import type { ControlState } from "../src/components/computer/take-the-wheel";
+import { stubFetch } from "./support/fetch";
 
 /**
  * The loop a transcript used to run one of per computer tool call.
@@ -51,10 +52,10 @@ beforeEach(() => {
   requests = 0;
   answer = () => new Response(JSON.stringify(BOT), { status: 200 });
   originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => {
+  globalThis.fetch = stubFetch(async () => {
     requests += 1;
     return answer();
-  }) as typeof fetch;
+  });
 });
 
 afterEach(() => {

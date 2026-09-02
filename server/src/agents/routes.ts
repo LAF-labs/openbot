@@ -26,9 +26,29 @@ import {
   type CreateAgentInput,
 } from "./profile-types";
 
+/**
+ * Which refusal it is, as a code rather than as a sentence.
+ *
+ * The prose beside it is still English and still what the route answers with, because nothing on
+ * the surface reads these yet. The code is what the surface will phrase in Korean and what a test
+ * pins: an assertion on the sentence makes rewording it a test failure and translating it
+ * impossible (docs/laf/redesign-2026-09.md §4-2).
+ */
+export type AgentInputRefusal =
+  | "laf:agent_input_not_object"
+  | "laf:agent_name_invalid"
+  | "laf:agent_title_too_long"
+  | "laf:agent_role_too_long"
+  | "laf:agent_visibility_invalid"
+  | "laf:agent_endpoint_refused"
+  | "laf:agent_avatar_invalid"
+  | "laf:agent_effort_invalid"
+  | "laf:agent_auto_review_too_long"
+  | "laf:agent_auth_header_invalid";
+
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code: AgentInputRefusal };
 
 type AgentInputObject = {
   name?: unknown;
@@ -54,13 +74,18 @@ export function parseAgentInput(
   allowPrivateHosts = false,
 ): AgentInputParseResult {
   if (!isAgentInputObject(input)) {
-    return { ok: false, error: "Agent input must be a JSON object." };
+    return {
+      ok: false,
+      error: "Agent input must be a JSON object.",
+      code: "laf:agent_input_not_object",
+    };
   }
 
   const name = boundedText(
     input.name,
     80,
     "Name must be text between 1 and 80 characters.",
+    "laf:agent_name_invalid",
   );
   if (typeof name !== "string") return name;
 
@@ -74,6 +99,7 @@ export function parseAgentInput(
     input.title,
     120,
     "Title must be text of at most 120 characters.",
+    "laf:agent_title_too_long",
   );
   if (typeof title !== "string") return title;
 
@@ -81,15 +107,24 @@ export function parseAgentInput(
     input.roleDescription,
     1000,
     "Role description must be text of at most 1000 characters.",
+    "laf:agent_role_too_long",
   );
   if (typeof roleDescription !== "string") return roleDescription;
 
   if (typeof input.visibility !== "string") {
-    return { ok: false, error: "Visibility must be public or private." };
+    return {
+      ok: false,
+      error: "Visibility must be public or private.",
+      code: "laf:agent_visibility_invalid",
+    };
   }
   const visibility = input.visibility.trim();
   if (visibility !== "public" && visibility !== "private") {
-    return { ok: false, error: "Visibility must be public or private." };
+    return {
+      ok: false,
+      error: "Visibility must be public or private.",
+      code: "laf:agent_visibility_invalid",
+    };
   }
 
   // The endpoint is optional and checked. Absent means the Bot in the box, which is what most people
@@ -98,7 +133,13 @@ export function parseAgentInput(
   let endpoint: string | undefined;
   if (input.endpoint !== undefined && input.endpoint !== "") {
     const verdict = checkAgentEndpoint(input.endpoint, { allowPrivateHosts });
-    if (!verdict.allowed) return { ok: false, error: verdict.reason };
+    if (!verdict.allowed) {
+      return {
+        ok: false,
+        error: verdict.reason,
+        code: "laf:agent_endpoint_refused",
+      };
+    }
     endpoint = verdict.url;
   }
 
@@ -114,7 +155,11 @@ export function parseAgentInput(
       supplied.length > 64 ||
       !/^[A-Za-z0-9._:-]+$/.test(supplied)
     ) {
-      return { ok: false, error: "That is not a valid avatar." };
+      return {
+        ok: false,
+        error: "That is not a valid avatar.",
+        code: "laf:agent_avatar_invalid",
+      };
     }
     avatarSeed = supplied;
   }
@@ -130,6 +175,7 @@ export function parseAgentInput(
       return {
         ok: false,
         error: "Effort must be quick, balanced or thorough.",
+        code: "laf:agent_effort_invalid",
       };
     }
     effort = supplied as AgentEffort;
@@ -147,6 +193,7 @@ export function parseAgentInput(
     input.autoReview,
     1000,
     "The auto-review instruction must be text of at most 1000 characters.",
+    "laf:agent_auto_review_too_long",
   );
   if (typeof autoReview !== "string") return autoReview;
 
@@ -163,7 +210,11 @@ export function parseAgentInput(
           ? supplied.header.trim()
           : "Authorization";
       if (!/^[A-Za-z0-9-]+$/.test(header)) {
-        return { ok: false, error: "That is not a valid header name." };
+        return {
+          ok: false,
+          error: "That is not a valid header name.",
+          code: "laf:agent_auth_header_invalid",
+        };
       }
       auth = { header, value };
     }
@@ -312,7 +363,8 @@ export function createAgentRoutes(
       await context.req.json().catch(() => null),
       allowPrivateHosts,
     );
-    if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+    if (!parsed.ok)
+      return context.json({ error: parsed.error, code: parsed.code }, 400);
 
     try {
       const agent = await store.create(context.var.actor, parsed.value);
@@ -328,7 +380,8 @@ export function createAgentRoutes(
       await context.req.json().catch(() => null),
       allowPrivateHosts,
     );
-    if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+    if (!parsed.ok)
+      return context.json({ error: parsed.error, code: parsed.code }, 400);
 
     try {
       const agent = await store.update(
@@ -669,12 +722,13 @@ function boundedText(
   value: unknown,
   maximumLength: number,
   error: string,
-): string | { ok: false; error: string } {
-  if (typeof value !== "string") return { ok: false, error };
+  code: AgentInputRefusal,
+): string | { ok: false; error: string; code: AgentInputRefusal } {
+  if (typeof value !== "string") return { ok: false, error, code };
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= maximumLength
     ? trimmed
-    : { ok: false, error };
+    : { ok: false, error, code };
 }
 
 /** The same, for a field a person may leave blank. Absent and empty both mean empty. */
@@ -682,11 +736,12 @@ function optionalBoundedText(
   value: unknown,
   maximumLength: number,
   error: string,
-): string | { ok: false; error: string } {
+  code: AgentInputRefusal,
+): string | { ok: false; error: string; code: AgentInputRefusal } {
   if (value === undefined || value === null) return "";
-  if (typeof value !== "string") return { ok: false, error };
+  if (typeof value !== "string") return { ok: false, error, code };
   const trimmed = value.trim();
-  return trimmed.length <= maximumLength ? trimmed : { ok: false, error };
+  return trimmed.length <= maximumLength ? trimmed : { ok: false, error, code };
 }
 
 /**

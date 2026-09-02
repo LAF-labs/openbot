@@ -13,11 +13,17 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     title: "Research Assistant",
     roleDescription: "Finds and summarizes information.",
     avatarSeed: "researcher",
+    effort: "balanced",
+    autoReview: "",
     visibility: "private",
     ownerUserId: creator.id,
     systemOwned: false,
     hidden: false,
+    pinnedAt: null,
+    notify: true,
     deletedAt: null,
+    endpoint: null,
+    hasAuth: false,
     ...overrides,
   };
 }

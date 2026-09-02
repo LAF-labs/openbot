@@ -97,7 +97,7 @@ const vendor = Bun.serve({
   },
 });
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 const store = createPluginStore({
   database,
