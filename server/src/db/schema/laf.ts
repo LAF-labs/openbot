@@ -4,12 +4,14 @@ import {
   boolean,
   index,
   integer,
+  pgEnum,
   pgTable,
   primaryKey,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { agents, users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
 // lands as a JSON *string* that no SQL operator can read. See ./json.ts.
 import { jsonb } from "./json";
@@ -68,6 +70,36 @@ export const lafThreadMessages = pgTable(
   ],
 );
 
+/** What started a run. A pg enum, so a client that invents one is refused rather than recorded. */
+export const runOrigin = pgEnum("laf_run_origin", [
+  "chat",
+  "routine",
+  "wake",
+  "handoff",
+  "room",
+]);
+
+/**
+ * How a run ended, or that it has not.
+ *
+ * `unknown` is boot's verdict on a run whose process died mid-turn; `stopped` is a person pressing
+ * Stop, which is not an error. Both existed as free text before this enum and both are written by
+ * `runner/laf-runner.ts`; nothing writes any other value.
+ */
+export const runStatus = pgEnum("laf_run_status", [
+  "running",
+  "done",
+  "error",
+  "stopped",
+  "unknown",
+]);
+
+/** `interval` runs every N minutes; `daily` runs once a day at `dailyLocal` in `dailyTimeZone`. */
+export const routineScheduleKind = pgEnum("laf_routine_schedule_kind", [
+  "interval",
+  "daily",
+]);
+
 /**
  * One row per run: when it started, how it ended, and how big it was.
  *
@@ -91,7 +123,19 @@ export const lafThreadRuns = pgTable(
      * most — had no in-flight record anywhere.
      */
     threadId: text("thread_id"),
-    agentId: text("agent_id"),
+    /**
+     * Which Bot ran, as a real reference at last.
+     *
+     * `set null` rather than `cascade`: this is the operational record of what the machine did, and
+     * a Bot being torn out of the deployment does not un-happen the afternoon it worked. The column
+     * was already nullable and the roster already ignores a run with no Bot (`runner/working.ts`),
+     * so a hard-deleted Bot leaves history that reads as "somebody's, no longer named" rather than
+     * a hole. Bots are soft-deleted in normal use (`agents/profile-store.ts`), so this fires only
+     * on the hard-delete path, which nothing in `src` takes today.
+     */
+    agentId: text("agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
     /**
      * Whose run it is, so "which of my Bots are working" is one indexed read.
      *
@@ -102,13 +146,12 @@ export const lafThreadRuns = pgTable(
     /** What it is doing, in the person's own words where there are any — a routine's name. */
     label: text("label"),
     /**
-     * `running` | `done` | `error` | `stopped` | `unknown`. A run still `running` when a new process
-     * boots cannot still be running — this build is one process — so boot reconciles it to
-     * `unknown`: the crash suspect the digest names.
+     * A run still `running` when a new process boots cannot still be running — this build is one
+     * process — so boot reconciles it to `unknown`: the crash suspect the digest names.
      */
-    status: text("status").notNull(),
+    status: runStatus("status").notNull(),
     /** What started it: `chat` for a person's turn, `routine` for one on a clock. */
-    origin: text("origin").notNull().default("chat"),
+    origin: runOrigin("origin").notNull().default("chat"),
     /**
      * Machine-initiated runs carry one; a second run with the same key must not
      * happen. Webhook redeliveries and watcher re-polls are the reason — a
@@ -134,6 +177,13 @@ export const lafThreadRuns = pgTable(
     index("laf_thread_runs_live_idx")
       .on(table.userId, table.startedAt)
       .where(sql`${table.status} = 'running'`),
+    /*
+     * And the same table read the other way: "what ran between these two times", which is what an
+     * operator and the digest ask and what the partial index above deliberately cannot answer —
+     * it holds only live runs. A seq scan of every run the deployment has recorded is fine on the
+     * first day and is exactly the query that gets slower every day after it.
+     */
+    index("laf_thread_runs_started_at_idx").on(table.startedAt),
   ],
 );
 
@@ -159,15 +209,29 @@ export const lafThreadRuns = pgTable(
  */
 export const lafRoutines = pgTable("laf_routines", {
   id: text("id").primaryKey(),
-  agentId: text("agent_id").notNull(),
+  /**
+   * Cascade, because a routine with no Bot is not dormant — it is claimed on every tick.
+   *
+   * `agent_id` was plain text, so deleting a Bot left its routines `enabled`, due, and failing
+   * with "the Bot is no longer in the roster" once a minute for as long as the deployment lives.
+   * Normal deletion is soft (`agents/profile-store.ts`), so this fires only on the hard-delete
+   * path; it is the one that used to leave the wreckage.
+   */
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   /** What to do, in words. Sent to the Bot verbatim as the run's one user message. */
   instruction: text("instruction").notNull(),
-  /** `interval` runs every N minutes; `daily` runs once a day at `dailyUtc`. */
-  scheduleKind: text("schedule_kind").notNull(),
+  scheduleKind: routineScheduleKind("schedule_kind").notNull(),
   intervalMinutes: integer("interval_minutes"),
-  /** "HH:MM", UTC. Stored as text because it is a time-of-day, not a moment. */
-  dailyUtc: text("daily_utc"),
+  /**
+   * "HH:MM" in `dailyTimeZone`, not in UTC. Text because it is a time-of-day, not a moment.
+   *
+   * It was called `daily_utc` and has held zone-local time since `daily_time_zone` arrived beside
+   * it — a column whose name asserted the one thing it was not. Renamed in migration 0026.
+   */
+  dailyLocal: text("daily_local"),
   /**
    * The zone the daily time is written in, IANA. Null means the row predates zones and is UTC.
    *
@@ -183,7 +247,17 @@ export const lafRoutines = pgTable("laf_routines", {
    */
   dailyDays: integer("daily_days").array(),
   enabled: boolean("enabled").notNull().default(true),
-  createdById: text("created_by_id").notNull(),
+  /**
+   * Who typed it, and nullable because a routine outlives them.
+   *
+   * The ownership rule is already written down in `routines/service.ts`: a routine is yours if you
+   * wrote it OR if the Bot it drives is yours, because staff leave and a shop owner must not be
+   * locked out of the routines running on their own Bot. `set null` is that rule at the column —
+   * the author's account going away takes the author, not the routine.
+   */
+  createdById: text("created_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdByRole: text("created_by_role").notNull(),
   /**
    * SHA-256 of the trigger token, for the webhook path.
@@ -212,7 +286,10 @@ export const lafRoutines = pgTable("laf_routines", {
  */
 export const lafRoutineRuns = pgTable("laf_routine_runs", {
   id: text("id").primaryKey(),
-  routineId: text("routine_id").notNull(),
+  /** Cascade: a run is a page of one routine's history and has no meaning without it. */
+  routineId: text("routine_id")
+    .notNull()
+    .references(() => lafRoutines.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   ok: boolean("ok"),
@@ -224,9 +301,10 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
    * went through. An operator reading "Failed: the Bot stopped before it finished" wants to know
    * how far it got; the answer alone cannot say. Null on rows written before this existed.
    *
-   * Written through drizzle's own `jsonb()` until now, which is the double-encoding trap: every one
-   * of the 22 rows this deployment had held a jsonb *string*, and `steps.reduce` on the Routines
-   * page would have thrown on the first one it drew. The custom type sends an array as an array.
+   * Written through drizzle's own `jsonb()` until 0026, which is the double-encoding trap: every
+   * one of the 22 rows this deployment had held a jsonb *string*, and `steps.reduce` on the
+   * Routines page would have thrown on the first one it drew. The custom type sends an array as an
+   * array; the migration repairs the rows already written.
    */
   steps:
     jsonb("steps").$type<

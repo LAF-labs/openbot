@@ -126,6 +126,47 @@ describe("LAF Agent database schema", () => {
   });
 
   /*
+   * The references the `laf_*` and `computer_*` tables never had.
+   *
+   * Deleting a Bot left its routines `enabled` and claimed on every tick, and its standing
+   * allowances standing. The `onDelete` on each one is the decision, so each one is named here:
+   * a routine and an allowance go with the Bot, a run record keeps its history and loses the name,
+   * and a routine outlives the person who typed it.
+   */
+  test("names a parent for every laf_* row that has one", async () => {
+    const {
+      computerStandingApprovals,
+      lafRoutineRuns,
+      lafRoutines,
+      lafThreadRuns,
+    } = (await import("../src/db/schema")) as Record<string, never>;
+
+    const references = (table: never) =>
+      getTableConfig(table).foreignKeys.map((foreignKey) => {
+        const reference = foreignKey.reference();
+        return [
+          reference.columns.map((column) => column.name).join(","),
+          getTableName(reference.foreignTable),
+          foreignKey.onDelete,
+        ].join(" -> ");
+      });
+
+    expect(references(lafRoutines)).toEqual([
+      "agent_id -> agents -> cascade",
+      "created_by_id -> users -> set null",
+    ]);
+    expect(references(lafRoutineRuns)).toEqual([
+      "routine_id -> laf_routines -> cascade",
+    ]);
+    expect(references(lafThreadRuns)).toEqual([
+      "agent_id -> agents -> set null",
+    ]);
+    expect(references(computerStandingApprovals)).toEqual([
+      "bot_id -> agents -> cascade",
+    ]);
+  });
+
+  /*
    * The upstream knowledge plane is gone, and this is the assertion that it stays gone.
    *
    * `documents`, `chunks`, `document_acls`, `sync_runs`, `connector_cursors`,

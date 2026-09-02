@@ -9,7 +9,8 @@ export type Routine = {
   instruction: string;
   scheduleKind: "interval" | "daily";
   intervalMinutes: number | null;
-  dailyUtc: string | null;
+  /** "HH:MM" in `dailyTimeZone`. Called `dailyUtc` until the column stopped claiming to be UTC. */
+  dailyLocal: string | null;
   /** The IANA zone the daily time is written in. Null on rows that predate zones, meaning UTC. */
   dailyTimeZone: string | null;
   /** Weekdays it may run on, 0 = Sunday. Null or empty means every day. */
@@ -137,7 +138,7 @@ export function scheduleLabel(routine: Routine): string {
     });
   }
 
-  const time = routine.dailyUtc ?? "";
+  const time = routine.dailyLocal ?? "";
   const zone = routine.dailyTimeZone ?? "UTC";
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const suffix = zone === here ? "" : ` ${zone}`;

@@ -6,11 +6,11 @@
  * the case a person could already see and unanswerable for the case they could not — scheduled
  * work, running while nobody watched. These tests pin the properties that make one ledger work.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { lafThreadRuns } from "../src/db/schema";
+import { agents, lafThreadRuns } from "../src/db/schema";
 import { createRunLedger } from "../src/runner/run-ledger";
 import { createWorkingReader } from "../src/runner/working";
 
@@ -24,6 +24,30 @@ describeDb("run ledger", () => {
   const owner = `user-${randomUUID()}`;
   const other = `user-${randomUUID()}`;
   const started: string[] = [];
+  /*
+   * The Bots these runs name. `laf_thread_runs.agent_id` references `agents` since 0026, so a run
+   * opened for an id nothing carries fails on the reference rather than on what it is testing.
+   */
+  const bots = [
+    "night-shift",
+    "inbox-triage",
+    "meeting-prep",
+    "shared-bot",
+    "abandoned",
+    "double",
+  ];
+  const seeded: string[] = [];
+
+  beforeAll(async () => {
+    for (const id of bots) {
+      const made = await database
+        .insert(agents)
+        .values({ id, name: id, type: "remote_ag_ui", configuration: {} })
+        .onConflictDoNothing()
+        .returning({ id: agents.id });
+      if (made.length > 0) seeded.push(id);
+    }
+  });
 
   const begin = async (over: Partial<Parameters<typeof ledger.begin>[0]>) => {
     const id = await ledger.begin({
@@ -41,6 +65,9 @@ describeDb("run ledger", () => {
       await database
         .delete(lafThreadRuns)
         .where(eq(lafThreadRuns.runId, runId));
+    }
+    if (seeded.length > 0) {
+      await database.delete(agents).where(inArray(agents.id, seeded));
     }
   });
 

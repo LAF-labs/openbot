@@ -6,6 +6,7 @@
  */
 import { sql } from "drizzle-orm";
 import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { agents } from "./core";
 
 /**
  * The boundary this deployment is enforcing, kept where a restart cannot lose it.
@@ -90,7 +91,14 @@ export const computerStandingApprovals = pgTable(
   "computer_standing_approvals",
   {
     id: text("id").primaryKey(),
-    botId: text("bot_id").notNull(),
+    /**
+     * Cascade, because an allowance for a Bot that no longer exists is a standing "yes" with
+     * nothing to say it to. The column was plain text, so a hard-deleted Bot left its allowances
+     * live and its id free to be handed to something else.
+     */
+    botId: text("bot_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
     /** The expression that asked. Empty string when the floor asked rather than a written rule. */
     rule: text("rule").notNull(),
     /** What the answer covers, as `host=…`, `file=…` or `tool=…`. See `allowanceOf`. */

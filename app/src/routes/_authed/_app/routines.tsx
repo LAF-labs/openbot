@@ -347,7 +347,7 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
     enabled: true,
     scheduleKind: "daily",
     intervalMinutes: null,
-    dailyUtc: time,
+    dailyLocal: time,
     dailyTimeZone: timeZone,
     dailyDays: days,
   } as Routine);

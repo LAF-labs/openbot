@@ -300,6 +300,22 @@ export const auditEvents = pgTable(
   },
   (table) => [
     index("audit_events_created_at_idx").on(table.createdAt),
+    /*
+     * The two filters the reader actually offers, each paired with the ordering it is read in.
+     *
+     * `audit_events_created_at_idx` alone serves "the last N rows" and nothing else, and the trail
+     * page is never read that way: it is read as "what did this person do" and "show me every
+     * `computer.denied`", both narrowed and then sorted by time. On a table that only ever grows
+     * and is never pruned, those were both a scan of everything the deployment has ever recorded.
+     */
+    index("audit_events_type_created_at_idx").on(
+      table.eventType,
+      table.createdAt,
+    ),
+    index("audit_events_actor_created_at_idx").on(
+      table.actorUserId,
+      table.createdAt,
+    ),
   ],
 );
 
