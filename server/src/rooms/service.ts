@@ -13,6 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import type { AnnounceChannelActivity } from "../channels/events";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { channelMemberships, channels } from "../db/schema";
@@ -60,6 +61,14 @@ export type RoomServiceOptions = {
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   /** Push a frame to whoever is watching this room. */
   emit: (frame: RoomFrame) => void;
+  /**
+   * Move the roster row on every member's screen, once the message that moved it has committed.
+   *
+   * Separate from `emit` because it is a different audience: `emit` reaches the room that is open,
+   * this reaches the list of rooms in every other tab. Absent in tests. See `channels/events.ts`
+   * for why the caller announces rather than the writer.
+   */
+  announce?: AnnounceChannelActivity;
   /** Keep the runner's rehydrated copy of the thread in step with what we wrote. */
   onAppended?: (
     threadId: string,
@@ -155,6 +164,8 @@ export function createRoomService(options: RoomServiceOptions) {
        */
       let appended: StoredMessage[] | null = null;
       const posted = await database.transaction(async (transaction) => {
+        // Same rule as `onAppended` below and for the same reason: nothing outside this transaction
+        // is told about a message until the transaction that wrote it has committed.
         const written = await appendRoomMessage(
           transaction,
           {
@@ -176,6 +187,7 @@ export function createRoomService(options: RoomServiceOptions) {
         return { written, epoch: Number(bumped?.epoch ?? room.epoch) };
       });
       if (appended) options.onAppended?.(input.threadId, null, appended);
+      if (posted.written.activity) options.announce?.(posted.written.activity);
 
       const memberIds = await watchers(database, input.channelId);
       const addressed = input.addressedAgentIds ?? [];
@@ -391,6 +403,9 @@ export function createRoomService(options: RoomServiceOptions) {
                     },
                     options.onAppended,
                   );
+                  // No transaction here — the append is its own — so the roster row is announced
+                  // as soon as it has moved.
+                  if (written.activity) options.announce?.(written.activity);
                   open.delete(toolCallId);
                   /*
                    * THE SETTLED MESSAGE REPLACES THE PROVISIONAL ONE IN PLACE. The browser has been

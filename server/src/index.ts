@@ -12,10 +12,7 @@ import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
 import type { UserRole } from "./auth/roles";
-import {
-  createChannelEventHub,
-  startChannelActivityListener,
-} from "./channels/events";
+import { createChannelEventHub } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
@@ -167,12 +164,21 @@ const agentProfileStore = createAgentProfileStore(
 // and the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
 const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
+/**
+ * Every socket open on this server, and the one thing that fans an event out to them.
+ *
+ * Built before the writers because they are handed it: activity is announced in this process once
+ * the write that earned it has committed, rather than through Postgres LISTEN/NOTIFY and a
+ * connection of its own. There is one process (docs/laf/deployment-model.md), so there was never a
+ * second instance for the carrier to reach.
+ */
+const channelEvents = createChannelEventHub();
 const channelStore = createChannelStore(
   database,
   agentProfileStore,
   threadIdentity,
+  (event) => channelEvents.deliver(event),
 );
-const channelEvents = createChannelEventHub();
 /**
  * Which components each Bot may answer with.
  *
@@ -182,12 +188,6 @@ const channelEvents = createChannelEventHub();
  * and owns only what may be done with it.
  */
 const componentStore = createComponentStore(database);
-// Its own connection is held for the life of the process; announced activity from any instance
-// arrives here and is fanned out to connected members.
-const channelActivityListener = await startChannelActivityListener(
-  config.databaseUrl,
-  channelEvents,
-);
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
 await recordTenantPackage(database, tenantPackage);
@@ -637,8 +637,11 @@ const routineService = createRoutineService({
   ledger: runLedger,
   lane: botLane,
   // And the answer lands in the Bot's own conversation, where a person already reads.
-  deliver: createRoutineDelivery(database, (threadId, agentId, messages) =>
-    lafRunner.adoptSnapshot(threadId, agentId, messages as never),
+  deliver: createRoutineDelivery(
+    database,
+    (threadId, agentId, messages) =>
+      lafRunner.adoptSnapshot(threadId, agentId, messages as never),
+    (event) => channelEvents.deliver(event),
   ),
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({
@@ -718,6 +721,8 @@ const app = createApp(
       pluginStore,
     }),
     emit: (frame) => channelEvents.deliverRoom(frame),
+    // The roster row on every OTHER tab, after the message that moved it has committed.
+    announce: (event) => channelEvents.deliver(event),
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
     onAppended: (threadId, agentId, messages) =>
@@ -952,14 +957,6 @@ if (config.devNoAuth) {
     "LAF_DEV_NO_AUTH is on: every request is treated as " +
       `${DEV_ACTOR.email} (administrator). Local development only.`,
   );
-}
-
-// The activity listener holds a connection of its own for the life of the process. Released on the
-// way out, so a watch-mode restart does not leave one behind on every reload.
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    void channelActivityListener.stop().finally(() => process.exit(0));
-  });
 }
 
 console.info(`LAF Agent server listening on http://localhost:${port}`);
