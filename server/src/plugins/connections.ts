@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
 import {
+  CredentialUnavailableError,
   decryptCredentialForUse,
   decryptSecret,
   encryptSecret,
@@ -68,6 +69,16 @@ export function createConnections(
    * two reach a person very differently: an error becomes "that tool could not be called", which is
    * what a vendor being down looks like, while a withdrawn grant is nobody's fault and has an
    * obvious next step. `onRevoked` says which of the two to name.
+   *
+   * WHICH of the two is decided on the vault's own error CLASS, never on the words in it. It used to
+   * be `message.includes("revoked") || message.includes("not found")` against sentences written for
+   * a person — the same read-the-prose pattern the store's note on `INVALID_CLIENT` records removing
+   * for exactly this reason. Rewording `credentials.ts`, or translating it, would have turned every
+   * withdrawn grant into "that tool could not be called" with every test still green.
+   *
+   * Everything else is rethrown untouched. A bad envelope or a key that will not decrypt is this
+   * deployment being broken, and telling somebody to connect again would send them round a loop
+   * that cannot end.
    */
   async function secretFor(
     credentialId: string,
@@ -80,8 +91,7 @@ export function createConnections(
         credentialId,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("revoked") || message.includes("not found")) {
+      if (error instanceof CredentialUnavailableError) {
         throw new PluginRefusedError(onRevoked, null);
       }
       throw error;

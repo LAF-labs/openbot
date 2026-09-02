@@ -21,6 +21,41 @@ const decoder = new TextDecoder();
  */
 export type CredentialKind = (typeof credentialKind.enumValues)[number];
 
+/**
+ * Which of the two ways the vault could not produce a secret, as a value rather than as prose.
+ *
+ * `missing_or_revoked` is a real third answer and not a shrug: the writes that report it decide in
+ * one statement, deliberately, so that nothing can revoke a row between a check and a write — which
+ * means the row's absence and its revocation arrive as the same fact.
+ */
+export type CredentialUnavailableReason =
+  | "missing"
+  | "revoked"
+  | "missing_or_revoked";
+
+/**
+ * The vault has no usable secret here, and it is nobody's mistake.
+ *
+ * A CLASS rather than a sentence, because callers branch on this. `plugins/connections.ts` turns it
+ * into "your access was withdrawn, connect again" and turns every other failure into "that tool
+ * could not be called" — two very different things to tell somebody — and it used to tell them apart
+ * with `message.includes("revoked") || message.includes("not found")`. That is the same
+ * read-the-prose pattern the plugin store's note on `INVALID_CLIENT` records removing, and it fails
+ * the same way: rewording these sentences, or translating them, silently turns every withdrawn grant
+ * into a vendor outage with every test still green.
+ *
+ * The messages are unchanged, because they are what a log and a stack trace show.
+ */
+export class CredentialUnavailableError extends Error {
+  constructor(
+    message: string,
+    readonly reason: CredentialUnavailableReason,
+  ) {
+    super(message);
+    this.name = "CredentialUnavailableError";
+  }
+}
+
 export type CredentialStatus = {
   id: string;
   kind: CredentialKind;
@@ -199,10 +234,10 @@ export async function decryptCredentialForUse(
 ) {
   const credential = await reader.readSecret(credentialId);
   if (!credential) {
-    throw new Error("Credential was not found");
+    throw new CredentialUnavailableError("Credential was not found", "missing");
   }
   if (credential.revokedAt) {
-    throw new Error("Credential is revoked");
+    throw new CredentialUnavailableError("Credential is revoked", "revoked");
   }
 
   return decryptSecret(encodedKey, credential.encryptedValue);
@@ -259,7 +294,10 @@ export function createCredentialStore(
        * message naming both. The caller acts identically on either: it refuses its call.
        */
       if (!credential) {
-        throw new Error("Credential was not found or is revoked");
+        throw new CredentialUnavailableError(
+          "Credential was not found or is revoked",
+          "missing_or_revoked",
+        );
       }
     },
     rotate: async (input, executor) => {
@@ -357,7 +395,10 @@ export function createCredentialStore(
         .returning({ revokedAt: credentials.revokedAt });
 
       if (!credential?.revokedAt) {
-        throw new Error("Credential was not found or already revoked");
+        throw new CredentialUnavailableError(
+          "Credential was not found or already revoked",
+          "missing_or_revoked",
+        );
       }
       return credential.revokedAt;
     },

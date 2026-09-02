@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config";
 import {
   createCredential,
   createCredentialStore,
+  CredentialUnavailableError,
   decryptCredentialForUse,
   decryptSecret,
   encryptSecret,
@@ -164,6 +165,70 @@ describe("credential encryption", () => {
         "credential-1",
       ),
     ).rejects.toThrow("Credential is revoked");
+  });
+
+  /**
+   * The refusals are a CLASS, not a sentence, and they say which fact the vault could establish.
+   *
+   * `plugins/connections.ts` branches on this to decide between "your access was withdrawn, connect
+   * again" and "that tool could not be called" — two very different things to tell somebody. It used
+   * to decide by reading the words in the message, so rewording or translating them would have
+   * swapped one for the other with every test still green.
+   */
+  test("an unavailable credential refuses with a class and a reason", async () => {
+    const encryptedValue = await encryptSecret(key, "connector-secret");
+
+    const missing = await decryptCredentialForUse(
+      key,
+      { readSecret: async () => null },
+      "credential-1",
+    ).catch((error: unknown) => error);
+    expect(missing).toBeInstanceOf(CredentialUnavailableError);
+    expect((missing as CredentialUnavailableError).reason).toBe("missing");
+
+    const revoked = await decryptCredentialForUse(
+      key,
+      { readSecret: async () => ({ encryptedValue, revokedAt: new Date() }) },
+      "credential-1",
+    ).catch((error: unknown) => error);
+    expect(revoked).toBeInstanceOf(CredentialUnavailableError);
+    expect((revoked as CredentialUnavailableError).reason).toBe("revoked");
+
+    // An envelope this deployment cannot read is a different failure entirely: nothing about
+    // connecting again fixes it, so it must not arrive wearing the same class.
+    const broken = await decryptCredentialForUse(
+      key,
+      { readSecret: async () => ({ encryptedValue: "{}", revokedAt: null }) },
+      "credential-1",
+    ).catch((error: unknown) => error);
+    expect(broken).toBeInstanceOf(Error);
+    expect(broken).not.toBeInstanceOf(CredentialUnavailableError);
+  });
+
+  /**
+   * The two writes that decide in one statement report a third reason, and it is honest.
+   *
+   * Both guard on `revoked_at IS NULL` inside the write itself, deliberately, so that nothing can
+   * revoke a row between a check and the write — which means the row's absence and its revocation
+   * genuinely arrive as one answer rather than as a shrug.
+   */
+  test("a write against a credential that is gone or revoked says so as a reason", async () => {
+    const store = createCredentialStore(database);
+    const absent = randomUUID();
+
+    const written = await store
+      .updateSecret(absent, await encryptSecret(key, "nothing"))
+      .catch((error: unknown) => error);
+    expect(written).toBeInstanceOf(CredentialUnavailableError);
+    expect((written as CredentialUnavailableError).reason).toBe(
+      "missing_or_revoked",
+    );
+
+    const retired = await store.revoke(absent).catch((error: unknown) => error);
+    expect(retired).toBeInstanceOf(CredentialUnavailableError);
+    expect((retired as CredentialUnavailableError).reason).toBe(
+      "missing_or_revoked",
+    );
   });
 });
 
