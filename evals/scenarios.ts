@@ -7,11 +7,19 @@
  * observed turn — no judge model, for the same reason the watcher is pure code:
  * a gate that costs a model call per verdict is a gate nobody runs.
  *
- * Scenario 2 and 3 are the remember/update_state split, kept as a pair on
+ * Scenario 2 and 3 are the remember/update_profile split, kept as a pair on
  * purpose: it failed on a real deployment in exactly this phrasing, and a
  * candidate that merges the two tools again must fail here, not in production.
+ *
+ * Every scenario now runs behind the REAL composed system prompt (`./prompt.ts`),
+ * which is where the date, the standing role and the memories come from. Three of
+ * them exist only because that prompt does: today's date with no date in the
+ * question, an English question that must still be answered in Korean, and a
+ * twelve-step transcript that must stay inside the context budget.
  */
 
+import { toolResultText } from "../shared/prompt/tool-results.ko";
+import { longPage } from "./fixtures";
 import {
   discipline,
   hangulShare,
@@ -19,18 +27,22 @@ import {
   saysNumber,
   type StreamEvent,
   textOf,
+  usageOf,
 } from "./lib";
+import { EVAL_NOW, EVAL_TIME_ZONE } from "./prompt";
 import {
   CLICK,
   LIST_FILES,
+  MANAGE_ROUTINE,
   NAVIGATE,
+  READ,
   READ_FILE,
   REMEMBER,
   REQUEST_HELP,
   REQUEST_SECRET,
   SNAPSHOT,
   TYPE,
-  UPDATE_STATE,
+  UPDATE_PROFILE,
 } from "./tools";
 
 export type Turn = {
@@ -90,7 +102,7 @@ export const SCENARIOS: Scenario[] = [
     id: "memory-goes-to-remember",
     dimension: "tool-calls",
     messages: [user("앞으로 기억해줘: 우리 가게는 일요일에 쉰다.")],
-    tools: [REMEMBER, UPDATE_STATE, NAVIGATE, LIST_FILES],
+    tools: [REMEMBER, UPDATE_PROFILE, MANAGE_ROUTINE, NAVIGATE, LIST_FILES],
     check: (turn) =>
       verdict([
         ["remember가 불리지 않음", called(turn, "remember")],
@@ -99,28 +111,33 @@ export const SCENARIOS: Scenario[] = [
           String(argsOf(turn, "remember")?.fact ?? "").includes("일요일"),
         ],
         [
-          "직무기술서(update_state)를 건드림 — 실측된 그 버그",
-          !called(turn, "update_state"),
+          "직무기술서(update_profile)를 건드림 — 실측된 그 버그",
+          !called(turn, "update_profile"),
         ],
       ]),
   },
   {
-    id: "role-goes-to-update-state",
+    id: "role-goes-to-update-profile",
     dimension: "tool-calls",
     messages: [
       user(
         "너는 앞으로 내 영수증을 정리하고 경비 보고서를 만드는 일을 맡아줘.",
       ),
     ],
-    tools: [REMEMBER, UPDATE_STATE, NAVIGATE, LIST_FILES],
+    tools: [REMEMBER, UPDATE_PROFILE, MANAGE_ROUTINE, NAVIGATE, LIST_FILES],
     check: (turn) =>
       verdict([
-        ["update_state가 불리지 않음", called(turn, "update_state")],
+        ["update_profile이 불리지 않음", called(turn, "update_profile")],
         [
-          "target이 profile이 아님",
-          argsOf(turn, "update_state")?.target === "profile",
+          "description을 쓰지 않음 — 직무는 설명에 적힌다",
+          String(argsOf(turn, "update_profile")?.description ?? "").trim()
+            .length > 0,
         ],
         ["직무 변경이 remember로 샘", !called(turn, "remember")],
+        [
+          "시간이 붙지 않은 일을 루틴으로 만듦",
+          !called(turn, "manage_routine"),
+        ],
       ]),
   },
   {
@@ -188,11 +205,19 @@ export const SCENARIOS: Scenario[] = [
         id: "t_prior",
         role: "tool",
         toolCallId: "call_prior_1",
-        // The production sentence VERBATIM (agent-computer/src/control.ts
-        // HUMAN_HAS_CONTROL) — a paraphrase here certifies a product that
-        // does not exist, which is the tools.ts banner's whole warning.
-        content:
-          "A person has control of the computer right now. Do not retry this action — the same refusal will answer. Say you are waiting, and act again only after you are told control is back.",
+        /*
+         * THE PRODUCTION ENVELOPE, built from the production table. The refusal
+         * used to be an English paragraph shipped by `agent-computer`; it is a
+         * fact code now (`control.ts`), turned into Korean by the same map the
+         * surface uses. Paraphrasing either half here would certify a product
+         * that does not exist, which is this file's oldest warning.
+         */
+        content: JSON.stringify({
+          ok: false,
+          humanHasControl: true,
+          code: "laf:human_has_control",
+          reason: toolResultText("laf:human_has_control"),
+        }),
       },
     ],
     tools: [SNAPSHOT, CLICK, TYPE, REQUEST_HELP],
@@ -287,7 +312,185 @@ export const SCENARIOS: Scenario[] = [
       ]);
     },
   },
+  /*
+   * THE THREE THAT ONLY EXIST BECAUSE THE PROMPT DOES.
+   *
+   * Every scenario above would pass with no system prompt at all. These cannot: the date is only
+   * in the prompt, the deployment's language is only in the prompt, and the budget is only in
+   * `agent-bot`. They are the ones that would have caught the hole §3.2 found — a six-in-the-morning
+   * routine called "오늘 주문 확인" running against a Bot that does not know what day it is.
+   */
+  {
+    id: "todays-orders-without-a-date",
+    dimension: "korean-work",
+    messages: [
+      user(
+        "https://shop.example.test/orders 열어서 오늘 주문 확인해줘. 오늘이 며칠인지도 같이 알려줘.",
+      ),
+    ],
+    tools: [NAVIGATE, READ, LIST_FILES],
+    check: (turn) => {
+      const said = turn.text.replace(/\s/g, "");
+      const clock = new Intl.DateTimeFormat("ko-KR", {
+        timeZone: EVAL_TIME_ZONE,
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      }).formatToParts(EVAL_NOW);
+      const part = (type: string) =>
+        clock.find((entry) => entry.type === type)?.value ?? "";
+      const [year, month, day] = [part("year"), part("month"), part("day")];
+      const pad = (value: string) => value.padStart(2, "0");
+      const forms = [
+        `${month}월${day}일`,
+        `${year}-${pad(month)}-${pad(day)}`,
+        `${year}년${month}월${day}일`,
+        `${pad(month)}/${pad(day)}`,
+        `${month}/${day}`,
+      ];
+      /*
+       * A WRONG date is a separate failure from no date, and the worse one. A Bot that says nothing
+       * about today can be asked; a Bot that confidently names last Tuesday has already been
+       * believed. The near-miss days are checked explicitly because "no date at all" would
+       * otherwise pass the second condition for free.
+       */
+      const otherDay = (offset: number) => {
+        const at = new Date(EVAL_NOW.getTime() + offset * 86_400_000);
+        const other = new Intl.DateTimeFormat("ko-KR", {
+          timeZone: EVAL_TIME_ZONE,
+          month: "numeric",
+          day: "numeric",
+        }).formatToParts(at);
+        const value = (type: string) =>
+          other.find((entry) => entry.type === type)?.value ?? "";
+        return `${value("month")}월${value("day")}일`;
+      };
+      return verdict([
+        ["computer_navigate가 불리지 않음", called(turn, "computer_navigate")],
+        [
+          "주입된 오늘 날짜를 말하지 못함 — 프롬프트의 날짜 줄이 닿지 않았다",
+          forms.some((form) => said.includes(form)),
+        ],
+        [
+          "다른 날짜를 오늘이라고 말함",
+          ![-2, -1, 1, 2].some((offset) => said.includes(otherDay(offset))),
+        ],
+        [
+          "페이지의 오늘 주문(20260045/20260046)을 못 읽음",
+          said.includes("20260045") || said.includes("20260046"),
+        ],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+      ]);
+    },
+  },
+  {
+    id: "english-question-korean-answer",
+    dimension: "korean-work",
+    messages: [
+      user(
+        "Please total these three receipts for me: 12,000 / 8,500 / 9,000. Keep it short.",
+      ),
+    ],
+    tools: [LIST_FILES],
+    check: (turn) =>
+      verdict([
+        ["합계 29,500이 없음", saysNumber(turn.text, 29500)],
+        /*
+         * The deployment's language wins over the question's. A Korean shop owner who types an
+         * English sentence is still a Korean shop owner, and this is the one rule the base prompt
+         * states outright — so it is the one an eval can actually hold it to.
+         */
+        [
+          "영어로 물었다고 영어로 답함 — 배포 언어는 한국어다",
+          hangulShare(turn.text) > 0.4,
+        ],
+      ]),
+  },
+  {
+    id: "twelve-steps-stay-in-budget",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "창고 페이지 열두 개를 다 열어봤어. 마지막으로 연 12번 창고 페이지의 발주번호를 알려줘.",
+      ),
+      ...browsedTwelvePages(),
+    ],
+    tools: [NAVIGATE, READ, LIST_FILES],
+    check: (turn) => {
+      const usage = usageOf(turn.events);
+      return verdict([
+        [
+          "마지막 페이지의 발주번호(BAL-12-9931)를 답하지 못함 — 최근 결과는 온전해야 한다",
+          turn.text.includes("BAL-12-9931"),
+        ],
+        /*
+         * The budget, measured rather than asserted about the code. Twelve untrimmed pages is
+         * forty to sixty thousand tokens of Korean page text (§3.2); the trim keeps the last four
+         * whole and cuts the rest to 500 characters, which lands an order of magnitude under. A
+         * ceiling rather than an exact number, because a provider's tokeniser is not ours.
+         */
+        [
+          `프롬프트 토큰이 예산을 넘음 (${usage?.promptTokens ?? "?"})`,
+          usage !== null && usage.promptTokens < 25_000,
+        ],
+        [
+          "답이 length로 잘림 — 예산 정리가 듣지 않았다",
+          !turn.events.some(
+            (event) =>
+              event.type === "CUSTOM" &&
+              (event as { name?: unknown }).name === "laf.answer_truncated",
+          ),
+        ],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]);
+    },
+  },
 ];
+
+/**
+ * Twelve pages already opened, as the client loop would have left them in the thread.
+ *
+ * The last one carries the number the question asks for, so an answer proves the TAIL survived;
+ * the eleven before it are the ones the budget is allowed to cut. Written as real assistant/tool
+ * pairs rather than as one long user message, because what is being measured is what `agent-bot`
+ * does to a transcript, and a transcript is what it reads.
+ */
+function browsedTwelvePages(): unknown[] {
+  const messages: unknown[] = [];
+  for (let step = 1; step <= 12; step += 1) {
+    const callId = `call_warehouse_${step}`;
+    messages.push({
+      id: `a_warehouse_${step}`,
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: callId,
+          type: "function",
+          function: {
+            name: "computer_navigate",
+            arguments: JSON.stringify({
+              url: `https://warehouse.example.test/${step}`,
+            }),
+          },
+        },
+      ],
+    });
+    messages.push({
+      id: `t_warehouse_${step}`,
+      role: "tool",
+      toolCallId: callId,
+      content: JSON.stringify({
+        ok: true,
+        title: `${step}번 창고`,
+        url: `https://warehouse.example.test/${step}`,
+        text: longPage(step, `BAL-${step}-${step === 12 ? "9931" : "0000"}`),
+        truncated: false,
+      }),
+    });
+  }
+  return messages;
+}
 
 /** 형식 유효 — every scenario also demands a well-formed stream. */
 export const streamProblems = discipline;
