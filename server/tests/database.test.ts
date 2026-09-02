@@ -24,7 +24,7 @@ test("hands back every table in the schema, typed", () => {
     (name) => (schema as Record<string, unknown>)[name] instanceof Object,
   );
   expect(tables.length).toBeGreaterThan(20);
-  for (const name of ["users", "agents", "auditEvents", "lafThreadSnapshots"]) {
+  for (const name of ["users", "agents", "auditEvents", "lafThreadMessages"]) {
     expect([name, name in database.query]).toEqual([name, true]);
   }
 
