@@ -58,14 +58,18 @@ export class ControlRequestError extends Error {
 
 export const NO_SECRET_PENDING = "Nothing is waiting for a secret.";
 /**
- * Said to a MODEL, so it forbids the loop by name. "Wait before acting" alone
- * left retrying the same click a legal reading — and the eval pack measured a
- * reasoning model taking it, one refused click in six, the day glm-5.3-flash
- * was judged. The gateway refuses the retry anyway; this sentence exists so
- * the Bot spends its turn SAYING it is waiting instead of proving it cannot act.
+ * A FACT CODE, NOT A SENTENCE.
+ *
+ * This was an English paragraph addressed to a model — it forbids the retry
+ * loop by name, because "wait before acting" alone left retrying the same
+ * click a legal reading and the eval pack measured a reasoning model taking
+ * it, one refused click in six, the day glm-5.3-flash was judged. The wording
+ * still exists and still says exactly that; it lives in
+ * `shared/prompt/tool-results.ko.ts`, in Korean, with the rest of the words a
+ * model reads. This container ships a code, so the sentence a Korean Bot reads
+ * is not decided by an English service that has never heard of a locale.
  */
-export const HUMAN_HAS_CONTROL =
-  "A person has control of the computer right now. Do not retry this action — the same refusal will answer. Say you are waiting, and act again only after you are told control is back.";
+export const HUMAN_HAS_CONTROL = "laf:human_has_control";
 export const TAKE_CONTROL_FIRST =
   "Take control before driving the computer yourself.";
 

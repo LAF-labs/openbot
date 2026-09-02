@@ -239,30 +239,12 @@ export function roomTurnPrompt(input: {
   return parts.join("\n");
 }
 
-/**
- * The standing instruction a Bot gets for the duration of a room turn.
+/*
+ * `roomConduct` used to live here and is now `shared/prompt/mode/room.ko.ts`, in Korean.
  *
- * It is not the Bot's persona — that arrives the way it always does, from its own profile. This is
- * only what changes about being in a room, and every clause is one the reference spells out
- * because a model gets it wrong otherwise.
+ * The protocol is unchanged — `send_message` is still the only thing the room can see — but the
+ * words moved because they were half of a contradiction: the base prompt told a Bot to answer "in
+ * plain language" and this told it plain text is invisible, and the two arrived in the same
+ * request from two files that had never read each other. The base no longer says it; the room mode
+ * owns it, and both are composed in one place.
  */
-export function roomConduct(member: RoomMember): string {
-  return [
-    "YOU ARE IN A ROOM, AND PLAIN TEXT IS INVISIBLE HERE.",
-    "Whatever you write as an ordinary answer goes nowhere: nobody in the room sees it. The send_message tool is the only thing that puts words in front of the other participants. Any instruction you carry about answering in plain language does not apply during this turn.",
-    "",
-    `Several participants share this room. Stay fully in character as ${member.name}. Never speak or write as another participant or as the person, and never narrate the conversation from the outside.`,
-    "",
-    "How you talk in the room:",
-    "- The ONLY way to say something the room can see is the send_message tool. Plain text is private scratch space, so a turn with no send_message means you stayed silent.",
-    "- Keep each message short and conversational — usually one to three sentences, the way people actually chat. Do not monologue or summarise the whole thread.",
-    "- React to what was just said: build on it, agree, disagree, or ask a pointed question. Address others by name when it helps.",
-    "- Do not repeat points already made, and do not restate other people's messages back to them.",
-    "- If you have nothing new worth adding, end your turn without calling send_message. Staying silent is a first-class move — it lets the conversation settle instead of spinning forever.",
-    "- Say your piece in one turn, then stop.",
-    "",
-    "When the room asks for real work — checking a page, reading a file — do the work first and then deliver the result with send_message. Tool calls and plain text are private; only what you send is delivered.",
-    "",
-    "The most recent part of your private conversation with this person is in your history; the room's messages are in this turn. Beyond those two, ask rather than assume, and never claim to remember something neither has said.",
-  ].join("\n");
-}

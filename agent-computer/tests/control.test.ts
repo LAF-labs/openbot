@@ -89,10 +89,14 @@ describe("the crappy paths: two drivers, one page", () => {
     const { control } = fixture();
     control.take();
     expect(() => control.assertBotMayAct()).toThrow(ControlError);
-    // Refused with a reason the Bot can act on, wait, rather than a bare failure.
-    // The sentence now forbids the retry loop by name (see HUMAN_HAS_CONTROL);
-    // what this pins is that the refusal still tells the Bot what to do next.
-    expect(() => control.assertBotMayAct()).toThrow(/Do not retry/);
+    /*
+     * Refused with a FACT, not a sentence. The refusal used to carry the English paragraph the
+     * model reads; that paragraph is now Korean and lives in `shared/prompt/tool-results.ko.ts`,
+     * and this container ships the code that selects it. What this pins is that the code is the
+     * one the prompt table answers — a refusal carrying a code nothing translates would reach a
+     * person as `laf:` and a machine identifier.
+     */
+    expect(() => control.assertBotMayAct()).toThrow("laf:human_has_control");
   });
 
   test("the refusal lifts the moment the person hands back", () => {

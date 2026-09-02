@@ -523,14 +523,6 @@ const coworkerCall = createCoworkerCall({
     resolveRuntimeAgents(
       () => loadAgentsForActor(actor),
       tenantPackage.model,
-      () =>
-        resolveModelApiKey({
-          encryptionKey: config.keyEncryptionKey,
-          reader: credentialStore,
-          provider: tenantPackage.model.provider,
-          keyId: tenantPackage.model.credentialSecretRef,
-          environment: process.env,
-        }),
       stallGuard,
     ),
   auditStore: bootAuditStore,
@@ -585,14 +577,6 @@ const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
   resolveRuntimeAgents(
     () => loadAgentsForActor(actor),
     tenantPackage.model,
-    () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: tenantPackage.model.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
     stallGuard,
   );
 
@@ -603,14 +587,6 @@ const routineService = createRoutineService({
     resolveRuntimeAgents(
       () => loadAgentsForActor(actor),
       tenantPackage.model,
-      () =>
-        resolveModelApiKey({
-          encryptionKey: config.keyEncryptionKey,
-          reader: credentialStore,
-          provider: tenantPackage.model.provider,
-          keyId: tenantPackage.model.credentialSecretRef,
-          environment: process.env,
-        }),
       stallGuard,
     ),
   auditStore: bootAuditStore,
@@ -644,14 +620,6 @@ const app = createApp(
   mountCopilotRuntime(
     tenantPackage.model,
     loadAgentsForActor,
-    () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: tenantPackage.model.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
     identifyActor,
     stallGuard,
     lafRunner,

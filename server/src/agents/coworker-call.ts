@@ -71,7 +71,15 @@ export async function runAgentOnce(
   target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
 
   const outcome = await Promise.race([
-    target.runAgent(),
+    /*
+     * The mode, so the prompt composer knows there are no tools in this room.
+     *
+     * Without it a coworker read the chat prompt — which tells it to open pages and to ask the
+     * person to sign in — in a run that has no browser and no person. The words that make an
+     * answer honest here ("say what would have to be checked rather than pretending you checked
+     * it") are in `shared/prompt/mode/coworker.ko.ts`, and this is what selects them.
+     */
+    target.runAgent({ forwardedProps: { mode: "coworker" } }),
     new Promise<never>((_, reject) => {
       setTimeout(
         () =>

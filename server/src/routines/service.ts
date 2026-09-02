@@ -511,6 +511,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
         const run = await runUnattended(target, instruction, {
           toolkit,
           timeoutMs: runTimeoutMs,
+          // Nobody is watching. What that means is said by `shared/prompt/mode/routine.ko.ts`,
+          // composed by the same middleware every other run path goes through.
+          mode: "routine",
         });
         answer = run.answer;
         steps = run.steps;
@@ -685,9 +688,23 @@ export function createRoutineService(options: RoutineServiceOptions) {
       const schedule = parseSchedule(input);
       const name = input.name.trim();
       const instruction = input.instruction.trim();
-      if (!name) throw new RoutineError("Name the routine.", 400);
+      /*
+       * Codes, because a Bot creates routines too and a Bot cannot act on an English sentence.
+       * The surface turns them into Korean; so does the Bot's own tool, from a different table.
+       */
+      if (!name) {
+        throw new RoutineError(
+          "Name the routine.",
+          400,
+          "laf:routine_needs_name",
+        );
+      }
       if (!instruction) {
-        throw new RoutineError("Say what the routine should do.", 400);
+        throw new RoutineError(
+          "Say what the routine should do.",
+          400,
+          "laf:routine_needs_instruction",
+        );
       }
 
       return database.transaction(async (transaction) => {
