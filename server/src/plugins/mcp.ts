@@ -100,6 +100,65 @@ export class McpServerError extends Error {
   }
 }
 
+/**
+ * The fact code an audit row carries when this deployment declined to follow a redirect.
+ *
+ * A code rather than a sentence, for the same reason the guard floors are `laf:*`: somebody counting
+ * these has to be able to find them, and a reader counting vendor outages should not be reading them
+ * by accident.
+ */
+export const MCP_REDIRECT_REFUSED = "laf:mcp_redirect_refused";
+
+/**
+ * A server answered by pointing somewhere else, and we did not go.
+ *
+ * WHY THIS IS A REFUSAL AND NOT A FAILURE. A custom MCP server is an address an administrator typed:
+ * it is checked when it is added and never again, and the check cannot see where a 302 points. Left
+ * on fetch's default, the transport would follow one — carrying the Authorization header — to
+ * `http://localhost:4100` (the Bot's own computer), to the cloud metadata endpoint, or to anything
+ * on this network. Every token endpoint in this fork already says `redirect: "manual"` for exactly
+ * that reason; the MCP call path had been left on the default, and it is the one path a MODEL can
+ * cause to be walked.
+ *
+ * Its own class because the two readings are different acts. A vendor failing is something that
+ * happened to the call; this is the deployment declining, and the trail should say which.
+ */
+export class McpRedirectRefusedError extends McpServerError {
+  readonly fact = MCP_REDIRECT_REFUSED;
+  constructor(readonly status: number) {
+    /*
+     * The address it named is deliberately absent. It is attacker-chosen text on a path that reaches
+     * a model and an audit payload, and naming it would neither help the operator (the server is
+     * theirs to fix) nor be safe to repeat.
+     */
+    super(
+      "That server answered with a redirect rather than a result, so the call was refused: a credential is never sent on to an address this deployment did not agree to talk to.",
+    );
+    this.name = "McpRedirectRefusedError";
+  }
+}
+
+/**
+ * Every request this transport makes, with redirects turned off.
+ *
+ * On the `fetch` seam rather than only in `requestInit`, because the SDK spreads `requestInit` into
+ * the POST and the DELETE and builds the GET stream's init by hand. One of the three would have kept
+ * following redirects, and it would have been the one nobody was looking at.
+ */
+const withoutRedirects = (
+  url: string | URL,
+  init?: RequestInit,
+): Promise<Response> => fetch(url, { ...init, redirect: "manual" });
+
+/** The HTTP status a transport failure carries, when it carries one. */
+function statusOf(error: unknown): number | undefined {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "number" ? code : undefined;
+}
+
 type Connection = {
   url: string;
   /** The bearer token for this server, already decrypted. Absent for a server that needs none. */
@@ -170,10 +229,7 @@ const trimmed = (value: string) =>
  * product is two APIs, so nothing else can tell "I enabled it" from "it is enabled".
  */
 function vendorFailure(error: unknown): string {
-  const status =
-    typeof error === "object" && error !== null && "code" in error
-      ? (error as { code?: unknown }).code
-      : undefined;
+  const status = statusOf(error);
 
   if (status === 401) {
     return "The vendor rejected this credential (401). For a connector reached as the person asking, reconnecting the account is the usual fix; if it persists, the scopes it was granted may not cover this server.";
@@ -221,6 +277,7 @@ async function withClient<T>(
     requestInit: connection.token
       ? { headers: { Authorization: `Bearer ${connection.token}` } }
       : undefined,
+    fetch: withoutRedirects,
   });
   const client = new Client({ name: "laf-agent", version: "1.0.0" });
 
@@ -228,6 +285,15 @@ async function withClient<T>(
     await client.connect(transport);
     return await use(client);
   } catch (error) {
+    /*
+     * A 3xx is this deployment's refusal, and it keeps its own class all the way to the audit row.
+     * With redirects off, the transport reports the redirect as an ordinary unsuccessful status, so
+     * without this branch "we would not follow that" would be filed as "the vendor answered 302".
+     */
+    const status = statusOf(error);
+    if (status !== undefined && status >= 300 && status < 400) {
+      throw new McpRedirectRefusedError(status);
+    }
     // Rewrapped so a caller never has to care whether the failure came from the transport, the
     // handshake or the call, and so the message that reaches an audit row and an admin page is one
     // sentence rather than a stack.

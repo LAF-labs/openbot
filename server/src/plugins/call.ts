@@ -12,6 +12,7 @@ import {
   type LafGuard,
   type ToolAnnotations,
 } from "./laf-contract";
+import { McpRedirectRefusedError } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
 import type { SkillsAndGrants } from "./skills-and-grants";
 import {
@@ -456,6 +457,29 @@ export function createCallPath(
         });
         return { text: result.text, isError: result.isError };
       } catch (error) {
+        /*
+         * A server that answered by pointing somewhere else is OUR refusal, not the vendor's
+         * failure, and the row says so with a code rather than with a sentence.
+         *
+         * The branch is worth its lines. Every other failure here is something that happened TO the
+         * call — a vendor down, a credential it would not take. This one is the deployment declining
+         * to follow a 3xx, which is the whole reason the transport now refuses redirects: a custom
+         * server nobody reviewed can answer 302 with the Bot's own computer, or an address on this
+         * network, and a followed redirect carries the credential there. A reader counting refusals
+         * should find these; a reader counting vendor outages should not be reading them.
+         *
+         * `rule` carries the fact code for the same reason the guard floors do — the surface names
+         * the boundary from a code, never from our sentence.
+         */
+        if (error instanceof McpRedirectRefusedError) {
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            payload: { ...decided, refusal: error.fact, status: error.status },
+          });
+          throw new PluginRefusedError(error.message, error.fact);
+        }
         /*
          * Recorded, then rethrown unchanged. The caller's behaviour is unaffected — what changes is
          * that the failure now exists in the trail, which is where somebody asking "is this
