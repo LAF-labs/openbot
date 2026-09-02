@@ -12,15 +12,9 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  chunks,
-  connectorCursors,
-  connectorInstances,
   credentials,
-  documentAcls,
-  documents,
   intelligenceChannelMappings,
   sessions,
-  syncRuns,
   userRoles,
   users,
   verifications,
@@ -40,12 +34,6 @@ describe("LAF Agent database schema", () => {
         channelMemberships,
         channelAgents,
         credentials,
-        connectorInstances,
-        connectorCursors,
-        syncRuns,
-        documents,
-        chunks,
-        documentAcls,
         auditEvents,
         intelligenceChannelMappings,
       ].map(getTableName),
@@ -60,32 +48,44 @@ describe("LAF Agent database schema", () => {
       "channel_memberships",
       "channel_agents",
       "credentials",
-      "connector_instances",
-      "connector_cursors",
-      "sync_runs",
-      "documents",
-      "chunks",
-      "document_acls",
       "audit_events",
       "intelligence_channel_mappings",
     ]);
   });
 
-  test("keeps document embeddings and ACLs separate from document metadata", () => {
-    expect(Object.keys(documents)).toEqual(
-      expect.arrayContaining([
-        "id",
-        "connectorInstanceId",
-        "sourceId",
-        "canonicalUrl",
-      ]),
-    );
-    expect(Object.keys(chunks)).toEqual(
-      expect.arrayContaining(["documentId", "embedding"]),
-    );
-    expect(Object.keys(documentAcls)).toEqual(
-      expect.arrayContaining(["documentId", "principal", "effect"]),
-    );
+  /*
+   * The upstream knowledge plane is gone, and this is the assertion that it stays gone.
+   *
+   * `documents`, `chunks`, `document_acls`, `sync_runs`, `connector_cursors`,
+   * `webhook_subscriptions` and `connector_instances` were created by 0000 and never written to by
+   * anything. The test above used to name six of them as though they were part of the product, and
+   * a list that protects dead tables is worse than no list: it makes deleting them look like
+   * breaking something. Migration 0024 drops them; a schema file that reintroduces one fails here.
+   *
+   * `chunks.embedding` was the only `vector` column, which is the whole reason the Postgres image
+   * had to carry pgvector. The image is `postgres:17` now, so a re-added vector column would not
+   * merely be dead — it would fail to migrate.
+   */
+  test("does not define the knowledge plane it deleted", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+
+    for (const name of [
+      "documents",
+      "chunks",
+      "documentAcls",
+      "syncRuns",
+      "connectorCursors",
+      "webhookSubscriptions",
+      "connectorInstances",
+      "lafWatchSources",
+      "lafWatchEvents",
+      "lafDigestLog",
+    ]) {
+      expect(schema[name]).toBeUndefined();
+    }
   });
 
   test("includes Better Auth's verified Google identity records", () => {

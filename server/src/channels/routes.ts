@@ -910,9 +910,9 @@ export function createChannelRoutes(
   /*
    * The room's transcript, read from the snapshot column directly.
    *
-   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route is answered by our runner
-   * only when the deployment is in local mode, and a room's messages are written by the server
-   * rather than by a run — so a room in Intelligence mode would have shown an empty screen.
+   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route answers from what a run
+   * put through the runner, and a room's messages are written by the server rather than by a run —
+   * so a room read that way showed an empty screen.
    */
   routes.get("/:channelId/messages", requireUser, async (context) => {
     try {

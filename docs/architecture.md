@@ -14,10 +14,10 @@ Regenerate it with `bun run diagram` after changing anything it shows.
 | Component                | Port                       | Responsibility                                                                                                                              |
 | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app`                    | 3010                       | React/Vite interface for channels, Bot chat, live screen, settings, and admin pages.                                                        |
-| `server`                 | 3001                       | API, CopilotKit runtime, auth, roles, tenant package, coworkers, channels, policy, audit, credentials, plugins, components, and connectors. |
+| `server`                 | 3001                       | API, CopilotKit runtime, auth, roles, tenant package, coworkers, channels, routines, policy, audit, credentials, plugins, and components.   |
 | `agent-computer`         | 4100                       | Chromium, `/workspace`, browser profile, screenshots, snapshots, and file tools.                                                            |
 | `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                                                                      |
-| PostgreSQL with pgvector | 5432                       | Product data, threads, memory, audit rows, credentials, policy, grants, channels, components, connector state, and knowledge records.       |
+| PostgreSQL 17            | 5432                       | Product data, threads, memory, audit rows, credentials, policy, grants, channels, components, and routines.                                 |
 
 `scripts/start.sh` starts PostgreSQL, `agent-computer`, and `agent-bot` through Docker Compose, then starts `server` and `app` on the host.
 
@@ -150,21 +150,19 @@ The curated MCP catalogue contains Atlassian, Box, Slack, Salesforce, and Servic
 
 Every MCP call checks the grant first, then evaluates the same action policy engine with MCP context, then audits the result.
 
-## Tenant package and knowledge
+## Tenant package
 
 `TENANT_PACKAGE_DIR` points at the tenant package. The default is `../tenant/laf`.
 
 Required package files:
 
 - `brand.yaml`
-- `agents.yaml`
-- `channels.yaml`
 - `model.yaml`
-- `knowledge.yaml`
 
-The server validates the package at startup. Channel agent IDs must match declared agents. Knowledge sources currently support Google Drive and Microsoft OneDrive declarations.
-
-Connector credentials are stored through the credential vault and referenced by id, not stored inline in YAML.
+The server validates the package at startup and refuses to start on an invalid one. It once also
+declared ready-made Bots and channels and a set of knowledge connectors; a Bot now starts with
+nothing set and belongs to the person who made it, and the connector plane never had an adapter
+behind it, so all three files are gone.
 
 ## Security boundaries
 

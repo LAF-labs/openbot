@@ -1,15 +1,21 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-test("provides PostgreSQL with pgvector for local development", () => {
+/*
+ * Plain postgres, and NOT pgvector, which this asserted for as long as one dead table carried a
+ * `vector(1536)` column. Migration 0024 drops the column, the table and the extension; an image
+ * carrying an extension nothing uses is a larger pull and a second thing to keep current, and
+ * `not.toContain` is here so re-adding one is a failing test rather than a quiet requirement.
+ */
+test("provides PostgreSQL 17 for local development", () => {
   const compose = readFileSync(
     join(import.meta.dir, "..", "docker-compose.yml"),
     "utf8",
   );
 
-  expect(compose).toContain("postgres:");
-  expect(compose).toContain("pgvector/pgvector:");
+  expect(compose).toContain("image: postgres:17");
+  expect(compose).not.toContain("pgvector");
   expect(compose).toContain("127.0.0.1:${POSTGRES_PORT:-5432}:5432");
 });
 
@@ -118,19 +124,31 @@ test("redirects the www name to the apex rather than serving it", () => {
   );
 });
 
-test("enables pgvector before creating vector columns", () => {
-  const migration = readFileSync(
-    join(import.meta.dir, "..", "server", "drizzle", "0000_schema.sql"),
-    "utf8",
-  );
+/*
+ * The chain has to walk on the image compose names, and it did not.
+ *
+ * 0000 opened with `CREATE EXTENSION IF NOT EXISTS vector` for one `vector(1536)` column in a table
+ * nothing ever wrote to. Measured against `postgres:17`: "extension "vector" is not available",
+ * and the chain stops on its first statement — so switching the image without also taking that line
+ * out would have left every fresh database, CI's included, unable to migrate at all. This is the
+ * assertion that the two stay in step: no migration may require an extension the image lacks.
+ */
+test("needs no Postgres extension the image does not ship", () => {
+  const migrations = readdirSync(
+    join(import.meta.dir, "..", "server", "drizzle"),
+  )
+    .filter((name) => name.endsWith(".sql"))
+    .map((name) =>
+      readFileSync(
+        join(import.meta.dir, "..", "server", "drizzle", name),
+        "utf8",
+      ),
+    );
 
-  // The order is the property, not the first line. A `vector` column cannot be created before the
-  // extension that defines the type, and a generated migration has no reason to put them in that
-  // order on its own.
-  const extension = migration.indexOf("CREATE EXTENSION IF NOT EXISTS vector;");
-  const firstVectorColumn = migration.search(/"embedding" vector\(/);
-  expect(extension).toBeGreaterThanOrEqual(0);
-  expect(firstVectorColumn).toBeGreaterThan(extension);
+  expect(migrations.length).toBeGreaterThan(0);
+  for (const migration of migrations) {
+    expect(migration).not.toMatch(/^\s*CREATE EXTENSION/im);
+  }
 });
 
 test("runs migrations after PostgreSQL becomes healthy", () => {

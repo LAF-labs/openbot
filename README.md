@@ -128,7 +128,6 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 | `/bot`               | Direct chat with a Bot; `?agent=<id>` selects one.                 |
 | `/skills`            | Create and enable personal skills.                                 |
 | `/settings`          | User preferences.                                                  |
-| `/admin/connectors`  | Configure deployment knowledge sources.                            |
 | `/admin/credentials` | Store write-only encrypted credentials.                            |
 | `/admin/computers`   | View, stop, and reset Bot computers.                               |
 | `/admin/boundaries`  | Configure browser/file/MCP action policy.                          |
@@ -166,10 +165,8 @@ From `/agents`, create a coworker with:
 
 The server validates agent endpoints with the same target checks used for browser navigation. If no custom endpoint is set, product-created coworkers use `MANAGED_AGENT_AG_UI_URL`.
 
-Tenant package agents are declared in `agents.yaml` as either:
-
-- `built-in`, with a system prompt; or
-- `remote-ag-ui`, with an endpoint.
+Every coworker is made this way. The tenant package could once declare some of its own; it ships
+none, and a Bot belongs to the person who made it.
 
 See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/coworkers.md).
 
@@ -181,11 +178,10 @@ See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/
 - `KEY_ENCRYPTION_KEY`
 - `MANAGED_AGENT_AG_UI_URL`
 
-CopilotKit Intelligence is optional here and off by default: durable threads and
-memory live in this deployment's own PostgreSQL. Set all four of
-`INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`
-and `COPILOTKIT_LICENSE_TOKEN` to use it instead. A partial set is refused
-rather than quietly ignored — somebody meant to configure it and got it wrong.
+Durable threads and memory live in this deployment's own PostgreSQL, and there
+is nowhere else they can live: four `INTELLIGENCE_*` variables once pointed them
+at CopilotKit's hosted runtime instead, no deployment ever set them, and they
+are gone.
 
 Settings worth knowing:
 
@@ -198,7 +194,7 @@ Settings worth knowing:
 | `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                  |
 | `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                             |
 | `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.            |
-| `DEPLOYMENT_ID`                      | Names this deployment in the thread ids it mints.                         |
+| `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.     |
 
 Full reference: [docs/configuration.md](docs/configuration.md).
 
@@ -210,7 +206,7 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 | `server`                 | 3001                       | Hono API, CopilotKit runtime, auth, policy, audit, plugins, components, coworkers, and channels. |
 | `agent-computer`         | 4100                       | Chromium plus `/workspace` and browser profile.                                                  |
 | `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                           |
-| PostgreSQL with pgvector | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and knowledge.      |
+| PostgreSQL 17            | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and routines.      |
 
 The server gateway is the product/API path for Bot browser and file tool calls.
 It resolves the target, evaluates policy, writes an audit row, and then calls

@@ -169,6 +169,13 @@
       "when": 1788078378812,
       "tag": "0023_flippant_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788356312596,
+      "tag": "0024_glorious_shockwave",
+      "breakpoints": true
     }
   ]
 }

@@ -122,13 +122,13 @@ fi
 wait_for "http://localhost:$SERVER_PORT/api/capabilities" "server"
 
 info "3/4  Runtime health"
-# /api/copilotkit has no GET surface (the routes are agent/{id}/run and threads/*), so the runtime
-# is asked through /api/capabilities, which reports the mode actually loaded.
+# /api/copilotkit has no GET surface (the routes are agent/{id}/run and threads/*), so the server is
+# asked through /api/capabilities, which is the one endpoint that answers without a session.
 CAPS="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/capabilities")"
 python3 - "$CAPS" <<'PY'
 import json, sys
 caps = json.loads(sys.argv[1])
-print(f"\033[32m  mode {caps.get('mode')} · durable history: {caps.get('durableHistory')}\033[0m")
+print(f"\033[32m  server {caps.get('status')} · threads durable in postgres\033[0m")
 PY
 
 info "4/4  App"

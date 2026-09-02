@@ -145,7 +145,7 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
 /**
  * Deleted coworkers the caller still has history with.
  *
- * Registered so Intelligence can restore the thread the person is reading. Membership of a channel
+ * Registered so the runtime can restore the thread the person is reading. Membership of a channel
  * the agent worked in is what authorizes this, not the profile's visibility, which is why deleting
  * a coworker leaves its conversations readable instead of erasing them.
  */

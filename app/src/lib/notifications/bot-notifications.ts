@@ -7,9 +7,9 @@
  * Bot that merely finished is silent; five seconds of quiet per Bot per kind; and a window the
  * person is looking at silences things, because the screen is already telling them.
  *
- * It is also the rule this fork wrote down for the approval buzz and the morning digest
- * (server/src/watch/digest.ts): what is blocked on you leads, what merely happened follows, and
- * everything else stays out of the way.
+ * It is also the rule this fork wrote down for the approval buzz
+ * (server/src/notifications/notify.ts): what is blocked on you leads, what merely happened follows,
+ * and everything else stays out of the way.
  *
  * It is the browser's own Notification, deliberately: no service worker, no push service, no
  * dependency. WHAT THAT COSTS, SAID PLAINLY: nothing arrives while the tab is closed. A person who

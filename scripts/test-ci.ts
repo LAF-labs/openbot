@@ -38,12 +38,21 @@ const projectRoot = resolve(import.meta.dir, "..");
  * counts them and a floor that disagreed with the number on the screen would be argued with rather
  * than read.
  *
+ * SERVER'S FLOOR CAME DOWN ON PURPOSE, 989 → 935, on 2026-09-02. The upstream knowledge plane, the
+ * connector stub, the Intelligence mode and the parked `laf.watch` poller were deleted, and with
+ * them eleven suites that were green about code nothing called: knowledge-acl, knowledge-repository,
+ * knowledge-agent, agent-registry, agent-invocation, connectors, connector-admin, sync-persistence,
+ * watch-differ, watch-digest and dev-actor-email, plus the Intelligence and package-synchronisation
+ * cases inside config, health and tenant-package. Server measures 964 after the deletion; 935 is 3%
+ * under that, the same margin the other three carry. A floor left at 989 would have been a floor
+ * nobody could get past honestly.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 989, roots: ["server"] },
+  { name: "server", floor: 935, roots: ["server"] },
   { name: "app", floor: 172, roots: ["app"] },
   { name: "agent-computer", floor: 88, roots: ["agent-computer"] },
   { name: "root", floor: 42, roots: ["tests", "agent-bot"] },

@@ -4,16 +4,17 @@ import { join } from "node:path";
 
 const packageDirectory = join(import.meta.dir, "..", "tenant", "laf");
 
-// The default tenant package. Everything — the server, the app build, `bun run test`'s pretest —
-// loads this directory when TENANT_PACKAGE_DIR is unset, so a missing file here fails every clone.
+/*
+ * The default tenant package. Everything — the server, the app build, `bun run test`'s pretest —
+ * loads this directory when TENANT_PACKAGE_DIR is unset, so a missing file here fails every clone.
+ *
+ * Two files, not five. `agents.yaml` and `channels.yaml` were empty lists that a synchronise loop
+ * read on every boot, and `knowledge.yaml` fed a connector plane with no adapters behind it; all
+ * three are deleted. What the package still decides is who this deployment is, which model it runs
+ * on, and how it looks.
+ */
 test("ships the complete LAF deployment package", () => {
-  for (const fileName of [
-    "brand.yaml",
-    "agents.yaml",
-    "channels.yaml",
-    "model.yaml",
-    "knowledge.yaml",
-  ]) {
+  for (const fileName of ["brand.yaml", "model.yaml"]) {
     expect(existsSync(join(packageDirectory, fileName))).toBe(true);
   }
 

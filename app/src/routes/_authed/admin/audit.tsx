@@ -184,17 +184,15 @@ function Row({
    * asked and the answer never arrived. Colour is how this table is read, and a row left in the
    * muted foreground reads as "Allowed", which a turn nobody ever got an answer to was not.
    *
-   * The four beyond the computer's own were each drawn as an ordinary allowed row: a tool call that
-   * died at the vendor, a component function that could not be read, a connector sync that failed,
-   * and a credential replacement the vault refused. Every one of them is the same complaint —
-   * permitted, attempted, did not happen — and the colour is what a person skimming this table
-   * actually reads.
+   * The three beyond the computer's own were each drawn as an ordinary allowed row: a tool call that
+   * died at the vendor, a component function that could not be read, and a credential replacement
+   * the vault refused. Every one of them is the same complaint — permitted, attempted, did not
+   * happen — and the colour is what a person skimming this table actually reads.
    */
   const failed =
     event.eventType === "computer.action_failed" ||
     event.eventType === "mcp.call_failed" ||
     event.eventType === "component.function_failed" ||
-    event.eventType === "connector.sync_failed" ||
     event.eventType === "credential.rotation_refused" ||
     stalled;
   const silence = stalled ? silenceOf(payload) : null;
@@ -433,10 +431,6 @@ export const DECISIONS: Record<string, string> = {
   "mcp.account_connected": "A person connected their own account",
   "mcp.account_disconnected": "An account is no longer connected",
 
-  "connector.sync_succeeded": "Sync finished",
-  "connector.sync_failed": "Sync failed",
-  "knowledge.searched": "Knowledge searched",
-  "agent.invoked": "The Bot was asked",
   "coworker.asked": "One Bot asked another",
   "routine.ran": "A routine ran",
   "model.usage": "Model usage recorded",

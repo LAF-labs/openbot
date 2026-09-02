@@ -13,9 +13,9 @@ import { ko } from "../src/lib/i18n-ko";
  *
  * And the worse half, which this file exists for. An event type with no entry falls back to
  * "Allowed", so adding a type on the server and forgetting the surface does not render an English
- * word — it renders a WRONG one. `mcp.account_disconnected`, `credential.rotation_refused` and
- * `connector.sync_failed` each read as "Allowed" for exactly as long as nobody looked, which is the
- * one thing an audit trail must never do: an access that was withdrawn is not a permission granted.
+ * word — it renders a WRONG one. `mcp.account_disconnected` and `credential.rotation_refused` each
+ * read as "Allowed" for exactly as long as nobody looked, which is the one thing an audit trail must
+ * never do: an access that was withdrawn is not a permission granted.
  *
  * So the coverage assertion is against the SERVER's own list of event types, imported rather than
  * copied. A type added there fails here until somebody decides what it says.
@@ -49,11 +49,10 @@ describe("the audit trail's labels", () => {
   });
 
   test("a label never claims an ended access was a permission", () => {
-    // The specific inversion this file was written after finding: three rows that read "Allowed".
+    // The specific inversion this file was written after finding: rows that read "Allowed".
     for (const type of [
       "mcp.account_disconnected",
       "credential.rotation_refused",
-      "connector.sync_failed",
       "credential.revoked",
     ] as const) {
       expect(DECISIONS[type]).toBeDefined();

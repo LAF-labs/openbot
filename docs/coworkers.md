@@ -12,7 +12,8 @@ A coworker is a Bot with a durable profile and standing role. The role is sent w
 | Channel              | `channels`                      | Conversation membership and coworker binding.                         |
 | Thread mapping       | `intelligence_channel_mappings` | Channel-to-thread mapping (name predates the fork; threads are local). |
 
-Package-provided agents are public and ownerless. User-created coworkers are owned by the creator.
+Every coworker is owned by the person who made it. The tenant package used to ship a few that
+were public and ownerless; it ships none.
 
 ## Standing role
 
@@ -57,23 +58,14 @@ Product-created coworkers use:
 MANAGED_AGENT_AG_UI_URL=http://localhost:4200/ag-ui
 ```
 
-The server requires this setting at startup. Package-provided agents use their own `agents.yaml` configuration.
+The server requires this setting at startup.
 
 ## Register an external AG-UI agent
 
-In `agents.yaml`:
+The tenant package could once declare one in `agents.yaml`; it ships no Bots at all now, and that
+file is deleted. Every coworker is made in the product.
 
-```yaml
-agents:
-  - id: risk
-    name: Risk
-    title: Risk & Compliance
-    role_description: Investigate policies and controls.
-    type: remote-ag-ui
-    endpoint: http://risk.internal/ag-ui
-```
-
-In the product, create or edit a coworker from `/agents` and set:
+Create or edit one from `/agents` and set:
 
 - name;
 - title;
@@ -121,9 +113,9 @@ Every Bot carries one preference per person: `notify`, on by default, editable
 from the switch on its profile. What it governs is the browser's own
 notification, raised when that Bot speaks in a room you are not reading.
 
-The rule is the one this fork already wrote down for the approval buzz and the
-morning digest (`server/src/watch/digest.ts`): what is blocked on you leads,
-what merely happened follows, everything else stays out of the way. So a reply
+The rule is the one this fork already wrote down for the approval buzz
+(`server/src/notifications/notify.ts`): what is blocked on you leads, what
+merely happened follows, everything else stays out of the way. So a reply
 in the room you are reading raises nothing — you can see it — and a reply in a
 room you left, or in any room at all while the tab sits behind another window,
 raises one. Repeats replace: three answers while you were at lunch leave one

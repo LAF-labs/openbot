@@ -3,18 +3,13 @@ import type {
   AgentRunner,
   BuiltInAgentConfiguration,
 } from "@copilotkit/runtime/v2";
-import {
-  BuiltInAgent,
-  CopilotKitIntelligence,
-  CopilotRuntime,
-} from "@copilotkit/runtime/v2";
+import { BuiltInAgent, CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
-import type { DeploymentConfig } from "./config";
 
 /**
- * The CopilotKit runtime, in one of two modes.
+ * The CopilotKit runtime, in the one mode this product has.
  *
  * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots are
  * reached over AG-UI as `HttpAgent` instances, so anything that speaks the protocol remains a Bot
@@ -22,10 +17,9 @@ import type { DeploymentConfig } from "./config";
  * server.
  *
  * Upstream had no SSE branch: Intelligence owned durable threads, and a deployment without it
- * silently forgot every conversation. This fork's default is the SSE branch with a runner that
- * does not forget — LafPostgresRunner keeps every thread in our own Postgres — so the hosted
- * service is an option a deployment may configure, never a requirement (config.ts decides which
- * mode this file gets).
+ * silently forgot every conversation. This fork runs the SSE branch on a runner that does not
+ * forget — LafPostgresRunner keeps every thread in our own Postgres — and there is no second
+ * branch to choose between.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -71,7 +65,7 @@ type RegisteredRemoteAgent = {
 
 /**
  * A coworker the caller may see but may not run: its profile was deleted while a channel it worked
- * in still exists. It is registered so Intelligence can restore that thread and the person can read
+ * in still exists. It is registered so the runtime can restore that thread and the person can read
  * what was said; every run is refused here, without contacting the endpoint.
  */
 type RegisteredUnavailableAgent = {
@@ -499,11 +493,9 @@ export function createRequestAgents(
  * which is not a property you can explain to somebody who just created one.
  */
 export function mountCopilotRuntime(
-  config: DeploymentConfig,
   model: RuntimeModel,
   loadAgents: LoadAgentsForActor,
   resolveModelApiKey: () => Promise<string | null>,
-  identifyUser: IdentifyUser,
   identifyActor: IdentifyActor,
   /**
    * The watch on Bot streams. Not optional, unlike the parameter it forwards to: a guard built from
@@ -511,7 +503,7 @@ export function mountCopilotRuntime(
    * there is no reason for a caller to have to say `undefined` here to reach `basePath`.
    */
   stallGuard: StallGuard,
-  /** The durable runner local mode runs on; unused when Intelligence is configured. */
+  /** The durable runner every turn goes through. */
   localRunner: AgentRunner,
   basePath = "/api/copilotkit",
 ) {
@@ -523,33 +515,9 @@ export function mountCopilotRuntime(
     stallGuard,
   );
 
-  if (config.runtime.mode === "local") {
-    const runtime = new CopilotRuntime({
-      runner: localRunner,
-      agents: agents as never,
-    });
-    return createCopilotHonoHandler({ runtime, basePath });
-  }
-
-  const { intelligence } = config.runtime;
-
   const runtime = new CopilotRuntime({
-    // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
-    //
-    // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
-    // returns, so omitting it puts every person in the deployment in the same thread space and one
-    // person's conversations become another's.
-    identifyUser,
-    intelligence: new CopilotKitIntelligence({
-      apiUrl: intelligence.apiUrl,
-      wsUrl: intelligence.gatewayWsUrl,
-      apiKey: intelligence.apiKey,
-    }),
-    licenseToken: intelligence.licenseToken,
-    // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
-    // one resolver decides both whose threads these are and whose coworkers exist.
+    runner: localRunner,
     agents: agents as never,
   });
-
   return createCopilotHonoHandler({ runtime, basePath });
 }

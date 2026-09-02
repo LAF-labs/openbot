@@ -57,13 +57,10 @@ export const ko: Record<string, string> = {
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
-  "Knowledge searched": "지식을 검색함",
   "Model usage recorded": "모델 사용량이 기록됨",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
   Refused: "거부됨",
-  "Sync failed": "동기화 실패",
-  "Sync finished": "동기화 완료",
   "The Bot could not reach its model. Ask again.":
     "봇이 모델에 닿지 못했습니다. 다시 물어봐 주세요.",
   "The Bot stopped without saying why.": "봇이 이유를 말하지 않고 멈췄습니다.",
@@ -156,8 +153,6 @@ export const ko: Record<string, string> = {
     "봇이 누르는 모든 Enter마다 묻습니다. 폼은 어느 칸에서든 Enter로 제출되기 때문입니다. 마지막에만이 아니라 작성 중에도 물어올 수 있습니다.",
   Audit: "감사 기록",
   Available: "사용 가능",
-  "Available integrations are defined by this deployment’s knowledge sources.":
-    "사용 가능한 연동은 이 배포의 지식 소스가 정합니다.",
   Axolotl: "우파루파",
   "Back to app": "앱으로 돌아가기",
   Bear: "곰",
@@ -204,8 +199,6 @@ export const ko: Record<string, string> = {
   "Configuration changed": "설정이 바뀜",
   "Configured credentials": "등록된 자격증명",
   Connect: "연결하기",
-  "Connect an organization service account with domain-wide delegation.":
-    "도메인 전체 위임이 설정된 조직 서비스 계정을 연결합니다.",
   Connected: "연결됨",
   "Connect your account below, and this server's tools load with it.":
     "아래에서 내 계정을 연결하면 이 서버가 제공하는 툴을 함께 불러옵니다.",
@@ -226,13 +219,10 @@ export const ko: Record<string, string> = {
   Copied: "복사됨",
   "Copy this reply": "이 답장 복사",
   "Could not be read": "읽지 못함",
-  "Could not load connectors.": "커넥터를 불러오지 못했습니다.",
   "Could not load credentials.": "자격증명을 불러오지 못했습니다.",
   "Could not load this channel.": "채널을 불러오지 못했습니다.",
   "Could not load this coworker.": "봇을 불러오지 못했습니다.",
   "Could not log out.": "로그아웃하지 못했습니다.",
-  "Could not save the Google Drive connection.":
-    "Google Drive 연결을 저장하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
   "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
@@ -492,8 +482,6 @@ export const ko: Record<string, string> = {
   "The server did not answer": "서버가 응답하지 않음",
   "The service refused this deployment's registration. Please try again in a moment.":
     "해당 서비스가 이 배포의 등록을 거절했습니다. 잠시 후 다시 시도해 주세요.",
-  "The services Bots can read from, and who connected them.":
-    "봇이 읽을 수 있는 서비스와, 누가 연결했는지.",
   "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.":
     "슬러그는 사람이 슬래시 뒤에 입력하는 이름이고, 입력하면 지시문이 실행에 더해집니다. 이 배포의 모두가 쓸 수 있으며, 어느 봇이 가질지는 관리자가 정합니다. 개인 스킬은 스킬 페이지에서 각자 만듭니다.",
   "The wheel was handed back": "제어를 돌려줌",
@@ -607,7 +595,6 @@ export const ko: Record<string, string> = {
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않습니다.",
   "How {product} looks and behaves for you. These apply to your account alone, on every deployment you sign in to.":
     "{product}의 모양과 동작 — 내 계정에만 적용되며, 로그인하는 모든 배포에서 유지됩니다.",
-  "Impersonation subject": "위임 대상 계정",
   "Install skill": "스킬 설치",
   Instructions: "지시문",
   "It may never": "절대 허용 안 함",
@@ -615,7 +602,6 @@ export const ko: Record<string, string> = {
   "Key for that agent (optional)": "해당 에이전트의 키 (선택)",
   "Listed files": "파일 목록 조회",
   "Loading channel…": "채널 불러오는 중…",
-  "Loading connectors…": "커넥터 불러오는 중…",
   "Loading credentials…": "자격증명 불러오는 중…",
   "Loading plugins…": "플러그인 불러오는 중…",
   "Loading the boundary…": "경계 불러오는 중…",
@@ -636,8 +622,6 @@ export const ko: Record<string, string> = {
   "No channels match your search": "검색과 일치하는 채널이 없습니다",
   "No computers yet. One appears the first time a Bot opens a page.":
     "아직 컴퓨터가 없습니다. 봇이 처음 페이지를 열면 나타납니다.",
-  "No connectors. They come from this deployment's knowledge sources.":
-    "커넥터가 없습니다. 이 배포의 지식 소스에서 옵니다.",
   "No coworker by that name.": "그 이름의 봇이 없습니다.",
   "Nothing here is named “{query}”, and nobody has said it recently either.":
     "“{query}”라는 이름의 채널도, 최근 그런 말이 오간 채널도 없어요.",
@@ -651,7 +635,6 @@ export const ko: Record<string, string> = {
   "No rules. Nothing stops to ask.": "규칙 없음. 멈춰서 묻는 것이 없습니다.",
   "No servers added yet. The Catalogue tab is where they come from.":
     "추가된 서버가 없습니다. 카탈로그 탭에서 가져옵니다.",
-  "No setup screen yet": "아직 설정 화면이 없습니다",
   "No skills installed yet.": "설치된 스킬이 없습니다.",
   "No tools listed. Refresh to ask the server again.":
     "툴 목록이 비어 있습니다. 새로고침으로 서버에 다시 물어보세요.",
@@ -707,12 +690,10 @@ export const ko: Record<string, string> = {
   "Search channels": "채널 검색",
   "Search...": "검색...",
   Secret: "비밀 값",
-  "Service account JSON key": "서비스 계정 JSON 키",
   "Services you have connected with your own account. A Bot answers with what your account can see, and nothing it cannot.":
     "내 계정으로 직접 연결한 서비스입니다. 봇은 내 계정이 볼 수 있는 것으로 답하고, 그 밖의 것은 답하지 못합니다.",
   "Services you have connected with your own account, so a Bot can answer with what you can see.":
     "내 계정으로 직접 연결한 서비스입니다. 봇이 내가 볼 수 있는 것으로 답할 수 있습니다.",
-  "Set up": "설정",
   Settings: "설정",
   "Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences.":
     "이 배포의 모든 사람에게 적용되는 설정입니다. 여기의 모든 항목은 모든 사람과 모든 봇에 영향을 줍니다 — 개인 환경설정과 다른 점입니다.",

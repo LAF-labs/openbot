@@ -9,23 +9,18 @@
  * person is asked to watch a spinner, which is the actual complaint.
  *
  * SILENCE ONLY MEANS ANYTHING WHILE THIS PROCESS IS WAITING TO HEAR FROM THE BOT. The Bot's stream
- * is relayed onward as it arrives, and whoever reads the relayed copy is entitled to take its time:
- * in Intelligence mode that reader is publishing every event on to the gateway over the network. A
- * chunk sitting in that handover is quiet that says nothing about the endpoint, and counting it
+ * is relayed onward as it arrives, and whoever reads the relayed copy is entitled to take its time.
+ * A chunk sitting in that handover is quiet that says nothing about the endpoint, and counting it
  * would end a run that was streaming perfectly and put the blame on a Bot for a pause on this side
  * of the wire. That is the one outcome a watchdog must never produce, so the clock is stopped for
  * the handover and started again when it completes, which is what `pause` and `resume` are for.
  *
- * WHAT THE STREAM ACTUALLY DOES IN THIS PRODUCT, measured before any of this was designed, because
- * the answer decides whether a long tool call would be reported as a stall.
+ * WHICH STREAM IS BEING WATCHED, decided before any of this was designed, because the answer is what
+ * makes a long tool call not a stall.
  *
- * LAF Agent runs in Intelligence mode and has no other mode, so `POST /api/copilotkit/agent/:id/run`
- * does not stream at all. It answers `Content-Type: application/json` with a fixed Content-Length in
- * about a second, carrying a join token, and the AG-UI events reach the browser over a WebSocket to
- * the Intelligence gateway. Wrapping that response body would watch a JSON envelope go past. The
- * stream that can actually stall is the one on the other side of this server: the Bot's own AG-UI
- * response, read here, event by event, and republished to the gateway. That is the stream this
- * watchdog is pointed at, and stall-guard.ts is where it is wrapped.
+ * Not this server's reply to the browser. The stream that can actually stall is the one on the other
+ * side of this server: the Bot's own AG-UI response, read here event by event and relayed onward.
+ * That is the stream this watchdog is pointed at, and stall-guard.ts is where it is wrapped.
  *
  * The computer tools are frontend tools, executed in the browser, and the run ENDS before the
  * browser runs one. The Bot emits TOOL_CALL_START, ARGS and END and then RUN_FINISHED, its stream

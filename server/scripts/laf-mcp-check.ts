@@ -17,10 +17,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
  *
  * This exact file is vendored into the public template repository
  * (LAF-labs/laf-mcp-template), where a customer's CI runs it without our
- * monorepo. The signal normalization below MIRRORS server/src/watch/differ.ts,
- * which is what the registration surface actually enforces;
- * server/tests/mcp-check-mirror.test.ts fails if the two drift apart. Change
- * both, then copy this file into the template repository verbatim.
+ * monorepo. The signal normalization below is the contract's, and
+ * server/tests/mcp-check-mirror.test.ts holds it to what docs/laf/mcp-contract.md
+ * §1 publishes — a checker that quietly used other limits would fail servers
+ * that are correct by the only description their authors have. Change the
+ * contract and this together, then copy this file into the template repository
+ * verbatim.
  */
 export const MAX_SIGNALS = 64;
 export const MAX_TEXT = 500;

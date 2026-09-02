@@ -16,6 +16,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import {
@@ -27,14 +28,6 @@ import type {
   StandingApproval,
   StandingApprovalStore,
 } from "./standing-approvals";
-
-/**
- * The local actor's address, matched to decide whether the id is a real users row.
- *
- * Compared against rather than imported from `auth/dev-actor` because this must not depend on the
- * authentication module's internals; this is the one fact about it that matters here.
- */
-const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 export function createApprovalRoutes(
   approvals: ApprovalRegistry,
@@ -95,7 +88,7 @@ export function createApprovalRoutes(
       eventType: "approval.standing_revoked",
       targetType: "bot",
       targetId: revoked.botId,
-      ...(record.email === DEV_ACTOR_EMAIL ? {} : { actorUserId: record.id }),
+      ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
       payload: standingPayload(revoked, record.id),
     });
     return context.json(revoked);
@@ -167,7 +160,7 @@ export function createApprovalRoutes(
       // Only a real users row may go in the audit table's foreign key column. The local development
       // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
       // it was is recorded in the payload regardless.
-      ...(record.email === DEV_ACTOR_EMAIL ? {} : { actorUserId: record.id }),
+      ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
       payload: payloadFor(answered.approval, record.id),
     });
 
@@ -200,7 +193,7 @@ export function createApprovalRoutes(
           eventType: "approval.standing_granted",
           targetType: "bot",
           targetId: granted.botId,
-          ...(record.email === DEV_ACTOR_EMAIL
+          ...(record.email === DEV_ACTOR.email
             ? {}
             : { actorUserId: record.id }),
           payload: {

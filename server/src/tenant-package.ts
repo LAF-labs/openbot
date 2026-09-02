@@ -1,16 +1,21 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { parse } from "yaml";
 import type { Database } from "./db/client";
-import {
-  agentProfiles,
-  agents as agentTable,
-  channelAgents,
-  channels as channelTable,
-  deploymentPackages,
-} from "./db/schema";
+import { deploymentPackages } from "./db/schema";
+
+/**
+ * What a deployment's package still says.
+ *
+ * It once shipped Bots and channels too, and a synchronise loop wrote them into `agents`,
+ * `agent_profiles`, `channels` and `channel_agents` on every boot. Both lists have been empty since
+ * the product decided a Bot starts with nothing set and belongs to the person who made it, so the
+ * loop's only remaining effect was its release step — clearing `package_id` from Bots the package
+ * no longer shipped — which a one-shot migration has now done for good. What is left is what is
+ * live: who this deployment is, which model it runs on, and how it looks.
+ */
 
 const approvedThemeVariables = new Set([
   "--background",
@@ -79,37 +84,14 @@ export function validateThemeCss(css: string) {
 
 type PackageFiles = {
   brand: string;
-  agents: string;
-  channels: string;
   model: string;
-  knowledge: string;
   themeCss: string;
-};
-
-type TenantAgent = {
-  id: string;
-  name: string;
-  title: string;
-  roleDescription: string;
-  avatarSeed?: string;
-  type: "built_in" | "remote_ag_ui";
-  configuration: Record<string, unknown>;
-};
-
-type TenantChannel = {
-  id: string;
-  name: string;
-  description: string;
-  permittedAgents: string[];
-  allowedGroups: string[];
 };
 
 export type TenantPackage = {
   tenantId: string;
   productName: string;
   stylesheet: string | null;
-  agents: TenantAgent[];
-  channels: TenantChannel[];
   model: {
     provider: "openai";
     credentialSecretRef: string;
@@ -119,10 +101,6 @@ export type TenantPackage = {
     /** Which model judges an auto-review instruction. Falls back to `defaultModel`. */
     reviewModel: string;
   };
-  knowledgeSources: {
-    type: "google-drive" | "microsoft-onedrive";
-    roots: string[];
-  }[];
   themeCss: string;
 };
 
@@ -168,20 +146,6 @@ function asRecord(value: unknown, name: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/**
- * A list a package must supply, named in the error when it does not.
- *
- * Cast without checking, a missing `agents:` reaches `.map` on `undefined` and the reader gets a
- * TypeError naming neither the file nor the key. Editing YAML by hand is the first thing somebody
- * does here, so getting it wrong has to produce a sentence they can act on.
- */
-function asList(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${name} must be a list`);
-  }
-  return value;
-}
-
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${name} must be a non-empty string`);
@@ -204,13 +168,6 @@ function asBoolean(value: unknown, fallback: boolean, name: string): boolean {
   throw new Error(`${name} must be true or false`);
 }
 
-function stringArray(value: unknown, name: string): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error(`${name} must be an array of strings`);
-  }
-  return value;
-}
-
 function yaml(value: string, filename: string): Record<string, unknown> {
   try {
     return asRecord(parse(value), filename);
@@ -224,9 +181,9 @@ function yaml(value: string, filename: string): Record<string, unknown> {
 /**
  * `${NAME}` in a package file, resolved from the environment.
  *
- * A package describes a deployment's Bots, and the addresses of the services behind them belong to
- * the environment rather than to the package: the same package has to be usable against a local
- * stack, a staging one and production. An unset name is an error rather than an empty string.
+ * A package describes a deployment, and the addresses of the services behind it belong to the
+ * environment rather than to the package: the same package has to be usable against a local stack,
+ * a staging one and production. An unset name is an error rather than an empty string.
  */
 export function expandEnvironment(
   value: string,
@@ -251,94 +208,14 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
     validateThemeCss(files.themeCss);
   }
   const brand = yaml(files.brand, "brand.yaml");
-  const agentsYaml = yaml(files.agents, "agents.yaml");
-  const channelsYaml = yaml(files.channels, "channels.yaml");
   const modelYaml = yaml(files.model, "model.yaml");
-  const knowledgeYaml = yaml(files.knowledge, "knowledge.yaml");
   const tenant = asRecord(brand.tenant, "brand.tenant");
   const skin =
     brand.skin === undefined ? undefined : asRecord(brand.skin, "brand.skin");
-  const agents = asList(agentsYaml.agents, "agents.yaml agents").map(
-    (value) => {
-      const agent = asRecord(value, "agent");
-      const type: TenantAgent["type"] | undefined =
-        agent.type === "built-in"
-          ? "built_in"
-          : agent.type === "remote-ag-ui"
-            ? "remote_ag_ui"
-            : undefined;
-      if (!type) {
-        throw new Error("agent.type must be built-in or remote-ag-ui");
-      }
-      return {
-        id: requiredString(agent.id, "agent.id"),
-        name: requiredString(agent.name, "agent.name"),
-        title: requiredString(agent.title, "agent.title"),
-        roleDescription: requiredString(
-          agent.role_description,
-          "agent.role_description",
-        ),
-        avatarSeed:
-          agent.avatar_seed === undefined
-            ? undefined
-            : requiredString(agent.avatar_seed, "agent.avatar_seed"),
-        type,
-        configuration:
-          type === "built_in"
-            ? {
-                systemPrompt: requiredString(
-                  agent.system_prompt,
-                  "agent.system_prompt",
-                ),
-              }
-            : { endpoint: requiredString(agent.endpoint, "agent.endpoint") },
-      };
-    },
-  );
-  const agentIds = new Set(agents.map((agent) => agent.id));
-  const channels = asList(channelsYaml.channels, "channels.yaml channels").map(
-    (value) => {
-      const channel = asRecord(value, "channel");
-      const permittedAgents = stringArray(
-        channel.permitted_agents,
-        "channel.permitted_agents",
-      );
-      for (const agentId of permittedAgents) {
-        if (!agentIds.has(agentId)) {
-          throw new Error(`channel references unknown agent "${agentId}"`);
-        }
-      }
-      return {
-        id: requiredString(channel.id, "channel.id"),
-        name: requiredString(channel.name, "channel.name"),
-        description: requiredString(channel.description, "channel.description"),
-        permittedAgents,
-        allowedGroups: stringArray(
-          channel.allowed_groups,
-          "channel.allowed_groups",
-        ),
-      };
-    },
-  );
   const model = asRecord(modelYaml.model, "model");
   if (model.provider !== "openai") {
     throw new Error("model.provider must be openai");
   }
-  const sources = asList(knowledgeYaml.sources, "knowledge.yaml sources").map(
-    (value) => {
-      const source = asRecord(value, "knowledge source");
-      if (
-        source.type !== "google-drive" &&
-        source.type !== "microsoft-onedrive"
-      ) {
-        throw new Error("knowledge source type is not supported");
-      }
-      return {
-        type: source.type,
-        roots: stringArray(source.roots, "source.roots"),
-      } as { type: "google-drive" | "microsoft-onedrive"; roots: string[] };
-    },
-  );
 
   return {
     tenantId: requiredString(tenant.id, "tenant.id"),
@@ -346,8 +223,6 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
     stylesheet: skin
       ? requiredString(skin.stylesheet, "skin.stylesheet")
       : null,
-    agents,
-    channels,
     model: {
       provider: "openai",
       credentialSecretRef: requiredString(
@@ -369,7 +244,6 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
           ? model.review_model.trim()
           : requiredString(model.default_model, "model.default_model"),
     },
-    knowledgeSources: sources,
     themeCss: files.themeCss,
   };
 }
@@ -377,13 +251,7 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
 export async function loadTenantPackage(
   sourcePath: string,
 ): Promise<LoadedTenantPackage> {
-  const filenames = [
-    "brand.yaml",
-    "agents.yaml",
-    "channels.yaml",
-    "model.yaml",
-    "knowledge.yaml",
-  ] as const;
+  const filenames = ["brand.yaml", "model.yaml"] as const;
   const contents = await Promise.all(
     filenames.map(async (filename) =>
       expandEnvironment(
@@ -392,7 +260,7 @@ export async function loadTenantPackage(
       ),
     ),
   );
-  const [brand, agents, channels, model, knowledge] = contents;
+  const [brand, model] = contents;
   const themeCss = await readFile(join(sourcePath, "theme.css"), "utf8").catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return "";
@@ -401,10 +269,7 @@ export async function loadTenantPackage(
   );
   const tenantPackage = validateTenantPackage({
     brand,
-    agents,
-    channels,
     model,
-    knowledge,
     themeCss,
   });
 
@@ -415,153 +280,42 @@ export async function loadTenantPackage(
   };
 }
 
-export async function synchronizeTenantPackage(
+/**
+ * Which package this deployment booted on, written down so the admin surface can say.
+ *
+ * All that is left of `synchronizeTenantPackage`. The loops it ran over `agents`, `agent_profiles`,
+ * `channels` and `channel_agents` had nothing to iterate — both lists have been empty for a while —
+ * and its one act with consequences, releasing Bots the package had stopped shipping, is done once
+ * and for all by migration 0024. This row is not that: it is the checksum `/api/admin/package`
+ * reports, and it must keep being written or that endpoint starts answering "no package" about a
+ * deployment that plainly has one.
+ */
+export async function recordTenantPackage(
   database: Database,
   tenantPackage: LoadedTenantPackage,
 ) {
-  return database.transaction(async (transaction) => {
-    const [deploymentPackage] = await transaction
-      .insert(deploymentPackages)
-      .values({
-        tenantId: tenantPackage.tenantId,
+  const [deploymentPackage] = await database
+    .insert(deploymentPackages)
+    .values({
+      tenantId: tenantPackage.tenantId,
+      sourcePath: tenantPackage.sourcePath,
+      checksum: tenantPackage.checksum,
+    })
+    .onConflictDoUpdate({
+      target: deploymentPackages.tenantId,
+      set: {
         sourcePath: tenantPackage.sourcePath,
         checksum: tenantPackage.checksum,
-      })
-      .onConflictDoUpdate({
-        target: deploymentPackages.tenantId,
-        set: {
-          sourcePath: tenantPackage.sourcePath,
-          checksum: tenantPackage.checksum,
-          loadedAt: new Date(),
-        },
-      })
-      .returning();
+        loadedAt: new Date(),
+      },
+    })
+    .returning();
 
-    if (!deploymentPackage) {
-      throw new Error("Tenant package could not be synchronized");
-    }
+  if (!deploymentPackage) {
+    throw new Error("Tenant package could not be recorded");
+  }
 
-    for (const agent of tenantPackage.agents) {
-      const updatedAt = new Date();
-      const [canonicalAgent] = await transaction
-        .insert(agentTable)
-        .values({
-          id: agent.id,
-          name: agent.name,
-          type: agent.type,
-          configuration: agent.configuration,
-          packageId: deploymentPackage.id,
-        })
-        .onConflictDoUpdate({
-          target: agentTable.id,
-          setWhere: eq(agentTable.packageId, deploymentPackage.id),
-          set: {
-            name: agent.name,
-            type: agent.type,
-            configuration: agent.configuration,
-            packageId: deploymentPackage.id,
-            updatedAt,
-          },
-        })
-        .returning({ id: agentTable.id });
-
-      if (!canonicalAgent) {
-        throw new Error(
-          `Tenant package agent "${agent.id}" collides with a user-created agent`,
-        );
-      }
-
-      const [profile] = await transaction
-        .insert(agentProfiles)
-        .values({
-          agentId: canonicalAgent.id,
-          ownerUserId: null,
-          title: agent.title,
-          roleDescription: agent.roleDescription,
-          avatarSeed: agent.avatarSeed ?? canonicalAgent.id,
-          visibility: "public",
-          deletedAt: null,
-          updatedAt,
-        })
-        .onConflictDoUpdate({
-          target: agentProfiles.agentId,
-          setWhere: isNull(agentProfiles.ownerUserId),
-          set: {
-            ownerUserId: null,
-            title: agent.title,
-            roleDescription: agent.roleDescription,
-            avatarSeed: agent.avatarSeed ?? canonicalAgent.id,
-            visibility: "public",
-            deletedAt: null,
-            updatedAt,
-          },
-        })
-        .returning({ agentId: agentProfiles.agentId });
-
-      if (!profile) {
-        throw new Error(
-          `Tenant package agent "${agent.id}" collides with a user-owned profile`,
-        );
-      }
-    }
-
-    /*
-     * A BOT THE PACKAGE NO LONGER SHIPS IS RELEASED, NOT LEFT STRANDED.
-     *
-     * `systemOwned` is derived from `packageId`, and the only thing it does is refuse edits and
-     * deletion. So an agent dropped from the package but left with its `packageId` becomes the worst
-     * of both: nobody can change it, nobody can remove it, and it goes on occupying one of the
-     * account's five seats forever. Clearing the id hands it back — an ordinary bot the person can
-     * rename, re-describe or delete — and keeps every conversation it has had.
-     *
-     * Its rows are otherwise untouched: this is a change of custody, not of content.
-     */
-    const shipped = tenantPackage.agents.map((agent) => agent.id);
-    await transaction
-      .update(agentTable)
-      .set({ packageId: null, updatedAt: new Date() })
-      .where(
-        and(
-          eq(agentTable.packageId, deploymentPackage.id),
-          shipped.length > 0 ? notInArray(agentTable.id, shipped) : sql`true`,
-        ),
-      );
-
-    for (const channel of tenantPackage.channels) {
-      await transaction
-        .insert(channelTable)
-        .values({
-          id: channel.id,
-          name: channel.name,
-          description: channel.description,
-          allowedGroups: channel.allowedGroups,
-          packageId: deploymentPackage.id,
-        })
-        .onConflictDoUpdate({
-          target: channelTable.id,
-          set: {
-            name: channel.name,
-            description: channel.description,
-            allowedGroups: channel.allowedGroups,
-            packageId: deploymentPackage.id,
-            updatedAt: new Date(),
-          },
-        });
-      await transaction
-        .delete(channelAgents)
-        .where(eq(channelAgents.channelId, channel.id));
-      if (channel.permittedAgents.length) {
-        await transaction.insert(channelAgents).values(
-          channel.permittedAgents.map((agentId) => ({
-            channelId: channel.id,
-            agentId,
-          })),
-        );
-      }
-    }
-
-    return deploymentPackage;
-  });
+  return deploymentPackage;
 }
 
 export function createPackageStatusReader(

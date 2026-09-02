@@ -18,9 +18,19 @@ import type { AppVariables, AuthenticatedActor } from "./guards";
  *     deployment believing it has authentication when it does not is the worst of the three states.
  *
  * The actor is an administrator so admin surfaces can be demonstrated too, and its id is fixed so
- * Intelligence threads and memory stay attached to the same person across restarts.
+ * threads and memory stay attached to the same person across restarts.
  */
 
+/**
+ * The fixture, and the one thing routes elsewhere ask about it: its address.
+ *
+ * Four route modules used to carry the email as a literal of their own, guarded by a test that
+ * walked the copies, on the stated grounds that `audit_events.actor_user_id` had a foreign key to
+ * `users` and a stale copy would silently lose the row. That key does not exist — the trail is
+ * append-only, so it never had one — and the copies were four chances to drift for a reason that
+ * was not true. They import this now. What the comparison still buys is attribution: a fixture is
+ * not a person, so its id does not become the actor of a row, and the payload names it either way.
+ */
 export const DEV_ACTOR: AuthenticatedActor = {
   id: "dev-local-user",
   email: "dev@laf.local",
