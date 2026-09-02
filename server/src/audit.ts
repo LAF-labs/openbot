@@ -74,6 +74,22 @@ export const auditEventTypes = [
   // is what makes a quiet downgrade a visible pause instead of an escalation.
   "mcp.tool_definition_changed",
   "mcp.tool_definition_approved",
+  /**
+   * The same tool call on somebody else's server, again, and again.
+   *
+   * `computer.action_repeated`'s twin, and it is here because the settle wave gave the MCP path the
+   * counter the browser had been using and then wrote nothing with it. So `repeat.count >= 5` could
+   * refuse a stuck Bot's fifth call to a vendor's tool while the trail held five ordinary
+   * `mcp.call_succeeded` rows and nothing anywhere saying they were the same call — the exact
+   * blindness `computer.action_repeated` was added to end, on the other half of the boundary.
+   *
+   * Its own type rather than a shared `action_repeated`: the payload names a server and a tool where
+   * the browser's names a page and an element, and the admin trail's filters are per type.
+   *
+   * Not a refusal. Nothing was stopped; a Bot did the same thing again, which is often a retry about
+   * to work. Written once per threshold crossed, never per attempt.
+   */
+  "mcp.call_repeated",
   // Every action a Bot takes on its computer, allowed or refused. Both, always: a trail that records
   // only what was permitted cannot answer whether the Bot tried.
   "computer.action_allowed",

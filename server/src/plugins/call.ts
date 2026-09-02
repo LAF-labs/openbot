@@ -393,7 +393,48 @@ export function createCallPath(
             tool: toolNameFor(input.ref),
             ref: input.ref,
           })
-        : { count: 1 };
+        : { count: 1, fingerprint: null, threshold: null };
+
+      if (repetition.threshold !== null && repetition.fingerprint) {
+        /*
+         * Ahead of the decision row, so the trail reads in the order the thing happened: this was
+         * the tenth identical call, and this is what the boundary did about it. The gateway files
+         * `computer.action_repeated` the same way round and for the same reason.
+         *
+         * Its failure is swallowed, which nothing else on this path does. The row is an observation
+         * and an observation may not refuse anything: a lost insert here would stop every third,
+         * tenth and twenty-fifth identical call before the policy had even been asked. Nothing is
+         * weakened, because the decision row goes to the same store a few lines below and a store
+         * that is genuinely down refuses the call there.
+         */
+        try {
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_repeated",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            payload: {
+              action: toolNameFor(input.ref),
+              bot: input.botId,
+              actor: input.actorId,
+              server: serverId,
+              tool: toolName,
+              effect,
+              fingerprint: repetition.fingerprint,
+              count: repetition.count,
+            },
+          });
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              type: "mcp-repeat-row-lost",
+              bot: input.botId,
+              fingerprint: repetition.fingerprint,
+              count: repetition.count,
+              error: String(error),
+            }),
+          );
+        }
+      }
 
       const policyContext: PolicyContext = {
         tool: { name: toolNameFor(input.ref) },

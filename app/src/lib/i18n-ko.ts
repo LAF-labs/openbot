@@ -539,6 +539,7 @@ export const ko: Record<string, string> = {
     "봇의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
   "The Bot asked for a secret": "봇이 비밀값을 요청함",
   "The Bot asked for help": "봇이 도움을 요청함",
+  "The Bot called the same tool again": "봇이 같은 도구를 다시 호출함",
   "The Bot declined": "봇이 거절함",
   "The Bot repeated itself": "봇이 같은 일을 반복함",
   "The Bot stopped responding": "봇이 응답을 멈춤",
