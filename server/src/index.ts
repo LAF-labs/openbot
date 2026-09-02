@@ -24,6 +24,7 @@ import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createDatabaseApprovalRegistry } from "./computer/approvals";
 import {
+  createAutoReviewProbe,
   createModelAutoReviewer,
   type ReviewSubject,
 } from "./computer/auto-review";
@@ -326,7 +327,8 @@ const recordModelUsage =
     }).catch(() => undefined);
   };
 
-const reviewModel = createModelAutoReviewer({
+/** Everything the judge and the probe both need, so the probe measures the real call. */
+const reviewCall = {
   baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
   model: tenantPackage.model.reviewModel,
   apiKey: () =>
@@ -337,8 +339,28 @@ const reviewModel = createModelAutoReviewer({
       keyId: tenantPackage.model.credentialSecretRef,
       environment: process.env,
     }),
+  // The deployment's own assertion that its model reasons, which is what decides whether an effort
+  // is sent at all. See `model.yaml supports_effort`, and the note in auto-review.ts.
+  supportsEffort: tenantPackage.model.supportsEffort,
+};
+
+const reviewModel = createModelAutoReviewer({
+  ...reviewCall,
   onUsage: recordModelUsage("auto-review"),
 });
+
+/**
+ * Whether this deployment can auto-review at all, measured rather than assumed.
+ *
+ * Started here so the answer is usually already in hand by the time a browser asks, and not awaited:
+ * a probe that could delay the port opening would make a model having a bad minute into a deployment
+ * that does not boot. Its cost is one trivial completion per process. See `createAutoReviewProbe`.
+ */
+const autoReviewCapable = createAutoReviewProbe({
+  ...reviewCall,
+  onUsage: recordModelUsage("auto-review"),
+});
+void autoReviewCapable().catch(() => false);
 
 /**
  * A finished recording, written up as a procedure.
@@ -732,6 +754,9 @@ const app = createApp(
         },
       }
     : undefined,
+  // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's
+  // own review model; see the probe above.
+  autoReviewCapable,
 );
 
 /**
