@@ -14,10 +14,13 @@ export const ko: Record<string, string> = {
   "A person allowed it": "사람이 허용함",
   "A person connected their own account": "사람이 자기 계정을 연결함",
   "A person declined it": "사람이 거절함",
+  "A person declined that": "사람이 거절함",
+  "A person has the computer": "사람이 컴퓨터를 잡고 있음",
   "A person pressed stop": "사람이 정지를 누름",
   "A person supplied a secret": "사람이 비밀값을 입력함",
   "A person took the wheel": "사람이 제어를 가져감",
   "A reason, if you want to give one": "이유 (선택)",
+  "A secret was not written down.": "비밀값이라 적지 않았습니다.",
   "A routine is work this Bot repeats on a schedule.":
     "루틴은 이 봇이 일정에 따라 반복하는 작업이에요.",
   "A routine ran": "루틴이 실행됨",
@@ -58,16 +61,31 @@ export const ko: Record<string, string> = {
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
+  "Give the routine a name.": "루틴 이름을 지어 주세요.",
   "Model usage recorded": "모델 사용량이 기록됨",
+  "Nobody answered in time": "아무도 답하지 않음",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
   Refused: "거부됨",
+  "Pick a Bot first.": "봇을 먼저 고르세요.",
+  "Say what the routine should do each time.":
+    "루틴이 매번 무엇을 할지 적어 주세요.",
+  "Say when it should run.": "언제 돌릴지 정해 주세요.",
+  Stopped: "중단됨",
   "The Bot could not reach its model. Ask again.":
     "봇이 모델에 닿지 못했습니다. 다시 물어봐 주세요.",
   "The Bot stopped without saying why.": "봇이 이유를 말하지 않고 멈췄습니다.",
+  "The Bot thought about it and answered with nothing. Ask again.":
+    "봇이 생각만 하고 아무 말도 하지 않았습니다. 다시 물어보세요.",
   "The Bot was asked": "봇이 요청을 받음",
+  "The Bot's computer could not be reached": "봇의 컴퓨터에 닿지 못함",
   "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.":
     "봇의 모델이 요청을 받지 않았습니다. 계속 반복되면 배포 점검이 필요합니다.",
+  "The answer was cut off before it finished. Ask the Bot to carry on.":
+    "답이 잘렸습니다. 이어서 말해 달라고 해 보세요.",
+  "The model took too long and the turn was ended. Ask again, or ask for less at once.":
+    "모델이 너무 오래 걸려 이번 차례를 끝냈습니다. 다시 물어보거나, 한 번에 조금만 시켜 보세요.",
+  "The request was cancelled": "요청이 취소됨",
   "The whole connector was removed": "커넥터 자체가 제거됨",
   "They disconnected it themselves": "본인이 직접 연결을 해제함",
   "They were removed from this deployment": "이 배포에서 제외된 사람입니다",
@@ -79,6 +97,7 @@ export const ko: Record<string, string> = {
   "Saved a routine": "루틴을 저장했습니다",
   "Could not save a routine": "루틴을 저장하지 못했습니다",
   "Changing a routine": "루틴을 바꾸는 중",
+  "Changed a routine": "루틴을 바꿨습니다",
   "Could not change a routine": "루틴을 바꾸지 못했습니다",
   "Deleting a routine": "루틴을 지우는 중",
   "Deleted a routine": "루틴을 지웠습니다",
@@ -562,7 +581,6 @@ export const ko: Record<string, string> = {
   "This account already holds as many routines as it can. Delete one to make room.":
     "이 계정이 만들 수 있는 루틴을 모두 채웠습니다. 하나를 지우고 다시 만들어 주세요.",
   "That routine is no longer there.": "그 루틴은 이제 없습니다.",
-  "Pick a Bot and a schedule first.": "먼저 봇과 실행 시각을 골라 주세요.",
   "No routines yet. Give a Bot something to do every morning.":
     "루틴이 아직 없습니다. 봇에게 매일 아침 할 일을 하나 맡겨보세요.",
   "Pick a face": "얼굴 고르기",

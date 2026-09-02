@@ -8,6 +8,7 @@ import {
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
+import { botPromptMessage } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import { agentMemories, agentProfiles, agents, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -71,17 +72,24 @@ async function createCoworker(
 }
 
 /**
- * The standing role this Bot would be sent, found by id.
+ * The composed system message this Bot would be sent, for this person.
  *
- * By id rather than by position: a deployment's package ships its own Bots and they load first, so
- * taking the head of the list reads a built-in agent — which carries `standing`, not
- * `standingMessage`, and every assertion against it passes vacuously against "".
+ * Found by id rather than by position: a person's roster holds more than one Bot and taking the
+ * head of the list reads whichever loaded first, against which every assertion passes vacuously.
+ *
+ * Built here rather than read off the registration, because the prompt is composed per RUN now —
+ * one of the things it says is what time it is — and what a person's memories have to reach is the
+ * message the endpoint actually receives.
  */
 async function standingFor(owner: AgentActor, agentId: string) {
   const loaded = await loadAgents(owner);
   const agent = loaded.find((candidate) => candidate.id === agentId);
-  return agent && "standingMessage" in agent
-    ? agent.standingMessage.content
+  return agent && "profile" in agent
+    ? botPromptMessage(agent.profile, {
+        mode: "chat",
+        now: new Date(),
+        timeZone: "Asia/Seoul",
+      }).content
     : "";
 }
 
@@ -103,7 +111,7 @@ describe("what a Bot remembers", () => {
      * Marked as memory rather than merged into the job. A Bot has to be able to tell what somebody
      * decided from what it worked out, because only the second kind can be wrong.
      */
-    expect(standing).toContain("not as instructions");
+    expect(standing).toContain("지시가 아니라 네 기억으로");
   });
 
   /**
@@ -128,7 +136,13 @@ describe("what a Bot remembers", () => {
     const loadedForOther = await loadAgents(other);
     const standing = loadedForOther
       .map((agent) =>
-        "standingMessage" in agent ? agent.standingMessage.content : "",
+        "profile" in agent
+          ? botPromptMessage(agent.profile, {
+              mode: "chat",
+              now: new Date(),
+              timeZone: "Asia/Seoul",
+            }).content
+          : "",
       )
       .join("\n");
 
@@ -188,6 +202,6 @@ describe("what a Bot remembers", () => {
     const bot = await createCoworker(owner);
 
     const standing = await standingFor(owner, bot.id);
-    expect(standing).not.toContain("What you have learned");
+    expect(standing).not.toContain("네가 알아낸 것들");
   });
 });

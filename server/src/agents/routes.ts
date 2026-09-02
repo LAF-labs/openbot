@@ -1,13 +1,14 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AuditStore } from "../audit";
-import { recordAuditEvent } from "../audit";
-import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { testAgentConnection } from "./connection-test";
 import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
-import { type AgentMemoryStore, MAX_MEMORY_LENGTH } from "./memory-store";
+import {
+  type AgentMemoryStore,
+  looksLikeASecret,
+  MAX_MEMORY_LENGTH,
+} from "./memory-store";
 import { canManageAgent } from "./profile-policy";
 import {
   AgentNotFoundError,
@@ -67,7 +68,7 @@ export function parseAgentInput(
    * OPTIONAL, BOTH OF THEM. A bot starts with nothing set and can become anything; forcing a job
    * description out of somebody before they have met the bot is the shape we just removed from the
    * deployment package. A bot with no description opens by asking what it is for
-   * (`standingRoleMessage`), which is the honest version of an empty field.
+   * (see `composePrompt`), which is the honest version of an empty field.
    */
   const title = optionalBoundedText(
     input.title,
@@ -196,8 +197,6 @@ export function createAgentRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   /** Whether this deployment may talk to its own network. True on a laptop, false when hosted. */
   allowPrivateHosts = false,
-  /** Where a Bot's own refusal is recorded. Absent in tests that do not care about the trail. */
-  auditStore?: AuditStore,
   /** One Bot asking another. Absent when the deployment has no runtime to run the coworker on. */
   coworkerCall?: CoworkerCall,
   /**
@@ -223,53 +222,18 @@ export function createAgentRoutes(
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
-  /**
-   * The Bot declined something, and says so.
+  /*
+   * `POST /:agentId/declined` used to be here, and is gone with `report_refusal`.
    *
-   * The audit trail records what a Bot did, decided by the gateway on the way to an action. A model
-   * that refuses before calling any tool takes no action, so this records the attempted request.
+   * It wrote a `bot.declined` audit row saying a Bot had turned something down. Nothing was
+   * prevented by it and nothing read it but the trail; it existed because a tool description told
+   * the model to call it, which cost about 150 tokens of schema on every single turn and only ever
+   * recorded the refusals a model chose to announce. A Bot that declines and says nothing wrote
+   * nothing, so the list was never the answer to "what is this Bot being asked to do" either.
    *
-   * Self-reported, and said so in the row. The Bot calls this because its tool description tells it
-   * to, so a model that declines without a tool call still writes nothing. This is evidence, not enforcement:
-   * nothing is prevented by it, and a reader must not mistake an empty list for an untroubled Bot.
+   * The `bot.declined` event type and its label stay: rows written before this exist in deployed
+   * trails, and a row nothing can name reads as a bug.
    */
-  routes.post("/:agentId/declined", requireUser, async (context) => {
-    const agentId = context.req.param("agentId");
-    const body = (await context.req.json().catch(() => null)) as {
-      reason?: unknown;
-      request?: unknown;
-    } | null;
-
-    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-    if (!reason) {
-      return context.json({ error: "A reason is required." }, 400);
-    }
-
-    if (auditStore) {
-      const actor = context.var.actor;
-      await recordAuditEvent(auditStore, {
-        eventType: "bot.declined",
-        targetType: "agent",
-        targetId: agentId,
-        ...(actor?.id && actor.email !== DEV_ACTOR.email
-          ? { actorUserId: actor.id }
-          : {}),
-        payload: {
-          bot: agentId,
-          actor: actor?.email ?? "unknown",
-          reason: reason.slice(0, 500),
-          // What it was asked, in the Bot's own words and only if it offered them. Truncated for the
-          // same reason every other payload here is: a trail is not a transcript.
-          ...(typeof body?.request === "string" && body.request.trim()
-            ? { request: body.request.trim().slice(0, 500) }
-            : {}),
-          reportedBy: "the Bot itself",
-        },
-      });
-    }
-
-    return context.json({ recorded: true });
-  });
 
   routes.get("/", requireUser, async (context) => {
     try {
@@ -437,9 +401,26 @@ export function createAgentRoutes(
       string,
       unknown
     > | null;
+    /*
+     * FACT CODES, because the caller is a Bot's own tool.
+     *
+     * The `update_profile` handler used to invent its own English sentences for these — server
+     * prose written in the browser, which no Korean reader and no other caller of this endpoint
+     * could use. The sentence stays for operators; the code is what the surface and the Bot both
+     * read.
+     */
     if (!patch || typeof patch !== "object") {
       return context.json(
-        { error: "Profile input must be a JSON object." },
+        {
+          error: "Profile input must be a JSON object.",
+          code: "laf:profile_invalid",
+        },
+        400,
+      );
+    }
+    if (Object.keys(patch).length === 0) {
+      return context.json(
+        { error: "No fields were given.", code: "laf:profile_no_fields" },
         400,
       );
     }
@@ -449,7 +430,12 @@ export function createAgentRoutes(
         context.var.actor,
         context.req.param("agentId"),
       );
-      if (!current) return context.json({ error: "Agent not found." }, 404);
+      if (!current) {
+        return context.json(
+          { error: "Agent not found.", code: "laf:profile_not_found" },
+          404,
+        );
+      }
 
       // Merged before validation, so the same rules that guard the edit form guard this too.
       const merged = parseAgentInput(
@@ -466,7 +452,7 @@ export function createAgentRoutes(
           ...(patch.effort === undefined ? {} : { effort: patch.effort }),
           /*
            * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
-           * feature. This endpoint is what a Bot's own `update_state` tool calls. A Bot that could
+           * feature. This endpoint is what a Bot's own `update_profile` tool calls. A Bot that could
            * write the instruction deciding whether it gets asked about would have no boundary at
            * all, and the shortest path from a helpful Bot to that is a page telling it to be
            * helpful. It is edited on the profile screen by a person, through PATCH, and nowhere
@@ -476,7 +462,12 @@ export function createAgentRoutes(
         },
         allowPrivateHosts,
       );
-      if (!merged.ok) return context.json({ error: merged.error }, 400);
+      if (!merged.ok) {
+        return context.json(
+          { error: merged.error, code: "laf:profile_invalid" },
+          400,
+        );
+      }
 
       const agent = await store.update(
         context.var.actor,
@@ -524,6 +515,11 @@ export function createAgentRoutes(
    * profile endpoint: a Bot that could write the rule deciding whether it gets asked about has no
    * boundary at all. This writes prose the Bot reads back to itself; nothing here is consulted by
    * the gateway, and "remember that payments under fifty are fine to send" changes no decision.
+   *
+   * NOR IS A SECRET. A memory is reread at the top of every single turn, so a password written
+   * here is read by every later conversation, every room and every routine — and it is a row in a
+   * table a person can list. The tool's description says not to; a description is not a boundary,
+   * and this is (see `looksLikeASecret`).
    */
   routes.post("/:agentId/memories", requireUser, async (context) => {
     if (!memoryStore) return context.json({ error: "Not found." }, 404);
@@ -531,6 +527,20 @@ export function createAgentRoutes(
       content?: unknown;
     } | null;
     const content = typeof body?.content === "string" ? body.content : "";
+    if (looksLikeASecret(content)) {
+      /*
+       * The refused text is NOT echoed back, not in the error and not in the log. Refusing to
+       * store a password and then printing it in a 400 body would put it in the browser's network
+       * panel, the server's access log and the transcript — three more places than it started in.
+       */
+      return context.json(
+        {
+          error: "That looks like a secret.",
+          code: "laf:memory_looks_like_a_secret",
+        },
+        400,
+      );
+    }
     try {
       await store.get(context.var.actor, context.req.param("agentId"));
       const memory = await memoryStore.remember(
@@ -543,6 +553,10 @@ export function createAgentRoutes(
         : context.json(
             {
               error: `A memory must be between 1 and ${MAX_MEMORY_LENGTH} characters.`,
+              code:
+                content.trim().length > MAX_MEMORY_LENGTH
+                  ? "laf:memory_too_long"
+                  : "laf:memory_empty",
             },
             400,
           );

@@ -144,8 +144,8 @@ a standing allowance, an auto-review instruction — is governed by one switch
 deployment's model cannot do the thing, do not draw the control.
 
 Never let a Bot write the rule that decides whether it gets asked about.
-`update_state` reaches the profile and the routines and must not reach
-`autoReview`.
+`update_profile` reaches the profile and `manage_routine` the routines; neither
+may reach `autoReview`.
 
 ### Never record what somebody typed
 

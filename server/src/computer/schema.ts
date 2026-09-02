@@ -10,60 +10,17 @@
  * repurposed: this file only ever grows.
  */
 
-/**
- * Every tool the computer exposes.
+/*
+ * THE TOOL NAME LISTS THAT USED TO BE HERE ARE GONE.
  *
- * Ordered read-only first, then acting. `COMPUTER_ACTING_TOOLS` below is what the gateway uses to
- * decide which calls need a policy decision, so add acting tools to both lists.
+ * `COMPUTER_TOOLS`, `COMPUTER_ACTING_TOOLS` and `isActingTool` had no importers at all — the
+ * gateway hardcodes the name in each method, which is the thing that actually decides — so they
+ * were a contract nobody was held to, and it had already drifted: `computer_screenshot` was listed
+ * as a tool and registered nowhere in the product. What a Bot may call now has exactly one source,
+ * `shared/tools/computer.ts`, which the surface, the unattended loop and the eval pack all read.
+ *
+ * The wire shapes below are still the contract between the two services and stay here.
  */
-export const COMPUTER_TOOLS = [
-  "computer_navigate",
-  "computer_screenshot",
-  "computer_read",
-  "computer_snapshot",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_read_file",
-  "computer_write_file",
-  "computer_list_files",
-] as const;
-
-/**
- * The tools that change something, or reach something that needs deciding on.
- *
- * These are the calls the gateway must decide on. Reading a PAGE a Bot has already been allowed to
- * open is not a new decision; clicking "Confirm payment" on it is.
- *
- * Both file tools are here, including the read. That differs from `computer_read`, which
- * is ungoverned, and it is deliberate: a page was already permitted when it was opened, whereas the
- * workspace accumulates whatever a Bot has put in it across every task it has ever run, so "which
- * files may this Bot read" is a question a deployment genuinely needs to be able to answer. The build
- * doc says both file tools go through the gateway, and this is why that is right.
- */
-export const COMPUTER_ACTING_TOOLS = [
-  // Navigation is governed too, and not only guarded. The client's target guard refuses a forbidden
-  // address on its own, which stops the request and writes nothing. That leaves the trail silent
-  // about an attempt to reach the cloud metadata endpoint, the single most security-relevant thing a
-  // Bot can try, while ticking a radio button is recorded. Governing it puts both in the trail.
-  "computer_navigate",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_read_file",
-  "computer_write_file",
-  "computer_list_files",
-] as const;
-
-export type ComputerActingToolName = (typeof COMPUTER_ACTING_TOOLS)[number];
-
-export function isActingTool(name: string): name is ComputerActingToolName {
-  return (COMPUTER_ACTING_TOOLS as readonly string[]).includes(name);
-}
-
-export type ComputerToolName = (typeof COMPUTER_TOOLS)[number];
 
 export type NavigateInput = { url: string };
 export type NavigateResult = {

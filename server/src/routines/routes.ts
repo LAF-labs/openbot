@@ -46,9 +46,23 @@ export function createRoutineRoutes(
     const body = (await context.req.json().catch(() => null)) as
       | (Partial<RoutineInput> & { schedule?: RoutineInput["schedule"] })
       | null;
-    if (!body?.agentId || !body.schedule) {
+    if (!body?.agentId) {
       return context.json(
-        { error: "Name a Bot and a schedule.", code: "laf:routine_incomplete" },
+        { error: "Name a Bot.", code: "laf:routine_incomplete" },
+        400,
+      );
+    }
+    /*
+     * Its own code, told apart from "name a Bot".
+     *
+     * A Bot creating a routine has already named itself, so the only half it can get wrong is the
+     * schedule — and that is exactly the mistake worth answering precisely, because a duty with no
+     * time attached is not a routine at all, it is the Bot's job. The code says so and the Korean
+     * for it (`shared/prompt/tool-results.ko.ts`) points the Bot at `update_profile`.
+     */
+    if (!body.schedule) {
+      return context.json(
+        { error: "Name a schedule.", code: "laf:routine_needs_schedule" },
         400,
       );
     }
