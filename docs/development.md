@@ -150,20 +150,50 @@ bun run test:smoke
 ```
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
-suite cannot reach: server to computer, the gateway deciding before the browser acts, and the audit
-row landing. What it needs is a whole deployment — Docker, a model key, and a computer that answers
-— plus a way in: it sends no credentials and reads `/api/admin/audit-events`, so the deployment has
-to be admitting it, which locally means `LAF_DEV_NO_AUTH=true`.
+suite cannot reach. In order:
 
-| Variable        | Default                 | Meaning                                                                                    |
-| --------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
-| `LAF_SMOKE`     | unset                   | `1` runs it. `bun run test:smoke` sets it; without it every test skips, so `bun run test` stays honest on a machine with nothing running. |
-| `LAF_API_URL`   | `http://localhost:3001` | The deployment to drive.                                                                   |
-| `LAF_SMOKE_BOT` | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has five seats and a smoke run per deploy would eat them all. |
+1. The deployment answers for itself, has Bots registered with the runtime, and mints thread ids.
+2. It makes a Bot of its own, serves a Korean shop page from the test process with `Bun.serve`, and
+   sends the Bot's browser to it. The page title carries a nonce minted for the run, so "the
+   computer really loaded it" is checked rather than assumed.
+3. It presses 결제하기 on that page. **Nothing writes a policy first**: what stops the click is the
+   `ask` list a fresh deployment ships, so this is a test of the boundary a person actually gets.
+   The reply is 409 with an approval id, the question is waiting on `/api/approvals/:bot`, somebody
+   answers yes there, the same click is presented with the answer, and the page changes.
+4. It asks again and says no, and the next attempt is refused outright with `laf:declined_recently`
+   rather than asked again.
+5. With a model key, it creates a routine, runs it now, and checks the Bot's answer carries the
+   nonce — which it can only have got by opening the page through its own computer.
+6. It deletes the Bot it made.
 
-It used to drive `risk-analyst`, a Bot the tenant package shipped. The package ships none — a Bot
-starts with nothing set and belongs to the person who made it — so making its own is what keeps the
-test about the joins it is checking.
+What it needs is a whole deployment — Docker, a model key, and a computer that answers — plus a way
+in: it sends no credentials and reads `/api/admin/audit-events`, so the deployment has to be
+admitting it, which locally means `LAF_DEV_NO_AUTH=true`.
+
+| Variable                  | Default                 | Meaning                                                                                    |
+| ------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `LAF_SMOKE`               | unset                   | `1` runs it. `bun run test:smoke` sets it; without it every test skips, so `bun run test` stays honest on a machine with nothing running. |
+| `LAF_API_URL`             | `http://localhost:3001` | The deployment to drive.                                                                   |
+| `LAF_SMOKE_BOT`           | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has five seats and a smoke run per deploy would eat them all. |
+| `LAF_SMOKE_MODEL`         | unset                   | `0` skips the routine turn, for a deployment with no model key. Everything else still runs. |
+| `LAF_SMOKE_FIXTURE_HOST`  | `host.docker.internal`  | How the Bot's browser reaches the machine serving the fixture page. Docker Desktop provides that name; on Linux there is none, so pass the gateway of the computer's own network (`docker inspect <container> --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'`) and start the server with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`, because a gateway address is private and the navigation guard refuses those by default — as it should on anything hosted. |
+
+It used to drive `risk-analyst`, a Bot the tenant package shipped, and `example.com` for a page.
+The package ships no Bot — a Bot starts with nothing set and belongs to the person who made it —
+and somebody else's website gave the journey nothing worth clicking. Its own Bot and its own page
+are what keep the test about the joins it is checking.
+
+### Nightly
+
+`.github/workflows/smoke.yml` runs the same journey against `docker compose`, at 02:40 UTC and on
+`workflow_dispatch`. It builds `agent-computer` rather than pulling `:stable`, so a nightly reports
+on the branch it ran from rather than on the last release, and it runs the API on the runner the
+way `scripts/start.sh` does so the fixture page is reachable from both sides.
+
+**It needs an `OPENAI_API_KEY` secret and skips cleanly without one**, saying so in a notice rather
+than failing: a red cross a fork cannot act on teaches people to ignore the job. `OPENAI_BASE_URL`
+and `BOT_MODEL` are read from repository variables when set, so the nightly can be pointed at the
+same provider a deployment uses.
 
 ## Contribution checklist
 
