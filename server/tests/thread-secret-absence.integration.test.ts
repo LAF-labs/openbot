@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { lafThreadRuns, lafThreadSnapshots } from "../src/db/schema";
+import { lafThreadMessages, lafThreadRuns } from "../src/db/schema";
 import { LafPostgresRunner } from "../src/runner/laf-runner";
 import { TEST_POOL } from "./support/database";
 
@@ -13,7 +13,7 @@ import { TEST_POOL } from "./support/database";
  * The audit trail and the demonstration recorder both refuse to write a value, and both are tested
  * for it. The transcript is the third place a value could end up and the only one that had no such
  * test (§3.5): a run hands back its whole history as its input, that history is written to
- * `laf_thread_snapshots` verbatim, and every tool call a Bot made — with its arguments — is in it.
+ * `laf_thread_messages` verbatim, and every tool call a Bot made — with its arguments — is in it.
  *
  * `computer_request_secret` exists precisely so the model never holds the value: it names a field
  * and a label, a person types into that field themselves, and the value travels on a route the
@@ -42,8 +42,8 @@ afterAll(async () => {
       .delete(lafThreadRuns)
       .where(eq(lafThreadRuns.threadId, threadId));
     await database
-      .delete(lafThreadSnapshots)
-      .where(eq(lafThreadSnapshots.threadId, threadId));
+      .delete(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, threadId));
   }
   await database.$client.close();
 });
@@ -115,11 +115,10 @@ async function runTurn(
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const [row] = await database
-      .select({ messages: lafThreadSnapshots.messages })
-      .from(lafThreadSnapshots)
-      .where(eq(lafThreadSnapshots.threadId, threadId));
-    const stored = (row?.messages ?? []) as Message[];
-    if (stored.length > messages.length) return;
+      .select({ stored: count() })
+      .from(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, threadId));
+    if ((row?.stored ?? 0) > messages.length) return;
     await Bun.sleep(25);
   }
   throw new Error(`The turn on ${threadId} was never written to the store.`);
