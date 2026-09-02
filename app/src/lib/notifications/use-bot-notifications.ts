@@ -12,13 +12,16 @@ import {
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import {
+  canRaiseNotice,
   decideNotice,
+  type NoticeDestination,
   type NoticeRequest,
   notificationSupport,
   setUnreadBadge,
   showNotice,
   throttleKey,
 } from "@/lib/notifications/bot-notifications";
+import { inShell } from "@/lib/notifications/shell";
 
 /**
  * The room on screen, from the path.
@@ -73,10 +76,24 @@ export function useBotNotifications(): void {
   const raise = useRef(
     (
       request: NoticeRequest,
-      notice: { title: string; body: string; tag: string },
+      notice: {
+        title: string;
+        body: string;
+        tag: string;
+        destination: NoticeDestination;
+      },
       onClick: () => void,
     ) => {
-      if (notificationSupport() !== "granted") return;
+      // Read each time rather than once on mount: permission can be granted while the app is open.
+      // `canRaiseNotice` is where the webview stops being asked about the shell.
+      if (
+        !canRaiseNotice({
+          inShell: inShell(),
+          browser: notificationSupport(),
+        })
+      ) {
+        return;
+      }
       const key = throttleKey(request);
       if (decideNotice(request, lastNotified.current.get(key)) !== "deliver") {
         return;
@@ -111,6 +128,7 @@ export function useBotNotifications(): void {
           title: bot?.name ?? activity.name,
           body: activity.lastMessage ?? "",
           tag: `laf-channel:${activity.channelId}`,
+          destination: { kind: "channel", id: activity.channelId },
         },
         () => {
           void navigateRef.current({
@@ -159,8 +177,20 @@ export function useBotNotifications(): void {
             title: t("{name} needs you", { name: bot?.name ?? question.botId }),
             body: question.question,
             tag: `laf-approval:${question.approvalId}`,
+            destination: { kind: "approve", id: question.approvalId },
           },
-          () => {},
+          /*
+           * The full-page view of this one question, which exists so that a notice has somewhere to
+           * land. It used to be an empty function: a notification about the one thing in this
+           * product that is blocked on a person did nothing whatsoever when they clicked it, and
+           * the card it was about was a row somewhere in a transcript they then had to find.
+           */
+          () => {
+            void navigateRef.current({
+              params: { approvalId: question.approvalId },
+              to: "/approve/$approvalId",
+            });
+          },
         );
       }
     });
