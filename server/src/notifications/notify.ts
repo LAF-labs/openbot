@@ -4,8 +4,7 @@
  * The field's rule, adopted whole: a Bot blocked on you is worth a buzz, a Bot
  * that finished is worth one if you asked, and everything else a Bot does
  * while it works is not. This file carries the first clause — the moment a
- * boundary opens a question, one frame goes out — and the digest carries the
- * rest.
+ * boundary opens a question, one frame goes out.
  *
  * Delivery is a separate concern. The frame is a webhook today and the
  * AlimTalk gateway once that channel clears review; a deployment with neither
@@ -13,7 +12,6 @@
  * waits on the approvals surface.
  */
 import type { ApprovalRegistry } from "../computer/approvals";
-import { lockScreenLine } from "./digest";
 
 const SEND_TIMEOUT_MS = 10_000;
 
@@ -21,6 +19,14 @@ export type NotifyOptions = {
   /** POSTed `{kind, headline, botId, approvalId, question}` as JSON. */
   webhookUrl?: string;
 };
+
+/** One line, short enough for a lock screen: newlines and fences flattened. */
+function lockScreenLine(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 /**
  * The registry, with the buzz attached to `request`.

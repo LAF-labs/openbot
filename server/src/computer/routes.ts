@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import {
@@ -90,7 +91,7 @@ export function createComputerRoutes(
           context.req.param("botId") ?? "default",
           {
             id: context.var.actor.id,
-            ...(context.var.actor.email === DEV_ACTOR_EMAIL
+            ...(context.var.actor.email === DEV_ACTOR.email
               ? {}
               : { userId: context.var.actor.id }),
           },
@@ -576,7 +577,7 @@ async function act(
         // Only a real users row may go in the audit table's foreign key column. The local development
         // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
         // it was is recorded in the payload regardless. See gateway.ts.
-        ...(record.email === DEV_ACTOR_EMAIL ? {} : { userId: record.id }),
+        ...(record.email === DEV_ACTOR.email ? {} : { userId: record.id }),
       },
       body,
       context.req.raw.signal,
@@ -608,14 +609,6 @@ async function act(
     return context.json({ error: describe(error) }, statusFor(error));
   }
 }
-
-/**
- * The local actor's address, matched to decide whether the id is a real users row.
- *
- * Compared against rather than imported from `auth/dev-actor` because the computer must not depend on the
- * authentication module's internals; this is the one fact about it that matters here.
- */
-const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 function isBadRequest(value: unknown): value is BadRequest {
   return (

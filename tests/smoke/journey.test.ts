@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 /**
  * One journey through a running deployment, over HTTP.
@@ -16,14 +16,24 @@ import { beforeAll, describe, expect, test } from "bun:test";
  *
  * `LAF_API_URL` points it at a deployment on other ports. Without `LAF_SMOKE` the file is
  * skipped, so `bun run test` stays honest on a machine with nothing running.
+ *
+ * IT MAKES ITS OWN BOT AND TAKES IT AWAY AGAIN. It used to drive `risk-analyst`, a Bot the tenant
+ * package shipped; the package ships none now — a Bot starts with nothing set and belongs to the
+ * person who made it — so a smoke test that assumes one is a smoke test that fails on every
+ * deployment for a reason that has nothing to do with the joins it is checking. `LAF_SMOKE_BOT`
+ * still names an existing Bot for anybody who would rather it used theirs.
  */
 
 const asked = process.env.LAF_SMOKE === "1";
 const API = process.env.LAF_API_URL ?? "http://localhost:3001";
-const BOT = process.env.LAF_SMOKE_BOT ?? "risk-analyst";
+const suppliedBot = process.env.LAF_SMOKE_BOT;
 
 /** Long enough for a computer to be created and Chromium to answer on a cold deployment. */
 const COMPUTER_TIMEOUT_MS = 180_000;
+
+/** The Bot this run acts as: the supplied one, or the one made in `beforeAll`. */
+let BOT = suppliedBot ?? "";
+let createdBotId: string | null = null;
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API}${path}`, {
@@ -52,25 +62,39 @@ beforeAll(async () => {
       `No deployment is answering at ${API}. Start one with \`bash scripts/start.sh\`, or set LAF_API_URL.`,
     );
   }
+  if (BOT) return;
+
+  const { agent } = await json<{ agent: { id: string } }>("/api/agents", {
+    method: "POST",
+    body: JSON.stringify({
+      name: `Smoke ${Date.now()}`,
+      title: "Smoke test",
+      roleDescription: "Made by tests/smoke/journey.test.ts. Safe to delete.",
+      visibility: "private",
+    }),
+  });
+  BOT = agent.id;
+  createdBotId = agent.id;
+});
+
+afterAll(async () => {
+  // Its own seat back. An account has five, and a smoke run per deploy would eat them all.
+  if (!createdBotId) return;
+  await api(`/api/agents/${createdBotId}`, { method: "DELETE" }).catch(
+    () => null,
+  );
 });
 
 describe.skipIf(!asked)("a deployment that is up", () => {
-  test("reports the runtime it is actually running", async () => {
-    const capabilities = await json<{ mode: string; durableHistory: boolean }>(
-      "/api/capabilities",
-    );
-    expect(capabilities.mode).toBe("intelligence");
-    expect(capabilities.durableHistory).toBe(true);
+  test("answers for itself before anything else is asked of it", async () => {
+    const capabilities = await json<{ status: string }>("/api/capabilities");
+    expect(capabilities.status).toBe("ok");
   });
 
-  test("holds a licence the runtime accepts, and has Bots registered", async () => {
-    // A licence the runtime refuses leaves the product running and quietly degraded, which is worth
-    // failing a smoke test over.
-    const info = await json<{
-      licenseStatus: string;
-      agents: Record<string, unknown>;
-    }>("/api/copilotkit/info");
-    expect(info.licenseStatus).toBe("valid");
+  test("has Bots registered with the runtime", async () => {
+    const info = await json<{ agents: Record<string, unknown> }>(
+      "/api/copilotkit/info",
+    );
     expect(Object.keys(info.agents).length).toBeGreaterThan(0);
   });
 

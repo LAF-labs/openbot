@@ -38,7 +38,6 @@ import { createDatabaseRepeatDetector } from "./computer/repeat";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
-import { createConnectorAdminService } from "./connectors";
 import {
   type IdentifyActor,
   type IdentifyUser,
@@ -52,6 +51,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
+import { withApprovalNotifications } from "./notifications/notify";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
@@ -71,11 +71,8 @@ import { createWorkingReader } from "./runner/working";
 import {
   createPackageStatusReader,
   loadTenantPackage,
-  synchronizeTenantPackage,
+  recordTenantPackage,
 } from "./tenant-package";
-import { createDigestService } from "./watch/digest-service";
-import { withApprovalNotifications } from "./watch/notify";
-import { createWatchService } from "./watch/poller";
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -108,7 +105,7 @@ async function resolveRequestActor(request: Request): Promise<{
   };
 }
 
-/** The Intelligence projection of {@link resolveRequestActor}: threads are scoped to this person. */
+/** The thread projection of {@link resolveRequestActor}: threads are scoped to this person. */
 const identifyUser: IdentifyUser = async (request) => {
   const { id, name } = await resolveRequestActor(request);
   return { id, name };
@@ -145,19 +142,9 @@ const database = createDatabase(config.databaseUrl);
  * its audit trail is unavailable.
  */
 const bootAuditStore = createAuditStore(database);
-// The durable runner behind local mode. Built before the app because construction
+// The durable runner every turn goes through. Built before the app because construction
 // is a read: it rehydrates every thread snapshot so restarts do not lose history.
 const lafRunner = await LafPostgresRunner.create(database, bootAuditStore);
-// The laf.watch poller: pure code on a clock, a model only on change (see watch/poller.ts).
-const watchService = createWatchService(database, { port });
-// The morning card. Hour and timezone are wall-clock, read at every check.
-const digestService = createDigestService(database, {
-  hour: Number.parseInt(process.env.LAF_DIGEST_HOUR ?? "8", 10),
-  timezone: process.env.LAF_DIGEST_TZ ?? "Asia/Seoul",
-  ...(process.env.LAF_DIGEST_WEBHOOK_URL
-    ? { webhookUrl: process.env.LAF_DIGEST_WEBHOOK_URL }
-    : {}),
-});
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -175,12 +162,10 @@ const agentProfileStore = createAgentProfileStore(
   config.managedAgentAgUiUrl,
   agentVault,
 );
-// Read here rather than beside the synchronise below, because the package names the deployment and
-// the channel store needs that name before it can mint a thread id.
+// Read here rather than beside the row it writes below, because the package names the deployment
+// and the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
-const threadIdentity = createThreadIdentity(
-  config.deploymentId ?? tenantPackage.tenantId,
-);
+const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
 const channelStore = createChannelStore(
   database,
   agentProfileStore,
@@ -204,7 +189,7 @@ const channelActivityListener = await startChannelActivityListener(
 );
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
-await synchronizeTenantPackage(database, tenantPackage);
+await recordTenantPackage(database, tenantPackage);
 const auth = config.auth ? createAuth(config, database) : undefined;
 // Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
 // (see computer/assignment.ts).
@@ -487,8 +472,8 @@ process.on("unhandledRejection", (reason) => {
  * The watch on Bot streams, built once and shared by every run.
  *
  * It has to outlive the request that opens a stream: the sweep that notices a silent one is still
- * running long after the run request has been answered, because in Intelligence mode that request is
- * answered in about a second and the Bot keeps writing for as long as it has something to say.
+ * running long after the run request has been answered, because the Bot goes on writing for as long
+ * as it has something to say.
  *
  * The same audit store as everything else, so a Bot that hangs is recorded beside what Bots do.
  */
@@ -653,20 +638,10 @@ const app = createApp(
     createAuditStore(database),
   ),
   createPackageStatusReader(database),
-  createConnectorAdminService(
-    tenantPackage.knowledgeSources,
-    database,
-    createCredentialAdminService(
-      config.keyEncryptionKey,
-      credentialStore,
-      createAuditStore(database),
-    ),
-  ),
   createOnboardingStore(database),
-  // The runtime call: the model, per-actor agent loading, and the two identity
-  // functions are how a run is attributed to a person.
+  // The runtime call: the model, per-actor agent loading, and the identity
+  // function are how a run is attributed to a person.
   mountCopilotRuntime(
-    config,
     tenantPackage.model,
     loadAgentsForActor,
     () =>
@@ -677,7 +652,6 @@ const app = createApp(
         keyId: tenantPackage.model.credentialSecretRef,
         environment: process.env,
       }),
-    identifyUser,
     identifyActor,
     stallGuard,
     lafRunner,
@@ -702,9 +676,6 @@ const app = createApp(
   threadIdentity,
   // Where a person answers what the boundary stopped to ask, whichever half of the product asked.
   approvals,
-  // The laf.watch poller; the surface mounts only when it exists.
-  watchService,
-  digestService,
   // One Bot asking another, over the same loader and keys the runtime itself uses.
   coworkerCall,
   routineService,
@@ -939,12 +910,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 console.info(`LAF Agent server listening on http://localhost:${port}`);
-// Zero disables the clock; sources can still be polled by hand from the surface.
-const watchTickMs = Number.parseInt(
-  process.env.LAF_WATCH_TICK_MS ?? "60000",
-  10,
-);
-watchService.start(watchTickMs);
-digestService.start(watchTickMs);
-// Routines share the watch's clock resolution; a routine is never due at finer grain than a tick.
-routineService.start(watchTickMs);
+/*
+ * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
+ * wall-clock times, not intervals — so a shorter tick would only mean more queries finding
+ * nothing. It was once shared with the watch poller's tick, which is gone.
+ */
+routineService.start(60_000);

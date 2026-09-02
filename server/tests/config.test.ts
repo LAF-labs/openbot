@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { loadConfig } from "../src/config";
 
-// Intelligence is part of the MINIMUM contract, so it belongs in the base environment every other
-// case builds on. Leaving it out of the base would make most of this file assert the behaviour of a
-// deployment that is not allowed to exist.
+/**
+ * The whole minimum contract, and nothing that used to be part of it.
+ *
+ * Four `INTELLIGENCE_*` variables were once in here on the grounds that they were part of that
+ * minimum — a partial set refused to boot, so leaving them out made most of this file describe a
+ * deployment that was not allowed to exist. They were never part of any deployment's minimum: the
+ * hosted runtime they selected was never stood up, threads have always lived in this deployment's
+ * own Postgres, and the branch behind them is deleted.
+ */
 const baseEnvironment = {
   DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
   KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -11,27 +17,13 @@ const baseEnvironment = {
   GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
   BETTER_AUTH_SECRET: "a-long-enough-local-development-auth-secret",
   BETTER_AUTH_URL: "http://localhost:3001",
-  INTELLIGENCE_API_URL: "http://localhost:7100",
-  INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103",
-  INTELLIGENCE_API_KEY: "tenant-api-key",
-  COPILOTKIT_LICENSE_TOKEN: "license-token",
   MANAGED_AGENT_AG_UI_URL: " http://localhost:4200/ag-ui ",
 };
 
 describe("deployment configuration", () => {
-  test("resolves the Intelligence runtime, which is the only runtime", () => {
+  test("resolves the addresses a deployment cannot start without", () => {
     const config = loadConfig(baseEnvironment);
 
-    expect(config.runtime).toEqual({
-      mode: "intelligence",
-      durableHistory: true,
-      intelligence: {
-        apiUrl: "http://localhost:7100",
-        gatewayWsUrl: "ws://localhost:7103",
-        apiKey: "tenant-api-key",
-        licenseToken: "license-token",
-      },
-    });
     expect(config.managedAgentAgUiUrl).toEqual(
       new URL("http://localhost:4200/ag-ui"),
     );
@@ -42,45 +34,35 @@ describe("deployment configuration", () => {
     const config = loadConfig({
       DATABASE_URL: baseEnvironment.DATABASE_URL,
       KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
-      INTELLIGENCE_API_URL: baseEnvironment.INTELLIGENCE_API_URL,
-      INTELLIGENCE_GATEWAY_WS_URL: baseEnvironment.INTELLIGENCE_GATEWAY_WS_URL,
-      INTELLIGENCE_API_KEY: baseEnvironment.INTELLIGENCE_API_KEY,
-      COPILOTKIT_LICENSE_TOKEN: baseEnvironment.COPILOTKIT_LICENSE_TOKEN,
       MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
     });
 
     expect(config.auth).toBeUndefined();
   });
 
-  // This fork has a mode without Intelligence — local, durable in our own
-  // Postgres — so all four variables absent is a decision, not an accident.
-  // A PARTIAL set is still the likeliest real mistake (somebody meant to
-  // configure Intelligence and got it wrong), so each of these remains a
-  // refusal to boot, and the message has to say which one is missing.
-  test.each([
-    "INTELLIGENCE_API_URL",
-    "INTELLIGENCE_GATEWAY_WS_URL",
-    "INTELLIGENCE_API_KEY",
-    "COPILOTKIT_LICENSE_TOKEN",
-  ])("refuses to start when only %s is missing", (name) => {
-    const environment: Record<string, string | undefined> = {
-      ...baseEnvironment,
-    };
-    delete environment[name];
-
-    expect(() => loadConfig(environment)).toThrow(
-      `CopilotKit Intelligence is partially configured. Missing: ${name}`,
-    );
-  });
-
-  test("runs in local mode when Intelligence is absent entirely", () => {
-    const config = loadConfig({
-      DATABASE_URL: baseEnvironment.DATABASE_URL,
-      KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
-      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
-    });
-    expect(config.runtime.mode).toBe("local");
-    expect(config.runtime.durableHistory).toBe(true);
+  /*
+   * A variable that no longer decides anything must not be able to decide something again by
+   * accident. The four below were read by `runtimeCapabilities`, which refused to boot on a partial
+   * set and selected a hosted runtime on a complete one; both are gone, and a `.env` left over from
+   * a deployment that had them set has to start rather than fail on a mode that does not exist.
+   */
+  test("ignores the Intelligence variables a stale .env may still carry", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        INTELLIGENCE_API_URL: "http://localhost:7100",
+        INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103",
+        INTELLIGENCE_API_KEY: "tenant-api-key",
+        COPILOTKIT_LICENSE_TOKEN: "license-token",
+      }),
+    ).not.toThrow();
+    // And a partial set, which used to be the refusal.
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        INTELLIGENCE_API_URL: "http://localhost:7100",
+      }),
+    ).not.toThrow();
   });
 
   test("rejects incomplete OAuth client configuration", () => {

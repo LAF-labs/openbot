@@ -12,7 +12,7 @@ plugins the browser offers, executes whatever it asks for through the same
 gateway and plugin store — policy, grants, audit row and approval registry all
 underneath — appends the results and runs again until the model stops asking,
 or the step budget (12) or the run timeout (ten minutes) ends it. So a routine
-can open a page, read it, save a note, or call a connector, and answer from
+can open a page, read it, save a note, or call a plugin, and answer from
 what it found.
 
 The answer is what the Bot said on its **last** turn. A model narrates ("let

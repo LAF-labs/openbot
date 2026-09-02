@@ -98,7 +98,7 @@ bun run test
 bun run build
 ```
 
-Integration tests expect a PostgreSQL database with pgvector. Use `start.sh` or point `DATABASE_URL` at a compatible database.
+Integration tests expect a PostgreSQL 17 database. Use `start.sh` or point `DATABASE_URL` at a compatible database.
 
 `bun run test:ci` is the one that keeps them off your own data. It reads `DATABASE_URL` for its
 server and credentials only, then runs everything in `<name>_test` on that server — created and

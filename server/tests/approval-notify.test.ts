@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createApprovalRegistry } from "../src/computer/approvals";
-import { withApprovalNotifications } from "../src/watch/notify";
+import { withApprovalNotifications } from "../src/notifications/notify";
 
 const ask = (registry: ReturnType<typeof createApprovalRegistry>) =>
   registry.request({

@@ -41,10 +41,6 @@ export const auditEventTypes = [
   // row while only successes were recorded.
   "credential.rotation_refused",
   "credential.revoked",
-  "connector.sync_succeeded",
-  "connector.sync_failed",
-  "knowledge.searched",
-  "agent.invoked",
   /**
    * A Bot's stream stopped producing anything and the turn was ended for it.
    *

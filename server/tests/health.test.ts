@@ -18,28 +18,24 @@ describe("health endpoint", () => {
   });
 });
 
-describe("runtime capabilities", () => {
-  test("reports the Intelligence runtime without exposing configuration secrets", async () => {
-    const response = await app.request("http://laf.local/api/capabilities");
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      mode: "intelligence",
-      durableHistory: true,
-    });
-  });
-
-  // The runtime object holds the Intelligence API key and licence token. This endpoint has no
-  // authentication, so a projection bug here publishes deployment secrets to anyone who asks.
-  test("never serves the Intelligence credentials", async () => {
+describe("deployment capabilities", () => {
+  /*
+   * This endpoint has NO authentication, so every field on it is published to anyone who asks. It
+   * used to report a runtime `mode` and an always-true `durableHistory`, projected by hand out of a
+   * config object that also held an API key and a licence token — one field added carelessly and
+   * the deployment's secrets went out with them. The mode is gone; the rule is not, and this is
+   * where it is enforced: the body says exactly one thing.
+   */
+  test("says the deployment is answering, and nothing else at all", async () => {
     const response = await app.request("http://laf.local/api/capabilities");
     const body = await response.text();
-    const parsed = (await new Response(body).json()) as Record<string, unknown>;
 
-    expect(body).not.toContain("tenant-api-key");
-    expect(body).not.toContain("license-token");
-    // The settings object itself must not be projected, whatever it happens to hold today.
-    expect(Object.keys(parsed)).toEqual(["mode", "durableHistory"]);
+    expect(response.status).toBe(200);
+    expect(Object.keys(JSON.parse(body) as Record<string, unknown>)).toEqual([
+      "status",
+    ]);
+    expect(body).not.toContain("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    expect(body).not.toContain("google-client-secret");
   });
 });
 

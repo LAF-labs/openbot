@@ -32,16 +32,12 @@ import { createComputerRoutes } from "./computer/routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
-import type { ConnectorAdminService } from "./connectors";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
 import type { PackageStatusReader } from "./tenant-package";
-import type { DigestService } from "./watch/digest-service";
-import type { WatchService } from "./watch/poller";
-import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(
   config: DeploymentConfig,
@@ -50,7 +46,6 @@ export function createApp(
   auditReader?: AuditReader,
   credentialService?: CredentialAdminService,
   packageStatusReader?: PackageStatusReader,
-  connectorService?: ConnectorAdminService,
   /** Whether this person has made their first Bot yet. Absent means nobody is ever asked to. */
   onboarding?: OnboardingStore,
   /**
@@ -119,13 +114,9 @@ export function createApp(
    * ten minutes and then reports that nobody answered.
    */
   approvals?: ApprovalRegistry,
-  /** The laf.watch poller; absent leaves the surface unmounted. */
-  watchService?: WatchService,
-  /** The morning card; optional so the watch surface works without it. */
-  digestService?: DigestService,
   /** One Bot asking another. Absent means the ask route answers 501 and everything else stands. */
   coworkerCall?: CoworkerCall,
-  /** Instructions on a clock. Absent leaves the surface unmounted, exactly like the watch. */
+  /** Instructions on a clock. Absent leaves the routine surface unmounted. */
   routineService?: RoutineService,
   /**
    * When each message in a thread was first seen and which Bot said it: the date separators, and
@@ -215,15 +206,16 @@ export function createApp(
   const app = new Hono<{ Variables: AppVariables }>();
 
   app.get("/health", (context) => context.json({ status: "ok" }));
-  // Projected, never the raw runtime. config.runtime carries the Intelligence contract, including
-  // INTELLIGENCE_API_KEY and the licence token, and this endpoint is reachable by anyone. Returning
-  // the object wholesale would serve deployment secrets to the browser. Add fields here explicitly.
-  app.get("/api/capabilities", (context) =>
-    context.json({
-      mode: config.runtime.mode,
-      durableHistory: config.runtime.durableHistory,
-    }),
-  );
+  /*
+   * What this deployment can do, for anybody who asks — and it is anybody: this endpoint has no
+   * session guard, so every field added here is published. It once reported a runtime `mode` and an
+   * always-true `durableHistory`, both left from a hosted-runtime choice that no longer exists, and
+   * a projection of nothing is still a projection: add fields explicitly, never the config object.
+   *
+   * Kept rather than removed because the deployment's own smoke test uses it to decide whether
+   * anything is answering at all before it starts asking real questions of it.
+   */
+  app.get("/api/capabilities", (context) => context.json({ status: "ok" }));
   app.on(["GET", "POST"], "/api/auth/*", (context) => {
     if (!auth) {
       return context.json({ error: "Authentication is not configured." }, 503);
@@ -394,41 +386,6 @@ export function createApp(
     }
     return context.json({ package: await packageStatusReader.active() });
   });
-  app.get("/api/admin/connectors", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-    if (!connectorService) {
-      return context.json(
-        { error: "Connector management is not configured." },
-        503,
-      );
-    }
-
-    return context.json({ connectors: await connectorService.list() });
-  });
-  app.post(
-    "/api/admin/connectors/google-drive/setup",
-    requireUser,
-    async (context) => {
-      const denied = requireAdmin(context);
-      if (denied) return denied;
-      if (!connectorService?.configureGoogleDrive) {
-        return context.json(
-          { error: "Google Drive setup is not configured." },
-          503,
-        );
-      }
-      const body = await context.req.json().catch(() => null);
-      const input = googleDriveSetupInput(body, context.var.actor.id);
-      if (!input)
-        return context.json({ error: "Google Drive setup is invalid." }, 400);
-      return context.json(
-        { connector: await connectorService.configureGoogleDrive(input) },
-        201,
-      );
-    },
-  );
-
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
   // its own routing under /api/copilotkit cannot shadow a LAF Agent route declared above.
   if (copilotHandler) {
@@ -535,38 +492,9 @@ export function createApp(
         createRoutineRoutes(routineService, requireUser),
       );
     }
-
-    if (watchService) {
-      app.route(
-        "/api/watch",
-        createWatchRoutes(watchService, requireUser, digestService),
-      );
-    }
   }
 
   return app;
-}
-
-function googleDriveSetupInput(value: unknown, actorUserId: string) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const body = value as Record<string, unknown>;
-  if (
-    typeof body.serviceAccountJson !== "string" ||
-    typeof body.impersonationSubject !== "string" ||
-    !body.impersonationSubject.trim()
-  )
-    return null;
-  try {
-    const json = JSON.parse(body.serviceAccountJson) as unknown;
-    if (!json || typeof json !== "object" || Array.isArray(json)) return null;
-  } catch {
-    return null;
-  }
-  return {
-    serviceAccountJson: body.serviceAccountJson,
-    impersonationSubject: body.impersonationSubject.trim(),
-    actorUserId,
-  };
 }
 
 function credentialInput(

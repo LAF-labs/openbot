@@ -594,9 +594,9 @@ describe("agent route composition", () => {
         api: { getSession: async () => session },
       },
       { rolesForUser: async () => ["user"] },
-      // Positions 4-12: auditReader, credentialService, packageStatusReader, connectorService,
-      // onboarding, copilotHandler, computerClient, computerGateway, computerPolicy.
-      undefined,
+      // Positions 4-11: auditReader, credentialService, packageStatusReader, onboarding,
+      // copilotHandler, computerClient, computerGateway, computerPolicy. One shorter than it was —
+      // the connector admin service sat at 7 and is deleted.
       undefined,
       undefined,
       undefined,

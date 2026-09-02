@@ -21,15 +21,10 @@ bash scripts/start.sh
 | `DATABASE_URL`                | PostgreSQL connection string.                                                                         |
 | `KEY_ENCRYPTION_KEY`          | Base64-encoded 32-byte key for encrypted stored credentials. Generate with `openssl rand -base64 32`. |
 | `MANAGED_AGENT_AG_UI_URL`     | Default AG-UI endpoint for coworkers created in the product. Must be HTTP(S).                         |
-| `INTELLIGENCE_API_URL`        | CopilotKit Intelligence API URL.                                                                      |
-| `INTELLIGENCE_GATEWAY_WS_URL` | CopilotKit Intelligence realtime gateway URL.                                                         |
-| `INTELLIGENCE_API_KEY`        | Runtime key for the Intelligence project.                                                             |
-| `COPILOTKIT_LICENSE_TOKEN`    | License token for the Intelligence project.                                                           |
 
-The four Intelligence values are optional and only meaningful together: with all four absent the
-server runs in local mode and stores threads and memory in PostgreSQL, which is how LAF Agent
-deploys. Setting some but not all of them stops server startup — somebody meant to configure the
-hosted mode and got it wrong.
+Threads and memory live in this deployment's own PostgreSQL and there is no other option. Four
+`INTELLIGENCE_*` variables once selected a hosted runtime instead; no deployment ever set them and
+they are gone.
 
 ## General variables
 
@@ -38,7 +33,6 @@ hosted mode and got it wrong.
 | `PORT`               | `3001`                             | API server port.                                                    |
 | `NODE_ENV`           | unset                              | `production` enables startup refusals for local-only settings.      |
 | `TENANT_PACKAGE_DIR` | `../tenant/laf`                    | Tenant package directory, resolved from `server/`.                  |
-| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment in the thread ids it mints.                    |
 | `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and `agent-bot`.              |
 | `OPENAI_BASE_URL`    | unset                              | OpenAI-compatible endpoint that key is spent against. See below.    |
 | `BOT_MODEL`          | provider default from Bot code/env | Model used by `agent-bot`.                                          |
@@ -134,22 +128,25 @@ To run two deployments on one Docker host, give the second one its own `COMPOSE_
 Container and volume names are global to a host, and the project name is what keeps each
 deployment's containers and volumes its own.
 
-Give it its own `DEPLOYMENT_ID` as well. Threads are listed per Bot and carry nothing else that
-says where a conversation came from, so the name goes into every thread id a deployment mints and
-is how its own conversations stay tellable from the other's.
+Both deployments then mint thread ids under the same name — the tenant package's id — so the six
+leading bytes of a thread id no longer tell one from the other. Nothing in the product reads that
+today; it matters if you ever have to work out which deployment a loose thread id belongs to. Give
+the second one its own tenant package with a different `tenant.id` if you need them separable.
 
 ## Tenant package
 
-The tenant package contains five required YAML files:
+The tenant package contains two required YAML files:
 
 ```text
 tenant/laf/
 ├── brand.yaml
-├── agents.yaml
-├── channels.yaml
-├── model.yaml
-└── knowledge.yaml
+└── model.yaml
 ```
+
+It once had three more. `agents.yaml` and `channels.yaml` declared Bots and rooms the deployment
+shipped ready-made; the product decided a Bot starts with nothing set and belongs to the person who
+made it, both lists went empty, and the loop that read them has been deleted. `knowledge.yaml`
+declared connector sources for a plane that never had an adapter behind it.
 
 ### `brand.yaml`
 
@@ -168,51 +165,11 @@ skin:
 
 Theme CSS may define only `:root` and `.dark` blocks, approved theme variables, and no `@import` or `url()`.
 
-### `agents.yaml`
-
-```yaml
-agents:
-  - id: knowledge
-    name: Knowledge
-    title: Company Knowledge
-    role_description: Answer company knowledge questions and cite sources.
-    avatar_seed: knowledge
-    type: built-in
-    system_prompt: Answer from authorized company knowledge and cite every source.
-
-  - id: risk-analyst
-    name: Risk Analyst
-    title: Risk & Compliance
-    role_description: Investigate policies and controls.
-    type: remote-ag-ui
-    endpoint: ${MANAGED_AGENT_AG_UI_URL}
-```
-
-Each agent requires `id`, `name`, `title`, `role_description`, and `type`.
-
-| Type           | Required field  |
-| -------------- | --------------- |
-| `built-in`     | `system_prompt` |
-| `remote-ag-ui` | `endpoint`      |
-
 Any `${NAME}` in a package file is replaced with that environment variable, so one package works
 against a local stack, a staging one and production. `${NAME:-fallback}` uses the fallback when the
 name is unset or empty, which is how the example package points at the Bot in the box without
 requiring any configuration. A name with neither a value nor a fallback stops the server with a
 message saying which file wanted it, rather than leaving a Bot pointed at an address nobody meant.
-
-### `channels.yaml`
-
-```yaml
-channels:
-  - id: risk-and-compliance
-    name: Risk & Compliance
-    description: Investigate policies and controls.
-    permitted_agents: [knowledge, risk-analyst]
-    allowed_groups: [risk, compliance]
-```
-
-Each channel requires `id`, `name`, `description`, `permitted_agents`, and `allowed_groups`. Every `permitted_agents` entry must match an agent id.
 
 ### `model.yaml`
 
@@ -225,25 +182,12 @@ model:
 
 `provider` must be `openai`. `credential_secret_ref` is a reference to a stored credential, not a credential value. `default_model` is passed through as written, so an OpenAI-compatible endpoint reached through `OPENAI_BASE_URL` takes the name that endpoint publishes.
 
-### `knowledge.yaml`
-
-```yaml
-sources:
-  - type: google-drive
-    roots: [Policies, Compliance]
-  - type: microsoft-onedrive
-    roots: [Risk, Operations]
-```
-
-Supported source types are `google-drive` and `microsoft-onedrive`.
-
 ## Change workflow
 
 1. Edit the relevant `.env` value or tenant YAML file.
-2. Check cross-file references, especially `channels[].permitted_agents`.
-3. Keep credential values and service-account JSON out of YAML.
-4. Restart the API server; invalid configuration stops startup.
-5. Run:
+2. Keep credential values out of YAML.
+3. Restart the API server; invalid configuration stops startup.
+4. Run:
 
    ```sh
    bun run format:check

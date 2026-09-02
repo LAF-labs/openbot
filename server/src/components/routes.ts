@@ -2,18 +2,11 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import { DATA_FUNCTIONS, dataFunction } from "./functions";
 import { ComponentNotFoundError, type ComponentStore } from "./store";
-
-/**
- * The local development actor, which is not a row in `users`.
- *
- * The audit table has a foreign key to that table, so writing this id would fail the constraint and
- * lose the row entirely. Who it was is in the payload either way.
- */
-const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 /**
  * Granting, publishing and asking whether a Bot may use a component.
@@ -47,7 +40,7 @@ export function createComponentRoutes(
       eventType,
       targetType: "component",
       targetId,
-      ...(actor?.id && actor.email !== DEV_ACTOR_EMAIL
+      ...(actor?.id && actor.email !== DEV_ACTOR.email
         ? { actorUserId: actor.id }
         : {}),
       payload: { actor: actor?.email ?? "unknown", ...payload },

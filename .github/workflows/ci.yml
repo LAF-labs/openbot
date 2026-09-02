@@ -41,11 +41,12 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     # The suite includes a real database integration test. Without a database it fails on every run,
-    # including on main, which trains everyone to read a red CI as normal. pgvector rather than plain
-    # postgres because the knowledge schema uses the extension.
+    # including on main, which trains everyone to read a red CI as normal. Plain postgres: the image
+    # was pgvector's for one `vector(1536)` column in a table nothing ever wrote to, and migration
+    # 0024 drops the column, the table and the extension.
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: postgres:17
         env:
           POSTGRES_DB: openbot
           POSTGRES_USER: openbot

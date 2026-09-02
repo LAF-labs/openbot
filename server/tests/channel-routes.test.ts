@@ -305,9 +305,9 @@ describe("channel route composition", () => {
         api: { getSession: async () => session },
       },
       { rolesForUser: async () => ["user"] },
-      // Positions 4-13, ending at agentProfileStore. Every service added ahead of the channel store
-      // lengthens this run — the computer gateway and policy store did, and so did onboarding.
-      undefined,
+      // Positions 4-12, ending at agentProfileStore. Every service added ahead of the channel store
+      // lengthens this run — the computer gateway and policy store did, and so did onboarding — and
+      // deleting one shortens it, which the connector admin service just did.
       undefined,
       undefined,
       undefined,

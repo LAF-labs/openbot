@@ -7,11 +7,10 @@
  * never produces another byte leaves the channel busy, the composer locked and a person watching a
  * Bot that appears to be thinking and is not.
  *
- * The seam is the Bot's own HTTP response, wrapped on the way in. In Intelligence mode this server's
- * reply to the browser is a JSON envelope, not a stream, and the AG-UI events reach the browser over
- * a WebSocket to the gateway (see the module comment on turn-watchdog.ts for what was measured).
- * The Bot's response, however, is an ordinary streaming HTTP body that this process reads to the
- * end, so it is both the thing that stalls and the only place a stall can be seen.
+ * The seam is the Bot's own HTTP response, wrapped on the way in. It is an ordinary streaming HTTP
+ * body that this process reads to the end, so it is both the thing that stalls and the only place a
+ * stall can be seen (see the module comment on turn-watchdog.ts for why it is this stream and not
+ * the one going back to the browser).
  *
  * A PASS-THROUGH RELAY IS THE ONLY ACCEPTABLE SHAPE HERE, and the relay below is an identity
  * transform with nothing in it at all. It must not buffer, because a Bot's answer is streamed a
@@ -28,8 +27,7 @@
  * would then be reported as a Bot that had gone silent, on a run that was streaming the whole time.
  * The pump times the resolution of each read from the Bot instead, and stops the clock entirely
  * while it waits for the consumer to take delivery, so the only quiet ever counted is quiet on the
- * wire. In this deployment that consumer is the Intelligence runner publishing every event on to
- * the gateway over the network, which is exactly the sort of thing that pauses.
+ * wire.
  *
  * On a stall it writes one RUN_ERROR event into the same stream and closes it. RUN_ERROR is the
  * event both surfaces already subscribe to, so nothing downstream had to learn a new one. What

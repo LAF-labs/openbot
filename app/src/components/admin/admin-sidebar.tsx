@@ -5,7 +5,6 @@ import {
   IconKey,
   IconLayoutGrid,
   IconListDetails,
-  IconPlugConnected,
   IconPuzzle,
   IconShieldCheck,
 } from "@tabler/icons-react";
@@ -45,11 +44,6 @@ const GROUPS: {
   {
     label: t("What Bots can reach"),
     items: [
-      {
-        title: t("Connectors"),
-        icon: IconPlugConnected,
-        linkOptions: { to: "/admin/connectors" },
-      },
       {
         title: t("Credentials"),
         icon: IconKey,

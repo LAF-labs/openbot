@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: postgres:17
     environment:
       POSTGRES_DB: openbot
       POSTGRES_USER: openbot
@@ -96,15 +96,14 @@ services:
       LAF_OIDC_CLIENT_ID: ${LAF_OIDC_CLIENT_ID:-}
       INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
       SIGN_IN_ALLOWED_EMAILS: ${SIGN_IN_ALLOWED_EMAILS:-}
-      INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
-      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:-}
-      INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:-}
-      COPILOTKIT_LICENSE_TOKEN: ${COPILOTKIT_LICENSE_TOKEN:-}
-      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       BOT_MODEL: ${BOT_MODEL:-}
       AGENT_STALL_TIMEOUT_MS: ${AGENT_STALL_TIMEOUT_MS:-}
+      # Where "a Bot is blocked on you" is delivered while the AlimTalk channel is still in review.
+      # Passed through because it was not: the server has always read it and no deployment could
+      # set it, so every question waited silently on a surface nobody was looking at.
+      LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

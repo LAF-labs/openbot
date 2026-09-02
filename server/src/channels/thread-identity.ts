@@ -3,16 +3,19 @@ import { createHash, randomBytes } from "node:crypto";
 /**
  * Which deployment a conversation belongs to, carried by the thread's own id.
  *
- * Threads live in an Intelligence project, and one project can serve more than one deployment: a
- * development copy of production shares its key, and listing a Bot's threads returns both
- * deployments' conversations with nothing to tell them apart. The platform keeps no field a
- * deployment can write its own name into, and lists threads by user and agent only, so the single
- * identifier a deployment controls is the id it mints for the thread.
+ * A thread id is minted here and then travels — into a Bot's own process, into a routine's trigger,
+ * into whatever a customer's agent writes it down in — and comes back later with nothing attached
+ * saying where it came from. Two deployments of this product can hand the same Bot the same kind of
+ * id, and a copy of production running beside production is exactly that case.
  *
  * So the id carries it: six bytes of a digest of the deployment's name lead the UUID and the rest is
  * random. That is enough to ask whether a thread is this deployment's without having seen it before,
- * which is what a workspace whose database is gone would need in order to take its own conversations
- * back and leave another deployment's alone.
+ * which is what a deployment whose database is gone would need in order to take its own
+ * conversations back and leave another deployment's alone.
+ *
+ * The name is the tenant package's id. It was once overridable by `DEPLOYMENT_ID`, for deployments
+ * sharing one hosted Intelligence project; no deployment ever set it, that project does not exist,
+ * and a knob that changes every thread id it touches is not one to leave lying about.
  *
  * Version 8 because RFC 9562 reserves that version for a layout the vendor decides. A version 4 UUID
  * asserts that every bit outside the version and variant is random, and these are not.

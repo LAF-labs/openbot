@@ -4,10 +4,19 @@
 -- deployment that has to walk it and not at all to one starting from nothing. Every deployment of
 -- this starts from nothing, so the chain was collapsed into the schema it produces.
 --
--- TWO THINGS HERE ARE NOT GENERATED from the table definitions, and must survive if this is ever
--- regenerated: the vector extension, and the trigger that makes the audit trail append-only.
-
-CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint
+-- ONE THING HERE IS NOT GENERATED from the table definitions, and must survive if this is ever
+-- regenerated: the trigger at the end that makes the audit trail append-only.
+--
+-- IT USED TO BE TWO. `CREATE EXTENSION IF NOT EXISTS vector` led this file, for a `chunks` table
+-- whose `vector(1536)` column was the only one in the database and was never written to or queried.
+-- Migration 0024 drops the whole upstream knowledge plane, so a fresh database was creating that
+-- table and its extension in order to drop them four migrations later — and paying for it with the
+-- Postgres image, which had to be `pgvector/pgvector:pg17` rather than `postgres:17` on every
+-- deployment and in CI. Both are removed here: the extension, and the `chunks` table that was its
+-- only reason. A deployment that already ran this file is unaffected — it never reads it again, and
+-- 0024 drops what it made, `IF EXISTS` so the same statement is a no-op on a database that starts
+-- from this version. Measured on `postgres:17`: the chain fails at line 10 without this change,
+-- `extension "vector" is not available`.
 
 CREATE TYPE "public"."acl_effect" AS ENUM('allow', 'deny');--> statement-breakpoint
 CREATE TYPE "public"."agent_type" AS ENUM('built_in', 'remote_ag_ui');--> statement-breakpoint
@@ -80,15 +89,6 @@ CREATE TABLE "channels" (
 	"last_message_agent_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "chunks" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"document_id" uuid NOT NULL,
-	"position" integer NOT NULL,
-	"content" text NOT NULL,
-	"embedding" vector(1536) NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "connector_cursors" (
@@ -351,7 +351,6 @@ ALTER TABLE "channel_memberships" ADD CONSTRAINT "channel_memberships_channel_id
 ALTER TABLE "channel_memberships" ADD CONSTRAINT "channel_memberships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "channels" ADD CONSTRAINT "channels_package_id_deployment_packages_id_fk" FOREIGN KEY ("package_id") REFERENCES "public"."deployment_packages"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "channels" ADD CONSTRAINT "channels_last_message_agent_id_agents_id_fk" FOREIGN KEY ("last_message_agent_id") REFERENCES "public"."agents"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "chunks" ADD CONSTRAINT "chunks_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "connector_cursors" ADD CONSTRAINT "connector_cursors_connector_instance_id_connector_instances_id_fk" FOREIGN KEY ("connector_instance_id") REFERENCES "public"."connector_instances"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "connector_instances" ADD CONSTRAINT "connector_instances_credential_id_credentials_id_fk" FOREIGN KEY ("credential_id") REFERENCES "public"."credentials"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_acls" ADD CONSTRAINT "document_acls_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -375,8 +374,6 @@ ALTER TABLE "skills" ADD CONSTRAINT "skills_owner_user_id_users_id_fk" FOREIGN K
 CREATE UNIQUE INDEX "accounts_provider_account_idx" ON "accounts" USING btree ("provider_id","account_id");--> statement-breakpoint
 CREATE INDEX "audit_events_created_at_idx" ON "audit_events" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "channels_recent_activity_idx" ON "channels" USING btree (COALESCE("last_message_at", "created_at") DESC);--> statement-breakpoint
-CREATE UNIQUE INDEX "chunks_document_position_idx" ON "chunks" USING btree ("document_id","position");--> statement-breakpoint
-CREATE INDEX "chunks_document_idx" ON "chunks" USING btree ("document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_acls_document_principal_effect_idx" ON "document_acls" USING btree ("document_id","principal","effect");--> statement-breakpoint
 CREATE INDEX "document_acls_principal_idx" ON "document_acls" USING btree ("principal");--> statement-breakpoint
 CREATE UNIQUE INDEX "documents_connector_source_idx" ON "documents" USING btree ("connector_instance_id","source_id");--> statement-breakpoint

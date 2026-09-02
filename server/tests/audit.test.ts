@@ -39,10 +39,6 @@ describe("audit payload redaction", () => {
         "credential.created",
         "credential.rotated",
         "credential.revoked",
-        "connector.sync_succeeded",
-        "connector.sync_failed",
-        "knowledge.searched",
-        "agent.invoked",
         "mcp.call_succeeded",
         "mcp.call_rejected",
       ]),
@@ -124,9 +120,9 @@ describe("admin audit API", () => {
             events: [
               {
                 id: "event-1",
-                eventType: "connector.sync_succeeded",
-                targetType: "connector",
-                targetId: "drive-1",
+                eventType: "mcp.call_succeeded",
+                targetType: "mcp_server",
+                targetId: "server-1",
                 actorUserId: "admin",
                 payload: { itemCount: 3 },
                 createdAt: "2026-08-13T12:00:00.000Z",
@@ -139,7 +135,7 @@ describe("admin audit API", () => {
     );
 
     const response = await app.request(
-      "http://laf.local/api/admin/audit-events?eventType=connector.sync_succeeded&limit=10",
+      "http://laf.local/api/admin/audit-events?eventType=mcp.call_succeeded&limit=10",
     );
 
     expect(response.status).toBe(200);
@@ -147,9 +143,9 @@ describe("admin audit API", () => {
       events: [
         {
           id: "event-1",
-          eventType: "connector.sync_succeeded",
-          targetType: "connector",
-          targetId: "drive-1",
+          eventType: "mcp.call_succeeded",
+          targetType: "mcp_server",
+          targetId: "server-1",
           actorUserId: "admin",
           payload: { itemCount: 3 },
           createdAt: "2026-08-13T12:00:00.000Z",
@@ -157,9 +153,7 @@ describe("admin audit API", () => {
       ],
       nextCursor: "next-page",
     });
-    expect(queries).toEqual([
-      { eventType: "connector.sync_succeeded", limit: 10 },
-    ]);
+    expect(queries).toEqual([{ eventType: "mcp.call_succeeded", limit: 10 }]);
   });
 
   /**
