@@ -25,6 +25,7 @@ import {
   readdir,
   readFile,
   realpath,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -78,6 +79,35 @@ export const DEFAULT_WORKSPACE_LIMITS: WorkspaceLimits = {
   writeBytes: 1_000_000,
   listEntries: 500,
 };
+
+/** Where a file a page handed the browser lands, so a Bot can find it with `computer_list_files`. */
+export const DOWNLOADS_DIRECTORY = "downloads";
+
+/**
+ * A name a page chose, made safe to put on this filesystem.
+ *
+ * The name comes from the site — `Content-Disposition` or the anchor's `download` attribute — which
+ * makes it the one string in this module that an attacker picks outright. Everything that could make
+ * it mean a path rather than a file is removed here, and `resolvePath` still refuses what is left if
+ * it somehow escapes: the two are layers, not alternatives.
+ *
+ * A name that survives as nothing becomes `download`, because a file that exists and is called
+ * something ordinary is more use to somebody than a refusal they cannot act on.
+ */
+export function safeDownloadName(suggested: string): string {
+  const base = (suggested ?? "").split(/[\\/]/).pop() ?? "";
+  const cleaned = base
+    // Control characters, including the NUL that truncates a path in a C library.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    // A leading dot makes a dotfile; a name that is only dots is `.` or `..`.
+    .replace(/^\.+/, "")
+    .trim();
+  if (!cleaned) return "download";
+  // Long enough for any real filename, short enough for every filesystem's limit with the ` (2)`
+  // a collision adds.
+  return cleaned.slice(0, 120);
+}
 
 export function createWorkspace(
   rootPath: string,
@@ -255,6 +285,59 @@ export function createWorkspace(
         flag: options.append ? "a" : "w",
       });
       return { path: requested, bytes, appended: options.append === true };
+    },
+
+    /**
+     * Put a file the browser downloaded into the workspace.
+     *
+     * `save` is Playwright's `download.saveAs`, handed the path this decides on: the file exists in
+     * Chromium's own temporary directory until then, and is deleted when the browser closes, so a
+     * download that is not moved here is a download the Bot cannot ever open.
+     *
+     * THE SAME LIMIT AS A WRITE. A Bot writing a megabyte of text is refused, and a Bot clicking a
+     * link to a 4GB file must be too, or the bound on what one Bot can put on the volume is decided
+     * by whatever it happened to click. The size is only knowable after the file has landed, so an
+     * oversized one is written and then removed — the refusal is real either way, and the disk holds
+     * it for the moment in between rather than for ever.
+     *
+     * A name already taken is suffixed rather than overwritten. Downloading 정산내역.xlsx twice is
+     * two months' figures, and the second silently replacing the first is a lost month.
+     */
+    async saveDownload(
+      suggested: string,
+      save: (to: string) => Promise<void>,
+    ): Promise<{ path: string; bytes: number }> {
+      const name = safeDownloadName(suggested);
+      const directory = resolve(await realpath(rootPath), DOWNLOADS_DIRECTORY);
+      await mkdir(directory, { recursive: true });
+
+      const dot = name.lastIndexOf(".");
+      const stem = dot > 0 ? name.slice(0, dot) : name;
+      const extension = dot > 0 ? name.slice(dot) : "";
+      let chosen = name;
+      for (let attempt = 2; attempt < 100; attempt += 1) {
+        const taken = await stat(resolve(directory, chosen)).catch(() => null);
+        if (!taken) break;
+        chosen = `${stem} (${attempt})${extension}`;
+      }
+
+      // Through the same confinement as everything else. The name is already safe; this is the layer
+      // that stays true if it ever is not.
+      const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
+      const full = await resolvePath(relativePath, true);
+      await save(full);
+
+      const written = await stat(full).catch(() => null);
+      if (!written) {
+        throw new WorkspaceFileError("The download did not arrive.");
+      }
+      if (written.size > limits.writeBytes) {
+        await rm(full, { force: true }).catch(() => undefined);
+        throw new WorkspaceFileError(
+          `That download is ${written.size} bytes and the limit is ${limits.writeBytes}.`,
+        );
+      }
+      return { path: relativePath, bytes: written.size };
     },
   };
 }

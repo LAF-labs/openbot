@@ -1,16 +1,25 @@
 import { serve } from "bun";
-import type { Page } from "playwright";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import type { Frame, Page } from "playwright";
 import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
 import { isOpenPath, matchesToken, offeredToken } from "./authorisation";
 import {
   type Control,
   ControlError,
   ControlRequestError,
+  type ControlState,
   createControl,
   NO_SECRET_PENDING,
+  restoredControl,
   TAKE_CONTROL_FIRST,
 } from "./control";
-import { createProfiles, VIEWPORT } from "./profiles";
+import {
+  createProfiles,
+  TabError,
+  type TabSummary,
+  VIEWPORT,
+} from "./profiles";
 import {
   type InputMessage,
   type Screencast,
@@ -104,11 +113,32 @@ const TEXT_EXTRACT_LIMIT = 6000;
  * the most recent snapshot, only while the element is still connected to the document, and it mints a
  * new ref if an element's role or accessible name changed, so a recycled node cannot inherit an old one.
  */
+/**
+ * Something the browser noticed that nothing asked it about.
+ *
+ * A CODE AND ITS FACTS, NEVER A SENTENCE. An alert that says 로그인이 필요합니다 is the answer to why
+ * a click did nothing, and Playwright dismisses it before any tool call returns — so the fact has to
+ * travel out of band, on the next result, or the Bot reports "I clicked it" about a page that never
+ * moved. The Korean the model reads for each code is in `shared/prompt/tool-results.ko.ts`, for the
+ * same reason `laf:human_has_control` lives there: this container ships facts and knows no locale.
+ */
+export type ComputerNote = { code: string } & Record<string, unknown>;
+
+/**
+ * How many of them one result carries.
+ *
+ * A page that opens an alert in a loop would otherwise fill a model's context with the same
+ * sentence. The newest are kept: the last dialog is the one the Bot is standing in front of.
+ */
+const MAX_NOTES = 8;
+
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
 type BotSession = {
   control: Control;
   /** This Bot's snapshot generation. See the note above on staleness. */
   snapshotId: number;
+  /** Facts waiting to ride out on the next tool result. Drained when they do. */
+  notes: ComputerNote[];
   /** The one live screen viewer for this Bot, if a person is watching. */
   viewer?: {
     socket: unknown;
@@ -123,21 +153,98 @@ const sessions = new Map<string, BotSession>();
 function sessionFor(botId: string): BotSession {
   const existing = sessions.get(botId);
   if (existing) return existing;
-  const created: BotSession = { control: createControl(), snapshotId: 0 };
+  /*
+   * WHO HAD THE WHEEL BEFORE THIS PROCESS STARTED.
+   *
+   * A restart in the middle of a takeover used to hand the browser back to the Bot in silence: the
+   * person was still looking at a bank's login form, and the Bot was free to click on it. Control is
+   * written to the profile directory on every change, and read back here, so a restart cannot quietly
+   * promote a Bot. See `restoredControl` for what survives and what does not.
+   */
+  const restored = restoredControl(readControlFile(botId));
+  const created: BotSession = {
+    control: createControl(undefined, {
+      ...(restored.state ? { initial: restored.state } : {}),
+      onChange: (state) => writeControlFile(botId, state),
+    }),
+    snapshotId: 0,
+    notes: restored.secretLost ? [{ code: "laf:secret_request_lost" }] : [],
+  };
   sessions.set(botId, created);
   return created;
 }
 
+/** Put a fact in front of the Bot on its next call. */
+function note(session: BotSession, entry: ComputerNote): void {
+  session.notes.push(entry);
+  if (session.notes.length > MAX_NOTES) {
+    session.notes.splice(0, session.notes.length - MAX_NOTES);
+  }
+}
+
+/** Everything waiting, handed over once. A fact delivered twice reads as it having happened twice. */
+function drainNotes(session: BotSession): ComputerNote[] {
+  return session.notes.splice(0, session.notes.length);
+}
+
+/** One response, with whatever the browser noticed since the last one attached to it. */
+function withNotes(
+  session: BotSession,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const notes = drainNotes(session);
+  return notes.length ? { ...body, notes } : body;
+}
+
+/** Where a Bot's control state is kept between lives of this process. */
+function controlFileFor(botId: string): string {
+  return join(profiles.directoryFor(botId), "control.json");
+}
+
+function readControlFile(botId: string): unknown {
+  try {
+    return JSON.parse(readFileSync(controlFileFor(botId), "utf8"));
+  } catch {
+    // No file is the ordinary case: a Bot that has never been driven. An unreadable one is treated
+    // the same way, because the fail-safe below only ever makes control stickier, never looser.
+    return null;
+  }
+}
+
 /**
- * Sent by the server as a header on every call. Absent means the caller does not know or does not
- * care, such as a health check, and that gets the default computer rather than an error, because
- * refusing it would make the container undemonstrable on its own.
+ * Written on every change, synchronously.
+ *
+ * Synchronous because the case this exists for is the process ending: an async write scheduled a
+ * millisecond before SIGKILL is a write that never happened, and the state it was carrying is
+ * exactly the one somebody is relying on.
  */
-function botIdOf(request: Request, fallback?: string | null): string {
+function writeControlFile(botId: string, state: ControlState): void {
+  try {
+    const path = controlFileFor(botId);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(state), "utf8");
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "control-state-not-saved",
+        bot: botId,
+        error: String(error),
+      }),
+    );
+  }
+}
+
+/**
+ * Which Bot is asking. Null when nobody said.
+ *
+ * REFUSED RATHER THAN GUESSED. This used to fall back to a fixed `"shared"` computer so the
+ * container stayed demonstrable on its own, and the server had a `"default"` of its own at the other
+ * end — two spellings of the blank page belonging to nobody that CLAUDE.md warns about. A caller
+ * that does not name a Bot is a bug in the caller, and it is told so.
+ */
+function botIdOf(request: Request, fallback?: string | null): string | null {
   return (
-    request.headers.get("x-openbot-bot-id")?.trim() ||
-    fallback?.trim() ||
-    DEFAULT_BOT_ID
+    request.headers.get("x-openbot-bot-id")?.trim() || fallback?.trim() || null
   );
 }
 
@@ -163,43 +270,243 @@ const workspace = createWorkspace(process.env.WORKSPACE_DIR ?? "/workspace");
  * `chromium.launch()` gives a fresh anonymous profile every time. Persistent profiles live on a
  * mounted volume so sign-in state survives the container.
  */
-const profiles = createProfiles(process.env.PROFILES_DIR ?? "/profiles");
-
-/**
- * The id normally arrives as a header on every request. This is the fallback for a caller that has no
- * Bot to name, such as a health check, so the container stays demonstrable on its own rather than
- * refusing everything that is not the server.
- */
-const DEFAULT_BOT_ID = process.env.COMPUTER_BOT_ID ?? "shared";
+const profiles = createProfiles(process.env.PROFILES_DIR ?? "/profiles", {
+  onPage: (botId, page) => watchPage(botId, page),
+});
 
 async function currentPage(botId: string): Promise<Page> {
   return profiles.page(botId);
 }
 
 /**
- * The page as text, the way a reader sees it.
+ * Everything a page can tell us that no tool call would ever return.
  *
- * Script and style bodies are dropped rather than included: they are the bulk of a modern page and
- * none of it is what anybody asked about, so leaving them in spends the extract on noise and pushes
- * the actual article past the limit.
+ * Attached the moment a page exists, including a page a site opened by itself, because both of the
+ * things below happen without anybody asking: a dialog blocks the page until it is answered, and a
+ * download starts and finishes while the Bot is still waiting for a click to return.
  */
-async function readablePageText(
-  target: Page,
-): Promise<{ text: string; truncated: boolean }> {
-  const raw = await target.evaluate(() => {
-    const clone = document.body?.cloneNode(true) as HTMLElement | undefined;
-    if (!clone) return "";
-    for (const node of clone.querySelectorAll("script, style, noscript, svg")) {
-      node.remove();
-    }
-    return clone.innerText ?? "";
+function watchPage(botId: string, page: Page): void {
+  const session = sessionFor(botId);
+  /*
+   * A different document means every ref from the last snapshot names something nobody is looking
+   * at. The generation is bumped for a new tab for the same reason `/navigate` bumps it.
+   */
+  session.snapshotId += 1;
+
+  page.on("dialog", (dialog) => {
+    const kind = dialog.type();
+    /*
+     * ALERT IS ACCEPTED, CONFIRM AND PROMPT ARE DISMISSED.
+     *
+     * An alert has one button and answering it is not a decision. A confirm is a decision — 정말
+     * 삭제하시겠습니까? — and this process is not where a Bot gets to make one: the boundary in front
+     * of it never saw the question, so there is nothing for it to have decided. Dismissed, reported,
+     * and the person handles it by taking the wheel. `beforeunload` is accepted because the Bot
+     * asked to leave the page and that is the answer to its own question.
+     */
+    const accepting = kind === "alert" || kind === "beforeunload";
+    void (accepting ? dialog.accept() : dialog.dismiss()).catch(
+      () => undefined,
+    );
+    note(session, {
+      code: "laf:dialog",
+      kind,
+      // The page's own words. Not a value anybody typed, and it is usually the whole reason the last
+      // action did nothing.
+      message: dialog.message(),
+      accepted: accepting,
+    });
   });
 
-  const collapsed = raw.replace(/\n{3,}/g, "\n\n").trim();
+  page.on("download", (download) => {
+    void (async () => {
+      try {
+        const saved = await workspace.saveDownload(
+          download.suggestedFilename(),
+          (to) => download.saveAs(to),
+        );
+        note(session, {
+          code: "laf:downloaded",
+          path: saved.path,
+          bytes: saved.bytes,
+        });
+      } catch (error) {
+        await download.cancel().catch(() => undefined);
+        note(session, {
+          code:
+            error instanceof WorkspaceFileError
+              ? "laf:download_too_large"
+              : "laf:download_failed",
+        });
+        console.error(
+          JSON.stringify({
+            type: "download-not-saved",
+            bot: botId,
+            error: String(error),
+          }),
+        );
+      }
+    })();
+  });
+}
+
+/**
+ * How long a page is given to go quiet before it is read.
+ *
+ * `domcontentloaded` was where this used to read, and on an SPA shell — 스마트스토어, 홈택스 — that is
+ * the skeleton: measured against smartstore.naver.com, the extract was zero characters and the
+ * snapshot zero elements, on a page a person sees a login form on. Capped rather than waited out,
+ * because a portal with a polling advertisement never reaches network idle at all and the Bot would
+ * sit there for the full navigation timeout instead of reading what is plainly on the screen.
+ */
+const NETWORK_IDLE_CAP_MS = 3_000;
+
+/** And a moment for the load event, which most pages reach long before the network does. */
+const LOAD_CAP_MS = 1_000;
+
+/** Let a page finish arriving. Never throws: every wait here is an optimisation, not a requirement. */
+async function settle(target: Page): Promise<void> {
+  await target
+    .waitForLoadState("load", { timeout: LOAD_CAP_MS })
+    .catch(() => undefined);
+  await target
+    .waitForLoadState("networkidle", { timeout: NETWORK_IDLE_CAP_MS })
+    .catch(() => undefined);
+}
+
+/**
+ * Settle only a page that is still arriving.
+ *
+ * Reading and snapshotting happen far more often than navigating, usually on a page that has been
+ * sitting there for a minute — and a portal with a polling advertisement never reaches network idle
+ * at all, so waiting unconditionally would put three seconds on every one of those calls. The page
+ * that IS still loading is the one that matters here: the tab a `target=_blank` link just opened is
+ * `about:blank` for the first fraction of a second, and a snapshot of it lists nothing.
+ */
+async function settleIfLoading(target: Page): Promise<void> {
+  const ready = await target
+    .evaluate(() => document.readyState)
+    .catch(() => "complete");
+  if (ready !== "complete") await settle(target);
+}
+
+/**
+ * How long an action waits to see whether it opened a tab.
+ *
+ * Measured on the fixture: the context's `page` event arrives 30-32 ms after the click resolves,
+ * five times out of five. The bound is several times that and it is paid in full only by a click
+ * that opens nothing — which is the trade being made, because the alternative is that a Bot clicks
+ * 주문 상세 보기 on 네이버, the page opens in a tab this process has not adopted yet, and the snapshot
+ * it takes next describes the page it was already on. It then reports on the wrong screen entirely.
+ */
+const POPUP_GRACE_MS = 150;
+
+/**
+ * Listen for a tab before the thing that might open one, and stop listening after it.
+ *
+ * Registered BEFORE the action, because a popup that arrives while the click is still resolving
+ * would be missed by a listener set up afterwards. The returned function is what the action awaits:
+ * it ends at the event or at the grace period, whichever comes first, so a click that opens nothing
+ * costs the grace and no more.
+ */
+function watchForTab(target: Page): () => Promise<void> {
+  const appeared = target
+    .context()
+    // The listener has to outlive the action itself; the race below is what bounds the waiting.
+    .waitForEvent("page", { timeout: ACTION_TIMEOUT_MS + POPUP_GRACE_MS })
+    .then(() => undefined)
+    .catch(() => undefined);
+  return () =>
+    Promise.race([
+      appeared,
+      new Promise<void>((resolve) => setTimeout(resolve, POPUP_GRACE_MS)),
+    ]);
+}
+
+/**
+ * A page moving under us while we read it.
+ *
+ * The SPA shells redirect on first load — hometax.go.kr answered `/navigate` with a 502 and the
+ * words "Execution context was destroyed" before this existed, which a Bot reads as a broken
+ * computer rather than as a page that had just gone somewhere else.
+ */
+function isNavigatingAway(error: unknown): boolean {
+  return /Execution context was destroyed|frame was detached|Target closed|Navigation to/i.test(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+/** What one frame's rendered text is. */
+async function frameText(frame: Frame): Promise<string> {
+  return frame.evaluate(() => document.body?.innerText ?? "");
+}
+
+type PageText = {
+  text: string;
+  truncated: boolean;
+  /** The iframes that contributed, and the ones that would not. */
+  frames?: { url: string; chars: number; code?: string }[];
+};
+
+/**
+ * The page as text, the way a reader sees it.
+ *
+ * THE LIVE BODY, NOT A COPY OF IT. This used to clone `<body>`, strip script and style nodes and
+ * read `innerText` off the clone — and `innerText` on a node that is not in the document is defined
+ * to be `textContent`: no line breaks, and every hidden thing included. Measured on ceo.baemin.com
+ * before the change: 331 characters, zero newlines, the whole of it a mega-menu that is not on the
+ * screen. Read live, the same page yields the text a person sees, in the shape they see it, and the
+ * script and style bodies drop out on their own because they are not rendered.
+ *
+ * iframes are merged in. A Korean site puts its real content in one more often than not — 홈택스's
+ * body, a payment window, a 본인인증 panel — and `evaluate` only ever sees the main frame. A frame
+ * that will not answer is reported as `laf:frame_opaque` rather than left out silently, because
+ * "there was nothing there" and "there was something and I could not read it" lead a Bot to opposite
+ * next moves.
+ */
+async function readablePageText(target: Page): Promise<PageText> {
+  const pieces = [await frameText(target.mainFrame())];
+  const frames: NonNullable<PageText["frames"]> = [];
+
+  for (const frame of target.frames()) {
+    if (frame === target.mainFrame()) continue;
+    const url = frame.url();
+    if (!url || url === "about:blank") continue;
+    try {
+      const text = (await frameText(frame)).trim();
+      if (!text) continue;
+      pieces.push(text);
+      frames.push({ url, chars: text.length });
+    } catch {
+      frames.push({ url, chars: 0, code: "laf:frame_opaque" });
+    }
+  }
+
+  const collapsed = pieces
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return {
     text: collapsed.slice(0, TEXT_EXTRACT_LIMIT),
     truncated: collapsed.length > TEXT_EXTRACT_LIMIT,
+    ...(frames.length ? { frames } : {}),
   };
+}
+
+/** The same, once the page has stopped moving, and once more if it moved while being read. */
+async function readSettledPageText(
+  target: Page,
+  options: { settleFirst?: boolean } = {},
+): Promise<PageText> {
+  if (options.settleFirst) await settle(target);
+  else await settleIfLoading(target);
+  try {
+    return await readablePageText(target);
+  } catch (error) {
+    if (!isNavigatingAway(error)) throw error;
+    await settle(target);
+    return readablePageText(target);
+  }
 }
 
 /**
@@ -211,6 +518,7 @@ async function readablePageText(
  */
 async function snapshotPage(
   session: BotSession,
+  botId: string,
   target: Page,
 ): Promise<{
   snapshotId: number;
@@ -218,14 +526,24 @@ async function snapshotPage(
   title: string;
   elements: SnapshotElement[];
   truncated: boolean;
+  tabs: TabSummary[];
 }> {
   session.snapshotId += 1;
+  // A tab that opened a moment ago is still `about:blank`, and an aria snapshot of that is an empty
+  // list — which reads as "there is nothing on this page you can act on".
+  await settleIfLoading(target);
   const yaml = await target.ariaSnapshot({ mode: "ai" });
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await target.title(),
     ...parseAriaSnapshot(yaml, await passwordLabels(target)),
+    /*
+     * The other tabs, listed with the elements rather than behind a tool of their own.
+     * A Bot that has to ask whether a second tab exists will not ask, and the tab a click just
+     * opened is usually where the answer is. `computer_switch_tab` takes the index from here.
+     */
+    tabs: await profiles.tabs(botId),
   };
 }
 
@@ -283,9 +601,7 @@ function locateRef(
     expectedSnapshotId !== undefined &&
     expectedSnapshotId !== session.snapshotId
   ) {
-    throw new StaleSnapshotError(
-      `That list of elements is out of date: it was taken for snapshot ${expectedSnapshotId} and the page is now at ${session.snapshotId}. Take a new snapshot and use the refs from it.`,
-    );
+    throw new StaleSnapshotError(STALE_REFS);
   }
   return target.locator(`aria-ref=${ref}`);
 }
@@ -310,12 +626,22 @@ async function resolveRef(
 ) {
   const locator = locateRef(session, target, ref, expectedSnapshotId);
   if ((await locator.count()) === 0) {
-    throw new StaleSnapshotError(
-      `Nothing on this page has the ref ${ref}. Take a new snapshot and use the refs it returns.`,
-    );
+    throw new StaleSnapshotError(STALE_REFS);
   }
   return locator;
 }
+
+/**
+ * A FACT CODE, NOT A SENTENCE.
+ *
+ * Both of these were English paragraphs addressed to a model, from a container that has never heard
+ * of a locale — the same thing `laf:human_has_control` used to be. The Korean the Bot reads lives in
+ * `shared/prompt/tool-results.ko.ts` under this code, and it says the one thing that helps: take
+ * another snapshot and use the refs from it. The ref and the two generation numbers went with the
+ * prose deliberately; neither is something the model can act on, and both are in the request it
+ * just sent.
+ */
+const STALE_REFS = "laf:stale_refs";
 
 class StaleSnapshotError extends Error {
   constructor(message: string) {
@@ -474,20 +800,67 @@ serve<StreamData>({
       return json({ error: "Not authorised." }, 401);
     }
 
+    if (url.pathname === "/health") {
+      // The header is optional here and nowhere else: an orchestrator probing this container has no
+      // Bot to name. Where one IS named, the answer is about that Bot's browser, as it always was.
+      const asked = botIdOf(request);
+      const [profile] = asked ? profiles.summary([asked]) : [];
+      return json({
+        status: "ok",
+        // `browser` kept as it was: it is in the published contract and start.sh reads it.
+        browser: profile?.running ?? false,
+        ...(profile ? { profile } : {}),
+        /*
+         * NO `identity` FIELD. It reported what the local SPIRE agent said this computer was, and
+         * SPIRE went with the per-Bot container plane in 2026-08. Nothing has set
+         * `SPIFFE_ENDPOINT_SOCKET` since, so the field was `null` in every deployment this
+         * repository can produce, and nothing read it. A health field that is always null is a
+         * claim the deployment cannot back.
+         */
+      });
+    }
+
+    /**
+     * The computers this process holds. The shape is a list because the admin surface is a
+     * list, and because a Bot that has a profile has a computer whether or not a browser is running
+     * for it this second.
+     *
+     * Names no Bot, by definition: it is the question "which are there".
+     */
+    if (url.pathname === "/computers" && request.method === "GET") {
+      return json({ computers: profiles.summary(await profiles.known()) });
+    }
+
+    /*
+     * The socket carries the Bot in the query because it cannot do it in a header. Every other call
+     * here names its Bot in `x-openbot-bot-id`, but a websocket client sends no custom headers on
+     * the upgrade, so the stream, and only the stream, also accepts the Bot as a query parameter.
+     * The header still wins where there is one, and neither is still a refusal.
+     */
+    const botId = botIdOf(
+      request,
+      url.pathname === "/stream" ? url.searchParams.get("bot") : null,
+    );
+    if (!botId) {
+      /*
+       * A CALLER THAT DOES NOT NAME A BOT GETS NOTHING.
+       *
+       * The fallback that used to be here put every unnamed call on one fixed profile: a browser
+       * with somebody else's cookies, or a blank page belonging to nobody, and either way an answer
+       * that looks like it worked. The code is a fact for the server's logs; nobody reading it is a
+       * person, because the surface never makes this call without the header.
+       */
+      return json(
+        { code: "laf:bot_header_missing", error: "laf:bot_header_missing" },
+        400,
+      );
+    }
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
-    const botId = botIdOf(request);
     const session = sessionFor(botId);
 
     if (url.pathname === "/stream") {
-      /*
-       * The socket carries the Bot in the query because it cannot do it in a header. Every other call here names
-       * its Bot in `x-openbot-bot-id`, but a websocket client sends no custom headers on the upgrade,
-       * so the stream, and only the stream, also accepts the Bot as a query parameter. The header
-       * still wins where there is one.
-       */
-      const streamBotId = botIdOf(request, url.searchParams.get("bot"));
-      if (server.upgrade(request, { data: { botId: streamBotId } }))
+      if (server.upgrade(request, { data: { botId } }))
         return undefined as unknown as Response;
       return json({ error: "Expected a WebSocket upgrade." }, 400);
     }
@@ -626,32 +999,6 @@ serve<StreamData>({
       }
     }
 
-    if (url.pathname === "/health") {
-      const [profile] = profiles.summary([botId]);
-      return json({
-        status: "ok",
-        // `browser` kept as it was: it is in the published contract and start.sh reads it.
-        browser: profile?.running ?? false,
-        profile,
-        /*
-         * NO `identity` FIELD. It reported what the local SPIRE agent said this computer was, and
-         * SPIRE went with the per-Bot container plane in 2026-08. Nothing has set
-         * `SPIFFE_ENDPOINT_SOCKET` since, so the field was `null` in every deployment this
-         * repository can produce, and nothing read it. A health field that is always null is a
-         * claim the deployment cannot back.
-         */
-      });
-    }
-
-    /**
-     * The computers this process holds. The shape is a list because the admin surface is a
-     * list, and because a Bot that has a profile has a computer whether or not a browser is running
-     * for it this second.
-     */
-    if (url.pathname === "/computers" && request.method === "GET") {
-      return json({ computers: profiles.summary(await profiles.known()) });
-    }
-
     /**
      * Stop the browser, keep what it knows.
      *
@@ -700,14 +1047,19 @@ serve<StreamData>({
         // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
         // than fall through to a selector that matches nothing and read as a missing element.
         session.snapshotId += 1;
-        const extract = await readablePageText(target);
-        return json({
-          url: target.url(),
-          title: await target.title(),
-          text: extract.text,
-          truncated: extract.truncated,
-          elapsedMs: Date.now() - startedAt,
+        const extract = await readSettledPageText(target, {
+          settleFirst: true,
         });
+        return json(
+          withNotes(session, {
+            url: target.url(),
+            title: await target.title().catch(() => ""),
+            text: extract.text,
+            truncated: extract.truncated,
+            ...(extract.frames ? { frames: extract.frames } : {}),
+            elapsedMs: Date.now() - startedAt,
+          }),
+        );
       } catch (error) {
         // A person holding the wheel is not a failed navigation; the Bot should wait.
         if (error instanceof ControlError) {
@@ -818,13 +1170,16 @@ serve<StreamData>({
     if (url.pathname === "/read" && request.method === "GET") {
       try {
         const target = await currentPage(botId);
-        const extract = await readablePageText(target);
-        return json({
-          url: target.url(),
-          title: await target.title(),
-          text: extract.text,
-          truncated: extract.truncated,
-        });
+        const extract = await readSettledPageText(target);
+        return json(
+          withNotes(session, {
+            url: target.url(),
+            title: await target.title().catch(() => ""),
+            text: extract.text,
+            truncated: extract.truncated,
+            ...(extract.frames ? { frames: extract.frames } : {}),
+          }),
+        );
       } catch (error) {
         return json(
           { error: describe(error, "Reading the page failed.") },
@@ -959,9 +1314,115 @@ serve<StreamData>({
 
     if (url.pathname === "/snapshot" && request.method === "POST") {
       try {
-        return json(await snapshotPage(session, await currentPage(botId)));
+        return json(
+          withNotes(
+            session,
+            await snapshotPage(session, botId, await currentPage(botId)),
+          ),
+        );
       } catch (error) {
         return json({ error: describe(error, "Snapshot failed.") }, 502);
+      }
+    }
+
+    /**
+     * Move the Bot to another tab.
+     *
+     * Read-only as far as any website is concerned — nothing on any page changes because somebody
+     * looked at a different one — which is why the gateway governs it as `read`. What it does change
+     * is which page the next action lands on, so the refs from the last snapshot are retired with it.
+     */
+    if (url.pathname === "/tabs/switch" && request.method === "POST") {
+      const body = (await request.json().catch(() => null)) as {
+        index?: unknown;
+      } | null;
+      if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
+        return json({ error: "A tab index is required." }, 400);
+      }
+      try {
+        // Started if it is not running, so a switch is never answered with "there are no tabs" on a
+        // computer that simply has not been woken up yet.
+        await currentPage(botId);
+        const tabs = await profiles.switchTab(botId, body.index);
+        session.snapshotId += 1;
+        const target = await currentPage(botId);
+        return json(
+          withNotes(session, {
+            action: "switch_tab",
+            index: body.index,
+            tabs,
+            url: target.url(),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof TabError) {
+          return json({ error: error.message, code: error.message }, 400);
+        }
+        return json({ error: describe(error, "The tab did not change.") }, 502);
+      }
+    }
+
+    /**
+     * Hand a file from the workspace to a page.
+     *
+     * The one direction the workspace could not go. A Bot can save a 정산 내역 and could not attach
+     * it to anything; a shop's product photo could be written and never uploaded. `setInputFiles`
+     * needs a real path, so the file is resolved through the same confinement every other file call
+     * uses — a Bot may only ever hand over something inside its own workspace.
+     */
+    if (url.pathname === "/upload" && request.method === "POST") {
+      const body = (await request.json().catch(() => null)) as {
+        ref?: unknown;
+        snapshotId?: unknown;
+        path?: unknown;
+      } | null;
+      if (typeof body?.ref !== "string" || !body.ref) {
+        return json({ error: "The ref of a file input is required." }, 400);
+      }
+      if (typeof body?.path !== "string" || !body.path.trim()) {
+        return json({ error: "A file path is required." }, 400);
+      }
+      try {
+        session.control.assertBotMayAct();
+        const full = await workspace.resolvePath(body.path.trim(), false);
+        const target = await currentPage(botId);
+        const field = await resolveRef(
+          session,
+          target,
+          body.ref,
+          typeof body.snapshotId === "number" ? body.snapshotId : undefined,
+        );
+        await field.setInputFiles(full, { timeout: ACTION_TIMEOUT_MS });
+        return json(
+          withNotes(session, {
+            action: "upload_file",
+            ref: body.ref,
+            // The path the Bot named, never the resolved one: the absolute path is inside a
+            // container and means nothing to anybody reading the transcript.
+            path: body.path.trim(),
+            url: target.url(),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof StaleSnapshotError) {
+          return json({ error: error.message, stale: true }, 409);
+        }
+        if (error instanceof ControlError) {
+          return json({ error: error.message, humanHasControl: true }, 409);
+        }
+        if (
+          error instanceof WorkspacePathError ||
+          error instanceof WorkspaceFileError
+        ) {
+          return json(
+            { error: describe(error, "That file could not be used.") },
+            fileStatus(error),
+          );
+        }
+        return json(
+          { error: describe(error, "The file could not be attached.") },
+          502,
+        );
       }
     }
 
@@ -986,7 +1447,9 @@ serve<StreamData>({
           // aborts the one it made to this computer, and Bun aborts this one in turn.
           request.signal,
         );
-        return json({ ...detail, elapsedMs: Date.now() - startedAt });
+        return json(
+          withNotes(session, { ...detail, elapsedMs: Date.now() - startedAt }),
+        );
       } catch (error) {
         /*
          * Stopped, not failed. The signal is checked rather than the error text: Playwright words an
@@ -1137,7 +1600,9 @@ async function performAction(
 
   if (action === "/click") {
     if (!ref) throw new Error("A click needs the ref of an element to click.");
+    const opening = watchForTab(target);
     await (await resolveRef(session, target, ref, expected)).click(acting);
+    await opening();
     return { action: "click", ref, url: target.url() };
   }
 
@@ -1171,12 +1636,25 @@ async function performAction(
       throw new Error("A key press needs a key name, such as Enter or Tab.");
     }
     if (ref) {
+      /*
+       * A REF WITHOUT ITS SNAPSHOT IS STALE BY DEFINITION.
+       *
+       * `expected` is undefined when the caller sent a ref and no `snapshotId`, and undefined is how
+       * `locateRef` says "no generation to check" — so this one call skipped the check every other
+       * action gets. The tool contract says the id is required alongside a ref, and the answer to a
+       * call that omits it is the same as the answer to an old one: take a new snapshot.
+       */
+      if (expected === undefined) throw new StaleSnapshotError(STALE_REFS);
+      const opening = watchForTab(target);
       await (await resolveRef(session, target, ref, expected)).press(
         body.key,
         acting,
       );
+      await opening();
     } else {
+      const opening = watchForTab(target);
       await target.keyboard.press(body.key);
+      await opening();
     }
     return { action: "key", key: body.key, ref, url: target.url() };
   }
