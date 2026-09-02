@@ -338,7 +338,12 @@ describe("what the run reports", () => {
     }
     expect(thrown).toBeInstanceOf(UnattendedRunError);
     const error = thrown as UnattendedRunError;
-    expect(error.message).toContain("stopped before it finished");
+    // WHICH failure, off the name rather than off the sentence. The server sends facts and the
+    // surface owns the words, so a run that pinned "stopped before it finished" made rewording the
+    // message a test failure and rewording it in Korean impossible.
+    expect(error.name).toBe("RunFailed");
+    // The Bot's own reason, carried through rather than replaced — this half is not our prose, and
+    // losing it is how a stalled endpoint becomes an unexplained failure.
     expect(error.message).toContain("60 seconds");
     // The turns it did take survive the failure: the record says how far it got.
     expect(error.steps).toHaveLength(2);
