@@ -6,8 +6,13 @@
  * removed the first (our only external dependencies are the model API and the
  * machines we run on), and the second is not a product. So this class is the
  * in-memory runner with its memory made durable: every run is teed into Postgres
- * as it streams, and on boot the store is read back so `getThreadMessages` can
+ * as it streams, and a thread is read back on demand so `getThreadMessages` can
  * answer for conversations no process alive today has seen.
+ *
+ * ON DEMAND, not at boot. Construction used to `select *` from every thread and
+ * hold the lot in a Map for the life of the process — the whole product's
+ * history, in memory, before the first request. It reads one thread now, for the
+ * request that asked for it, through `prime`.
  *
  * The tee is a second subscription, not a wrapped stream. `InMemoryAgentRunner`
  * multicasts each run through replay subjects, so subscribing here costs nothing
@@ -16,99 +21,44 @@
  *
  * What is persisted is deliberately small: the input messages when a run starts
  * (the user's side is safe even if the process dies mid-turn), the assistant text
- * rebuilt from TEXT_MESSAGE events when it ends, and a one-row run record. The
- * full event stream is not stored; the log of record for actions is
- * `audit_events`.
+ * rebuilt from TEXT_MESSAGE events when it ends, and a one-row run record written
+ * by `run-ledger.ts`. The full event stream is not stored; the log of record for
+ * actions is `audit_events`.
  */
-import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
 import {
   type AgentRunnerRunRequest,
   InMemoryAgentRunner,
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
+import { channelThreads, lafThreadRuns } from "../db/schema";
+import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
 import {
-  intelligenceChannelMappings,
-  lafThreadRuns,
-  lafThreadSnapshots,
-} from "../db/schema";
+  appendMessages,
+  messagesFor,
+  type StoredMessage,
+  threadSummaries,
+} from "./thread-store";
 
-type SnapshotRow = typeof lafThreadSnapshots.$inferSelect;
-
-type RestoredThread = {
+type PrimedThread = {
   record: InMemoryThread;
-  messages: Message[];
-};
-
-/** Reads heal the double-encoded rows written before saveSnapshot cast to jsonb. */
-function parseMessages(stored: unknown): Message[] {
-  if (Array.isArray(stored)) {
-    return stored as Message[];
-  }
-  if (typeof stored === "string") {
-    try {
-      const parsed = JSON.parse(stored);
-      return Array.isArray(parsed) ? (parsed as Message[]) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-/**
- * A message as we store it: AG-UI's shape plus the moment we first saw it.
- *
- * `lafAt` is ours, and it survives only because `messages` is jsonb and the read path casts rather
- * than validates. It cannot ride AG-UI's own message type — every message schema is zod `strip`,
- * so a key the client attaches is deleted before a run ever reaches this class. Stamping here, on
- * the server, is also the only way the two sides of a conversation share one clock.
- */
-type StampedMessage = Message & {
-  lafAt?: string;
-  /**
-   * Which Bot said it, for a room where more than one can.
-   *
-   * The same trick and the same reason as `lafAt`: it survives because `messages` is jsonb and the
-   * read path casts rather than validates, and it cannot ride AG-UI's message type because every
-   * message schema is zod `strip`. A run is the only place a message and the Bot producing it are
-   * both in scope, so this is written there and nowhere else.
-   */
-  lafAgentId?: string;
+  messages: StoredMessage[];
 };
 
 /**
- * Merge stamps onto a message list, FIRST SEEN WINS.
+ * How many primed threads are kept.
  *
- * Each run's input carries the whole history back, unstamped, so re-stamping on every save would
- * march every message in a conversation forward to the time of its most recent turn. The stamps
- * already on the previous snapshot are the record; `fallback` is only for messages that have none.
+ * `getThreadMessages` is synchronous — CopilotKit's local thread endpoints are declared that way
+ * and the handler maps the result straight into a `Response` — so a read that has to reach Postgres
+ * cannot happen inside it. `prime` does the read for the request that is about to ask, and this Map
+ * carries it the few microseconds between. It is a handoff, not a mirror: nothing else writes to it,
+ * so nothing can leave it stale. The cap only stops a long-lived process from remembering every
+ * thread it ever answered for, which is the thing boot-loading did on purpose.
  */
-export function stamp(
-  messages: Message[],
-  known: Map<string, string>,
-  /**
-   * Every id this thread already held, stamped or not.
-   *
-   * The distinction matters exactly once per thread: the first save after stamping shipped. Those
-   * messages are known to the snapshot and carry no time, because nobody was recording one when
-   * they were said — and `fallback` would then declare that the whole back history happened at the
-   * instant of the next reply. A conversation with no separators is a conversation whose timing we
-   * do not know; one with wrong separators is a record that lies.
-   */
-  seen: Set<string>,
-  fallback: string,
-): StampedMessage[] {
-  return messages.map((message) => {
-    const existing = (message as StampedMessage).lafAt ?? known.get(message.id);
-    if (existing) return { ...message, lafAt: existing };
-    if (seen.has(message.id)) return { ...message };
-    return { ...message, lafAt: fallback };
-  });
-}
+const MAX_PRIMED_THREADS = 32;
 
 /**
  * The client's history, plus anything the store holds that the client never saw.
@@ -116,14 +66,14 @@ export function stamp(
  * Every run hands back the caller's copy of the thread as its input, and that copy is the truth
  * about what the caller said. It is not the truth about what else happened to the thread: a
  * routine can deliver an answer into it while no tab is open, and a tab that hydrated before that
- * delivery would, on its next turn, overwrite the thread with a history that never had it. Nothing
- * in this product deletes messages, so a stored message missing from the input is one the client
- * did not know about, not one it removed — and it is kept, at its place: right after the nearest
- * stored neighbour the client does know.
+ * delivery would otherwise be shown a history that never had it. Nothing in this product deletes
+ * messages, so a stored message missing from the live copy is one the client did not know about,
+ * not one it removed — and it is kept, at its place: right after the nearest stored neighbour the
+ * client does know.
  */
 export function mergeKeepingStoredOnly(
-  stored: Message[],
-  incoming: Message[],
+  stored: readonly Message[],
+  incoming: readonly Message[],
 ): Message[] {
   const incomingIds = new Set(incoming.map((message) => message.id));
   const result = [...incoming];
@@ -139,59 +89,6 @@ export function mergeKeepingStoredOnly(
     insertAfter += 1;
   }
   return result;
-}
-
-/** The stamps a snapshot already carries, so a save can preserve them. */
-export function stampsOf(messages: Message[]): Map<string, string> {
-  const times = new Map<string, string>();
-  for (const message of messages) {
-    const at = (message as StampedMessage).lafAt;
-    if (typeof at === "string") times.set(message.id, at);
-  }
-  return times;
-}
-
-/** The speakers a snapshot already carries, for the same reason `stampsOf` exists. */
-export function speakersOf(messages: Message[]): Map<string, string> {
-  const speakers = new Map<string, string>();
-  for (const message of messages) {
-    const by = (message as StampedMessage).lafAgentId;
-    if (typeof by === "string") speakers.set(message.id, by);
-  }
-  return speakers;
-}
-
-/**
- * Merge speakers onto a message list, FIRST WRITER WINS and NO FALLBACK.
- *
- * The absence of a fallback is the difference from `stamp`, and it is deliberate. A time can be
- * approximated — "we first saw this now" is true even if it was said earlier. A speaker cannot: a
- * message whose Bot nobody recorded belongs to no particular Bot, and filling it in with whoever
- * happens to be running would put one colleague's words under another's name for the life of the
- * conversation. Unattributed is the honest state, and the transcript knows how to draw it.
- */
-export function attribute(
-  messages: Message[],
-  known: Map<string, string>,
-): StampedMessage[] {
-  return messages.map((message) => {
-    const existing =
-      (message as StampedMessage).lafAgentId ?? known.get(message.id);
-    return existing ? { ...message, lafAgentId: existing } : { ...message };
-  });
-}
-
-function recordFromRow(row: SnapshotRow): InMemoryThread {
-  return {
-    id: row.threadId,
-    name: null,
-    agentId: row.agentId ?? "",
-    organizationId: "",
-    createdById: "",
-    archived: false,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
 }
 
 /**
@@ -228,9 +125,9 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): Array<{
  * The assistant's side of a finished run, rebuilt from its text-message events.
  *
  * Only TEXT_MESSAGE_* is read. Tool calls and their results are not reconstructed
- * here: AG-UI carries them back in the next run's input, so the snapshot written
- * then will contain them, and a reconstruction that guessed wrong would be worse
- * than one turn's tool detail arriving one run late.
+ * here: AG-UI carries them back in the next run's input, and `appendMessages`
+ * updates the row in place when that richer copy of the same message arrives, so
+ * one turn's tool detail lands one run late rather than being guessed at now.
  */
 function assistantMessagesFrom(
   events: BaseEvent[],
@@ -238,7 +135,7 @@ function assistantMessagesFrom(
   startedAt: Map<string, string>,
   /** The Bot this run belongs to. Null for a run whose agent the request did not name. */
   agentId: string | null,
-): StampedMessage[] {
+): StoredMessage[] {
   const order: string[] = [];
   const parts = new Map<string, { role: string; content: string }>();
   for (const raw of events) {
@@ -277,7 +174,7 @@ function assistantMessagesFrom(
         ...(agentId && part.role === "assistant"
           ? { lafAgentId: agentId }
           : {}),
-      } as StampedMessage,
+      } as StoredMessage,
     ];
   });
 }
@@ -319,9 +216,14 @@ export function runOutcome(
 }
 
 export class LafPostgresRunner extends InMemoryAgentRunner {
+  /** Threads read for a request that is about to ask for them. See `MAX_PRIMED_THREADS`. */
+  private readonly primed = new Map<string, PrimedThread>();
+  /** The thread list, read for the one route that asks for it. Null until something does. */
+  private listed: InMemoryThread[] | null = null;
+
   private constructor(
     private readonly database: Database,
-    private readonly restored: Map<string, RestoredThread>,
+    private readonly ledger: RunLedger,
     private readonly auditStore: AuditStore | null,
   ) {
     // `supersede` matches the hosted posture upstream documents for its own
@@ -329,9 +231,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     super({ onConcurrentRun: "supersede" });
   }
 
-  /** Async because construction is a read: boot rehydrates every snapshot. */
+  /** Async because boot adjudicates the runs the last process left open. It reads no messages. */
   static async create(
     database: Database,
+    ledger: RunLedger,
     auditStore: AuditStore | null = null,
   ): Promise<LafPostgresRunner> {
     /*
@@ -350,39 +253,90 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         `[laf-runner] ${reconciled.length} run(s) had no ending; reconciled to unknown`,
       );
     }
-    const rows = await database.select().from(lafThreadSnapshots);
-    const restored = new Map<string, RestoredThread>(
-      rows.map((row) => [
-        row.threadId,
-        {
-          record: recordFromRow(row),
-          messages: parseMessages(row.messages),
+    return new LafPostgresRunner(database, ledger, auditStore);
+  }
+
+  /**
+   * Read one thread out of Postgres, for the request about to ask for it.
+   *
+   * Called by the middleware in front of CopilotKit's thread routes (`index.ts`), because those
+   * routes reach this class through synchronous methods and the read is not synchronous. Never
+   * throws: a thread that cannot be read answers as the live copy rather than as a 500.
+   */
+  async prime(threadId: string): Promise<void> {
+    try {
+      const messages = await messagesFor(this.database, threadId);
+      const at = new Date().toISOString();
+      const existing = this.primed.get(threadId);
+      this.primed.delete(threadId);
+      if (this.primed.size >= MAX_PRIMED_THREADS) {
+        const oldest = this.primed.keys().next();
+        if (!oldest.done) this.primed.delete(oldest.value);
+      }
+      this.primed.set(threadId, {
+        messages,
+        record: existing?.record ?? {
+          id: threadId,
+          name: null,
+          agentId: "",
+          organizationId: "",
+          createdById: "",
+          archived: false,
+          createdAt: at,
+          updatedAt: at,
         },
-      ]),
-    );
-    return new LafPostgresRunner(database, restored, auditStore);
+      });
+    } catch (error) {
+      console.error("[laf-runner] reading a thread failed:", error);
+    }
+  }
+
+  /** The same for the thread list, which is a summary read and touches no message body. */
+  async primeThreadList(): Promise<void> {
+    try {
+      this.listed = (await threadSummaries(this.database)).map((summary) => ({
+        id: summary.threadId,
+        name: null,
+        agentId: summary.agentId ?? "",
+        organizationId: "" as const,
+        createdById: "" as const,
+        archived: false as const,
+        createdAt: summary.createdAt.toISOString(),
+        updatedAt: summary.updatedAt.toISOString(),
+      }));
+    } catch (error) {
+      console.error("[laf-runner] reading the thread list failed:", error);
+    }
   }
 
   override run(request: AgentRunnerRunRequest) {
-    const runId =
-      typeof request.input.runId === "string" && request.input.runId
-        ? request.input.runId
-        : randomUUID();
     const agentId = request.agent.agentId ?? null;
     const inputMessages = [...(request.input.messages ?? [])] as Message[];
     const forwarded = (request.input.forwardedProps ?? {}) as Record<
       string,
       unknown
     >;
-    const origin =
-      typeof forwarded.lafOrigin === "string" ? forwarded.lafOrigin : "chat";
+    /*
+     * The origin is checked against the list, not accepted. It reaches this from `forwardedProps`,
+     * the one field AG-UI does not strip, so it is a value a client can choose — and `origin` is a
+     * pg enum now: a made-up one would fail the ledger insert and lose the run's record entirely.
+     */
+    const origin: RunOrigin = RUN_ORIGINS.includes(
+      forwarded.lafOrigin as RunOrigin,
+    )
+      ? (forwarded.lafOrigin as RunOrigin)
+      : "chat";
     const dedupeKey =
       typeof forwarded.lafDedupeKey === "string" &&
       forwarded.lafDedupeKey.length > 0
         ? forwarded.lafDedupeKey
         : null;
-    void this.beginRun(
-      runId,
+    const requestedRunId =
+      typeof request.input.runId === "string" && request.input.runId
+        ? request.input.runId
+        : null;
+    const opened = this.beginRun(
+      requestedRunId,
       request.threadId,
       agentId,
       inputMessages,
@@ -414,7 +368,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       },
       error: (error: unknown) => {
         void this.finishRun(
-          runId,
+          opened,
           request.threadId,
           agentId,
           inputMessages,
@@ -425,7 +379,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       },
       complete: () => {
         void this.finishRun(
-          runId,
+          opened,
           request.threadId,
           agentId,
           inputMessages,
@@ -441,94 +395,36 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   override listThreads(): InMemoryThread[] {
     const live = super.listThreads();
     const liveIds = new Set(live.map((thread) => thread.id));
-    const rest = [...this.restored.values()]
-      .map((thread) => thread.record)
-      .filter((record) => !liveIds.has(record.id));
+    const rest = (this.listed ?? []).filter(
+      (record) => !liveIds.has(record.id),
+    );
     return [...live, ...rest];
   }
 
   override getThreadMessages(threadId: string): Message[] {
     const live = super.getThreadMessages(threadId);
-    const stored = this.restored.get(threadId)?.messages ?? [];
+    const stored = this.primed.get(threadId)?.messages ?? [];
     if (live.length === 0) return stored;
-
     /*
-     * PREFER THE STORE WHEN IT STRICTLY CONTAINS THE LIVE THREAD.
-     *
-     * The live copy belongs to the vendored runner and only ever grows through a run. Something
-     * else can add to a conversation without running it — a routine's answer being written into the
-     * Bot's own chat is the case that exists today — and that lands in Postgres and in `restored`,
-     * where the live copy cannot see it. Blindly preferring live meant the roster showed the answer
-     * and the transcript did not.
-     *
-     * The superset test is what keeps this safe in the other direction: mid-run the live copy holds
-     * messages the snapshot has not been written for yet, and then live is the newer of the two.
+     * BOTH, WITH THE LIVE COPY'S ORDER. The live copy belongs to the vendored runner and only ever
+     * grows through a run; something else can add to a conversation without running it — a routine
+     * delivering its answer into the Bot's own chat is the case that exists today — and that lands
+     * in Postgres, where the live copy cannot see it. Preferring live outright meant the roster
+     * showed the answer and the transcript did not; preferring the store outright loses the tool
+     * calls of a turn that is still in flight.
      */
-    const storedIds = new Set(stored.map((message) => message.id));
-    /*
-     * Only messages the snapshot would ever HOLD count against it. `assistantMessagesFrom` keeps
-     * assistant text and drops an assistant message that only carried tool calls, so after a
-     * tool-using turn the live copy has ids the store never will — and a rule that demanded every
-     * live id would hand the live copy the win until the next turn, hiding anything delivered in
-     * between.
-     */
-    const storable = live.filter(
-      (message) =>
-        !(
-          message.role === "assistant" &&
-          !(typeof message.content === "string" && message.content.length > 0)
-        ),
-    );
-    const storedHasAllLive = storable.every((message) =>
-      storedIds.has(message.id),
-    );
-    return storedHasAllLive && stored.length > storable.length ? stored : live;
-  }
-
-  /**
-   * Take on a thread's messages written by something other than a run.
-   *
-   * Keeps the rehydrated copy in step with Postgres when a writer outside this class appends —
-   * see `getThreadMessages` for why the two can disagree and which one wins.
-   */
-  adoptSnapshot(
-    threadId: string,
-    agentId: string | null,
-    messages: Message[],
-  ): void {
-    const existing = this.restored.get(threadId);
-    const updatedAt = new Date().toISOString();
-    /*
-     * Created when missing, not skipped. `restored` is filled at boot and by saveSnapshot, so a
-     * channel that exists but has never had a run has no entry — and a delivery into it was being
-     * written to Postgres and then not shown until the next restart.
-     */
-    this.restored.set(threadId, {
-      messages,
-      record: existing
-        ? { ...existing.record, updatedAt }
-        : {
-            id: threadId,
-            name: null,
-            agentId: agentId ?? "",
-            organizationId: "",
-            createdById: "",
-            archived: false,
-            createdAt: updatedAt,
-            updatedAt,
-          },
-    });
+    return mergeKeepingStoredOnly(stored, live);
   }
 
   /** The user's side, written the moment a run starts: a crash mid-turn keeps it. */
   private async beginRun(
-    runId: string,
+    requestedRunId: string | null,
     threadId: string,
     agentId: string | null,
     messages: Message[],
-    origin = "chat",
-    dedupeKey: string | null = null,
-  ): Promise<void> {
+    origin: RunOrigin,
+    dedupeKey: string | null,
+  ): Promise<string | null> {
     try {
       /*
        * WHOSE RUN IT IS, LOOKED UP RATHER THAN ACCEPTED.
@@ -536,33 +432,34 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
        * The roster asks "what is running for me", so a run needs an owner. The obvious route is
        * `forwardedProps` — it is the one field AG-UI does not strip — and it is the wrong one: a
        * client that can name the owner of a run can light up somebody else's roster, or hide its
-       * own work in theirs. The thread already knows. `intelligence_channel_mappings` is unique on
-       * `thread_id`, so this is one indexed read of a fact the server itself wrote.
+       * own work in theirs. The thread already knows. `channel_threads` is unique on `thread_id`,
+       * so this is one indexed read of a fact the server itself wrote.
        */
       const [owner] = await this.database
-        .select({ userId: intelligenceChannelMappings.userId })
-        .from(intelligenceChannelMappings)
-        .where(eq(intelligenceChannelMappings.threadId, threadId))
+        .select({ userId: channelThreads.userId })
+        .from(channelThreads)
+        .where(eq(channelThreads.threadId, threadId))
         .limit(1);
 
-      await this.database.insert(lafThreadRuns).values({
-        runId,
+      // One writer for this table, and it is not this class. See runner/run-ledger.ts.
+      const runId = await this.ledger.begin({
+        ...(requestedRunId ? { runId: requestedRunId } : {}),
         threadId,
         agentId,
-        // The same ledger the routine service writes — see runner/run-ledger.ts.
         userId: owner?.userId ?? null,
-        status: "running",
         origin,
         dedupeKey,
       });
-      await this.saveSnapshot(threadId, agentId, messages);
+      await appendMessages(this.database, threadId, messages, { runId });
+      return runId;
     } catch (error) {
       console.error("[laf-runner] persisting run start failed:", error);
+      return null;
     }
   }
 
   private async finishRun(
-    runId: string,
+    opened: Promise<string | null>,
     threadId: string,
     agentId: string | null,
     inputMessages: Message[],
@@ -571,20 +468,20 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     errorMessage: string | null,
   ): Promise<void> {
     try {
+      const runId = await opened;
       const messages = [
         ...inputMessages,
         ...assistantMessagesFrom(events, startedAt, agentId),
       ];
-      await this.saveSnapshot(threadId, agentId, messages);
-      await this.database
-        .update(lafThreadRuns)
-        .set({
-          ...runOutcome(events, errorMessage),
+      await appendMessages(this.database, threadId, messages, { runId });
+      if (runId) {
+        const outcome = runOutcome(events, errorMessage);
+        await this.ledger.settle(runId, {
+          ...outcome,
           eventCount: events.length,
-          finishedAt: new Date(),
-        })
-        .where(eq(lafThreadRuns.runId, runId));
-      await this.recordUsage(runId, threadId, agentId, events);
+        });
+        await this.recordUsage(runId, threadId, agentId, events);
+      }
     } catch (error) {
       console.error("[laf-runner] persisting run end failed:", error);
     }
@@ -619,65 +516,5 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         },
       }).catch(() => undefined);
     }
-  }
-
-  private async saveSnapshot(
-    threadId: string,
-    agentId: string | null,
-    incoming: Message[],
-  ): Promise<void> {
-    const updatedAt = new Date();
-    /*
-     * Stamps are merged against what this thread already holds, not recomputed.
-     *
-     * Every run hands back the entire history as its input, and that copy has been through AG-UI's
-     * `strip` on the way in, so it arrives bare. Without the merge, saving turn ten would set turn
-     * one's time to now — the conversation would claim to have happened all at once, every time.
-     */
-    const previous = this.restored.get(threadId)?.messages ?? [];
-    /*
-     * And who said it, kept the same way and for the same reason: the input arrives stripped, so
-     * without the merge every reply in a group room would lose its colleague's name the moment
-     * anybody else took a turn.
-     */
-    const messages = attribute(
-      stamp(
-        mergeKeepingStoredOnly(previous, incoming),
-        stampsOf(previous),
-        new Set(previous.map((message) => message.id)),
-        updatedAt.toISOString(),
-      ),
-      speakersOf(previous),
-    );
-    // `::text::jsonb`, measured, not guessed. A top-level JS array must not reach
-    // the driver as itself (postgres-js reads it as a Postgres array) nor as a
-    // parameter cast straight to jsonb (the jsonb serializer stringifies the
-    // already-stringified value — a jsonb *string*, opaque to every SQL-side
-    // consumer). Typing the parameter as text first is the one form of the three
-    // that lands as a real jsonb array; see laf_thread_runs in the M0 notes.
-    const messagesJson = sql`${JSON.stringify(messages)}::text::jsonb`;
-    await this.database
-      .insert(lafThreadSnapshots)
-      .values({ threadId, agentId, messages: messagesJson, updatedAt })
-      .onConflictDoUpdate({
-        target: lafThreadSnapshots.threadId,
-        set: { agentId, messages: messagesJson, updatedAt },
-      });
-    const existing = this.restored.get(threadId);
-    this.restored.set(threadId, {
-      messages,
-      record: existing
-        ? { ...existing.record, updatedAt: updatedAt.toISOString() }
-        : {
-            id: threadId,
-            name: null,
-            agentId: agentId ?? "",
-            organizationId: "",
-            createdById: "",
-            archived: false,
-            createdAt: updatedAt.toISOString(),
-            updatedAt: updatedAt.toISOString(),
-          },
-    });
   }
 }

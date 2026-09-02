@@ -1,45 +1,82 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
-  jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+// NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
+// lands as a JSON *string* that no SQL operator can read. See ./json.ts.
+import { jsonb } from "./json";
 
 /**
  * Durable conversation history, kept here instead of in CopilotKit Intelligence.
  *
- * This fork's rule is that the only external dependencies are the model API and the
- * machines it runs on, so the thing Intelligence held — what was said in every thread —
- * lives in the same Postgres as everything else. One row per thread, the whole message
- * list as it stood after the last completed run. A snapshot rather than an append-only
- * log because AG-UI carries the full conversation into every run anyway; the log of
- * record for *actions* is `audit_events`, not this table.
+ * This fork's rule is that the only external dependencies are the model API and the machines it
+ * runs on, so the thing Intelligence held — what was said in every thread — lives in the same
+ * Postgres as everything else.
+ *
+ * ONE ROW PER MESSAGE, APPEND-ONLY. It was one row per thread holding the whole list, on the
+ * reasoning that AG-UI carries the full conversation into every run anyway — and three writers grew
+ * on it with two different disciplines. The runner rewrote the array from its own in-memory mirror
+ * merged with the client's copy; the room and the routine delivery appended with `jsonb || jsonb`.
+ * An append landing between the runner's read and its overwrite was gone, and the mirror the
+ * overwrite was built from had to be glued back into step by hand after every append. A turn also
+ * cost a rewrite of the whole conversation, and boot read every thread's full history into memory.
+ *
+ * `seq` is per thread and assigned under a per-thread advisory lock, so two transactions appending
+ * at the same instant cannot claim one number or lose each other's message. `at` is when the row
+ * was written; the transcript's own separators still come from the message's `lafAt` stamp, because
+ * a row written by the 0026 backfill knows only when its snapshot was last saved and a separator
+ * drawn from that would be a time this product invented. `run_id` is the run that produced it,
+ * where one did — a routine delivery and a person's own message have none.
+ *
+ * There is no foreign key on `thread_id`: a thread is an id this deployment mints
+ * (`channels/thread-identity.ts`), not a row.
  */
-export const lafThreadSnapshots = pgTable("laf_thread_snapshots", {
-  threadId: text("thread_id").primaryKey(),
-  /** The agent the thread belongs to, when the run said so. */
-  agentId: text("agent_id"),
-  /** AG-UI `Message[]`, verbatim. */
-  messages: jsonb("messages").notNull().default([]),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const lafThreadMessages = pgTable(
+  "laf_thread_messages",
+  {
+    threadId: text("thread_id").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    /** One AG-UI `Message`, plus the `lafAt`/`lafAgentId` stamps. See `runner/thread-store.ts`. */
+    message: jsonb("message").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** The run that wrote it, when a run did. Null for a delivery and for a person's own message. */
+    runId: text("run_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.seq] }),
+    /*
+     * A message id appears at most once in a thread, enforced rather than hoped for.
+     *
+     * Every run hands the WHOLE history back as its input, so the append path sees each message
+     * again on every turn; identity is what makes writing it twice impossible rather than merely
+     * unlikely. It is also what lets a later, richer copy of the same message — an assistant turn
+     * whose tool calls only arrive with the next run's input — update its row in place instead of
+     * arriving as a second message.
+     */
+    uniqueIndex("laf_thread_messages_message_id_idx").on(
+      table.threadId,
+      sql`(${table.message} ->> 'id')`,
+    ),
+  ],
+);
 
 /**
  * One row per run: when it started, how it ended, and how big it was.
  *
  * Deliberately not the full event stream — a streaming turn can be arbitrarily large and
- * the messages already land in the snapshot. This is the skeleton the real Run ledger
+ * the messages already land in `laf_thread_messages`. This is the skeleton the real Run ledger
  * (states like `claimed` and `unknown`, budgets, approvals) will grow on; until then it
  * answers the operational question a restart raises: which runs never finished.
+ *
+ * Every row is written by `runner/run-ledger.ts` and by nothing else.
  */
 export const lafThreadRuns = pgTable(
   "laf_thread_runs",
@@ -65,12 +102,12 @@ export const lafThreadRuns = pgTable(
     /** What it is doing, in the person's own words where there are any — a routine's name. */
     label: text("label"),
     /**
-     * `running` | `done` | `error` | `unknown`. A run still `running` when a new
-     * process boots cannot still be running — this build is one process — so
-     * boot reconciles it to `unknown`: the crash suspect the digest names.
+     * `running` | `done` | `error` | `stopped` | `unknown`. A run still `running` when a new process
+     * boots cannot still be running — this build is one process — so boot reconciles it to
+     * `unknown`: the crash suspect the digest names.
      */
     status: text("status").notNull(),
-    /** What started it: `chat` for a person's turn, `wake` for the watcher. */
+    /** What started it: `chat` for a person's turn, `routine` for one on a clock. */
     origin: text("origin").notNull().default("chat"),
     /**
      * Machine-initiated runs carry one; a second run with the same key must not
@@ -186,6 +223,10 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
    * The turns the run took: how many, how long each, which tools each asked for and whether they
    * went through. An operator reading "Failed: the Bot stopped before it finished" wants to know
    * how far it got; the answer alone cannot say. Null on rows written before this existed.
+   *
+   * Written through drizzle's own `jsonb()` until now, which is the double-encoding trap: every one
+   * of the 22 rows this deployment had held a jsonb *string*, and `steps.reduce` on the Routines
+   * page would have thrown on the first one it drew. The custom type sends an array as an array.
    */
   steps:
     jsonb("steps").$type<

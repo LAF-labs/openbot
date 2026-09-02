@@ -10,14 +10,15 @@ import {
   agentProfiles,
   agents,
   channels,
-  intelligenceChannelMappings,
-  lafThreadSnapshots,
+  channelThreads,
+  lafThreadMessages,
   users,
 } from "../src/db/schema";
 import {
   appendToSoloConversation,
   createRoutineDelivery,
 } from "../src/routines/deliver";
+import { messagesFor } from "../src/runner/thread-store";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -54,13 +55,13 @@ const threadIds: string[] = [];
 afterEach(async () => {
   for (const threadId of threadIds.splice(0)) {
     await database
-      .delete(lafThreadSnapshots)
-      .where(eq(lafThreadSnapshots.threadId, threadId));
+      .delete(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, threadId));
   }
   for (const channelId of channelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of agentIds.splice(0)) {
@@ -102,19 +103,15 @@ async function createSolo(owner: AgentActor, agentId: string) {
   const channel = await store.create(owner, [agentId]);
   channelIds.push(channel.id);
   const [mapping] = await database
-    .select({ threadId: intelligenceChannelMappings.threadId })
-    .from(intelligenceChannelMappings)
-    .where(eq(intelligenceChannelMappings.channelId, channel.id));
+    .select({ threadId: channelThreads.threadId })
+    .from(channelThreads)
+    .where(eq(channelThreads.channelId, channel.id));
   if (mapping?.threadId) threadIds.push(mapping.threadId);
   return channel;
 }
 
 async function messagesIn(threadId: string) {
-  const [row] = await database
-    .select({ messages: lafThreadSnapshots.messages })
-    .from(lafThreadSnapshots)
-    .where(eq(lafThreadSnapshots.threadId, threadId));
-  return (row?.messages ?? []) as Array<{
+  return (await messagesFor(database, threadId)) as unknown as Array<{
     role: string;
     content: string;
     lafAgentId?: string;

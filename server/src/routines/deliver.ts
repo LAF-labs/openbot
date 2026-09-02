@@ -7,7 +7,7 @@
  * the roster preview, it lights the unread dot, and the transcript reads as one continuous
  * relationship rather than two logs of the same colleague.
  *
- * Written straight into the snapshot rather than through a run of the conversation's agent. The
+ * Written straight into the store rather than through a run of the conversation's agent. The
  * routine already ran — this is recording what was said, not saying it again, and re-running it
  * against the chat thread would double the cost and could answer differently the second time.
  */
@@ -20,16 +20,8 @@ import type {
 import { previewOf } from "../channels/preview";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { Database } from "../db/client";
-import { channelMemberships, channels, lafThreadSnapshots } from "../db/schema";
-
-type StampedMessage = {
-  id: string;
-  role: string;
-  content: string;
-  lafAt?: string;
-  /** Which Bot said it. See `laf-runner.ts` for why this rides the jsonb rather than the type. */
-  lafAgentId?: string;
-};
+import { channelMemberships, channels } from "../db/schema";
+import { appendMessages, type StoredMessage } from "../runner/thread-store";
 
 export type RoutineDelivery = {
   agentId: string;
@@ -68,114 +60,54 @@ export type SoloAppend = {
 export async function appendToSoloConversation(
   database: Database,
   append: SoloAppend,
-  onAppended?: (
-    threadId: string,
-    agentId: string,
-    messages: StampedMessage[],
-  ) => void,
 ): Promise<{ channelId: string; threadId: string } | null> {
-  const delivery = append;
-  {
-    const target = await soloChannelFor(
-      database,
-      delivery.userId,
-      delivery.agentId,
-    );
-    if (!target) return null;
+  const target = await soloChannelFor(database, append.userId, append.agentId);
+  if (!target) return null;
 
-    const [snapshot] = await database
-      .select({ messages: lafThreadSnapshots.messages })
-      .from(lafThreadSnapshots)
-      .where(eq(lafThreadSnapshots.threadId, target.threadId))
-      .limit(1);
+  /*
+   * One message, from the Bot, that says which routine spoke.
+   *
+   * Not two — the instruction is not something the person typed, and rendering it as their own
+   * message would put words in their mouth every morning. The routine's name carries the "why is
+   * this here" that the instruction would have carried.
+   */
+  const message = {
+    id: randomUUID(),
+    role: "assistant",
+    content: `**${append.heading}**\n\n${append.body}`,
+    lafAt: append.at.toISOString(),
+    // The Bot whose routine it was. A message it left unattributed would be a hole in a record the
+    // transcript reads as complete.
+    lafAgentId: append.agentId,
+  } as StoredMessage;
 
-    const existing: StampedMessage[] = Array.isArray(snapshot?.messages)
-      ? (snapshot?.messages as StampedMessage[])
-      : [];
-    const at = delivery.at.toISOString();
-    /*
-     * One message, from the Bot, that says which routine spoke.
-     *
-     * Not two — the instruction is not something the person typed, and rendering it as their own
-     * message would put words in their mouth every morning. The routine's name carries the "why is
-     * this here" that the instruction would have carried.
-     */
-    const message: StampedMessage = {
-      id: randomUUID(),
-      role: "assistant",
-      content: `**${delivery.heading}**\n\n${delivery.body}`,
-      lafAt: at,
-      // The Bot whose routine it was. This is the second writer into the snapshot, and a message
-      // it left unattributed would be a hole in a record the transcript reads as complete.
-      lafAgentId: delivery.agentId,
-    };
-    const one = sql`${JSON.stringify([message])}::text::jsonb`;
+  /*
+   * APPENDED, NOT READ-MODIFIED-WRITTEN.
+   *
+   * A chat run can write this thread at the same instant — the person may be mid-turn with the
+   * same Bot when its routine fires — and whichever wrote second used to erase the other's message.
+   * `appendMessages` takes a per-thread lock and adds a row, so neither side can lose the other's
+   * and neither has to know the other exists.
+   */
+  await appendMessages(database, target.threadId, [message], { at: append.at });
 
-    /*
-     * APPENDED IN SQL, NOT READ-MODIFIED-WRITTEN.
-     *
-     * A chat run can save this thread between a read here and a write here — the person may be
-     * mid-turn with the same Bot when its routine fires — and whichever wrote second would erase
-     * the other's message. `jsonb || jsonb` appends atomically against whatever the row holds at
-     * that instant, so neither side can lose the other's. The read above is only for the copy the
-     * runner is told about.
-     */
-    const [written] = await database
-      .insert(lafThreadSnapshots)
-      .values({
-        threadId: target.threadId,
-        agentId: delivery.agentId,
-        messages: one,
-        updatedAt: delivery.at,
-      })
-      .onConflictDoUpdate({
-        target: lafThreadSnapshots.threadId,
-        set: {
-          messages: sql`${lafThreadSnapshots.messages} || ${one}`,
-          updatedAt: delivery.at,
-        },
-      })
-      .returning({ messages: lafThreadSnapshots.messages });
-
-    onAppended?.(
-      target.threadId,
-      delivery.agentId,
-      Array.isArray(written?.messages)
-        ? (written.messages as StampedMessage[])
-        : [...existing, message],
-    );
-
-    return target;
-  }
+  return target;
 }
 
 export function createRoutineDelivery(
   database: Database,
-  /**
-   * Told what the thread now holds, so the runner's rehydrated copy stays in step with Postgres.
-   * Absent in tests; the row is still written and read correctly on the next boot.
-   */
-  onAppended?: (
-    threadId: string,
-    agentId: string,
-    messages: StampedMessage[],
-  ) => void,
   /** Moves the roster row on every open tab. Absent in tests; the row is still written. */
   announce?: AnnounceChannelActivity,
 ) {
   return async (delivery: RoutineDelivery): Promise<void> => {
-    const target = await appendToSoloConversation(
-      database,
-      {
-        agentId: delivery.agentId,
-        userId: delivery.userId,
-        // The routine's name, which is the "why is this here" the instruction would have carried.
-        heading: delivery.routineName,
-        body: delivery.answer,
-        at: delivery.at,
-      },
-      onAppended,
-    );
+    const target = await appendToSoloConversation(database, {
+      agentId: delivery.agentId,
+      userId: delivery.userId,
+      // The routine's name, which is the "why is this here" the instruction would have carried.
+      heading: delivery.routineName,
+      body: delivery.answer,
+      at: delivery.at,
+    });
     if (!target) return;
 
     /*

@@ -22,7 +22,7 @@ import {
   channelAgents,
   channels,
   deploymentPackages,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -543,7 +543,7 @@ describe("agent profile store integration", () => {
       channelId,
       agentId: source.agentId,
     });
-    await database.insert(intelligenceChannelMappings).values({
+    await database.insert(channelThreads).values({
       userId: owner.id,
       channelId,
       threadId: id("thread"),
@@ -557,16 +557,16 @@ describe("agent profile store integration", () => {
       .select()
       .from(channelAgents)
       .innerJoin(
-        intelligenceChannelMappings,
-        eq(channelAgents.channelId, intelligenceChannelMappings.channelId),
+        channelThreads,
+        eq(channelAgents.channelId, channelThreads.channelId),
       )
       .where(eq(channelAgents.agentId, source.agentId));
     const duplicateMappings = await database
       .select()
       .from(channelAgents)
       .innerJoin(
-        intelligenceChannelMappings,
-        eq(channelAgents.channelId, intelligenceChannelMappings.channelId),
+        channelThreads,
+        eq(channelAgents.channelId, channelThreads.channelId),
       )
       .where(eq(channelAgents.agentId, duplicate.id));
     const duplicateChannelAgents = await database

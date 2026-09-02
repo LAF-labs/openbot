@@ -298,19 +298,21 @@ export const auditEvents = pgTable(
     payload: jsonb("payload").notNull(),
     createdAt: createdAt(),
   },
-  (table) => [index("audit_events_created_at_idx").on(table.createdAt)],
+  (table) => [
+    index("audit_events_created_at_idx").on(table.createdAt),
+  ],
 );
 
 /**
  * Which thread a person is having with a channel.
  *
- * The name is a fossil: threads once lived in CopilotKit Intelligence and this table pointed at
- * them there. They live in `laf_thread_snapshots` now and nothing here reaches a hosted service,
- * but the rows are real conversations and renaming a table is a migration with no upside on its
- * own, so the name is left for the phase that is renaming several at once.
+ * It was `intelligence_channel_mappings`, after a service this fork does not use: threads once
+ * lived in CopilotKit Intelligence and this table pointed at them there. They live in
+ * `laf_thread_messages` now and nothing here reaches a hosted service, so migration 0026 renames
+ * the table to what it is.
  */
-export const intelligenceChannelMappings = pgTable(
-  "intelligence_channel_mappings",
+export const channelThreads = pgTable(
+  "channel_threads",
   {
     userId: text("user_id")
       .notNull()
@@ -324,6 +326,6 @@ export const intelligenceChannelMappings = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.channelId] }),
-    uniqueIndex("intelligence_channel_mappings_thread_idx").on(table.threadId),
+    uniqueIndex("channel_threads_thread_idx").on(table.threadId),
   ],
 );

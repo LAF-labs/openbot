@@ -29,11 +29,7 @@ import { readPrivateHistory } from "./private-history";
 import type { ApprovalWaiter } from "./wait-for-approval";
 import { runRoomTurn } from "./orchestrator";
 import type { RoomMember } from "./prompt";
-import {
-  appendRoomMessage,
-  readRoomLines,
-  type StoredMessage,
-} from "./transcript";
+import { appendRoomMessage, readRoomLines } from "./transcript";
 
 /** How long one member may take. Generous: it may open pages and read files before it answers. */
 export const MEMBER_TURN_TIMEOUT_MS = 300_000;
@@ -69,12 +65,6 @@ export type RoomServiceOptions = {
    * for why the caller announces rather than the writer.
    */
   announce?: AnnounceChannelActivity;
-  /** Keep the runner's rehydrated copy of the thread in step with what we wrote. */
-  onAppended?: (
-    threadId: string,
-    agentId: string | null,
-    messages: StoredMessage[],
-  ) => void;
   /**
    * Hold a member's turn while a person answers the question its action raised.
    *
@@ -156,29 +146,16 @@ export function createRoomService(options: RoomServiceOptions) {
       }
 
       const turnId = randomUUID();
-      /*
-       * `onAppended` updates the runner's in-memory copy of the thread, and it is NOT passed into
-       * the transaction. Called there, a rollback after the append would leave the runner holding a
-       * message Postgres never kept — and `mergeKeepingStoredOnly` would faithfully re-insert that
-       * phantom on the thread's next save. It is told once the transaction has committed.
-       */
-      let appended: StoredMessage[] | null = null;
       const posted = await database.transaction(async (transaction) => {
-        // Same rule as `onAppended` below and for the same reason: nothing outside this transaction
-        // is told about a message until the transaction that wrote it has committed.
-        const written = await appendRoomMessage(
-          transaction,
-          {
-            channelId: input.channelId,
-            threadId: input.threadId,
-            agentId: null,
-            text,
-            ...(input.messageId ? { messageId: input.messageId } : {}),
-          },
-          (_threadId, _agentId, messages) => {
-            appended = messages;
-          },
-        );
+        // Nothing outside this transaction is told about a message until the transaction that
+        // wrote it has committed — hence the announcement below rather than in here.
+        const written = await appendRoomMessage(transaction, {
+          channelId: input.channelId,
+          threadId: input.threadId,
+          agentId: null,
+          text,
+          ...(input.messageId ? { messageId: input.messageId } : {}),
+        });
         const [bumped] = await transaction
           .update(channels)
           .set({ roomTurnEpoch: sql`${channels.roomTurnEpoch} + 1` })
@@ -186,7 +163,6 @@ export function createRoomService(options: RoomServiceOptions) {
           .returning({ epoch: channels.roomTurnEpoch });
         return { written, epoch: Number(bumped?.epoch ?? room.epoch) };
       });
-      if (appended) options.onAppended?.(input.threadId, null, appended);
       if (posted.written.activity) options.announce?.(posted.written.activity);
 
       const memberIds = await watchers(database, input.channelId);
@@ -393,16 +369,12 @@ export function createRoomService(options: RoomServiceOptions) {
                 timeoutMs,
                 ...(options.ledger ? { ledger: options.ledger } : {}),
                 deliver: async (text, toolCallId) => {
-                  const written = await appendRoomMessage(
-                    database,
-                    {
-                      channelId: input.channelId,
-                      threadId: input.threadId,
-                      agentId: member.id,
-                      text,
-                    },
-                    options.onAppended,
-                  );
+                  const written = await appendRoomMessage(database, {
+                    channelId: input.channelId,
+                    threadId: input.threadId,
+                    agentId: member.id,
+                    text,
+                  });
                   // No transaction here — the append is its own — so the roster row is announced
                   // as soon as it has moved.
                   if (written.activity) options.announce?.(written.activity);

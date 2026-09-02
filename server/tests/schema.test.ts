@@ -13,7 +13,8 @@ import {
   channelMemberships,
   channels,
   credentials,
-  intelligenceChannelMappings,
+  channelThreads,
+  lafThreadMessages,
   sessions,
   userRoles,
   users,
@@ -35,7 +36,7 @@ describe("LAF Agent database schema", () => {
         channelAgents,
         credentials,
         auditEvents,
-        intelligenceChannelMappings,
+        channelThreads,
       ].map(getTableName),
     ).toEqual([
       "users",
@@ -49,8 +50,46 @@ describe("LAF Agent database schema", () => {
       "channel_agents",
       "credentials",
       "audit_events",
-      "intelligence_channel_mappings",
+      "channel_threads",
     ]);
+  });
+
+  /*
+   * The conversation store, and the shape that makes it append-only.
+   *
+   * `laf_thread_snapshots` held one jsonb array per thread and three call sites wrote it two
+   * different ways; an append landing between the runner's read and its overwrite was gone. The
+   * primary key is what says a message has a place in a thread rather than a place in an array, and
+   * the unique index on the message id is what lets the same message arrive twice — every run hands
+   * the whole history back — without becoming two.
+   */
+  test("stores a conversation as one append-only row per message", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+    expect(schema.lafThreadSnapshots).toBeUndefined();
+
+    const config = getTableConfig(lafThreadMessages);
+    expect(getTableName(lafThreadMessages)).toBe("laf_thread_messages");
+    expect(config.columns.map((column) => column.name)).toEqual([
+      "thread_id",
+      "seq",
+      "message",
+      "at",
+      "run_id",
+    ]);
+    expect(
+      config.primaryKeys.map((key) => key.columns.map((c) => c.name)),
+    ).toEqual([["thread_id", "seq"]]);
+    expect(
+      config.indexes.map((index) => ({
+        name: index.config.name,
+        unique: index.config.unique,
+      })),
+    ).toEqual([{ name: "laf_thread_messages_message_id_idx", unique: true }]);
+    // No foreign key on thread_id: a thread is an id this deployment mints, not a row.
+    expect(config.foreignKeys).toHaveLength(0);
   });
 
   /*

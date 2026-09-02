@@ -9,12 +9,13 @@ import {
 } from "bun:test";
 import { eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, channels, lafThreadSnapshots } from "../src/db/schema";
+import { agents, channels, lafThreadMessages } from "../src/db/schema";
+import { appendRoomMessage, readRoomLines } from "../src/rooms/transcript";
 import {
-  appendRoomMessage,
-  readRoomLines,
+  appendMessages,
+  messagesFor,
   type StoredMessage,
-} from "../src/rooms/transcript";
+} from "../src/runner/thread-store";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -65,8 +66,8 @@ afterAll(async () => {
 afterEach(async () => {
   if (made.threads.length > 0) {
     await database
-      .delete(lafThreadSnapshots)
-      .where(inArray(lafThreadSnapshots.threadId, made.threads));
+      .delete(lafThreadMessages)
+      .where(inArray(lafThreadMessages.threadId, made.threads));
   }
   if (made.channels.length > 0) {
     await database.delete(channels).where(inArray(channels.id, made.channels));
@@ -98,9 +99,9 @@ describe("writing into a room", () => {
     const { channelId, threadId } = await makeRoom();
 
     /*
-     * The reason the append is `jsonb || jsonb` and not read-modify-write. Both of these read the
-     * same row before either writes; with a read-modify-write the second would erase the first,
-     * and in a room that is one colleague's sentence disappearing from the conversation.
+     * The reason `appendMessages` takes a per-thread advisory lock. Both of these read the thread
+     * before either writes; without the lock the second would claim the first's `seq` or overwrite
+     * it, and in a room that is one colleague's sentence disappearing from the conversation.
      */
     await Promise.all([
       appendRoomMessage(database, {
@@ -160,11 +161,7 @@ describe("writing into a room", () => {
     });
     expect(written?.messageId).toBe(messageId);
 
-    const [row] = await database
-      .select({ messages: lafThreadSnapshots.messages })
-      .from(lafThreadSnapshots)
-      .where(eq(lafThreadSnapshots.threadId, threadId));
-    const stored = (row?.messages ?? []) as StoredMessage[];
+    const stored = await messagesFor(database, threadId);
     expect(stored[0]?.id).toBe(messageId);
   });
 });
@@ -176,22 +173,18 @@ describe("reading a room back", () => {
      * A member's tool calls, their results and its system turn are how it did the work, not what it
      * said — the room only ever shows what a `send_message` put in it.
      */
-    await database.insert(lafThreadSnapshots).values({
-      threadId,
-      agentId: "risk-analyst",
-      messages: [
-        { id: "s", role: "system", content: "room conduct" },
-        { id: "u", role: "user", content: "확인해주세요" },
-        { id: "scratch", role: "assistant", content: "먼저 페이지를 열어보자" },
-        { id: "t", role: "tool", toolCallId: "c1", content: "{}" },
-        {
-          id: "said",
-          role: "assistant",
-          content: "확인했습니다",
-          lafAgentId: "risk-analyst",
-        },
-      ] as never,
-    });
+    await appendMessages(database, threadId, [
+      { id: "s", role: "system", content: "room conduct" },
+      { id: "u", role: "user", content: "확인해주세요" },
+      { id: "scratch", role: "assistant", content: "먼저 페이지를 열어보자" },
+      { id: "t", role: "tool", toolCallId: "c1", content: "{}" },
+      {
+        id: "said",
+        role: "assistant",
+        content: "확인했습니다",
+        lafAgentId: "risk-analyst",
+      },
+    ] as unknown as StoredMessage[]);
 
     const lines = await readRoomLines(database, threadId, names, "김기범");
     expect(lines.map((line) => line.text)).toEqual([

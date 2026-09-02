@@ -27,7 +27,7 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -384,8 +384,8 @@ const createdChannelIds: string[] = [];
 afterEach(async () => {
   for (const channelId of createdChannelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of createdAgentIds.splice(0)) {
@@ -458,8 +458,8 @@ async function persistedChannel(channelId: string) {
     .where(eq(channelAgents.channelId, channelId));
   const mappings = await database
     .select()
-    .from(intelligenceChannelMappings)
-    .where(eq(intelligenceChannelMappings.channelId, channelId));
+    .from(channelThreads)
+    .where(eq(channelThreads.channelId, channelId));
   return { channelRow, memberships, linkedAgents, mappings };
 }
 
@@ -491,11 +491,11 @@ async function channelTableSnapshot() {
     mappings: (
       await database
         .select({
-          channelId: intelligenceChannelMappings.channelId,
-          threadId: intelligenceChannelMappings.threadId,
-          userId: intelligenceChannelMappings.userId,
+          channelId: channelThreads.channelId,
+          threadId: channelThreads.threadId,
+          userId: channelThreads.userId,
         })
-        .from(intelligenceChannelMappings)
+        .from(channelThreads)
     )
       .map(
         ({ channelId, threadId, userId }) =>
@@ -599,8 +599,8 @@ describe("channel store integration", () => {
     const created = await persistentStore.create(actor, [agentId]);
     createdChannelIds.push(created.id);
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, created.id));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, created.id));
 
     expect(await persistentStore.get(actor, created.id)).toBeNull();
   });

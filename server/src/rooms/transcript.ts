@@ -1,40 +1,32 @@
 /**
  * Reading a room and writing into it.
  *
- * A room's transcript is the same `laf_thread_snapshots` row a one-to-one conversation uses; what
+ * A room's transcript is the same `laf_thread_messages` rows a one-to-one conversation uses; what
  * makes it a room is that several Bots write into it and every assistant message carries
  * `lafAgentId`. Both halves live here so the rule about who said what is written once: a message
  * whose speaker nobody recorded is not shown to the members as anybody's, and no message is ever
  * written without one.
  *
- * The append is `createRoutineDelivery`'s, generalised. Everything it learned the hard way is kept:
- * `jsonb || jsonb` rather than read-modify-write, because a chat run can save the same thread
- * between our read and our write; Postgres' clock and a forward-only guard on the roster row,
- * because this process runs ~66 ms behind the database and the roster orders by that column; and
- * the announcement last, only when the row actually moved.
+ * The append goes through `appendMessages` (runner/thread-store.ts) like every other write in the
+ * product. What this file kept from the version that wrote `jsonb || jsonb` by hand is the half
+ * that is about the ROSTER rather than the transcript: Postgres' clock and a forward-only guard on
+ * the roster row, because this process runs ~66 ms behind the database and the roster orders by
+ * that column; and the announcement last, only when the row actually moved.
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { ChannelActivityEvent } from "../channels/events";
 import { previewOf } from "../channels/preview";
-import type { Database } from "../db/client";
-import { channelMemberships, channels, lafThreadSnapshots } from "../db/schema";
+import { channelMemberships, channels } from "../db/schema";
+import {
+  appendMessages,
+  type Executor,
+  messagesFor,
+  type StoredMessage,
+} from "../runner/thread-store";
 import type { RoomLine } from "./prompt";
 
-/** A message as the snapshot stores it. See `laf-runner.ts` for why these keys ride the jsonb. */
-export type StoredMessage = {
-  id: string;
-  role: string;
-  content?: unknown;
-  lafAt?: string;
-  lafAgentId?: string;
-};
-
-/** Anything that can run a statement: the pool, or a transaction inside somebody else's work. */
-export type Executor = Pick<
-  Database,
-  "select" | "insert" | "update" | "execute"
->;
+export type { Executor, StoredMessage } from "../runner/thread-store";
 
 /** The words of a stored message. Parts that are not text — an image, a file — are not words. */
 export function textOf(content: unknown): string {
@@ -62,9 +54,9 @@ export function textOf(content: unknown): string {
  * room without narrating it at everybody.
  *
  * An assistant message with no `lafAgentId` is skipped rather than attributed to somebody. That is
- * `attribute()`'s rule (`runner/laf-runner.ts`) carried into the prompt: a message whose Bot nobody
- * recorded belongs to no particular Bot, and putting one colleague's words under another's name is
- * worse than leaving a gap.
+ * `attribute()`'s rule (`runner/thread-store.ts`) carried into the prompt: a message whose Bot
+ * nobody recorded belongs to no particular Bot, and putting one colleague's words under another's
+ * name is worse than leaving a gap.
  */
 export async function readRoomLines(
   executor: Executor,
@@ -72,18 +64,11 @@ export async function readRoomLines(
   names: ReadonlyMap<string, string>,
   personName: string,
 ): Promise<RoomLine[]> {
-  const [row] = await executor
-    .select({ messages: lafThreadSnapshots.messages })
-    .from(lafThreadSnapshots)
-    .where(eq(lafThreadSnapshots.threadId, threadId))
-    .limit(1);
-  const stored: unknown = row?.messages;
-  if (!Array.isArray(stored)) return [];
+  const stored = await messagesFor(executor, threadId);
 
   const lines: RoomLine[] = [];
-  for (const entry of stored as StoredMessage[]) {
-    if (!entry || typeof entry !== "object") continue;
-    const text = textOf(entry.content).trim();
+  for (const entry of stored) {
+    const text = textOf((entry as { content?: unknown }).content).trim();
     if (!text) continue;
     if (entry.role === "user") {
       lines.push({ agentId: null, name: personName, text });
@@ -108,7 +93,7 @@ export type RoomAppend = {
 };
 
 /**
- * Put one message in the room, tell the runner, move the roster row, and say what to announce.
+ * Put one message in the room, move the roster row, and say what to announce.
  *
  * The id is OURS, always. `agent-bot` mints `msg_${runId}` for the message it streams, and two
  * members answering in the same turn would collide on it — a collision here does not throw, it
@@ -124,11 +109,6 @@ export type RoomAppend = {
 export async function appendRoomMessage(
   executor: Executor,
   append: RoomAppend,
-  onAppended?: (
-    threadId: string,
-    agentId: string | null,
-    messages: StoredMessage[],
-  ) => void,
 ): Promise<{
   messageId: string;
   at: string;
@@ -141,33 +121,9 @@ export async function appendRoomMessage(
     content: append.text,
     lafAt: at.toISOString(),
     ...(append.agentId ? { lafAgentId: append.agentId } : {}),
-  };
-  const one = sql`${JSON.stringify([message])}::text::jsonb`;
+  } as StoredMessage;
 
-  const [written] = await executor
-    .insert(lafThreadSnapshots)
-    .values({
-      threadId: append.threadId,
-      agentId: append.agentId,
-      messages: one,
-      updatedAt: at,
-    })
-    .onConflictDoUpdate({
-      target: lafThreadSnapshots.threadId,
-      set: {
-        messages: sql`${lafThreadSnapshots.messages} || ${one}`,
-        updatedAt: at,
-      },
-    })
-    .returning({ messages: lafThreadSnapshots.messages });
-
-  if (Array.isArray(written?.messages)) {
-    onAppended?.(
-      append.threadId,
-      append.agentId,
-      written.messages as StoredMessage[],
-    );
-  }
+  await appendMessages(executor, append.threadId, [message], { at });
 
   const [row] = await executor
     .update(channels)
