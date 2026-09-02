@@ -1,0 +1,49 @@
+version: 2
+
+# Nothing here watched a dependency before this file existed: the images pinned nothing, the
+# workflows pin action SHAs by hand, and a published advisory reached this repository only when
+# somebody happened to read one.
+#
+# Weekly and grouped, on purpose. Ungrouped, a monorepo this size opens a dozen pull requests every
+# Monday, each needing its own CI run and its own review, and the pile is how a person learns to
+# ignore the whole channel. One pull request per ecosystem per week is a thing somebody actually
+# reads — and CI, which now runs the same checks that gate an image, is what says whether it is safe.
+updates:
+  # Bun reads the same manifests, and the root manifest declares the workspaces, so one entry
+  # covers app, server, agent-bot, agent-computer and desktop.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    groups:
+      # Security fixes travel on their own so they are not held up behind a major version bump
+      # somebody is arguing about.
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  # The workflows pin every action by commit SHA, which is the safe form and also the form nobody
+  # can read for freshness. This is what re-pins them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"

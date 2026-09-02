@@ -10,6 +10,12 @@ name: Images
 #   manual dispatch → :edge from the default branch; tick `promote_stable` to also move :stable,
 #                     which exists so the very first :stable can be minted before any release tag
 #
+# NOTHING IS PUBLISHED UNTIL THE CHECKS PASS. Every build here waits on `checks`, which is the same
+# `.github/workflows/checks.yml` that CI runs — one definition, called twice, rather than a copy of
+# the steps that drifts from the original. Before it, `:stable` moved on a tag with no `needs` at
+# all: measured on v0.3.2, images finished at 05:50:53 while CI was still a separate run that a tag
+# did not even start.
+#
 # Both architectures are built on NATIVE runners (amd64 on ubuntu-latest, arm64 on the free public
 # ARM runners) and merged into one manifest per image — QEMU emulation would turn the app build
 # into a half-hour job. No build cache, same reason as release.yml: a workflow that publishes must
@@ -38,8 +44,14 @@ env:
   REGISTRY: ghcr.io/laf-labs
 
 jobs:
+  # The gate. Format, lint, types, the test floor and the app build, against the exact ref being
+  # published — a tag reference resolves this file at that tag.
+  checks:
+    uses: ./.github/workflows/checks.yml
+
   build:
     name: ${{ matrix.service }} (${{ matrix.arch }})
+    needs: checks
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
