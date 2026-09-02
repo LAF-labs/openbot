@@ -1,5 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import {
+  isNotificationFrame,
+  NOTIFICATION_FRAME,
+  type NotificationFrame,
+  notificationFrames,
+} from "@/lib/notifications/outbox";
 import { type ChannelSummary, channelKeys } from "./queries";
 import { isRoomFrame, type RoomFrame } from "./room-frames";
 
@@ -100,6 +106,19 @@ export function useChannelEvents() {
         if (isRoomFrame(parsed)) {
           roomFrames.dispatchEvent(
             new CustomEvent<RoomFrame>(ROOM_FRAME, { detail: parsed }),
+          );
+          return;
+        }
+        /*
+         * The third kind: the notification outbox saying something is waiting for this person.
+         * Checked here for the same reason a room frame is — anything not recognised falls through
+         * to the roster patch below, which would spread `approvalId` onto a row the sidebar draws.
+         */
+        if (isNotificationFrame(parsed)) {
+          notificationFrames.dispatchEvent(
+            new CustomEvent<NotificationFrame>(NOTIFICATION_FRAME, {
+              detail: parsed,
+            }),
           );
           return;
         }
