@@ -22,7 +22,7 @@ import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
-import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import { createApprovalRegistry } from "./computer/approvals";
 import {
   createAutoReviewProbe,
   createModelAutoReviewer,
@@ -35,7 +35,7 @@ import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
-import { createDatabaseRepeatDetector } from "./computer/repeat";
+import { createRepeatDetector } from "./computer/repeat";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
@@ -231,17 +231,17 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
  */
 // The buzz on "blocked on you": a webhook today, AlimTalk once that channel
 // clears review. Absent both, the question still waits on the surface.
-// Backed by the database, not by a Map in this process: several servers behind a
-// load balancer must see one another's open questions, or an answer given on one
-// reads as an expiry on the next. See createDatabaseApprovalRegistry.
-const approvals = withApprovalNotifications(
-  createDatabaseApprovalRegistry(database),
-  {
-    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
-      ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
-      : {}),
-  },
-);
+//
+// A Map in this process, which is where a pending question belongs: one process
+// per VM by decision (docs/laf/deployment-model.md), a question is about a live
+// browser session and a live turn, and a restart is an honest withdrawal of it.
+// It is also what lets the room be TOLD an answer instead of asking every second
+// — see `waitFor`.
+const approvals = withApprovalNotifications(createApprovalRegistry(), {
+  ...(process.env.LAF_NOTIFY_WEBHOOK_URL
+    ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
+    : {}),
+});
 
 /**
  * The allowances, in the database, because an allowance whose whole point is to outlive the turn
@@ -522,12 +522,10 @@ const computerGateway = computerClient
       approvals,
       standing: standingApprovals,
       autoReview: autoReviewFor,
-      // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
-      // a deployment with a second process would then split every Bot's count between them and
-      // never reach a threshold. The window is still only passed when a deployment has said its
-      // Bots retry on a slower rhythm than the built-in one assumes.
-      repeat: createDatabaseRepeatDetector(
-        database,
+      // Passed rather than left to the gateway's own fallback only so the configured window
+      // reaches it; the detector is the same in-process one either way, which is the whole count
+      // on a deployment of one process (docs/laf/deployment-model.md).
+      repeat: createRepeatDetector(
         config.computer?.repeatWindowMs
           ? { windowMs: config.computer.repeatWindowMs }
           : {},

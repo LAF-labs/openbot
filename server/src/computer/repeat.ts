@@ -1,11 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { and, eq, lte, notExists, sql, count as sqlCount } from "drizzle-orm";
-import type { Database } from "../db/client";
-import {
-  computerRepeatCalls,
-  computerRepeatReports,
-} from "../db/schema/computer";
-
 /**
  * How many times a Bot has just made this exact call.
  *
@@ -21,11 +13,17 @@ import {
  * `dry-run`, and impossible to switch off for the one Bot whose job really is to poll something.
  * One boundary, given better information.
  *
- * Two detectors live here. The in-memory one is right on one machine and is what the unit tests
- * drive; the database-backed one is what a deployment runs, because several servers behind a load
- * balancer each see a fraction of a Bot's calls and a rule written against the count then never
- * fires. Both are held to one contract, in approval-registry-contract's sibling test, so the one
- * nobody ships cannot be the only one that works.
+ * IN MEMORY, which is the whole count: this deployment is one process on one VM
+ * (docs/laf/deployment-model.md), so the process that served the call is the process that holds the
+ * count. A `computer_repeat_calls`/`computer_repeat_reports` pair once stood beside this and was
+ * what the server actually wired, justified by "several servers behind a load balancer each see a
+ * fraction of a Bot's calls". They cost two DELETEs, an INSERT and a COUNT on every governed click
+ * to answer a question a Map answers for nothing, and were deleted on 2026-09-02 by decision §7-1.
+ * Git holds them; the decision record holds the list to start from if the deployment ever changes
+ * shape.
+ *
+ * What the count is still wrong about is in `policy.ts` beside the field a rule reads: the caps
+ * below, the sliding window, and the fact that only the computer gateway counts.
  */
 
 /**
@@ -139,9 +137,9 @@ export type RepeatDetector = {
   /**
    * Records the call and answers with what it now knows. Never throws.
    *
-   * One round trip for the store that has to be shared, on a path that is already making a remote
-   * call to a browser; the in-memory detector resolves without one. It is awaited before the policy
-   * is asked, so a rule written against the count decides the very attempt that crossed the line.
+   * Asynchronous although nothing here waits on anything: it is awaited before the policy is asked,
+   * so a rule written against the count decides the very attempt that crossed the line, and the
+   * shape leaves room for a detector that would have to go somewhere for its answer.
    */
   observe: (botId: string, call: RepeatedCall) => Promise<RepeatObservation>;
 };
@@ -349,101 +347,4 @@ function forgetQuietBots(perBot: Map<string, BotHistory>, cutoff: number) {
   for (const [botId, history] of perBot) {
     if (history.lastSeen <= cutoff) perBot.delete(botId);
   }
-}
-
-/**
- * The same detector, counting where every process can see the count.
- *
- * The nested Map is right on one machine and wrong on two. Four servers behind a load balancer each
- * see a quarter of a Bot's clicks, so a rule written as `repeat.count >= 25` never fires and the
- * audit trail records a Bot that behaved itself. The rule did not decide anything and nothing said
- * so — a boundary that goes quiet is worse than one that was never offered.
- *
- * Counting is an insert and a count, not a read-modify-write, so two processes observing at the same
- * moment cannot lose one of the calls. Reporting a threshold is an insert against a primary key, so
- * exactly one process wins the race and one row is filed per incident — an improvement on the Map,
- * which reported once per process and filed four rows for one stuck Bot.
- *
- * The caps the Map carried are gone. They bounded memory; rows that delete themselves at the edge of
- * the window bound nothing that needs bounding, and dropping them removes the one behaviour that made
- * the detector stop counting a busy Bot exactly when it was most worth counting.
- */
-export function createDatabaseRepeatDetector(
-  database: Database,
-  options: RepeatDetectorOptions = {},
-): RepeatDetector {
-  const windowMs = options.windowMs ?? DEFAULT_REPEAT_WINDOW_MS;
-  const thresholds = [
-    ...(options.thresholds ?? DEFAULT_REPEAT_THRESHOLDS),
-  ].sort((a, b) => a - b);
-  const clock = options.now ?? Date.now;
-
-  return {
-    async observe(botId, call) {
-      const fingerprint = fingerprintOf(call);
-      if (!fingerprint) {
-        return { count: 1, fingerprint: null, threshold: null };
-      }
-
-      const now = clock();
-      const cutoff = new Date(now - windowMs);
-
-      // Swept on write rather than on a timer, as the Map was: nothing here matters until somebody
-      // counts, and the thing that counts sweeps first.
-      await database
-        .delete(computerRepeatCalls)
-        .where(lte(computerRepeatCalls.at, cutoff));
-      // A run of repetition ends when its window empties, and its thresholds are then free to report
-      // again. The Map did this by clearing a Set; here the markers go when the calls they belong to
-      // are gone, so a Bot that got stuck, recovered and got stuck again files two incidents.
-      await database.delete(computerRepeatReports).where(
-        notExists(
-          database
-            .select({ one: sql`1` })
-            .from(computerRepeatCalls)
-            .where(
-              and(
-                eq(computerRepeatCalls.botId, computerRepeatReports.botId),
-                eq(
-                  computerRepeatCalls.fingerprint,
-                  computerRepeatReports.fingerprint,
-                ),
-              ),
-            ),
-        ),
-      );
-
-      await database.insert(computerRepeatCalls).values({
-        id: randomUUID(),
-        botId,
-        fingerprint,
-        at: new Date(now),
-      });
-
-      const [counted] = await database
-        .select({ count: sqlCount() })
-        .from(computerRepeatCalls)
-        .where(
-          and(
-            eq(computerRepeatCalls.botId, botId),
-            eq(computerRepeatCalls.fingerprint, fingerprint),
-          ),
-        );
-      const count = Number(counted?.count ?? 1);
-
-      // Ascending, so a call that crossed two at once reports the higher, as the Map did.
-      let threshold: number | null = null;
-      for (const candidate of thresholds) {
-        if (count < candidate) continue;
-        const [claimed] = await database
-          .insert(computerRepeatReports)
-          .values({ botId, fingerprint, threshold: candidate })
-          .onConflictDoNothing()
-          .returning();
-        if (claimed) threshold = candidate;
-      }
-
-      return { count, fingerprint, threshold };
-    },
-  };
 }
