@@ -12,7 +12,11 @@ import type {
   AgentProfile,
   CreateAgentInput,
 } from "../src/agents/profile-types";
-import { createAgentRoutes, parseAgentInput } from "../src/agents/routes";
+import {
+  type AgentInputRefusal,
+  createAgentRoutes,
+  parseAgentInput,
+} from "../src/agents/routes";
 import { createApp } from "../src/app";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { loadConfig } from "../src/config";
@@ -121,42 +125,38 @@ async function json(response: Response) {
 }
 
 describe("agent input parser", () => {
+  /*
+   * THE CODE, NOT THE SENTENCE. The English body is still there and still what the route answers
+   * with, but it is a placeholder for words the surface has yet to write in Korean, and a test that
+   * pins it makes rewording the placeholder a failing test. What is being asserted is which refusal
+   * this is (docs/laf/redesign-2026-09.md §4-2).
+   */
   test.each([[null], [[]], ["input"], [42], [true]])(
     "rejects a non-object root: %p",
     (input) => {
-      expect(parseAgentInput(input)).toEqual({
-        ok: false,
-        error: "Agent input must be a JSON object.",
-      });
+      const parsed = parseAgentInput(input);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) expect(parsed.code).toBe("laf:agent_input_not_object");
     },
   );
 
   test.each([
-    ["name", undefined, "Name must be text between 1 and 80 characters."],
-    ["name", 12, "Name must be text between 1 and 80 characters."],
-    ["name", "   ", "Name must be text between 1 and 80 characters."],
-    ["name", "n".repeat(81), "Name must be text between 1 and 80 characters."],
-    ["title", false, "Title must be text of at most 120 characters."],
-    ["title", "t".repeat(121), "Title must be text of at most 120 characters."],
-    [
-      "roleDescription",
-      {},
-      "Role description must be text of at most 1000 characters.",
-    ],
-    [
-      "roleDescription",
-      "r".repeat(1001),
-      "Role description must be text of at most 1000 characters.",
-    ],
-    ["visibility", undefined, "Visibility must be public or private."],
-    ["visibility", 1, "Visibility must be public or private."],
-    ["visibility", "   ", "Visibility must be public or private."],
-    ["visibility", "friends", "Visibility must be public or private."],
-  ])("rejects invalid %s values", (field, value, error) => {
-    expect(parseAgentInput({ ...validInput, [field]: value })).toEqual({
-      ok: false,
-      error,
-    });
+    ["name", undefined, "laf:agent_name_invalid"],
+    ["name", 12, "laf:agent_name_invalid"],
+    ["name", "   ", "laf:agent_name_invalid"],
+    ["name", "n".repeat(81), "laf:agent_name_invalid"],
+    ["title", false, "laf:agent_title_too_long"],
+    ["title", "t".repeat(121), "laf:agent_title_too_long"],
+    ["roleDescription", {}, "laf:agent_role_too_long"],
+    ["roleDescription", "r".repeat(1001), "laf:agent_role_too_long"],
+    ["visibility", undefined, "laf:agent_visibility_invalid"],
+    ["visibility", 1, "laf:agent_visibility_invalid"],
+    ["visibility", "   ", "laf:agent_visibility_invalid"],
+    ["visibility", "friends", "laf:agent_visibility_invalid"],
+  ])("rejects invalid %s values", (field, value, code) => {
+    const parsed = parseAgentInput({ ...validInput, [field]: value });
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.code).toBe(code as AgentInputRefusal);
   });
 
   /*
@@ -499,8 +499,8 @@ describe("agent lifecycle routes", () => {
     });
 
     expect(malformed.status).toBe(400);
-    expect(await json(malformed)).toEqual({
-      error: "Agent input must be a JSON object.",
+    expect(await json(malformed)).toMatchObject({
+      code: "laf:agent_input_not_object",
     });
     /*
      * A name alone is still not a whole body — `visibility` says who may see the bot, and guessing
@@ -509,8 +509,8 @@ describe("agent lifecycle routes", () => {
      * is decided.
      */
     expect(partial.status).toBe(400);
-    expect(await json(partial)).toEqual({
-      error: "Visibility must be public or private.",
+    expect(await json(partial)).toMatchObject({
+      code: "laf:agent_visibility_invalid",
     });
     expect(store.calls).toEqual([]);
   });
@@ -675,7 +675,7 @@ describe("how hard a Bot thinks", () => {
       effort: "as hard as possible",
     });
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error).toContain("quick, balanced");
+    if (!parsed.ok) expect(parsed.code).toBe("laf:agent_effort_invalid");
   });
 
   test("takes the three it does allow", () => {

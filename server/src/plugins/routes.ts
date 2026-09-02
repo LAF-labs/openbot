@@ -315,6 +315,7 @@ export function createPluginRoutes(
         {
           error:
             "This deployment has no public URL configured, so it cannot complete a consent flow. Set BETTER_AUTH_URL.",
+          code: "laf:no_public_url",
         },
         503,
       );
@@ -323,7 +324,10 @@ export function createPluginRoutes(
     const entry = catalogueEntry(serverId);
     if (entry?.auth.kind !== "user-oauth") {
       return context.json(
-        { error: `${serverId} is not connected as an individual person.` },
+        {
+          error: `${serverId} is not connected as an individual person.`,
+          code: "laf:not_a_personal_connection",
+        },
         400,
       );
     }
@@ -350,6 +354,7 @@ export function createPluginRoutes(
         return context.json(
           {
             error: `${entry.title} has not been added to this deployment yet. An administrator has to add it first.`,
+            code: "laf:server_not_added",
           },
           409,
         );
@@ -361,6 +366,7 @@ export function createPluginRoutes(
         return context.json(
           {
             error: `${entry.title} refused this deployment's registration. Try again, and check the vendor's status if it persists.`,
+            code: "laf:registration_refused",
           },
           502,
         );
@@ -368,6 +374,7 @@ export function createPluginRoutes(
       return context.json(
         {
           error: `${entry.title} has no OAuth client registered yet. An administrator has to add one first.`,
+          code: "laf:no_oauth_client",
         },
         409,
       );
@@ -715,7 +722,10 @@ export function createPluginRoutes(
         );
       }
       if (error instanceof PluginRefusedError) {
-        return context.json({ error: error.message, rule: error.rule }, 403);
+        return context.json(
+          { error: error.message, rule: error.rule, code: error.code },
+          403,
+        );
       }
       if (error instanceof CatalogueEntryUnknownError) {
         return context.json({ error: error.message }, 404);

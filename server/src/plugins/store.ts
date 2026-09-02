@@ -159,6 +159,15 @@ export class PluginRefusedError extends Error {
   constructor(
     message: string,
     readonly rule: string | null,
+    /**
+     * WHICH refusal this is, beside the sentence rather than instead of it.
+     *
+     * Optional, because the settle path already puts its code in `message` and the vendor's own
+     * 403 has no code of ours to give. Where it is set, a test pins this and not the English: the
+     * sentence is a placeholder for words the surface has yet to write in Korean, and a test that
+     * pins the placeholder makes rewording it a failing test (docs/laf/redesign-2026-09.md §4-2).
+     */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "PluginRefusedError";

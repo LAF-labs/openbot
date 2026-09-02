@@ -295,8 +295,10 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(asPerson({ connected: false }));
 
     expect(response.status).toBe(503);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toContain("BETTER_AUTH_URL");
+    const body = (await response.json()) as { error: string; code: string };
+    // The code is the fact; the sentence beside it is a placeholder until the surface says this in
+    // Korean. Asserting the sentence is asserting a translation that has not happened yet.
+    expect(body.code).toBe("laf:no_public_url");
     expect(registrations).toEqual([]);
   });
 
@@ -304,10 +306,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(asPerson(), `not-a-vendor-${suite}`);
 
     expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      `not-a-vendor-${suite} is not connected as an individual person.`,
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:not_a_personal_connection");
     // Refused on the entry, before anything is asked of the store or the vendor.
     expect(registrations).toEqual([]);
   });
@@ -337,10 +337,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(hono);
 
     expect(response.status).toBe(409);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      "Notion has not been added to this deployment yet. An administrator has to add it first.",
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:server_not_added");
   });
 
   test("a vendor that refuses this deployment's registration answers 502, naming it", async () => {
@@ -355,10 +353,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(hono);
 
     expect(response.status).toBe(502);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      "Notion refused this deployment's registration. Try again, and check the vendor's status if it persists.",
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:registration_refused");
   });
 });
 
