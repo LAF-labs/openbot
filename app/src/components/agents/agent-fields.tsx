@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type AgentFormValues, agentFormSchema } from "@/lib/agents/form";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
 /** What the server said when it tried the endpoint. */
@@ -51,6 +53,21 @@ export function AgentFields({
 
   const [connection, setConnection] = useState<ConnectionVerdict | null>(null);
   const [testing, setTesting] = useState(false);
+  /*
+   * THE SHOP OWNER OPENS THIS PANE TO CHANGE WHAT A BOT DOES, AND IT ASKED FOR AN AG-UI ENDPOINT.
+   *
+   * Every Bot anybody makes here is `remote_ag_ui` on this deployment's own endpoint, by
+   * construction (CLAUDE.md) — so for the person the product is for, the two fields below have no
+   * answer that is not the one already there. They are the operator's fields: pointing an existing
+   * colleague at something somebody else hosts. Behind a disclosure, and not rendered at all for a
+   * reader who is not an administrator.
+   *
+   * `undefined` while the answer is in flight reads as "not an administrator", which is the safe
+   * way round: a field that appears a moment late is a smaller surprise than one that appears to
+   * somebody it was never meant for.
+   */
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const isOperator = currentUser?.role === "admin";
 
   /** Test endpoint reachability from the server, which is what runs will use. */
   const testConnection = async (endpoint: string, key: string) => {
@@ -78,13 +95,13 @@ export function AgentFields({
           ok: false,
           reason:
             (body as { error?: string } | null)?.error ??
-            "The connection could not be tested.",
+            t("The connection could not be tested."),
         });
       }
     } catch {
       setConnection({
         ok: false,
-        reason: "The connection could not be tested.",
+        reason: t("The connection could not be tested."),
       });
     } finally {
       setTesting(false);
@@ -207,103 +224,122 @@ export function AgentFields({
             </Field>
           )}
         </form.Field>
-        <form.Field name="endpoint">
-          {(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid;
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>
-                  {t("Agent endpoint (optional)")}
-                </FieldLabel>
-                <div className="flex gap-2">
+      </FieldGroup>
+
+      {isOperator ? (
+        /*
+         * `details`/`summary` rather than a state flag: shut is the state that matters, and a
+         * disclosure the browser opens and closes needs no JavaScript to be correct.
+         */
+        <details className="mt-6 rounded-xl border border-border px-3 py-2">
+          <summary className="cursor-pointer list-none text-muted-foreground text-sm marker:content-none">
+            {t("Advanced")}
+          </summary>
+          <p className="mt-1 text-muted-foreground text-xs">
+            {t(
+              "Only for pointing this Bot at something you host yourself. Leave it alone and it runs here.",
+            )}
+          </p>
+          <FieldGroup className="mt-3">
+            <form.Field name="endpoint">
+              {(field) => {
+                const isInvalid =
+                  field.state.meta.isTouched && !field.state.meta.isValid;
+                return (
+                  <Field data-invalid={isInvalid}>
+                    <FieldLabel htmlFor={field.name}>
+                      {t("Agent endpoint (optional)")}
+                    </FieldLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        aria-invalid={isInvalid}
+                        id={field.name}
+                        name={field.name}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => {
+                          setConnection(null);
+                          field.handleChange(event.target.value);
+                        }}
+                        placeholder="https://your-agent.example.com/ag-ui"
+                        value={field.state.value}
+                      />
+                      <Button
+                        disabled={!field.state.value || testing}
+                        onClick={() =>
+                          void testConnection(
+                            field.state.value,
+                            form.getFieldValue("authValue") ?? "",
+                          )
+                        }
+                        type="button"
+                        variant="outline"
+                      >
+                        {testing ? t("Testing…") : t("Test")}
+                      </Button>
+                    </div>
+                    {isInvalid ? (
+                      <FieldError errors={field.state.meta.errors} />
+                    ) : null}
+                    {connection ? (
+                      <p
+                        className={`text-sm ${connection.ok ? "text-muted-foreground" : "text-destructive"}`}
+                        role="status"
+                      >
+                        {connection.ok
+                          ? t("It answered: {events}", {
+                              events: connection.events.join(", "),
+                            })
+                          : connection.reason}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground text-sm">
+                        {t(
+                          "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.",
+                        )}
+                      </p>
+                    )}
+                  </Field>
+                );
+              }}
+            </form.Field>
+            <form.Field name="authValue">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>
+                    {t("Key for that agent (optional)")}
+                  </FieldLabel>
                   <Input
-                    aria-invalid={isInvalid}
+                    autoComplete="off"
                     id={field.name}
                     name={field.name}
                     onBlur={field.handleBlur}
                     onChange={(event) => {
+                      // The verdict below was made with the old key; it is not about this one.
                       setConnection(null);
                       field.handleChange(event.target.value);
                     }}
-                    placeholder="https://your-agent.example.com/ag-ui"
+                    placeholder={
+                      hasAuth
+                        ? t("A key is set. Type a new one to replace it.")
+                        : "Bearer …"
+                    }
+                    // Never repopulated; `hasAuth` communicates that a key exists without exposing it.
+                    type="password"
                     value={field.state.value}
                   />
-                  <Button
-                    disabled={!field.state.value || testing}
-                    onClick={() =>
-                      void testConnection(
-                        field.state.value,
-                        form.getFieldValue("authValue") ?? "",
-                      )
-                    }
-                    type="button"
-                    variant="outline"
-                  >
-                    {testing ? t("Testing…") : t("Test")}
-                  </Button>
-                </div>
-                {isInvalid ? (
-                  <FieldError errors={field.state.meta.errors} />
-                ) : null}
-                {connection ? (
-                  <p
-                    className={`text-sm ${connection.ok ? "text-muted-foreground" : "text-destructive"}`}
-                    role="status"
-                  >
-                    {connection.ok
-                      ? t("It answered: {events}", {
-                          events: connection.events.join(", "),
-                        })
-                      : connection.reason}
-                  </p>
-                ) : (
                   <p className="text-muted-foreground text-sm">
+                    {/* "Authorization" is the literal HTTP header name — plumbing, never translated. */}
                     {t(
-                      "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.",
+                      "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.",
+                      { header: "Authorization" },
                     )}
                   </p>
-                )}
-              </Field>
-            );
-          }}
-        </form.Field>
-        <form.Field name="authValue">
-          {(field) => (
-            <Field>
-              <FieldLabel htmlFor={field.name}>
-                {t("Key for that agent (optional)")}
-              </FieldLabel>
-              <Input
-                autoComplete="off"
-                id={field.name}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) => {
-                  // The verdict below was made with the old key; it is not about this one.
-                  setConnection(null);
-                  field.handleChange(event.target.value);
-                }}
-                placeholder={
-                  hasAuth
-                    ? t("A key is set. Type a new one to replace it.")
-                    : "Bearer …"
-                }
-                // Never repopulated; `hasAuth` communicates that a key exists without exposing it.
-                type="password"
-                value={field.state.value}
-              />
-              <p className="text-muted-foreground text-sm">
-                {/* "Authorization" is the literal HTTP header name — plumbing, never translated. */}
-                {t(
-                  "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.",
-                  { header: "Authorization" },
-                )}
-              </p>
-            </Field>
-          )}
-        </form.Field>
-      </FieldGroup>
+                </Field>
+              )}
+            </form.Field>
+          </FieldGroup>
+        </details>
+      ) : null}
 
       {error ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
@@ -317,7 +353,7 @@ export function AgentFields({
         >
           {([canSubmit, isSubmitting]) => (
             <Button disabled={!canSubmit || isSubmitting} type="submit">
-              {isSubmitting ? "Saving…" : submitLabel}
+              {isSubmitting ? t("Saving…") : submitLabel}
             </Button>
           )}
         </form.Subscribe>

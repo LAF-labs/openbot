@@ -1,3 +1,10 @@
+import {
+  isCloudMetadataHostname,
+  isLoopbackHostname,
+  isPrivateAddress,
+  normalizeHostname,
+} from "../net/host-verdict";
+
 /**
  * What a Bot's browser is allowed to navigate to.
  *
@@ -11,64 +18,19 @@
  * made rather than after. It is deliberately dumb: no DNS resolution, no redirect following, no
  * cleverness that could disagree with what the browser eventually does. The gateway sits in front
  * of every action, which is where policy per Bot belongs; this is the floor that holds even without it.
+ *
+ * The ranges and the names come from {@link ../net/host-verdict}, which is also what "add an MCP
+ * server" asks. They used to be two lists of the same addresses that did not know about each other.
+ * What stays here is the DECISION, which is not the same on both paths: this one is synchronous
+ * because a navigation cannot wait on a resolver, and it has an opt-in a deployment on a laptop
+ * needs. Adding a server has neither, and does resolve the name.
  */
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
-/**
- * Addresses no deployment may ever open, including one that opted into private hosts.
- *
- * Reading instance metadata is how a container's cloud credentials leave it, and there is no
- * development task that needs it, so it is not covered by the private-host escape hatch.
- */
-const NEVER_ALLOWED_HOSTNAMES = new Set([
-  "169.254.169.254",
-  "metadata.google.internal",
-  "metadata.goog",
-]);
-
-/**
- * Is this a hostname that holds the deployment's own cloud credentials?
- *
- * Exported for the MCP catalogue's custom-URL check, so browsing and "add an MCP server" refuse the
- * same list: an alias somebody adds to the set above should not have to be remembered twice. The
- * caller passes a bare hostname; case and a trailing root dot are normalised here rather than
- * trusted to every caller.
- */
-export function isNeverAllowedHostname(hostname: string): boolean {
-  return NEVER_ALLOWED_HOSTNAMES.has(
-    hostname.toLowerCase().replace(/\.+$/, ""),
-  );
-}
-
-/** Hostnames inside the deployment. Reachable only when a deployment opts in. */
-const INTERNAL_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "::1",
-  "[::1]",
-]);
-
 export type TargetVerdict =
   | { allowed: true; url: string }
   | { allowed: false; reason: string };
-
-function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split(".");
-  if (parts.length !== 4) return false;
-  const octets = parts.map((part) => Number.parseInt(part, 10));
-  if (octets.some((value) => Number.isNaN(value) || value < 0 || value > 255)) {
-    return false;
-  }
-  const [a, b] = octets as [number, number, number, number];
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true; // link-local, includes metadata
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  return false;
-}
 
 /**
  * Decide whether a Bot may navigate here.
@@ -94,10 +56,17 @@ export function checkNavigationTarget(
     };
   }
 
-  const hostname = url.hostname.toLowerCase();
+  /*
+   * Normalised once, which closes a gap the two lists used to have between them.
+   *
+   * This function used to lower-case the hostname and no more, while the helper the MCP catalogue
+   * borrowed from it also stripped the root dot — so `metadata.google.internal.` was refused when
+   * somebody added it as a server and opened when a Bot browsed to it. It is the same address.
+   */
+  const hostname = normalizeHostname(url.hostname);
 
   // Checked before the opt-in, so no configuration can reach it.
-  if (NEVER_ALLOWED_HOSTNAMES.has(hostname)) {
+  if (isCloudMetadataHostname(hostname)) {
     return {
       allowed: false,
       reason:
@@ -111,7 +80,7 @@ export function checkNavigationTarget(
     return { allowed: true, url: url.toString() };
   }
 
-  if (INTERNAL_HOSTNAMES.has(hostname) || isPrivateIpv4(hostname)) {
+  if (isLoopbackHostname(hostname) || isPrivateAddress(hostname)) {
     return {
       allowed: false,
       reason:

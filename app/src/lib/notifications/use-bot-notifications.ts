@@ -2,23 +2,42 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { openQuestions, watchQuestions } from "@/lib/approvals";
+import {
+  askSubjectOf,
+  describeSubject,
+  openQuestions,
+  watchQuestions,
+} from "@/lib/approvals";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
   channelActivity,
+  SOCKET_RECONNECTED,
+  socketState,
 } from "@/lib/channels/use-channel-events";
+import {
+  destinationOf,
+  markNotificationSeen,
+  NOTIFICATION_FRAME,
+  type NotificationFrame,
+  notificationFrames,
+  readNotifications,
+} from "@/lib/notifications/outbox";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import {
+  canRaiseNotice,
   decideNotice,
+  type NoticeDestination,
+  type NoticeKind,
   type NoticeRequest,
   notificationSupport,
   setUnreadBadge,
   showNotice,
   throttleKey,
 } from "@/lib/notifications/bot-notifications";
+import { inShell } from "@/lib/notifications/shell";
 
 /**
  * The room on screen, from the path.
@@ -31,6 +50,45 @@ export function openChannelFrom(pathname: string): string | null {
   if (!pathname.startsWith("/channel/")) return null;
   const [id] = pathname.slice("/channel/".length).split("/");
   return id ? decodeURIComponent(id) : null;
+}
+
+/**
+ * Which of the two interruptions an outbox row is, or neither.
+ *
+ * The mapping is the field rule, one line per clause: blocked on you leads, finished follows, and
+ * everything else stays out of the way. `approval.expired` is the deliberate "neither" — a question
+ * that has run out cannot be answered, so a notice about it would be an interruption a person can
+ * do nothing with. The row still exists and the list still shows it.
+ *
+ * An unknown kind is also "neither": a newer server may send a word this build has never heard, and
+ * the honest thing to do with a notification you cannot phrase is to leave it in the list.
+ */
+export function noticeKindOf(event: string): NoticeKind | null {
+  if (event === "approval.requested" || event === "run.needs_you") {
+    return "needs-you";
+  }
+  if (event === "run.finished" || event === "run.failed") return "finished";
+  return null;
+}
+
+/**
+ * The line under the title, from the facts.
+ *
+ * Written here, the same way the card the person will land on is written, because a lock screen is
+ * no place to discover that one surface says it differently. `described` is the subject already put
+ * into words by `describeSubject`, when there was a subject at all.
+ */
+export function bodyFor(event: string, described: string | null): string {
+  if (described) return described;
+  if (event === "run.finished") return t("It finished while you were away.");
+  if (event === "run.failed") return t("It stopped before it finished.");
+  // A password, a code from a text message, a login it cannot finish. The row deliberately carries
+  // no detail — what the Bot called the field is text off somebody's page — so the line says only
+  // what is true of all of them, which is that nobody else can do this part.
+  if (event === "run.needs_you") {
+    return t("It needs something only you can give.");
+  }
+  return t("It is waiting on your answer.");
 }
 
 /**
@@ -68,15 +126,41 @@ export function useBotNotifications(): void {
   navigateRef.current = navigate;
   /** Last delivery per `${agentId}:${kind}`. Lives as long as the app does, like the socket. */
   const lastNotified = useRef(new Map<string, number>());
+  /**
+   * What has already been said out loud, so the two paths below cannot say it twice.
+   *
+   * A question raised by a tool call in THIS tab is announced from the tab (the effect at the
+   * bottom, which has the Bot, the id and the facts one line after they exist) and then arrives
+   * again as an outbox frame moments later. Keyed on the approval where there is one, so the two
+   * paths recognise each other's work; on the row's own id otherwise. The five-second throttle
+   * would not catch this — it is per Bot and per kind, and two questions seconds apart are two
+   * different things worth saying.
+   */
+  const announced = useRef(new Set<string>());
 
   /** The one place a notice can be raised, so nothing can be raised around the rules. */
   const raise = useRef(
     (
       request: NoticeRequest,
-      notice: { title: string; body: string; tag: string },
+      notice: {
+        title: string;
+        body: string;
+        tag: string;
+        /** Absent for the one interruption that has no page of its own. See `showNotice`. */
+        destination?: NoticeDestination;
+      },
       onClick: () => void,
     ) => {
-      if (notificationSupport() !== "granted") return;
+      // Read each time rather than once on mount: permission can be granted while the app is open.
+      // `canRaiseNotice` is where the webview stops being asked about the shell.
+      if (
+        !canRaiseNotice({
+          inShell: inShell(),
+          browser: notificationSupport(),
+        })
+      ) {
+        return;
+      }
       const key = throttleKey(request);
       if (decideNotice(request, lastNotified.current.get(key)) !== "deliver") {
         return;
@@ -111,6 +195,7 @@ export function useBotNotifications(): void {
           title: bot?.name ?? activity.name,
           body: activity.lastMessage ?? "",
           tag: `laf-channel:${activity.channelId}`,
+          destination: { kind: "channel", id: activity.channelId },
         },
         () => {
           void navigateRef.current({
@@ -138,14 +223,13 @@ export function useBotNotifications(): void {
    * it — and the throttle would not catch that, because those questions are seconds apart.
    */
   useEffect(() => {
-    const announced = new Set<string>();
     return watchQuestions(() => {
       for (const question of openQuestions()) {
-        if (announced.has(question.approvalId)) continue;
+        if (announced.current.has(question.approvalId)) continue;
         const bot = rosterRef.current?.find(
           (profile) => profile.id === question.botId,
         );
-        announced.add(question.approvalId);
+        announced.current.add(question.approvalId);
         raise.current(
           {
             kind: "needs-you",
@@ -157,13 +241,137 @@ export function useBotNotifications(): void {
           },
           {
             title: t("{name} needs you", { name: bot?.name ?? question.botId }),
-            body: question.question,
+            // Written here, from the facts, like the card the person will land on — a lock screen is
+            // no place to discover that one surface says it differently.
+            body: question.subject
+              ? describeSubject(question.subject)
+              : t("It is waiting on your answer."),
             tag: `laf-approval:${question.approvalId}`,
+            destination: { kind: "approve", id: question.approvalId },
           },
-          () => {},
+          /*
+           * The full-page view of this one question, which exists so that a notice has somewhere to
+           * land. It used to be an empty function: a notification about the one thing in this
+           * product that is blocked on a person did nothing whatsoever when they clicked it, and
+           * the card it was about was a row somewhere in a transcript they then had to find.
+           */
+          () => {
+            void navigateRef.current({
+              params: { approvalId: question.approvalId },
+              to: "/approve/$approvalId",
+            });
+          },
         );
       }
     });
+  }, []);
+
+  /*
+   * AND EVERYTHING THAT HAPPENED WHERE THIS TAB COULD NOT SEE IT.
+   *
+   * The effect above is the fast path and only that: it hears a question raised by a tool call in
+   * this very tab. A question raised by a routine at seven in the morning, by a room turn running on
+   * the server, or in the other window, was heard by nothing — the page had no channel to the fact
+   * that a Bot somewhere was waiting. The server's outbox is that channel.
+   *
+   * THE FRAME IS THE NUDGE AND THE ENDPOINT IS THE TRUTH, which is the rule the roster follows and
+   * the reason the socket is allowed to miss things. So a frame does not carry the work: it causes a
+   * read of `GET /api/me/notifications`, and so does a reconnect, and so does mounting. The mount
+   * read raises nothing — the person has just arrived and is looking at the screen; it is there to
+   * seed the watermark so a backlog does not shout on every page load.
+   */
+  useEffect(() => {
+    /** The newest row this page has taken account of, so a read asks only for what is after it. */
+    let watermark: string | undefined;
+    let stopped = false;
+
+    const catchUp = async (options: { raises: boolean }) => {
+      const rows = await readNotifications(watermark);
+      // Null is "the server could not be asked", which is not "nothing is waiting". Leaving the
+      // watermark alone means the next read covers the same ground rather than skipping it.
+      if (!rows || stopped) return;
+      // Oldest first, so that when several arrive at once the notice left on screen is the newest.
+      for (const row of [...rows].reverse()) {
+        if (!watermark || row.at > watermark) watermark = row.at;
+        const key = row.approvalId ?? row.id;
+        if (!options.raises) {
+          announced.current.add(key);
+          continue;
+        }
+        raiseFromOutbox(row);
+      }
+    };
+
+    const raiseFromOutbox = (frame: NotificationFrame) => {
+      const key = frame.approvalId ?? frame.id;
+      if (announced.current.has(key)) return;
+      const kind = noticeKindOf(frame.event);
+      // An expired question is deliberately silent. Nobody can answer a question that has run out,
+      // and the two things worth interrupting somebody for are being blocked and having finished.
+      // It is still a row, and the list still shows it.
+      if (!kind) return;
+      // May be nothing: a Bot asking for a password is blocked on the person and has no page of its
+      // own to send them to. See `showNotice`, which takes the destination as optional for this.
+      const destination = destinationOf(frame);
+      announced.current.add(key);
+
+      const bot = rosterRef.current?.find(
+        (profile) => profile.id === frame.botId,
+      );
+      const subject = askSubjectOf(frame.subject);
+      raise.current(
+        {
+          kind,
+          agentId: frame.botId,
+          notify: bot?.notify,
+          hidden: bot?.hidden,
+          visible: document.visibilityState === "visible",
+          openChannelId: openChannelFrom(pathRef.current),
+          ...(frame.channelId ? { channelId: frame.channelId } : {}),
+          now: Date.now(),
+        },
+        {
+          title:
+            kind === "needs-you"
+              ? t("{name} needs you", { name: bot?.name ?? frame.botId })
+              : (bot?.name ?? frame.botId),
+          body: bodyFor(frame.event, subject ? describeSubject(subject) : null),
+          tag: `laf-notification:${key}`,
+          ...(destination ? { destination } : {}),
+        },
+        () => {
+          // Acting on it is the moment it has actually been seen — not the moment it was shown.
+          void markNotificationSeen(frame.id);
+          // Nowhere to go: bringing the window forward is the whole of what a click can do, and it
+          // is what somebody whose Bot is waiting for a password actually needed.
+          if (!destination) return;
+          if (destination.kind === "approve") {
+            void navigateRef.current({
+              params: { approvalId: destination.id },
+              to: "/approve/$approvalId",
+            });
+            return;
+          }
+          void navigateRef.current({
+            params: { channelId: destination.id },
+            to: "/channel/$channelId",
+          });
+        },
+      );
+    };
+
+    void catchUp({ raises: false });
+    const onFrame = () => {
+      void catchUp({ raises: true });
+    };
+    notificationFrames.addEventListener(NOTIFICATION_FRAME, onFrame);
+    // A reconnect is the one moment this page knows it may have missed frames. See `events.ts`.
+    socketState.addEventListener(SOCKET_RECONNECTED, onFrame);
+    return () => {
+      stopped = true;
+      notificationFrames.removeEventListener(NOTIFICATION_FRAME, onFrame);
+      socketState.removeEventListener(SOCKET_RECONNECTED, onFrame);
+    };
   }, []);
 
   /*

@@ -71,9 +71,17 @@ bun run format:check
 DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
 
-`test:ci` refuses to pass below a floor of tests, so a suite that quietly lost
-an area fails instead of going green. Raise the floor when the suite grows;
-lower it only with a reason.
+`typecheck` covers **`tests` as well as `src`**, in every workspace and at the
+root. It did not until 2026-09-03, and sixty-four errors were waiting: fixtures
+missing required fields, stubs cast to `never` so their callbacks took `any`,
+assertions on fields that two migrations ago stopped existing — `undefined`
+matching `undefined`, green for months. Never narrow an `include` back to `src`.
+
+`test:ci` reads `DATABASE_URL` for its server and credentials and then never
+hands it to a test — see below. It also refuses to pass below a floor of tests,
+one floor per workspace, so a suite that quietly lost an area fails instead of
+going green. Raise a floor when that workspace grows; lower it only with a
+reason.
 
 ## Running it locally
 
@@ -118,9 +126,13 @@ is the one seam every path goes through — chat, rooms and routines alike.
 
 ### The computer reads the Bot from a header
 
-`agent-computer` takes the Bot from `x-openbot-bot-id` and **falls back to a
-default** when it is absent. A query string is not a different Bot; it is
-silently the wrong one, on a blank page belonging to nobody.
+`agent-computer` takes the Bot from `x-openbot-bot-id` and **refuses without
+it** — 400 `laf:bot_header_missing` on every route but `/health` and
+`/computers`. It used to fall back to `"shared"` while the server fell back to
+`"default"`, which is the blank page belonging to nobody, twice, answering as
+though it had worked. The live-screen socket is the one exception and only
+because a websocket upgrade carries no custom header: it accepts `?bot=`, and
+the header still wins.
 
 ### Korean is not optional
 
@@ -142,8 +154,8 @@ a standing allowance, an auto-review instruction — is governed by one switch
 deployment's model cannot do the thing, do not draw the control.
 
 Never let a Bot write the rule that decides whether it gets asked about.
-`update_state` reaches the profile and the routines and must not reach
-`autoReview`.
+`update_profile` reaches the profile and `manage_routine` the routines; neither
+may reach `autoReview`.
 
 ### Never record what somebody typed
 
@@ -167,12 +179,22 @@ measured here:
   waiting; an unusable reply wants pressing again. Saying "try again" in front
   of an instant refusal is how a working feature looks broken.
 
-### The development database is shared with the tests
+### The tests have a database of their own
 
-Integration tests write to the same Postgres the app uses. So: clean up test
-rows, and never assume a row exists because the app put it there — a suite that
+`test:ci` runs them in `<name>_test` on the server `DATABASE_URL` names,
+creating and migrating it if it is absent. The database you develop against is
+never written to — two files delete rows by identity rather than by what they
+made (the boundary policy row, every Google Drive connector instance), and
+against a live database that is somebody's afternoon. Run the gate twice at once
+by giving each worktree `LAF_TEST_DB_SUFFIX`; they land in different databases.
+
+The old rule still holds inside that database, because the tests still share it
+with each other: clean up your rows, scope every cleanup to what the test
+created — an unscoped `delete(table)` once erased every routine in the database
+— and never assume a row exists because the app put it there. A suite that
 passes only on the machine it was written on is the failure mode
-(`room-transcript.integration.test.ts` had exactly that).
+(`room-transcript.integration.test.ts` had exactly that), and it is now the
+normal case, since the test database starts empty.
 
 ## Conventions
 

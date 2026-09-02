@@ -41,7 +41,7 @@ export function BotPanel({
          */}
         <ComputerView active computerId={agentId} minWidth={0} teachable />
         <p className="text-center text-muted-foreground text-xs">
-          {name ? t("{name}'s screen", { name }) : t("The assistant's screen")}
+          {name ? t("{name}'s screen", { name }) : t("The Bot's screen")}
         </p>
       </section>
 

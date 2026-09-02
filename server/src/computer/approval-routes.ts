@@ -16,8 +16,9 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import { requireAdmin, requireAdminRoute } from "../auth/guards";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -27,14 +28,6 @@ import type {
   StandingApproval,
   StandingApprovalStore,
 } from "./standing-approvals";
-
-/**
- * The local actor's address, matched to decide whether the id is a real users row.
- *
- * Compared against rather than imported from `auth/dev-actor` because this must not depend on the
- * authentication module's internals; this is the one fact about it that matters here.
- */
-const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 export function createApprovalRoutes(
   approvals: ApprovalRegistry,
@@ -49,6 +42,19 @@ export function createApprovalRoutes(
    * widening it has nowhere to record.
    */
   standing?: StandingApprovalStore,
+  /**
+   * "They have answered, so stop telling them about it."
+   *
+   * The notification outbox, reached as one function rather than as a store, so this file goes on
+   * knowing nothing about how somebody was told — a webhook, the page's own socket, a message on
+   * their phone one day. Absent leaves every notification for this question sitting unseen until
+   * the person opens the list, which is not wrong so much as untidy: the question is gone and the
+   * row says it is still waiting.
+   *
+   * Fire-and-forget after the answer has been recorded. An outbox that is having a bad minute must
+   * not turn a person's yes into a 500.
+   */
+  onAnswered?: (approvalId: string) => void,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -65,41 +71,49 @@ export function createApprovalRoutes(
    * names the Bot, the rule and the scope. `GET /api/approvals/:botId` next door is readable by any
    * signed-in person, which is its own thing to fix; this one is not going to inherit it.
    */
-  routes.get("/standing", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
+  routes.get("/standing", requireUser, requireAdminRoute, async (context) => {
     const botId = context.req.query("bot");
     return context.json({
       standing: (await standing?.list(botId || undefined)) ?? [],
     });
   });
 
-  /** Ask to be asked again. The row stays and is marked; see the table's own comment. */
-  routes.delete("/standing/:id", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-    const record = context.var.actor;
-    const revoked = await standing?.revoke(
-      context.req.param("id") ?? "",
-      record.id,
-    );
-    // Already withdrawn, or never granted here. Nothing is broken and there is nothing to retry —
-    // the same conflict an answered question reports, for the same reason.
-    if (!revoked) {
-      return context.json(
-        { error: "That allowance is no longer standing." },
-        409,
+  /**
+   * Ask to be asked again. The row stays and is marked; see the table's own comment.
+   *
+   * The guard is in the route's declaration rather than inside the handler, like the read above it:
+   * these two are the list of places a boundary has been stood down and the button that puts one
+   * back, and a check that lives in the middle of a function body is a check an unrelated edit can
+   * drop while everything still compiles.
+   */
+  routes.delete(
+    "/standing/:id",
+    requireUser,
+    requireAdminRoute,
+    async (context) => {
+      const record = context.var.actor;
+      const revoked = await standing?.revoke(
+        context.req.param("id") ?? "",
+        record.id,
       );
-    }
-    await recordAuditEvent(auditStore, {
-      eventType: "approval.standing_revoked",
-      targetType: "bot",
-      targetId: revoked.botId,
-      ...(record.email === DEV_ACTOR_EMAIL ? {} : { actorUserId: record.id }),
-      payload: standingPayload(revoked, record.id),
-    });
-    return context.json(revoked);
-  });
+      // Already withdrawn, or never granted here. Nothing is broken and there is nothing to retry —
+      // the same conflict an answered question reports, for the same reason.
+      if (!revoked) {
+        return context.json(
+          { error: "That allowance is no longer standing." },
+          409,
+        );
+      }
+      await recordAuditEvent(auditStore, {
+        eventType: "approval.standing_revoked",
+        targetType: "bot",
+        targetId: revoked.botId,
+        ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
+        payload: standingPayload(revoked, record.id),
+      });
+      return context.json(revoked);
+    },
+  );
 
   /**
    * The questions this Bot is waiting on, for the surface to poll.
@@ -167,9 +181,12 @@ export function createApprovalRoutes(
       // Only a real users row may go in the audit table's foreign key column. The local development
       // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
       // it was is recorded in the payload regardless.
-      ...(record.email === DEV_ACTOR_EMAIL ? {} : { actorUserId: record.id }),
+      ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
       payload: payloadFor(answered.approval, record.id),
     });
+
+    // After the row, never before it: the trail is the record and the notification is bookkeeping.
+    onAnswered?.(answered.approval.id);
 
     /*
      * "And stop asking me about this."
@@ -193,14 +210,14 @@ export function createApprovalRoutes(
           botId: answered.approval.botId,
           rule: answered.approval.rule,
           scope,
-          question: answered.approval.question,
+          subject: answered.approval.subject,
           grantedBy: record.id,
         });
         await recordAuditEvent(auditStore, {
           eventType: "approval.standing_granted",
           targetType: "bot",
           targetId: granted.botId,
-          ...(record.email === DEV_ACTOR_EMAIL
+          ...(record.email === DEV_ACTOR.email
             ? {}
             : { actorUserId: record.id }),
           payload: {
@@ -229,8 +246,8 @@ export function createApprovalRoutes(
  * What an allowance records: which Bot, which boundary, and exactly how wide.
  *
  * The scope in both halves — as one string and split — so a reader filtering the trail can find
- * every allowance about one host without knowing how the key is spelled, and the question is the
- * sentence the person was reading when they widened it.
+ * every allowance about one host without knowing how the key is spelled, and the subject is what the
+ * Bot was about to do when they widened it.
  */
 function standingPayload(standing: StandingApproval, actor: string) {
   return {
@@ -241,7 +258,7 @@ function standingPayload(standing: StandingApproval, actor: string) {
     scope: standing.scope,
     scopeKind: standing.scopeKind,
     scopeValue: standing.scopeValue,
-    reason: standing.question,
+    ...(standing.subject ? { subject: standing.subject } : {}),
     grantedBy: standing.grantedBy,
   };
 }
@@ -252,9 +269,10 @@ function payloadFor(approval: PendingApproval, answeredBy: string) {
     actor: answeredBy,
     approval: approval.id,
     rule: approval.rule,
-    // The question as a person read it, so the trail records what they were shown rather than a
-    // reconstruction of it.
-    reason: approval.question,
+    // What they were shown, in the same facts the card was drawn from. A sentence here would be a
+    // second description of the question, written by a server that does not speak the language the
+    // person answered in.
+    subject: approval.subject,
     // Who was driving when the boundary stopped, which is usually not who answered. The gap between
     // the two is the reason this is its own row.
     asked: approval.actor,

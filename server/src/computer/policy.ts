@@ -2,9 +2,14 @@
  * Whether a Bot may take one particular action on one particular page.
  *
  * Mirrors the policy engine in CopilotKit's enterprise agent gateway rather than being re-derived, so
- * a rule written here means the same thing there. Kept from it: CEL expressions, `dry-run` vs
- * `enforce`, default-deny, and fail-closed evaluation. Added here: a `deny` list, because an
- * allow-only policy can only forbid one thing by withdrawing permission from everything.
+ * a rule written here means the same thing there. Kept from it: CEL expressions, default-deny, and
+ * fail-closed evaluation. Added here: a `deny` list, because an allow-only policy can only forbid one
+ * thing by withdrawing permission from everything.
+ *
+ * DROPPED FROM IT: `dry-run`. It decided, recorded a refusal and let the action happen anyway, which
+ * made it a second switch beside `settleWithoutAsking` that could stand the whole boundary down —
+ * and the deployment this product ships to is one person's business, not an enterprise trying a rule
+ * out against a quarter's traffic first. Everything enforces (docs/laf/redesign-2026-09.md §7-10).
  *
  * CEL instead of a rule table. The boundary a company wants is a sentence: "never click anything
  * that says Submit on a page outside our own domain". A table of columns can express the shapes we
@@ -22,18 +27,9 @@
  * configuration, so the first rule anybody ever wrote here would silently do nothing.
  */
 import { evaluate } from "cel-js";
-
-export type PolicyMode = "dry-run" | "enforce";
+import { isSecretField } from "./default-policy";
 
 export type ActionPolicy = {
-  /**
-   * `enforce` blocks. `dry-run` decides and records, and lets everything through.
-   *
-   * Dry-run exists so an operator can write a rule against real traffic and read the audit trail
-   * before it starts refusing anybody's work. A governance feature nobody dares switch on is not a
-   * governance feature.
-   */
-  mode: PolicyMode;
   /** Evaluated first. Any expression true means refused, whatever `ask` or `allow` says. */
   deny: string[];
   /**
@@ -104,17 +100,30 @@ export type PolicyContext = {
    * It is wrong in both directions, and a rule written against it has to be worth both. Under, three
    * ways: the window is time-based, so a Bot slow enough to spread its attempts wider than the window
    * never trips this, and one that varies a single argument each time round is thirty calls; the
-   * count is held by the process that served the call, so a deployment behind two API replicas
-   * splits every count and a rule about ten attempts fires at twenty or never; and a call to another
-   * server's tools over MCP is not counted at all, because only the computer gateway counts.
+   * detector holds a bounded number of calls per Bot and Bots at once (`repeat.ts`), so a Bot whose
+   * loop opens after sixty-four distinct calls is uncounted until one of them ages out; and a call to
+   * another server's tools over MCP is not counted at all, because only the computer gateway counts.
    *
    * Over, once, and that one costs somebody their Bot rather than their evidence. Two calls are the
    * same call when the thing acted on is the same, whatever was typed into it, so ten searches typed
    * into one box and one file read ten times while a Bot works through it are both ten repeats, and
    * `repeat.count >= 10` refuses the tenth. It is a backstop against the loop that actually happens,
-   * not a guarantee, which is the argument for trying a rule about it in `dry-run` first.
+   * rather than a guarantee.
    */
   repeat: { count: number };
+  /**
+   * The control being acted on, with empty strings where there is nothing to say.
+   *
+   * OPTIONAL IN THE TYPE, ALWAYS SUPPLIED IN PRODUCTION, and the difference is worth the sentence.
+   * cel-js throws on a field that is not in the context, a thrown `deny` denies and a thrown `ask`
+   * asks — so an absent `element` turns one rule about button labels into a deployment that stops
+   * every keypress the server could not attach to a control. Both callers therefore fill it in:
+   * the plugin store with empty strings because an MCP call has no element (`plugins/store.ts`), and
+   * the gateway with whatever it resolved from its own snapshot, blank when that was nothing.
+   *
+   * `type` is an input's type where the page said so, and empty otherwise. A rule about password
+   * fields wants both it and the label; see `default-policy.ts`.
+   */
   element?: {
     ref: string;
     role: string;
@@ -178,6 +187,9 @@ export type PolicyContext = {
     | "read_file"
     | "write_file"
     | "list_files"
+    // A workspace file handed to a page. The one call that takes something OUT of the Bot's own
+    // folder and gives it to a website, which is why the shipped policy asks about it.
+    | "upload"
     // A tool on somebody else's MCP server. Split by effect for the same reason as the browser
     // intents: an operator thinks "nothing may change anything in Jira", not "nothing may call
     // editJiraIssue, transitionJiraIssue, addCommentToJiraIssue and the six others".
@@ -221,7 +233,6 @@ export type PolicyContext = {
 
 export type PolicyDecision = {
   allowed: boolean;
-  mode: PolicyMode;
   /** Which expression decided it, so the audit row can say why and an operator can find the rule. */
   matched: string | null;
   /**
@@ -233,11 +244,41 @@ export type PolicyDecision = {
    * tell an action a person consented to from one nothing ever questioned.
    */
   source: "deny" | "ask" | "allow" | "default";
-  /** True when the action should actually be carried out. False for a refusal in `enforce`. */
+  /** True when the action should actually be carried out. False for a refusal. */
   forward: boolean;
-  /** Why, in words that go in front of a person. */
-  reason: string;
+  /**
+   * What happened, as a code rather than as a sentence.
+   *
+   * IT USED TO BE A SENTENCE. `reason` held English prose assembled here — "This deployment's policy
+   * does not allow that: “Submit order” on example.com is blocked by the rule …" — and it went out
+   * to a Korean screen and to a Korean-speaking model as written. The surface owns the words now
+   * (docs/laf/redesign-2026-09.md §4-2): this says which fact it is, `matched` says which rule, and
+   * the sentence is composed where somebody reads it — `i18n-ko.ts` for a person,
+   * `shared/prompt/tool-results.ko.ts` for the model.
+   *
+   * Present on every refusal. Absent on an `ask`, where nothing has been refused and the question
+   * itself carries the facts (see {@link AskSubject}), and on an `allow`, where there is nothing to
+   * say.
+   */
+  code?: FactCode;
 };
+
+/**
+ * The facts this module reports, for a surface to phrase and a Bot to act on.
+ *
+ * `laf:` so a reader can tell ours from a vendor's, and so grepping for the set is one search.
+ */
+export type FactCode =
+  /** Typing a secret into a page. The Bot's next move is `computer_request_secret`. */
+  | "laf:use_request_secret"
+  /** A person already said no to this exact action, recently enough that it still stands. */
+  | "laf:declined_recently"
+  /** A `deny` rule matched. `matched` names it. */
+  | "laf:policy_denied"
+  /** Nothing in the policy permits it. Not the same fact as a rule forbidding it. */
+  | "laf:no_rule_allows"
+  /** The server has not seen the screen, so a rule about the page could not be decided. */
+  | "laf:blind_action";
 
 /**
  * String helpers, registered as CEL globals.
@@ -301,9 +342,9 @@ function matches(
 /**
  * Does any rule that can refuse read the page or the element?
  *
- * `page` and `element` reach a rule from the snapshot the gateway took, which the gateway holds in
- * the process that took it. A deployment running a second server process routes the next call to a
- * process that never snapshotted that window, and both fields arrive blank: `page.host == "admin"`
+ * `page` and `element` reach a rule from the snapshot the gateway took, and the gateway's cache of
+ * those is emptied by a restart and was never filled for a Bot that has not looked at anything yet.
+ * Then both fields arrive blank: `page.host == "admin"`
  * compares against "" and never fires. The rule stops refusing, the audit row says the action was
  * permitted, and nothing anywhere says the boundary went quiet — the failure this file is otherwise
  * written to avoid, where an absent policy denies and a broken deny expression still denies.
@@ -334,7 +375,6 @@ export function evaluateActionPolicy(
   policy: ActionPolicy | null | undefined,
   context: PolicyContext,
 ): PolicyDecision {
-  const mode: PolicyMode = policy?.mode ?? "enforce";
   const deny = policy?.deny ?? [];
   const ask = policy?.ask ?? [];
   const allow = policy?.allow ?? [];
@@ -346,13 +386,14 @@ export function evaluateActionPolicy(
     if (matches(expression, context, true)) {
       return {
         allowed: false,
-        mode,
         matched: expression,
         source: "deny",
-        // dry-run records the refusal and lets the work continue, which is what makes it safe to
-        // switch on against live traffic.
-        forward: mode === "dry-run",
-        reason: describeRefusal(context, expression),
+        forward: false,
+        // A Bot refused at a password box has somewhere else to go, and being told so is the
+        // difference between it asking the person for the value and it giving up on the task.
+        code: isSecretField(context)
+          ? ("laf:use_request_secret" as const)
+          : ("laf:policy_denied" as const),
       };
     }
   }
@@ -365,15 +406,11 @@ export function evaluateActionPolicy(
     if (matches(expression, context, true)) {
       return {
         allowed: false,
-        mode,
         matched: expression,
         source: "ask",
-        // Nothing happens until somebody says so, except in dry-run, where the whole promise is that
-        // switching the policy on changes nothing. A dry-run ask is a note in the trail saying "here
-        // is where you would have been interrupted", which is precisely what an operator trying a
-        // rule out against real traffic wants to find out before it starts stopping anybody.
-        forward: mode === "dry-run",
-        reason: describeAsk(context),
+        // Nothing happens until somebody says so. No code: nothing has been refused, and what the
+        // question is about travels as the caller's `AskSubject` rather than as a sentence here.
+        forward: false,
       };
     }
   }
@@ -382,97 +419,21 @@ export function evaluateActionPolicy(
     if (matches(expression, context, false)) {
       return {
         allowed: true,
-        mode,
         matched: expression,
         source: "allow",
         forward: true,
-        reason: "Permitted by policy.",
       };
     }
   }
 
   return {
     allowed: false,
-    mode,
     matched: null,
     source: "default",
-    forward: mode === "dry-run",
-    reason:
-      "No rule in this deployment's policy permits that action, so it was refused. " +
-      "An administrator can add one.",
+    forward: false,
+    // A different fact from `laf:policy_denied`, and worth its own code: nobody forbade this, the
+    // deployment simply has no rule that permits it, and the next move is an administrator adding
+    // one rather than an argument about the rule that fired.
+    code: "laf:no_rule_allows",
   };
-}
-
-/**
- * The verb a person reads, chosen from what the action does rather than which tool ran.
- *
- * A question phrased as "allow computer_write_file?" asks somebody to translate an implementation
- * detail before they can decide, and a question nobody understands gets answered yes.
- */
-const ASK_VERBS: Record<string, string> = {
-  activate: "press",
-  type: "type into",
-  navigate: "open",
-  read: "look at",
-  read_file: "read",
-  write_file: "write to",
-  list_files: "list",
-  read_tool: "call",
-  write_tool: "call",
-};
-
-/**
- * The question itself: what is about to happen, in one sentence.
- *
- * The rule that asked is deliberately not in here. It travels beside the question as its own field,
- * so the surface can show it as a rule and the trail can record it as one, and a person reading the
- * prompt is not made to parse CEL before they can answer a question about a button.
- */
-function describeAsk(context: PolicyContext): string {
-  return `The Bot wants to ${ASK_VERBS[context.intent ?? ""] ?? "act on"} ${subjectOf(context)}.`;
-}
-
-/** A refusal a person can act on: what was refused, and on what. */
-function describeRefusal(context: PolicyContext, expression: string): string {
-  // A file or tool refusal must not be phrased as happening "on <host>": neither the workspace nor
-  // somebody else's server has anything to do with whatever page the browser happens to be showing,
-  // and saying so sends somebody to the wrong place.
-  if (context.mcp) {
-    return (
-      `This deployment's policy does not allow that: ${subjectOf(context)} ` +
-      `is blocked by the rule \`${expression}\`.`
-    );
-  }
-  if (context.file?.path) {
-    return (
-      `This deployment's policy does not allow that: the file ${context.file.path} ` +
-      `is blocked by the rule \`${expression}\`.`
-    );
-  }
-  const what = context.element?.name
-    ? `“${context.element.name}”`
-    : `a ${context.tool.name.replace("computer_", "")} action`;
-  return (
-    `This deployment's policy does not allow that: ${what} on ${context.page.host} ` +
-    `is blocked by the rule \`${expression}\`.`
-  );
-}
-
-/**
- * The thing an action is aimed at, named the way the person who has to decide would name it.
- *
- * Every branch is checked for content rather than presence, because a caller judging something that
- * is not a browser action fills the browser fields in with empty strings on purpose: a rule about
- * element names must evaluate to false against a tool call rather than becoming unevaluable and
- * therefore matching. Reading those blanks as "a file" produced a question with a hole in it, "The
- * Bot wants to call .", which is a sentence nobody can answer and which arrived attached to two
- * buttons.
- */
-function subjectOf(context: PolicyContext): string {
-  if (context.mcp) return `${context.mcp.tool} on ${context.mcp.server}`;
-  if (context.file?.path) return context.file.path;
-  if (context.element?.name) {
-    return `“${context.element.name}” on ${context.page.host}`;
-  }
-  return context.page.host || "this page";
 }

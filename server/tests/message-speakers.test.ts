@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
-import { attribute, speakersOf } from "../src/runner/laf-runner";
+import { attribute, speakersOf } from "../src/runner/thread-store";
 
 const said = (id: string, by?: string): Message =>
   ({

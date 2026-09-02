@@ -1,49 +1,21 @@
 /**
- * What the runtime can do.
+ * Everything a deployment is told about itself, read from the environment once.
  *
- * Upstream has exactly one answer — Intelligence — because that service holds its durable
- * threads and memory. This fork's rule is that the only external dependencies are the model
- * API and the machines it runs on, so `local` is the default: durable history lives in our
- * own Postgres (see runner/laf-runner.ts), and Intelligence remains available only where a
- * deployment explicitly configures it.
+ * There is one runtime and no switch for it. Upstream reads its durable threads and memory out of
+ * CopilotKit Intelligence; this fork's rule is that the only external dependencies are the model
+ * API and the machines it runs on, so conversations live in our own Postgres (runner/laf-runner.ts)
+ * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
+ * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 
-export type RuntimeCapabilities =
-  | {
-      mode: "intelligence";
-      durableHistory: true;
-      intelligence: IntelligenceSettings;
-    }
-  | {
-      /** Durable threads in our own Postgres; no hosted service in the path. */
-      mode: "local";
-      durableHistory: true;
-    };
-
-/** The Intelligence contract. Every field is required; see runtimeCapabilities. */
-export type IntelligenceSettings = {
-  apiUrl: string;
-  gatewayWsUrl: string;
-  apiKey: string;
-  licenseToken: string;
-};
-
 export type DeploymentConfig = {
   databaseUrl: string;
   keyEncryptionKey: string;
   managedAgentAgUiUrl: URL;
-  /**
-   * What this deployment calls itself, when more than one shares an Intelligence project.
-   *
-   * Absent, the tenant package's id stands in, which separates deployments running different
-   * packages but not a copy of one running alongside the original. See channels/thread-identity.ts.
-   */
-  deploymentId: string | undefined;
   tenantPackageDirectory: string;
-  runtime: RuntimeCapabilities;
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -332,50 +304,6 @@ function authConfig(
   };
 }
 
-/**
- * Resolve the Intelligence contract, or refuse to start.
- *
- * All four values are required together. A partial set is the more dangerous shape than none at all:
- * it means somebody intended to configure Intelligence and got it wrong, so failing on the partial
- * set alone (as this did) let a completely unconfigured deployment through as if that were a choice.
- */
-function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
-  const settings = {
-    apiUrl: url(environment, "INTELLIGENCE_API_URL"),
-    gatewayWsUrl: url(environment, "INTELLIGENCE_GATEWAY_WS_URL"),
-    apiKey: optional(environment, "INTELLIGENCE_API_KEY"),
-    licenseToken: optional(environment, "COPILOTKIT_LICENSE_TOKEN"),
-  };
-
-  const missing = Object.entries({
-    INTELLIGENCE_API_URL: settings.apiUrl,
-    INTELLIGENCE_GATEWAY_WS_URL: settings.gatewayWsUrl,
-    INTELLIGENCE_API_KEY: settings.apiKey,
-    COPILOTKIT_LICENSE_TOKEN: settings.licenseToken,
-  })
-    .filter(([, value]) => !value)
-    .map(([name]) => name);
-
-  // All four absent is a decision — the fork's default, local mode. A partial set is
-  // still the dangerous shape: somebody meant to configure Intelligence and got it
-  // wrong, and silently falling back to local would hide that from them.
-  if (missing.length === 4) {
-    return { mode: "local", durableHistory: true };
-  }
-
-  if (missing.length > 0) {
-    throw new Error(
-      `CopilotKit Intelligence is partially configured. Missing: ${missing.join(", ")}. Remove all four variables to run in local mode, or provide the full set.`,
-    );
-  }
-
-  return {
-    mode: "intelligence",
-    durableHistory: true,
-    intelligence: settings as IntelligenceSettings,
-  };
-}
-
 function computerConfig(
   environment: Environment,
 ): DeploymentConfig["computer"] {
@@ -499,10 +427,8 @@ export function loadConfig(
       environment,
       "MANAGED_AGENT_AG_UI_URL",
     ),
-    deploymentId: optional(environment, "DEPLOYMENT_ID"),
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../tenant/laf",
-    runtime: runtimeCapabilities(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     auth: authConfig(environment, providers),
     devNoAuth: devAuthEnabled(environment),

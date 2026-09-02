@@ -71,9 +71,23 @@ export type SnapshotElement = {
   name: string;
   /** Present for form controls, so the Bot can tell an empty field from a filled one. */
   value?: string;
+  /**
+   * An input's type, where it is one the boundary has to be able to see.
+   *
+   * Only `"password"` is set today, and only because the boundary cannot do its job without it: a
+   * Bot must never type a password into a page, and Playwright's accessible tree reports a password
+   * box as an ordinary `textbox` — the ARIA role for one is textbox, and the snapshot's flags are
+   * about state (`[checked]`, `[disabled]`), not about markup. The server's own contract has carried
+   * an `element.type` field this whole time, the policy language advertises it, and nothing was ever
+   * putting a value in it.
+   */
+  type?: string;
   disabled?: boolean;
   checked?: boolean;
 };
+
+/** The roles a password box can arrive as, so the marking below does not go looking at buttons. */
+const TEXT_ENTRY_ROLES = new Set(["textbox", "searchbox", "combobox"]);
 
 /** The descriptor half of an entry: everything before the colon. */
 type Descriptor = {
@@ -193,11 +207,29 @@ function toElement(
   return element;
 }
 
-/** Turn an aria snapshot into the flat element list the tool contract publishes. */
-export function parseAriaSnapshot(yaml: string): {
+/**
+ * Turn an aria snapshot into the flat element list the tool contract publishes.
+ *
+ * `passwordLabels` are the accessible names of the page's own password inputs, read from the DOM by
+ * the caller because the accessible tree does not carry the type. Matching by label is the join
+ * available: the tree gives a name and a ref, the DOM gives a type and a name, and the name is what
+ * both have. It is not exact — two fields can share a label, and a password box inside an iframe is
+ * not in the caller's query at all — so it is one of two signals the boundary uses, beside the
+ * field's own label (`default-policy.ts`). Over-marking costs a Bot the use of a text field it
+ * should have been asking a person to fill anyway.
+ */
+export function parseAriaSnapshot(
+  yaml: string,
+  passwordLabels: readonly string[] = [],
+): {
   elements: SnapshotElement[];
   truncated: boolean;
 } {
+  const secret = new Set(
+    passwordLabels
+      .map((label) => label.replace(/\s+/g, " ").trim())
+      .filter(Boolean),
+  );
   const elements: SnapshotElement[] = [];
   let truncated = false;
 
@@ -205,6 +237,12 @@ export function parseAriaSnapshot(yaml: string): {
     if (elements.length >= SNAPSHOT_ELEMENT_LIMIT) {
       truncated = true;
       return;
+    }
+    if (
+      TEXT_ENTRY_ROLES.has(element.role) &&
+      secret.has(element.name.replace(/\s+/g, " ").trim())
+    ) {
+      element.type = "password";
     }
     elements.push(element);
   };

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ComputerUnavailableError,
   createComputerClient,
   ElementNotFoundError,
   NavigationRefusedError,
@@ -8,10 +9,12 @@ import {
 function clientWith(
   handler: (url: string, init?: RequestInit) => Promise<Response> | Response,
   allowPrivateHosts = false,
+  timeoutMs?: number,
 ) {
   return createComputerClient({
     baseUrl: "http://agent-computer:4100",
     allowPrivateHosts,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     fetchImpl: ((url: string, init?: RequestInit) =>
       Promise.resolve(handler(url, init))) as unknown as typeof fetch,
   });
@@ -34,6 +37,11 @@ describe("computer client", () => {
       return ok({
         url: "https://example.com/",
         title: "Example",
+        // The page's readable text, which is the whole reason navigate returns a body at all. It
+        // was missing from both halves of this test, so the one call that carries what the model
+        // reads was asserted without it.
+        text: "Example Domain",
+        truncated: false,
         elapsedMs: 12,
       });
     });
@@ -41,6 +49,8 @@ describe("computer client", () => {
     await expect(client.navigate("https://example.com/")).resolves.toEqual({
       url: "https://example.com/",
       title: "Example",
+      text: "Example Domain",
+      truncated: false,
       elapsedMs: 12,
     });
     expect(seen).toEqual(["http://agent-computer:4100/navigate"]);
@@ -235,22 +245,130 @@ describe("the caller's Stop", () => {
     const stop = new AbortController();
     stop.abort();
 
-    expect(
+    // The refusal a stopped caller gets, named. `toBeDefined()` here accepted any rejection at all,
+    // including the TypeError a broken client would produce — which is the one outcome that would
+    // mean this path is not doing what the test says it does.
+    await expect(
       client.click({ ref: "e1", snapshotId: 1 }, stop.signal),
-    ).rejects.toBeDefined();
+    ).rejects.toThrow(ComputerUnavailableError);
     expect(called).toBe(false);
   });
 
   test("without one, the timeout still applies", async () => {
     let seen: AbortSignal | undefined;
-    const client = clientWith((_url, init) => {
-      seen = init?.signal ?? undefined;
-      return ok({ action: "click" });
-    });
+    // Ten milliseconds, so the bound is watched rather than asserted to exist. `toBeDefined()` on
+    // the signal passed against a client that had combined nothing and would hang forever.
+    const client = clientWith(
+      (_url, init) => {
+        seen = init?.signal ?? undefined;
+        return ok({ action: "click" });
+      },
+      false,
+      10,
+    );
 
     await client.click({ ref: "e1", snapshotId: 1 });
 
-    // A caller that passes nothing must not end up with an unbounded request.
-    expect(seen).toBeDefined();
+    expect(seen?.aborted).toBe(false);
+    await Bun.sleep(30);
+    // A caller that passes nothing must not end up with an unbounded request: the signal the client
+    // built for itself fires on its own.
+    expect(seen?.aborted).toBe(true);
+    expect((seen?.reason as Error | undefined)?.name).toBe("TimeoutError");
+  });
+});
+
+/**
+ * WHICH BOT IS ASKING, ON EVERY CALL.
+ *
+ * Nothing in this repository named `x-openbot-bot-id` until this test, and it is the string the
+ * whole per-Bot half of the computer hangs off: the profile that holds the logins, the proxy the
+ * traffic leaves through, whose wheel is being held. A method that forgets it does not fail — it
+ * silently lands on the default computer, on a blank page belonging to nobody, and the Bot reports
+ * that the site logged it out.
+ *
+ * Every method, driven for real rather than a chosen few, because the way this breaks is a method
+ * added later that does not go through the same `call`.
+ */
+describe("the header that says which Bot", () => {
+  function recording() {
+    const sent: Array<{ path: string; botId: string | null }> = [];
+    const client = clientWith((url, init) => {
+      const headers = new Headers(init?.headers as HeadersInit | undefined);
+      sent.push({
+        path: new URL(url).pathname,
+        botId: headers.get("x-openbot-bot-id"),
+      });
+      return ok({
+        url: "https://example.com/",
+        title: "Example",
+        elapsedMs: 1,
+        base64: "aGVsbG8=",
+        snapshotId: 1,
+        elements: [],
+        entries: [],
+        contents: "",
+        characters: 3,
+        computers: [],
+        holder: "bot",
+      });
+    }, true);
+    return { client, sent };
+  }
+
+  /** Every method that reaches the computer, called once. */
+  const drive = async (client: ReturnType<typeof recording>["client"]) => {
+    await client.status("bot-7");
+    await client.navigate("https://example.com/");
+    await client.screenshot();
+    await client.read();
+    await client.snapshot();
+    await client.click({ ref: "e1", snapshotId: 1 });
+    await client.type({ ref: "e1", snapshotId: 1, text: "hello" });
+    await client.key({ key: "Enter" });
+    await client.scroll({ deltaY: 100 });
+    await client.readFile({ path: "notes.md" });
+    await client.writeFile({ path: "notes.md", contents: "hi" });
+    await client.listFiles({});
+    await client.control();
+    await client.requestControl("stuck");
+    await client.takeControl();
+    await client.releaseControl();
+    await client.requestSecret({ label: "PIN", ref: "e1", snapshotId: 1 });
+    await client.supplySecret("hunter2");
+    await client.humanInput({ kind: "click", x: 1, y: 2 });
+    await client.computers();
+    await client.stopComputer();
+    await client.resetComputer();
+  };
+
+  test("rides every call a Bot's view makes", async () => {
+    const { client, sent } = recording();
+
+    await drive(client.forBot("bot-7"));
+
+    expect(sent.length).toBeGreaterThan(20);
+    const missing = sent.filter((call) => call.botId !== "bot-7");
+    // Named, so a failure says which method forgot rather than only that one did.
+    expect(missing.map((call) => call.path)).toEqual([]);
+  });
+
+  test("is absent from a client that was never told which Bot", async () => {
+    // The base client is what a health probe and the admin computer listing use. It has no Bot to
+    // name, and the computer's own fallback is what answers it — which is correct for exactly this
+    // caller and wrong for every other one, hence the test above.
+    const { client, sent } = recording();
+
+    await drive(client);
+
+    expect(sent.every((call) => call.botId === null)).toBe(true);
+  });
+
+  test("even /health carries it, so a probe is answered for that Bot's own computer", async () => {
+    const { client, sent } = recording();
+
+    await client.forBot("bot-7").status("bot-7");
+
+    expect(sent).toEqual([{ path: "/health", botId: "bot-7" }]);
   });
 });

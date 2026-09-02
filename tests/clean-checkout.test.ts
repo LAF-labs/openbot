@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -16,6 +16,7 @@ const root = join(import.meta.dir, "..");
 
 function manifest(path: string) {
   return JSON.parse(readFileSync(join(root, path, "package.json"), "utf8")) as {
+    name?: string;
     workspaces?: string[];
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
@@ -25,31 +26,33 @@ function manifest(path: string) {
 const rootManifest = manifest(".");
 const workspaces = rootManifest.workspaces ?? [];
 
-/** Packages with their own manifest that the root install does not reach. */
-const OUTSIDE_THE_WORKSPACES = ["agent-computer"] as const;
-
 describe("a clone that has only run bun install", () => {
-  test.each(OUTSIDE_THE_WORKSPACES)(
-    "can resolve everything %s imports in its tests",
-    (packageName) => {
-      // These are not workspace members, so their own node_modules is never installed by the root.
-      // Anything their tested source imports has to be resolvable from the root instead.
-      expect(workspaces).not.toContain(packageName);
+  /*
+   * This used to be the opposite test. `agent-computer` was outside the workspaces, so it asserted
+   * that whatever its tests imported could still be resolved from the root install — a rule for
+   * living with the gap rather than closing it. Being outside was the actual defect: root
+   * `typecheck` never saw the service that drives the browser, and its image installed with no
+   * lockfile. It is a member now, and what is worth keeping is that nothing else ends up where it
+   * was, which is easy to do by accident — a new directory with a package.json is simply invisible
+   * to the root install, and it is invisible in a way that passes.
+   */
+  test("leaves no package outside the root install", () => {
+    const withManifests = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .filter((entry) => entry.name !== "node_modules")
+      .map((entry) => entry.name)
+      .filter((name) => existsSync(join(root, name, "package.json")));
 
-      const declared = Object.keys(manifest(packageName).dependencies ?? {});
-      const rootHas = {
-        ...(rootManifest.dependencies ?? {}),
-        ...(rootManifest.devDependencies ?? {}),
-      };
+    // Asserted so this cannot quietly pass by matching nothing.
+    expect(withManifests.length).toBeGreaterThan(0);
 
-      // Only what the root test run actually loads. Playwright is imported by the service entry
-      // point, which no test imports, and it is installed inside the container image instead.
-      const loadedByTests = declared.filter((name) => name === "yaml");
-      for (const name of loadedByTests) {
-        expect(rootHas).toHaveProperty(name);
-      }
-    },
-  );
+    for (const name of withManifests) {
+      expect(workspaces).toContain(name);
+      // The lockfile and every `--filter` in a Dockerfile address a workspace by the name in its
+      // manifest, so a package whose name is not its directory is a trap in both.
+      expect(manifest(name).name).toBe(name);
+    }
+  });
 
   test("can read the default tenant package with nothing set", () => {
     // `pretest` loads this package, so a name here with no fallback fails the suite before a single

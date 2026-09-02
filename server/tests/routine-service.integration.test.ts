@@ -1,14 +1,27 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
-import { count, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { AuditEventInput } from "../src/audit";
 import { createDatabase } from "../src/db/client";
-import { lafRoutineRuns, lafRoutines } from "../src/db/schema";
+import {
+  agentProfiles,
+  agents,
+  lafRoutineRuns,
+  lafRoutines,
+  users,
+} from "../src/db/schema";
 import {
   createRoutineService,
   MAX_ROUTINES,
   nextRunAt,
-  RoutineError,
 } from "../src/routines/service";
 import { TEST_POOL } from "./support/database";
 
@@ -23,25 +36,79 @@ const database = createDatabase(
   TEST_POOL,
 );
 
-const ACTOR = { id: "routine-tester", role: "admin" as const };
+/*
+ * A plain user, not an administrator.
+ *
+ * Every method scopes by the actor now, and an administrator is the one actor the scope lets
+ * through unfiltered — so a suite that ran as one would exercise the ownership rule nowhere.
+ */
+const ACTOR = { id: "routine-tester", role: "user" as const };
+const STRANGER = { id: "routine-stranger", role: "user" as const };
+const ADMIN = { id: "routine-admin", role: "admin" as const };
 
 /*
- * Only this file's rows. Every test here creates as ACTOR, so everything it made carries that
- * id — and nothing else does. The suite runs against whatever DATABASE_URL names, which on a
- * development machine is the database the app is using; a `delete(lafRoutines)` with no clause
- * erased every routine a person had made, each time the tests ran.
+ * Only this file's rows. Every test here creates as one of the three actors above, so everything it
+ * made carries one of those ids — and nothing else does. The suite runs against whatever
+ * DATABASE_URL names, which on a development machine is the database the app is using; a
+ * `delete(lafRoutines)` with no clause erased every routine a person had made, each time the tests
+ * ran.
  */
+const TEST_ACTOR_IDS = [ACTOR.id, STRANGER.id, ADMIN.id];
+
+/** The Bot every routine below drives. `laf_routines.agent_id` is a real reference since 0026. */
+const BOT_ID = "morning-bot";
+
+/*
+ * The rows the references need, created rather than assumed.
+ *
+ * `laf_routines.agent_id` and `created_by_id` point at `agents` and `users` now, so a routine made
+ * under an id nothing carries fails on the reference instead of exercising the scheduler. Only what
+ * this file creates is removed; on a machine where the app already seeded them, nothing is touched.
+ */
+const seeded = { agents: [] as string[], users: [] as string[] };
+
+beforeAll(async () => {
+  const madeBot = await database
+    .insert(agents)
+    .values({
+      id: BOT_ID,
+      name: "Morning Bot",
+      type: "remote_ag_ui",
+      configuration: {},
+    })
+    .onConflictDoNothing()
+    .returning({ id: agents.id });
+  if (madeBot.length > 0) seeded.agents.push(BOT_ID);
+  for (const id of TEST_ACTOR_IDS) {
+    const madeUser = await database
+      .insert(users)
+      .values({ id, email: `${id}@laf.test`, name: id })
+      .onConflictDoNothing()
+      .returning({ id: users.id });
+    if (madeUser.length > 0) seeded.users.push(id);
+  }
+});
+
+afterAll(async () => {
+  if (seeded.agents.length > 0) {
+    await database.delete(agents).where(inArray(agents.id, seeded.agents));
+  }
+  if (seeded.users.length > 0) {
+    await database.delete(users).where(inArray(users.id, seeded.users));
+  }
+});
+
 afterEach(async () => {
   const mine = database
     .select({ id: lafRoutines.id })
     .from(lafRoutines)
-    .where(eq(lafRoutines.createdById, ACTOR.id));
+    .where(inArray(lafRoutines.createdById, TEST_ACTOR_IDS));
   await database
     .delete(lafRoutineRuns)
     .where(inArray(lafRoutineRuns.routineId, mine));
   await database
     .delete(lafRoutines)
-    .where(eq(lafRoutines.createdById, ACTOR.id));
+    .where(inArray(lafRoutines.createdById, TEST_ACTOR_IDS));
 });
 
 function fakeAgents(reply: string, delayMs = 0) {
@@ -58,7 +125,7 @@ function fakeAgents(reply: string, delayMs = 0) {
       };
     },
   } as unknown as AbstractAgent;
-  return { agents: { "morning-bot": agent }, asked };
+  return { agents: { [BOT_ID]: agent }, asked };
 }
 
 function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
@@ -169,7 +236,7 @@ describe("a routine on the clock", () => {
     const { service, rows } = serviceWith(agents, () => clock);
 
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "아침 리뷰 요약",
       instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -182,7 +249,7 @@ describe("a routine on the clock", () => {
     expect(await service.tick()).toBe(1);
 
     expect(asked).toEqual(["스토어 리뷰 확인하고 새 것만 요약해줘"]);
-    const runs = await service.runs(routine.id);
+    const runs = await service.runs(ACTOR, routine.id);
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       ok: true,
@@ -209,7 +276,7 @@ describe("a routine on the clock", () => {
     const { service } = serviceWith(agents, () => clock);
 
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "아침 리뷰 요약",
       instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -256,7 +323,7 @@ describe("a routine on the clock", () => {
 
     const broken = serviceWith({ "morning-bot": failing }, () => clock);
     const routine = await broken.service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "점검",
       instruction: "확인해줘",
       schedule: { kind: "interval", minutes: 30 },
@@ -281,7 +348,7 @@ describe("a routine on the clock", () => {
     const b = serviceWith(agents, () => clock).service;
 
     const routine = await a.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "once",
       instruction: "run once",
       schedule: { kind: "interval", minutes: 10 },
@@ -291,14 +358,14 @@ describe("a routine on the clock", () => {
 
     const [ranA, ranB] = await Promise.all([a.tick(), b.tick()]);
     expect(ranA + ranB).toBe(1);
-    expect(await a.runs(routine.id)).toHaveLength(1);
+    expect(await a.runs(ACTOR, routine.id)).toHaveLength(1);
   });
 
   test("a Bot that fails leaves a run record that says so", async () => {
     let clock = new Date("2026-08-20T07:00:00Z");
     const { service } = serviceWith({}, () => clock); // Roster without the Bot.
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "gone",
       instruction: "hello",
       schedule: { kind: "interval", minutes: 10 },
@@ -307,7 +374,7 @@ describe("a routine on the clock", () => {
     clock = new Date("2026-08-20T07:11:00Z");
 
     await service.tick();
-    const runs = await service.runs(routine.id);
+    const runs = await service.runs(ACTOR, routine.id);
     expect(runs[0]).toMatchObject({ ok: false });
     expect(runs[0]?.error).toContain("no longer in the roster");
   });
@@ -317,36 +384,35 @@ describe("a routine on the clock", () => {
     const { agents } = fakeAgents("hi");
     const { service } = serviceWith(agents, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "paused",
       instruction: "hello",
       schedule: { kind: "interval", minutes: 10 },
     });
     if (!routine) throw new Error("not created");
 
-    await service.setEnabled(routine.id, false);
+    await service.setEnabled(ACTOR, routine.id, false);
     clock = new Date("2026-08-20T09:00:00Z");
     expect(await service.tick()).toBe(0);
 
     // A routine paused for hours must not fire a backlog on re-enable.
-    const rearmed = await service.setEnabled(routine.id, true);
+    const rearmed = await service.setEnabled(ACTOR, routine.id, true);
     expect(rearmed?.nextRunAt?.toISOString()).toBe("2026-08-20T09:10:00.000Z");
   });
 
   test("refuses the routine past the cap, with the reason", async () => {
     const { agents } = fakeAgents("x");
     const { service } = serviceWith(agents, () => new Date());
-    // The cap is the deployment's, and a development database already holds a person's routines.
-    const [existing] = await database
-      .select({ count: count() })
-      .from(lafRoutines);
-    for (
-      let held = Number(existing?.count ?? 0);
-      held < MAX_ROUTINES;
-      held += 1
-    ) {
+    /*
+     * THIS PERSON'S routines, so the count starts at nothing however many the database holds.
+     *
+     * The cap counted the whole table, which meant it also counted whatever a development machine
+     * already had — and, on the deployment it is written for, whatever the shop owner's staff had
+     * made. The first person to reach twenty stopped everybody else from making one.
+     */
+    for (let held = 0; held < MAX_ROUTINES; held += 1) {
       await service.create(ACTOR, {
-        agentId: "morning-bot",
+        agentId: BOT_ID,
         name: `routine ${held}`,
         instruction: "x",
         schedule: { kind: "interval", minutes: 10 },
@@ -354,12 +420,21 @@ describe("a routine on the clock", () => {
     }
     await expect(
       service.create(ACTOR, {
-        agentId: "morning-bot",
+        agentId: BOT_ID,
         name: "one too many",
         instruction: "x",
         schedule: { kind: "interval", minutes: 10 },
       }),
-    ).rejects.toThrow(RoutineError);
+    ).rejects.toMatchObject({ code: "laf:routine_cap_reached", status: 409 });
+
+    // And the next person is not out of room because of it.
+    const theirs = await service.create(STRANGER, {
+      agentId: BOT_ID,
+      name: "somebody else's first",
+      instruction: "x",
+      schedule: { kind: "interval", minutes: 10 },
+    });
+    expect(theirs.id).toBeString();
   });
 
   test("run-now fires ahead of the clock and pushes the next firing out", async () => {
@@ -367,15 +442,15 @@ describe("a routine on the clock", () => {
     const { agents } = fakeAgents("early");
     const { service } = serviceWith(agents, () => clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "early",
       instruction: "x",
       schedule: { kind: "interval", minutes: 30 },
     });
     if (!routine) throw new Error("not created");
 
-    await service.runNow(routine.id);
-    expect(await service.runs(routine.id)).toHaveLength(1);
+    await service.runNow(ACTOR, routine.id);
+    expect(await service.runs(ACTOR, routine.id)).toHaveLength(1);
 
     // The early run re-armed the clock: nothing is due before the full interval has passed again.
     clock = new Date("2026-08-20T07:20:00Z");
@@ -388,12 +463,268 @@ describe("a routine on the clock", () => {
   });
 });
 
+/**
+ * The window a routine missed while nothing was running.
+ *
+ * `nextRunAt` in the past fired at the first tick however long ago it passed, so a VM that came back
+ * at nine o'clock ran the 07:30 open-up briefing then — a Bot answering a question about a morning
+ * that is over — and an hourly monitor that missed six windows delivered six verdicts at once.
+ */
+describe("a window that came and went", () => {
+  async function overdue(byMinutes: number) {
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { agents, asked } = fakeAgents("caught up");
+    const { service, rows } = serviceWith(agents, () => clock);
+    const routine = await service.create(ACTOR, {
+      agentId: BOT_ID,
+      name: "매일 아침 브리핑",
+      instruction: "오늘 할 일 알려줘",
+      // Due at 07:30, and then however overdue the caller asked for.
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+    clock = new Date(
+      new Date("2026-08-20T07:30:00Z").getTime() + byMinutes * 60_000,
+    );
+    const ran = await service.tick();
+    const [row] = await database
+      .select()
+      .from(lafRoutines)
+      .where(eq(lafRoutines.id, routine.id));
+    return { asked, ran, routine, row, rows, service };
+  }
+
+  test("thirty minutes late still runs, once", async () => {
+    const { asked, ran, routine, rows, service } = await overdue(30);
+
+    expect(ran).toBe(1);
+    expect(asked).toEqual(["오늘 할 일 알려줘"]);
+    expect(await service.runs(ACTOR, routine.id)).toHaveLength(1);
+    expect(rows.map((row) => row.eventType)).toEqual(["routine.ran"]);
+  });
+
+  test("ninety minutes late is skipped, recorded, and re-armed", async () => {
+    const { asked, ran, routine, row, rows, service } = await overdue(90);
+
+    expect(ran).toBe(0);
+    expect(asked).toEqual([]);
+    expect(await service.runs(ACTOR, routine.id)).toHaveLength(0);
+
+    // The row that says a scheduled thing did not happen, and how late the window already was.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "routine.skipped",
+      targetId: routine.id,
+      targetType: "routine",
+    });
+    expect(rows[0]?.payload).toMatchObject({
+      lateByMinutes: 90,
+      missed: "2026-08-20T07:30:00.000Z",
+    });
+
+    // Skipped to the NEXT window, not queued: one interval on from the moment the tick looked.
+    expect(row?.nextRunAt?.toISOString()).toBe("2026-08-20T09:30:00.000Z");
+  });
+
+  test("a routine an hour and a half behind does not fire on the tick after it either", async () => {
+    // The skip has to leave the routine armed. A skip that forgot to move the clock would find the
+    // same stale window again on the next pass and write a `routine.skipped` row every tick.
+    const { rows, service } = await overdue(90);
+    expect(await service.tick()).toBe(0);
+    expect(rows.map((row) => row.eventType)).toEqual(["routine.skipped"]);
+  });
+});
+
+describe("two ticks over one service", () => {
+  test("a pass does not start while the last one is still running", async () => {
+    /*
+     * `start` fires the tick on an interval while a run may take ROUTINE_RUN_TIMEOUT_MS, so on a
+     * ten-minute run the ticker entered the pass nine more times underneath itself. Without the
+     * guard the second pass here claims the second routine and drives the same Bot's browser
+     * alongside the first; with it, the pass is skipped and the routine is simply still due.
+     */
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { agents, asked } = fakeAgents("slowly", 40);
+    const { service } = serviceWith(agents, () => clock);
+    for (const name of ["first", "second"]) {
+      await service.create(ACTOR, {
+        agentId: BOT_ID,
+        name,
+        instruction: `run ${name}`,
+        schedule: { kind: "interval", minutes: 10 },
+      });
+      // A second apart, so "first" is created first as far as the service can tell: both fall due at
+      // the same instant, and the pass runs older routines before newer ones.
+      clock = new Date(clock.getTime() + 1_000);
+    }
+
+    clock = new Date("2026-08-20T07:11:00Z");
+    const running = service.tick();
+    const overlapping = await service.tick();
+
+    expect(overlapping).toBe(0);
+    // The pass that was already going still does all of its own work, sequentially.
+    expect(await running).toBe(2);
+    expect(asked).toEqual(["run first", "run second"]);
+  });
+});
+
+/**
+ * Whose routine it is.
+ *
+ * The service took an id and scoped by nothing, so on the VM a shop owner shares with their staff
+ * any signed-in account could list, run, disable and delete anybody's routines. The rule is the one
+ * that decides a Bot (`canManageAgent`): the author, the owner of the Bot it drives, or an
+ * administrator — and to everybody else the routine does not exist.
+ */
+describe("whose routine it is", () => {
+  const seededAgentIds: string[] = [];
+  const seededUserIds: string[] = [];
+
+  afterEach(async () => {
+    for (const agentId of seededAgentIds.splice(0)) {
+      // agent_profiles cascades from agents; the user has to go after both.
+      await database.delete(agents).where(eq(agents.id, agentId));
+    }
+    for (const userId of seededUserIds.splice(0)) {
+      await database.delete(users).where(eq(users.id, userId));
+    }
+  });
+
+  async function botOwnedBySomebody() {
+    const userId = `routine-bot-owner-${randomUUID()}`;
+    const agentId = `routine-test-agent-${randomUUID()}`;
+    await database.insert(users).values({
+      id: userId,
+      email: `${userId}@laf.test`,
+      name: "Routine Bot Owner",
+    });
+    seededUserIds.push(userId);
+    await database.insert(agents).values({
+      id: agentId,
+      name: "Morning Bot",
+      type: "remote_ag_ui",
+      configuration: { endpoint: "https://seed.example.test/ag-ui" },
+    });
+    seededAgentIds.push(agentId);
+    await database.insert(agentProfiles).values({
+      agentId,
+      ownerUserId: userId,
+      title: "Morning",
+      roleDescription: "Opens the shop.",
+      avatarSeed: agentId,
+      visibility: "private",
+    });
+    return { agentId, owner: { id: userId, role: "user" as const } };
+  }
+
+  async function madeByActor() {
+    const clock = new Date("2026-08-20T07:00:00Z");
+    const { agents: roster } = fakeAgents("mine");
+    const { service } = serviceWith(roster, () => clock);
+    const routine = await service.create(ACTOR, {
+      agentId: BOT_ID,
+      name: "mine",
+      instruction: "x",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+    return { routine, service };
+  }
+
+  test("the author reaches their own routine", async () => {
+    const { routine, service } = await madeByActor();
+
+    expect((await service.list(ACTOR)).map((row) => row.id)).toEqual([
+      routine.id,
+    ]);
+    expect(await service.runs(ACTOR, routine.id)).toEqual([]);
+    expect((await service.setEnabled(ACTOR, routine.id, false)).enabled).toBe(
+      false,
+    );
+    await service.remove(ACTOR, routine.id);
+    expect(await service.list(ACTOR)).toEqual([]);
+  });
+
+  test("somebody else's routine does not exist", async () => {
+    const { routine, service } = await madeByActor();
+
+    // Not listed at all, which is the half a 404 on its own would not give.
+    expect(await service.list(STRANGER)).toEqual([]);
+    for (const attempt of [
+      () => service.runs(STRANGER, routine.id),
+      () => service.setEnabled(STRANGER, routine.id, false),
+      () => service.runNow(STRANGER, routine.id),
+      () => service.remove(STRANGER, routine.id),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({
+        code: "laf:routine_not_found",
+        status: 404,
+      });
+    }
+
+    // And it is all still there: a refused delete must not have taken the run history with it.
+    const [survivor] = await database
+      .select()
+      .from(lafRoutines)
+      .where(eq(lafRoutines.id, routine.id));
+    expect(survivor).toMatchObject({ enabled: true, id: routine.id });
+  });
+
+  test("the owner of the Bot manages the routines that drive it", async () => {
+    // A routine outlives whoever typed it. Staff leave, and a shop owner locked out of the routines
+    // running on their own Bot has no way in that is not an administrator.
+    const { agentId, owner } = await botOwnedBySomebody();
+    const clock = new Date("2026-08-20T07:00:00Z");
+    const { service } = serviceWith({}, () => clock);
+    const routine = await service.create(ACTOR, {
+      agentId,
+      name: "theirs to keep",
+      instruction: "x",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+
+    expect((await service.list(owner)).map((row) => row.id)).toEqual([
+      routine.id,
+    ]);
+    expect((await service.setEnabled(owner, routine.id, false)).enabled).toBe(
+      false,
+    );
+    await service.remove(owner, routine.id);
+  });
+
+  test("an administrator reaches all of them", async () => {
+    const { routine, service } = await madeByActor();
+
+    expect((await service.list(ADMIN)).map((row) => row.id)).toContain(
+      routine.id,
+    );
+    await service.remove(ADMIN, routine.id);
+  });
+
+  test("the list never carries the trigger token hash", async () => {
+    // A hash is not the token, but it is the material for guessing one offline, and it was on a
+    // screen with no use for it. Asserted on the serialised body, the way it reaches a browser.
+    const { routine, service } = await madeByActor();
+
+    const [listed] = await service.list(ACTOR);
+    expect(listed).toBeDefined();
+    expect(JSON.stringify(listed)).not.toContain("triggerTokenHash");
+    expect(Object.keys(listed as object)).not.toContain("triggerTokenHash");
+
+    // Nor does the create response, which is the one place the token itself is handed over.
+    expect(Object.keys(routine)).not.toContain("triggerTokenHash");
+    expect(routine.triggerToken).toBeString();
+  });
+});
+
 describe("a webhook firing a routine", () => {
   async function armed(clock: () => Date, reply = "fired") {
     const { agents, asked } = fakeAgents(reply);
     const { service } = serviceWith(agents, clock);
     const routine = await service.create(ACTOR, {
-      agentId: "morning-bot",
+      agentId: BOT_ID,
       name: "on event",
       instruction: "summarize the event",
       schedule: { kind: "interval", minutes: 60 },
@@ -446,7 +777,7 @@ describe("a webhook firing a routine", () => {
   test("a disabled routine acknowledges and does nothing", async () => {
     const clock = new Date("2026-08-20T07:00:00Z");
     const { service, routine, asked } = await armed(() => clock);
-    await service.setEnabled(routine.id, false);
+    await service.setEnabled(ACTOR, routine.id, false);
 
     const outcome = await service.trigger(routine.id, routine.triggerToken);
     expect(outcome).toEqual({ ran: false, reason: "disabled" });

@@ -2,11 +2,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
+import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import { agentProfiles, agents, skills, users } from "../src/db/schema";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore } from "../src/plugins/store";
+import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -24,14 +26,17 @@ const database = createDatabase(
   TEST_POOL,
 );
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 const store = createPluginStore({
   database,
   auditStore: createAuditStore(database),
-  credentials: { readSecret: async () => null },
+  credentials: credentialVaultStub({ readSecret: async () => null }),
   encryptionKey: "x".repeat(44),
   policy: () => policy,
+  // The registry the settle path opens a question on. Absent, this store could not have raised one
+  // at all — which nothing here would have noticed, because nothing here asks.
+  approvals: createApprovalRegistry(),
 });
 
 const suite = randomUUID().slice(0, 8);

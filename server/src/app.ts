@@ -1,5 +1,6 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { type AccountService, createAccountRoutes } from "./account/routes";
 import type { CoworkerCall } from "./agents/coworker-call";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -32,16 +33,16 @@ import { createComputerRoutes } from "./computer/routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
-import type { ConnectorAdminService } from "./connectors";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
+import { createHealthRoute, type HealthProbes } from "./health";
+import type { ApprovalMetrics } from "./notifications/approval-metrics";
+import type { NotificationOutbox } from "./notifications/outbox";
+import { createNotificationRoutes } from "./notifications/routes";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
 import type { PackageStatusReader } from "./tenant-package";
-import type { DigestService } from "./watch/digest-service";
-import type { WatchService } from "./watch/poller";
-import { createWatchRoutes } from "./watch/routes";
 
 export function createApp(
   config: DeploymentConfig,
@@ -50,7 +51,6 @@ export function createApp(
   auditReader?: AuditReader,
   credentialService?: CredentialAdminService,
   packageStatusReader?: PackageStatusReader,
-  connectorService?: ConnectorAdminService,
   /** Whether this person has made their first Bot yet. Absent means nobody is ever asked to. */
   onboarding?: OnboardingStore,
   /**
@@ -119,13 +119,9 @@ export function createApp(
    * ten minutes and then reports that nobody answered.
    */
   approvals?: ApprovalRegistry,
-  /** The laf.watch poller; absent leaves the surface unmounted. */
-  watchService?: WatchService,
-  /** The morning card; optional so the watch surface works without it. */
-  digestService?: DigestService,
   /** One Bot asking another. Absent means the ask route answers 501 and everything else stands. */
   coworkerCall?: CoworkerCall,
-  /** Instructions on a clock. Absent leaves the surface unmounted, exactly like the watch. */
+  /** Instructions on a clock. Absent leaves the routine surface unmounted. */
   routineService?: RoutineService,
   /**
    * When each message in a thread was first seen and which Bot said it: the date separators, and
@@ -211,19 +207,78 @@ export function createApp(
    * consent flow, which is the honest degraded behaviour for a deployment with no public URL.
    */
   pluginConnect?: ConnectConfig,
+  /**
+   * Whether this deployment's model can actually judge a "do not ask me about" instruction.
+   *
+   * Asked of the model rather than assumed, once, and cached — see `createAutoReviewProbe`. It is
+   * here because the alternative is a control on every Bot's profile that saves, draws, and reaches
+   * nothing, which is the exact failure CLAUDE.md names: if a deployment's model cannot do the
+   * thing, do not draw the control.
+   *
+   * Absent reads as capable, which is what a deployment with no probe wired up should look like:
+   * the feature behaves as it did, and the surface draws the control it has always drawn.
+   */
+  autoReviewCapable?: () => Promise<boolean>,
+  /**
+   * What `/health` asks before it answers. Last, like everything new here.
+   *
+   * Absent, the endpoint reports no checks and stays 200 — an embedding that supplied no probes is
+   * not a degraded deployment. The process that runs a deployment supplies all three; see
+   * `health.ts` for why a constant was worse than nothing.
+   */
+  healthProbes?: HealthProbes,
+  /**
+   * Taking your data with you, and leaving. Last, like everything new here.
+   *
+   * Absent leaves the three routes unmounted, which is the honest degraded behaviour: a deployment
+   * that cannot delete an account must answer 404 rather than draw a page whose button reports
+   * success and removes nothing.
+   */
+  accountService?: AccountService,
+  /**
+   * The notification outbox and the number it exists to make measurable. Last, like everything new.
+   *
+   * Absent leaves both routes unmounted and the answering handler telling nobody it was answered,
+   * which is the honest degraded behaviour: a deployment with no outbox has nothing to list, and a
+   * page that asked would get a 404 rather than an empty list it would read as "nothing is waiting".
+   */
+  notifications?: {
+    outbox: NotificationOutbox;
+    /** How long answers take. Absent answers 503 on the metric and leaves the door working. */
+    approvalMetrics?: (days: number) => Promise<ApprovalMetrics>;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
-  app.get("/health", (context) => context.json({ status: "ok" }));
-  // Projected, never the raw runtime. config.runtime carries the Intelligence contract, including
-  // INTELLIGENCE_API_KEY and the licence token, and this endpoint is reachable by anyone. Returning
-  // the object wholesale would serve deployment secrets to the browser. Add fields here explicitly.
-  app.get("/api/capabilities", (context) =>
-    context.json({
-      mode: config.runtime.mode,
-      durableHistory: config.runtime.durableHistory,
-    }),
-  );
+  /**
+   * What the deployment can do, asked per request and answered from a cache.
+   *
+   * One function so that a second place cannot answer differently, which is how a control comes to
+   * be drawn on one screen and dead on the next.
+   */
+  const capabilities = async () => ({
+    effort: deploymentEffort !== false,
+    autoReview: autoReviewCapable ? await autoReviewCapable() : true,
+  });
+
+  app.route("/health", createHealthRoute(healthProbes));
+  /*
+   * What this deployment can do, for anybody who asks — and it is anybody: this endpoint has no
+   * session guard, so every field added here is published. It once reported a runtime `mode` and an
+   * always-true `durableHistory`, both left from a hosted-runtime choice that no longer exists, and
+   * a projection of nothing is still a projection: add fields explicitly, never the config object.
+   *
+   * Kept rather than removed because the deployment's own smoke test uses it to decide whether
+   * anything is answering at all before it starts asking real questions of it.
+   */
+  /*
+   * WHAT THIS DEPLOYMENT CAN DO IS NOT PUBLISHED HERE. It is on `/api/me`, behind the session
+   * guard, beside the person it is being drawn for. This endpoint is reachable by anyone, the two
+   * booleans are about which controls to draw rather than about who is asking, and there is nothing
+   * an anonymous caller needs them for — see the note above and `health.test.ts`, which pins the
+   * body to one field for exactly that reason.
+   */
+  app.get("/api/capabilities", (context) => context.json({ status: "ok" }));
   app.on(["GET", "POST"], "/api/auth/*", (context) => {
     if (!auth) {
       return context.json({ error: "Authentication is not configured." }, 503);
@@ -257,15 +312,18 @@ export function createApp(
     /*
      * What this deployment can do, beside who is asking.
      *
-     * Here rather than on its own endpoint because it is one boolean and this is the call the app
-     * already makes before it draws anything. Today it says whether the model takes an effort
-     * setting: a deployment whose model does not reason must not offer a control that silently does
-     * nothing, and the surface cannot work that out for itself — the model is never sent to it, and
-     * it should not have to know model names to draw a form.
+     * Here as well as on `/api/capabilities` because this is the call the app already makes before
+     * it draws anything, and a second round trip to find out whether to draw a control is a control
+     * that flickers. Both read one function, so they cannot disagree.
+     *
+     * Two booleans, and each one is a control that must not be drawn where it does nothing: whether
+     * the model takes an effort setting, and whether it can judge a "do not ask me about"
+     * instruction. The surface cannot work either out for itself — it is never told which model this
+     * deployment serves, and it should not have to know model names to draw a form.
      */
     return context.json({
       user: { ...actor, onboarded },
-      deployment: { effort: deploymentEffort !== false },
+      deployment: await capabilities(),
     });
   });
 
@@ -394,41 +452,6 @@ export function createApp(
     }
     return context.json({ package: await packageStatusReader.active() });
   });
-  app.get("/api/admin/connectors", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-    if (!connectorService) {
-      return context.json(
-        { error: "Connector management is not configured." },
-        503,
-      );
-    }
-
-    return context.json({ connectors: await connectorService.list() });
-  });
-  app.post(
-    "/api/admin/connectors/google-drive/setup",
-    requireUser,
-    async (context) => {
-      const denied = requireAdmin(context);
-      if (denied) return denied;
-      if (!connectorService?.configureGoogleDrive) {
-        return context.json(
-          { error: "Google Drive setup is not configured." },
-          503,
-        );
-      }
-      const body = await context.req.json().catch(() => null);
-      const input = googleDriveSetupInput(body, context.var.actor.id);
-      if (!input)
-        return context.json({ error: "Google Drive setup is invalid." }, 400);
-      return context.json(
-        { connector: await connectorService.configureGoogleDrive(input) },
-        201,
-      );
-    },
-  );
-
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
   // its own routing under /api/copilotkit cannot shadow a LAF Agent route declared above.
   if (copilotHandler) {
@@ -453,6 +476,8 @@ export function createApp(
         requireUser,
         demonstrations,
         writeUp,
+        // So a change to the boundary itself lands in the same trail as the actions it governs.
+        auditStore,
       ),
     );
   }
@@ -466,6 +491,31 @@ export function createApp(
         auditStore,
         requireUser,
         standingApprovals,
+        // An answered question stops being a thing anybody is waiting on. See the outbox.
+        notifications
+          ? (approvalId) => {
+              void notifications.outbox
+                .markSeenForApproval(approvalId)
+                .catch(() => undefined);
+            }
+          : undefined,
+      ),
+    );
+  }
+
+  /*
+   * What is waiting for the person asking, and how long answers take.
+   *
+   * One mount under `/api`, holding `/me/notifications` and `/admin/metrics/approvals`, because
+   * they are the door and the measurement of the same thing — see notifications/routes.ts.
+   */
+  if (notifications) {
+    app.route(
+      "/api",
+      createNotificationRoutes(
+        requireUser,
+        notifications.outbox,
+        notifications.approvalMetrics,
       ),
     );
   }
@@ -480,8 +530,6 @@ export function createApp(
         // deployment must not. Passed from configuration rather than defaulted here, so "hosted and
         // permissive" cannot happen by forgetting something.
         config.computer?.allowPrivateHosts ?? false,
-        // A Bot's own refusal goes in the same trail as everything else it does.
-        auditStore,
         coworkerCall,
         // What the roster shows as busy, read from the one ledger every run path writes.
         readWorking,
@@ -526,6 +574,11 @@ export function createApp(
     );
   }
 
+  // Export, deletion and the admin removal, under `/api` because two are the person's own and one
+  // is an administrator's. See account/routes.ts.
+  if (accountService)
+    app.route("/api", createAccountRoutes(accountService, requireUser));
+
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));
 
@@ -535,38 +588,9 @@ export function createApp(
         createRoutineRoutes(routineService, requireUser),
       );
     }
-
-    if (watchService) {
-      app.route(
-        "/api/watch",
-        createWatchRoutes(watchService, requireUser, digestService),
-      );
-    }
   }
 
   return app;
-}
-
-function googleDriveSetupInput(value: unknown, actorUserId: string) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const body = value as Record<string, unknown>;
-  if (
-    typeof body.serviceAccountJson !== "string" ||
-    typeof body.impersonationSubject !== "string" ||
-    !body.impersonationSubject.trim()
-  )
-    return null;
-  try {
-    const json = JSON.parse(body.serviceAccountJson) as unknown;
-    if (!json || typeof json !== "object" || Array.isArray(json)) return null;
-  } catch {
-    return null;
-  }
-  return {
-    serviceAccountJson: body.serviceAccountJson,
-    impersonationSubject: body.impersonationSubject.trim(),
-    actorUserId,
-  };
 }
 
 function credentialInput(

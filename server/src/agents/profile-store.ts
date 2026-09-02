@@ -1,4 +1,4 @@
-import { and, count, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
@@ -77,18 +77,24 @@ export class AgentNotManageableError extends Error {
 }
 
 /**
- * The account's computer seats five Bots, and every seat is taken.
+ * The account's computer has no seat left for another Bot.
  *
  * The cap is a fact about the computer, not about the roster table: an account gets one virtual
- * computer and up to five Bots share it (assignment.ts). It is enforced here, where a Bot comes to
- * exist, because a sixth Bot must fail to be created — not get created and then fail to reach a
- * computer, which would look like an outage instead of a limit.
+ * computer and a fixed number of Bots share it (assignment.ts). It is enforced here, where a Bot
+ * comes to exist, because a sixth Bot must fail to be created — not get created and then fail to
+ * reach a computer, which would look like an outage instead of a limit.
+ *
+ * A FACT CODE AND A NUMBER, NOT A SENTENCE. This threw "…seats five Bots, and all five seats are
+ * taken" — English, on a Korean screen, with the five written into the prose while
+ * `BOT_SEATS_PER_ACCOUNT` is a setting a deployment can change. Both halves were wrong in the same
+ * place. The server sends what happened and how many seats there are; the surface owns the words,
+ * the way `ROUTINE_REFUSALS` already does (app/src/lib/routines/queries.ts).
  */
 export class RosterFullError extends Error {
-  constructor() {
-    super(
-      "This account's computer seats five Bots, and all five seats are taken.",
-    );
+  readonly code = "laf:seats_full";
+
+  constructor(readonly seats: number) {
+    super(`This account's computer seats ${seats} Bots, and all are taken.`);
     this.name = "RosterFullError";
   }
 }
@@ -231,6 +237,53 @@ async function lockProfileReadRow(executor: DatabaseExecutor, id: string) {
     .for("share");
 }
 
+/**
+ * Hold this account's seats against every other create, then refuse the one that would not fit.
+ *
+ * WHY A LOCK. The count used to sit alone inside the transaction under a comment claiming two
+ * racing creates "serialize here". They do not. Read committed gives each transaction its own
+ * snapshot, so two creates for an account with one seat left both read four, both pass the check
+ * and both insert — and no constraint catches it afterwards, because there is no constraint that
+ * can count rows. The comment was the whole guard.
+ *
+ * `pg_advisory_xact_lock` is the fence the comment described. Keyed on the owner, so two people
+ * making Bots at the same moment never wait on each other; taken before the count, so the second
+ * transaction reads a table the first has already added to; released by the transaction ending,
+ * whichever way it ends. Two owner ids that hash alike cost one of them a wait and nothing else.
+ *
+ * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md), so the
+ * five seats are theirs and nobody else's Bots can take one. It counted every undeleted profile in
+ * the deployment. Measured on a development machine: five profiles, two of them this person's, and
+ * their sixth Bot refused with "all five seats are taken" — the other three were Bots a package had
+ * shipped, owned by nobody, quietly holding seats. On a shared deployment it is worse: somebody
+ * else making a Bot takes one of yours.
+ *
+ * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a Bot the
+ * deployment shipped is not something this person chose to spend a seat on.
+ */
+async function reserveSeat(
+  transaction: Transaction,
+  ownerUserId: string,
+  seats: number,
+): Promise<void> {
+  await transaction.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${ownerUserId})::bigint)`,
+  );
+  const [seated] = await transaction
+    .select({ count: count() })
+    .from(agents)
+    .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+    .where(
+      and(
+        isNull(agentProfiles.deletedAt),
+        eq(agentProfiles.ownerUserId, ownerUserId),
+      ),
+    );
+  if (Number(seated?.count ?? 0) >= seats) {
+    throw new RosterFullError(seats);
+  }
+}
+
 function requireManageable(actor: AgentActor, profile: AgentProfile) {
   if (profile.systemOwned) throw new ProtectedAgentError(profile.id);
   if (!canManageAgent(actor, profile)) {
@@ -287,34 +340,7 @@ export function createAgentProfileStore(
 
     create(actor, input) {
       return database.transaction(async (transaction) => {
-        // Seats are counted inside the transaction, so two creates racing for the last seat
-        // serialize here rather than both finding four and both inserting a fifth and sixth.
-        const [seated] = await transaction
-          .select({ count: count() })
-          .from(agents)
-          .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-          /*
-           * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md),
-           * so the five seats are theirs and nobody else's Bots can take one.
-           *
-           * It counted every undeleted profile in the deployment. Measured on a development
-           * machine: five profiles, two of them this person's, and their sixth Bot refused with
-           * "all five seats are taken" — the other three were Bots a package had shipped, owned by
-           * nobody, quietly holding seats. On a shared deployment it is worse: somebody else making
-           * a Bot takes one of yours.
-           *
-           * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a
-           * Bot the deployment shipped is not something this person chose to spend a seat on.
-           */
-          .where(
-            and(
-              isNull(agentProfiles.deletedAt),
-              eq(agentProfiles.ownerUserId, actor.id),
-            ),
-          );
-        if (Number(seated?.count ?? 0) >= seats) {
-          throw new RosterFullError();
-        }
+        await reserveSeat(transaction, actor.id, seats);
         const id = newAgentId();
         await transaction.insert(agents).values({
           id,
@@ -440,34 +466,7 @@ export function createAgentProfileStore(
         const source = await findAccessibleProfile(transaction, actor, id);
         if (!source) throw new AgentNotFoundError(id);
 
-        // Seats are counted inside the transaction, so two creates racing for the last seat
-        // serialize here rather than both finding four and both inserting a fifth and sixth.
-        const [seated] = await transaction
-          .select({ count: count() })
-          .from(agents)
-          .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-          /*
-           * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md),
-           * so the five seats are theirs and nobody else's Bots can take one.
-           *
-           * It counted every undeleted profile in the deployment. Measured on a development
-           * machine: five profiles, two of them this person's, and their sixth Bot refused with
-           * "all five seats are taken" — the other three were Bots a package had shipped, owned by
-           * nobody, quietly holding seats. On a shared deployment it is worse: somebody else making
-           * a Bot takes one of yours.
-           *
-           * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a
-           * Bot the deployment shipped is not something this person chose to spend a seat on.
-           */
-          .where(
-            and(
-              isNull(agentProfiles.deletedAt),
-              eq(agentProfiles.ownerUserId, actor.id),
-            ),
-          );
-        if (Number(seated?.count ?? 0) >= seats) {
-          throw new RosterFullError();
-        }
+        await reserveSeat(transaction, actor.id, seats);
 
         const duplicateId = newAgentId();
         await transaction.insert(agents).values({

@@ -10,8 +10,11 @@
  * grant was spent on nothing and the room simply went quiet.
  *
  * The one-to-one conversation has always waited: the browser's loop holds its tool call open and
- * polls (`app/src/lib/approvals.ts`). This is that same wait, on the server, for the loop that runs
- * a room. Same registry, same ten-minute window, same rule that an answer is final.
+ * polls (`app/src/lib/approvals.ts`). A browser has to poll — it cannot hold a promise on this
+ * heap. This wait can, and used to poll anyway: it asked the registry in this very process for its
+ * list of open questions once a second for two minutes, to learn something the registry knew the
+ * instant it happened. It now asks to be told (`ApprovalRegistry.waitFor`), so the turn resumes in
+ * the same tick the button is pressed and a wait costs nothing while nobody is answering.
  *
  * BOUNDED, because a room is a conversation and the other members are queued behind this one. Two
  * minutes is long enough for somebody at the screen and short of a turn that hangs because the
@@ -27,8 +30,6 @@ export type ApprovalOutcome = "granted" | "denied" | "unanswered";
 
 /** How long a room turn will hold for an answer. */
 export const ROOM_APPROVAL_WAIT_MS = 120_000;
-/** How often it looks. The browser's own waiter polls at the same rate. */
-export const APPROVAL_POLL_MS = 1_000;
 
 export type ApprovalWaiter = (
   botId: string,
@@ -38,49 +39,31 @@ export type ApprovalWaiter = (
 ) => Promise<ApprovalOutcome>;
 
 export function createApprovalWaiter(
-  approvals: Pick<ApprovalRegistry, "pending">,
-  options: {
-    waitMs?: number;
-    pollMs?: number;
-    sleep?: (ms: number) => Promise<void>;
-    now?: () => number;
-  } = {},
+  approvals: Pick<ApprovalRegistry, "waitFor">,
+  options: { waitMs?: number } = {},
 ): ApprovalWaiter {
   const waitMs = options.waitMs ?? ROOM_APPROVAL_WAIT_MS;
-  const pollMs = options.pollMs ?? APPROVAL_POLL_MS;
-  const now = options.now ?? Date.now;
-  const sleep =
-    options.sleep ??
-    ((ms: number) =>
-      new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, ms);
-        timer.unref?.();
-      }));
 
   return async function waitForApproval(botId, approvalId, signal) {
-    const deadline = now() + waitMs;
-    for (;;) {
-      /*
-       * The turn ended while this was waiting — its deadline fired, or it was aborted. The wait is
-       * inside a promise the loop has already walked away from, so without this it keeps polling
-       * and, worse, its answer would send the action through on behalf of a turn that is over.
-       */
-      if (signal?.aborted) return "unanswered";
-      /*
-       * `pending` includes answered-but-unspent questions on purpose — that is how a waiting caller
-       * learns the answer, and it is what the browser's waiter reads too. A question that is GONE
-       * from the list expired or was already spent, and there is nothing left to wait for.
-       */
-      const open = await approvals.pending(botId).catch(() => null);
-      if (open) {
-        const mine = open.find((approval) => approval.id === approvalId);
-        if (!mine) return "unanswered";
-        if (mine.granted === true) return "granted";
-        if (mine.granted === false) return "denied";
-      }
-      // A failed read is a blip, not an answer: keep waiting rather than giving up on one query.
-      if (now() >= deadline) return "unanswered";
-      await sleep(pollMs);
-    }
+    /*
+     * A wait that throws is a wait that ended, and it ended without an answer. Nothing here is
+     * allowed to fail a member's turn: the question is still on screen, and the honest report is
+     * the same one nobody answering gets.
+     */
+    const answered = await approvals
+      .waitFor(botId, approvalId, {
+        ...(signal ? { signal } : {}),
+        timeoutMs: waitMs,
+      })
+      .catch(() => null);
+
+    /*
+     * Null is expiry, an abandoned turn, a question spent elsewhere, or nobody answering in time —
+     * one ending, because the member does the same thing with all four: it says it is still waiting
+     * and stops. `granted === undefined` cannot happen through `waitFor`, and is read the same way
+     * rather than trusted.
+     */
+    if (!answered || answered.granted === undefined) return "unanswered";
+    return answered.granted ? "granted" : "denied";
   };
 }

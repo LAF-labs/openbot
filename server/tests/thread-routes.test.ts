@@ -18,7 +18,7 @@ const asSignedIn: MiddlewareHandler<{ Variables: AppVariables }> = async (
   context,
   next,
 ) => {
-  context.set("actor", { id: "u1", email: "someone@laf.test" });
+  context.set("actor", { id: "u1", email: "someone@laf.test", role: "user" });
   return next();
 };
 

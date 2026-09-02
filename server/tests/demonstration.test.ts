@@ -48,6 +48,52 @@ describe("what a demonstration keeps", () => {
     expect(written).toContain("아이디");
   });
 
+  /**
+   * NOR ANYTHING THE SCREEN WAS SHOWING, which is the same rule by the other door.
+   *
+   * `/describe-point` used to fall back to eighty characters of the clicked element's own
+   * `innerText` when it had no label, and that text is whatever the page happened to be showing:
+   * a one-time code, an account number, a balance. It arrived here as the element's `name` and went
+   * straight into the recording a model is later asked to write up.
+   *
+   * It now returns role plus the author's label — aria-label, title, placeholder, alt — and null
+   * when there is none (`agent-computer/src/index.ts`). These two pin the server's half of that:
+   * whatever the namer says is what is kept, so a namer that has stopped reading page text produces
+   * a record with no page text in it, and a press with no label is still a press.
+   */
+  test("nothing the screen was showing either, when a press has no label", async () => {
+    const otp = "482913";
+    // What the namer answers for an element whose only text is the code on screen: no aria-label,
+    // no title, no placeholder — so no name at all.
+    const recorder = recorderWith(null);
+    recorder.start("bot-1", "boss");
+    recorder.observe("bot-1", {
+      type: "mouse",
+      event: "pressed",
+      x: 210,
+      y: 480,
+    });
+    await Promise.resolve();
+
+    const written = JSON.stringify(recorder.read("bot-1"));
+    expect(written).not.toContain(otp);
+    // And the press is still in there. A procedure that skipped it would describe a task with a
+    // hole in the middle.
+    expect(recorder.read("bot-1")?.steps).toHaveLength(1);
+  });
+
+  test("the author's label, where the page has one, and never the value beside it", async () => {
+    const recorder = recorderWith({ role: "textbox", name: "인증번호" });
+    recorder.start("bot-1", "boss");
+    recorder.observe("bot-1", { type: "mouse", event: "pressed", x: 1, y: 1 });
+    recorder.observe("bot-1", { type: "text", text: "482913" });
+    await Promise.resolve();
+
+    const written = JSON.stringify(recorder.read("bot-1"));
+    expect(written).toContain("인증번호");
+    expect(written).not.toContain("482913");
+  });
+
   test("that typing happened, and where, once per run", () => {
     const recorder = recorderWith(null);
     recorder.start("bot-1", "boss");

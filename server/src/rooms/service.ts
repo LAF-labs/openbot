@@ -13,6 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import type { AnnounceChannelActivity } from "../channels/events";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { channelMemberships, channels } from "../db/schema";
@@ -28,11 +29,7 @@ import { readPrivateHistory } from "./private-history";
 import type { ApprovalWaiter } from "./wait-for-approval";
 import { runRoomTurn } from "./orchestrator";
 import type { RoomMember } from "./prompt";
-import {
-  appendRoomMessage,
-  readRoomLines,
-  type StoredMessage,
-} from "./transcript";
+import { appendRoomMessage, readRoomLines } from "./transcript";
 
 /** How long one member may take. Generous: it may open pages and read files before it answers. */
 export const MEMBER_TURN_TIMEOUT_MS = 300_000;
@@ -60,12 +57,14 @@ export type RoomServiceOptions = {
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   /** Push a frame to whoever is watching this room. */
   emit: (frame: RoomFrame) => void;
-  /** Keep the runner's rehydrated copy of the thread in step with what we wrote. */
-  onAppended?: (
-    threadId: string,
-    agentId: string | null,
-    messages: StoredMessage[],
-  ) => void;
+  /**
+   * Move the roster row on every member's screen, once the message that moved it has committed.
+   *
+   * Separate from `emit` because it is a different audience: `emit` reaches the room that is open,
+   * this reaches the list of rooms in every other tab. Absent in tests. See `channels/events.ts`
+   * for why the caller announces rather than the writer.
+   */
+  announce?: AnnounceChannelActivity;
   /**
    * Hold a member's turn while a person answers the question its action raised.
    *
@@ -147,27 +146,16 @@ export function createRoomService(options: RoomServiceOptions) {
       }
 
       const turnId = randomUUID();
-      /*
-       * `onAppended` updates the runner's in-memory copy of the thread, and it is NOT passed into
-       * the transaction. Called there, a rollback after the append would leave the runner holding a
-       * message Postgres never kept — and `mergeKeepingStoredOnly` would faithfully re-insert that
-       * phantom on the thread's next save. It is told once the transaction has committed.
-       */
-      let appended: StoredMessage[] | null = null;
       const posted = await database.transaction(async (transaction) => {
-        const written = await appendRoomMessage(
-          transaction,
-          {
-            channelId: input.channelId,
-            threadId: input.threadId,
-            agentId: null,
-            text,
-            ...(input.messageId ? { messageId: input.messageId } : {}),
-          },
-          (_threadId, _agentId, messages) => {
-            appended = messages;
-          },
-        );
+        // Nothing outside this transaction is told about a message until the transaction that
+        // wrote it has committed — hence the announcement below rather than in here.
+        const written = await appendRoomMessage(transaction, {
+          channelId: input.channelId,
+          threadId: input.threadId,
+          agentId: null,
+          text,
+          ...(input.messageId ? { messageId: input.messageId } : {}),
+        });
         const [bumped] = await transaction
           .update(channels)
           .set({ roomTurnEpoch: sql`${channels.roomTurnEpoch} + 1` })
@@ -175,7 +163,7 @@ export function createRoomService(options: RoomServiceOptions) {
           .returning({ epoch: channels.roomTurnEpoch });
         return { written, epoch: Number(bumped?.epoch ?? room.epoch) };
       });
-      if (appended) options.onAppended?.(input.threadId, null, appended);
+      if (posted.written.activity) options.announce?.(posted.written.activity);
 
       const memberIds = await watchers(database, input.channelId);
       const addressed = input.addressedAgentIds ?? [];
@@ -333,9 +321,10 @@ export function createRoomService(options: RoomServiceOptions) {
                   memberId: member.id,
                   memberName: member.name,
                   approvalId: question.approvalId,
-                  question: question.question,
+                  subject: question.subject,
                   rule: question.rule,
                   ...(question.scope ? { scope: question.scope } : {}),
+                  expiresAt: question.expiresAt,
                   answered,
                 }),
             });
@@ -381,16 +370,15 @@ export function createRoomService(options: RoomServiceOptions) {
                 timeoutMs,
                 ...(options.ledger ? { ledger: options.ledger } : {}),
                 deliver: async (text, toolCallId) => {
-                  const written = await appendRoomMessage(
-                    database,
-                    {
-                      channelId: input.channelId,
-                      threadId: input.threadId,
-                      agentId: member.id,
-                      text,
-                    },
-                    options.onAppended,
-                  );
+                  const written = await appendRoomMessage(database, {
+                    channelId: input.channelId,
+                    threadId: input.threadId,
+                    agentId: member.id,
+                    text,
+                  });
+                  // No transaction here — the append is its own — so the roster row is announced
+                  // as soon as it has moved.
+                  if (written.activity) options.announce?.(written.activity);
                   open.delete(toolCallId);
                   /*
                    * THE SETTLED MESSAGE REPLACES THE PROVISIONAL ONE IN PLACE. The browser has been

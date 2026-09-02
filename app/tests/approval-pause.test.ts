@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { allowanceScopeOf, pauseFrom } from "../src/lib/approvals";
+import {
+  allowanceScopeOf,
+  type AskSubject,
+  askSubjectOf,
+  pauseFrom,
+} from "../src/lib/approvals";
+
+/** What the server sends about a navigation it stopped, in the shape the reply carries. */
+const OPENING: AskSubject = {
+  kind: "browser",
+  intent: "navigate",
+  host: "wttr.in",
+  reason: "policy_ask",
+};
 
 /**
  * The hop between the server's pause reply and the card that draws it.
@@ -19,15 +32,17 @@ describe("reading a pause reply", () => {
       pauseFrom({
         awaitingApproval: true,
         approvalId: "a-1",
-        question: "The Bot wants to open wttr.in.",
+        subject: OPENING,
         rule: 'intent == "navigate"',
         scope: { kind: "host", value: "wttr.in" },
+        expiresAt: "2026-09-03T09:10:00.000Z",
       }),
     ).toEqual({
       approvalId: "a-1",
-      question: "The Bot wants to open wttr.in.",
+      subject: OPENING,
       rule: 'intent == "navigate"',
       scope: { kind: "host", value: "wttr.in" },
+      expiresAt: "2026-09-03T09:10:00.000Z",
     });
   });
 
@@ -35,19 +50,42 @@ describe("reading a pause reply", () => {
     const pause = pauseFrom({
       awaitingApproval: true,
       approvalId: "a-1",
-      question: "q",
+      subject: OPENING,
       rule: null,
     });
     expect(pause?.scope).toBeUndefined();
   });
 
-  test("falls back to the error, which is the question in different clothes", () => {
-    // The pause error's message IS the question, so a reply carrying only one of them still names
-    // what is being asked about rather than drawing an empty card with two buttons under it.
+  test("a subject it cannot read is no subject at all", () => {
+    /*
+     * The card says it cannot name what is being asked about rather than composing a sentence out of
+     * a shape nobody sent. This used to read the reply's `error` as the question, which worked while
+     * the error WAS the question in English; it is a fact code now, and "laf:awaiting_approval" is
+     * not a thing to put in front of somebody with two buttons under it.
+     */
     expect(
-      pauseFrom({ awaitingApproval: true, approvalId: "a", error: "Open it?" })
-        ?.question,
-    ).toBe("Open it?");
+      pauseFrom({
+        awaitingApproval: true,
+        approvalId: "a",
+        error: "laf:awaiting_approval",
+      })?.subject,
+    ).toBeUndefined();
+    expect(askSubjectOf({ kind: "browser" })).toBeUndefined();
+    expect(
+      askSubjectOf({
+        kind: "elsewhere",
+        intent: "activate",
+        reason: "policy_ask",
+      }),
+    ).toBeUndefined();
+    expect(
+      askSubjectOf({
+        kind: "browser",
+        intent: "teleport",
+        reason: "policy_ask",
+      }),
+    ).toBeUndefined();
+    expect(askSubjectOf(OPENING)).toEqual(OPENING);
   });
 
   test("anything that is not a pause is not one", () => {

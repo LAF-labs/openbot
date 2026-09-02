@@ -1,0 +1,182 @@
+name: Smoke
+
+# The four containers, driven together, once a night.
+#
+# `checks.yml` proves each decision in isolation against a database and nothing else. Everything it
+# cannot see lives in the joins: the server reaching the account's computer, the gateway deciding
+# before Chromium acts, the trail recording it, a question raised mid-action being answered on the
+# approvals surface and the same action then completing, and a Bot's own turn using its computer at
+# all. Those are the failures that reach a person first and a test last.
+#
+# Nightly rather than per-push, because it builds a browser image and spends a model key. Principle
+# 8 of the redesign — "say only what you measured" — is what it is for: a green `checks.yml` is not
+# evidence that a deployment works, and until this job existed nothing was.
+
+on:
+  schedule:
+    # 02:40 UTC, which is mid-morning in Seoul: a failure is read the same working day.
+    - cron: "40 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+jobs:
+  journey:
+    name: one journey through a running deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The token the computer refuses to start without. Local to this run and never a secret worth
+      # having: the container it protects is published on loopback inside one ephemeral runner.
+      COMPUTER_TOKEN: laf-ci-smoke-token
+      COMPUTER_PORT: "4100"
+      BOT_PORT: "4200"
+      SERVER_PORT: "3001"
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # THE KEY DECIDES WHETHER THIS RUNS AT ALL, and it is checked first so a fork or a repository
+      # that has not been given one reports "not configured" in one green step rather than fifteen
+      # minutes of container builds ending in a red cross nobody can act on. The secret is
+      # referenced, never created here.
+      - name: Is a model key configured
+        id: key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Smoke skipped::No OPENAI_API_KEY secret is set, so the model half of the journey cannot run and the rest is not worth the build. Add the secret to enable this job."
+          fi
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.key.outputs.present == 'true'
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+        if: steps.key.outputs.present == 'true'
+
+      # Compose reads .env, and so does the server started below. Written here rather than committed
+      # because it carries the key; every other value is this runner's own.
+      - name: Write the deployment's environment
+        if: steps.key.outputs.present == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          BOT_MODEL: ${{ vars.BOT_MODEL }}
+        run: |
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "POSTGRES_PORT=$POSTGRES_PORT"
+            echo "PORT=$SERVER_PORT"
+            echo "TENANT_PACKAGE_DIR=../tenant/laf"
+            # Every request is the fixed development administrator. The journey answers its own
+            # approvals, and standing up Google OAuth on a runner would test the sign-in provider
+            # rather than the joins this job is about.
+            echo "LAF_DEV_NO_AUTH=true"
+            echo "TRUSTED_ORIGINS=http://localhost:$SERVER_PORT"
+            echo "MANAGED_AGENT_AG_UI_URL=http://localhost:$BOT_PORT/ag-ui"
+            echo "KEY_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)"
+            echo "COMPUTER_TOKEN=$COMPUTER_TOKEN"
+            echo "OPENAI_API_KEY=$OPENAI_API_KEY"
+            [ -n "$OPENAI_BASE_URL" ] && echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"
+            [ -n "$BOT_MODEL" ] && echo "BOT_MODEL=$BOT_MODEL"
+          } > .env
+
+      # agent-computer is BUILT, not pulled: a nightly that checked the published `:stable` image
+      # would be reporting on the last release rather than on the branch it ran from, and the one
+      # service whose behaviour this job depends on most is the browser.
+      - name: Bring up postgres, the browser and the Bot
+        if: steps.key.outputs.present == 'true'
+        run: |
+          docker compose up -d --build postgres agent-computer agent-bot
+          docker compose run --rm --build migrate
+
+      - name: Wait for the containers to answer
+        if: steps.key.outputs.present == 'true'
+        run: |
+          for service in "agent-computer:$COMPUTER_PORT" "agent-bot:$BOT_PORT"; do
+            name="${service%%:*}"; port="${service##*:}"
+            for _ in $(seq 1 60); do
+              curl -fsS --max-time 3 "http://localhost:$port/health" >/dev/null 2>&1 && break
+              sleep 2
+            done
+            curl -fsS --max-time 5 "http://localhost:$port/health" >/dev/null \
+              || { echo "$name never answered on $port"; docker compose logs "$name"; exit 1; }
+          done
+
+      # The API on the host, the way `scripts/start.sh` runs it, so the test process and the server
+      # share a machine and the fixture page below is reachable from both sides.
+      #
+      # ALLOW_PRIVATE_HOSTS, and only here. Docker on Linux gives no `host.docker.internal`, so the
+      # container reaches this runner at the bridge gateway — a private address, which the
+      # navigation guard refuses by default and should. Opting in is what makes a locally served
+      # fixture possible; a hosted deployment must never set it.
+      - name: Start the API
+        if: steps.key.outputs.present == 'true'
+        run: |
+          (cd server && PORT="$SERVER_PORT" \
+            AGENT_COMPUTER_URL="http://localhost:$COMPUTER_PORT" \
+            COMPUTER_TOKEN="$COMPUTER_TOKEN" \
+            AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true \
+            bun --env-file=../.env src/index.ts > "$RUNNER_TEMP/server.log" 2>&1 &)
+          for _ in $(seq 1 60); do
+            curl -fsS --max-time 3 "http://localhost:$SERVER_PORT/api/capabilities" >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "The API never answered."; cat "$RUNNER_TEMP/server.log"; exit 1
+
+      # WHERE THE BOT'S BROWSER FINDS THIS RUNNER, established before the journey rather than
+      # assumed by it. `host.docker.internal` is Docker Desktop's and does not exist on Linux, so
+      # the gateway of the container's own network is read — hardcoding 172.17.0.1 is right until
+      # compose numbers a second network. Then it is proved, by fetching a page from inside the
+      # container: without this, a runner where the route is closed fails inside an expectation
+      # about an approval and reads as a boundary that broke.
+      - name: Can the browser reach this runner
+        id: route
+        if: steps.key.outputs.present == 'true'
+        run: |
+          container="$(docker compose ps --format '{{.Name}}' agent-computer | head -1)"
+          gateway="$(docker inspect "$container" \
+            --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' | tr -d '[:space:]')"
+          [ -n "$gateway" ] || { echo "No gateway address for $container."; exit 1; }
+          bun -e 'Bun.serve({ port: 8099, fetch: () => new Response("reachable") })' &
+          probe=$!
+          sleep 1
+          docker compose exec -T agent-computer bun -e \
+            "const r = await fetch('http://$gateway:8099/'); process.exit((await r.text()) === 'reachable' ? 0 : 1)" \
+            || { echo "The computer cannot reach this runner at $gateway."; kill $probe; exit 1; }
+          kill $probe
+          echo "gateway=$gateway" >> "$GITHUB_OUTPUT"
+          echo "The fixture will be served to the browser at $gateway."
+
+      - name: The journey
+        if: steps.key.outputs.present == 'true'
+        env:
+          LAF_SMOKE: "1"
+          LAF_API_URL: http://localhost:3001
+          LAF_SMOKE_FIXTURE_HOST: ${{ steps.route.outputs.gateway }}
+        run: bun test tests/smoke
+
+      # What the run actually did, for a failure that says only "expected 409".
+      - name: What the deployment logged
+        if: always() && steps.key.outputs.present == 'true'
+        run: |
+          echo "::group::API"; cat "$RUNNER_TEMP/server.log" || true; echo "::endgroup::"
+          echo "::group::containers"; docker compose logs --tail 200 || true; echo "::endgroup::"
+
+      - name: Take it down
+        if: always() && steps.key.outputs.present == 'true'
+        run: docker compose down -v || true

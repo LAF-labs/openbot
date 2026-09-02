@@ -7,6 +7,7 @@
     "app",
     "server",
     "agent-bot",
+    "agent-computer",
     "desktop"
   ],
   "scripts": {
@@ -17,10 +18,10 @@
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint .",
     "test": "bun test",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json && bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
-    "test:smoke": "OPENBOT_SMOKE=1 bun test tests/smoke",
+    "test:smoke": "LAF_SMOKE=1 bun test tests/smoke",
     "diagram": "bun scripts/architecture-diagram.ts",
     "eval:model": "bun --env-file=.env evals/run.ts"
   },

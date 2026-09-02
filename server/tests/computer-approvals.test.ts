@@ -4,6 +4,7 @@ import {
   createApprovalRegistry,
   fingerprintOf,
 } from "../src/computer/approvals";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * What an approval has to mean, tested as properties rather than as a call sequence.
@@ -33,7 +34,7 @@ async function ask(
     botId: subject.botId,
     actor: "someone@example.test",
     rule: 'contains(element.name, "submit")',
-    question: "The Bot wants to press “Submit order” on example.com.",
+    subject: A_CLICK,
     fingerprint: fingerprintOf(subject),
     target: { type: "computer", id: subject.botId },
   });
@@ -228,6 +229,194 @@ describe("an approval belongs to one Bot", () => {
     await ask(approvals);
     expect(await approvals.pending("research-bot")).toEqual([]);
     expect(await approvals.pending("sales-bot")).toHaveLength(1);
+  });
+});
+
+/**
+ * A No OUTLIVES THE QUESTION IT ANSWERED, which it did not.
+ *
+ * The refusal on the approval itself was the whole of it: the next attempt found no approval to
+ * spend and the gateway opened a fresh question. So a Bot that had been told no could ask again
+ * immediately, and the only thing between somebody and being worn down was their patience. Deny has
+ * to mean "not this", not "not this second".
+ *
+ * These moved here from `approval-registry-contract.integration.test.ts` when the registry's
+ * database twin was deleted (decision §7-1). There is one registry now, so there is one file.
+ */
+describe("a No that sticks", () => {
+  test("is remembered against the action it was about", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", false);
+
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(true);
+  });
+
+  test("covers the Bot and the action it was about, and nothing else", async () => {
+    // A person told one Bot not to press one button. Everything else it was doing carries on, and
+    // so does every other Bot — a refusal that spread would be a Bot stopped by somebody else's
+    // decision about something else.
+    const approvals = registry();
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", false);
+
+    expect(
+      await approvals.recentlyDeclined(
+        CLICK.botId,
+        fingerprintOf({ ...CLICK, ref: "e42" }),
+      ),
+    ).toBe(false);
+    expect(
+      await approvals.recentlyDeclined("research-bot", fingerprintOf(CLICK)),
+    ).toBe(false);
+  });
+
+  test("is not what a Yes leaves behind", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", true);
+
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(false);
+  });
+
+  test("expires, so it is a pause and not a rule", async () => {
+    // Half an hour later the same action asks again. Somebody who wants a thing stopped for good
+    // writes it into the boundary, where everybody can read it — a refusal buried in a registry
+    // is not a rule anybody can find.
+    const clock = { at: 1_000_000 };
+    const approvals = createApprovalRegistry({
+      now: () => clock.at,
+      declineStickyMs: 60_000,
+    });
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", false);
+
+    clock.at += 59_000;
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(true);
+    clock.at += 2_000;
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Being TOLD an answer rather than asking for it once a second.
+ *
+ * The room used to poll `pending` every second for two minutes to learn something that happened in
+ * this very process. `waitFor` is what the questions being in memory actually buys: the promise
+ * settles in the same tick the answer lands, and a wait with nobody answering costs nothing at all.
+ * So the assertion in most of these is `looks`, not just the outcome — a waiter that returned the
+ * right answer by polling would pass every other test in this file.
+ */
+describe("waiting to be told", () => {
+  /** A promise that has not settled, told apart from one that has without waiting on a clock. */
+  const settled = async <T>(promise: Promise<T>) =>
+    await Promise.race([
+      promise.then(() => true),
+      Promise.resolve().then(() => false),
+    ]);
+
+  test("resolves in the tick the answer lands, on a clock that never moves", async () => {
+    // The clock is frozen for the whole test. A poller cannot pass this: its next look is a
+    // `setTimeout` away, and nothing here ever gets to one.
+    const clock = { at: 1_000_000 };
+    const approvals = registry(clock);
+    const pending = await ask(approvals);
+
+    const waiting = approvals.waitFor(CLICK.botId, pending.id);
+    expect(await settled(waiting)).toBe(false);
+
+    await answer(approvals, pending.id, "manager@example.test", true);
+    const answered = await waiting;
+    expect(answered?.granted).toBe(true);
+    expect(answered?.answeredBy).toBe("manager@example.test");
+  });
+
+  test("resolves on a No too, because a refusal is an answer", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    const waiting = approvals.waitFor(CLICK.botId, pending.id);
+    await answer(approvals, pending.id, "manager@example.test", false);
+    expect((await waiting)?.granted).toBe(false);
+  });
+
+  test("does not wait at all for a question already answered", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", true);
+
+    expect((await approvals.waitFor(CLICK.botId, pending.id))?.granted).toBe(
+      true,
+    );
+  });
+
+  test("has nothing to wait for when the question is not open here", async () => {
+    const approvals = registry();
+    expect(await approvals.waitFor(CLICK.botId, "never-asked")).toBeNull();
+  });
+
+  test("has nothing to wait for on another Bot's question", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    expect(await approvals.waitFor("research-bot", pending.id)).toBeNull();
+  });
+
+  test("ends when the question runs out, on the clock the registry is given", async () => {
+    const clock = { at: 1_000_000 };
+    const approvals = createApprovalRegistry({
+      now: () => clock.at,
+      ttlMs: 60_000,
+    });
+    const pending = await ask(approvals);
+    const waiting = approvals.waitFor(CLICK.botId, pending.id);
+
+    // A sweep is what notices an expiry — the same rule the registry has always had, that nothing
+    // matters until somebody looks. The waiter is told rather than left holding a dead question.
+    clock.at += 60_001;
+    await approvals.pending(CLICK.botId);
+    expect(await waiting).toBeNull();
+  });
+
+  test("ends when the turn holding it is over", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    const over = new AbortController();
+    const waiting = approvals.waitFor(CLICK.botId, pending.id, {
+      signal: over.signal,
+    });
+
+    over.abort();
+    expect(await waiting).toBeNull();
+    // And the question is still open, to be answered late by whoever is looking at it.
+    expect(await approvals.pending(CLICK.botId)).toHaveLength(1);
+  });
+
+  test("ends at the caller's own bound", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    // A real millisecond, because this is the one path that is a timer rather than an event.
+    expect(
+      await approvals.waitFor(CLICK.botId, pending.id, { timeoutMs: 1 }),
+    ).toBeNull();
+  });
+
+  test("tells every waiter, not merely the first", async () => {
+    const approvals = registry();
+    const pending = await ask(approvals);
+    const both = Promise.all([
+      approvals.waitFor(CLICK.botId, pending.id),
+      approvals.waitFor(CLICK.botId, pending.id),
+    ]);
+
+    await answer(approvals, pending.id, "manager@example.test", true);
+    expect((await both).map((one) => one?.granted)).toEqual([true, true]);
   });
 });
 

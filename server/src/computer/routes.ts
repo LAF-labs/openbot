@@ -1,7 +1,9 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { type AuditStore, recordAuditEvent } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import { requireAdminRoute } from "../auth/guards";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -49,6 +51,14 @@ export function createComputerRoutes(
    * more, which is what a deployment without a model can honestly offer.
    */
   writeUp?: WriteUp,
+  /**
+   * Where a change to the boundary itself is recorded.
+   *
+   * Last, and optional, like everything else here: without it the policy still saves and the trail
+   * simply does not say who widened it or why. Every acting route already writes through the
+   * gateway's own store — this one is for the edit to the rules, which no gateway call goes through.
+   */
+  auditStore?: AuditStore,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -86,11 +96,15 @@ export function createComputerRoutes(
     try {
       return context.json(
         await gateway.navigate(
-          context.req.param("botId") ?? "default",
-          context.req.param("botId") ?? "default",
+          // No `?? "default"`. It was the server's half of a pair of silent fallbacks — the computer
+          // had `"shared"` at the other end — and between them an unnamed call landed on a browser
+          // belonging to nobody and answered as though it had worked. This route declares `:botId`,
+          // so the value is there; `act()` below refuses when it somehow is not.
+          botIdOf(context),
+          botIdOf(context),
           {
             id: context.var.actor.id,
-            ...(context.var.actor.email === DEV_ACTOR_EMAIL
+            ...(context.var.actor.email === DEV_ACTOR.email
               ? {}
               : { userId: context.var.actor.id }),
           },
@@ -103,7 +117,17 @@ export function createComputerRoutes(
         return awaitingApproval(context, error);
       }
       if (error instanceof ActionRefusedError) {
-        return context.json({ error: error.message, rule: error.rule }, 403);
+        return context.json(
+          {
+            // The code twice, deliberately: `error` is what every caller of these routes already
+            // reads, and `code` is where a refusal's fact has been since the surface started owning
+            // the words. Neither is a sentence any more. See ActionRefusedError.
+            error: error.message,
+            rule: error.rule,
+            code: error.code,
+          },
+          403,
+        );
       }
       // A refusal is the rules working, not a fault, so it is a 403 with the reason a person reads.
       // Collapsing it into the same 5xx as an unreachable computer would send somebody looking for
@@ -205,6 +229,46 @@ export function createComputerRoutes(
   );
 
   /**
+   * Move the Bot to another one of its open tabs.
+   *
+   * An acting route although it changes nothing on any site: it goes through the gateway so the trail
+   * says which page the Bot was on when it pressed the next thing.
+   */
+  routes.post("/:botId/tabs/switch", requireUser, (context) =>
+    act(context, (botId, actor, body) => {
+      if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
+        return { error: "A tab index is required." };
+      }
+      return gateway.switchTab(
+        botId,
+        botId,
+        actor,
+        { index: body.index },
+        asApprovalId(body),
+      );
+    }),
+  );
+
+  /** Hand one of the Bot's own files to a file input on the page. */
+  routes.post("/:botId/upload", requireUser, (context) =>
+    act(context, (botId, actor, body, signal) => {
+      const ref = asRef(body);
+      if (!ref) return badRef;
+      if (typeof body?.path !== "string" || !body.path.trim()) {
+        return { error: "A file path is required." };
+      }
+      return gateway.uploadFile(
+        botId,
+        botId,
+        actor,
+        { ...ref, path: body.path.trim() },
+        signal,
+        asApprovalId(body),
+      );
+    }),
+  );
+
+  /**
    * Who has the wheel. Polled by the surface next to the screen, so the person sees the Bot ask for
    * help without reloading anything.
    */
@@ -249,9 +313,22 @@ export function createComputerRoutes(
     act(context, (botId, actor) => gateway.stopComputer(botId, botId, actor)),
   );
 
-  /** Delete the profile. Every login goes with it, which is the point and also the danger. */
-  routes.post("/:botId/computers/reset", requireUser, (context) =>
-    act(context, (botId, actor) => gateway.resetComputer(botId, botId, actor)),
+  /**
+   * Delete the profile. Every login goes with it, which is the point and also the danger.
+   *
+   * ADMINISTRATORS ONLY, unlike stopping. Stopping a browser costs somebody the page they were on;
+   * this destroys every login on the one computer all of this account's Bots share, with no undo,
+   * and it sat behind the same guard as reading a screenshot. Nothing about it is a Bot's own
+   * business, so it is not a Bot's own decision either.
+   */
+  routes.post(
+    "/:botId/computers/reset",
+    requireUser,
+    requireAdminRoute,
+    (context) =>
+      act(context, (botId, actor) =>
+        gateway.resetComputer(botId, botId, actor),
+      ),
   );
 
   /**
@@ -415,8 +492,12 @@ export function createComputerRoutes(
     try {
       return context.json(
         await gateway.humanInput(context.req.param("botId"), {
-          kind,
+          // The body first and the validated `kind` LAST. Spread the other way round, a body
+          // carrying `kind: "secret"` overwrote the one this route checked, and the person's own
+          // input became a secret being supplied — down a path this route does not audit and whose
+          // whole design is that there is exactly one door into it.
           ...(body ?? {}),
+          kind,
         } as Parameters<typeof gateway.humanInput>[1]),
       );
     } catch (error) {
@@ -485,21 +566,32 @@ export function createComputerRoutes(
    * takes one appended line per mount. The storage underneath is durable, so administrator rules
    * remain active after a restart.
    */
-  routes.get("/policy", requireUser, (context) => {
-    const denied = requireAdmin(context);
-    return denied ?? context.json({ policy: policyStore.get() });
-  });
+  routes.get("/policy", requireUser, requireAdminRoute, (context) =>
+    context.json({ policy: policyStore.get() }),
+  );
 
-  routes.put("/policy", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-
-    const parsed = parseActionPolicy(
-      await context.req.json().catch(() => null),
-    );
+  routes.put("/policy", requireUser, requireAdminRoute, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    const parsed = parseActionPolicy(body);
     if (!parsed.ok) {
       return context.json({ error: parsed.error }, 400);
     }
+    /*
+     * WHY, WHERE THE CHANGE IS ONE THAT STANDS THE BOUNDARY DOWN.
+     *
+     * `settleWithoutAsking` decides whether a question may be answered by an allowance or by a
+     * model instead of by a person, so switching it is a decision about the deployment rather than
+     * about one action, and it has to be arguable with afterwards. The reason travels beside the
+     * policy, is never enforced on, and is required by the surface rather than here: a route that
+     * refused a boundary change over a missing sentence would be a route that leaves a deployment
+     * unable to tighten its own rules.
+     */
+    const before = policyStore.get();
+    const reason =
+      typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) : "";
     try {
       await policyStore.set(parsed.policy, context.var.actor.email);
     } catch {
@@ -515,6 +607,41 @@ export function createComputerRoutes(
         },
         503,
       );
+    }
+    /*
+     * Written after the save, so the trail records boundaries that are actually in force. Its
+     * failure is swallowed for the opposite reason to everywhere else in this area: the rule IS
+     * saved by now, and throwing here would tell an administrator their change failed while it was
+     * being enforced — the one lie worse than a missing row.
+     */
+    if (auditStore) {
+      await recordAuditEvent(auditStore, {
+        eventType: "computer.policy_changed",
+        targetType: "computer",
+        payload: {
+          actor: context.var.actor.email,
+          ...(reason ? { reason } : {}),
+          settleWithoutAsking: parsed.policy.settleWithoutAsking ?? "allowed",
+          // Named only when it moved. A row for every rule edit that said the switch was on would
+          // bury the handful of rows where somebody actually changed it.
+          ...((before.settleWithoutAsking ?? "allowed") !==
+          (parsed.policy.settleWithoutAsking ?? "allowed")
+            ? {
+                settleWithoutAskingWas: before.settleWithoutAsking ?? "allowed",
+              }
+            : {}),
+          deny: parsed.policy.deny.length,
+          ask: parsed.policy.ask.length,
+          allow: parsed.policy.allow.length,
+        },
+      }).catch((error) => {
+        console.error(
+          JSON.stringify({
+            type: "computer-policy-row-lost",
+            error: String(error),
+          }),
+        );
+      });
     }
     // Echoed back so a caller can see exactly what is now in force rather than assuming its request
     // was stored verbatim.
@@ -558,10 +685,16 @@ async function act(
     signal: AbortSignal,
   ) => Promise<unknown> | BadRequest,
 ) {
-  // Always present on these routes, which all declare `:botId`. The fallback exists because this
-  // helper is typed against a generic context that cannot know that, and a thrown "undefined bot"
-  // would be a worse outcome than naming the one shared computer.
-  const botId = context.req.param("botId") ?? "default";
+  // Always present on these routes, which all declare `:botId`. It used to fall back to `"default"`
+  // here — the server's half of a pair of fallbacks that put an unnamed call on a browser belonging
+  // to nobody. There is no computer worth naming when nobody said which, so this refuses instead.
+  const botId = context.req.param("botId");
+  if (!botId) {
+    return context.json(
+      { error: "laf:bot_header_missing", code: "laf:bot_header_missing" },
+      400,
+    );
+  }
   const record = context.var.actor;
   const body = (await context.req.json().catch(() => null)) as Record<
     string,
@@ -576,7 +709,7 @@ async function act(
         // Only a real users row may go in the audit table's foreign key column. The local development
         // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
         // it was is recorded in the payload regardless. See gateway.ts.
-        ...(record.email === DEV_ACTOR_EMAIL ? {} : { userId: record.id }),
+        ...(record.email === DEV_ACTOR.email ? {} : { userId: record.id }),
       },
       body,
       context.req.raw.signal,
@@ -592,7 +725,15 @@ async function act(
     // A policy refusal is the product working. 403 with the rule that refused it, so the surface can
     // tell the person which boundary they met rather than reporting a malfunction.
     if (error instanceof ActionRefusedError) {
-      return context.json({ error: error.message, rule: error.rule }, 403);
+      return context.json(
+        {
+          // The code, not a sentence — see the sibling handler above and ActionRefusedError.
+          error: error.message,
+          rule: error.rule,
+          code: error.code,
+        },
+        403,
+      );
     }
     // The computer refused the path itself, which is a different thing from the policy refusing this
     // Bot. Same status, no rule attached, because there is no rule to go and edit.
@@ -608,14 +749,6 @@ async function act(
     return context.json({ error: describe(error) }, statusFor(error));
   }
 }
-
-/**
- * The local actor's address, matched to decide whether the id is a real users row.
- *
- * Compared against rather than imported from `auth/dev-actor` because the computer must not depend on the
- * authentication module's internals; this is the one fact about it that matters here.
- */
-const DEV_ACTOR_EMAIL = "dev@laf.local";
 
 function isBadRequest(value: unknown): value is BadRequest {
   return (
@@ -645,14 +778,20 @@ function awaitingApproval(
 ) {
   return context.json(
     {
+      // A code, not a sentence. The card is Korean and the model reads Korean; neither of them is
+      // owed this server's English. See ActionRefusedError.
       error: error.message,
       awaitingApproval: true,
       approvalId: error.approvalId,
-      question: error.question,
+      // What is being asked about, in facts. `app/src/lib/approvals.ts` turns it into a sentence.
+      subject: error.subject,
       rule: error.rule,
       // Undefined drops out of the JSON, so a question with no derivable scope simply arrives
       // without one and the card offers "this once" alone.
       scope: error.scope,
+      // So the card can show how long is left. Without it the question simply disappeared after ten
+      // minutes with nothing having said it would.
+      expiresAt: error.expiresAt,
     },
     409,
   );
@@ -665,6 +804,18 @@ function asApprovalId(
   return typeof body?.approvalId === "string" && body.approvalId
     ? body.approvalId
     : undefined;
+}
+
+/**
+ * Which Bot this call is about.
+ *
+ * Every route here declares `:botId`, so the parameter is always there and this is a formality —
+ * which is precisely why it must not be `?? "default"`. That fallback, and the computer's matching
+ * `"shared"`, are how a call that named no Bot used to be answered by a browser belonging to nobody.
+ * An empty string reaches the gateway as a Bot with no name, is refused there, and is visible.
+ */
+function botIdOf(context: ComputerContext): string {
+  return context.req.param("botId") ?? "";
 }
 
 function asRef(

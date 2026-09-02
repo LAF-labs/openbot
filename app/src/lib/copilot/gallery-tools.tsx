@@ -9,7 +9,7 @@ import {
   decideComponent,
   type GrantedComponent,
 } from "@/lib/components/queries";
-import { useActiveBotId } from "@/lib/copilot/active-bot";
+import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import {
   GALLERY_COMPONENTS,
   type GalleryComponent,
@@ -32,7 +32,10 @@ export function GalleryTools() {
 
   // Active Bot comes from the route/channel surface currently driving the provider.
   const grantsFor = useActiveBotId();
-  const { data: granted } = useQuery(agentComponentsQueryOptions(grantsFor));
+  // Registered on every screen, asked about on none that has no Bot: a five-second poll for the
+  // grants of `default` ran on Settings and the admin console for the life of the tab.
+  const declared = useDeclaredBotId();
+  const { data: granted } = useQuery(agentComponentsQueryOptions(declared));
   const held = useMemo(
     () =>
       new Map(

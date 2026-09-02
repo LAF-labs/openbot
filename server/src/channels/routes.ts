@@ -15,12 +15,12 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
 } from "../db/schema";
-import {
-  CHANNEL_ACTIVITY_TOPIC,
-  type ChannelActivityEvent,
-  type ChannelEventHub,
+import type {
+  AnnounceChannelActivity,
+  ChannelActivityEvent,
+  ChannelEventHub,
 } from "./events";
 import { upgradeWebSocket } from "./socket";
 import type { ThreadIdentity } from "./thread-identity";
@@ -120,6 +120,13 @@ export function createChannelStore(
   database: Database,
   profileStore: AgentProfileStore,
   threadIdentity: ThreadIdentity,
+  /**
+   * Told what to announce, once the write that earned it has committed.
+   *
+   * Absent in tests that only care about the row, and absent is silence rather than an error: the
+   * roster query is authoritative and a client that hears nothing refetches. See `events.ts`.
+   */
+  announce?: AnnounceChannelActivity,
 ): ChannelStore {
   return {
     create(actor, agentIds) {
@@ -165,7 +172,7 @@ export function createChannelStore(
               .select({
                 id: channels.id,
                 name: channels.name,
-                threadId: intelligenceChannelMappings.threadId,
+                threadId: channelThreads.threadId,
               })
               .from(channels)
               .innerJoin(
@@ -176,10 +183,10 @@ export function createChannelStore(
                 ),
               )
               .innerJoin(
-                intelligenceChannelMappings,
+                channelThreads,
                 and(
-                  eq(intelligenceChannelMappings.channelId, channels.id),
-                  eq(intelligenceChannelMappings.userId, actor.id),
+                  eq(channelThreads.channelId, channels.id),
+                  eq(channelThreads.userId, actor.id),
                 ),
               )
               .innerJoin(
@@ -233,7 +240,7 @@ export function createChannelStore(
           await transaction
             .insert(channelAgents)
             .values(agentIds.map((agentId) => ({ channelId: id, agentId })));
-          await transaction.insert(intelligenceChannelMappings).values({
+          await transaction.insert(channelThreads).values({
             userId: actor.id,
             channelId: id,
             threadId,
@@ -251,7 +258,7 @@ export function createChannelStore(
           id: channels.id,
           name: channels.name,
           agentId: channelAgents.agentId,
-          threadId: intelligenceChannelMappings.threadId,
+          threadId: channelThreads.threadId,
           deletedAt: agentProfiles.deletedAt,
         })
         .from(channels)
@@ -263,10 +270,10 @@ export function createChannelStore(
           ),
         )
         .innerJoin(
-          intelligenceChannelMappings,
+          channelThreads,
           and(
-            eq(intelligenceChannelMappings.channelId, channels.id),
-            eq(intelligenceChannelMappings.userId, actor.id),
+            eq(channelThreads.channelId, channels.id),
+            eq(channelThreads.userId, actor.id),
           ),
         )
         .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
@@ -295,7 +302,7 @@ export function createChannelStore(
           id: channels.id,
           name: channels.name,
           agentId: channelAgents.agentId,
-          threadId: intelligenceChannelMappings.threadId,
+          threadId: channelThreads.threadId,
           deletedAt: agentProfiles.deletedAt,
           lastMessage: channels.lastMessage,
           lastMessageAt: channels.lastMessageAt,
@@ -312,10 +319,10 @@ export function createChannelStore(
           ),
         )
         .innerJoin(
-          intelligenceChannelMappings,
+          channelThreads,
           and(
-            eq(intelligenceChannelMappings.channelId, channels.id),
-            eq(intelligenceChannelMappings.userId, actor.id),
+            eq(channelThreads.channelId, channels.id),
+            eq(channelThreads.userId, actor.id),
           ),
         )
         .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
@@ -412,8 +419,15 @@ export function createChannelStore(
       });
     },
 
-    recordActivity(actor, channelId, activity) {
-      return database.transaction(
+    async recordActivity(actor, channelId, activity) {
+      /*
+       * Filled inside the transaction, delivered after it. What `pg_notify` used to do for nothing:
+       * a NOTIFY inside a transaction reaches listeners on commit and never after a rollback. In
+       * process the same guarantee is this variable and the line below the `await` — announce from
+       * inside and a rolled-back message moves every member's roster with no correction coming.
+       */
+      let announcement: ChannelActivityEvent | null = null;
+      await database.transaction(
         async (transaction) => {
           const [membership] = await transaction
             .select({
@@ -500,10 +514,9 @@ export function createChannelStore(
             .from(channelMemberships)
             .where(eq(channelMemberships.channelId, channelId));
 
-          // Announced inside the transaction, so it is delivered on commit and a write that rolls
-          // back is never announced. The payload carries the members because the writer has already
-          // resolved them; NOTIFY caps at 8000 bytes, which a 200-character preview leaves room in.
-          const event: ChannelActivityEvent = {
+          // The payload carries the members because the writer has already resolved them, and the
+          // reader of this event is a socket map that knows nothing about who is in what.
+          announcement = {
             channelId,
             memberIds: members.map((member) => member.userId),
             // The post-rename name, so a first message retitles every member's roster in the same
@@ -515,12 +528,10 @@ export function createChannelStore(
             lastMessageAt: at.toISOString(),
             lastMessageAgentId: activity.agentId,
           };
-          await transaction.execute(
-            sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
-          );
         },
         { isolationLevel: "read committed" },
       );
+      if (announcement) announce?.(announcement);
     },
   };
 }
@@ -910,9 +921,9 @@ export function createChannelRoutes(
   /*
    * The room's transcript, read from the snapshot column directly.
    *
-   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route is answered by our runner
-   * only when the deployment is in local mode, and a room's messages are written by the server
-   * rather than by a run — so a room in Intelligence mode would have shown an empty screen.
+   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route answers from what a run
+   * put through the runner, and a room's messages are written by the server rather than by a run —
+   * so a room read that way showed an empty screen.
    */
   routes.get("/:channelId/messages", requireUser, async (context) => {
     try {

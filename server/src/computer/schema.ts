@@ -10,60 +10,17 @@
  * repurposed: this file only ever grows.
  */
 
-/**
- * Every tool the computer exposes.
+/*
+ * THE TOOL NAME LISTS THAT USED TO BE HERE ARE GONE.
  *
- * Ordered read-only first, then acting. `COMPUTER_ACTING_TOOLS` below is what the gateway uses to
- * decide which calls need a policy decision, so add acting tools to both lists.
+ * `COMPUTER_TOOLS`, `COMPUTER_ACTING_TOOLS` and `isActingTool` had no importers at all — the
+ * gateway hardcodes the name in each method, which is the thing that actually decides — so they
+ * were a contract nobody was held to, and it had already drifted: `computer_screenshot` was listed
+ * as a tool and registered nowhere in the product. What a Bot may call now has exactly one source,
+ * `shared/tools/computer.ts`, which the surface, the unattended loop and the eval pack all read.
+ *
+ * The wire shapes below are still the contract between the two services and stay here.
  */
-export const COMPUTER_TOOLS = [
-  "computer_navigate",
-  "computer_screenshot",
-  "computer_read",
-  "computer_snapshot",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_read_file",
-  "computer_write_file",
-  "computer_list_files",
-] as const;
-
-/**
- * The tools that change something, or reach something that needs deciding on.
- *
- * These are the calls the gateway must decide on. Reading a PAGE a Bot has already been allowed to
- * open is not a new decision; clicking "Confirm payment" on it is.
- *
- * Both file tools are here, including the read. That differs from `computer_read`, which
- * is ungoverned, and it is deliberate: a page was already permitted when it was opened, whereas the
- * workspace accumulates whatever a Bot has put in it across every task it has ever run, so "which
- * files may this Bot read" is a question a deployment genuinely needs to be able to answer. The build
- * doc says both file tools go through the gateway, and this is why that is right.
- */
-export const COMPUTER_ACTING_TOOLS = [
-  // Navigation is governed too, and not only guarded. The client's target guard refuses a forbidden
-  // address on its own, which stops the request and writes nothing. That leaves the trail silent
-  // about an attempt to reach the cloud metadata endpoint, the single most security-relevant thing a
-  // Bot can try, while ticking a radio button is recorded. Governing it puts both in the trail.
-  "computer_navigate",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_read_file",
-  "computer_write_file",
-  "computer_list_files",
-] as const;
-
-export type ComputerActingToolName = (typeof COMPUTER_ACTING_TOOLS)[number];
-
-export function isActingTool(name: string): name is ComputerActingToolName {
-  return (COMPUTER_ACTING_TOOLS as readonly string[]).includes(name);
-}
-
-export type ComputerToolName = (typeof COMPUTER_TOOLS)[number];
 
 export type NavigateInput = { url: string };
 export type NavigateResult = {
@@ -81,8 +38,17 @@ export type NavigateResult = {
   text: string;
   /** True when the page was longer than the extract, so the Bot can say so rather than guess. */
   truncated: boolean;
+  /**
+   * The iframes whose text was merged in, and the ones that would not answer.
+   *
+   * A Korean site puts its real content in an iframe more often than not. `code:
+   * "laf:frame_opaque"` marks one that could not be read — a payment or 본인인증 window, usually —
+   * which is a different fact from there being nothing in it.
+   */
+  frames?: { url: string; chars: number; code?: string }[];
   /** Wall-clock ms the navigation took, for the progress line in the transcript. */
   elapsedMs: number;
+  notes?: ComputerNote[];
 };
 
 export type ScreenshotResult = {
@@ -126,6 +92,30 @@ export type SnapshotElement = {
   checked?: boolean;
 };
 
+/**
+ * One tab the Bot's browser has open.
+ *
+ * Mirrors `TabSummary` in `agent-computer/src/profiles.ts`, duplicated for the same reason
+ * `SnapshotElement` is: two deployables with no code in common.
+ */
+export type TabSummary = {
+  /** Position in the browser's own list. What `computer_switch_tab` takes. */
+  index: number;
+  title: string;
+  url: string;
+  /** The one the next action lands on. */
+  active: boolean;
+};
+
+/**
+ * Something the browser noticed that nothing asked about.
+ *
+ * A dialog the page opened, a file it downloaded, a secret request lost to a restart. Each is a
+ * `code` and its facts — never a sentence: the Korean a model reads is looked up from the code in
+ * `shared/prompt/tool-results.ko.ts`, and the words a person reads come from `t()`.
+ */
+export type ComputerNote = { code: string } & Record<string, unknown>;
+
 export type SnapshotResult = {
   /**
    * Which snapshot these refs belong to. Must be sent back with every action.
@@ -140,6 +130,36 @@ export type SnapshotResult = {
   elements: SnapshotElement[];
   /** True when the page had more interactive elements than the snapshot describes. */
   truncated: boolean;
+  /**
+   * Every tab, so a Bot can see the one a `target=_blank` link just opened.
+   *
+   * Optional because a computer that has not been redeployed does not send it; an absent list means
+   * "this computer does not report tabs", never "there is only one".
+   */
+  tabs?: TabSummary[];
+  /** Anything the browser noticed since the last call. See {@link ComputerNote}. */
+  notes?: ComputerNote[];
+};
+
+export type SwitchTabInput = { index: number };
+export type SwitchTabResult = {
+  action: "switch_tab";
+  index: number;
+  tabs: TabSummary[];
+  url: string;
+  notes?: ComputerNote[];
+};
+
+/** A file from the Bot's own workspace, handed to a file input on the page. */
+export type UploadFileInput = ActionTarget & { path: string };
+export type UploadFileResult = {
+  action: "upload_file";
+  ref: string;
+  /** As the Bot named it, relative to its workspace. Never the path inside the container. */
+  path: string;
+  url: string;
+  element?: { role: string; name: string };
+  notes?: ComputerNote[];
 };
 
 /** Common to every acting call: which element, and which snapshot the ref came from. */
@@ -179,6 +199,13 @@ export type ActionResult = {
   /** Where the page ended up, which is how a Bot notices that its click navigated. */
   url: string;
   elapsedMs: number;
+  /**
+   * What the browser noticed while this ran.
+   *
+   * A click that opens `alert("로그인이 필요합니다")` returns exactly as a click that did nothing:
+   * Playwright answers the dialog before the call comes back. The reason rides here.
+   */
+  notes?: ComputerNote[];
 };
 
 /** Absent path means the whole workspace. */

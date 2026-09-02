@@ -1,45 +1,114 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
-  jsonb,
+  pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { agents, users } from "./core";
+// NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
+// lands as a JSON *string* that no SQL operator can read. See ./json.ts.
+import { jsonb } from "./json";
 
 /**
  * Durable conversation history, kept here instead of in CopilotKit Intelligence.
  *
- * This fork's rule is that the only external dependencies are the model API and the
- * machines it runs on, so the thing Intelligence held — what was said in every thread —
- * lives in the same Postgres as everything else. One row per thread, the whole message
- * list as it stood after the last completed run. A snapshot rather than an append-only
- * log because AG-UI carries the full conversation into every run anyway; the log of
- * record for *actions* is `audit_events`, not this table.
+ * This fork's rule is that the only external dependencies are the model API and the machines it
+ * runs on, so the thing Intelligence held — what was said in every thread — lives in the same
+ * Postgres as everything else.
+ *
+ * ONE ROW PER MESSAGE, APPEND-ONLY. It was one row per thread holding the whole list, on the
+ * reasoning that AG-UI carries the full conversation into every run anyway — and three writers grew
+ * on it with two different disciplines. The runner rewrote the array from its own in-memory mirror
+ * merged with the client's copy; the room and the routine delivery appended with `jsonb || jsonb`.
+ * An append landing between the runner's read and its overwrite was gone, and the mirror the
+ * overwrite was built from had to be glued back into step by hand after every append. A turn also
+ * cost a rewrite of the whole conversation, and boot read every thread's full history into memory.
+ *
+ * `seq` is per thread and assigned under a per-thread advisory lock, so two transactions appending
+ * at the same instant cannot claim one number or lose each other's message. `at` is when the row
+ * was written; the transcript's own separators still come from the message's `lafAt` stamp, because
+ * a row written by the 0026 backfill knows only when its snapshot was last saved and a separator
+ * drawn from that would be a time this product invented. `run_id` is the run that produced it,
+ * where one did — a routine delivery and a person's own message have none.
+ *
+ * There is no foreign key on `thread_id`: a thread is an id this deployment mints
+ * (`channels/thread-identity.ts`), not a row.
  */
-export const lafThreadSnapshots = pgTable("laf_thread_snapshots", {
-  threadId: text("thread_id").primaryKey(),
-  /** The agent the thread belongs to, when the run said so. */
-  agentId: text("agent_id"),
-  /** AG-UI `Message[]`, verbatim. */
-  messages: jsonb("messages").notNull().default([]),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const lafThreadMessages = pgTable(
+  "laf_thread_messages",
+  {
+    threadId: text("thread_id").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    /** One AG-UI `Message`, plus the `lafAt`/`lafAgentId` stamps. See `runner/thread-store.ts`. */
+    message: jsonb("message").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** The run that wrote it, when a run did. Null for a delivery and for a person's own message. */
+    runId: text("run_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.seq] }),
+    /*
+     * A message id appears at most once in a thread, enforced rather than hoped for.
+     *
+     * Every run hands the WHOLE history back as its input, so the append path sees each message
+     * again on every turn; identity is what makes writing it twice impossible rather than merely
+     * unlikely. It is also what lets a later, richer copy of the same message — an assistant turn
+     * whose tool calls only arrive with the next run's input — update its row in place instead of
+     * arriving as a second message.
+     */
+    uniqueIndex("laf_thread_messages_message_id_idx").on(
+      table.threadId,
+      sql`(${table.message} ->> 'id')`,
+    ),
+  ],
+);
+
+/** What started a run. A pg enum, so a client that invents one is refused rather than recorded. */
+export const runOrigin = pgEnum("laf_run_origin", [
+  "chat",
+  "routine",
+  "wake",
+  "handoff",
+  "room",
+]);
+
+/**
+ * How a run ended, or that it has not.
+ *
+ * `unknown` is boot's verdict on a run whose process died mid-turn; `stopped` is a person pressing
+ * Stop, which is not an error. Both existed as free text before this enum and both are written by
+ * `runner/laf-runner.ts`; nothing writes any other value.
+ */
+export const runStatus = pgEnum("laf_run_status", [
+  "running",
+  "done",
+  "error",
+  "stopped",
+  "unknown",
+]);
+
+/** `interval` runs every N minutes; `daily` runs once a day at `dailyLocal` in `dailyTimeZone`. */
+export const routineScheduleKind = pgEnum("laf_routine_schedule_kind", [
+  "interval",
+  "daily",
+]);
 
 /**
  * One row per run: when it started, how it ended, and how big it was.
  *
  * Deliberately not the full event stream — a streaming turn can be arbitrarily large and
- * the messages already land in the snapshot. This is the skeleton the real Run ledger
+ * the messages already land in `laf_thread_messages`. This is the skeleton the real Run ledger
  * (states like `claimed` and `unknown`, budgets, approvals) will grow on; until then it
  * answers the operational question a restart raises: which runs never finished.
+ *
+ * Every row is written by `runner/run-ledger.ts` and by nothing else.
  */
 export const lafThreadRuns = pgTable(
   "laf_thread_runs",
@@ -54,7 +123,19 @@ export const lafThreadRuns = pgTable(
      * most — had no in-flight record anywhere.
      */
     threadId: text("thread_id"),
-    agentId: text("agent_id"),
+    /**
+     * Which Bot ran, as a real reference at last.
+     *
+     * `set null` rather than `cascade`: this is the operational record of what the machine did, and
+     * a Bot being torn out of the deployment does not un-happen the afternoon it worked. The column
+     * was already nullable and the roster already ignores a run with no Bot (`runner/working.ts`),
+     * so a hard-deleted Bot leaves history that reads as "somebody's, no longer named" rather than
+     * a hole. Bots are soft-deleted in normal use (`agents/profile-store.ts`), so this fires only
+     * on the hard-delete path, which nothing in `src` takes today.
+     */
+    agentId: text("agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
     /**
      * Whose run it is, so "which of my Bots are working" is one indexed read.
      *
@@ -65,13 +146,12 @@ export const lafThreadRuns = pgTable(
     /** What it is doing, in the person's own words where there are any — a routine's name. */
     label: text("label"),
     /**
-     * `running` | `done` | `error` | `unknown`. A run still `running` when a new
-     * process boots cannot still be running — this build is one process — so
-     * boot reconciles it to `unknown`: the crash suspect the digest names.
+     * A run still `running` when a new process boots cannot still be running — this build is one
+     * process — so boot reconciles it to `unknown`: the crash suspect the digest names.
      */
-    status: text("status").notNull(),
-    /** What started it: `chat` for a person's turn, `wake` for the watcher. */
-    origin: text("origin").notNull().default("chat"),
+    status: runStatus("status").notNull(),
+    /** What started it: `chat` for a person's turn, `routine` for one on a clock. */
+    origin: runOrigin("origin").notNull().default("chat"),
     /**
      * Machine-initiated runs carry one; a second run with the same key must not
      * happen. Webhook redeliveries and watcher re-polls are the reason — a
@@ -97,76 +177,15 @@ export const lafThreadRuns = pgTable(
     index("laf_thread_runs_live_idx")
       .on(table.userId, table.startedAt)
       .where(sql`${table.status} = 'running'`),
+    /*
+     * And the same table read the other way: "what ran between these two times", which is what an
+     * operator and the digest ask and what the partial index above deliberately cannot answer —
+     * it holds only live runs. A seq scan of every run the deployment has recorded is fine on the
+     * first day and is exactly the query that gets slower every day after it.
+     */
+    index("laf_thread_runs_started_at_idx").on(table.startedAt),
   ],
 );
-
-/**
- * What the watcher polls: a `laf.watch` endpoint and how often.
- *
- * The watcher is pure code by design — the cost rule of an always-on product is that
- * nothing wakes a model on a schedule. A source is polled, its signals are normalized
- * and diffed against `lastSignals`, and only a *transition* becomes an event (and, when
- * `wakeAgentId` is set, a run). A value wobbling inside the same status is not news.
- */
-export const lafWatchSources = pgTable("laf_watch_sources", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  /** `http` fetches the URL and expects `{signals:[…]}`; `mcp` calls the `laf.watch` tool. */
-  kind: text("kind").notNull(),
-  url: text("url").notNull(),
-  intervalSeconds: integer("interval_seconds").notNull().default(60),
-  enabled: boolean("enabled").notNull().default(true),
-  /** When set, a detected change also runs this agent with a change report. */
-  wakeAgentId: text("wake_agent_id"),
-  /** Normalized signal list from the last poll — the diff's left-hand side. */
-  lastSignals: jsonb("last_signals"),
-  lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
-  lastError: text("last_error"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-/** One row per signal transition — what the digest reads and the wake delivers. */
-export const lafWatchEvents = pgTable("laf_watch_events", {
-  id: text("id").primaryKey(),
-  sourceId: text("source_id")
-    .notNull()
-    .references(() => lafWatchSources.id, { onDelete: "cascade" }),
-  key: text("key").notNull(),
-  /** Null when the signal appeared for the first time. */
-  prevStatus: text("prev_status"),
-  /** Null when the signal disappeared. */
-  nextStatus: text("next_status"),
-  detail: text("detail"),
-  observedAt: timestamp("observed_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  /** Set when a wake run carried this event to a bot. */
-  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-});
-
-/**
- * One row per digest actually composed — the "we were watching" receipt.
- *
- * `forDate` is the day in the deployment's reporting timezone, and the pair
- * (forDate, ok) is what the scheduler checks so a restart at 09:00 does not
- * send a second morning card. The body is kept because a digest is a claim
- * about what happened overnight; a claim you cannot re-read is not evidence.
- */
-export const lafDigestLog = pgTable("laf_digest_log", {
-  id: text("id").primaryKey(),
-  forDate: text("for_date").notNull(),
-  channel: text("channel").notNull(),
-  ok: boolean("ok").notNull(),
-  error: text("error"),
-  headline: text("headline").notNull(),
-  body: text("body").notNull(),
-  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
-});
 
 /**
  * A routine: one instruction, one Bot, run on a clock instead of on a keystroke.
@@ -190,15 +209,29 @@ export const lafDigestLog = pgTable("laf_digest_log", {
  */
 export const lafRoutines = pgTable("laf_routines", {
   id: text("id").primaryKey(),
-  agentId: text("agent_id").notNull(),
+  /**
+   * Cascade, because a routine with no Bot is not dormant — it is claimed on every tick.
+   *
+   * `agent_id` was plain text, so deleting a Bot left its routines `enabled`, due, and failing
+   * with "the Bot is no longer in the roster" once a minute for as long as the deployment lives.
+   * Normal deletion is soft (`agents/profile-store.ts`), so this fires only on the hard-delete
+   * path; it is the one that used to leave the wreckage.
+   */
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   /** What to do, in words. Sent to the Bot verbatim as the run's one user message. */
   instruction: text("instruction").notNull(),
-  /** `interval` runs every N minutes; `daily` runs once a day at `dailyUtc`. */
-  scheduleKind: text("schedule_kind").notNull(),
+  scheduleKind: routineScheduleKind("schedule_kind").notNull(),
   intervalMinutes: integer("interval_minutes"),
-  /** "HH:MM", UTC. Stored as text because it is a time-of-day, not a moment. */
-  dailyUtc: text("daily_utc"),
+  /**
+   * "HH:MM" in `dailyTimeZone`, not in UTC. Text because it is a time-of-day, not a moment.
+   *
+   * It was called `daily_utc` and has held zone-local time since `daily_time_zone` arrived beside
+   * it — a column whose name asserted the one thing it was not. Renamed in migration 0026.
+   */
+  dailyLocal: text("daily_local"),
   /**
    * The zone the daily time is written in, IANA. Null means the row predates zones and is UTC.
    *
@@ -214,7 +247,17 @@ export const lafRoutines = pgTable("laf_routines", {
    */
   dailyDays: integer("daily_days").array(),
   enabled: boolean("enabled").notNull().default(true),
-  createdById: text("created_by_id").notNull(),
+  /**
+   * Who typed it, and nullable because a routine outlives them.
+   *
+   * The ownership rule is already written down in `routines/service.ts`: a routine is yours if you
+   * wrote it OR if the Bot it drives is yours, because staff leave and a shop owner must not be
+   * locked out of the routines running on their own Bot. `set null` is that rule at the column —
+   * the author's account going away takes the author, not the routine.
+   */
+  createdById: text("created_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdByRole: text("created_by_role").notNull(),
   /**
    * SHA-256 of the trigger token, for the webhook path.
@@ -243,7 +286,10 @@ export const lafRoutines = pgTable("laf_routines", {
  */
 export const lafRoutineRuns = pgTable("laf_routine_runs", {
   id: text("id").primaryKey(),
-  routineId: text("routine_id").notNull(),
+  /** Cascade: a run is a page of one routine's history and has no meaning without it. */
+  routineId: text("routine_id")
+    .notNull()
+    .references(() => lafRoutines.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   ok: boolean("ok"),
@@ -254,6 +300,11 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
    * The turns the run took: how many, how long each, which tools each asked for and whether they
    * went through. An operator reading "Failed: the Bot stopped before it finished" wants to know
    * how far it got; the answer alone cannot say. Null on rows written before this existed.
+   *
+   * Written through drizzle's own `jsonb()` until 0026, which is the double-encoding trap: every
+   * one of the 22 rows this deployment had held a jsonb *string*, and `steps.reduce` on the
+   * Routines page would have thrown on the first one it drew. The custom type sends an array as an
+   * array; the migration repairs the rows already written.
    */
   steps:
     jsonb("steps").$type<
@@ -264,3 +315,86 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
       }>
     >(),
 });
+
+/**
+ * One outbox for "somebody has to be told", whatever is going to tell them.
+ *
+ * THE PROBLEM IT SOLVES is that a Bot blocked on a person reached that person through whichever
+ * surface happened to be open. The buzz webhook fired from inside the approval registry and
+ * remembered nothing, so nobody could answer "did that question ever reach anybody"; the page
+ * worked out "a Bot is waiting" from its own tab, so a question raised while nobody was looking
+ * reached nothing at all; and the number this product is judged by — how long a person takes to
+ * answer, at night — had no row to be counted from. One row per thing worth interrupting somebody
+ * about, written once, then offered to every door in turn.
+ *
+ * IT IS A QUEUE, NOT THE TRAIL. `audit_events` is the record of what happened and refuses to be
+ * edited; these rows are marked as they are delivered and seen, and are deleted after thirty days
+ * by the retention tick. Nothing here is evidence of anything — the approval's own `approval.*`
+ * rows are, which is why the KPI in `notifications/approval-metrics.ts` is computed from those and
+ * never from this table.
+ *
+ * `kind` IS TEXT AND NOT AN ENUM, deliberately. It is a product word — the list of things worth
+ * interrupting somebody about — and adding one should be a line of TypeScript rather than a
+ * migration. Nothing in SQL branches on it; `NotificationKind` in `notifications/outbox.ts` is the
+ * list, and the door and the adapters are what read it.
+ *
+ * NO FOREIGN KEY ON `bot_id`, one on `user_id`. A notification that cannot be written is a person
+ * who is never told, so the Bot's id is carried as text the way `laf_thread_messages.thread_id` is:
+ * an id, not a row, and a Bot deleted between the question and the sweep must not turn the insert
+ * on the path that was trying to reach somebody into an exception. The person is the opposite case
+ * — the rows are addressed to them, they are worth nothing once the account is gone, and the
+ * cascade is what stops a departure leaving a queue behind that nobody owns.
+ */
+export const lafNotifications = pgTable(
+  "laf_notifications",
+  {
+    id: text("id").primaryKey(),
+    /** One of `NotificationKind`. See the note above on why this is not an enum. */
+    kind: text("kind").notNull(),
+    botId: text("bot_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The question this is about, for the rows that are about one. */
+    approvalId: text("approval_id"),
+    /** The room it happened in, for the rows that happened in one. */
+    channelId: text("channel_id"),
+    /**
+     * What the action was, in facts — the same `AskSubject` the approval card is drawn from.
+     *
+     * Carried so a door can say what is waiting without going back to a registry that lives in
+     * another process's memory and has already forgotten. The words are still the surface's: the
+     * server sends facts, here as everywhere else.
+     */
+    subject: jsonb("subject"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /**
+     * Which doors took it. Appended to, never replaced, so a row says every way it went out.
+     *
+     * An array rather than a boolean because there are several doors and they fail independently:
+     * "the webhook took it and nobody was connected" and "the page had it the whole time" are
+     * different mornings, and one `delivered` flag cannot tell them apart.
+     */
+    deliveredVia: text("delivered_via")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** When the FIRST door took it. Null means nothing has managed to deliver it yet. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /** When the person actually looked. Set by the in-app door, or by answering the question. */
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+  },
+  (table) => [
+    // The door's own read: this person's rows, newest first.
+    index("laf_notifications_user_created_at_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    // Answering a question marks its rows seen, and arrives holding only the approval's id.
+    index("laf_notifications_approval_idx").on(table.approvalId),
+    // The thirty-day sweep, which is a range over this column and nothing else.
+    index("laf_notifications_created_at_idx").on(table.createdAt),
+  ],
+);

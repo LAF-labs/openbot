@@ -1,5 +1,3 @@
-import postgres from "postgres";
-
 /**
  * Live channel activity, from whoever ran an agent to everybody else in the channel.
  *
@@ -8,13 +6,18 @@ import postgres from "postgres";
  * source of truth: the roster query stays authoritative, and a client that misses events while
  * disconnected recovers by refetching on reconnect. Nothing may be knowable only through the socket.
  *
- * Delivery goes through Postgres rather than an in-process list, because an in-process list is
- * silently wrong the moment a second server instance exists: the writer is on one and the listener
- * on the other, and the message is never delivered.
+ * DELIVERED IN THIS PROCESS, AFTER THE COMMIT. It used to go out through Postgres LISTEN/NOTIFY on
+ * a connection of its own, so that a second server instance would hear what the first announced —
+ * a deployment this product does not have (docs/laf/deployment-model.md: one API process per VM).
+ * The writer and every socket are on the same heap, so the carrier was a round trip, an 8000-byte
+ * payload cap and a SIGINT handler that existed for nothing else.
+ *
+ * WHAT NOTIFY WAS GIVING FOR FREE, AND IS NOW SOMEBODY'S JOB: a NOTIFY issued inside a transaction
+ * is delivered when it commits and never when it rolls back. So the rule that replaced it is that
+ * the code owning the transaction announces, once the transaction has returned — never from inside
+ * it. Announced early, a member's roster would move for a message that then rolled back, and the
+ * only thing that would correct it is a refetch nobody has a reason to make.
  */
-
-export const CHANNEL_ACTIVITY_TOPIC = "channel_activity";
-
 export type ChannelActivityEvent = {
   channelId: string;
   /** Who may receive it. Resolved by the writer, which already had to check membership. */
@@ -35,16 +38,14 @@ type Send = (payload: string) => void;
 export type ChannelEventHub = {
   /** Attach a connection for a person. Returns the detach. */
   register(userId: string, send: Send): () => void;
-  /** Fan one event out to this instance's own connections. */
-  deliver(event: ChannelActivityEvent): void;
   /**
-   * Fan one room frame out, to this instance's connections only.
+   * Fan one event out to the connections open here.
    *
-   * Deliberately not through `pg_notify` like `deliver`: that carrier caps a payload at 8000 bytes
-   * and costs a database round trip per frame, and a room turn produces one every few tokens. The
-   * SETTLED message still goes the other way, so a person connected to a second instance sees the
-   * message when it lands rather than as it is typed — which is exactly what they see today.
+   * Called by whoever owns the transaction that wrote the thing being announced, once it has
+   * committed. See the note at the top on what NOTIFY used to guarantee about that.
    */
+  deliver(event: ChannelActivityEvent): void;
+  /** Fan one room frame out. A turn produces one every few tokens, so it never goes near a write. */
   deliverRoom(frame: { memberIds: string[] } & Record<string, unknown>): void;
   connectionCount(userId: string): number;
 };
@@ -101,32 +102,11 @@ export function createChannelEventHub(): ChannelEventHub {
   };
 }
 
-export type ChannelActivityListener = { stop: () => Promise<void> };
-
 /**
- * Listen for activity announced by any instance, including this one.
+ * The announcement a write has earned, handed to whoever will deliver it after the commit.
  *
- * On its own connection, because `LISTEN` holds one for the life of the subscription: taken from the
- * pool, it would be a connection the rest of the server never gets back.
+ * A function rather than the hub itself, so the things that write into a channel — the channel
+ * store, the room transcript, a routine's delivery — depend on "somebody wants to be told" and not
+ * on sockets. Absent in tests that only care about the row.
  */
-export async function startChannelActivityListener(
-  databaseUrl: string,
-  hub: ChannelEventHub,
-): Promise<ChannelActivityListener> {
-  const connection = postgres(databaseUrl, { max: 1 });
-
-  await connection.listen(CHANNEL_ACTIVITY_TOPIC, (payload) => {
-    try {
-      hub.deliver(JSON.parse(payload) as ChannelActivityEvent);
-    } catch {
-      // A payload we cannot read is not a reason to tear down the subscription: the roster query is
-      // still correct, and the next refetch shows whatever this event would have.
-    }
-  });
-
-  return {
-    stop: async () => {
-      await connection.end();
-    },
-  };
-}
+export type AnnounceChannelActivity = (event: ChannelActivityEvent) => void;

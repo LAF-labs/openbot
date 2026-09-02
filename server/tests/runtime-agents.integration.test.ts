@@ -6,13 +6,12 @@ import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
-import { standingRoleMessage } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -38,8 +37,8 @@ const createdChannelIds: string[] = [];
 afterEach(async () => {
   for (const channelId of createdChannelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of createdAgentIds.splice(0)) {
@@ -104,13 +103,19 @@ describe("runtime agent loading", () => {
       name: "Expense Manager",
       type: "remote_ag_ui",
       endpoint: managedEndpoint.toString(),
-      standingMessage: standingRoleMessage({
+      /*
+       * The PROFILE, not a finished message. The prompt is composed per run — one of the things it
+       * says is what time it is — so what a loader hands over is who the Bot is, and the middleware
+       * turns that into words at the moment the run starts.
+       */
+      profile: {
         id: profile.id,
         name: "Expense Manager",
         title: "Finance Operations",
         roleDescription:
           "Review receipts, categorize expenses, and prepare reimbursement reports.",
-      }),
+        memories: [],
+      },
       // Every Bot anybody creates is remote, so this loader is where a remote Bot's model setting
       // has to arrive from. The column's default, for a Bot nobody has chosen one for.
       effort: "balanced",
@@ -183,7 +188,7 @@ describe("runtime agent loading", () => {
       (agent) => agent.id === profile.id,
     );
     expect(
-      reloaded?.type === "remote_ag_ui" && reloaded.standingMessage.content,
-    ).toContain("Reconcile corporate card statements.");
+      reloaded?.type === "remote_ag_ui" && reloaded.profile.roleDescription,
+    ).toBe("Reconcile corporate card statements.");
   });
 });

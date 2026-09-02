@@ -13,7 +13,7 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
 } from "../db/schema";
 
 export async function soloChannelFor(
@@ -36,7 +36,7 @@ export async function soloChannelFor(
   const rows = await database
     .select({
       channelId: channels.id,
-      threadId: intelligenceChannelMappings.threadId,
+      threadId: channelThreads.threadId,
       members: sql<number>`(
         select count(*) from ${channelAgents}
         where ${channelAgents.channelId} = ${channels.id}
@@ -45,10 +45,10 @@ export async function soloChannelFor(
     })
     .from(channels)
     .innerJoin(
-      intelligenceChannelMappings,
+      channelThreads,
       and(
-        eq(intelligenceChannelMappings.channelId, channels.id),
-        eq(intelligenceChannelMappings.userId, userId),
+        eq(channelThreads.channelId, channels.id),
+        eq(channelThreads.userId, userId),
       ),
     )
     .where(inArray(channels.id, mine));

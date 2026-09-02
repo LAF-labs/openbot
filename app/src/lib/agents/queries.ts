@@ -34,7 +34,7 @@ export type AgentProfile = {
    * What this Bot may be waved through for, in the owner's own words.
    *
    * Empty means ask about everything the boundary stops. Written by a person on this screen and
-   * nowhere else — a Bot's own `update_state` cannot touch it, because a Bot that could write the
+   * nowhere else — a Bot's own `update_profile` cannot touch it, because a Bot that could write the
    * rule deciding whether it gets asked about has no boundary at all.
    */
   autoReview: string;

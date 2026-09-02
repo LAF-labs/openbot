@@ -17,3 +17,6 @@ desktop/src-tauri/gen/
 
 # Model eval reports: local measurements, one file per run
 evals/reports/
+
+# Agent worktrees are full checkouts of this repository; tools walking the tree must not see them.
+.claude/worktrees/

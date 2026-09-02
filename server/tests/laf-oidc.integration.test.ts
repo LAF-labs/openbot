@@ -217,10 +217,6 @@ async function buildAuth() {
     LAF_OIDC_CLIENT_ID: CLIENT_ID,
     SIGN_IN_ALLOWED_EMAILS: ALLOWED,
     MANAGED_AGENT_AG_UI_URL: "http://localhost:4200/ag-ui",
-    INTELLIGENCE_API_URL: "http://localhost:7100",
-    INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103",
-    INTELLIGENCE_API_KEY: "tenant-api-key",
-    COPILOTKIT_LICENSE_TOKEN: "license-token",
   };
   return createAuth(loadConfig(environment), database);
 }

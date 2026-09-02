@@ -222,6 +222,14 @@ describe("the two halves of the contract", () => {
   });
 });
 
+/** What a member's stopped action is about, in the shape a frame carries it. */
+const SENDING = {
+  kind: "tool",
+  intent: "call_tool",
+  tool: { server: "mail", name: "send_message", guard: "external" },
+  reason: "guard_floor",
+} as const;
+
 describe("a member waiting on an answer", () => {
   const approval: RoomFrame = {
     ...base,
@@ -229,8 +237,9 @@ describe("a member waiting on an answer", () => {
     memberId: "risk",
     memberName: "리스크 분석가",
     approvalId: "ap_1",
-    question: "Send the report to the client?",
+    subject: SENDING,
     rule: "send_email",
+    expiresAt: "2026-09-03T09:10:00.000Z",
   };
   const done: RoomFrame = { ...base, kind: "room.done", reason: "ended" };
 
@@ -277,8 +286,10 @@ describe("catching up on questions", () => {
     approvalId: "ap_1",
     memberId: "risk",
     memberName: "리스크 분석가",
-    question: "Open wttr.in?",
+    // Facts, not a sentence: the card writes the Korean. See `app/src/lib/approvals.ts`.
+    subject: SENDING,
     rule: "true",
+    expiresAt: "2026-09-03T09:10:00.000Z",
   };
   const asked: RoomFrame = { ...base, kind: "room.approval", ...question };
 

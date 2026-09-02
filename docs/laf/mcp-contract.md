@@ -88,8 +88,9 @@ bun laf-mcp-check.ts https://your-host/mcp [--token <bearer>]
 
 등록 화면이 하는 검사와 같다: 핸드셰이크 → 툴 목록 → `laf.watch` 존재와
 어노테이션 → 실호출 → 신호 스키마 → 크기·지연. exit 0이면 등록 가능.
-(검사기 원본은 이 저장소의 `server/scripts/laf-mcp-check.ts`이고, 거울
-테스트가 등록 표면의 검증 코드와 어긋나지 않게 붙들고 있다.)
+(검사기 원본은 이 저장소의 `server/scripts/laf-mcp-check.ts`이고,
+`server/tests/mcp-check-mirror.test.ts`가 이 문서 §1의 한도와 어긋나지 않게
+붙들고 있다.)
 
 시작점: [LAF-labs/laf-mcp-template](https://github.com/LAF-labs/laf-mcp-template) —
 계약 전 요소를 시연하는 실행 가능한 최소 서버 + 검사기 + CI.

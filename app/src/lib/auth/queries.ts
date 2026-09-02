@@ -13,13 +13,19 @@ export type AuthenticatedUser = {
 /**
  * What this deployment can do, as the app needs to know before it draws anything.
  *
- * One boolean so far. `effort` false means the model this deployment serves takes no effort
- * setting, so the control is not drawn — a slider that silently does nothing is worse than no
- * slider, and the surface has no other way to know: the model's name is never sent to it, and
- * knowing which names reason is not a thing a form should have to know.
+ * Two booleans, and each one decides whether a control exists at all. `effort` false means the model
+ * this deployment serves takes no effort setting. `autoReview` false means it cannot judge a "do not
+ * ask me about" instruction — the server asked it a trivial question and did not get a readable
+ * answer in time. Either one drawn anyway is a control that saves, shows its state, and reaches
+ * nothing, which is worse than not having it: the person most likely to use it is the one who most
+ * needs it to work.
+ *
+ * The surface has no other way to know. It is never told which model this deployment serves, and
+ * knowing which model names reason is not a thing a form should have to know.
  */
 export type Deployment = {
   effort: boolean;
+  autoReview: boolean;
 };
 
 /** The signed-in person, and what the deployment they are on can do. */
@@ -76,11 +82,18 @@ async function currentUser(): Promise<CurrentUserResult> {
 
   const body = (await response.json()) as {
     user: AuthenticatedUser;
-    deployment?: Deployment;
+    deployment?: Partial<Deployment>;
   };
-  // Absent reads as yes, matching the server's own default: an older server that does not say is
-  // far more likely to be serving a model with an effort setting than one without.
-  return { ...body.user, deployment: body.deployment ?? { effort: true } };
+  // Absent reads as yes, field by field, matching the server's own default: a server that does not
+  // say is far more likely to be one that has both than one that has neither, and the failure of
+  // guessing wrong here is a control that is missing rather than a control that lies.
+  return {
+    ...body.user,
+    deployment: {
+      effort: body.deployment?.effort !== false,
+      autoReview: body.deployment?.autoReview !== false,
+    },
+  };
 }
 
 export function currentUserQueryOptions() {

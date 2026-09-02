@@ -1,11 +1,18 @@
 /**
  * The model eval pack — the gate a candidate model passes before it may answer Bots.
  *
- * Drives the REAL `agent-bot` code: its system prompt, its message translation and
- * its streaming loop, against whatever model the environment names. What is being
- * certified is "this model works in this product", so nothing here reimplements the
- * product's path to the model; a synthetic harness would certify a product that
- * does not exist.
+ * Drives the REAL `agent-bot` code: its message translation, its context budget and
+ * its streaming loop, against whatever model the environment names — behind the REAL
+ * composed prompt and the REAL tool catalogue (`./prompt.ts`, `../shared/tools`).
+ * What is being certified is "this model works in this product", so nothing here
+ * reimplements the product's path to the model; a synthetic harness would certify a
+ * product that does not exist.
+ *
+ * The prompt is the server's now, not the service's: `agent-bot` carries none of its
+ * own, so an eval that sent no system message would be measuring a Bot with no
+ * instructions. The report records a hash of the prompt and of the catalogue,
+ * because the ritual's rule is that editing either INSIDE a verdict starts a new
+ * verdict — see docs/laf/eval-pack.md.
  *
  *   OPENAI_API_KEY=…  OPENAI_BASE_URL=…  BOT_MODEL=candidate/name  bun run eval:model
  *
@@ -17,10 +24,22 @@
 
 import { mkdirSync } from "node:fs";
 import { runAgent } from "../agent-bot/src/index";
+import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import { callsOf, eventsOfSse, type StreamEvent, usageOf } from "./lib";
+import {
+  CATALOGUE_HASH,
+  EVAL_NOW,
+  EVAL_TIME_ZONE,
+  PROMPT_HASH,
+  systemMessageFor,
+} from "./prompt";
 import { SCENARIOS, streamProblems, turnText } from "./scenarios";
 
-const MODEL = process.env.BOT_MODEL ?? "gpt-5.5";
+/**
+ * The candidate. No default: this file exists to certify one named model, and a fallback here is a
+ * report that says PASS about a model nobody asked about.
+ */
+const MODEL = process.env.BOT_MODEL?.trim() ?? "";
 const RUNS = Math.max(
   1,
   Number.parseInt(process.env.EVAL_RUNS ?? "1", 10) || 1,
@@ -31,6 +50,13 @@ const SCENARIO_TIMEOUT_MS = 180_000;
 if (!process.env.OPENAI_API_KEY) {
   console.error(
     "OPENAI_API_KEY is not set. The eval calls a real model; there is nothing to certify without one.",
+  );
+  process.exit(1);
+}
+
+if (!MODEL) {
+  console.error(
+    "BOT_MODEL is not set. The eval certifies the model it is given by name, so there is no default to fall back to: BOT_MODEL=candidate/name bun run eval:model.",
   );
   process.exit(1);
 }
@@ -57,19 +83,39 @@ type ScenarioOutcome = {
 function stubResult(name: string): string {
   if (name === "computer_list_files")
     return JSON.stringify({ entries: [], note: "the workspace is empty" });
-  if (name === "computer_read")
-    return JSON.stringify({ title: "", text: "", truncated: false });
+  /*
+   * A REAL PAGE, not `{ ok: true }`.
+   *
+   * Navigation used to be answered with a bare success and reading with an empty string, so the
+   * one thing the prompt insists on — answer from what came back, never send the person to go and
+   * look — was never once exercised. A model can pass an eval like that and still be unable to
+   * read a Korean order table, which is the first job this product has.
+   */
+  if (name === "computer_navigate" || name === "computer_read") {
+    return JSON.stringify({
+      ok: true,
+      title: SHOP_PAGE_TITLE,
+      url: "https://shop.example.test/orders",
+      text: SHOP_PAGE_TEXT,
+      truncated: false,
+    });
+  }
   if (name === "computer_snapshot")
     return JSON.stringify({ snapshotId: 1, elements: [] });
   return JSON.stringify({ ok: true });
 }
 
 /** How many client-loop continuations a scenario may spend before it must have answered. */
-const MAX_TURNS = 3;
+const MAX_TURNS = 4;
 
 async function runOnce(scenario: (typeof SCENARIOS)[number], attempt: number) {
   const started = performance.now();
-  const messages: unknown[] = [...scenario.messages];
+  /*
+   * The composed prompt first, exactly where the server's middleware puts it. Rebuilt per attempt
+   * from one fixed clock (`EVAL_NOW`), so a run that straddles midnight does not judge one date
+   * against a prompt carrying another.
+   */
+  const messages: unknown[] = [systemMessageFor("chat"), ...scenario.messages];
   const allEvents: StreamEvent[] = [];
   let totalTokens: number | null = null;
 
@@ -107,9 +153,18 @@ async function runOnce(scenario: (typeof SCENARIOS)[number], attempt: number) {
     const usage = usageOf(events);
     if (usage) totalTokens = (totalTokens ?? 0) + usage.totalTokens;
 
-    // The run ended with words: the turn is finished, judge it.
+    /*
+     * THE PRODUCT'S BREAK CONDITION, WHICH IS NOT "IT SAID SOMETHING".
+     *
+     * This used to stop as soon as a turn produced any prose, so a model that says "네, 열어
+     *볼게요" while calling `computer_navigate` was judged on the sentence before the page had
+     * been read — measured: `todays-orders-without-a-date` failed one run in three for exactly
+     * that, on an answer the product would have gone on to complete. In the real loop a tool call
+     * ends the RUN, not the turn: the surface executes it and starts another with the result. So
+     * the loop continues while the model is still asking for tools, and MAX_TURNS is the bound.
+     */
     const calls = callsOf(events);
-    if (calls.length === 0 || turnText(events).trim().length > 0) break;
+    if (calls.length === 0) break;
 
     // The run ended on tool calls alone — continue the client loop with stub results.
     messages.push({
@@ -138,7 +193,8 @@ async function runOnce(scenario: (typeof SCENARIOS)[number], attempt: number) {
 
 const outcomes: ScenarioOutcome[] = [];
 console.log(
-  `\neval pack · model ${MODEL} · ${SCENARIOS.length} scenarios × ${RUNS} run(s)\n`,
+  `\neval pack · model ${MODEL} · ${SCENARIOS.length} scenarios × ${RUNS} run(s)` +
+    `\nprompt ${PROMPT_HASH} · catalogue ${CATALOGUE_HASH}\n`,
 );
 
 for (const scenario of SCENARIOS) {
@@ -220,6 +276,14 @@ const report = {
     : "api.openai.com",
   ranAt: new Date().toISOString(),
   runsPerScenario: RUNS,
+  /*
+   * What this verdict was ABOUT. Two runs of the same model with different numbers here are two
+   * verdicts, not two samples of one — which is the thing that went wrong on 2026-09-01, when
+   * three runs eleven minutes apart carried three different prompts and were read as n=3.
+   */
+  promptHash: PROMPT_HASH,
+  catalogueHash: CATALOGUE_HASH,
+  promptClock: { now: EVAL_NOW.toISOString(), timeZone: EVAL_TIME_ZONE },
   verdict: allPassed ? "pass" : "fail",
   scenarios: outcomes,
 };

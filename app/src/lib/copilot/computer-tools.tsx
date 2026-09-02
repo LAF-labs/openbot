@@ -1,5 +1,7 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { z } from "zod";
+import { noteTexts, toolResultText } from "@shared/prompt/tool-results.ko";
+import { computerTool } from "@shared/tools/computer";
+import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
 import { ComputerView } from "@/components/computer/computer-view";
@@ -9,6 +11,7 @@ import {
 } from "@/components/computer/take-the-wheel";
 import {
   allowanceScopeOf,
+  askSubjectOf,
   closeQuestion,
   openQuestion,
   pauseFrom,
@@ -20,10 +23,77 @@ import { reportComputerActivity } from "./computer-activity";
 
 /**
  * Frontend registrations for computer tools, including inline rendering and policy-refusal display.
+ *
+ * The names, descriptions and schemas come from `shared/tools/computer.ts` — the same objects the
+ * server's unattended loop and the eval pack hand to a model. Only the handler and the transcript
+ * line are written here, because only those two are about a browser being open.
+ *
+ * TWO READERS, TWO LANGUAGES, ONE FACT. What a tool hands back carries a `code`; the sentence the
+ * MODEL reads comes from `shared/prompt/tool-results.ko.ts`, and the words a PERSON reads on the
+ * transcript line come from `t()`. They are not the same sentence — one says what to do next and
+ * the other says what happened — and the code is what keeps them from drifting apart.
  */
 
 /** What every computer call returns to the model: either the result, or a reason it did not happen. */
 type ToolOutcome = Record<string, unknown> & { ok: boolean };
+
+/**
+ * A tool's name, description and schema, straight from the catalogue.
+ *
+ * Throws on a name the catalogue does not have, at first render rather than at the first call: a
+ * tool registered under a name nothing describes is a tool the model is handed with an empty
+ * contract, and that failure is silent everywhere else.
+ */
+function fromCatalogue<T extends Record<string, unknown>>(name: string) {
+  const tool = computerTool(name);
+  if (!tool) {
+    throw new Error(`No computer tool named ${name} is in the catalogue.`);
+  }
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: asStandardSchema<T>(tool.parameters),
+  };
+}
+
+/**
+ * What a refused or failed call says on the transcript line, in Korean.
+ *
+ * English keys because that is how `t()` works here, and a table rather than literals because the
+ * value arrives as a code at runtime. `t(variable)` is invisible to the i18n coverage test, so this
+ * table is walked by one of its own (`app/tests/tool-result-codes.test.ts`).
+ */
+const OUTCOME_LABELS: Record<string, string> = {
+  "laf:human_has_control": "A person has the computer",
+  "laf:stopped": "Stopped",
+  "laf:person_declined": "A person declined that",
+  "laf:computer_unreachable": "The Bot's computer could not be reached",
+  "laf:nobody_answered": "Nobody answered in time",
+  "laf:request_cancelled": "The request was cancelled",
+  /*
+   * The boundary's own refusals, which used to arrive as English sentences the server had assembled
+   * and this line printed as they came. Five facts rather than one, because what a person does next
+   * differs: a rule to edit, a rule to add, a snapshot to take, an answer they already gave, and a
+   * password box that has its own door (§5.1(b)).
+   */
+  "laf:policy_denied": "A rule refused it",
+  "laf:no_rule_allows": "No rule allows it",
+  "laf:blind_action": "The screen had not been read yet",
+  "laf:declined_recently": "You said no to this recently",
+  "laf:use_request_secret": "It asked for a secret instead",
+};
+
+/** The words for a line, from the code where there is one and from the server's text otherwise. */
+function labelForCode(code: unknown, fallback: unknown): string | undefined {
+  const known = typeof code === "string" ? OUTCOME_LABELS[code] : undefined;
+  if (known) return t(known);
+  return typeof fallback === "string" && fallback.trim() ? fallback : undefined;
+}
+
+/** One outcome, carrying the fact and the sentence the model reads for it. */
+function refusal(code: string, extra: Record<string, unknown> = {}) {
+  return { ok: false as const, code, reason: toolResultText(code), ...extra };
+}
 
 /**
  * What the SDK hands a running tool call, as much of it as this file needs.
@@ -110,9 +180,11 @@ async function callComputer(
   openQuestion(toolCallId, {
     approvalId,
     botId,
-    question: String(outcome.question ?? outcome.reason ?? ""),
+    // The facts, not a sentence: the card writes the Korean. See lib/approvals.ts.
+    subject: askSubjectOf(outcome.subject),
     rule: typeof outcome.rule === "string" ? outcome.rule : null,
     scope: allowanceScopeOf(outcome.scope),
+    expiresAt: typeof outcome.expiresAt === "string" ? outcome.expiresAt : "",
   });
   try {
     const answer = await waitForApproval(botId, approvalId, signal);
@@ -128,16 +200,11 @@ async function callComputer(
       );
     }
     if (answer === "cancelled") {
-      return { ok: false, reason: "Stopped.", stopped: true };
+      return refusal("laf:stopped", { stopped: true });
     }
     return answer === "declined"
-      ? { ok: false, refused: true, reason: "A person declined that." }
-      : {
-          ok: false,
-          reason:
-            "Nobody answered the request to allow that, so it did not happen. Say what you were " +
-            "waiting for rather than trying another way round it.",
-        };
+      ? refusal("laf:person_declined", { refused: true })
+      : refusal("laf:nobody_answered");
   } finally {
     // However the wait ended, nothing should still be offering buttons for it. A run that was
     // stopped leaves its question open on the server for the rest of its ten minutes, and a card
@@ -165,12 +232,9 @@ async function sendToComputer(
   } catch (error) {
     // An abort is a stopped run, not a computer failure.
     if (error instanceof DOMException && error.name === "AbortError") {
-      return { ok: false, reason: "Stopped.", stopped: true };
+      return refusal("laf:stopped", { stopped: true });
     }
-    return {
-      ok: false,
-      reason: "The assistant's computer could not be reached.",
-    };
+    return refusal("laf:computer_unreachable");
   }
 
   const body = (await response.json().catch(() => null)) as Record<
@@ -192,13 +256,24 @@ async function sendToComputer(
         // happened here: the scope was added at both ends and dropped in the middle, with every
         // test on both sides green.
         ...pause,
-        reason:
-          (body?.error as string) ?? "Somebody is being asked about that.",
+        // Never seen by anybody in the ordinary case — the caller above waits and sends the same
+        // request again — but a Korean sentence rather than the code if a caller ever reports it.
+        reason: toolResultText("laf:awaiting_approval"),
       };
     }
+    /*
+     * The computer answers with a fact code where it has one — `laf:human_has_control` is the
+     * whole of the sentence the container used to ship — so the words the model reads are chosen
+     * here, in Korean, rather than by a service that has never heard of a locale. Anything that is
+     * not a code is passed through: an English sentence from somewhere upstream reaching the
+     * person is a regression, and it is visible rather than swallowed.
+     */
+    const said = typeof body?.error === "string" ? body.error : "";
+    const code = said.startsWith("laf:") ? said : undefined;
     return {
       ok: false,
-      reason: (body?.error as string) ?? "That did not work.",
+      ...(code ? { code } : {}),
+      reason: code ? toolResultText(code) : said || "That did not work.",
       // Preserve refusal/stale-ref/control distinctions for the model's next step.
       ...(response.status === 403
         ? { refused: true, rule: body?.rule ?? null }
@@ -211,7 +286,16 @@ async function sendToComputer(
     };
   }
 
-  return { ok: true, ...(body ?? {}) };
+  /*
+   * The facts the browser noticed, put into the words the model reads.
+   *
+   * The computer ships `{code: "laf:dialog", message}` and knows no locale, the same way it ships
+   * `laf:human_has_control`. Translated here, on the one path every successful computer call comes
+   * back through, so an alert the page raised reads as a sentence rather than as a symbol the model
+   * has never seen. The person's own words for the same fact are `t()`'s job, on the line below.
+   */
+  const said = body ? noteTexts(body.notes) : undefined;
+  return { ok: true, ...(body ?? {}), ...(said ? { notes: said } : {}) };
 }
 
 /** What a computer tool's render can read back out of its own result. */
@@ -221,6 +305,8 @@ type ComputerOutcome = {
   humanHasControl?: boolean;
   entries?: unknown[];
   refused?: boolean;
+  /** The fact, where there is one. The transcript line's words come from this, not from `reason`. */
+  code?: string;
   reason?: string;
   staleRefs?: boolean;
   elements?: unknown[];
@@ -313,14 +399,7 @@ export function ComputerTools() {
   const bot = useActiveBotHolder();
 
   useFrontendTool({
-    name: "computer_navigate",
-    description:
-      "Open a web page on your own computer so the person can watch. Use this when asked to look " +
-      "at, visit, open or check a website. Returns the page title and its readable text, so answer " +
-      "from what comes back rather than telling the person to go and look.",
-    parameters: z.object({
-      url: z.string().describe("Full web address to open, including https://"),
-    }),
+    ...fromCatalogue<{ url: string }>("computer_navigate"),
     handler: async ({ url }: { url: string }, call: ToolCallContext = {}) => {
       const result = await callComputer(
         bot.current,
@@ -356,23 +435,13 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_read",
-    description:
-      "Read the page currently open on your computer, without opening anything. Use this after you " +
-      "click something that changes the page, such as submitting a form, to find out what it now says.",
-    parameters: z.object({}),
+    ...fromCatalogue<Record<string, never>>("computer_read"),
     handler: async () => callComputer(bot.current, "/read"),
     render: () => null,
   });
 
   useFrontendTool({
-    name: "computer_snapshot",
-    description:
-      "List the things on the current page you can act on: fields, buttons, links and checkboxes, " +
-      "each with a ref, its label and its current value. Call this BEFORE clicking or typing, and " +
-      "use the refs it returns. Always send back the snapshotId it gives you. If an action reports " +
-      "that your refs are stale, the page changed: call this again and use the new refs.",
-    parameters: z.object({}),
+    ...fromCatalogue<Record<string, never>>("computer_snapshot"),
     handler: async () =>
       callComputer(bot.current, "/snapshot", { method: "POST" }),
     // Snapshot renders a count only; navigate owns the screen view.
@@ -394,22 +463,12 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_type",
-    description:
-      "Enter text into a field on the page. Give the ref of the field from your most recent " +
-      "snapshot and the snapshotId it came from. This replaces whatever the field already contains. " +
-      "Set submit to true to press Enter afterwards.",
-    parameters: z.object({
-      ref: z
-        .string()
-        .describe("Ref of the field, from your most recent snapshot"),
-      snapshotId: z.number().describe("The snapshotId that ref came from"),
-      text: z.string().describe("The text to enter"),
-      submit: z
-        .boolean()
-        .optional()
-        .describe("Press Enter after typing, to submit a single-field form"),
-    }),
+    ...fromCatalogue<{
+      ref: string;
+      snapshotId: number;
+      text: string;
+      submit?: boolean;
+    }>("computer_type"),
     handler: async (
       input: {
         ref: string;
@@ -446,18 +505,7 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_click",
-    description:
-      "Click something on the page: a button, a link, a checkbox or a radio option. Give the ref " +
-      "from your most recent snapshot and the snapshotId it came from.",
-    parameters: z.object({
-      ref: z
-        .string()
-        .describe(
-          "Ref of the element to click, from your most recent snapshot",
-        ),
-      snapshotId: z.number().describe("The snapshotId that ref came from"),
-    }),
+    ...fromCatalogue<{ ref: string; snapshotId: number }>("computer_click"),
     handler: async (
       input: { ref: string; snapshotId: number },
       call: ToolCallContext = {},
@@ -482,7 +530,7 @@ export function ComputerTools() {
           detail={
             // Show refusal reason instead of an internal element ref.
             outcome.refused === true
-              ? String(outcome.reason ?? "")
+              ? labelForCode(outcome.code, outcome.reason)
               : (labelOf(result) ??
                 (typeof args?.ref === "string" ? args.ref : undefined))
           }
@@ -494,18 +542,9 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_key",
-    description:
-      "Press a key, such as Enter, Tab or Escape. Give a ref to press it while a particular field " +
-      "is focused, or omit the ref to press it on the page.",
-    parameters: z.object({
-      key: z.string().describe("Key name, such as Enter, Tab or Escape"),
-      ref: z.string().optional().describe("Optional ref to press the key on"),
-      snapshotId: z
-        .number()
-        .optional()
-        .describe("The snapshotId the ref came from, required if ref is given"),
-    }),
+    ...fromCatalogue<{ key: string; ref?: string; snapshotId?: number }>(
+      "computer_key",
+    ),
     handler: async (
       input: {
         key: string;
@@ -537,27 +576,9 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_request_secret",
-    description:
-      "Ask the person for ONE value you must not be told: a password, a one-time code, a card number. " +
-      "Focus the field first with computer_click, then call this with the ref of that field and a " +
-      "short label for what you need. They type it into a masked box that goes straight to the page. " +
-      "You will never see the value, and you must not ask for it any other way. Prefer this over a " +
-      "full takeover when you only need one field filled in. The value is only TYPED into the field: " +
-      "if the form needs submitting, do that yourself afterwards with computer_click.",
-    parameters: z.object({
-      label: z
-        .string()
-        .describe(
-          "What you need, in a few words, e.g. 'the code sent to your phone'",
-        ),
-      ref: z
-        .string()
-        .describe(
-          "Ref of the field it goes in, from your most recent snapshot",
-        ),
-      snapshotId: z.number().describe("The snapshotId that ref came from"),
-    }),
+    ...fromCatalogue<{ label: string; ref: string; snapshotId: number }>(
+      "computer_request_secret",
+    ),
     handler: async (
       input: { label: string; ref: string; snapshotId: number },
       call: ToolCallContext = {},
@@ -581,78 +602,20 @@ export function ComputerTools() {
         (state) => state.secretWanted === undefined,
         call.signal,
       );
-      return {
-        ok: true,
-        result:
-          outcome === "answered"
-            ? `The person has entered ${input.label} into the field. It was typed straight into the page and you were not told what it is.`
-            : outcome === "cancelled"
-              ? "The request was cancelled."
-              : `Nobody entered ${input.label}. Do not ask for it another way.`,
-      };
+      const code =
+        outcome === "answered"
+          ? "laf:secret_entered"
+          : outcome === "cancelled"
+            ? "laf:request_cancelled"
+            : "laf:secret_not_entered";
+      return { ok: true, code, result: toolResultText(code) };
     },
     // Rendered by ComputerView as a masked prompt.
     render: () => null,
   });
 
-  /** Self-reported model declines: audit evidence, not an enforcement control. */
   useFrontendTool({
-    name: "report_refusal",
-    description:
-      "Record that you DECLINED something you were asked to do, because it looked unsafe, was outside " +
-      "what you are for, or you judged you should not. Call this whenever you say no to a request, in " +
-      "addition to telling the person. It changes nothing about your answer; it exists so an " +
-      "administrator can see what this Bot is being asked to do. Do not call it when you simply could " +
-      "not do something, only when you chose not to.",
-    parameters: z.object({
-      reason: z
-        .string()
-        .describe("Why you declined, in one sentence and in your own words"),
-      request: z
-        .string()
-        .optional()
-        .describe("What you were asked to do, in a few words"),
-    }),
-    handler: async (
-      input: { reason: string; request?: string },
-      call: ToolCallContext = {},
-    ) => {
-      try {
-        const response = await fetch(
-          `/api/agents/${encodeURIComponent(bot.current)}/declined`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(input),
-            ...(call.signal ? { signal: call.signal } : {}),
-          },
-        );
-        return response.ok
-          ? "Recorded. Now tell the person what you decided and why."
-          : "That could not be recorded. Tell the person what you decided anyway.";
-      } catch {
-        // Audit bookkeeping must not prevent the Bot from answering.
-        return "That could not be recorded. Tell the person what you decided anyway.";
-      }
-    },
-    render: () => null,
-  });
-
-  useFrontendTool({
-    name: "computer_request_help",
-    description:
-      "Ask the person to take control of your computer and do something you cannot: sign in, enter a " +
-      "password or a one-time code, or clear a CAPTCHA. Say specifically what you need done. They " +
-      "will drive the browser themselves and hand it back, and you carry on in the same session. " +
-      "Use this INSTEAD of giving up, and instead of ever asking them to type a password to you.",
-    parameters: z.object({
-      reason: z
-        .string()
-        .describe(
-          "What you need the person to do, in one sentence, e.g. 'This page is asking for a code sent to your phone.'",
-        ),
-    }),
+    ...fromCatalogue<{ reason: string }>("computer_request_help"),
     handler: async (input: { reason: string }, call: ToolCallContext = {}) => {
       const botId = bot.current;
       const asked = await callComputer(
@@ -673,32 +636,20 @@ export function ComputerTools() {
         (state) => state.holder === "bot" && !state.requested,
         call.signal,
       );
-      return {
-        ok: true,
-        result:
-          outcome === "answered"
-            ? "The person has finished and handed control back. Take a fresh snapshot: the page may have changed while they were driving."
-            : outcome === "cancelled"
-              ? "The request was cancelled."
-              : "Nobody took control. Say what you still need rather than trying to do it yourself.",
-      };
+      const code =
+        outcome === "answered"
+          ? "laf:control_returned"
+          : outcome === "cancelled"
+            ? "laf:request_cancelled"
+            : "laf:nobody_took_control";
+      return { ok: true, code, result: toolResultText(code) };
     },
     // Rendered by ComputerView as the take-the-wheel prompt.
     render: () => null,
   });
 
   useFrontendTool({
-    name: "computer_list_files",
-    description:
-      "List what is in your workspace: every file and folder you have saved, with sizes. Call this " +
-      "FIRST when you are asked what files you have, or before reading a file whose exact name you " +
-      "are not sure of. Never guess a filename.",
-    parameters: z.object({
-      path: z
-        .string()
-        .optional()
-        .describe("Optional folder to list. Omit for the whole workspace."),
-    }),
+    ...fromCatalogue<{ path?: string }>("computer_list_files"),
     handler: async (input: { path?: string }, call: ToolCallContext = {}) =>
       callComputer(
         bot.current,
@@ -720,7 +671,7 @@ export function ComputerTools() {
           label={t("Listed files")}
           detail={
             outcome.refused === true || didNotWork(outcome)
-              ? String(outcome.reason ?? "")
+              ? labelForCode(outcome.code, outcome.reason)
               : entries.length
                 ? entries.length === 1
                   ? t("1 item in the workspace")
@@ -737,16 +688,7 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_read_file",
-    description:
-      "Read a file you saved earlier in your own workspace. Paths are relative to your workspace, " +
-      "such as notes.md or reports/august.csv. Your workspace survives between conversations, so use " +
-      "this to pick up notes you made before.",
-    parameters: z.object({
-      path: z
-        .string()
-        .describe("Path relative to your workspace, such as notes.md"),
-    }),
+    ...fromCatalogue<{ path: string }>("computer_read_file"),
     handler: async (input: { path: string }, call: ToolCallContext = {}) =>
       callComputer(
         bot.current,
@@ -767,7 +709,7 @@ export function ComputerTools() {
           label={t("Read file")}
           detail={
             outcome.refused === true
-              ? String(outcome.reason ?? "")
+              ? labelForCode(outcome.code, outcome.reason)
               : typeof args?.path === "string"
                 ? args.path
                 : undefined
@@ -780,23 +722,9 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_write_file",
-    description:
-      "Save a file in your own workspace so you still have it later. Paths are relative to your " +
-      "workspace and folders are created as needed. Set append to true to add to the end of an " +
-      "existing file rather than replacing it. Text only.",
-    parameters: z.object({
-      path: z
-        .string()
-        .describe(
-          "Path relative to your workspace, such as reports/august.csv",
-        ),
-      contents: z.string().describe("The text to save"),
-      append: z
-        .boolean()
-        .optional()
-        .describe("Add to the end of the file instead of replacing it"),
-    }),
+    ...fromCatalogue<{ path: string; contents: string; append?: boolean }>(
+      "computer_write_file",
+    ),
     handler: async (
       input: {
         path: string;
@@ -825,7 +753,7 @@ export function ComputerTools() {
           // Show the path, never file contents.
           detail={
             outcome.refused === true
-              ? String(outcome.reason ?? "")
+              ? labelForCode(outcome.code, outcome.reason)
               : typeof args?.path === "string"
                 ? args.path
                 : undefined
@@ -838,15 +766,84 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    name: "computer_scroll",
-    description:
-      "Scroll the page down, or up with a negative amount, to bring more of a long page into view.",
-    parameters: z.object({
-      deltaY: z
-        .number()
-        .optional()
-        .describe("Pixels to scroll; positive is down. Defaults to 600."),
-    }),
+    ...fromCatalogue<{ index: number }>("computer_switch_tab"),
+    handler: async (input: { index: number }, call: ToolCallContext = {}) =>
+      callComputer(
+        bot.current,
+        "/tabs/switch",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+        call,
+      ),
+    render: ({ result, status, toolCallId }) => {
+      const outcome = outcomeOf(result) as ComputerOutcome & {
+        tabs?: { title?: string; active?: boolean }[];
+      };
+      const active = outcome.tabs?.find((tab) => tab.active);
+      return (
+        <ActionLine
+          toolCallId={toolCallId}
+          running={status !== "complete"}
+          label={t("Switched tab")}
+          detail={
+            outcome.refused === true || didNotWork(outcome)
+              ? labelForCode(outcome.code, outcome.reason)
+              : // The tab's own title, which is what a person would call it. Never the url: it is
+                // long, and half of it is a session id.
+                (active?.title ?? undefined)
+          }
+          refused={outcome.refused === true}
+          failed={didNotWork(outcome)}
+        />
+      );
+    },
+  });
+
+  useFrontendTool({
+    ...fromCatalogue<{ ref: string; snapshotId: number; path: string }>(
+      "computer_upload_file",
+    ),
+    handler: async (
+      input: { ref: string; snapshotId: number; path: string },
+      call: ToolCallContext = {},
+    ) =>
+      callComputer(
+        bot.current,
+        "/upload",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+        call,
+      ),
+    render: ({ args, result, status, toolCallId }) => {
+      const outcome = outcomeOf(result);
+      return (
+        <ActionLine
+          toolCallId={toolCallId}
+          running={status !== "complete"}
+          label={t("Attached file")}
+          // The path, which is what was handed over. Never the contents.
+          detail={
+            outcome.refused === true || didNotWork(outcome)
+              ? labelForCode(outcome.code, outcome.reason)
+              : typeof args?.path === "string"
+                ? args.path
+                : undefined
+          }
+          refused={outcome.refused === true}
+          failed={didNotWork(outcome)}
+        />
+      );
+    },
+  });
+
+  useFrontendTool({
+    ...fromCatalogue<{ deltaY?: number }>("computer_scroll"),
     handler: async (input: { deltaY?: number }, call: ToolCallContext = {}) =>
       callComputer(
         bot.current,

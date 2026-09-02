@@ -1,6 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
+import { toolResultText } from "@shared/prompt/tool-results.ko";
 import {
   type AllowanceScope,
+  type AskSubject,
   closeQuestion,
   openQuestion,
   pauseFrom,
@@ -273,14 +275,17 @@ export async function saveOauthClient(
 /**
  * Polled grant snapshot for what the active Bot should be offered; call-time checks still enforce.
  */
-export function agentPluginsQueryOptions(agentId: string) {
+export function agentPluginsQueryOptions(agentId: string | undefined) {
   return queryOptions({
-    queryKey: pluginKeys.forAgent(agentId),
-    enabled: agentId.length > 0,
+    queryKey: pluginKeys.forAgent(agentId ?? ""),
+    // No Bot in front of the person is not a Bot with no plugins; it is nothing to ask about.
+    enabled: Boolean(agentId),
     refetchInterval: 15_000,
+    // A hidden tab cannot act on a revoked tool, and its throttled timers only bank up requests.
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<GrantedPlugins> => {
       const response = await fetch(
-        `/api/plugins/for/${encodeURIComponent(agentId)}`,
+        `/api/plugins/for/${encodeURIComponent(agentId ?? "")}`,
         { credentials: "include" },
       );
       if (!response.ok)
@@ -319,9 +324,11 @@ export async function callPluginTool(
   openQuestion(toolCallId ?? "", {
     approvalId: outcome.approvalId,
     botId: agentId,
-    question: outcome.question,
+    // The facts, not a sentence: `describeSubject` writes the Korean on the card.
+    subject: outcome.subject,
     rule: outcome.rule,
     scope: outcome.scope,
+    expiresAt: outcome.expiresAt,
   });
   try {
     const answer = await waitForApproval(agentId, outcome.approvalId, signal);
@@ -341,26 +348,25 @@ export async function callPluginTool(
         ? {
             ok: false,
             refused: false,
-            reason:
-              "That was allowed, but the answer did not fit the call being made, so it did not happen.",
+            reason: toolResultText("laf:approval_did_not_fit"),
           }
         : retried;
     }
+    // The same three codes the computer's tools hand back, said in the same Korean: what a Bot is
+    // told when a person says no must not depend on which subsystem it was asking about.
     return answer === "declined"
       ? {
           ok: false,
           refused: true,
-          reason: "A person declined that.",
+          reason: toolResultText("laf:person_declined"),
           rule: outcome.rule,
         }
       : {
           ok: false,
           refused: false,
-          reason:
-            answer === "cancelled"
-              ? "Stopped."
-              : "Nobody answered the request to allow that, so it did not happen. Say what you " +
-                "were waiting for rather than trying another way round it.",
+          reason: toolResultText(
+            answer === "cancelled" ? "laf:stopped" : "laf:nobody_answered",
+          ),
         };
   } finally {
     closeQuestion(toolCallId ?? "");
@@ -371,10 +377,13 @@ export async function callPluginTool(
 type AwaitingApproval = {
   awaitingApproval: true;
   approvalId: string;
-  question: string;
+  /** What is being asked about, in facts. Undefined when the reply carried none we recognise. */
+  subject: AskSubject | undefined;
   rule: string | null;
   /** What "always" would cover here — always a tool, for a call to somebody else's server. */
   scope?: AllowanceScope | undefined;
+  /** When it stops being answerable, so the card can count down. */
+  expiresAt: string;
 };
 
 async function sendCall(
@@ -422,10 +431,22 @@ async function sendCall(
   const pause = response.status === 409 ? pauseFrom(body) : null;
   if (pause) return { awaitingApproval: true, ...pause };
   if (response.status === 403) {
+    /*
+     * A fact code from the boundary, turned into the sentence the MODEL reads.
+     *
+     * The server stopped writing prose here: a refusal arrives as `laf:policy_denied` or
+     * `laf:declined_recently`, and passing that through would hand a Bot an identifier to reason
+     * about. The Korean is in the one table both tool paths read
+     * (`shared/prompt/tool-results.ko.ts`); anything that is not a code passes through unchanged,
+     * because an English sentence from somewhere upstream is a regression worth seeing.
+     */
+    const said = typeof body?.error === "string" ? body.error : "";
     return {
       ok: false,
       refused: true,
-      reason: body?.error ?? "That tool is not allowed here.",
+      reason: said.startsWith("laf:")
+        ? toolResultText(said)
+        : said || "That tool is not allowed here.",
       rule: body?.rule ?? null,
     };
   }

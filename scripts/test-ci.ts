@@ -1,55 +1,305 @@
 /**
- * The test run, with a floor under how much of it must actually execute.
+ * The test run: in a database of its own, with a floor under each part of it.
  *
- * A test file that throws while it is being imported never runs its tests and never reports them as
- * failures; the file is simply absent from the totals.
+ * Two separate guarantees live here.
  *
- * This asserts the count as well as the result. A drop is treated as a failure, because a smaller
- * suite with no failure report gives false coverage.
+ * **The run never touches the database the application is using.** The suite writes to a real
+ * Postgres, and some of it deletes rows by identity rather than by what it created — the boundary
+ * policy row (`policy-durability.integration.test.ts`), every Google Drive connector instance
+ * (`connector-admin.integration.test.ts`). Pointed at a developer's own database those deletions
+ * land on their work, and nothing says so. So `DATABASE_URL` as given is read for its server and
+ * its credentials and then never handed to a test: the tests run in `<name>_test` on the same
+ * server, created here if it is absent and migrated exactly the way CI migrates.
+ * `LAF_TEST_DB_SUFFIX` names a second one, so two worktrees can run the gate at the same time
+ * without sharing a database.
  *
- * The floor is deliberately a floor and not an exact number. Tests are added constantly and a check
- * that has to be edited for every new test is a check people learn to edit without thinking.
+ * **A group of tests cannot go missing quietly.** A test file that throws while it is being
+ * imported never runs its tests and never reports them as failures; the file is simply absent from
+ * the totals. One floor over the whole monorepo could not see that at any useful resolution: at
+ * ~1,330 tests, a floor with enough slack to survive a legitimate consolidation also had enough
+ * slack to hide a whole mid-size server file. A floor per workspace is the same check at the size
+ * of the thing being lost.
+ *
+ * The floors are floors and not exact numbers. Tests are added constantly, and a check that has to
+ * be edited for every new test is a check people learn to edit without thinking.
  */
 
-// Raised from 1,100 with the suite at ~1,320, after the OAuth connections work added four suites
-// (105 tests) plus the catalogue-copy walk: the margin now covers the whole plugins area, whose
-// silent loss is exactly the shape this floor exists to catch. Re-raise when the suite outgrows
-// this one by the same margin.
-const MINIMUM_TESTS = 1290;
+import { resolve } from "node:path";
+import { Glob, SQL } from "bun";
 
-// `bun run test` rather than `bun test`, so the pretest hook fires and the generated application
-// config exists before route imports need it.
-const proc = Bun.spawn(["bun", "run", "test"], {
-  stdout: "inherit",
-  stderr: "pipe",
-});
+const projectRoot = resolve(import.meta.dir, "..");
 
-// Bun writes its summary to stderr, so it is captured and echoed rather than inherited.
-const stderr = await new Response(proc.stderr).text();
-process.stderr.write(stderr);
+/**
+ * One floor per workspace, each about 3% under what that workspace measures today.
+ *
+ * RE-RAISED 2026-09-03, on the run that typechecked the test directories. The four had been left
+ * at what they measured on 2026-09-02 while five waves landed on top of them — settle, the Korean
+ * question, the browser, the surface, the data lifecycle — and by this run the smallest gap was
+ * agent-computer's 88 against 132, a floor that would have let a third of that workspace vanish
+ * without the run going red. A floor whose margin has grown to 50% is not a floor, it is a number
+ * in a comment.
+ *
+ * Measured on this tree, four consecutive green runs of the whole gate agreeing exactly:
+ *
+ *     server           1,185 tests across 93 files   → 1,149
+ *     app                235 tests across 37 files   →   227
+ *     agent-computer     132 tests across  8 files   →   128
+ *     root                75 tests across 12 files   →    72
+ *                      ─────                            ─────
+ *                      1,627                            1,576
+ *
+ * Each floor is 3% under, rounded down, which is the same margin they were introduced with: enough
+ * that consolidating a handful of cases does not fail the run, small enough that a file which threw
+ * on import and took its tests with it does. `root` counts its seven skipped tests and
+ * `agent-computer` its two todos, because bun counts them and a floor that disagreed with the
+ * number on the screen would be argued with rather than read.
+ *
+ * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
+ *
+ * `roots` is a partition of the repository rather than a filter: a test file under none of them
+ * fails the run instead of going uncounted, which is the same silence this whole script exists to
+ * break.
+ */
+const GROUPS = [
+  { name: "server", floor: 1149, roots: ["server"] },
+  { name: "app", floor: 227, roots: ["app"] },
+  { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
+  { name: "root", floor: 72, roots: ["tests", "agent-bot"] },
+] as const;
 
-const status = await proc.exited;
-if (status !== 0) process.exit(status);
+/** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
+const TEST_FILE_GLOBS = [
+  "**/*.{test,spec}.{js,jsx,ts,tsx}",
+  "**/*_{test,spec}.{js,jsx,ts,tsx}",
+];
 
-const ran = stderr.match(/Ran (\d+) tests? across/);
-const count = ran ? Number.parseInt(ran[1] as string, 10) : 0;
+function fail(message: string): never {
+  console.error(`\n${message}`);
+  process.exit(1);
+}
 
-if (!ran) {
+/** Never print a connection string with the password still in it; CI logs are readable. */
+function redacted(url: URL): string {
+  const copy = new URL(url);
+  copy.password = "";
+  return copy.toString();
+}
+
+// --- where the tests are allowed to write ------------------------------------------------------
+
+const configuredDatabaseUrl = process.env.DATABASE_URL;
+if (!configuredDatabaseUrl) {
+  fail(
+    "DATABASE_URL is not set. It is read for the server and the credentials only — the tests run in\n" +
+      "a database derived from it, never in it. Set it to the database you develop against.",
+  );
+}
+if (!URL.canParse(configuredDatabaseUrl)) {
+  fail(
+    "DATABASE_URL is not a URL, so no test database can be derived from it.",
+  );
+}
+
+const sourceUrl = new URL(configuredDatabaseUrl);
+const sourceDatabase = decodeURIComponent(sourceUrl.pathname.slice(1));
+if (!sourceDatabase) {
+  fail(
+    "DATABASE_URL names no database, so no test database can be derived from it.",
+  );
+}
+
+/*
+ * The suffix reaches `CREATE DATABASE` as an identifier, so it is checked rather than trusted, and
+ * held to the characters that need no thought about quoting.
+ */
+const suffix = process.env.LAF_TEST_DB_SUFFIX?.trim();
+if (suffix && !/^[A-Za-z0-9_]+$/.test(suffix)) {
+  fail(
+    `LAF_TEST_DB_SUFFIX is "${suffix}". It becomes part of a database name, so it may only contain\n` +
+      "letters, digits and underscores.",
+  );
+}
+
+const testDatabase = `${sourceDatabase}_test${suffix ? `_${suffix}` : ""}`;
+/*
+ * PostgreSQL truncates an identifier at 63 bytes without complaining. Two worktrees whose suffixes
+ * differ only past that point would silently share one database, which is the one thing the suffix
+ * exists to prevent, so the truncation is refused instead of absorbed.
+ */
+if (new TextEncoder().encode(testDatabase).length > 63) {
+  fail(
+    `The test database would be named "${testDatabase}", which PostgreSQL would truncate to 63\n` +
+      "bytes. Shorten LAF_TEST_DB_SUFFIX.",
+  );
+}
+
+const testUrl = new URL(sourceUrl);
+testUrl.pathname = `/${encodeURIComponent(testDatabase)}`;
+
+/** `postgres` is the database that is always there, and the only one another can be made from. */
+const maintenanceUrl = new URL(sourceUrl);
+maintenanceUrl.pathname = "/postgres";
+
+const admin = new SQL(maintenanceUrl.toString(), { max: 1 });
+try {
+  const existing =
+    await admin`select 1 from pg_database where datname = ${testDatabase}`;
+  if (existing.length === 0) {
+    // Quoted so a name with a hyphen or a capital works, and the quotes doubled because the name
+    // comes out of DATABASE_URL rather than out of this file.
+    await admin.unsafe(
+      `create database "${testDatabase.replaceAll('"', '""')}"`,
+    );
+    console.error(`Created ${testDatabase}.`);
+  }
+  await admin.close();
+} catch (error) {
+  fail(
+    `Could not reach ${redacted(maintenanceUrl)} to prepare the test database.\n` +
+      `${error instanceof Error ? error.message : String(error)}\n\n` +
+      "The gate needs a running PostgreSQL: `docker compose up -d postgres`.",
+  );
+}
+
+/*
+ * The same command CI runs, in the same directory, for the same reason it runs that one: the
+ * `db:migrate` script loads ../.env, which does not exist in CI, and drizzle.config.ts already
+ * reads DATABASE_URL.
+ */
+const migration = Bun.spawn(
+  ["bunx", "drizzle-kit", "migrate", "--config=drizzle.config.ts"],
+  {
+    cwd: resolve(projectRoot, "server"),
+    env: { ...process.env, DATABASE_URL: testUrl.toString() },
+    stdout: "inherit",
+    stderr: "inherit",
+  },
+);
+if ((await migration.exited) !== 0) {
+  fail(`Migrating ${testDatabase} failed, so no tests were run.`);
+}
+
+// --- which tests belong under which floor ------------------------------------------------------
+
+const discovered = new Set<string>();
+for (const pattern of TEST_FILE_GLOBS) {
+  for await (const path of new Glob(pattern).scan({
+    cwd: projectRoot,
+    onlyFiles: true,
+  })) {
+    // Agent worktrees under .claude/ are whole checkouts; their tests are counted in their own runs.
+    const parts = path.split("/");
+    if (!parts.includes("node_modules") && !parts.includes(".claude"))
+      discovered.add(path);
+  }
+}
+
+const owns = (roots: readonly string[], path: string) =>
+  roots.some((root) => path.startsWith(`${root}/`));
+
+const unclaimed = [...discovered]
+  .filter((path) => !GROUPS.some((group) => owns(group.roots, path)))
+  .sort();
+if (unclaimed.length > 0) {
+  fail(
+    `${unclaimed.length} test file(s) belong to no group, so no floor is watching them:\n` +
+      `${unclaimed.map((path) => `  ${path}`).join("\n")}\n\n` +
+      "Add the directory to a group's `roots` in scripts/test-ci.ts.",
+  );
+}
+
+// --- the runs ----------------------------------------------------------------------------------
+
+type Outcome = {
+  name: string;
+  floor: number;
+  count: number | null;
+  status: number;
+};
+
+const outcomes: Outcome[] = [];
+
+/*
+ * One group at a time. The groups share the one test database, and the deletions described at the
+ * top of this file are exactly as destructive between two parallel groups as they were against a
+ * developer's own database.
+ *
+ * Absolute paths, because Bun matches a positional argument as a substring of the file path and
+ * `tests/workspace.test.ts` is a substring of `agent-computer/tests/workspace.test.ts`. Anchoring
+ * at the repository root is what makes a group's file list mean only that group's files.
+ */
+for (const group of GROUPS) {
+  const files = [...discovered]
+    .filter((path) => owns(group.roots, path))
+    .sort()
+    .map((path) => resolve(projectRoot, path));
+
+  console.error(`\n=== ${group.name} (${files.length} files) ===`);
+
+  // `bun run test` rather than `bun test`, so the pretest hook fires and the generated application
+  // config exists before route imports need it. `--silent` keeps a file list this long out of the
+  // log without hiding anything bun itself reports.
+  const proc = Bun.spawn(["bun", "run", "--silent", "test", ...files], {
+    cwd: projectRoot,
+    env: { ...process.env, DATABASE_URL: testUrl.toString() },
+    stdout: "inherit",
+    stderr: "pipe",
+  });
+
+  // Bun writes its summary to stderr, so it is captured and echoed rather than inherited.
+  const stderr = await new Response(proc.stderr).text();
+  process.stderr.write(stderr);
+
+  const status = await proc.exited;
+  const ran = stderr.match(/Ran (\d+) tests? across/);
+  outcomes.push({
+    name: group.name,
+    floor: group.floor,
+    count: ran ? Number.parseInt(ran[1] as string, 10) : null,
+    status,
+  });
+}
+
+// --- the verdict -------------------------------------------------------------------------------
+
+const problems: string[] = [];
+for (const outcome of outcomes) {
+  if (outcome.status !== 0) {
+    problems.push(`${outcome.name}: tests failed (exit ${outcome.status}).`);
+    continue;
+  }
+  if (outcome.count === null) {
+    problems.push(
+      `${outcome.name}: could not read how many tests ran from bun's output. Refusing to report a\n` +
+        "  pass on a run that cannot be counted.",
+    );
+    continue;
+  }
+  if (outcome.count < outcome.floor) {
+    problems.push(
+      `${outcome.name}: ${outcome.count} tests ran, and at least ${outcome.floor} were expected.`,
+    );
+  }
+}
+
+const table = outcomes
+  .map(
+    (outcome) =>
+      `  ${outcome.name.padEnd(16)}${String(outcome.count ?? "?").padStart(5)} / floor ${outcome.floor}`,
+  )
+  .join("\n");
+
+if (problems.length > 0) {
   console.error(
-    "\nCould not read how many tests ran from bun's output. Refusing to report a pass on a run that cannot be counted.",
+    `\n${problems.map((problem) => `- ${problem}`).join("\n")}\n\n${table}\n\n` +
+      "A group under its floor with every test passing is not a failing test, it is a suite that got\n" +
+      "smaller. The usual cause is a file that threw while being imported, which takes its tests with\n" +
+      "it and reports nothing. Run `bun test` over that workspace and look for an unhandled error\n" +
+      "between the file groups.\n\n" +
+      "If tests were deliberately removed, lower that group's floor in scripts/test-ci.ts and say why.",
   );
   process.exit(1);
 }
 
-if (count < MINIMUM_TESTS) {
-  console.error(
-    `\n${count} tests ran, and at least ${MINIMUM_TESTS} were expected.\n\n` +
-      "Every test passed, so this is not a failing test, it is a suite that got smaller. The usual\n" +
-      "cause is a file that threw while being imported, which takes its tests with it and reports\n" +
-      "nothing. Run `bun test` and look for an unhandled error between the file groups.\n\n" +
-      `If tests were deliberately removed, lower MINIMUM_TESTS in scripts/test-ci.ts and say why.`,
-  );
-  process.exit(1);
-}
-
-console.error(`\n${count} tests ran (floor ${MINIMUM_TESTS}).`);
+const total = outcomes.reduce((sum, outcome) => sum + (outcome.count ?? 0), 0);
+console.error(`\n${total} tests ran in ${testDatabase}.\n${table}`);

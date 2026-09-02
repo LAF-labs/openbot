@@ -23,10 +23,13 @@ function fakeAgent(
   turns: Array<Message | Message[] | Stalled | Dropped>,
 ): LoopAgent & {
   runs: number;
+  /** What the loop forwarded on the last run. The mode lives here now, not in a system message. */
+  forwardedProps?: unknown;
 } {
   const agent = {
     messages: [] as Message[],
     runs: 0,
+    forwardedProps: undefined as unknown,
     setMessages(messages: Message[]) {
       agent.messages = [...messages];
     },
@@ -34,12 +37,14 @@ function fakeAgent(
       agent.messages.push(message);
     },
     async runAgent(
-      _parameters?: unknown,
+      parameters?: { forwardedProps?: unknown },
       subscriber?: {
         onRunErrorEvent?: (payload: { event: { message: string } }) => unknown;
         onRunFinishedEvent?: () => unknown;
       },
     ) {
+      // What the loop said about this run. The prompt the endpoint composes is chosen from it.
+      agent.forwardedProps = parameters?.forwardedProps;
       const turn = turns[agent.runs] ?? [];
       agent.runs += 1;
       if (!Array.isArray(turn) && "dropped" in turn) {
@@ -109,6 +114,7 @@ describe("an unattended run", () => {
           return { ok: true, title: "Example Domain" };
         }),
         timeoutMs: 5_000,
+        mode: "routine",
       },
     );
 
@@ -128,16 +134,27 @@ describe("an unattended run", () => {
     expect(agent.runs).toBe(2);
   });
 
-  test("opens with the note that nobody is watching", async () => {
+  /*
+   * THE SITUATION NOTE IS NOT WRITTEN HERE ANY MORE.
+   *
+   * The loop used to prepend a system message of its own ("This run is unattended…"), which meant
+   * a Bot could be told one thing by this file and another by the prompt the server composed —
+   * and it was: that note told the model to call `computer_request_help` when it got stuck, in a
+   * run that is never given that tool. The mode travels as a forwarded prop instead, and
+   * `shared/prompt/mode/routine.ko.ts` says what it means, once.
+   */
+  test("says where the run is happening, and writes no note of its own", async () => {
     const agent = fakeAgent([say("ok")]);
     await runUnattended(agent, "hello", {
       toolkit: toolkit(async () => ({ ok: true })),
       timeoutMs: 5_000,
+      mode: "routine",
     });
-    const [first, second] = agent.messages;
-    expect(first?.role).toBe("system");
-    expect(String(first?.content)).toContain("unattended");
-    expect(second).toMatchObject({ role: "user", content: "hello" });
+    expect(agent.messages[0]).toMatchObject({
+      role: "user",
+      content: "hello",
+    });
+    expect(agent.forwardedProps).toEqual({ mode: "routine" });
   });
 
   test("reports what it is waiting for when a tool needs a person", async () => {
@@ -155,6 +172,7 @@ describe("an unattended run", () => {
         reason: "A person has to allow that.",
       })),
       timeoutMs: 5_000,
+      mode: "routine",
     });
     expect(result.awaiting).toBe("Open bank.example?");
     expect(result.steps[0]?.calls).toEqual([
@@ -179,6 +197,7 @@ describe("an unattended run", () => {
         return { ok: true };
       }),
       timeoutMs: 5_000,
+      mode: "routine",
       maxSteps: 3,
     });
 
@@ -210,6 +229,7 @@ describe("an unattended run", () => {
       runUnattended(agent, "hang", {
         toolkit: toolkit(async () => ({ ok: true })),
         timeoutMs: 30,
+        mode: "routine",
       }),
     ).rejects.toThrow("did not finish in time");
   });
@@ -219,37 +239,47 @@ import {
   ActionNeedsApprovalError,
   ActionRefusedError,
 } from "../src/computer/gateway";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { outcomeOfError } from "../src/runner/unattended";
+import { A_CLICK } from "./support/subjects";
 
 describe("what a failed tool tells the model", () => {
-  test("an ask-rule is a pause with the question, never a refusal", () => {
+  test("an ask-rule is a pause with the facts, never a refusal", () => {
     const outcome = outcomeOfError(
       new ActionNeedsApprovalError({
         id: "appr-1",
-        question: "Open bank.example?",
+        subject: A_CLICK,
         rule: "ask: banking",
+        expiresAt: "2026-09-03T09:10:00.000Z",
       } as never),
     );
     expect(outcome).toMatchObject({
       ok: false,
       awaitingApproval: true,
       approvalId: "appr-1",
-      question: "Open bank.example?",
+      // The facts the room's card writes its Korean from, and the clock it counts down. It used to
+      // be a finished English sentence, which a Korean member then read out into the room.
+      subject: A_CLICK,
       rule: "ask: banking",
+      expiresAt: "2026-09-03T09:10:00.000Z",
     });
     expect(outcome.refused).toBeUndefined();
   });
 
-  test("a deny-rule is final and names the rule", () => {
+  test("a deny-rule is final, names the rule, and speaks Korean to the model", () => {
     const outcome = outcomeOfError(
-      new ActionRefusedError("Never submit a form.", "deny: submit"),
+      new ActionRefusedError("deny: submit", "laf:policy_denied"),
     );
     expect(outcome).toMatchObject({
       ok: false,
       refused: true,
-      reason: "Never submit a form.",
+      code: "laf:policy_denied",
+      // The one table both tool paths read, so a Bot hears the same thing whether its turn is being
+      // driven by a person's tab or by a routine at three in the morning.
+      reason: toolResultText("laf:policy_denied"),
       rule: "deny: submit",
     });
+    expect(outcome.reason).not.toContain("laf:");
     expect(outcome.awaitingApproval).toBeUndefined();
   });
 
@@ -277,10 +307,12 @@ describe("the ends of an unattended run", () => {
     const agent = fakeAgent(turns);
     const offered: number[] = [];
     (agent as { runAgent: unknown }).runAgent = async (
-      parameters?: { tools?: unknown[] },
+      parameters?: { tools?: unknown[]; forwardedProps?: unknown },
       subscriber?: { onRunFinishedEvent?: () => unknown },
     ) => {
       offered.push(parameters?.tools?.length ?? -1);
+      // What the loop said about this run. The prompt the endpoint composes is chosen from it.
+      agent.forwardedProps = parameters?.forwardedProps;
       const turn = turns[agent.runs] ?? [];
       agent.runs += 1;
       const added = Array.isArray(turn) ? turn : [turn];
@@ -292,6 +324,7 @@ describe("the ends of an unattended run", () => {
     const result = await runUnattended(agent, "loop", {
       toolkit: toolkit(async () => ({ ok: true })),
       timeoutMs: 5_000,
+      mode: "routine",
       maxSteps: 3,
     });
 
@@ -312,6 +345,7 @@ describe("the ends of an unattended run", () => {
       runUnattended(agent, "hang", {
         toolkit: toolkit(async () => ({ ok: true })),
         timeoutMs: 30,
+        mode: "routine",
       }),
     ).rejects.toThrow("did not finish in time");
     expect(aborted).toBe(true);
@@ -332,13 +366,19 @@ describe("what the run reports", () => {
       await runUnattended(agent, "look", {
         toolkit: toolkit(async () => ({ ok: true })),
         timeoutMs: 5_000,
+        mode: "routine",
       });
     } catch (error) {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(UnattendedRunError);
     const error = thrown as UnattendedRunError;
-    expect(error.message).toContain("stopped before it finished");
+    // WHICH failure, off the name rather than off the sentence. The server sends facts and the
+    // surface owns the words, so a run that pinned "stopped before it finished" made rewording the
+    // message a test failure and rewording it in Korean impossible.
+    expect(error.name).toBe("RunFailed");
+    // The Bot's own reason, carried through rather than replaced — this half is not our prose, and
+    // losing it is how a stalled endpoint becomes an unexplained failure.
     expect(error.message).toContain("60 seconds");
     // The turns it did take survive the failure: the record says how far it got.
     expect(error.steps).toHaveLength(2);
@@ -354,14 +394,16 @@ describe("what the run reports", () => {
       await runUnattended(agent, "send it", {
         toolkit: toolkit(async () => ({ ok: true })),
         timeoutMs: 5_000,
+        mode: "routine",
       });
     } catch (error) {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(UnattendedRunError);
-    expect((thrown as Error).message).toContain(
-      "ended before the run finished",
-    );
+    // The name, like the case above: the sentence after it is our own English and rewording it
+    // must not be a failing test. What is being asserted is that a stream ending without
+    // RUN_FINISHED is the same kind of failure as one ending in RUN_ERROR.
+    expect((thrown as Error).name).toBe("RunFailed");
   });
 
   test("the answer is the last turn, not the narration before it", async () => {
@@ -375,6 +417,7 @@ describe("what the run reports", () => {
     const run = await runUnattended(agent, "which is warmer", {
       toolkit: toolkit(async () => ({ ok: true })),
       timeoutMs: 5_000,
+      mode: "routine",
     });
     expect(run.answer).toBe("Busan is warmer.");
     expect(run.steps.map((step) => step.calls.length)).toEqual([1, 0]);
@@ -393,6 +436,7 @@ describe("what the run reports", () => {
     const run = await runUnattended(agent, "look", {
       toolkit: toolkit(async () => ({ ok: false, reason: "down" })),
       timeoutMs: 5_000,
+      mode: "routine",
     });
     expect(run.answer).toBe("Opening it.");
     expect(run.steps.flatMap((step) => step.calls).every((c) => !c.ok)).toBe(
@@ -405,14 +449,14 @@ describe("what the run reports", () => {
 });
 
 describe("what the Bot remembers going in", () => {
-  test("history sits between the situation note and the instruction", async () => {
+  test("history sits ahead of the instruction, and nothing else is added", async () => {
     const agent = fakeAgent([
       { id: "a-reply", role: "assistant", content: "ok" },
     ]);
     await runUnattended(agent, "It's your turn.", {
       toolkit: { tools: [], execute: async () => ({ ok: false }) },
       timeoutMs: 1_000,
-      preamble: "You are in a room.",
+      mode: "room",
       history: [
         { id: "h1", role: "user", content: "다음 주 일정 정리해줘" },
         { id: "h2", role: "assistant", content: "회의가 세 건 있어요." },
@@ -423,11 +467,12 @@ describe("what the Bot remembers going in", () => {
       .filter((message) => message.id !== "a-reply")
       .map((message) => [message.role, message.content]);
     expect(seen).toEqual([
-      ["system", "You are in a room."],
       ["user", "다음 주 일정 정리해줘"],
       ["assistant", "회의가 세 건 있어요."],
       ["user", "It's your turn."],
     ]);
+    // And the endpoint is told it is a room, which is what selects the room prompt.
+    expect(agent.forwardedProps).toEqual({ mode: "room" });
   });
 
   test("a routine carries none", async () => {
@@ -437,9 +482,9 @@ describe("what the Bot remembers going in", () => {
     await runUnattended(agent, "Check the balance.", {
       toolkit: { tools: [], execute: async () => ({ ok: false }) },
       timeoutMs: 1_000,
+      mode: "routine",
     });
     expect(agent.messages.map((message) => message.role)).toEqual([
-      "system",
       "user",
       "assistant",
     ]);

@@ -38,7 +38,7 @@ describe("a boundary set while running", () => {
     const before = createPolicyStore(configured, database);
     await before.load();
     await before.set(
-      { mode: "enforce", deny: [rule], ask: [], allow: ["true"] },
+      { deny: [rule], ask: [], allow: ["true"] },
       "admin@example.test",
     );
 
@@ -54,7 +54,6 @@ describe("a boundary set while running", () => {
     const asking = 'intent == "write_file" && !matches(file.path, "^notes/")';
     const before = createPolicyStore(configured, database);
     await before.set({
-      mode: "enforce",
       deny: [],
       ask: [asking],
       allow: ["true"],
@@ -74,7 +73,6 @@ describe("a boundary set while running", () => {
   test("resetting forgets it, so a restart returns to configuration", async () => {
     const store = createPolicyStore(configured, database);
     await store.set({
-      mode: "enforce",
       deny: [rule],
       ask: [],
       allow: ["true"],
@@ -83,21 +81,24 @@ describe("a boundary set while running", () => {
 
     // The saved row is removed rather than overwritten, so changing what configuration says then
     // changes what is enforced, which is what an operator expects a reset to mean.
+    //
+    // Compared against the configured default rather than against an empty list: the shipped
+    // default is no longer empty, and a test that hard-coded "nothing" would have to be edited every
+    // time the boundary this product ships with changes — which is the one thing it should notice.
     const after = createPolicyStore(configured, database);
     expect(await after.load()).toBe("configuration");
-    expect(after.get().deny).toEqual([]);
+    expect(after.get().deny).toEqual(configured.deny);
+    expect(after.get().deny).not.toContain(rule);
   });
 
   test("setting twice keeps one row and the latest rule", async () => {
     const store = createPolicyStore(configured, database);
     await store.set({
-      mode: "enforce",
       deny: ["first"],
       ask: [],
       allow: ["true"],
     });
     await store.set({
-      mode: "dry-run",
       deny: ["second"],
       ask: [],
       allow: ["true"],
@@ -106,14 +107,17 @@ describe("a boundary set while running", () => {
     const rows = await database.select().from(actionPolicy);
     // One boundary per deployment, by construction. Two rows would mean something has to choose.
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.mode).toBe("dry-run");
+    // The column outlived the field. There is one mode now, so what goes in it is a constant, and
+    // `load` does not read it back — a row saved when `dry-run` existed must not switch a boundary
+    // off after an upgrade.
+    expect(rows[0]?.mode).toBe("enforce");
     expect(rows[0]?.deny).toEqual(["second"]);
   });
 
   test("records who changed it", async () => {
     const store = createPolicyStore(configured, database);
     await store.set(
-      { mode: "enforce", deny: [rule], ask: [], allow: ["true"] },
+      { deny: [rule], ask: [], allow: ["true"] },
       "admin@example.test",
     );
 
@@ -127,7 +131,6 @@ describe("a boundary set while running", () => {
     const store = createPolicyStore(configured);
     expect(await store.load()).toBe("configuration");
     await store.set({
-      mode: "enforce",
       deny: [rule],
       ask: [],
       allow: ["true"],

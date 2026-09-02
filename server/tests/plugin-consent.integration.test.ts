@@ -9,14 +9,29 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { McpTool } from "../src/plugins/mcp";
+// Imported for its side effect as much as its value: a static import is evaluated before this
+// file's body, so the snapshot inside it is taken before the `mock.module` below replaces anything.
+import { realMcpModule } from "./support/mcp-module";
 
 let toolsOnServer: McpTool[] = [];
 
-mock.module("../src/plugins/mcp", () => ({
+/**
+ * The vendor this suite talks to, which is no vendor at all.
+ *
+ * `mock.module` is process-wide in bun and it MERGES: every file is evaluated before any test runs,
+ * so this replaces `listTools` and `callTool` for the whole run in whatever order the files are
+ * listed. Three other suites carry a note about that and answer it by injecting `callVendor`. A
+ * suite whose subject IS the transport cannot answer it that way, so this one puts the real module
+ * back when it is finished — and installs its own stub again on the way in, in case a suite that
+ * needed the real transport ran first.
+ */
+const stubbedVendor = () => ({
   listTools: async () => toolsOnServer,
   callTool: async () => ({ text: "ok", isError: false, truncated: false }),
   McpServerError: class McpServerError extends Error {},
-}));
+});
+
+mock.module("../src/plugins/mcp", stubbedVendor);
 
 import { eq } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
@@ -34,6 +49,7 @@ import {
   PluginNeedsApprovalError,
   PluginRefusedError,
 } from "../src/plugins/store";
+import { credentialVaultStub } from "./support/credentials";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
@@ -59,13 +75,16 @@ describeDb("plugin definition consent", () => {
   const store = createPluginStore({
     database,
     auditStore: createAuditStore(database),
-    credentials: { read: async () => null },
+    credentials: credentialVaultStub({ readSecret: async () => null }),
     encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    policy: () => ({ mode: "enforce", deny: [], ask: [], allow: ["true"] }),
+    policy: () => ({ deny: [], ask: [], allow: ["true"] }),
     approvals: createApprovalRegistry(),
   });
 
   beforeAll(async () => {
+    // Again here, not only at load: a suite that needs the real transport restores it, and bun's
+    // module mocks are one shared registry for the whole run.
+    mock.module("../src/plugins/mcp", stubbedVendor);
     await database.insert(users).values({
       id: actorId,
       name: "Consent Tester",
@@ -96,6 +115,9 @@ describeDb("plugin definition consent", () => {
   });
 
   afterAll(async () => {
+    // The door is left as this deployment ships it. Leaving the stub behind is how a suite about
+    // the transport itself ends up asserting against a stub of the transport.
+    mock.module("../src/plugins/mcp", () => realMcpModule);
     await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
     await database.delete(agents).where(eq(agents.id, botId));
     await database.delete(users).where(eq(users.id, actorId));

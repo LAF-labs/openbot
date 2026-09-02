@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { MASCOT_ART } from "../src/components/agents/mascot-art";
 import {
   AGENT_PRESETS,
-  type PresetCategory,
+  WORK_PATTERNS,
+  type WorkPatternId,
   pickSuggestions,
+  workPattern,
 } from "../src/lib/agents/presets";
 import { ko } from "../src/lib/i18n-ko";
 
@@ -18,19 +20,19 @@ import { ko } from "../src/lib/i18n-ko";
  */
 
 /**
- * `satisfies Record<PresetCategory, true>` is doing the work: a category added to the type and not
- * to this object is a typecheck error rather than a category this file quietly stops checking.
+ * `satisfies Record<WorkPatternId, true>` is doing the work: a pattern added to the type and not to
+ * this object is a typecheck error rather than a pattern this file quietly stops checking.
  */
-const CATEGORIES = Object.keys({
-  money: true,
-  customers: true,
-  communication: true,
-  research: true,
-  operations: true,
-  content: true,
-  documents: true,
-  personal: true,
-} satisfies Record<PresetCategory, true>) as PresetCategory[];
+const PATTERNS = Object.keys({
+  "night-watch": true,
+  approval: true,
+  settlement: true,
+  enquiries: true,
+  schedule: true,
+  stock: true,
+  reputation: true,
+  paperwork: true,
+} satisfies Record<WorkPatternId, true>) as WorkPatternId[];
 
 describe("the presets", () => {
   test("every word of every one of them has Korean", () => {
@@ -57,14 +59,68 @@ describe("the presets", () => {
     expect(unknown).toEqual([]);
   });
 
-  test("every category is represented, and none is a category of one", () => {
-    // Named rather than counted, so a failure says which category went thin.
-    const thin = CATEGORIES.filter(
-      (category) =>
-        AGENT_PRESETS.filter((preset) => preset.category === category).length <
-        2,
+  /**
+   * FOUR EACH, EXACTLY.
+   *
+   * `pickSuggestions` deals one per pattern, so a pattern with three presets runs out one round
+   * before the others and quietly stops appearing in the second half of a hand — and a pattern of
+   * one is a pattern that shows the same card every single time. Named rather than counted, so a
+   * failure says which pattern went thin.
+   */
+  test("every work pattern has four presets", () => {
+    const counted = PATTERNS.map(
+      (pattern) =>
+        `${pattern}: ${AGENT_PRESETS.filter((preset) => preset.pattern === pattern).length}`,
     );
-    expect(thin).toEqual([]);
+    expect(counted).toEqual(PATTERNS.map((pattern) => `${pattern}: 4`));
+  });
+
+  test("every preset belongs to a pattern that exists", () => {
+    const known = new Set(WORK_PATTERNS.map((pattern) => pattern.id));
+    const orphans = AGENT_PRESETS.filter(
+      (preset) => !known.has(preset.pattern),
+    ).map((preset) => preset.id);
+    expect(orphans).toEqual([]);
+  });
+});
+
+describe("the eight work patterns", () => {
+  /*
+   * The pattern name is drawn above every suggestion card and the connection beside it, both
+   * through `t(variable)` — the same blind spot the presets have, and the same answer.
+   */
+  test("every name and connection has Korean", () => {
+    const missing: string[] = [];
+    for (const pattern of WORK_PATTERNS) {
+      for (const value of [pattern.name, pattern.connection]) {
+        if (!(value in ko)) missing.push(value);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test("the table holds every pattern in the type, once", () => {
+    expect(WORK_PATTERNS.map((pattern) => pattern.id).sort()).toEqual(
+      [...PATTERNS].sort(),
+    );
+  });
+
+  test("a preset can always name its pattern", () => {
+    // `workPattern` casts, because the type says the id is one of eight. This is the check that
+    // makes the cast true rather than merely convenient.
+    for (const preset of AGENT_PRESETS) {
+      expect(workPattern(preset.pattern).id).toBe(preset.pattern);
+    }
+  });
+
+  test("the connections are the four words the product owns", () => {
+    const used = new Set(WORK_PATTERNS.map((pattern) => pattern.connection));
+    expect([...used].sort()).toEqual([
+      "Browser",
+      "Connected apps",
+      "Email",
+      "Sheets",
+    ]);
   });
 });
 
@@ -77,11 +133,9 @@ describe("picking a handful", () => {
 
   test("spreads across kinds of work rather than dealing six of one", () => {
     // The whole reason `pickSuggestions` exists rather than a plain shuffle. Six from eight
-    // categories, one per category, means six distinct ones every time — not merely usually.
+    // patterns, one per pattern, means six distinct ones every time — not merely usually.
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      const kinds = new Set(
-        pickSuggestions(6).map((preset) => preset.category),
-      );
+      const kinds = new Set(pickSuggestions(6).map((preset) => preset.pattern));
       expect(kinds.size).toBe(6);
     }
   });

@@ -188,9 +188,11 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           approvalId: approval.id,
           memberId: ids[at] ?? approval.botId,
           // Never the raw id: "a4f1c… is waiting for your answer" tells a person nothing.
-          memberName: memberNames.get(ids[at] ?? "") ?? t("A coworker"),
-          question: approval.question,
+          memberName: memberNames.get(ids[at] ?? "") ?? t("A Bot"),
+          // The facts the card writes its sentence from, and the clock it counts down.
+          subject: approval.subject,
           rule: approval.rule,
+          expiresAt: approval.expiresAt,
         })),
     );
     setRoom((state) => mergeApprovals(state, open));
@@ -227,7 +229,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       if (frame.kind === "room.done" && frame.channelId === channel.id) {
         if ((frame.failures ?? 0) > 0) {
           setNotice(
-            t("{count} of the coworkers could not answer this time.", {
+            t("{count} of the Bots could not answer this time.", {
               count: String(frame.failures ?? 0),
             }),
           );
@@ -464,7 +466,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           ) : !channel.active ? (
             <p className="pb-2 text-muted-foreground text-sm" role="status">
               {t(
-                "This coworker has been deleted. The conversation stays readable, but it can no longer reply.",
+                "This Bot has been deleted. The conversation stays readable, but it can no longer reply.",
               )}
             </p>
           ) : null}

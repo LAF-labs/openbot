@@ -1,6 +1,17 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
-import { and, count, desc, eq, isNull, lte, notInArray } from "drizzle-orm";
+import {
+  asc,
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import { runAgentOnce } from "../agents/coworker-call";
 import type { BotLane } from "../runner/bot-lane";
 import type { AgentActor } from "../agents/profile-types";
@@ -8,7 +19,7 @@ import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
-import { lafRoutineRuns, lafRoutines } from "../db/schema";
+import { agentProfiles, lafRoutineRuns, lafRoutines } from "../db/schema";
 import type { RunLedger } from "../runner/run-ledger";
 import {
   runUnattended,
@@ -33,8 +44,29 @@ import {
  * same act on a different trigger.
  */
 
-/** Twenty routines per account. A wall against runaway creation, not a pricing tier. */
+/**
+ * Twenty routines per account. A wall against runaway creation, not a pricing tier.
+ *
+ * Per account, counted by who made them. It counted the whole table, which on a VM a shop owner
+ * shares with their staff means the first person to make twenty routines stops everybody else from
+ * making one — a limit that reads as somebody else's mistake.
+ */
 export const MAX_ROUTINES = 20;
+
+/**
+ * How late a routine may be and still run.
+ *
+ * `nextRunAt` in the past fires at the first tick, however long ago it passed. That is right for a
+ * server that was down for four minutes and wrong for one that was down overnight: the 07:30
+ * open-up briefing arriving at 09:00 is not a briefing, it is a Bot answering a question about a
+ * morning that is over, and an hourly monitor that missed six windows should not deliver six
+ * verdicts at once when the machine comes back.
+ *
+ * An hour, because that is roughly the span in which "it is late" is still the same piece of work.
+ * Past it the window is skipped, recorded as `routine.skipped` with how late it was, and the clock
+ * moves to the next one — skipped, never queued.
+ */
+export const MISSED_WINDOW_MS = 60 * 60_000;
 
 /** Five minutes. Anything faster is polling, and polling is the watch service's job. */
 export const MIN_INTERVAL_MINUTES = 5;
@@ -70,15 +102,37 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * What a routine call refused, as a status, a code and a sentence.
+ *
+ * The code is the part a surface may read. English prose from the server reaching a Korean screen
+ * is the thing this deployment does not do — the server sends facts and the surface owns the words
+ * (see `MODEL_FAILURES` in app/src/lib/copilot/stopped-turn.ts for the same shape) — so the two
+ * refusals a person can actually provoke carry one. The sentence stays for operators and for logs.
+ */
 export class RoutineError extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "RoutineError";
   }
 }
+
+/**
+ * A routine that is not this person's does not exist, as far as they can tell.
+ *
+ * 404 rather than 403, and the choice follows `agents/routes.ts`: a Bot somebody cannot see is an
+ * `AgentNotFoundError` and answers 404, and 403 there is reserved for a resource they CAN see and
+ * may not change — a public Bot they do not own, or one a package shipped. A routine has no public
+ * visibility, so the second case has no routine equivalent and every refusal here is the first one.
+ * This file already argued it for the webhook: one answer for a missing routine and a wrong token,
+ * so a prober cannot tell which of the two it guessed.
+ */
+const noSuchRoutine = () =>
+  new RoutineError("There is no such routine.", 404, "laf:routine_not_found");
 
 export type RoutineSchedule =
   | { kind: "interval"; minutes: number }
@@ -193,6 +247,41 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
  * and the list disagreed about the same routine's days. Normalised here, once, for every row that
  * leaves the service.
  */
+/**
+ * Every column of a routine except the one that is a capability.
+ *
+ * `triggerTokenHash` is the SHA-256 of the webhook token, and `SELECT *` was handing it to the
+ * roster: a hash is not the token, but it is the material for guessing one offline and it is on a
+ * screen that has no use for it. The list is the projection rather than a delete-after-select so a
+ * column added to the table has to be named here before it can leave the deployment.
+ */
+const publishedColumns = {
+  id: lafRoutines.id,
+  agentId: lafRoutines.agentId,
+  name: lafRoutines.name,
+  instruction: lafRoutines.instruction,
+  scheduleKind: lafRoutines.scheduleKind,
+  intervalMinutes: lafRoutines.intervalMinutes,
+  dailyLocal: lafRoutines.dailyLocal,
+  dailyTimeZone: lafRoutines.dailyTimeZone,
+  dailyDays: lafRoutines.dailyDays,
+  enabled: lafRoutines.enabled,
+  createdById: lafRoutines.createdById,
+  createdByRole: lafRoutines.createdByRole,
+  nextRunAt: lafRoutines.nextRunAt,
+  lastRunAt: lafRoutines.lastRunAt,
+  createdAt: lafRoutines.createdAt,
+  updatedAt: lafRoutines.updatedAt,
+};
+
+/** The same, for a row that arrived whole: `.returning()` has no projection to apply. */
+function withoutTokenHash<Row extends { triggerTokenHash?: unknown }>(
+  row: Row,
+): Omit<Row, "triggerTokenHash"> {
+  const { triggerTokenHash: _hash, ...rest } = row;
+  return rest;
+}
+
 function published<Row extends { dailyDays: unknown }>(row: Row): Row {
   const days = row.dailyDays;
   const dailyDays = Array.isArray(days)
@@ -209,7 +298,7 @@ function scheduleOf(row: typeof lafRoutines.$inferSelect): RoutineSchedule {
   }
   return {
     kind: "daily",
-    time: row.dailyUtc ?? "07:30",
+    time: row.dailyLocal ?? "07:30",
     // A row written before zones existed meant UTC, because that is what it did.
     timeZone: row.dailyTimeZone ?? "UTC",
     days: row.dailyDays ?? [],
@@ -283,6 +372,49 @@ export function createRoutineService(options: RoutineServiceOptions) {
   const now = options.now ?? (() => new Date());
   const runTimeoutMs = options.runTimeoutMs ?? ROUTINE_RUN_TIMEOUT_MS;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let ticking = false;
+
+  /**
+   * Which routines this person may see and act on, as a WHERE clause.
+   *
+   * The rule is `canManageAgent`'s (agents/profile-policy.ts) carried across: whoever can manage
+   * the Bot can manage the routines that drive it. So a routine is yours if you wrote it, or if the
+   * Bot it names is yours, and an administrator reaches all of them — the same three cases, in the
+   * same order, that decide a Bot.
+   *
+   * The Bot's owner and not only the author, because a routine outlives the person who typed it:
+   * staff leave, and a shop owner locked out of the routines running on their own Bot has no way in
+   * that is not an administrator. `agent_id` is not a foreign key yet, so a routine naming a Bot
+   * that no longer exists matches nobody by that half and stays with its author.
+   */
+  function scopeOf(actor: AgentActor) {
+    if (actor.role === "admin") return undefined;
+    return or(
+      eq(lafRoutines.createdById, actor.id),
+      inArray(
+        lafRoutines.agentId,
+        database
+          .select({ agentId: agentProfiles.agentId })
+          .from(agentProfiles)
+          .where(
+            and(
+              eq(agentProfiles.ownerUserId, actor.id),
+              isNull(agentProfiles.deletedAt),
+            ),
+          ),
+      ),
+    );
+  }
+
+  /** One routine, if it is this person's. Anything else did not exist; see `noSuchRoutine`. */
+  async function mine(actor: AgentActor, id: string) {
+    const [row] = await database
+      .select()
+      .from(lafRoutines)
+      .where(and(eq(lafRoutines.id, id), scopeOf(actor)));
+    if (!row) throw noSuchRoutine();
+    return row;
+  }
 
   /**
    * One unattended run per Bot at a time.
@@ -310,6 +442,17 @@ export function createRoutineService(options: RoutineServiceOptions) {
   async function executeNow(row: typeof lafRoutines.$inferSelect) {
     const startedAt = now();
     const runId = randomUUID();
+    /*
+     * The person the run is made as, and it can be missing.
+     *
+     * `created_by_id` became a real reference with `on delete set null`, because the ownership rule
+     * above says a routine outlives the person who typed it. What it cannot outlive is the
+     * VISIBILITY that person had — the Bot roster is loaded with the creator's own, so a routine
+     * with no creator has nobody to load it as, and running it under anybody else would let it
+     * reach a private coworker its author could not. It stops instead, in the one place a person
+     * reads a routine's history.
+     */
+    const author = row.createdById;
     let ok = false;
     let answer = "";
     let failure = "";
@@ -330,8 +473,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
       })
       .catch(() => null);
     try {
+      if (!author) {
+        throw new Error(
+          "The person who created this routine no longer has an account.",
+        );
+      }
       const agents = await options.resolveAgents({
-        id: row.createdById,
+        id: author,
         role: row.createdByRole === "admin" ? "admin" : "user",
       });
       const target = agents[row.agentId];
@@ -369,16 +517,17 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
       if (options.tools) {
         const actor: ActionActor = {
-          id: row.createdById,
-          // The local actor is not a row in `users`, and the audit table has a foreign key to it.
-          ...(row.createdById === DEV_ACTOR.id
-            ? {}
-            : { userId: row.createdById }),
+          id: author,
+          // The local actor is not a row in `users`, so it is named without claiming to be one.
+          ...(author === DEV_ACTOR.id ? {} : { userId: author }),
         };
         const toolkit = await options.tools(row.agentId, actor);
         const run = await runUnattended(target, instruction, {
           toolkit,
           timeoutMs: runTimeoutMs,
+          // Nobody is watching. What that means is said by `shared/prompt/mode/routine.ko.ts`,
+          // composed by the same middleware every other run path goes through.
+          mode: "routine",
         });
         answer = run.answer;
         steps = run.steps;
@@ -400,11 +549,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (error instanceof UnattendedRunError) steps = error.steps;
     }
 
-    if (ok && answer.trim().length > 0) {
+    if (ok && author && answer.trim().length > 0) {
       try {
         await options.deliver?.({
           agentId: row.agentId,
-          userId: row.createdById,
+          userId: author,
           routineName: row.name,
           answer,
           at: now(),
@@ -460,19 +609,41 @@ export function createRoutineService(options: RoutineServiceOptions) {
   }
 
   /**
-   * One pass: claim everything due, run what was claimed.
+   * One pass: claim everything due, run what was claimed and is not stale.
    *
    * The claim advances nextRunAt in the same UPDATE that selects, so a second process ticking over
    * the same table finds nothing due — the rule the pull request template asks about, answered the
    * way it suggests: a conditional update, not a check-then-write.
+   *
+   * A pass never overlaps a pass. `start` fires this on an interval while one run may take up to
+   * ROUTINE_RUN_TIMEOUT_MS, so on a ten-minute run the ticker used to enter this function nine more
+   * times underneath itself; each of those re-read the table, and a routine coming due meanwhile was
+   * started by whichever pass reached it first while the others queued behind the Bot's lane. The
+   * second pass is skipped, not queued: whatever it would have found is still due at the next tick,
+   * and a queue of passes is how one slow morning turns into a burst at lunchtime.
    */
   async function tick(): Promise<number> {
+    if (ticking) return 0;
+    ticking = true;
+    try {
+      return await tickOnce();
+    } finally {
+      ticking = false;
+    }
+  }
+
+  async function tickOnce(): Promise<number> {
     const at = now();
     const due = await database
       .select()
       .from(lafRoutines)
-      .where(
-        and(eq(lafRoutines.enabled, true), lte(lafRoutines.nextRunAt, at)),
+      .where(and(eq(lafRoutines.enabled, true), lte(lafRoutines.nextRunAt, at)))
+      // Oldest due first, then creation order: a pass is one sequential lane, and which routine
+      // goes first must not depend on the order Postgres happened to return the rows.
+      .orderBy(
+        asc(lafRoutines.nextRunAt),
+        asc(lafRoutines.createdAt),
+        asc(lafRoutines.id),
       );
 
     let ran = 0;
@@ -489,7 +660,39 @@ export function createRoutineService(options: RoutineServiceOptions) {
           ),
         )
         .returning();
-      if (!claimed) continue; // Another process moved the clock first.
+      // Somebody else already took this window: an overlapping tick, or a `runNow` that arrived
+      // over HTTP while this pass was walking the list. One process, but not one caller.
+      if (!claimed) continue;
+
+      /*
+       * How late this window is, measured against the moment it was supposed to fire — `row`, not
+       * `claimed`, because the claim above has already moved the clock to the next one.
+       *
+       * The claim is what makes the skip safe to record: exactly one pass takes the row, so exactly
+       * one `routine.skipped` is written, and the routine leaves this loop armed for the next window
+       * either way. `lastRunAt` moves too, which is the truthful reading — the scheduler did look at
+       * this routine, and the tick's own debounce should treat it as attended to.
+       */
+      const lateBy = at.getTime() - row.nextRunAt.getTime();
+      if (lateBy > MISSED_WINDOW_MS) {
+        try {
+          await options.auditStore?.insert({
+            eventType: "routine.skipped",
+            targetType: "routine",
+            targetId: row.id,
+            payload: {
+              agentId: row.agentId,
+              name: row.name,
+              lateByMinutes: Math.round(lateBy / 60_000),
+              missed: row.nextRunAt.toISOString(),
+            },
+          });
+        } catch {
+          // Losing the audit row must not turn a skip into a run.
+        }
+        continue;
+      }
+
       await execute(claimed);
       ran += 1;
     }
@@ -501,19 +704,36 @@ export function createRoutineService(options: RoutineServiceOptions) {
       const schedule = parseSchedule(input);
       const name = input.name.trim();
       const instruction = input.instruction.trim();
-      if (!name) throw new RoutineError("Name the routine.", 400);
+      /*
+       * Codes, because a Bot creates routines too and a Bot cannot act on an English sentence.
+       * The surface turns them into Korean; so does the Bot's own tool, from a different table.
+       */
+      if (!name) {
+        throw new RoutineError(
+          "Name the routine.",
+          400,
+          "laf:routine_needs_name",
+        );
+      }
       if (!instruction) {
-        throw new RoutineError("Say what the routine should do.", 400);
+        throw new RoutineError(
+          "Say what the routine should do.",
+          400,
+          "laf:routine_needs_instruction",
+        );
       }
 
       return database.transaction(async (transaction) => {
+        // This person's routines, not the deployment's. See MAX_ROUTINES.
         const [held] = await transaction
           .select({ count: count() })
-          .from(lafRoutines);
+          .from(lafRoutines)
+          .where(eq(lafRoutines.createdById, actor.id));
         if (Number(held?.count ?? 0) >= MAX_ROUTINES) {
           throw new RoutineError(
             `This account holds ${MAX_ROUTINES} routines already. Delete one to make room.`,
             409,
+            "laf:routine_cap_reached",
           );
         }
         const at = now();
@@ -530,7 +750,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
             scheduleKind: schedule.kind,
             intervalMinutes:
               schedule.kind === "interval" ? schedule.minutes : null,
-            dailyUtc: schedule.kind === "daily" ? schedule.time : null,
+            dailyLocal: schedule.kind === "daily" ? schedule.time : null,
             dailyTimeZone:
               schedule.kind === "daily" ? (schedule.timeZone ?? "UTC") : null,
             dailyDays: schedule.kind === "daily" ? (schedule.days ?? []) : null,
@@ -544,18 +764,23 @@ export function createRoutineService(options: RoutineServiceOptions) {
           .returning();
         if (!row)
           throw new RoutineError("The routine could not be created.", 409);
-        return { ...published(row), triggerToken };
+        // The token, once. Never its hash, which is the one column this row does not publish.
+        return { ...published(withoutTokenHash(row)), triggerToken };
       });
     },
 
-    async list() {
+    async list(actor: AgentActor) {
       return database
-        .select()
+        .select(publishedColumns)
         .from(lafRoutines)
+        .where(scopeOf(actor))
         .orderBy(desc(lafRoutines.createdAt));
     },
 
-    async runs(routineId: string) {
+    async runs(actor: AgentActor, routineId: string) {
+      // Ownership before history: a run record carries the Bot's answer, which is the routine's
+      // whole content, so reading somebody else's runs is reading their work.
+      await mine(actor, routineId);
       return database
         .select()
         .from(lafRoutineRuns)
@@ -564,33 +789,33 @@ export function createRoutineService(options: RoutineServiceOptions) {
         .limit(KEPT_RUNS);
     },
 
-    async setEnabled(id: string, enabled: boolean) {
+    async setEnabled(actor: AgentActor, id: string, enabled: boolean) {
+      await mine(actor, id);
       const at = now();
       const [row] = await database
         .update(lafRoutines)
-        .set({
-          enabled,
-          updatedAt: at,
-          // Re-enabling re-arms the clock from now; a routine disabled for a week must not fire
-          // seven times to catch up.
-          ...(enabled ? {} : {}),
-        })
+        .set({ enabled, updatedAt: at })
         .where(eq(lafRoutines.id, id))
         .returning();
-      if (!row) throw new RoutineError("There is no such routine.", 404);
+      if (!row) throw noSuchRoutine();
       if (enabled) {
+        // Re-enabling re-arms the clock from now; a routine disabled for a week must not fire
+        // seven times to catch up.
         const next = nextRunAt(scheduleOf(row), at);
         const [rearmed] = await database
           .update(lafRoutines)
           .set({ nextRunAt: next })
           .where(eq(lafRoutines.id, id))
           .returning();
-        return published(rearmed ?? row);
+        return published(withoutTokenHash(rearmed ?? row));
       }
-      return published(row);
+      return published(withoutTokenHash(row));
     },
 
-    async remove(id: string) {
+    async remove(actor: AgentActor, id: string) {
+      // Checked before the runs are deleted, so a stranger's DELETE cannot destroy the history of a
+      // routine it is then refused permission to remove.
+      await mine(actor, id);
       await database
         .delete(lafRoutineRuns)
         .where(eq(lafRoutineRuns.routineId, id));
@@ -598,19 +823,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
         .delete(lafRoutines)
         .where(eq(lafRoutines.id, id))
         .returning();
-      if (removed.length === 0) {
-        throw new RoutineError("There is no such routine.", 404);
-      }
+      if (removed.length === 0) throw noSuchRoutine();
     },
 
     /** Run one routine now, ahead of its clock. The claim still applies, so a due tick cannot double it. */
-    async runNow(id: string) {
+    async runNow(actor: AgentActor, id: string) {
       const at = now();
-      const [row] = await database
-        .select()
-        .from(lafRoutines)
-        .where(eq(lafRoutines.id, id));
-      if (!row) throw new RoutineError("There is no such routine.", 404);
+      const row = await mine(actor, id);
       const next = nextRunAt(scheduleOf(row), at);
       const [claimed] = await database
         .update(lafRoutines)
@@ -635,7 +854,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
       // One answer for a missing routine and a wrong token: a prober must not be able to tell
       // which of the two it guessed.
       if (!row?.triggerTokenHash || hashToken(token) !== row.triggerTokenHash) {
-        throw new RoutineError("There is no such trigger.", 404);
+        throw new RoutineError(
+          "There is no such trigger.",
+          404,
+          "laf:routine_not_found",
+        );
       }
       if (!row.enabled) return { ran: false, reason: "disabled" as const };
 

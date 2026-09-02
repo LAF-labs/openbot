@@ -1,6 +1,11 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import {
+  ShellTitleBar,
+  shellTopInset,
+} from "@/components/layout/shell-titlebar";
 import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authed/settings")({
   component: RouteComponent,
@@ -20,8 +25,11 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
-      <SettingsSidebar />
-      <main className="min-w-0 flex-1">
+      <ShellTitleBar />
+      {/* The rail is `fixed inset-y-0`, so the inset has to go on the rail itself: padding on the
+          layout around it would move the pane and leave the rail under the window buttons. */}
+      <SettingsSidebar className={shellTopInset()} />
+      <main className={cn("min-w-0 flex-1", shellTopInset())}>
         <Outlet />
       </main>
     </SidebarProvider>

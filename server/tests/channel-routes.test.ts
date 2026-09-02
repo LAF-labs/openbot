@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { UnofficialStatusCode } from "hono/utils/http-status";
 import {
   AgentNotFoundError,
   createAgentProfileStore,
@@ -27,7 +28,7 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -64,6 +65,17 @@ function fakeStore(
     async get(receivedActor, id) {
       calls.push(["get", receivedActor, id]);
       return channel({ id });
+    },
+    async list(receivedActor) {
+      calls.push(["list", receivedActor]);
+      return [];
+    },
+    async setLastRead(receivedActor, id, at, options) {
+      calls.push(["setLastRead", receivedActor, id, at, options]);
+      return { previous: null, at };
+    },
+    async recordActivity(receivedActor, id, activity) {
+      calls.push(["recordActivity", receivedActor, id, activity]);
     },
   };
 
@@ -278,7 +290,9 @@ describe("channel routes", () => {
     });
     const app = appFor(store);
     app.onError((error, context) =>
-      context.json({ sentinel: error.message }, 599),
+      // 599 is outside Hono's official union; `UnofficialStatusCode` is the cast Hono documents
+      // for exactly this, and the number is a sentinel no route here produces.
+      context.json({ sentinel: error.message }, 599 as UnofficialStatusCode),
     );
 
     const response = await app.request("http://laf.test/", {
@@ -305,9 +319,9 @@ describe("channel route composition", () => {
         api: { getSession: async () => session },
       },
       { rolesForUser: async () => ["user"] },
-      // Positions 4-13, ending at agentProfileStore. Every service added ahead of the channel store
-      // lengthens this run — the computer gateway and policy store did, and so did onboarding.
-      undefined,
+      // Positions 4-12, ending at agentProfileStore. Every service added ahead of the channel store
+      // lengthens this run — the computer gateway and policy store did, and so did onboarding — and
+      // deleting one shortens it, which the connector admin service just did.
       undefined,
       undefined,
       undefined,
@@ -384,8 +398,8 @@ const createdChannelIds: string[] = [];
 afterEach(async () => {
   for (const channelId of createdChannelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of createdAgentIds.splice(0)) {
@@ -458,8 +472,8 @@ async function persistedChannel(channelId: string) {
     .where(eq(channelAgents.channelId, channelId));
   const mappings = await database
     .select()
-    .from(intelligenceChannelMappings)
-    .where(eq(intelligenceChannelMappings.channelId, channelId));
+    .from(channelThreads)
+    .where(eq(channelThreads.channelId, channelId));
   return { channelRow, memberships, linkedAgents, mappings };
 }
 
@@ -491,11 +505,11 @@ async function channelTableSnapshot() {
     mappings: (
       await database
         .select({
-          channelId: intelligenceChannelMappings.channelId,
-          threadId: intelligenceChannelMappings.threadId,
-          userId: intelligenceChannelMappings.userId,
+          channelId: channelThreads.channelId,
+          threadId: channelThreads.threadId,
+          userId: channelThreads.userId,
         })
-        .from(intelligenceChannelMappings)
+        .from(channelThreads)
     )
       .map(
         ({ channelId, threadId, userId }) =>
@@ -531,7 +545,13 @@ describe("channel store integration", () => {
     const otherUserMiddleware: MiddlewareHandler<{
       Variables: AppVariables;
     }> = async (context, next) => {
-      context.set("actor", otherUser);
+      // The routes' actor is an `AuthenticatedActor`, which carries the address; `AgentActor` does
+      // not. Setting the narrower one left `actor.email` undefined for anything downstream reading
+      // it, and nothing said so.
+      context.set("actor", {
+        ...otherUser,
+        email: `${otherUser.id}@example.test`,
+      });
       await next();
     };
 
@@ -599,8 +619,8 @@ describe("channel store integration", () => {
     const created = await persistentStore.create(actor, [agentId]);
     createdChannelIds.push(created.id);
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, created.id));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, created.id));
 
     expect(await persistentStore.get(actor, created.id)).toBeNull();
   });

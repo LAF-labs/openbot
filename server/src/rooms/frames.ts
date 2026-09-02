@@ -6,15 +6,17 @@
  * a deploy: it looks a frame up by `channelId`, finds the row, spreads unknown keys onto it and
  * touches nothing it draws.
  *
- * DELTAS DO NOT GO THROUGH `pg_notify`. That carrier caps a payload at 8000 bytes and costs a
- * round trip through the database for every keystroke-sized event; the settled message already goes
- * that way, because it must reach a second process. Deltas are instance-local by design — a person
- * whose tab is connected to another instance sees the message when it lands rather than as it is
- * typed, which is the same thing they see today.
+ * ONE HUB, ONE PROCESS. Deltas and the settled message both go out through `ChannelEventHub` to the
+ * sockets this server holds. They once differed: the settled message went through `pg_notify` so a
+ * second server instance would hear it, and deltas did not because that carrier caps a payload at
+ * 8000 bytes and costs a round trip per keystroke-sized event. There is one process
+ * (docs/laf/deployment-model.md), so the exception became the rule rather than the other way round.
  *
  * EVERY `text` IS THE WHOLE MESSAGE SO FAR, never an increment. A dropped frame heals on the next
  * one, a reconnecting tab is right as soon as one arrives, and the browser needs no reassembly.
  */
+
+import type { AskSubject } from "../computer/approvals";
 
 export const ROOM_FRAME_KINDS = [
   "room.turn",
@@ -79,10 +81,13 @@ export type RoomFrame =
       memberId: string;
       memberName: string;
       approvalId: string;
-      question: string;
+      /** What is being asked about, in facts; the card composes the Korean. Null when unknown. */
+      subject: AskSubject | null;
       rule: string;
       /** What "always" would cover; absent means the room's card offers "this once" alone. */
       scope?: { kind: "host" | "file" | "tool"; value: string };
+      /** When the question stops being answerable, for the countdown on the card. */
+      expiresAt: string;
       answered?: boolean;
     })
   /**

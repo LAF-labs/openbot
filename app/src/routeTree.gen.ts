@@ -17,7 +17,6 @@ import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/rou
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
-import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -29,12 +28,12 @@ import { Route as AuthedAdminCredentialsRouteImport } from './routes/_authed/adm
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/plugins'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedSettingsAccountRouteImport } from './routes/_authed/settings/account'
 import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
+import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
-import { Route as AuthedAdminConnectorsIndexRouteImport } from './routes/_authed/admin/connectors/index'
-import { Route as AuthedAdminConnectorsGoogleDriveRouteImport } from './routes/_authed/admin/connectors/google-drive'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
@@ -72,11 +71,6 @@ const AuthedWelcomeRoute = AuthedWelcomeRouteImport.update({
 const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AuthedAppRoute,
-} as any)
-const AuthedAppBotRoute = AuthedAppBotRouteImport.update({
-  id: '/bot',
-  path: '/bot',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -134,6 +128,11 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsAccountRoute = AuthedSettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsConnectedAccountsRoute =
   AuthedSettingsConnectedAccountsRouteImport.update({
     id: '/connected-accounts',
@@ -145,6 +144,12 @@ const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   path: '/agents/',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppApproveApprovalIdRoute =
+  AuthedAppApproveApprovalIdRouteImport.update({
+    id: '/approve/$approvalId',
+    path: '/approve/$approvalId',
+    getParentRoute: () => AuthedAppRoute,
+  } as any)
 const AuthedAppChannelChannelIdRoute =
   AuthedAppChannelChannelIdRouteImport.update({
     id: '/channel/$channelId',
@@ -156,18 +161,6 @@ const AuthedAppChannelNewRoute = AuthedAppChannelNewRouteImport.update({
   path: '/channel/new',
   getParentRoute: () => AuthedAppRoute,
 } as any)
-const AuthedAdminConnectorsIndexRoute =
-  AuthedAdminConnectorsIndexRouteImport.update({
-    id: '/connectors/',
-    path: '/connectors/',
-    getParentRoute: () => AuthedAdminRouteRoute,
-  } as any)
-const AuthedAdminConnectorsGoogleDriveRoute =
-  AuthedAdminConnectorsGoogleDriveRouteImport.update({
-    id: '/connectors/google-drive',
-    path: '/connectors/google-drive',
-    getParentRoute: () => AuthedAdminRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
@@ -176,7 +169,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/welcome': typeof AuthedWelcomeRoute
-  '/bot': typeof AuthedAppBotRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -186,21 +178,20 @@ export interface FileRoutesByFullPath {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
-  '/admin/connectors/google-drive': typeof AuthedAdminConnectorsGoogleDriveRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
-  '/admin/connectors/': typeof AuthedAdminConnectorsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
   '/sign': typeof SignRoute
   '/unreachable': typeof UnreachableRoute
   '/welcome': typeof AuthedWelcomeRoute
-  '/bot': typeof AuthedAppBotRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -210,14 +201,14 @@ export interface FileRoutesByTo {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
-  '/admin/connectors/google-drive': typeof AuthedAdminConnectorsGoogleDriveRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
-  '/admin/connectors': typeof AuthedAdminConnectorsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -228,7 +219,6 @@ export interface FileRoutesById {
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
   '/_authed/welcome': typeof AuthedWelcomeRoute
-  '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -238,15 +228,15 @@ export interface FileRoutesById {
   '/_authed/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/_authed/settings/account': typeof AuthedSettingsAccountRoute
   '/_authed/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/_app/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
-  '/_authed/admin/connectors/google-drive': typeof AuthedAdminConnectorsGoogleDriveRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
-  '/_authed/admin/connectors/': typeof AuthedAdminConnectorsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -257,7 +247,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/settings'
     | '/welcome'
-    | '/bot'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -267,21 +256,20 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/account'
     | '/settings/connected-accounts'
     | '/admin/'
     | '/settings/'
+    | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
-    | '/admin/connectors/google-drive'
     | '/agents/'
-    | '/admin/connectors/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/sign'
     | '/unreachable'
     | '/welcome'
-    | '/bot'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -291,14 +279,14 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/account'
     | '/settings/connected-accounts'
     | '/admin'
     | '/settings'
+    | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
-    | '/admin/connectors/google-drive'
     | '/agents'
-    | '/admin/connectors'
   id:
     | '__root__'
     | '/_authed'
@@ -308,7 +296,6 @@ export interface FileRouteTypes {
     | '/_authed/settings'
     | '/_authed/_app'
     | '/_authed/welcome'
-    | '/_authed/_app/bot'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -318,15 +305,15 @@ export interface FileRouteTypes {
     | '/_authed/admin/credentials'
     | '/_authed/admin/playground'
     | '/_authed/admin/plugins'
+    | '/_authed/settings/account'
     | '/_authed/settings/connected-accounts'
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
+    | '/_authed/_app/approve/$approvalId'
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
-    | '/_authed/admin/connectors/google-drive'
     | '/_authed/_app/agents/'
-    | '/_authed/admin/connectors/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -391,13 +378,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedAppIndexRouteImport
-      parentRoute: typeof AuthedAppRoute
-    }
-    '/_authed/_app/bot': {
-      id: '/_authed/_app/bot'
-      path: '/bot'
-      fullPath: '/bot'
-      preLoaderRoute: typeof AuthedAppBotRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -477,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/account': {
+      id: '/_authed/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthedSettingsAccountRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/connected-accounts': {
       id: '/_authed/settings/connected-accounts'
       path: '/connected-accounts'
@@ -489,6 +476,13 @@ declare module '@tanstack/react-router' {
       path: '/agents'
       fullPath: '/agents/'
       preLoaderRoute: typeof AuthedAppAgentsIndexRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/approve/$approvalId': {
+      id: '/_authed/_app/approve/$approvalId'
+      path: '/approve/$approvalId'
+      fullPath: '/approve/$approvalId'
+      preLoaderRoute: typeof AuthedAppApproveApprovalIdRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/channel/$channelId': {
@@ -505,20 +499,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppChannelNewRouteImport
       parentRoute: typeof AuthedAppRoute
     }
-    '/_authed/admin/connectors/': {
-      id: '/_authed/admin/connectors/'
-      path: '/connectors'
-      fullPath: '/admin/connectors/'
-      preLoaderRoute: typeof AuthedAdminConnectorsIndexRouteImport
-      parentRoute: typeof AuthedAdminRouteRoute
-    }
-    '/_authed/admin/connectors/google-drive': {
-      id: '/_authed/admin/connectors/google-drive'
-      path: '/connectors/google-drive'
-      fullPath: '/admin/connectors/google-drive'
-      preLoaderRoute: typeof AuthedAdminConnectorsGoogleDriveRouteImport
-      parentRoute: typeof AuthedAdminRouteRoute
-    }
   }
 }
 
@@ -531,8 +511,6 @@ interface AuthedAdminRouteRouteChildren {
   AuthedAdminPlaygroundRoute: typeof AuthedAdminPlaygroundRoute
   AuthedAdminPluginsRoute: typeof AuthedAdminPluginsRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
-  AuthedAdminConnectorsGoogleDriveRoute: typeof AuthedAdminConnectorsGoogleDriveRoute
-  AuthedAdminConnectorsIndexRoute: typeof AuthedAdminConnectorsIndexRoute
 }
 
 const AuthedAdminRouteRouteChildren: AuthedAdminRouteRouteChildren = {
@@ -544,19 +522,19 @@ const AuthedAdminRouteRouteChildren: AuthedAdminRouteRouteChildren = {
   AuthedAdminPlaygroundRoute: AuthedAdminPlaygroundRoute,
   AuthedAdminPluginsRoute: AuthedAdminPluginsRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
-  AuthedAdminConnectorsGoogleDriveRoute: AuthedAdminConnectorsGoogleDriveRoute,
-  AuthedAdminConnectorsIndexRoute: AuthedAdminConnectorsIndexRoute,
 }
 
 const AuthedAdminRouteRouteWithChildren =
   AuthedAdminRouteRoute._addFileChildren(AuthedAdminRouteRouteChildren)
 
 interface AuthedSettingsRouteRouteChildren {
+  AuthedSettingsAccountRoute: typeof AuthedSettingsAccountRoute
   AuthedSettingsConnectedAccountsRoute: typeof AuthedSettingsConnectedAccountsRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
+  AuthedSettingsAccountRoute: AuthedSettingsAccountRoute,
   AuthedSettingsConnectedAccountsRoute: AuthedSettingsConnectedAccountsRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
@@ -565,20 +543,20 @@ const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
 interface AuthedAppRouteChildren {
-  AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
+  AuthedAppApproveApprovalIdRoute: typeof AuthedAppApproveApprovalIdRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
   AuthedAppChannelNewRoute: typeof AuthedAppChannelNewRoute
   AuthedAppAgentsIndexRoute: typeof AuthedAppAgentsIndexRoute
 }
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
-  AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
+  AuthedAppApproveApprovalIdRoute: AuthedAppApproveApprovalIdRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
   AuthedAppChannelNewRoute: AuthedAppChannelNewRoute,
   AuthedAppAgentsIndexRoute: AuthedAppAgentsIndexRoute,

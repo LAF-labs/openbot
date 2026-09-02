@@ -8,8 +8,8 @@ import {
   challengeFor,
   connectedAccountsUrlFor,
   createVerifier,
-  readConnectState,
   redeemAuthorizationCode,
+  redeemConnectState,
   redirectUriFor,
   sealConnectState,
 } from "./oauth";
@@ -315,6 +315,7 @@ export function createPluginRoutes(
         {
           error:
             "This deployment has no public URL configured, so it cannot complete a consent flow. Set BETTER_AUTH_URL.",
+          code: "laf:no_public_url",
         },
         503,
       );
@@ -323,7 +324,10 @@ export function createPluginRoutes(
     const entry = catalogueEntry(serverId);
     if (entry?.auth.kind !== "user-oauth") {
       return context.json(
-        { error: `${serverId} is not connected as an individual person.` },
+        {
+          error: `${serverId} is not connected as an individual person.`,
+          code: "laf:not_a_personal_connection",
+        },
         400,
       );
     }
@@ -350,6 +354,7 @@ export function createPluginRoutes(
         return context.json(
           {
             error: `${entry.title} has not been added to this deployment yet. An administrator has to add it first.`,
+            code: "laf:server_not_added",
           },
           409,
         );
@@ -361,6 +366,7 @@ export function createPluginRoutes(
         return context.json(
           {
             error: `${entry.title} refused this deployment's registration. Try again, and check the vendor's status if it persists.`,
+            code: "laf:registration_refused",
           },
           502,
         );
@@ -368,6 +374,7 @@ export function createPluginRoutes(
       return context.json(
         {
           error: `${entry.title} has no OAuth client registered yet. An administrator has to add one first.`,
+          code: "laf:no_oauth_client",
         },
         409,
       );
@@ -429,11 +436,25 @@ export function createPluginRoutes(
     if (!connect?.publicUrl) return context.redirect(failed);
 
     const code = context.req.query("code");
-    const state = await readConnectState(
+    if (!code) return context.redirect(failed);
+
+    /*
+     * Redeemed, not merely read: a state stands for one attempt and is spent here whatever happens
+     * next. The callback URL is held by every log, proxy and browser history it passes through, so
+     * without this a second walk down the same URL was refused only if the VENDOR happened to refuse
+     * the spent code — somebody else's implementation detail deciding whether a replay attached a
+     * second grant.
+     *
+     * The refusal carries a code (`laf:state_replayed` and `laf:state_unreadable`) which is
+     * deliberately not shown: every failure ends the same way, because telling a caller which of
+     * them it was tells anybody probing this endpoint how far they got.
+     */
+    const opened = await redeemConnectState(
       context.req.query("state") ?? "",
       connect.encryptionKey,
     );
-    if (!code || !state) return context.redirect(failed);
+    if (!opened.ok) return context.redirect(failed);
+    const { state } = opened;
 
     /*
      * Is the person in the state still somebody here?
@@ -687,18 +708,24 @@ export function createPluginRoutes(
       if (error instanceof PluginNeedsApprovalError) {
         return context.json(
           {
+            // A code rather than a sentence, and the facts beside it: the card is Korean and this
+            // server does not write Korean. See `computer/approvals.ts` AskSubject.
             error: error.message,
             awaitingApproval: true,
             approvalId: error.approvalId,
-            question: error.question,
+            subject: error.subject,
             rule: error.rule,
             scope: error.scope,
+            expiresAt: error.expiresAt,
           },
           409,
         );
       }
       if (error instanceof PluginRefusedError) {
-        return context.json({ error: error.message, rule: error.rule }, 403);
+        return context.json(
+          { error: error.message, rule: error.rule, code: error.code },
+          403,
+        );
       }
       if (error instanceof CatalogueEntryUnknownError) {
         return context.json({ error: error.message }, 404);

@@ -10,7 +10,7 @@ import {
   agentProfiles,
   agents,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -46,8 +46,8 @@ const createdChannelIds: string[] = [];
 afterEach(async () => {
   for (const channelId of createdChannelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of createdAgentIds.splice(0)) {
@@ -122,7 +122,14 @@ describe("a Bot has one conversation", () => {
     const other = await createUser();
     const agentId = await createAgent(owner, "Shared Assistant");
     // Reachable by both: a private Bot is only ever its owner's.
-    await profileStore.update(owner, agentId, { visibility: "public" });
+    // `update` REPLACES the profile — it takes the whole `CreateAgentInput`, not a patch — so the
+    // other three fields have to be restated or the name and description go with the edit.
+    await profileStore.update(owner, agentId, {
+      name: "Shared Assistant",
+      title: "Finance Operations",
+      roleDescription: "Review receipts.",
+      visibility: "public",
+    });
 
     const mine = await store.create(owner, [agentId]);
     createdChannelIds.push(mine.id);

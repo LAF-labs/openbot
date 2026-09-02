@@ -4,35 +4,57 @@
 
 ## Where it runs
 
-OpenBot is deployed as several server processes behind a load balancer, serving a whole company.
-Consecutive requests from the same person reach different processes, and the process that answered a
-WebSocket upgrade is rarely the one that answers the next call on that conversation.
+LAF Agent runs **one VM per person**, with **one API server process on it**. Every Bot somebody
+makes shares that VM and that process, and nobody else's Bots are on it. That is a decision, not a
+stage we are passing through — [`docs/laf/deployment-model.md`](../docs/laf/deployment-model.md) is
+the record.
 
-State that outlives a single request therefore has to be shared, or the change works on one machine
-and stops working the moment there are two, without saying so. That failure is worse than not
-shipping the feature: it passes review, passes CI, passes a local demo, and only surfaces as a Bot
-that forgets, a question nobody can answer, or a boundary that never fires.
+So in-process state is a correct answer here. The approval registry, the repeat counter and the
+gateway's snapshot cache live in memory on purpose, and a review saying "this breaks across
+processes" is answered by that document. What is *not* an answer is state that outlives a restart
+living only in memory: the VM reboots, the image is upgraded, the process is killed by hand.
 
-Answer these even when the answer is "none":
-
-- [ ] **New state that outlives a request?** Where does it live? A `Map` or `Set` held in a module or
-      a factory closure does not count as somewhere.
-- [ ] **What happens on the second replica?** Name the concrete outcome, not "should be fine".
-- [ ] **Anything serialised?** Say what stops two processes doing it at once. A unique index, a
-      conditional update, or an advisory lock are answers. A check-then-write is not.
-- [ ] **Anything fanned out to a browser?** Say how it reaches a socket held by another process.
-- [ ] **New listener, port, or schedule?** Say how it is reached through the same ingress as the API,
-      and what a hundred copies of it do.
-
-Postgres is already there and is the default answer to all of the above: a table, a unique index, a
-conditional update, `LISTEN`/`NOTIFY` for fan-out.
+- [ ] **New state that outlives a request?** Say where it lives, and whether it must survive a
+      restart. If it must, it is in Postgres.
+- [ ] **New listener, port, or schedule?** Say how it is reached through the same ingress as the
+      API, and what it does to a 1 vCPU / 6 GB VM already running Chromium.
+- [ ] **Anything the deployment cannot honour?** Do not draw the control. A setting that saves and
+      reaches nothing is worse than no setting.
 
 ## Boundary and audit
 
 - [ ] Every acting call still goes through the gateway: resolve, decide, audit, then act.
 - [ ] New refusals and new failures each write a row.
 - [ ] Nothing new is trusted from the client that the server can resolve itself.
+- [ ] Nothing new lets an action past a person without one switch governing it, a record of who
+      decided and why, and a `deny` that still means deny.
+- [ ] A Bot cannot write the rule that decides whether it gets asked about.
+- [ ] Nothing new records a value somebody typed — that it was typed, and where, is the whole of it.
+
+## Korean
+
+- [ ] Every new user-facing string goes through `t()` with English as the key, and its Korean entry
+      is in `app/src/lib/i18n-ko.ts` in this same change.
+- [ ] Strings read through a variable (`t(someVariable)`) are invisible to the coverage test and
+      carry their own test walking the table.
+- [ ] The server sends facts; the surface owns the words. No server prose reaches the screen.
+
+## The gate
+
+```sh
+bun run typecheck
+bunx biome lint .
+bun run format:check
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
+```
+
+- [ ] All four pass. If a test floor moved, say why.
 
 ## Proof
 
-<!-- What you ran, and what you saw. Screenshots or a recording for anything with a surface. -->
+<!--
+Say what you MEASURED, not that it typechecked. Everything that has ever shipped broken here
+typechecked and passed tests. Open the page, press the button, read what the other service actually
+received. "It answered normally" is what happens when a setting reaches nothing.
+Screenshots or a recording for anything with a surface.
+-->

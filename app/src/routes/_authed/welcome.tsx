@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
-import { type AgentPreset, pickSuggestions } from "@/lib/agents/presets";
+import {
+  type AgentPreset,
+  pickSuggestions,
+  workPattern,
+} from "@/lib/agents/presets";
 import { authKeys } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
@@ -86,7 +90,23 @@ function Welcome() {
         method: "POST",
         credentials: "include",
       });
-      await queryClient.invalidateQueries({ queryKey: authKeys.currentUser() });
+      /*
+       * REFETCH, NOT INVALIDATE, AND `type: "all"` IS THE WHOLE FIX.
+       *
+       * Measured: the first Bot was created, `onboarded_at` was stamped, and the screen stayed on
+       * the welcome form with the person's own words still in it — and pressing 시작하기 again did
+       * nothing at all, because the double-click guard had already latched. A dead button on the
+       * first screen of the product.
+       *
+       * `invalidateQueries` only marks the entry stale; it refetches ACTIVE queries, and nothing on
+       * this screen observes the current user. `ensureQueryData` in `_authed`'s guard then answered
+       * from the cache — still `onboarded: false` — and redirected the navigation straight back
+       * here. The two halves each behaved correctly and the person was in a loop.
+       */
+      await queryClient.refetchQueries({
+        queryKey: authKeys.currentUser(),
+        type: "all",
+      });
       await navigate({ to: "/agents", search: { agent: agent.id } });
     } catch {
       // Released only on failure: on success this screen is going away, and re-arming the button
@@ -114,9 +134,17 @@ function Welcome() {
             <h1 className="font-semibold text-2xl">
               {t("Your team of always-on Bots")}
             </h1>
+            {/*
+             * IT USED TO SAY THEY KEEP WORKING WHEN THIS WINDOW IS CLOSED, AND THAT IS HALF TRUE.
+             *
+             * A routine and a room run on the server and do carry on. A one-to-one turn does not:
+             * the browser is what drives it, so closing the window ends it (docs/laf/user-guide.md
+             * §7 says exactly this, in a table). Promising it on the first screen somebody ever
+             * sees is a promise the product breaks the first time they close a laptop mid-answer.
+             */}
             <p className="text-muted-foreground">
               {t(
-                "Each one is a colleague you can hand real work to. They keep working when this window is closed.",
+                "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.",
               )}
             </p>
             <Button className="w-full" onClick={() => setStep("computer")}>
@@ -216,28 +244,36 @@ function Welcome() {
                   {t("Show me others")}
                 </button>
               </div>
-              {suggestions.map((preset) => (
-                <button
-                  className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
-                  key={preset.id}
-                  onClick={() => applyPreset(preset)}
-                  type="button"
-                >
-                  <Mascot
-                    className="size-8 shrink-0 rounded-lg"
-                    seed={preset.avatarSeed}
-                    size={32}
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium text-[13px]">
-                      {t(preset.name)}
+              {suggestions.map((preset) => {
+                const pattern = workPattern(preset.pattern);
+                return (
+                  <button
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    type="button"
+                  >
+                    <Mascot
+                      className="size-8 shrink-0 rounded-lg"
+                      seed={preset.avatarSeed}
+                      size={32}
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      {/* The kind of work first: on somebody's first minute, "당직·감시" says more
+                          about what a Bot is for than any name it could be given. */}
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {t(pattern.name)} · {t(pattern.connection)}
+                      </span>
+                      <span className="truncate font-medium text-[13px]">
+                        {t(preset.name)}
+                      </span>
+                      <span className="truncate text-[12px] text-muted-foreground">
+                        {t(preset.roleDescription)}
+                      </span>
                     </span>
-                    <span className="truncate text-[12px] text-muted-foreground">
-                      {t(preset.roleDescription)}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </section>
 
             <fieldset className="flex flex-wrap justify-center gap-2">

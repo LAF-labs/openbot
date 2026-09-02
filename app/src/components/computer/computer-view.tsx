@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { TeachATask } from "@/components/computer/teach-a-task";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
 import { t } from "@/lib/i18n";
+import { pokeControl, watchControl } from "./control-poll";
 import { LiveScreen } from "./live-screen";
 import {
   type ControlState,
@@ -123,6 +124,9 @@ export function ComputerView({
   const handBack = useCallback(async () => {
     const state = await releaseControl(computerId);
     if (state) setControl(state);
+    // The other cards watching this computer share one loop, and it may have settled. Wake it, or
+    // the pane beside the conversation goes on saying somebody holds the wheel.
+    pokeControl(computerId);
     // Handing back is what ends a recording, so what was kept is read straight afterwards — that is
     // the moment the panel has something to offer.
     await refreshRecording();
@@ -143,6 +147,7 @@ export function ComputerView({
   const teach = useCallback(async () => {
     const state = await takeControl(computerId, true);
     if (state) setControl(state);
+    pokeControl(computerId);
     await refreshRecording();
   }, [computerId, refreshRecording]);
   /** Secret prompts keep the screen live even though the human does not hold the wheel. */
@@ -219,27 +224,22 @@ export function ComputerView({
     };
   }, [computerId, active, intervalMs, secretPending]);
 
-  /** Poll control state independently from screenshot polling so help/secret prompts surface. */
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      const { state, absent } = await readControl(computerId);
-      if (!live) return;
-      // No computer is configured, so there is nothing this loop could ever learn: a deployment
-      // that gains one restarts the app process anyway. Without this, the loop 404s once a second
-      // for the life of the tab and reads as an outage in every network log.
-      if (absent) return;
-      if (state) setControl(state);
-      timer = setTimeout(tick, 1000);
-    };
-    void tick();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [computerId]);
-
+  /*
+   * Control state, on the shared loop rather than one of this card's own.
+   *
+   * Independent of the screenshot poll because help and secret prompts have to surface on a card
+   * whose screen has settled — but it now settles too, and every card watching one computer settles
+   * together. `isLive` is this card's vote: while it is the live one, while somebody holds the
+   * wheel, and while a secret is being waited for, the loop keeps its 1 Hz whatever the state does.
+   */
+  const isLive = useCallback(
+    () => active || drivingRef.current || secretPendingRef.current,
+    [active],
+  );
+  useEffect(
+    () => watchControl(computerId, { isLive, onState: setControl }),
+    [computerId, isLive],
+  );
   // Input forwarding lives in LiveScreen on the socket.
   // Escape is bound to the window so it works regardless of overlay focus.
   useEffect(() => {
@@ -272,7 +272,7 @@ export function ComputerView({
   const polledScreen = showScreen ? (
     <img
       src={`data:image/png;base64,${shot.base64}`}
-      alt={t("What the assistant is looking at")}
+      alt={t("What the Bot is looking at")}
       // Keep unexpected screenshot dimensions inside the reserved frame.
       className="absolute inset-0 h-full w-full object-contain opacity-100 transition-opacity duration-300 starting:opacity-0"
     />
@@ -289,7 +289,7 @@ export function ComputerView({
           disabled={!showScreen}
           className="relative block w-full bg-muted enabled:cursor-zoom-in"
           style={frameStyle}
-          aria-label={t("Open the assistant's screen full size")}
+          aria-label={t("Open the Bot's screen full size")}
         >
           {polledScreen}
 
@@ -313,14 +313,14 @@ export function ComputerView({
                   <span>{problem}</span>
                   <span>
                     {t(
-                      "The assistant may still be working. An administrator can check whether its computer is running.",
+                      "The Bot may still be working. An administrator can check whether its computer is running.",
                     )}
                   </span>
                 </>
               ) : blankBrowser ? (
-                <span>{t("The assistant has not opened a page yet.")}</span>
+                <span>{t("The Bot has not opened a page yet.")}</span>
               ) : (
-                <span>{t("Waiting for the assistant's screen…")}</span>
+                <span>{t("Waiting for the Bot's screen…")}</span>
               )}
             </span>
           )}
@@ -345,10 +345,11 @@ export function ComputerView({
               setSecretProblem(result.ok ? null : (result.error ?? null));
               const { state } = await readControl(computerId);
               if (state) setControl(state);
+              pokeControl(computerId);
             }}
           >
             <label className="block" htmlFor={secretFieldId}>
-              <span className="font-medium">{t("The assistant needs")} </span>
+              <span className="font-medium">{t("The Bot needs")} </span>
               <span>{control.secretWanted}</span>
             </label>
             <div className="mt-1.5 flex gap-2">
@@ -360,7 +361,7 @@ export function ComputerView({
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder={t("Typed here, never shown to the assistant")}
+                placeholder={t("Typed here, never shown to the Bot")}
                 className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
               />
               <button
@@ -368,12 +369,12 @@ export function ComputerView({
                 disabled={!secret || sendingSecret}
                 className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
               >
-                {sendingSecret ? "Sending…" : "Send to the page"}
+                {sendingSecret ? t("Sending…") : t("Send to the page")}
               </button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {t(
-                "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.",
+                "This goes straight to the page. It is not shown in the conversation and the Bot never receives it.",
               )}
             </p>
             {secretProblem ? (
@@ -428,9 +429,7 @@ export function ComputerView({
         {control?.requested && !driving ? (
           <div className="flex items-start justify-between gap-3 border-t bg-warning/10 px-3 py-2 text-sm">
             <span>
-              <strong className="font-medium">
-                {t("The assistant needs you.")}
-              </strong>{" "}
+              <strong className="font-medium">{t("The Bot needs you.")}</strong>{" "}
               {control.reason}
             </span>
             <button
@@ -438,6 +437,7 @@ export function ComputerView({
               onClick={async () => {
                 const state = await takeControl(computerId);
                 if (state) setControl(state);
+                pokeControl(computerId);
                 setExpanded(true);
               }}
               className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
@@ -456,14 +456,14 @@ export function ComputerView({
             <div
               role="dialog"
               aria-modal="true"
-              aria-label={t("The assistant's screen")}
+              aria-label={t("The Bot's screen")}
               className="fixed inset-0 z-50 flex flex-col p-4 sm:p-8"
             >
               {/* Backdrop closes only while read-only; during driving, Escape remains the exit. */}
               <button
                 type="button"
                 onClick={() => !driving && setExpanded(false)}
-                aria-label={t("Close the assistant's screen")}
+                aria-label={t("Close the Bot's screen")}
                 aria-hidden={driving}
                 tabIndex={driving ? -1 : 0}
                 className={`absolute inset-0 bg-black/80 ${driving ? "cursor-default" : "cursor-zoom-out"}`}
@@ -479,9 +479,9 @@ export function ComputerView({
                       {control?.reason ? ` ${control.reason}` : null}
                     </>
                   ) : active ? (
-                    t("The assistant's screen, updating live")
+                    t("The Bot's screen, updating live")
                   ) : (
-                    t("The assistant's screen")
+                    t("The Bot's screen")
                   )}
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
@@ -494,7 +494,7 @@ export function ComputerView({
                       }}
                       className="rounded-md bg-white px-3 py-1 text-xs font-medium text-black"
                     >
-                      {t("Hand back to the assistant")}
+                      {t("Hand back to the Bot")}
                     </button>
                   ) : (
                     /*
@@ -509,6 +509,7 @@ export function ComputerView({
                       onClick={async () => {
                         const state = await takeControl(computerId);
                         if (state) setControl(state);
+                        pokeControl(computerId);
                       }}
                       className={
                         "rounded-md px-3 py-1 text-xs font-medium " +
@@ -518,7 +519,7 @@ export function ComputerView({
                       }
                     >
                       {control?.requested
-                        ? t("Take control — the assistant asked for you")
+                        ? t("Take control — the Bot asked for you")
                         : t("Take control")}
                     </button>
                   )}

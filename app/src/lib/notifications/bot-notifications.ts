@@ -7,9 +7,9 @@
  * Bot that merely finished is silent; five seconds of quiet per Bot per kind; and a window the
  * person is looking at silences things, because the screen is already telling them.
  *
- * It is also the rule this fork wrote down for the approval buzz and the morning digest
- * (server/src/watch/digest.ts): what is blocked on you leads, what merely happened follows, and
- * everything else stays out of the way.
+ * It is also the rule this fork wrote down for the approval buzz
+ * (server/src/notifications/notify.ts): what is blocked on you leads, what merely happened follows,
+ * and everything else stays out of the way.
  *
  * It is the browser's own Notification, deliberately: no service worker, no push service, no
  * dependency. WHAT THAT COSTS, SAID PLAINLY: nothing arrives while the tab is closed. A person who
@@ -23,7 +23,21 @@
  * `components/notifications/notification-permission.tsx` for why it is not the mute switch.
  */
 
-import { inShell, setShellBadge, showShellNotice } from "./shell";
+import {
+  inShell,
+  type NoticeDestination,
+  requestShellNoticePermission,
+  setShellBadge,
+  shellNoticePermission,
+  showShellNotice,
+} from "./shell";
+
+export type { NoticeDestination };
+
+/** The path a destination names, which is where a click on the notice should land. */
+export function noticePath(destination: NoticeDestination): string {
+  return `/${destination.kind}/${encodeURIComponent(destination.id)}`;
+}
 
 export type NotificationSupport = "unsupported" | "granted" | "denied" | "ask";
 
@@ -39,12 +53,33 @@ export function notificationSupport(): NotificationSupport {
 }
 
 /**
+ * The same question, asked of whatever is actually going to show the notice.
+ *
+ * IN THE DESKTOP SHELL THE SYNCHRONOUS ANSWER IS A LIE. WKWebView has no `Notification` at all, so
+ * `notificationSupport()` says "unsupported" and the control that offers to turn notifications on
+ * was never drawn in the installed app — while `showShellNotice` worked the whole time and the
+ * shell was the reason somebody installed it. The shell's answer is a promise, so this is one too,
+ * and the browser path is unchanged.
+ */
+export async function readNotificationSupport(): Promise<NotificationSupport> {
+  if (inShell()) {
+    const answer = await shellNoticePermission();
+    if (answer) return answer;
+  }
+  return notificationSupport();
+}
+
+/**
  * Ask, once, from a gesture.
  *
  * Safari's older signature hands the answer to a callback instead of a promise, so both are
  * accepted; `Notification.requestPermission()` returning undefined is what that looks like here.
  */
 export async function requestNotificationPermission(): Promise<NotificationSupport> {
+  if (inShell()) {
+    const answer = await requestShellNoticePermission();
+    if (answer) return answer;
+  }
   if (notificationSupport() === "unsupported") return "unsupported";
   if (Notification.permission !== "default") return notificationSupport();
   const answer = await new Promise<NotificationPermission>((resolve) => {
@@ -58,6 +93,32 @@ export async function requestNotificationPermission(): Promise<NotificationSuppo
   if (answer === "granted") return "granted";
   if (answer === "denied") return "denied";
   return "ask";
+}
+
+/**
+ * Whether a notice can be attempted at all — before any of the rules about whether it should be.
+ *
+ * IN THE SHELL THIS QUESTION HAS NO SYNCHRONOUS ANSWER, SO IT IS NOT ASKED.
+ *
+ * `notificationSupport()` reads `window.Notification`, which is the webview's answer to a question
+ * about the shell. What is actually there was measured 2026-09 by running the installed app:
+ * `tauri-plugin-notification` INJECTS a `window.Notification` (`src/init-iife.js`), and sets its
+ * `permission` to "granted" from an async round trip a moment after every load. So the old gate
+ * mostly passed — and dropped every notice raised in the window between load and that round trip
+ * resolving, silently, on the surface this product leads with. It is the same false negative that
+ * hid the "turn on notifications" control (`notification-permission.tsx`), one line before the
+ * shell path written for exactly this case.
+ *
+ * The browser keeps the live check, because a person may grant permission at any moment and reading
+ * it each time is how notices start working the instant they do. The shell has no gate here at all:
+ * `showShellNotice` asks the operating system itself and falls back when refused, which is the only
+ * honest way to ask a question whose answer is a promise.
+ */
+export function canRaiseNotice(where: {
+  inShell: boolean;
+  browser: NotificationSupport;
+}): boolean {
+  return where.inShell || where.browser === "granted";
 }
 
 /**
@@ -156,21 +217,45 @@ export function noticeBody(text: string): string {
  */
 export function showNotice(
   kind: NoticeKind,
-  options: { title: string; body: string; tag: string },
+  options: {
+    title: string;
+    body: string;
+    tag: string;
+    /**
+     * Where acting on this notice should land somebody, when there is such a place.
+     *
+     * OPTIONAL, because one of the two kinds does not have one. A Bot that has stopped to ask for a
+     * password (`run.needs_you`) is the most blocked a Bot ever is, and there is no page in this app
+     * that is about that moment — the person hands the value over in whatever conversation they were
+     * already having. Refusing to raise the notice for want of a destination would mean the one
+     * interruption that cannot be worked around silently interrupts nobody; a click with nowhere to
+     * go brings the window forward, which is what the person needed.
+     */
+    destination?: NoticeDestination;
+  },
   onClick: () => void,
 ): void {
   /*
    * Inside the desktop shell, the OS notification centre; the webview's own `Notification` is
    * unsupported there (WKWebView) or dies with the window. The shell path is tried first and the
-   * web path is the fallback, so a browser tab is exactly what it was. Clicking a native
-   * notification focuses the app; the room-level navigation is lost on that path, and that is the
-   * honest trade until the shell carries a deep link.
+   * web path is the fallback, so a browser tab is exactly what it was.
+   *
+   * WHAT A CLICK ON THE NATIVE ONE DOES, EXACTLY. Nothing here, because there is nothing to hang
+   * it on: measured in `tauri-plugin-notification` 2.3.3, the desktop implementation spawns
+   * `notify_rust`'s `show()` and drops the handle, and `on_action` exists only in its mobile
+   * module. So the destination is handed to the shell, which remembers it and follows it the next
+   * time the person brings the window forward — from the tray, from 열기, from the dock. Clicking
+   * the banner itself activates the app on macOS and does not report anything, so what a person
+   * sees after clicking is the window, and then the app's own routing showing the waiting question.
+   * A deep link (`lafagent://approve/<id>`) is the path that really does carry a click, and it is
+   * how another program — or a message in another app — reaches the same page.
    */
   if (inShell()) {
     void showShellNotice({
       title: options.title,
       body: noticeBody(options.body),
       silent: kind === "finished",
+      ...(options.destination ? { destination: options.destination } : {}),
     }).then((shown) => {
       if (!shown) showWebNotice(kind, options, onClick);
     });

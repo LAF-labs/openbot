@@ -12,7 +12,7 @@ import {
   decideComponent,
   type GrantedComponent,
 } from "@/lib/components/queries";
-import { useActiveBotId } from "@/lib/copilot/active-bot";
+import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import {
   type PublishedSandboxed,
@@ -25,8 +25,17 @@ import {
  */
 export function SandboxedTools() {
   const botId = useActiveBotId();
-  const { data: published } = useQuery(publishedSandboxedQueryOptions());
-  const { data: granted } = useQuery(agentComponentsQueryOptions(botId));
+  /*
+   * REGISTRATION IS GLOBAL, THE GRANT QUERIES ARE NOT. These tools are registered for the whole
+   * app so a conversation can offer one the moment it opens; what a Bot may answer with is a
+   * question about a Bot, and on a screen with none it was being asked about `default` every
+   * thirty seconds forever.
+   */
+  const declared = useDeclaredBotId();
+  const { data: published } = useQuery(
+    publishedSandboxedQueryOptions(Boolean(declared)),
+  );
+  const { data: granted } = useQuery(agentComponentsQueryOptions(declared));
 
   const held = new Map(
     (granted ?? []).map((component: GrantedComponent) => [

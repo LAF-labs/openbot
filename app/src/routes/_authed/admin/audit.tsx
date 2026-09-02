@@ -1,5 +1,5 @@
 import { IconRefresh } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { auditEventsQueryOptions } from "@/lib/audit/queries";
+import { type AuditEvent, auditEventsQueryOptions } from "@/lib/audit/queries";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 
@@ -19,17 +19,6 @@ import { activeLocale, t } from "@/lib/i18n";
 export const Route = createFileRoute("/_authed/admin/audit")({
   component: AuditPage,
 });
-
-/** One row as the API returns it. */
-type AuditEvent = {
-  id: string;
-  actorUserId: string | null;
-  eventType: string;
-  targetType: string;
-  targetId: string | null;
-  payload: Record<string, unknown>;
-  createdAt: string;
-};
 
 const FILTERS = [
   { label: "Everything", search: "" },
@@ -62,14 +51,16 @@ const FILTERS = [
     // Its own filter rather than a place in "Blocked". A Bot repeating itself has not been stopped by
     // anything, and putting it beside the refusals would make the refusals look less real.
     label: "Going in circles",
-    search: "?eventType=computer.action_repeated",
+    // Both halves of the boundary. A Bot stuck on somebody else's MCP tool is going in circles for
+    // the same reason and by the same counter as one stuck on a button.
+    search: "?eventType=computer.action_repeated,mcp.call_repeated",
   },
 ] as const;
 
 function AuditPage() {
   const [search, setSearch] = useState<string>(FILTERS[0].search);
-  const events = useQuery(auditEventsQueryOptions(search));
-  const rows = (events.data?.events ?? []) as AuditEvent[];
+  const events = useInfiniteQuery(auditEventsQueryOptions(search));
+  const rows = (events.data?.pages ?? []).flatMap((page) => page.events);
   const nameFor = useBotNames();
 
   return (
@@ -84,7 +75,7 @@ function AuditPage() {
         <Button
           // A refresh that takes a second looked ignored: nothing moved until the answer landed.
           disabled={events.isFetching}
-          onClick={() => events.refetch()}
+          onClick={() => void events.refetch()}
           size="sm"
           variant="ghost"
         >
@@ -145,6 +136,34 @@ function AuditPage() {
             </table>
           </div>
         )}
+
+        {/*
+         * Under the table, not inside it. The count says what has been read so far rather than how
+         * much there is: the server answers with a page and a cursor, never a total, and inventing
+         * "100 of 3,412" from a cursor is a number nobody counted.
+         */}
+        {rows.length > 0 ? (
+          <div className="mt-3 flex items-center gap-3">
+            {events.hasNextPage ? (
+              <Button
+                disabled={events.isFetchingNextPage}
+                onClick={() => void events.fetchNextPage()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {events.isFetchingNextPage ? t("Loading…") : t("Load more")}
+              </Button>
+            ) : null}
+            <p className="text-muted-foreground text-xs">
+              {events.hasNextPage
+                ? t("{count} events so far", { count: rows.length })
+                : t("{count} events, and that is all of them", {
+                    count: rows.length,
+                  })}
+            </p>
+          </div>
+        ) : null}
       </PageSection>
     </PageShell>
   );
@@ -184,17 +203,15 @@ function Row({
    * asked and the answer never arrived. Colour is how this table is read, and a row left in the
    * muted foreground reads as "Allowed", which a turn nobody ever got an answer to was not.
    *
-   * The four beyond the computer's own were each drawn as an ordinary allowed row: a tool call that
-   * died at the vendor, a component function that could not be read, a connector sync that failed,
-   * and a credential replacement the vault refused. Every one of them is the same complaint —
-   * permitted, attempted, did not happen — and the colour is what a person skimming this table
-   * actually reads.
+   * The three beyond the computer's own were each drawn as an ordinary allowed row: a tool call that
+   * died at the vendor, a component function that could not be read, and a credential replacement
+   * the vault refused. Every one of them is the same complaint — permitted, attempted, did not
+   * happen — and the colour is what a person skimming this table actually reads.
    */
   const failed =
     event.eventType === "computer.action_failed" ||
     event.eventType === "mcp.call_failed" ||
     event.eventType === "component.function_failed" ||
-    event.eventType === "connector.sync_failed" ||
     event.eventType === "credential.rotation_refused" ||
     stalled;
   const silence = stalled ? silenceOf(payload) : null;
@@ -301,7 +318,8 @@ function Row({
             {t(DISCONNECT_REASONS[payload.reason] as string)}
           </div>
         ) : null}
-        {event.eventType === "computer.action_repeated" &&
+        {(event.eventType === "computer.action_repeated" ||
+          event.eventType === "mcp.call_repeated") &&
         typeof payload.count === "number" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {t("{count} times within a few minutes", {
@@ -387,6 +405,9 @@ export const DECISIONS: Record<string, string> = {
   // answered, which is the same complaint as an action that was allowed and then did not happen.
   "agent.stream_stalled": "The Bot stopped responding",
   "computer.policy_loaded": "Boundary at start-up",
+  // Somebody edited the rules. The payload carries their reason, and says so when the switch that
+  // decides whether a person sees an action at all was the thing that moved.
+  "computer.policy_changed": "The boundary was changed",
   "computer.isolation_loaded": "Isolation at start-up",
   "computer.control_taken": "A person took the wheel",
   "computer.control_released": "The wheel was handed back",
@@ -422,6 +443,10 @@ export const DECISIONS: Record<string, string> = {
   "mcp.call_succeeded": "Called on this Bot's behalf",
   "mcp.call_rejected": "Blocked",
   "mcp.call_failed": "The server did not answer",
+  // `computer.action_repeated`'s twin, and not "Blocked" for the same reason: nothing refused this,
+  // the Bot called the same tool again and the trail is saying so. Its own words rather than the
+  // browser's, because a reader filtering this row wants the server and the tool, not a page.
+  "mcp.call_repeated": "The Bot called the same tool again",
   // A tool whose definition moved after somebody consented to it, and the moment somebody looked at
   // what it now says. The first is a pause and not a refusal: nothing was blocked, the tool simply
   // stops running until the pair is closed.
@@ -433,12 +458,11 @@ export const DECISIONS: Record<string, string> = {
   "mcp.account_connected": "A person connected their own account",
   "mcp.account_disconnected": "An account is no longer connected",
 
-  "connector.sync_succeeded": "Sync finished",
-  "connector.sync_failed": "Sync failed",
-  "knowledge.searched": "Knowledge searched",
-  "agent.invoked": "The Bot was asked",
   "coworker.asked": "One Bot asked another",
   "routine.ran": "A routine ran",
+  // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
+  // and a row that reads as an accident hides the decision.
+  "routine.skipped": "A routine's window was skipped",
   "model.usage": "Model usage recorded",
 
   "configuration.changed": "Configuration changed",
@@ -449,6 +473,13 @@ export const DECISIONS: Record<string, string> = {
   // refusal — but it is emphatically not the "Allowed" every unlabelled row used to fall back to.
   "credential.rotation_refused": "Could not be replaced",
   "credential.revoked": "Credential retired",
+
+  // A person taking their data, and a person leaving. Neither is a permission and neither is a
+  // refusal — they are the two ends of somebody's relationship with this deployment, and the
+  // deletion row is written under a code rather than a name because by the time it commits there is
+  // no name left to write.
+  "account.exported": "A person took a copy of their data",
+  "account.deleted": "An account was deleted",
 };
 
 /**

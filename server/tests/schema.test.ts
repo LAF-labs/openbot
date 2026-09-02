@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { getTableName } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import {
   accounts,
   agentPreferences,
@@ -12,15 +12,10 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  chunks,
-  connectorCursors,
-  connectorInstances,
   credentials,
-  documentAcls,
-  documents,
-  intelligenceChannelMappings,
+  channelThreads,
+  lafThreadMessages,
   sessions,
-  syncRuns,
   userRoles,
   users,
   verifications,
@@ -40,14 +35,8 @@ describe("LAF Agent database schema", () => {
         channelMemberships,
         channelAgents,
         credentials,
-        connectorInstances,
-        connectorCursors,
-        syncRuns,
-        documents,
-        chunks,
-        documentAcls,
         auditEvents,
-        intelligenceChannelMappings,
+        channelThreads,
       ].map(getTableName),
     ).toEqual([
       "users",
@@ -60,32 +49,214 @@ describe("LAF Agent database schema", () => {
       "channel_memberships",
       "channel_agents",
       "credentials",
-      "connector_instances",
-      "connector_cursors",
-      "sync_runs",
-      "documents",
-      "chunks",
-      "document_acls",
       "audit_events",
-      "intelligence_channel_mappings",
+      "channel_threads",
     ]);
   });
 
-  test("keeps document embeddings and ACLs separate from document metadata", () => {
-    expect(Object.keys(documents)).toEqual(
-      expect.arrayContaining([
-        "id",
-        "connectorInstanceId",
-        "sourceId",
-        "canonicalUrl",
-      ]),
+  /*
+   * The conversation store, and the shape that makes it append-only.
+   *
+   * `laf_thread_snapshots` held one jsonb array per thread and three call sites wrote it two
+   * different ways; an append landing between the runner's read and its overwrite was gone. The
+   * primary key is what says a message has a place in a thread rather than a place in an array, and
+   * the unique index on the message id is what lets the same message arrive twice — every run hands
+   * the whole history back — without becoming two.
+   */
+  test("stores a conversation as one append-only row per message", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+    expect(schema.lafThreadSnapshots).toBeUndefined();
+
+    const config = getTableConfig(lafThreadMessages);
+    expect(getTableName(lafThreadMessages)).toBe("laf_thread_messages");
+    expect(config.columns.map((column) => column.name)).toEqual([
+      "thread_id",
+      "seq",
+      "message",
+      "at",
+      "run_id",
+    ]);
+    expect(
+      config.primaryKeys.map((key) => key.columns.map((c) => c.name)),
+    ).toEqual([["thread_id", "seq"]]);
+    expect(
+      config.indexes.map((index) => ({
+        name: index.config.name,
+        unique: index.config.unique,
+      })),
+    ).toEqual([{ name: "laf_thread_messages_message_id_idx", unique: true }]);
+    // No foreign key on thread_id: a thread is an id this deployment mints, not a row.
+    expect(config.foreignKeys).toHaveLength(0);
+  });
+
+  /*
+   * The migration behind it, and the half of it that is a DATA migration.
+   *
+   * Dropping the old table without moving its rows across is every conversation in the deployment
+   * gone, and it would type-check, pass every unit test, and be discovered by somebody opening the
+   * app. The `INSERT … SELECT` and the self-heal for the double-encoded rows are what this asserts.
+   */
+  test("ships the migration that moves the conversations across", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0026_one_conversation_store.sql", import.meta.url),
+      "utf8",
     );
-    expect(Object.keys(chunks)).toEqual(
-      expect.arrayContaining(["documentId", "embedding"]),
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    expect(normalized).toContain(`CREATE TABLE "laf_thread_messages"`);
+    expect(normalized).toContain(
+      `INSERT INTO "laf_thread_messages" ("thread_id", "seq", "message", "at")`,
     );
-    expect(Object.keys(documentAcls)).toEqual(
-      expect.arrayContaining(["documentId", "principal", "effect"]),
+    // The double-encoded rows are re-parsed rather than read as an empty conversation.
+    expect(normalized).toContain(`WHEN 'string' THEN`);
+    expect(normalized).toContain(`DROP TABLE "laf_thread_snapshots" CASCADE`);
+    // And the copy happens BEFORE the drop, which is the whole difference.
+    expect(
+      normalized.indexOf(`INSERT INTO "laf_thread_messages"`),
+    ).toBeLessThan(normalized.indexOf(`DROP TABLE "laf_thread_snapshots"`));
+    expect(normalized).toContain(
+      `ALTER TABLE "intelligence_channel_mappings" RENAME TO "channel_threads"`,
     );
+    expect(normalized).toContain(
+      `ALTER TABLE "laf_routines" RENAME COLUMN "daily_utc" TO "daily_local"`,
+    );
+  });
+
+  /*
+   * The references the `laf_*` and `computer_*` tables never had.
+   *
+   * Deleting a Bot left its routines `enabled` and claimed on every tick, and its standing
+   * allowances standing. The `onDelete` on each one is the decision, so each one is named here:
+   * a routine and an allowance go with the Bot, a run record keeps its history and loses the name,
+   * and a routine outlives the person who typed it.
+   */
+  test("names a parent for every laf_* row that has one", async () => {
+    // Imported as itself. It used to be cast to `Record<string, never>` so that `references` could
+    // take `never` — which made every table below `never` too, so nothing in this test was checked
+    // against the schema it is about.
+    const {
+      computerStandingApprovals,
+      lafRoutineRuns,
+      lafRoutines,
+      lafThreadRuns,
+    } = await import("../src/db/schema");
+
+    const references = (table: PgTable) =>
+      getTableConfig(table).foreignKeys.map((foreignKey) => {
+        const reference = foreignKey.reference();
+        return [
+          reference.columns.map((column) => column.name).join(","),
+          getTableName(reference.foreignTable),
+          foreignKey.onDelete,
+        ].join(" -> ");
+      });
+
+    expect(references(lafRoutines)).toEqual([
+      "agent_id -> agents -> cascade",
+      "created_by_id -> users -> set null",
+    ]);
+    expect(references(lafRoutineRuns)).toEqual([
+      "routine_id -> laf_routines -> cascade",
+    ]);
+    expect(references(lafThreadRuns)).toEqual([
+      "agent_id -> agents -> set null",
+    ]);
+    expect(references(computerStandingApprovals)).toEqual([
+      "bot_id -> agents -> cascade",
+    ]);
+  });
+
+  /*
+   * The upstream knowledge plane is gone, and this is the assertion that it stays gone.
+   *
+   * `documents`, `chunks`, `document_acls`, `sync_runs`, `connector_cursors`,
+   * `webhook_subscriptions` and `connector_instances` were created by 0000 and never written to by
+   * anything. The test above used to name six of them as though they were part of the product, and
+   * a list that protects dead tables is worse than no list: it makes deleting them look like
+   * breaking something. Migration 0024 drops them; a schema file that reintroduces one fails here.
+   *
+   * `chunks.embedding` was the only `vector` column, which is the whole reason the Postgres image
+   * had to carry pgvector. The image is `postgres:17` now, so a re-added vector column would not
+   * merely be dead — it would fail to migrate.
+   */
+  test("does not define the knowledge plane it deleted", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+
+    for (const name of [
+      "documents",
+      "chunks",
+      "documentAcls",
+      "syncRuns",
+      "connectorCursors",
+      "webhookSubscriptions",
+      "connectorInstances",
+      "lafWatchSources",
+      "lafWatchEvents",
+      "lafDigestLog",
+    ]) {
+      expect(schema[name]).toBeUndefined();
+    }
+  });
+
+  /*
+   * The state that belongs in memory, and the assertion that it stays out of the database.
+   *
+   * `computer_approvals`, `computer_repeat_calls` and `computer_repeat_reports` were the database
+   * twins of the approval registry and the repeat counter, and the server wired them rather than
+   * the Maps beside them. Their stated reason was several servers behind a load balancer; this
+   * deployment is one API process per VM (docs/laf/deployment-model.md), so the code was arguing
+   * with the decision record. Migration 0025 drops all three, and a schema file that reintroduces
+   * one fails here.
+   *
+   * `computer_standing_approvals` is deliberately NOT in this list. An allowance whose whole point
+   * is to outlive the turn must outlive the process, so it stays in the database — the test below
+   * is what says so.
+   */
+  test("does not define the pending state it moved back into memory", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+
+    for (const name of [
+      "computerApprovals",
+      "computerRepeatCalls",
+      "computerRepeatReports",
+    ]) {
+      expect(schema[name]).toBeUndefined();
+    }
+    expect(schema.computerStandingApprovals).toBeDefined();
+  });
+
+  /*
+   * The migration behind the assertion above. A table removed from the schema with no migration
+   * behind it leaves the table standing on every database that already has it, and nothing here or
+   * in the type system would say so — the same trap the pin-and-notification test below covers from
+   * the other direction.
+   */
+  test("ships the migration that drops the three orphaned tables", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0025_simple_selene.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    for (const table of [
+      "computer_approvals",
+      "computer_repeat_calls",
+      "computer_repeat_reports",
+    ]) {
+      // `IF EXISTS`, so a database created after this migration — which never had them — walks the
+      // chain without stopping.
+      expect(normalized).toContain(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
+    expect(normalized).not.toContain(`"computer_standing_approvals"`);
   });
 
   test("includes Better Auth's verified Google identity records", () => {

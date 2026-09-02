@@ -88,26 +88,59 @@ Review generated migration files before sharing them. `start.sh` applies existin
 
 ## Quality checks
 
-Run these before opening a pull request:
+The gate. A change is not done until all four pass:
 
 ```sh
-bun run format:check
-bun run lint
 bun run typecheck
-bun run test
-bun run build
+bunx biome lint .
+bun run format:check
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
 
-Integration tests expect a PostgreSQL database with pgvector. Use `start.sh` or point `DATABASE_URL` at a compatible database.
+`bun run build` as well, for anything that touches how the app is built.
 
-They write to whichever database `DATABASE_URL` names and leave their rows behind, so running
-them against the development database leaves test Bots and channels in the app. Point
-`DATABASE_URL` at a database of their own to keep the two apart. Every test's cleanup is scoped
-to the rows that test created — an unscoped `delete(table)` in an `afterEach` once erased every
-routine a person had made, each time the suite ran. Keep it that way: a new integration test
-deletes by its own actor, prefix or Bot id, never the table.
+Integration tests expect a PostgreSQL 17 database. Use `start.sh` or point `DATABASE_URL` at a compatible database.
 
-CI uses `bun run test:ci` to verify the expected test count in addition to normal tests.
+`bun run test:ci` is the one that keeps them off your own data. It reads `DATABASE_URL` for its
+server and credentials only, then runs everything in `<name>_test` on that server — created and
+migrated on first use:
+
+```sh
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
+```
+
+Two runs at once need two databases, or they interfere with each other exactly the way they used
+to interfere with the development database. Give each one a name:
+
+```sh
+LAF_TEST_DB_SUFFIX=mybranch DATABASE_URL=... bun run test:ci   # runs in openbot_test_mybranch
+```
+
+They also need connections. One run peaks at 67 of PostgreSQL's default 100 — every test file that
+touches the database holds its own small pool for the whole run — so a second one fails on `sorry,
+too many clients already`, which reads as broken tests and is a full connection table. Raise the
+limit before running two:
+
+```sh
+POSTGRES_MAX_CONNECTIONS=300 docker compose up -d postgres
+```
+
+It takes effect on container recreation, not on restart, and the default stays 100 so a deployment
+is unaffected.
+
+Bare `bun test` still writes to whatever `DATABASE_URL` names, so it is for one file at a time
+against a database you are willing to lose.
+
+Test rows still get cleaned up, because the tests share the test database with each other. Every
+test's cleanup is scoped to the rows that test created — an unscoped `delete(table)` in an
+`afterEach` once erased every routine a person had made, each time the suite ran. Keep it that way:
+a new integration test deletes by its own actor, prefix or Bot id, never the table.
+
+`test:ci` also verifies the expected test count, one floor per workspace (`server`, `app`,
+`agent-computer`, and `root` for `tests/` plus `agent-bot/`). A file that throws while being
+imported reports no failure at all — its tests simply never register — so the count is asserted
+alongside the result. Lower a floor in `scripts/test-ci.ts` when tests are deliberately removed,
+and say why.
 
 `bun run test:smoke` is separate and needs a deployment that is up:
 
@@ -117,9 +150,50 @@ bun run test:smoke
 ```
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
-suite cannot reach: server to computer, the gateway deciding before the browser acts,
-and the audit row landing. Point it elsewhere with `LAF_API_URL`. Without a deployment it is
-skipped by `bun run test` and says what to start when asked for by name.
+suite cannot reach. In order:
+
+1. The deployment answers for itself, has Bots registered with the runtime, and mints thread ids.
+2. It makes a Bot of its own, serves a Korean shop page from the test process with `Bun.serve`, and
+   sends the Bot's browser to it. The page title carries a nonce minted for the run, so "the
+   computer really loaded it" is checked rather than assumed.
+3. It presses 결제하기 on that page. **Nothing writes a policy first**: what stops the click is the
+   `ask` list a fresh deployment ships, so this is a test of the boundary a person actually gets.
+   The reply is 409 with an approval id, the question is waiting on `/api/approvals/:bot`, somebody
+   answers yes there, the same click is presented with the answer, and the page changes.
+4. It asks again and says no, and the next attempt is refused outright with `laf:declined_recently`
+   rather than asked again.
+5. With a model key, it creates a routine, runs it now, and checks the Bot's answer carries the
+   nonce — which it can only have got by opening the page through its own computer.
+6. It deletes the Bot it made.
+
+What it needs is a whole deployment — Docker, a model key, and a computer that answers — plus a way
+in: it sends no credentials and reads `/api/admin/audit-events`, so the deployment has to be
+admitting it, which locally means `LAF_DEV_NO_AUTH=true`.
+
+| Variable                  | Default                 | Meaning                                                                                    |
+| ------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `LAF_SMOKE`               | unset                   | `1` runs it. `bun run test:smoke` sets it; without it every test skips, so `bun run test` stays honest on a machine with nothing running. |
+| `LAF_API_URL`             | `http://localhost:3001` | The deployment to drive.                                                                   |
+| `LAF_SMOKE_BOT`           | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has five seats and a smoke run per deploy would eat them all. |
+| `LAF_SMOKE_MODEL`         | unset                   | `0` skips the routine turn, for a deployment with no model key. Everything else still runs. |
+| `LAF_SMOKE_FIXTURE_HOST`  | `host.docker.internal`  | How the Bot's browser reaches the machine serving the fixture page. Docker Desktop provides that name; on Linux there is none, so pass the gateway of the computer's own network (`docker inspect <container> --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'`) and start the server with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`, because a gateway address is private and the navigation guard refuses those by default — as it should on anything hosted. |
+
+It used to drive `risk-analyst`, a Bot the tenant package shipped, and `example.com` for a page.
+The package ships no Bot — a Bot starts with nothing set and belongs to the person who made it —
+and somebody else's website gave the journey nothing worth clicking. Its own Bot and its own page
+are what keep the test about the joins it is checking.
+
+### Nightly
+
+`.github/workflows/smoke.yml` runs the same journey against `docker compose`, at 02:40 UTC and on
+`workflow_dispatch`. It builds `agent-computer` rather than pulling `:stable`, so a nightly reports
+on the branch it ran from rather than on the last release, and it runs the API on the runner the
+way `scripts/start.sh` does so the fixture page is reachable from both sides.
+
+**It needs an `OPENAI_API_KEY` secret and skips cleanly without one**, saying so in a notice rather
+than failing: a red cross a fork cannot act on teaches people to ignore the job. `OPENAI_BASE_URL`
+and `BOT_MODEL` are read from repository variables when set, so the nightly can be pointed at the
+same provider a deployment uses.
 
 ## Contribution checklist
 

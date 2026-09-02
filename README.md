@@ -12,14 +12,14 @@
 
 </div>
 
-https://github.com/user-attachments/assets/535ef7ee-1631-4a69-b839-564c56cf90b4
-
 <div align="center">
 
 Make a Bot with nothing but a name, tell it what you want, and it writes down
 what it is for. Watch it work on its own screen, take the wheel when it reaches
 something it should not do alone, then hand it back — or show it how the task is
 done once, and keep that as something you can ask for by name.
+
+Korean first, for the people who run a shop rather than a codebase.
 
 </div>
 
@@ -29,13 +29,27 @@ done once, and keep that as something you can ask for by name.
 
 ## What it is
 
-A Bot is a colleague you can hand a job to. It has a browser of its own with
-your logins in it, it can read and write files, and it keeps working when you
-close the window.
+A Bot is a colleague you can hand a job to. It drives a real browser with your
+logins in it, and it can read and write files.
 
-**One VM per person.** However many Bots you make, they share it — and nobody
-else's Bots are on it. That decision shapes the code, and it is written down in
+Two of the three ways it works keep going when you close the window: a routine
+fires on its clock, and a room with several Bots takes its turn on the server. A
+one-to-one conversation is still driven by the open page and ends with it — the
+turn streams for free that way and needs no relay, and it is the piece of this
+sentence that is not yet true.
+
+**One VM per person, one computer on it.** However many Bots you make, they share
+that computer — its files, its logins, its browser sessions — and nobody else's
+Bots are on it. Each Bot gets its own browser profile inside it, but the thing
+that keeps a Bot in bounds is the gateway in front of the computer, not a
+separate computer. That decision shapes the code, and it is written down in
 [`docs/laf/deployment-model.md`](docs/laf/deployment-model.md).
+
+**It is an app you install.** The engine runs on the VM and
+[`desktop/`](desktop/) is a Tauri window onto it, holding no product logic of its
+own. The order is the PC app first, then mobile, then the browser as a bonus on
+top — the SPA being same-origin is how one codebase reaches all three, not
+evidence that the browser comes first.
 
 **A Bot starts blank.** No personas ship in the box. You make one with a name,
 and either say what it is for or leave it to ask you itself. Up to five.
@@ -50,20 +64,24 @@ between an agent that can use your tools and an agent you can let near them.
 
 ## What we changed
 
-Everything below is ours; the rest of this README describes what we inherited
-and still runs.
+Everything in this table is ours. The rest of this README describes the inherited
+architecture, kept and still running.
 
 | | |
 | --- | --- |
-| **Blank Bots, and onboarding** | No shipped personas. A first run that ends with one Bot of your own. |
-| **A Bot shapes itself** | `update_state` — it writes its own name, its job, its routines, and how hard it thinks, from inside the conversation. |
+| **Blank Bots, and onboarding** | No shipped personas. A first run that ends with one Bot of your own. Five per person. |
+| **A Bot shapes itself** | `update_profile` and `manage_routine` — it writes its own name, its job, how hard it thinks and the routines it runs, from inside the conversation. It cannot reach the rule that decides whether it gets asked about. |
 | **Suggestions, not a catalogue** | Thirty-two jobs to start from, dealt a handful at a time, one per kind of work. |
 | **Answering a boundary for good** | `Always allow`, scoped to a site, a file or a tool — and the scope is on the button, so what you agree to is what happens. |
 | **"Do not ask me about…"** | A sentence you write once; a model applies it to each stopped action. Everything it lets through is recorded as seen by nobody. |
 | **One switch over both** | A deployment can refuse to have its boundary settled without a person, and it covers both of the above. |
 | **Teaching by demonstration** | Do the task once in the Bot's browser. It is written up as a procedure you edit, name, and invoke with `/`. It never records what you typed. |
+| **Routines** | An instruction, a Bot and a clock. It runs with its tools, through the same gateway, and reports back into its own conversation. |
+| **Rooms** | Several Bots in one conversation, with the turn running on the server — a tab that closes mid-turn no longer kills it. |
+| **Connected as the person asking** | Notion and Google Drive, each person consenting for themselves, so two people asking the same question get the answers their own accounts can see. |
 | **Effort** | The one model setting, per Bot, carried into every run — chat, rooms and routines. |
 | **Korean first** | Every user-facing string, enforced by a test. |
+| **One VM per person** | The deployment decides the architecture, not the other way round. |
 
 ## Built on AG-UI
 
@@ -113,41 +131,47 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Try it
 
-- Open `/bot` and ask: `Open news.ycombinator.com and tell me the top story.`
-- Ask the Bot to fill out <https://httpbin.org/forms/post>, then inspect `/admin/audit`.
+- Make a Bot, then ask it: `Open news.ycombinator.com and tell me the top story.`
+- Ask it to fill out <https://httpbin.org/forms/post>, then inspect `/admin/audit`.
 - Open `/admin/boundaries`, add a deny rule or preset, and retry the same browser action.
-- Create a coworker from `/agents`, give it a standing role, and start a channel with it.
+- Give it a routine on `/routines` and press Run now.
 
 ## Main surfaces
 
-| Route                | Purpose                                                            |
-| -------------------- | ------------------------------------------------------------------ |
-| `/`                  | Start and browse channels.                                         |
-| `/agents`            | Create, edit, duplicate, hide, delete, and launch coworkers.       |
-| `/channel/:id`       | Converse with one coworker and view its live screen/profile panel. |
-| `/bot`               | Direct chat with a Bot; `?agent=<id>` selects one.                 |
-| `/skills`            | Create and enable personal skills.                                 |
-| `/settings`          | User preferences.                                                  |
-| `/admin/connectors`  | Configure deployment knowledge sources.                            |
-| `/admin/credentials` | Store write-only encrypted credentials.                            |
-| `/admin/computers`   | View, stop, and reset Bot computers.                               |
-| `/admin/boundaries`  | Configure browser/file/MCP action policy.                          |
-| `/admin/components`  | Publish components and govern which Bots may use them.             |
-| `/admin/playground`  | Draft and publish sandboxed components in the browser.             |
-| `/admin/plugins`     | Configure MCP servers, MCP grants, and deployment skills.          |
-| `/admin/audit`       | Review permitted, refused, and failed actions.                     |
+| Route                         | Purpose                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `/welcome`                    | First run: it ends with one Bot of your own.                                            |
+| `/`                           | The roster, and the composer that starts a conversation with any of them.               |
+| `/agents`                     | Your Bots, the public ones to explore, and the button that makes a new one.             |
+| `/channel/new`                | Start a conversation, with one Bot or several.                                          |
+| `/channel/:id`                | Talk to a Bot, watch its screen, take the wheel, answer what it asks.                   |
+| `/skills`                     | Skills — including the ones recorded by showing a Bot how a task is done.               |
+| `/routines`                   | An instruction, a Bot and a clock. Create, enable, run now, and read what happened.     |
+| `/settings`                   | Your preferences.                                                                       |
+| `/settings/connected-accounts`| Connect and disconnect Notion and Google Drive as yourself.                             |
+| `/admin`                      | Where the operator surfaces below are listed.                                           |
+| `/admin/boundaries`           | Configure browser/file/MCP action policy.                                               |
+| `/admin/audit`                | Review permitted, refused, and failed actions.                                          |
+| `/admin/computers`            | View, stop, and reset computers.                                                        |
+| `/admin/credentials`          | Store write-only encrypted credentials.                                                 |
+| `/admin/components`           | Publish components and govern which Bots may use them.                                  |
+| `/admin/playground`           | Draft and publish sandboxed components in the browser.                                  |
+| `/admin/plugins`              | Configure MCP servers, MCP grants, and deployment skills.                                |
+| `/sign`                       | Sign in, when the deployment has authentication configured.                             |
 
 ## Features
 
 - **One computer per account**: every Bot you make shares your computer — files, logins and browser sessions carry from one Bot to the next, which is what lets them hand work to each other. Bots are not a security boundary; the gateway in front of the computer is.
 - **The gateway is the only way in**: it resolves the target from a server-held snapshot, evaluates the policy, writes the audit row, and only then calls the computer. There is no path that acts without the record existing first.
-- **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `file.*` and `mcp.*`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
+- **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `submit`, `file.*`, `mcp.*` and `repeat.count`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
 - **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
 - **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork) and Google Drive (read-only, via an admin-registered OAuth client). Each person consents for themselves and calls run on their own grant, so two people asking the same question get the answers their own accounts can see. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
+- **Show it once**: drive the Bot's browser through a task yourself and the demonstration is written up as a procedure you edit, name and invoke with `/`. The recorder keeps that typing happened and into which field — never a value, passwords included, and a test serialises the whole record to prove it.
+- **Routines and rooms run on the server**: a routine fires on its clock with the Bot's tools underneath the same gateway, and a room with several Bots takes its turn server-side, so closing the window does not end either.
 - **An audit trail you can read**: `/admin/audit` lists what was permitted, what was refused and what failed, and every refusal carries the rule that caused it.
 - **Credentials encrypted at rest**: stored through `/admin/credentials`, never returned by an API, and redacted from audit events.
 - **Loopback by default**: computers bind to `127.0.0.1` and require a per-container token, so nothing reaches a logged-in browser by knowing its port.
@@ -166,12 +190,10 @@ From `/agents`, create a coworker with:
 
 The server validates agent endpoints with the same target checks used for browser navigation. If no custom endpoint is set, product-created coworkers use `MANAGED_AGENT_AG_UI_URL`.
 
-Tenant package agents are declared in `agents.yaml` as either:
+Every coworker is made this way. The tenant package could once declare some of its own; it ships
+none, and a Bot belongs to the person who made it.
 
-- `built-in`, with a system prompt; or
-- `remote-ag-ui`, with an endpoint.
-
-See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/coworkers.md).
+See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](docs/laf/coworkers.md).
 
 ## Configuration
 
@@ -181,26 +203,27 @@ See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/
 - `KEY_ENCRYPTION_KEY`
 - `MANAGED_AGENT_AG_UI_URL`
 
-CopilotKit Intelligence is optional here and off by default: durable threads and
-memory live in this deployment's own PostgreSQL. Set all four of
-`INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`
-and `COPILOTKIT_LICENSE_TOKEN` to use it instead. A partial set is refused
-rather than quietly ignored — somebody meant to configure it and got it wrong.
+Durable threads and memory live in this deployment's own PostgreSQL, and there
+is nowhere else they can live: four `INTELLIGENCE_*` variables once pointed them
+at CopilotKit's hosted runtime instead, no deployment ever set them, and they
+are gone.
 
 Settings worth knowing:
 
-| Variable                             | Use                                                                       |
-| ------------------------------------ | ------------------------------------------------------------------------- |
-| `LAF_DEV_NO_AUTH`                | Admits every request as one administrator. How it runs today.             |
-| `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
-| `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
-| `COMPUTER_TOKEN`                     | Secret every Bot computer request must present. `start.sh` sets one.      |
-| `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                  |
-| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                             |
-| `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.            |
-| `DEPLOYMENT_ID`                      | Names this deployment in the thread ids it mints.                         |
+| Variable                             | Use                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `LAF_DEV_NO_AUTH`                    | Admits every request as one fixed administrator, so a laptop needs no OAuth credentials. Local only: with `NODE_ENV=production` the server refuses to start rather than ignoring it. `.env.example` ships it on. |
+| `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy. Moves the whole deployment. |
+| `BOT_MODEL`                          | The model, read by `agent-bot` and substituted into the tenant package. Sent verbatim.              |
+| `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.               |
+| `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                                            |
+| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                                                       |
+| `BOT_SEATS_PER_ACCOUNT`              | Bots one person may have. Five.                                                                     |
+| `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.                                       |
+| `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                               |
 
-Full reference: [docs/configuration.md](docs/configuration.md).
+Full reference — every variable the code actually reads, and nothing it does not:
+[docs/configuration.md](docs/configuration.md).
 
 ## Architecture
 
@@ -210,7 +233,7 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 | `server`                 | 3001                       | Hono API, CopilotKit runtime, auth, policy, audit, plugins, components, coworkers, and channels. |
 | `agent-computer`         | 4100                       | Chromium plus `/workspace` and browser profile.                                                  |
 | `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                           |
-| PostgreSQL with pgvector | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and knowledge.      |
+| PostgreSQL 17            | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and routines.      |
 
 The server gateway is the product/API path for Bot browser and file tool calls.
 It resolves the target, evaluates policy, writes an audit row, and then calls
@@ -221,7 +244,10 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Sign in
 
-`LAF_DEV_NO_AUTH` is the default because it needs no OAuth credentials and no consent screen. To sign in for real instead, declare the providers and set the values that back them:
+`.env.example` ships `LAF_DEV_NO_AUTH=true`, because a fresh clone should run without OAuth
+credentials and a consent screen. It is for a laptop and only a laptop: with `NODE_ENV=production`
+the server refuses to start rather than quietly running without authentication. A deployment
+removes it and declares its providers instead:
 
 ```sh
 AUTH_PROVIDERS=google      # google, kakao, naver — comma separated
@@ -235,7 +261,7 @@ GOOGLE_OAUTH_CLIENT_SECRET=
 
 A deployment can also sign people in through a shared OIDC broker instead of its own provider apps, as `AUTH_PROVIDERS=laf` plus `LAF_OIDC_ISSUER` and `LAF_OIDC_CLIENT_ID` — a public client with PKCE, so there is no secret to configure. See [docs/laf/deploying.md](docs/laf/deploying.md).
 
-Then set the two that decide who gets in and from where:
+Then set the three that decide who gets in and from where:
 
 - `TRUSTED_ORIGINS` — where the app is served from, `http://localhost:3010` locally. It defaults to `http://localhost:3000`, which is not where `start.sh` serves the app.
 - `INITIAL_ADMIN_EMAILS` — comma separated. An address listed here becomes an administrator the first time it signs in; everybody else becomes a user.
@@ -253,12 +279,13 @@ A partial set is refused rather than ignored: the server will not start with `BE
 
 ## Development
 
+The gate. A change is not done until all four pass:
+
 ```sh
-bun run format:check
-bun run lint
 bun run typecheck
-bun run test
-bun run build
+bunx biome lint .
+bun run format:check
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
 
 After changing the Drizzle schema:
@@ -272,21 +299,34 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 
 ## Documentation
 
-Ours:
+[docs/README.md](docs/README.md) indexes all of it. The ones worth naming here:
 
-- [docs/laf/deployment-model.md](docs/laf/deployment-model.md) — one VM per person, and what follows from it
+- [docs/laf/user-guide.md](docs/laf/user-guide.md) — 한국어 사용 설명서, for the person using it rather than building it
+- [docs/laf/deployment-model.md](docs/laf/deployment-model.md) — one VM per person, and everything that follows from it. The decision record
 - [docs/laf/deploying.md](docs/laf/deploying.md) — how one is actually stood up, and what goes wrong at each step
-- [docs/laf/onboarding-guide.md](docs/laf/onboarding-guide.md)
-- [docs/laf/mcp-contract.md](docs/laf/mcp-contract.md)
+- [docs/architecture.md](docs/architecture.md), [docs/configuration.md](docs/configuration.md), [docs/development.md](docs/development.md) — inherited from upstream and kept true to what this fork runs
 - [CLAUDE.md](CLAUDE.md) — how to work in this repository
 
-Inherited, and still accurate:
+## Credits
 
-- [docs/README.md](docs/README.md)
-- [docs/architecture.md](docs/architecture.md)
-- [docs/configuration.md](docs/configuration.md)
-- [docs/development.md](docs/development.md)
-- [docs/coworkers.md](docs/coworkers.md)
+Built on [CopilotKit's OpenBot](https://github.com/CopilotKit/openbot) (MIT), whose architecture this
+fork keeps: AG-UI Bots, one governed gateway, an audit row for everything.
+
+Two other products were read closely and are credited where they were followed, in the commits and
+in the comments:
+
+- **xAI's Grok Bot** — the one-VM-per-account shape, and the shape of group rooms. A room's turn
+  running on the server rather than in the browser, with a Bot answering out of its own
+  conversation, is ported from Grok Bot 0.24 rather than invented; so are the notification rules,
+  which were read out of its shipped bundle and copied rather than re-derived, so that mute, hidden
+  and throttle are written once and cannot drift apart.
+- **Nous Research's Hermes Bot Mode** (`hermes-agent` 0.21.0) — a handoff landing in the answering
+  Bot's own conversation, "durable and inspectable, not fire-and-forget", rather than only in the
+  caller's window and one audit row. And the unhide affordance on the roster.
+
+No code was taken from either. What was taken was a decision each of them had already made well,
+measured against what was here before it was adopted. Bot avatars carry their own attribution in
+[NOTICE](./NOTICE).
 
 ## Contributing
 

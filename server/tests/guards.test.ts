@@ -75,8 +75,10 @@ describe("server authorization", () => {
         onboarded: true,
       },
       // What this deployment can do, beside who is asking. True when nothing says otherwise, so an
-      // app talking to a server that has not been told reads it the same way the package defaults.
-      deployment: { effort: true },
+      // app talking to a server that has not been told reads it the same way the package defaults —
+      // and each of these decides whether a control is drawn at all, so a wrong answer here is a
+      // control that saves and reaches nothing.
+      deployment: { effort: true, autoReview: true },
     });
   });
 

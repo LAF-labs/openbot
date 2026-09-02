@@ -14,7 +14,8 @@
  *
  * NATIVE NOTIFICATIONS. A webview's `Notification` is unsupported (WKWebView) or bound to the
  * webview's own lifetime. The shell's go through the OS centre and survive the window being hidden
- * behind others — which is the whole reason the person installed an app.
+ * behind others — which is the whole reason the person installed an app. They carry a destination,
+ * because since the shell grew a tray the window it should come back to may not be on screen at all.
  *
  * LINKS OUT. Every link a Bot writes is rendered `target="_blank"` (`lib/markdown.tsx`), and a
  * webview has no second window to put one in: in the shell, clicking any link in any message did
@@ -30,14 +31,14 @@ type TauriGlobal = {
       args?: Record<string, unknown>,
     ) => Promise<unknown>;
   };
+  /*
+   * Permission only. Posting a notice goes through the shell's own `post_notice` command instead of
+   * this plugin's `sendNotification`, so that the tray's mute and the notice's destination have one
+   * place to live rather than being things the page could route around or drop on the floor.
+   */
   notification?: {
     isPermissionGranted?: () => Promise<boolean>;
     requestPermission?: () => Promise<string>;
-    sendNotification?: (options: {
-      title: string;
-      body?: string;
-      silent?: boolean;
-    }) => void;
   };
 };
 
@@ -84,28 +85,84 @@ export async function openExternal(url: string): Promise<boolean> {
 }
 
 /**
- * Show a native notification through the shell. Resolves false when there is no shell or it was
- * not permitted, so the caller can fall back to the webview's own `Notification`.
+ * Whether the shell may already post notices, or nothing when there is no shell.
  *
- * The OS asks for permission on its own terms the first time; the answer is cached by the shell.
+ * The shell answers with a boolean and no third state: Tauri's plugin has `isPermissionGranted`,
+ * which is false both for "the person said no" and for "nobody has asked yet". So "not granted" is
+ * reported as something still worth asking about, which is the honest reading of a boolean — and
+ * asking again on a denied system is a no-op rather than a second popup.
+ */
+export async function shellNoticePermission(): Promise<
+  "granted" | "ask" | null
+> {
+  const notification = shell()?.notification;
+  if (!notification?.isPermissionGranted) return null;
+  try {
+    return (await notification.isPermissionGranted?.()) ? "granted" : "ask";
+  } catch {
+    return null;
+  }
+}
+
+/** Ask the OS, through the shell. Null when there is no shell to ask through. */
+export async function requestShellNoticePermission(): Promise<
+  "granted" | "denied" | null
+> {
+  const notification = shell()?.notification;
+  if (!notification?.isPermissionGranted) return null;
+  try {
+    if (await notification.isPermissionGranted?.()) return "granted";
+    if (!notification.requestPermission) return null;
+    return (await notification.requestPermission()) === "granted"
+      ? "granted"
+      : "denied";
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where a notice should land, if the person acts on it.
+ *
+ * A kind and an id, not a path. The shell keeps the list of paths it is willing to open — the same
+ * list its `lafagent://` links go through — so nothing this page says can point that window at an
+ * address somebody did not choose to visit.
+ */
+export type NoticeDestination = { kind: "approve" | "channel"; id: string };
+
+/**
+ * Show a native notification through the shell. Resolves false when there is no shell or it could
+ * not be posted, so the caller can fall back to the webview's own `Notification`.
+ *
+ * TRUE MEANS THE SHELL DEALT WITH IT, WHICH INCLUDES DELIBERATE SILENCE. The shell's tray carries a
+ * "알림 받기" switch, and a mute the page could route around by falling back to its own notification
+ * would be no mute at all. A shell that refuses because the person asked for quiet answers the same
+ * way as one that posted: handled.
+ *
+ * It goes through the shell's own `post_notice` rather than the notification plugin's binding for
+ * that reason and one more — the destination has to be recorded somewhere the shell can reach it,
+ * because the desktop plugin cannot report a click (see `bot-notifications.ts`).
  */
 export async function showShellNotice(options: {
   title: string;
   body: string;
   silent: boolean;
+  destination?: NoticeDestination;
 }): Promise<boolean> {
+  const invoke = shell()?.core?.invoke;
   const notification = shell()?.notification;
-  if (!notification?.sendNotification) return false;
+  if (!invoke || !notification) return false;
   try {
     let granted = (await notification.isPermissionGranted?.()) ?? false;
     if (!granted && notification.requestPermission) {
       granted = (await notification.requestPermission()) === "granted";
     }
     if (!granted) return false;
-    notification.sendNotification({
+    await invoke("post_notice", {
       title: options.title,
       body: options.body,
       silent: options.silent,
+      destination: options.destination ?? null,
     });
     return true;
   } catch {

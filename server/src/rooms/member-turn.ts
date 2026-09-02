@@ -1,25 +1,20 @@
 /**
  * One Bot, one turn, in a room.
  *
- * The same loop a routine runs — `runUnattended` — with a different note at the top, a way to
- * speak, and somebody watching. That it is the same loop is the point: policy, grants, approvals,
- * the audit row, the step budget, the deadline and the "a stream that stopped is a failure" rule
- * are all one implementation, so a Bot in a room is governed exactly as a Bot on a schedule is.
+ * The same loop a routine runs — `runUnattended` — in a different mode, with a way to speak and
+ * somebody watching. That it is the same loop is the point: policy, grants, approvals, the audit
+ * row, the step budget, the deadline and the "a stream that stopped is a failure" rule are all one
+ * implementation, so a Bot in a room is governed exactly as a Bot on a schedule is.
  *
- * What this file adds is only what a room needs: the member is told where it is (`roomConduct`),
- * asked for its turn (`roomTurnPrompt`), given `send_message`, and its messages are posted AS IT
- * SENDS THEM rather than at the end — so a member's first sentence reaches the room while it is
- * still deciding whether to add a second.
+ * What this file adds is only what a room needs: the member is told where it is (the prompt
+ * composer's room mode), asked for its turn (`roomTurnPrompt`), given `send_message`, and its
+ * messages are posted AS IT SENDS THEM rather than at the end — so a member's first sentence
+ * reaches the room while it is still deciding whether to add a second.
  */
 import type { AbstractAgent, Message } from "@ag-ui/client";
 import type { RunLedger } from "../runner/run-ledger";
 import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
-import {
-  roomConduct,
-  roomTurnPrompt,
-  type RoomLine,
-  type RoomMember,
-} from "./prompt";
+import { roomTurnPrompt, type RoomLine, type RoomMember } from "./prompt";
 import { roomToolkit } from "./send-message";
 import { watchRoomSpeech } from "./stream";
 
@@ -84,7 +79,9 @@ export async function runMemberTurn(
     await runUnattended(input.agent, roomTurnPrompt(input), {
       toolkit,
       timeoutMs: input.timeoutMs,
-      preamble: roomConduct(input.member),
+      // How a room works is said by the prompt composer, from `shared/prompt/mode/room.ko.ts`.
+      // This only says where the run is; `roomTurnPrompt` still ends the request with the turn.
+      mode: "room",
       ...(input.history ? { history: input.history } : {}),
       watch: watchRoomSpeech(input.watch),
     });

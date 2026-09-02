@@ -41,10 +41,6 @@ export const auditEventTypes = [
   // row while only successes were recorded.
   "credential.rotation_refused",
   "credential.revoked",
-  "connector.sync_succeeded",
-  "connector.sync_failed",
-  "knowledge.searched",
-  "agent.invoked",
   /**
    * A Bot's stream stopped producing anything and the turn was ended for it.
    *
@@ -78,6 +74,22 @@ export const auditEventTypes = [
   // is what makes a quiet downgrade a visible pause instead of an escalation.
   "mcp.tool_definition_changed",
   "mcp.tool_definition_approved",
+  /**
+   * The same tool call on somebody else's server, again, and again.
+   *
+   * `computer.action_repeated`'s twin, and it is here because the settle wave gave the MCP path the
+   * counter the browser had been using and then wrote nothing with it. So `repeat.count >= 5` could
+   * refuse a stuck Bot's fifth call to a vendor's tool while the trail held five ordinary
+   * `mcp.call_succeeded` rows and nothing anywhere saying they were the same call — the exact
+   * blindness `computer.action_repeated` was added to end, on the other half of the boundary.
+   *
+   * Its own type rather than a shared `action_repeated`: the payload names a server and a tool where
+   * the browser's names a page and an element, and the admin trail's filters are per type.
+   *
+   * Not a refusal. Nothing was stopped; a Bot did the same thing again, which is often a retry about
+   * to work. Written once per threshold crossed, never per attempt.
+   */
+  "mcp.call_repeated",
   // Every action a Bot takes on its computer, allowed or refused. Both, always: a trail that records
   // only what was permitted cannot answer whether the Bot tried.
   "computer.action_allowed",
@@ -168,6 +180,16 @@ export const auditEventTypes = [
    */
   "computer.policy_loaded",
   /**
+   * Somebody changed the boundary, and why.
+   *
+   * The table holds what is in force now and who saved it last, which answers "what are the rules"
+   * and never "what were they, and what was the argument for loosening them". This row is that
+   * second question: it carries the reason the administrator gave, and it names the switch that
+   * decides whether a question can be settled without a person seeing the action, because that is
+   * the one change on the page that can stand the whole boundary down.
+   */
+  "computer.policy_changed",
+  /**
    * That every Bot shares the account's one computer, said out loud at boot.
    *
    * The sharing is a product decision (computer/assignment.ts), and it is invisible: the screens
@@ -210,6 +232,15 @@ export const auditEventTypes = [
   "coworker.asked",
   /** A routine fired, and how it went. The run record prunes; this row is the history of record. */
   "routine.ran",
+  /**
+   * A routine's window came and went while nothing was running, and was let go rather than caught up.
+   *
+   * The evidence that a scheduled thing did not happen. Without it, a machine down overnight leaves
+   * a routine with a gap in its history and nothing anywhere saying whether it was skipped, failed,
+   * or was never armed — three different problems that look identical from a missing row. Carries
+   * how late the window was, so "the VM was off for nine hours" is readable from the trail.
+   */
+  "routine.skipped",
 
   /*
    * What a Bot may answer with, decided per Bot and recorded like anything else it is trusted with.
@@ -247,6 +278,23 @@ export const auditEventTypes = [
   "component.function_called",
   "component.function_refused",
   "component.function_failed",
+
+  /*
+   * A person taking their data with them, and a person leaving.
+   *
+   * `account.exported` is recorded when the export is ASKED FOR, not when it arrives: the whole of
+   * somebody's account leaving this deployment is the event, and a row written only on a completed
+   * download would miss the one case anybody investigates.
+   *
+   * `account.deleted` is the last thing written under the departing person, and it is written under
+   * their PSEUDONYM — `deleted-<hash>`, the same string every earlier row of theirs is re-pointed
+   * at. It carries the counts per table, so "what was removed" is answerable a year later from a
+   * trail in which nothing else about them can be resolved to a person. The payload also says
+   * whether the Bot's browser profile on disk was actually wiped, because that lives in a volume no
+   * row can speak for.
+   */
+  "account.exported",
+  "account.deleted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

@@ -23,27 +23,32 @@ import type { ActionPolicy } from "./policy";
 const CURRENT = "current";
 
 /**
- * What a deployment allows when it has not said otherwise.
+ * What a deployment enforces when it has not said otherwise.
  *
- * Permissive, and written down rather than implied. The policy engine is fail-closed: an absent
- * policy denies, and a broken rule denies. This default is a separate decision, and it is deliberately
- * an explicit `allow` rather than a special "unconfigured" case, because a Bot that can look at a page
- * and touch nothing is not a product, and the first thing a person does is ask it to fill something in.
- *
- * Out of the box, LAF Agent lets a Bot act, records every action and gives an administrator somewhere
- * to write the first restriction.
+ * Lives in `default-policy.ts` with the word and host lists it is built from, and is re-exported here
+ * because this is where everything that wants a starting policy already looks.
  */
-export const DEFAULT_ACTION_POLICY: ActionPolicy = {
-  mode: "enforce",
-  deny: [],
-  ask: [],
-  allow: ["true"],
-};
+export { DEFAULT_ACTION_POLICY } from "./default-policy";
+
+/**
+ * The one mode there is, written into the column the table still has.
+ *
+ * `dry-run` is gone (see policy.ts), and the column is not: dropping it is a migration, and a
+ * migration to delete a field nothing reads is a worse trade than one honest constant. Rows written
+ * before this say `dry-run` and mean nothing now, which is why `load` does not read the column at all.
+ */
+const ENFORCED = "enforce";
 
 export type PolicyStore = {
   /** Synchronous on purpose: this is asked on every action. */
   get: () => ActionPolicy;
-  /** Persisted before the in-memory copy changes, so a reported success is a saved rule. */
+  /**
+   * Persisted before the in-memory copy changes, so a reported success is a saved rule.
+   *
+   * WHO, and not why. The reasoning behind a change belongs in the audit trail beside the change
+   * itself, where a reader is already looking and where it cannot be overwritten by the next save;
+   * `routes.ts` writes that row. This table holds what is in force now.
+   */
   set: (policy: ActionPolicy, by?: string) => Promise<void>;
   /** Back to what configuration says, forgetting the saved one. */
   reset: () => Promise<void>;
@@ -72,7 +77,7 @@ export function createPolicyStore(
           .insert(actionPolicy)
           .values({
             id: CURRENT,
-            mode: next.mode,
+            mode: ENFORCED,
             deny: next.deny,
             ask: next.ask,
             allow: next.allow,
@@ -83,7 +88,7 @@ export function createPolicyStore(
           .onConflictDoUpdate({
             target: actionPolicy.id,
             set: {
-              mode: next.mode,
+              mode: ENFORCED,
               deny: next.deny,
               ask: next.ask,
               allow: next.allow,
@@ -116,7 +121,9 @@ export function createPolicyStore(
       if (!row) return "configuration";
 
       current = {
-        mode: row.mode as ActionPolicy["mode"],
+        // The mode column is not read. A row saved when `dry-run` existed said "record it and let it
+        // through", and honouring that now would bring the mode back for exactly the deployments
+        // that had switched the boundary off.
         deny: [...row.deny],
         ask: [...row.ask],
         allow: [...row.allow],
@@ -136,7 +143,6 @@ export function createPolicyStore(
 
 function clone(policy: ActionPolicy): ActionPolicy {
   return {
-    mode: policy.mode,
     deny: [...policy.deny],
     ask: [...policy.ask],
     allow: [...policy.allow],
@@ -165,12 +171,22 @@ export function parseActionPolicy(
   }
   const candidate = input as Record<string, unknown>;
 
-  const mode = candidate.mode;
-  if (mode !== "enforce" && mode !== "dry-run") {
-    return {
-      ok: false,
-      error: 'mode must be "enforce" or "dry-run".',
-    };
+  /*
+   * `mode` IS READ AND THROWN AWAY, rather than refused.
+   *
+   * Everything enforces now. A policy that still carries `"mode": "dry-run"` — saved before that
+   * decision, or copied out of an older `.env.example` — must not stop a deployment from booting
+   * over a field that no longer means anything, and must not be silently believed either. So it
+   * parses, it is said out loud, and the boundary it describes is enforced.
+   */
+  if (candidate.mode !== undefined && candidate.mode !== "enforce") {
+    console.warn(
+      JSON.stringify({
+        type: "computer-policy-mode-ignored",
+        was: candidate.mode,
+        now: "enforce",
+      }),
+    );
   }
 
   const lists: Record<"deny" | "ask" | "allow", string[]> = {
@@ -200,7 +216,6 @@ export function parseActionPolicy(
   return {
     ok: true,
     policy: {
-      mode,
       deny: lists.deny,
       ask: lists.ask,
       allow: lists.allow,

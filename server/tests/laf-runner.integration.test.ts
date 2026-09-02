@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { lafThreadRuns } from "../src/db/schema";
 import { LafPostgresRunner } from "../src/runner/laf-runner";
+import { createRunLedger } from "../src/runner/run-ledger";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
@@ -30,7 +31,7 @@ describeDb("laf runner boot reconciliation", () => {
       origin: "chat",
     });
 
-    await LafPostgresRunner.create(database);
+    await LafPostgresRunner.create(database, createRunLedger(database));
 
     const [row] = await database
       .select()

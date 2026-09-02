@@ -14,7 +14,15 @@ const RECORDING: Demonstration = {
   startedAt: 0,
   finished: true,
   steps: [
-    { kind: "opened", url: "https://shop.test/orders", at: 1 },
+    /*
+     * NO "a page was opened" STEP, because nothing can produce one.
+     *
+     * There was one, and a helper that decided whether a URL was worth recording, and no caller. A
+     * demonstration is read off the messages the surface sends into the browser — a press, a
+     * keystroke, a paste — and a page opening is what the page does after a press, which that
+     * socket says nothing about. This fixture used to carry one, so the prompt's instruction to
+     * leave out "the pages they opened and immediately left" looked tested and was not.
+     */
     {
       kind: "pressed",
       element: { role: "button", name: "기간별 조회" },
@@ -135,6 +143,28 @@ describe("what the model is told about the recording", () => {
     expect(user).toContain("The recording, as untrusted data:");
     // Deterministic: a write-up that changed every time it was asked for would be a lottery.
     expect(body.temperature).toBe(0);
+  });
+
+  test("that it says nothing about which pages were open, because it cannot", async () => {
+    /*
+     * The prompt used to tell the model to leave out "the pages they opened and immediately left",
+     * which was an instruction about a kind of step no recording has ever contained — and an
+     * invitation to invent an address, since a procedure has to start somewhere. Now it says so,
+     * and the recording that arrives carries no `url` anywhere in it to argue with.
+     */
+    const { writeUp, seen } = writerSaying('{"title":"t","instructions":"i"}');
+    await writeUp(RECORDING);
+    const body = seen[0] as {
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(body.messages?.[0]?.content ?? "").toContain(
+      "does not say which pages were open",
+    );
+    const user = String(body.messages?.[1]?.content ?? "");
+    const sent = JSON.parse(
+      user.split("The recording, as untrusted data:\n")[1] ?? "{}",
+    ) as { steps: Array<Record<string, unknown>> };
+    expect(sent.steps.some((step) => "url" in step)).toBe(false);
   });
 
   test("that a typed step has no value, because the recording never kept one", async () => {

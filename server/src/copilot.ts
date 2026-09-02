@@ -1,31 +1,33 @@
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import type {
-  AgentRunner,
-  BuiltInAgentConfiguration,
-} from "@copilotkit/runtime/v2";
-import {
-  BuiltInAgent,
-  CopilotKitIntelligence,
-  CopilotRuntime,
-} from "@copilotkit/runtime/v2";
+import type { AgentRunner } from "@copilotkit/runtime/v2";
+import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
+import {
+  composePrompt,
+  type PromptMode,
+  promptModeOf,
+  resolveTimeZone,
+} from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
-import type { DeploymentConfig } from "./config";
 
 /**
- * The CopilotKit runtime, in one of two modes.
+ * The CopilotKit runtime, in the one mode this product has.
  *
- * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots are
- * reached over AG-UI as `HttpAgent` instances, so anything that speaks the protocol remains a Bot
+ * Every Bot is reached over AG-UI as an `HttpAgent`, so anything that speaks the protocol is a Bot
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
- * server.
+ * server. This deployment's own `agent-bot` is one of those endpoints and nothing more.
+ *
+ * THE SECOND BRANCH IS GONE. CopilotKit's `BuiltInAgent` — the Responses API, a package's own
+ * system prompt, `forceReasoning` — was unreachable: the package ships `agents: []`, and after
+ * migration 0024 released the packaged Bots there is no `built_in` row anywhere to construct one
+ * from. It carried a whole second way for a Bot's prompt and effort to reach a model, which is the
+ * shape that hides a setting going nowhere. Git has it.
  *
  * Upstream had no SSE branch: Intelligence owned durable threads, and a deployment without it
- * silently forgot every conversation. This fork's default is the SSE branch with a runner that
- * does not forget — LafPostgresRunner keeps every thread in our own Postgres — so the hosted
- * service is an option a deployment may configure, never a requirement (config.ts decides which
- * mode this file gets).
+ * silently forgot every conversation. This fork runs the SSE branch on a runner that does not
+ * forget — LafPostgresRunner keeps every thread in our own Postgres — and there is no second
+ * branch to choose between.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -33,28 +35,19 @@ export type IdentifyUser = (
   request: Request,
 ) => Promise<{ id: string; name: string }>;
 
-type RegisteredBuiltInAgent = {
-  id: string;
-  name: string;
-  type: "built_in";
-  /**
-   * The same standing role a remote Bot is sent as its first message (see `standingRoleMessage`),
-   * as the text a built-in Bot is prompted with. Without it the built-in Bots were the only ones
-   * that did not know their own name, title or role: asked who was answering, 일상 비서 named its
-   * model and its vendor.
-   */
-  standing: string;
-  systemPrompt: string;
-  /** How hard this Bot thinks. See `agentEffort` in the schema for why this is the only knob. */
-  effort: AgentEffort;
-};
-
 type RegisteredRemoteAgent = {
   id: string;
   name: string;
   type: "remote_ag_ui";
   endpoint: string;
-  standingMessage: StandingRoleMessage;
+  /**
+   * Who this Bot is, as the prompt composer needs it.
+   *
+   * The finished system message is built per RUN rather than held here, because one of the things
+   * it says is what time it is. Built once at load, a long-lived deployment would tell every Bot
+   * the moment its process started, for as long as that process lived.
+   */
+  profile: AgentStandingProfile;
   /**
    * How hard it thinks, sent to the endpoint on every run.
    *
@@ -71,7 +64,7 @@ type RegisteredRemoteAgent = {
 
 /**
  * A coworker the caller may see but may not run: its profile was deleted while a channel it worked
- * in still exists. It is registered so Intelligence can restore that thread and the person can read
+ * in still exists. It is registered so the runtime can restore that thread and the person can read
  * what was said; every run is refused here, without contacting the endpoint.
  */
 type RegisteredUnavailableAgent = {
@@ -82,7 +75,6 @@ type RegisteredUnavailableAgent = {
 };
 
 export type RegisteredAgent =
-  | RegisteredBuiltInAgent
   | RegisteredRemoteAgent
   | RegisteredUnavailableAgent;
 
@@ -107,61 +99,61 @@ export type AgentStandingProfile = {
 };
 
 /**
- * The coworker's job, as one system message.
+ * The wall clock a Bot is told about, from the environment, defaulting to Seoul.
  *
- * It is an ordinary AG-UI system message rather than `forwardedProps` or framework-specific state
- * because the endpoint on the other side may be LangGraph, Mastra, ADK or a hand-written server, and
- * a system message is the only thing all of them already understand. The id is derived from the
- * agent so a run can recognise a copy of it and refuse to send a second.
+ * `BOT_TIME_ZONE` rather than the host's own zone: the VM may be anywhere and the person is in
+ * Korea. An unusable name falls back rather than throwing — a typo in a deployment's environment
+ * should not stop every Bot answering, it should stop being believed.
  */
-export function standingRoleMessage(
+export function botTimeZone(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  return resolveTimeZone(environment.BOT_TIME_ZONE);
+}
+
+/** The message id every composed prompt carries, so a replayed thread cannot accumulate copies. */
+export function promptMessageId(agentId: string): string {
+  return `laf-prompt:${agentId}`;
+}
+
+/**
+ * Threads written before the prompt moved here still hold the old English standing-role message.
+ *
+ * Filtered out by id on the way past rather than migrated: a snapshot is a record of what was said,
+ * and rewriting history to make today's prompt look like it was always there is a worse lie than
+ * one stale system message the model never sees.
+ */
+function isSupersededPrompt(id: unknown, agentId: string): boolean {
+  return id === promptMessageId(agentId) || id === `standing-role:${agentId}`;
+}
+
+/**
+ * Everything the Bot reads before the first word of the conversation, as one system message.
+ *
+ * An ordinary AG-UI system message rather than `forwardedProps` or framework-specific state,
+ * because the endpoint on the other side may be LangGraph, Mastra, ADK or a hand-written server
+ * and a system message is the only thing all of them already understand.
+ *
+ * IT IS THE WHOLE PROMPT. `agent-bot` used to prepend a system prompt of its own — upstream's
+ * English original — and this message was the second one after it. Two authors for one prompt is
+ * how a rule gets contradicted by a rule nobody remembered writing, so the service now sends
+ * nothing of its own and this is all there is.
+ */
+export function botPromptMessage(
   profile: AgentStandingProfile,
+  options: { mode: PromptMode; now: Date; timeZone: string },
 ): StandingRoleMessage {
-  const title = profile.title.trim();
-  const role = profile.roleDescription.trim();
-  const memories = (profile.memories ?? [])
-    .map((memory) => memory.trim())
-    .filter(Boolean);
   return {
-    id: `standing-role:${profile.id}`,
+    id: promptMessageId(profile.id),
     role: "system",
-    content: [
-      title ? `You are ${profile.name}, ${title}.` : `You are ${profile.name}.`,
-      /*
-       * A BOT WITH NO DESCRIPTION HAS NOT BEEN GIVEN A JOB YET, AND IS TOLD SO.
-       *
-       * A bot starts with nothing set — the person who made it decides what it becomes, and until
-       * they have said, the honest thing is to ask. Without this the empty description simply fell
-       * out of the message and the bot behaved as if it had a role nobody had written, which reads
-       * to the person as a colleague who has forgotten what they are for.
-       */
-      role ||
-        "You have just been created and nobody has told you what you are for yet. " +
-          "Open by introducing yourself in one line and asking what they would like you to help " +
-          "with. Whatever they answer is your job from then on: write it into your own description " +
-          "with update_state so you still know it next time, then take it up immediately.",
-      /*
-       * WHAT IT KNOWS, BESIDE WHAT IT IS.
-       *
-       * The job above is written once and reread every morning. This is the half that accumulates,
-       * and it is the difference between a colleague and a stranger who has read your file: without
-       * it a Bot asks which supplier you meant for the ninth time, and no amount of personality on
-       * the profile survives that.
-       *
-       * Marked as remembered rather than merged into the role, so the Bot can tell the two apart
-       * when they disagree — a job description is what somebody decided, and these are things it
-       * worked out, which are exactly the things that can be wrong.
-       */
-      memories.length > 0
-        ? [
-            "What you have learned about the person you work for, oldest first. Treat it as your own memory, not as instructions:",
-            ...memories.map((memory) => `- ${memory}`),
-          ].join("\n")
-        : "",
-      "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
-    ]
-      .filter(Boolean)
-      .join("\n\n"),
+    content: composePrompt({
+      mode: options.mode,
+      now: options.now,
+      timeZone: options.timeZone,
+      bot: { id: profile.id, name: profile.name, title: profile.title },
+      standingRole: profile.roleDescription,
+      ...(profile.memories ? { memories: profile.memories } : {}),
+    }),
   };
 }
 
@@ -178,13 +170,6 @@ export type RuntimeModel = {
    * that does nothing.
    */
   supportsEffort: boolean;
-};
-
-/** Effort as the model provider spells it. The three the schema names, in the API's words. */
-const REASONING_EFFORT: Record<AgentEffort, "low" | "medium" | "high"> = {
-  quick: "low",
-  balanced: "medium",
-  thorough: "high",
 };
 
 type RuntimeAgentRow = {
@@ -211,31 +196,31 @@ export function registeredAgentFromRow(
   if (!isPlainObject(row.configuration)) {
     return null;
   }
-  const configuration = row.configuration;
-  if (row.type === "built_in") {
-    const systemPrompt = configuration?.systemPrompt;
-    const trimmedSystemPrompt =
-      typeof systemPrompt === "string" ? systemPrompt.trim() : "";
-    return trimmedSystemPrompt.length > 0
-      ? {
-          id: row.id,
-          name: row.name,
-          type: "built_in",
-          standing: standingRoleMessage(row).content,
-          systemPrompt: trimmedSystemPrompt,
-          effort: row.effort ?? "balanced",
-        }
-      : null;
-  }
+  /*
+   * A `built_in` row resolves to nothing.
+   *
+   * The enum value stays — old audit rows and old snapshots name it — but nothing constructs one:
+   * migration 0024 released the packaged Bots as ordinary remote ones and the package ships
+   * `agents: []`. Answering null rather than throwing keeps one stray row from taking a person's
+   * whole roster down with it; `resolveRuntimeAgents` still refuses a roster that resolves to
+   * nothing at all, which is the case worth failing on.
+   */
+  if (row.type === "built_in") return null;
 
-  const endpoint = configuration?.endpoint;
+  const endpoint = row.configuration?.endpoint;
   return typeof endpoint === "string" && isHttpUrl(endpoint)
     ? {
         id: row.id,
         name: row.name,
         type: "remote_ag_ui",
         endpoint,
-        standingMessage: standingRoleMessage(row),
+        profile: {
+          id: row.id,
+          name: row.name,
+          title: row.title,
+          roleDescription: row.roleDescription,
+          ...(row.memories ? { memories: row.memories } : {}),
+        },
         effort: row.effort ?? "balanced",
       }
     : null;
@@ -257,66 +242,8 @@ function isHttpUrl(value: string) {
   }
 }
 
-export function builtInAgentConfiguration(
-  agent: RegisteredBuiltInAgent,
-  model: RuntimeModel,
-  apiKey: string | null,
-): BuiltInAgentConfiguration {
-  if (!apiKey) {
-    return {
-      type: "custom",
-      // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
-      factory: async function* () {
-        throw new Error(
-          `Model credential is not configured for ${agent.name}. Add the package credential or set OPENAI_API_KEY.`,
-        );
-      },
-    };
-  }
-
-  return {
-    model: `${model.provider}/${model.defaultModel}`,
-    // Who it is first, then how it works: the role is the part the person wrote.
-    prompt: `${agent.standing}\n\n${agent.systemPrompt}`,
-    apiKey,
-    /*
-     * The one thing about the model a person sets, and only where the model takes one.
-     *
-     * Keyed by provider because that is the shape the SDK takes; `provider` is narrowed to "openai"
-     * in this deployment, so there is one key and it is the right one. Omitted entirely rather than
-     * sent as a default when the model does not reason — see RuntimeModel.supportsEffort.
-     */
-    ...(model.supportsEffort
-      ? {
-          providerOptions: {
-            openai: {
-              reasoningEffort: REASONING_EFFORT[agent.effort],
-              /*
-               * WITHOUT THIS THE SETTING IS DROPPED FOR OUR OWN MODEL.
-               *
-               * The provider decides whether to send an effort by pattern-matching the model's
-               * name — o-series, or gpt-5 and up — and sends nothing at all for anything else.
-               * Measured against the wire: `gpt-5` carried `reasoning: { effort: "high" }` and
-               * `stealth/ox-alpha`, which is what this deployment actually runs, carried nothing.
-               * The control would have saved, shown its ring, and changed how the Bot answers not
-               * at all.
-               *
-               * `supportsEffort` is the deployment asserting that its model reasons, which is a
-               * thing only the deployment can know: the product's model is served by us under a
-               * name only we choose, and no heuristic over model names can keep up with that. So
-               * the assertion is what decides, and a deployment on a model that does not reason
-               * says so and the control disappears rather than lying.
-               */
-              forceReasoning: true,
-            },
-          },
-        }
-      : {}),
-  };
-}
-
 /**
- * Build the built-in and remote AG-UI agent map the runtime serves.
+ * Build the AG-UI agent map the runtime serves.
  *
  * Keyed by the registry id, which is what the browser sends as the agent name, so the two cannot
  * drift apart without the lookup failing loudly rather than silently running the wrong Bot.
@@ -324,14 +251,15 @@ export function builtInAgentConfiguration(
 export function buildAgents(
   agents: RegisteredAgent[],
   model: RuntimeModel,
-  apiKey: string | null,
   /** Absent leaves every stream unwatched, which is what an unconfigured timeout means. */
   stallGuard?: StallGuard,
+  /** The clock a Bot is told about. Read from the environment once, at the top of the app. */
+  timeZone: string = botTimeZone(),
 ): Record<string, AbstractAgent> {
   return Object.fromEntries(
     agents.map((agent) => [
       agent.id,
-      buildAgent(agent, model, apiKey, stallGuard),
+      buildAgent(agent, model, stallGuard, timeZone),
     ]),
   );
 }
@@ -339,36 +267,43 @@ export function buildAgents(
 function buildAgent(
   agent: RegisteredAgent,
   model: RuntimeModel,
-  apiKey: string | null,
-  stallGuard?: StallGuard,
+  stallGuard: StallGuard | undefined,
+  timeZone: string,
 ): AbstractAgent {
-  if (agent.type === "built_in") {
-    return new BuiltInAgent(builtInAgentConfiguration(agent, model, apiKey));
-  }
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
   }
-  return remoteAgentWithStandingRole(agent, model.supportsEffort, stallGuard);
+  return remoteAgentWithPrompt(agent, model.supportsEffort, {
+    timeZone,
+    ...(stallGuard ? { stallGuard } : {}),
+  });
 }
 
 /**
- * A remote AG-UI agent that states its standing role on every run.
+ * A remote AG-UI agent that composes its whole prompt on every run.
  *
- * This is standard AG-UI middleware rather than a request transformation on one provider's client,
- * so the same coworker works against any endpoint that speaks the protocol. Any copy of the standing
- * message already in the conversation is dropped: the endpoint must receive exactly one, first,
- * however many times the thread has been replayed.
+ * THIS IS THE ONE SEAM. Chat, rooms, routines and one Bot asking another all resolve their agents
+ * through here, so this middleware is the only place that has to know what a Bot is told — and the
+ * only place that has to be changed when that changes. Standard AG-UI middleware rather than a
+ * request transformation on one provider's client, so the same Bot works against any endpoint that
+ * speaks the protocol.
  *
- * The stall watch goes on the fetch rather than into that middleware, because the middleware works
+ * Composed per run rather than per load, because it says what time it is. Any copy already in the
+ * conversation — this run's id, or the old `standing-role:` message a thread was saved with before
+ * the prompt moved — is dropped: the endpoint receives exactly one, first, however many times the
+ * thread has been replayed.
+ *
+ * The stall watch goes on the fetch rather than into this middleware, because the middleware works
  * in AG-UI events and a stall is the absence of one. The thing that has to be watched is the
  * response body, and the fetch is where this deployment still holds it.
  */
-function remoteAgentWithStandingRole(
+function remoteAgentWithPrompt(
   agent: RegisteredRemoteAgent,
   /** Whether this deployment's model takes an effort setting. See `RuntimeModel.supportsEffort`. */
   supportsEffort: boolean,
-  stallGuard?: StallGuard,
+  options: { timeZone: string; stallGuard?: StallGuard },
 ) {
+  const { timeZone, stallGuard } = options;
   const remote = new HttpAgent({
     url: agent.endpoint,
     agentId: agent.id,
@@ -379,43 +314,48 @@ function remoteAgentWithStandingRole(
       ? { fetch: stallGuard.watch({ id: agent.id, name: agent.name }) }
       : {}),
   });
-  remote.use((input, next) =>
-    next.run({
+  remote.use((input, next) => {
+    const forwarded =
+      typeof input.forwardedProps === "object" && input.forwardedProps !== null
+        ? (input.forwardedProps as Record<string, unknown>)
+        : {};
+    const prompt = botPromptMessage(agent.profile, {
+      // What the run says it is. Chat says nothing, and silence is a chat.
+      mode: promptModeOf(forwarded),
+      now: new Date(),
+      timeZone,
+    });
+    return next.run({
       ...input,
       messages: [
-        agent.standingMessage,
+        prompt,
         ...input.messages.filter(
-          (message) => message.id !== agent.standingMessage.id,
+          (message) => !isSupersededPrompt(message.id, agent.id),
         ),
       ],
       /*
-       * HOW HARD IT THINKS, on the run rather than in the configuration.
+       * WHAT THE ENDPOINT IS TOLD ABOUT THIS RUN, beside the conversation.
        *
-       * A remote Bot's model is answered by the endpoint, not here, so the effort has to travel to
-       * it — and this middleware is the one place every run path goes through, so chat, rooms and
-       * routines all carry it without any of them knowing.
+       * `botId` because `agent-bot` had no way to know which Bot it was answering — the Bot's whole
+       * identity arrived as a system message, which a log line cannot be written from. Every other
+       * service in this deployment names the Bot in its logs and that one could not.
        *
-       * OUR WORD, NOT THE PROVIDER'S. `thorough`, not `high`: the two ends spell it differently
-       * anyway — the built-in path sends `reasoning: { effort }` to the Responses API and
-       * `agent-bot` sends `reasoning_effort` to chat completions — so each end translates its own,
-       * and adding a third API means changing one file rather than everything upstream of it.
+       * `effort` on the run rather than in a configuration: a remote Bot's model is answered by the
+       * endpoint, not here, so the setting has to travel — and this middleware is the one place
+       * every run path goes through, so chat, rooms and routines all carry it without any of them
+       * knowing. OUR WORD, NOT THE PROVIDER'S: `thorough`, not `high`, because each end translates
+       * its own spelling and adding a third API is then one file. Omitted entirely, not defaulted,
+       * where the deployment's model takes no effort setting.
        *
-       * Merged over whatever the caller forwarded rather than replacing it, and omitted entirely
-       * when the deployment's model takes no effort setting.
+       * Merged over whatever the caller forwarded rather than replacing it.
        */
-      ...(supportsEffort
-        ? {
-            forwardedProps: {
-              ...(typeof input.forwardedProps === "object" &&
-              input.forwardedProps !== null
-                ? input.forwardedProps
-                : {}),
-              effort: agent.effort,
-            },
-          }
-        : {}),
-    }),
-  );
+      forwardedProps: {
+        ...forwarded,
+        botId: agent.id,
+        ...(supportsEffort ? { effort: agent.effort } : {}),
+      },
+    });
+  });
   return remote;
 }
 
@@ -434,11 +374,19 @@ class UnavailableAgent extends AbstractAgent {
   }
 }
 
+/**
+ * No model credential is resolved here any more.
+ *
+ * It was only ever needed by the built-in branch, which held the key itself and called the provider
+ * from this process. Every Bot is an AG-UI endpoint now and the key lives where the call is made —
+ * `agent-bot`'s own environment, and `askModel` for auto-review and write-ups, which still resolve
+ * it from the vault.
+ */
 export async function resolveRuntimeAgents(
   loadAgents: () => Promise<RegisteredAgent[]>,
   model: RuntimeModel,
-  resolveModelApiKey: () => Promise<string | null>,
   stallGuard?: StallGuard,
+  timeZone: string = botTimeZone(),
 ): Promise<Record<string, AbstractAgent>> {
   const registered = await loadAgents();
   if (registered.length === 0) {
@@ -446,11 +394,7 @@ export async function resolveRuntimeAgents(
       "No agents are registered. Add one to the tenant package or the agents table.",
     );
   }
-
-  const apiKey = registered.some((agent) => agent.type === "built_in")
-    ? await resolveModelApiKey()
-    : null;
-  return buildAgents(registered, model, apiKey, stallGuard);
+  return buildAgents(registered, model, stallGuard, timeZone);
 }
 
 /** Who is asking. Agent visibility is decided per person, so a run has to know this first. */
@@ -472,21 +416,21 @@ export function createRequestAgents(
   identifyActor: IdentifyActor,
   loadAgents: LoadAgentsForActor,
   model: RuntimeModel,
-  resolveModelApiKey: () => Promise<string | null>,
   /**
    * Shared across every request rather than built per run, because it is the thing that has to
    * outlive one: the sweep that notices a silent stream has to still be running after the request
    * that opened it has been answered.
    */
   stallGuard?: StallGuard,
+  timeZone: string = botTimeZone(),
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
     return resolveRuntimeAgents(
       () => loadAgents(actor),
       model,
-      resolveModelApiKey,
       stallGuard,
+      timeZone,
     );
   };
 }
@@ -499,11 +443,8 @@ export function createRequestAgents(
  * which is not a property you can explain to somebody who just created one.
  */
 export function mountCopilotRuntime(
-  config: DeploymentConfig,
   model: RuntimeModel,
   loadAgents: LoadAgentsForActor,
-  resolveModelApiKey: () => Promise<string | null>,
-  identifyUser: IdentifyUser,
   identifyActor: IdentifyActor,
   /**
    * The watch on Bot streams. Not optional, unlike the parameter it forwards to: a guard built from
@@ -511,7 +452,7 @@ export function mountCopilotRuntime(
    * there is no reason for a caller to have to say `undefined` here to reach `basePath`.
    */
   stallGuard: StallGuard,
-  /** The durable runner local mode runs on; unused when Intelligence is configured. */
+  /** The durable runner every turn goes through. */
   localRunner: AgentRunner,
   basePath = "/api/copilotkit",
 ) {
@@ -519,37 +460,12 @@ export function mountCopilotRuntime(
     identifyActor,
     loadAgents,
     model,
-    resolveModelApiKey,
     stallGuard,
   );
 
-  if (config.runtime.mode === "local") {
-    const runtime = new CopilotRuntime({
-      runner: localRunner,
-      agents: agents as never,
-    });
-    return createCopilotHonoHandler({ runtime, basePath });
-  }
-
-  const { intelligence } = config.runtime;
-
   const runtime = new CopilotRuntime({
-    // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
-    //
-    // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
-    // returns, so omitting it puts every person in the deployment in the same thread space and one
-    // person's conversations become another's.
-    identifyUser,
-    intelligence: new CopilotKitIntelligence({
-      apiUrl: intelligence.apiUrl,
-      wsUrl: intelligence.gatewayWsUrl,
-      apiKey: intelligence.apiKey,
-    }),
-    licenseToken: intelligence.licenseToken,
-    // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
-    // one resolver decides both whose threads these are and whose coworkers exist.
+    runner: localRunner,
     agents: agents as never,
   });
-
   return createCopilotHonoHandler({ runtime, basePath });
 }

@@ -54,6 +54,13 @@ export function agentComponentsQueryOptions(agentId: string | undefined) {
     queryKey: componentKeys.forAgent(agentId ?? ""),
     enabled: Boolean(agentId),
     refetchInterval: 5_000,
+    /*
+     * NOT WHILE THE TAB IS HIDDEN. A background tab is throttled to about one timer a minute, so
+     * this does not buy freshness there — it buys a queue of requests that all fire at once when
+     * the tab comes back. The focus refetch below is what actually makes a grant change visible,
+     * and it is the same instant.
+     */
+    refetchIntervalInBackground: false,
     // Refetched when the tab is looked at again, so a grant changed on another screen is not waiting
     // out an interval before it shows.
     refetchOnWindowFocus: true,

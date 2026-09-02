@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { roomKo } from "../../shared/prompt/mode/room.ko";
 import {
   addressedMembers,
   isSilence,
   ROOM_LINES,
   type RoomLine,
-  roomConduct,
   roomTurnPrompt,
   rotate,
 } from "../src/rooms/prompt";
@@ -179,11 +179,34 @@ describe("a Bot that had nothing to add", () => {
   });
 });
 
+/*
+ * The conduct moved to `shared/prompt/mode/room.ko.ts` and is now Korean, composed by the one
+ * middleware every run path goes through. The PROTOCOL did not move: `send_message` is still the
+ * only thing the room can see, and a turn without it is still silence. That is what these pin —
+ * the room is the half of the product where the prompt IS the protocol, so a paraphrase that lost
+ * a clause would be a room where Bots write into the void.
+ */
 describe("how a Bot is told to behave in a room", () => {
   test("says silence is a move and that only the tool reaches the room", () => {
-    const conduct = roomConduct(risk);
-    expect(conduct).toContain("Stay fully in character as 리스크 분석가");
+    const conduct = roomKo(risk.name);
+    expect(conduct).toContain("끝까지 리스크 분석가로 있는다");
     expect(conduct).toContain("send_message");
-    expect(conduct).toContain("Staying silent is a first-class move");
+    expect(conduct).toContain("침묵은 제대로 된 선택이고");
+  });
+
+  /*
+   * THE CONTRADICTION THIS ENDED.
+   *
+   * The base prompt used to say "say what you found in plain language" and this used to say plain
+   * text is invisible — two files that had never read each other, arriving in one request. The
+   * base says nothing about plain text now; the room owns it, and nothing else may claim it back.
+   */
+  test("the base prompt leaves plain text alone, and the room does not", async () => {
+    const { BASE_KO } = await import("../../shared/prompt/base.ko");
+    expect(BASE_KO).not.toContain("plain");
+    expect(BASE_KO).not.toContain("그냥 쓴 글");
+    expect(roomKo(risk.name)).toContain(
+      "그냥 쓴 글이 아무에게도 보이지 않는다",
+    );
   });
 });

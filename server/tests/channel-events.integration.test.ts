@@ -6,7 +6,6 @@ import type { AgentActor } from "../src/agents/profile-types";
 import {
   type ChannelActivityEvent,
   createChannelEventHub,
-  startChannelActivityListener,
 } from "../src/channels/events";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
@@ -15,7 +14,7 @@ import {
   agentProfiles,
   agents,
   channels,
-  intelligenceChannelMappings,
+  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -95,10 +94,16 @@ const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
 );
+/**
+ * The hub the store announces into, built here so the test can watch what reaches it AND what the
+ * database holds at the moment it does. See the delivery describe below.
+ */
+const hub = createChannelEventHub();
 const store = createChannelStore(
   database,
   profileStore,
   createThreadIdentity("test-deployment"),
+  (event) => hub.deliver(event),
 );
 const testPrefix = `channel-events-${randomUUID()}`;
 const createdUserIds: string[] = [];
@@ -108,8 +113,8 @@ const createdChannelIds: string[] = [];
 afterEach(async () => {
   for (const channelId of createdChannelIds.splice(0)) {
     await database
-      .delete(intelligenceChannelMappings)
-      .where(eq(intelligenceChannelMappings.channelId, channelId));
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
   }
   for (const agentId of createdAgentIds.splice(0)) {
@@ -128,12 +133,20 @@ afterAll(async () => {
 });
 
 /**
- * Delivery goes through Postgres so it survives more than one server instance. This proves the round
- * trip a second instance would take: a write announces, and a listener that shares nothing with the
- * writer but the database hears it.
+ * Delivery is in process now, and the thing that has to survive the change is the ORDERING.
+ *
+ * `pg_notify` used to give it for nothing: a NOTIFY issued inside a transaction reaches listeners on
+ * commit and never after a rollback, so a message that rolled back was never announced. Nothing in
+ * this process does that on its own — announce from inside the transaction and every member's roster
+ * moves for a write that may never land, with no correction coming, because the roster query is the
+ * only thing that would put it right and nobody has a reason to run it.
+ *
+ * So the assertion is not "the event arrived": it is that when the event arrives, a reader on a
+ * DIFFERENT connection can already see the row. Under `read committed` that is only true after the
+ * commit, which makes this test fail if the announcement is ever moved back inside the transaction.
  */
 describe("channel activity delivery", () => {
-  test("announces a recorded message to a listener on its own connection", async () => {
+  test("announces a recorded message, and only once the row is readable", async () => {
     const id = `${testPrefix}-user-${randomUUID()}`;
     await database.insert(users).values({
       id,
@@ -153,15 +166,25 @@ describe("channel activity delivery", () => {
     const channel = await store.create(owner, [profile.id]);
     createdChannelIds.push(channel.id);
 
-    const hub = createChannelEventHub();
     const delivered: ChannelActivityEvent[] = [];
-    const arrived = new Promise<void>((resolve) => {
-      hub.register(owner.id, (payload) => {
-        delivered.push(JSON.parse(payload));
-        resolve();
-      });
+    /**
+     * The roster row as a SEPARATE connection saw it, read the instant the event was handed over.
+     *
+     * Started inside the delivery callback on purpose. Announced from inside the transaction, this
+     * read would find the row as it was before — a plain SELECT under `read committed` does not
+     * block on an uncommitted write, it reads the old version — and the assertion below would fail.
+     */
+    // `as` on the initialiser, not just an annotation: assigned only inside the callback below,
+    // TypeScript narrows the plain form to `null` and calls the assertion at the end unsatisfiable.
+    let readOnDelivery = null as Promise<string | null | undefined> | null;
+    const detach = hub.register(owner.id, (payload) => {
+      delivered.push(JSON.parse(payload));
+      readOnDelivery = database
+        .select({ lastMessage: channels.lastMessage })
+        .from(channels)
+        .where(eq(channels.id, channel.id))
+        .then(([row]) => row?.lastMessage);
     });
-    const listener = await startChannelActivityListener(databaseUrl, hub);
 
     try {
       await store.recordActivity(owner, channel.id, {
@@ -169,15 +192,11 @@ describe("channel activity delivery", () => {
         at: new Date(),
         text: "Categorized three expenses.",
       });
-      await Promise.race([
-        arrived,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("no event within 5s")), 5000),
-        ),
-      ]);
     } finally {
-      await listener.stop();
+      detach();
     }
+
+    expect(await readOnDelivery).toBe("Categorized three expenses.");
 
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toMatchObject({
@@ -186,5 +205,37 @@ describe("channel activity delivery", () => {
       lastMessageAgentId: profile.id,
       memberIds: [owner.id],
     });
+  });
+
+  test("says nothing when the write rolls back", async () => {
+    // The store is handed a channel that is not this person's, so `recordActivity` throws and the
+    // transaction never commits. An announcement here would move a roster row for a message that
+    // does not exist.
+    const id = `${testPrefix}-user-${randomUUID()}`;
+    await database.insert(users).values({
+      id,
+      email: `${id}@example.test`,
+      name: "Channel Events Rollback User",
+    });
+    createdUserIds.push(id);
+    const owner: AgentActor = { id, role: "user" };
+
+    const heard: ChannelActivityEvent[] = [];
+    const detach = hub.register(owner.id, (payload) =>
+      heard.push(JSON.parse(payload)),
+    );
+    try {
+      await expect(
+        store.recordActivity(owner, `${testPrefix}-no-such-channel`, {
+          agentId: null,
+          at: new Date(),
+          text: "Never happened.",
+        }),
+      ).rejects.toThrow();
+    } finally {
+      detach();
+    }
+
+    expect(heard).toEqual([]);
   });
 });

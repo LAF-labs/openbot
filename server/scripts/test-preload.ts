@@ -19,12 +19,3 @@
  */
 
 import "eventsource";
-
-/*
- * Seats, out of the way of the tests.
- *
- * An account's computer seats five Bots, and the integration tests write to a real database — so as
- * soon as a few Bots exist in it for any other reason, a test that creates two of its own fails
- * with a roster-full error about data it never made. The product number stays five; this is the
- * suite declining to share that budget.
- */

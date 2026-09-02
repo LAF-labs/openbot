@@ -9,7 +9,8 @@ export type Routine = {
   instruction: string;
   scheduleKind: "interval" | "daily";
   intervalMinutes: number | null;
-  dailyUtc: string | null;
+  /** "HH:MM" in `dailyTimeZone`. Called `dailyUtc` until the column stopped claiming to be UTC. */
+  dailyLocal: string | null;
   /** The IANA zone the daily time is written in. Null on rows that predate zones, meaning UTC. */
   dailyTimeZone: string | null;
   /** Weekdays it may run on, 0 = Sunday. Null or empty means every day. */
@@ -59,6 +60,32 @@ export const routineKeys = {
   runs: (routineId: string) => ["routine-runs", routineId] as const,
 };
 
+/**
+ * The refusals the routines API names, translated here because the code is a fact and this surface
+ * owns the words — the same arrangement as MODEL_FAILURES in lib/copilot/stopped-turn.ts.
+ *
+ * The screen renders these straight into the create and delete forms, and what it rendered before
+ * was the server's own English sentence: "This account holds 20 routines already. Delete one to
+ * make room." on a Korean page. `app/tests/routines-copy.test.ts` walks this table, because `t()`
+ * called on a variable is invisible to the i18n coverage test.
+ */
+export const ROUTINE_REFUSALS: Record<string, string> = {
+  "laf:routine_cap_reached":
+    "This account already holds as many routines as it can. Delete one to make room.",
+  "laf:routine_not_found": "That routine is no longer there.",
+  "laf:routine_incomplete": "Pick a Bot first.",
+  /*
+   * The three a Bot can provoke, because a Bot creates routines too now (`manage_routine`).
+   *
+   * They reach this screen as well: the same route answers both callers, and a refusal that had
+   * words only for the Bot would fall through to the server's English sentence here — the exact
+   * failure this table was written to end.
+   */
+  "laf:routine_needs_name": "Give the routine a name.",
+  "laf:routine_needs_instruction": "Say what the routine should do each time.",
+  "laf:routine_needs_schedule": "Say when it should run.",
+};
+
 export async function routineRequest(path: string, init?: RequestInit) {
   const response = await fetch(path, {
     credentials: "include",
@@ -70,10 +97,14 @@ export async function routineRequest(path: string, init?: RequestInit) {
     unknown
   > | null;
   if (!response.ok) {
-    // The server's sentence when there is one. `statusText` is "Internal Server Error", which
-    // tells a person nothing they can act on.
+    const known =
+      typeof body?.code === "string" ? ROUTINE_REFUSALS[body.code] : undefined;
+    // The code first, the server's sentence only where there is no code for what happened.
+    // `statusText` is "Internal Server Error", which tells a person nothing they can act on.
     throw new Error(
-      String(body?.error ?? t("That did not go through. Try again.")),
+      known
+        ? t(known)
+        : String(body?.error ?? t("That did not go through. Try again.")),
     );
   }
   return body;
@@ -117,11 +148,24 @@ export function scheduleLabel(routine: Routine): string {
     });
   }
 
-  const time = routine.dailyUtc ?? "";
+  const time = routine.dailyLocal ?? "";
   const zone = routine.dailyTimeZone ?? "UTC";
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const suffix = zone === here ? "" : ` ${zone}`;
-  const days = routine.dailyDays ?? [];
+  /*
+   * ONE BAD ROW MUST NOT TAKE THE WHOLE ROUTINES SCREEN DOWN, AND ONE DID.
+   *
+   * Measured on a development database: a routine stored `daily_days` as `{}` rather than as an
+   * array — an empty jsonb object, which `?? []` waves straight through because it is not null.
+   * `{}.length` is undefined, so both early returns miss, and the spread below threw "days is not
+   * iterable" out of a LABEL. The error boundary caught it at the page, so every routine somebody
+   * had disappeared behind "문제가 생겼습니다" because one of them had a shape nobody expected.
+   *
+   * A label is the last place that should be able to fail. An unreadable day list reads as "every
+   * day", which is what an empty one already means and is the honest degradation: the routine is
+   * still listed, still switchable, still deletable.
+   */
+  const days = Array.isArray(routine.dailyDays) ? routine.dailyDays : [];
 
   if (days.length === 0 || days.length === 7) {
     return `${t("Daily at {time}", { time })}${suffix}`;

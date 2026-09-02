@@ -14,34 +14,40 @@ Fill the required values, then run:
 bash scripts/start.sh
 ```
 
+Every variable below is one the code actually reads, and the table says where. A name that appears
+in `.env.example` but in no table here is read by nothing.
+
 ## Required API server variables
+
+The server refuses to start without these three (`server/src/config.ts`).
 
 | Variable                      | Meaning                                                                                               |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | PostgreSQL connection string.                                                                         |
 | `KEY_ENCRYPTION_KEY`          | Base64-encoded 32-byte key for encrypted stored credentials. Generate with `openssl rand -base64 32`. |
 | `MANAGED_AGENT_AG_UI_URL`     | Default AG-UI endpoint for coworkers created in the product. Must be HTTP(S).                         |
-| `INTELLIGENCE_API_URL`        | CopilotKit Intelligence API URL.                                                                      |
-| `INTELLIGENCE_GATEWAY_WS_URL` | CopilotKit Intelligence realtime gateway URL.                                                         |
-| `INTELLIGENCE_API_KEY`        | Runtime key for the Intelligence project.                                                             |
-| `COPILOTKIT_LICENSE_TOKEN`    | License token for the Intelligence project.                                                           |
 
-The four Intelligence values are optional and only meaningful together: with all four absent the
-server runs in local mode and stores threads and memory in PostgreSQL, which is how LAF Agent
-deploys. Setting some but not all of them stops server startup — somebody meant to configure the
-hosted mode and got it wrong.
+Threads and memory live in this deployment's own PostgreSQL and there is no other option. Four
+`INTELLIGENCE_*` variables once selected a hosted runtime instead; no deployment ever set them and
+they are gone.
 
-## General variables
+## General API server variables
 
-| Variable             | Default                            | Meaning                                                             |
-| -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
-| `PORT`               | `3001`                             | API server port.                                                    |
-| `NODE_ENV`           | unset                              | `production` enables startup refusals for local-only settings.      |
-| `TENANT_PACKAGE_DIR` | `../tenant/laf`                    | Tenant package directory, resolved from `server/`.                  |
-| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment in the thread ids it mints.                    |
-| `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and `agent-bot`.              |
-| `OPENAI_BASE_URL`    | unset                              | OpenAI-compatible endpoint that key is spent against. See below.    |
-| `BOT_MODEL`          | provider default from Bot code/env | Model used by `agent-bot`.                                          |
+| Variable                        | Default                | Meaning                                                                                                                              |
+| ------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                          | `3001`                 | API server port.                                                                                                                     |
+| `NODE_ENV`                      | unset                  | `production` turns three local-only conveniences into startup refusals: the example encryption key, `LAF_DEV_NO_AUTH`, and its legacy spelling. |
+| `TENANT_PACKAGE_DIR`            | `../tenant/laf`        | Tenant package directory, resolved from `server/`.                                                                                   |
+| `OPENAI_API_KEY`                | unset                  | Model key, when no stored credential answers for the package's `credential_secret_ref`. Resolved per call, so revoking one takes effect on the next action rather than the next restart. |
+| `OPENAI_BASE_URL`               | `https://api.openai.com/v1` | OpenAI-compatible endpoint the key is spent against. Moves the whole deployment. See below.                                      |
+| `AGENT_STALL_TIMEOUT_MS`        | `0` (watchdog off)     | How long a Bot's stream may say nothing before the deployment ends the turn. Refuses to start on anything that is not a whole number ≥ 0. |
+| `BOT_SEATS_PER_ACCOUNT`         | `5`                    | Bots one person may have. Enforced where a Bot is created, so a sixth fails to exist rather than existing with no computer to reach.  |
+| `LAF_NOTIFY_WEBHOOK_URL`        | unset                  | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                                                                |
+| `COPILOTKIT_TELEMETRY_DISABLED` | `true`                 | Set by the server on itself before the runtime loads. Set it to something else deliberately if you want the runtime's telemetry.      |
+
+`BOT_MODEL` is read by `agent-bot`, not by the API server — see [Bot endpoint](#bot-endpoint) below.
+`REVIEW_MODEL` and `BOT_MODEL_EFFORT` are read by nothing directly: they are substituted into the
+tenant package's `model.yaml`, and the section on that file says how.
 
 ## OpenAI-compatible endpoints
 
@@ -70,44 +76,83 @@ model:
 
 Most gateways publish a model list, which is the way to check a name before configuring it.
 
-Two things are worth knowing before pointing a deployment at any gateway. Not every catalogue entry accepts tools, and a Bot without tool calling cannot drive its computer; the model list says which do. And `BOT_RESPONSES_API=true` needs an endpoint that implements the Responses API, not only chat completions.
+One thing is worth knowing before pointing a deployment at any gateway: not every catalogue entry
+accepts tools, and a Bot without tool calling cannot drive its computer. The model list says which
+do.
 
 ## Authentication
 
-| Variable                     | Meaning                                                                                |
-| ---------------------------- | -------------------------------------------------------------------------------------- |
-| `LAF_OIDC_ISSUER`            | The fleet broker's origin, for `AUTH_PROVIDERS=laf`. Travels with the client id or not at all. |
-| `LAF_OIDC_CLIENT_ID`         | This deployment's public broker client (its own fqdn). No secret exists — PKCE is the proof. |
-| `LAF_DEV_NO_AUTH`        | Local-only fixed administrator when set to `true`. Refused with `NODE_ENV=production`. |
-| `GOOGLE_OAUTH_CLIENT_ID`     | Google OAuth client id.                                                                |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret.                                                            |
-| `BETTER_AUTH_SECRET`         | At least 32 characters. Required with Google OAuth.                                    |
-| `BETTER_AUTH_URL`            | Public API server base URL. Required with Google OAuth.                                |
-| `TRUSTED_ORIGINS`            | Comma-separated app origins accepted by the API.                                       |
-| `INITIAL_ADMIN_EMAILS`       | Comma-separated users seeded as administrators.                                        |
+Three providers can be configured directly, plus the fleet's own broker. Everything here is read in
+`server/src/config.ts` and `server/src/auth/`.
 
-Google OAuth client id and secret must be configured together. If Google OAuth is configured, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are also required.
+| Variable                                                | Meaning                                                                                                                    |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_PROVIDERS`                                        | Comma-separated declaration: `google`, `kakao`, `naver`, `laf`. This is what the sign-in buttons are compiled from.        |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`  | Google OAuth client. Both or neither.                                                                                      |
+| `KAKAO_OAUTH_CLIENT_ID`, `KAKAO_OAUTH_CLIENT_SECRET`    | Kakao OAuth client. Both or neither.                                                                                       |
+| `NAVER_OAUTH_CLIENT_ID`, `NAVER_OAUTH_CLIENT_SECRET`    | Naver OAuth client. Both or neither.                                                                                       |
+| `LAF_OIDC_ISSUER`                                       | The fleet broker's origin, for `AUTH_PROVIDERS=laf`. Must be an HTTP(S) URL; a trailing slash is stripped.                  |
+| `LAF_OIDC_CLIENT_ID`                                    | This deployment's public broker client (its own fqdn). No secret exists — PKCE is the proof. Travels with the issuer or not at all. |
+| `BETTER_AUTH_SECRET`                                    | At least 32 characters. Required once any provider is configured.                                                          |
+| `BETTER_AUTH_URL`                                       | Public API server base URL. Required once any provider is configured.                                                      |
+| `TRUSTED_ORIGINS`                                       | Comma-separated app origins accepted by the API. Defaults to `http://localhost:3000`, which is **not** where `start.sh` serves the app. |
+| `INITIAL_ADMIN_EMAILS`                                  | Comma-separated. An address here becomes an administrator the first time it signs in; everybody else becomes a user.        |
+| `SIGN_IN_ALLOWED_EMAILS`                                | Comma-separated, and the actual door. Unset means open: anybody the provider authenticates gets an account. Admin emails are admitted on top, so listing staff cannot lock the owner out. |
+| `LAF_DEV_NO_AUTH`                                       | Local-only fixed administrator when `true`. See below.                                                                     |
+| `OPENBOT_DEV_NO_AUTH`                                   | The pre-rename spelling. It no longer enables anything, but with `NODE_ENV=production` it still refuses to start — a stale `.env` that meant "no auth" must fail loudly rather than fall through to an authentication state nobody chose. |
+
+The declaration and the credentials must agree, and disagreement stops the server rather than being
+served: `AUTH_PROVIDERS` naming a provider with no credentials would draw a button that posts into
+an error, and credentials without the declaration would accept a sign-in the surface never offers.
+Both are refused by name. Each provider's redirect URI is the origin plus
+`/api/auth/callback/<provider>`.
+
+`LAF_DEV_NO_AUTH=true` admits every request as one fixed administrator, `dev@laf.local`, so the
+product runs with no OAuth credentials and no consent screen. It is for a laptop. Two independent
+locks keep it there: it does nothing unless it is set, and with `NODE_ENV=production` the server
+**refuses to start** rather than ignoring the flag — a deployment that believes it has
+authentication when it does not is the worst of the three states. `.env.example` ships it on, so a
+fresh clone runs without sign-in; a deployment removes it (`server/src/auth/dev-actor.ts`).
 
 ## Computer
 
-| Variable                             | Meaning                                                                                   |
-| ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `AGENT_COMPUTER_URL`                 | The account's computer. If absent, computer routes are not mounted.                       |
-| `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.     |
-| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Local-only private-host browsing when `true`. Cloud metadata addresses are still refused. |
-| `AGENT_COMPUTER_POLICY`              | JSON action policy: `{"mode":"enforce","deny":[...],"ask":[...],"allow":[...]}`.          |
+What the API server reads about the computer:
 
-`agent-computer` also reads:
+| Variable                             | Default            | Meaning                                                                                                          |
+| ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `AGENT_COMPUTER_URL`                 | unset              | The account's computer. Absent, the computer routes are **not mounted** — a capability that is not configured should be missing, not broken. |
+| `COMPUTER_TOKEN`                     | unset              | Secret every computer request must present. Without it every call to a computer is refused, which is the intended failure. |
+| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | `false`            | Lets a Bot reach services on this machine, when `true`. Cloud metadata addresses are refused under every configuration. |
+| `AGENT_COMPUTER_POLICY`              | built-in default   | JSON action policy: `{"mode":"enforce","deny":[...],"ask":[...],"allow":[...]}`. Malformed JSON or the wrong shape **stops startup** rather than falling back — an operator who mistyped a rule would otherwise get a deployment that silently permits what they had just tried to forbid. |
+| `COMPUTER_REPEAT_WINDOW_MS`          | `180000` (3 min)   | How long two identical calls count as the same repetition. Refuses to start on anything that is not a positive whole number. Widen it on a slow or heavily queued provider, where genuine retries arrive minutes apart and a rule about repetition never fires at all. |
 
-- `ACTION_TIMEOUT_MS`
-- `NAVIGATION_TIMEOUT_MS`
-- `WORKSPACE_DIR`
-- `PROFILES_DIR`
-- `COMPUTER_BOT_ID`
-- `EGRESS_PROXY_DEFAULT`
-- `EGRESS_PROXY_<BOT_ID>`
+What `agent-computer` reads of its own (`agent-computer/src/`):
+
+| Variable                 | Default       | Meaning                                                                                                    |
+| ------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `COMPUTER_TOKEN`         | —             | Required. It **refuses to start without it**, and compose does not supply one on its own.                  |
+| `PORT`                   | `4100`        | Listening port.                                                                                            |
+| `NAVIGATION_TIMEOUT_MS`  | `30000`       | How long a page load may take.                                                                             |
+| `ACTION_TIMEOUT_MS`      | `10000`       | How long one click, type or read may take.                                                                 |
+| `WORKSPACE_DIR`          | `/workspace`  | The Bots' shared folder of files.                                                                          |
+| `PROFILES_DIR`           | `/profiles`   | Where each Bot's Chromium profile lives.                                                                   |
+| `COMPUTER_BOT_ID`        | `shared`      | The profile used when a request carries no `x-openbot-bot-id` header. There is always a fallback, so a caller that omits the header is silently on the wrong Bot rather than on none. |
+| `EGRESS_PROXY_DEFAULT`   | unset         | Proxy for every Bot without one of its own.                                                                |
+| `EGRESS_PROXY_<BOT_ID>`  | unset         | One Bot's proxy. The Bot id is uppercased with non-alphanumerics turned into `_`, so `sales-bot` reads `EGRESS_PROXY_SALES_BOT`. |
 
 Proxy credentials may appear in proxy URLs, but the computer strips them before reporting proxy status.
+
+## Bot endpoint
+
+`agent-bot` is the AG-UI endpoint every Bot a person creates runs on. It reads four variables
+(`agent-bot/src/index.ts`):
+
+| Variable          | Default                       | Meaning                                                                     |
+| ----------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `PORT`            | `4200`                        | Listening port. It reads the shared `../.env`, where `PORT` is the API server's, so start it by hand with the override — see [development](development.md). |
+| `BOT_MODEL`       | `gpt-5.5`                     | The model, sent verbatim, because an endpoint names its own catalogue.       |
+| `OPENAI_BASE_URL` | OpenAI                        | The endpoint that answers. Same value as the API server's, deliberately.     |
+| `OPENAI_API_KEY`  | unset                         | The key spent against it.                                                    |
 
 ## Ports
 
@@ -126,26 +171,33 @@ everything that talks to it. The three compose publishes — Postgres, `agent-co
 published to every interface. The addresses built from them are separate settings, so a moved service
 also needs its URL changed: `DATABASE_URL`, `AGENT_COMPUTER_URL` and `MANAGED_AGENT_AG_UI_URL`.
 
+`POSTGRES_MAX_CONNECTIONS` sets PostgreSQL's connection limit, and defaults to its own default of
+100. A deployment runs one API server process and never approaches it. It is raised only to run
+more than one test suite at once against the same server; see [development](development.md).
+
 To run two deployments on one Docker host, give the second one its own `COMPOSE_PROJECT_NAME`.
 Container and volume names are global to a host, and the project name is what keeps each
 deployment's containers and volumes its own.
 
-Give it its own `DEPLOYMENT_ID` as well. Threads are listed per Bot and carry nothing else that
-says where a conversation came from, so the name goes into every thread id a deployment mints and
-is how its own conversations stay tellable from the other's.
+Both deployments then mint thread ids under the same name — the tenant package's id — so the six
+leading bytes of a thread id no longer tell one from the other. Nothing in the product reads that
+today; it matters if you ever have to work out which deployment a loose thread id belongs to. Give
+the second one its own tenant package with a different `tenant.id` if you need them separable.
 
 ## Tenant package
 
-The tenant package contains five required YAML files:
+The tenant package contains two required YAML files:
 
 ```text
 tenant/laf/
 ├── brand.yaml
-├── agents.yaml
-├── channels.yaml
-├── model.yaml
-└── knowledge.yaml
+└── model.yaml
 ```
+
+It once had three more. `agents.yaml` and `channels.yaml` declared Bots and rooms the deployment
+shipped ready-made; the product decided a Bot starts with nothing set and belongs to the person who
+made it, both lists went empty, and the loop that read them has been deleted. `knowledge.yaml`
+declared connector sources for a plane that never had an adapter behind it.
 
 ### `brand.yaml`
 
@@ -164,86 +216,51 @@ skin:
 
 Theme CSS may define only `:root` and `.dark` blocks, approved theme variables, and no `@import` or `url()`.
 
-### `agents.yaml`
-
-```yaml
-agents:
-  - id: knowledge
-    name: Knowledge
-    title: Company Knowledge
-    role_description: Answer company knowledge questions and cite sources.
-    avatar_seed: knowledge
-    type: built-in
-    system_prompt: Answer from authorized company knowledge and cite every source.
-
-  - id: risk-analyst
-    name: Risk Analyst
-    title: Risk & Compliance
-    role_description: Investigate policies and controls.
-    type: remote-ag-ui
-    endpoint: ${MANAGED_AGENT_AG_UI_URL}
-```
-
-Each agent requires `id`, `name`, `title`, `role_description`, and `type`.
-
-| Type           | Required field  |
-| -------------- | --------------- |
-| `built-in`     | `system_prompt` |
-| `remote-ag-ui` | `endpoint`      |
-
 Any `${NAME}` in a package file is replaced with that environment variable, so one package works
 against a local stack, a staging one and production. `${NAME:-fallback}` uses the fallback when the
 name is unset or empty, which is how the example package points at the Bot in the box without
 requiring any configuration. A name with neither a value nor a fallback stops the server with a
 message saying which file wanted it, rather than leaving a Bot pointed at an address nobody meant.
 
-### `channels.yaml`
-
-```yaml
-channels:
-  - id: risk-and-compliance
-    name: Risk & Compliance
-    description: Investigate policies and controls.
-    permitted_agents: [knowledge, risk-analyst]
-    allowed_groups: [risk, compliance]
-```
-
-Each channel requires `id`, `name`, `description`, `permitted_agents`, and `allowed_groups`. Every `permitted_agents` entry must match an agent id.
-
 ### `model.yaml`
+
+The shipped package is written entirely in substitutions, which is where three environment variables
+that the server never reads by name actually land:
 
 ```yaml
 model:
   provider: openai
   credential_secret_ref: openai-api-key
-  default_model: gpt-4.1
+  default_model: ${BOT_MODEL:-gpt-4.1}
+  supports_effort: ${BOT_MODEL_EFFORT:-true}
+  review_model: ${REVIEW_MODEL:-}
 ```
 
 `provider` must be `openai`. `credential_secret_ref` is a reference to a stored credential, not a credential value. `default_model` is passed through as written, so an OpenAI-compatible endpoint reached through `OPENAI_BASE_URL` takes the name that endpoint publishes.
 
-### `knowledge.yaml`
+| Field / variable                    | Default   | What it decides                                                                                                     |
+| ----------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| `default_model` / `BOT_MODEL`       | `gpt-4.1` | The model the deployment serves. Note `agent-bot`'s own default differs (`gpt-5.5`); set `BOT_MODEL` and both follow it. |
+| `supports_effort` / `BOT_MODEL_EFFORT` | `true` | Whether this model reasons, and therefore takes an effort setting. **An assertion, not a description** — the provider otherwise guesses from the model's name, and a model served under a name only we choose can never be recognised by a heuristic. Set it `false` on a model that does not reason: nothing is sent, and the control disappears from the Bot's profile rather than sitting there doing nothing. |
+| `review_model` / `REVIEW_MODEL`     | the same model | Which model judges a Bot owner's "do not ask me about" instruction. Point it at something small and fast: that judgement runs in front of an action, and on the flagship model a yes/no took ten to thirty seconds — longer than a person often takes to press the button themselves. |
 
-```yaml
-sources:
-  - type: google-drive
-    roots: [Policies, Compliance]
-  - type: microsoft-onedrive
-    roots: [Risk, Operations]
-```
+Both variables reach the substitution and not the server, so a deployment that sets them in the
+shell but does not pass them into the `server` service in `docker-compose.yml` runs on the defaults
+forever, with no error to say so.
 
-Supported source types are `google-drive` and `microsoft-onedrive`.
+Swapping the model is a ritual rather than a debate: `bun run eval:model` drives the real
+`agent-bot` stack against a candidate and gives a verdict. See [laf/eval-pack.md](laf/eval-pack.md).
 
 ## Change workflow
 
 1. Edit the relevant `.env` value or tenant YAML file.
-2. Check cross-file references, especially `channels[].permitted_agents`.
-3. Keep credential values and service-account JSON out of YAML.
-4. Restart the API server; invalid configuration stops startup.
-5. Run:
+2. Keep credential values out of YAML.
+3. Restart the API server; invalid configuration stops startup.
+4. Run the gate ([development](development.md)):
 
    ```sh
-   bun run format:check
-   bun run lint
    bun run typecheck
-   bun run test
+   bunx biome lint .
+   bun run format:check
+   DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
    ```

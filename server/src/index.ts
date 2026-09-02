@@ -1,6 +1,10 @@
 import "./telemetry-off";
 import { serve } from "bun";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import { createAccountDeletion } from "./account/deletion";
+import { createAccountExport } from "./account/export";
+import { createRetentionJob, retentionDays } from "./account/retention";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -12,18 +16,16 @@ import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
 import type { UserRole } from "./auth/roles";
-import {
-  createChannelEventHub,
-  startChannelActivityListener,
-} from "./channels/events";
+import { createChannelEventHub } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
-import { createDatabaseApprovalRegistry } from "./computer/approvals";
+import { createApprovalRegistry } from "./computer/approvals";
 import {
+  createAutoReviewProbe,
   createModelAutoReviewer,
   type ReviewSubject,
 } from "./computer/auto-review";
@@ -34,11 +36,10 @@ import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
-import { createDatabaseRepeatDetector } from "./computer/repeat";
+import { createRepeatDetector } from "./computer/repeat";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
-import { createConnectorAdminService } from "./connectors";
 import {
   type IdentifyActor,
   type IdentifyUser,
@@ -52,6 +53,18 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
+import { createAlimtalkAdapter } from "./notifications/alimtalk";
+import { readApprovalMetrics } from "./notifications/approval-metrics";
+import { withOutboxWatch } from "./notifications/from-audit";
+import {
+  createFinishedNotice,
+  createSocketAdapter,
+} from "./notifications/in-app";
+import {
+  createWebhookAdapter,
+  withApprovalNotifications,
+} from "./notifications/notify";
+import { createNotificationOutbox } from "./notifications/outbox";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
@@ -71,11 +84,8 @@ import { createWorkingReader } from "./runner/working";
 import {
   createPackageStatusReader,
   loadTenantPackage,
-  synchronizeTenantPackage,
+  recordTenantPackage,
 } from "./tenant-package";
-import { createDigestService } from "./watch/digest-service";
-import { withApprovalNotifications } from "./watch/notify";
-import { createWatchService } from "./watch/poller";
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -108,7 +118,7 @@ async function resolveRequestActor(request: Request): Promise<{
   };
 }
 
-/** The Intelligence projection of {@link resolveRequestActor}: threads are scoped to this person. */
+/** The thread projection of {@link resolveRequestActor}: threads are scoped to this person. */
 const identifyUser: IdentifyUser = async (request) => {
   const { id, name } = await resolveRequestActor(request);
   return { id, name };
@@ -145,19 +155,16 @@ const database = createDatabase(config.databaseUrl);
  * its audit trail is unavailable.
  */
 const bootAuditStore = createAuditStore(database);
-// The durable runner behind local mode. Built before the app because construction
-// is a read: it rehydrates every thread snapshot so restarts do not lose history.
-const lafRunner = await LafPostgresRunner.create(database, bootAuditStore);
-// The laf.watch poller: pure code on a clock, a model only on change (see watch/poller.ts).
-const watchService = createWatchService(database, { port });
-// The morning card. Hour and timezone are wall-clock, read at every check.
-const digestService = createDigestService(database, {
-  hour: Number.parseInt(process.env.LAF_DIGEST_HOUR ?? "8", 10),
-  timezone: process.env.LAF_DIGEST_TZ ?? "Asia/Seoul",
-  ...(process.env.LAF_DIGEST_WEBHOOK_URL
-    ? { webhookUrl: process.env.LAF_DIGEST_WEBHOOK_URL }
-    : {}),
-});
+// One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
+// one module writes it. Built before the runner because the runner opens its rows through it.
+const runLedger = createRunLedger(database);
+// The durable runner every turn goes through. Built before the app because construction adjudicates
+// the runs the last process left open; it reads no conversation until one is asked for.
+const lafRunner = await LafPostgresRunner.create(
+  database,
+  runLedger,
+  bootAuditStore,
+);
 await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -175,18 +182,51 @@ const agentProfileStore = createAgentProfileStore(
   config.managedAgentAgUiUrl,
   agentVault,
 );
-// Read here rather than beside the synchronise below, because the package names the deployment and
-// the channel store needs that name before it can mint a thread id.
+// Read here rather than beside the row it writes below, because the package names the deployment
+// and the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
-const threadIdentity = createThreadIdentity(
-  config.deploymentId ?? tenantPackage.tenantId,
-);
+const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
+/**
+ * Every socket open on this server, and the one thing that fans an event out to them.
+ *
+ * Built before the writers because they are handed it: activity is announced in this process once
+ * the write that earned it has committed, rather than through Postgres LISTEN/NOTIFY and a
+ * connection of its own. There is one process (docs/laf/deployment-model.md), so there was never a
+ * second instance for the carrier to reach.
+ */
+const channelEvents = createChannelEventHub();
+/**
+ * One outbox for "somebody has to be told", and every door it goes out through.
+ *
+ * Built here, before anything that raises a notification, because there is exactly one of these and
+ * the things that write into it — a boundary opening a question, a Bot asking for a password, a
+ * routine finishing at seven in the morning — are spread across the process. Three doors:
+ *
+ *   socket    the page itself, when somebody is connected. The common case, and the fast one.
+ *   webhook   `LAF_NOTIFY_WEBHOOK_URL`, unchanged in what it sends but now carrying the row's id.
+ *   alimtalk  a slot, deferred by decision §7-4. It never claims delivery; see the adapter.
+ *
+ * The socket goes first because it is the only door that is free and instantaneous, and the order
+ * is otherwise cosmetic — they are offered the row together (see `outbox.ts`).
+ */
+const notificationOutbox = createNotificationOutbox({
+  database,
+  adapters: [
+    createSocketAdapter(channelEvents),
+    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
+      ? [createWebhookAdapter(process.env.LAF_NOTIFY_WEBHOOK_URL)]
+      : []),
+    createAlimtalkAdapter(),
+  ],
+});
+/** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
+const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
 const channelStore = createChannelStore(
   database,
   agentProfileStore,
   threadIdentity,
+  (event) => channelEvents.deliver(event),
 );
-const channelEvents = createChannelEventHub();
 /**
  * Which components each Bot may answer with.
  *
@@ -196,15 +236,9 @@ const channelEvents = createChannelEventHub();
  * and owns only what may be done with it.
  */
 const componentStore = createComponentStore(database);
-// Its own connection is held for the life of the process; announced activity from any instance
-// arrives here and is fanned out to connected members.
-const channelActivityListener = await startChannelActivityListener(
-  config.databaseUrl,
-  channelEvents,
-);
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
-await synchronizeTenantPackage(database, tenantPackage);
+await recordTenantPackage(database, tenantPackage);
 const auth = config.auth ? createAuth(config, database) : undefined;
 // Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
 // (see computer/assignment.ts).
@@ -243,18 +277,34 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
  * one on a tool call are the same interruption to the same person, and a registry per subsystem
  * would mean the surface somebody happens to be looking at decides which of them they can answer.
  */
-// The buzz on "blocked on you": a webhook today, AlimTalk once that channel
-// clears review. Absent both, the question still waits on the surface.
-// Backed by the database, not by a Map in this process: several servers behind a
-// load balancer must see one another's open questions, or an answer given on one
-// reads as an expiry on the next. See createDatabaseApprovalRegistry.
+// The buzz on "blocked on you" goes through the outbox above, which writes the
+// row and then offers it to every door. Absent all of them, the question still
+// waits on the surface.
+//
+// A Map in this process, which is where a pending question belongs: one process
+// per VM by decision (docs/laf/deployment-model.md), a question is about a live
+// browser session and a live turn, and a restart is an honest withdrawal of it.
+// It is also what lets the room be TOLD an answer instead of asking every second
+// — see `waitFor`.
+//
+// `onExpire` is the one ending of a question that writes no row anywhere else:
+// ten minutes with nobody answering. It is what makes "the notification was
+// never delivered" and "somebody said no" different facts in the list.
 const approvals = withApprovalNotifications(
-  createDatabaseApprovalRegistry(database),
-  {
-    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
-      ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
-      : {}),
-  },
+  createApprovalRegistry({
+    onExpire: (approval) => {
+      void notificationOutbox
+        .enqueue({
+          kind: "approval.expired",
+          botId: approval.botId,
+          userId: approval.actor,
+          approvalId: approval.id,
+          subject: approval.subject,
+        })
+        .catch(() => undefined);
+    },
+  }),
+  { outbox: notificationOutbox },
 );
 
 /**
@@ -262,6 +312,22 @@ const approvals = withApprovalNotifications(
  * must outlive the process too. See `standing-approvals.ts`.
  */
 const standingApprovals = createDatabaseStandingApprovalStore(database);
+
+/**
+ * ONE COUNT OF A BOT GOING ROUND IN CIRCLES, not one per subsystem.
+ *
+ * Built here rather than inside the gateway for the same reason the approval registry is: a Bot
+ * clicking the same button thirty times and a Bot calling the same tool on somebody else's server
+ * thirty times are the same Bot stuck, and a detector each would mean the shipped
+ * `repeat.count >= 5` rule counted only whichever half of its work the deployment happened to be
+ * watching. A Map in this process, which is the whole count on one process per VM
+ * (docs/laf/deployment-model.md); the window is configurable for a slow provider.
+ */
+const repeatDetector = createRepeatDetector(
+  config.computer?.repeatWindowMs
+    ? { windowMs: config.computer.repeatWindowMs }
+    : {},
+);
 
 /**
  * What somebody did while showing a Bot how a task is done.
@@ -341,7 +407,8 @@ const recordModelUsage =
     }).catch(() => undefined);
   };
 
-const reviewModel = createModelAutoReviewer({
+/** Everything the judge and the probe both need, so the probe measures the real call. */
+const reviewCall = {
   baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
   model: tenantPackage.model.reviewModel,
   apiKey: () =>
@@ -352,8 +419,28 @@ const reviewModel = createModelAutoReviewer({
       keyId: tenantPackage.model.credentialSecretRef,
       environment: process.env,
     }),
+  // The deployment's own assertion that its model reasons, which is what decides whether an effort
+  // is sent at all. See `model.yaml supports_effort`, and the note in auto-review.ts.
+  supportsEffort: tenantPackage.model.supportsEffort,
+};
+
+const reviewModel = createModelAutoReviewer({
+  ...reviewCall,
   onUsage: recordModelUsage("auto-review"),
 });
+
+/**
+ * Whether this deployment can auto-review at all, measured rather than assumed.
+ *
+ * Started here so the answer is usually already in hand by the time a browser asks, and not awaited:
+ * a probe that could delay the port opening would make a model having a bad minute into a deployment
+ * that does not boot. Its cost is one trivial completion per process. See `createAutoReviewProbe`.
+ */
+const autoReviewCapable = createAutoReviewProbe({
+  ...reviewCall,
+  onUsage: recordModelUsage("auto-review"),
+});
+void autoReviewCapable().catch(() => false);
 
 /**
  * A finished recording, written up as a procedure.
@@ -400,6 +487,10 @@ const pluginStore = createPluginStore({
   policy: () => policyStore.get(),
   approvals,
   standing: standingApprovals,
+  // The same instruction, the same counter and the same registry the computer gets. A boundary that
+  // held for a click and not for a call to somebody else's server was one boundary written twice.
+  autoReview: autoReviewFor,
+  repeat: repeatDetector,
   /*
    * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
    * public URL, and self-registration then simply does not happen — registering a redirect URI
@@ -487,8 +578,8 @@ process.on("unhandledRejection", (reason) => {
  * The watch on Bot streams, built once and shared by every run.
  *
  * It has to outlive the request that opens a stream: the sweep that notices a silent one is still
- * running long after the run request has been answered, because in Intelligence mode that request is
- * answered in about a second and the Bot keeps writing for as long as it has something to say.
+ * running long after the run request has been answered, because the Bot goes on writing for as long
+ * as it has something to say.
  *
  * The same audit store as everything else, so a Bot that hangs is recorded beside what Bots do.
  */
@@ -508,28 +599,25 @@ const stallGuard = createStallGuard({
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
-      auditStore: bootAuditStore,
+      /*
+       * The trail, with one ear on it.
+       *
+       * `computer_request_help` and `computer_request_secret` are the two moments a Bot stops for a
+       * person WITHOUT going through the approval registry, so neither reaches the buzz on
+       * `request`. Both already write a row here, on exactly the right occasions and holding
+       * exactly the right two ids, so the row is the seam — see notifications/from-audit.ts. The
+       * gateway goes on knowing nothing about notifications.
+       */
+      auditStore: withOutboxWatch(bootAuditStore, notificationOutbox),
       // Read on every decision rather than captured once, so a rule an administrator adds while the
       // server is running applies to the very next action instead of after a restart.
       policy: () => policyStore.get(),
       approvals,
       standing: standingApprovals,
       autoReview: autoReviewFor,
-      // Always supplied, unlike the window: the gateway's own fallback counts in this process, and
-      // a deployment with a second process would then split every Bot's count between them and
-      // never reach a threshold. The window is still only passed when a deployment has said its
-      // Bots retry on a slower rhythm than the built-in one assumes.
-      repeat: createDatabaseRepeatDetector(
-        database,
-        config.computer?.repeatWindowMs
-          ? { windowMs: config.computer.repeatWindowMs }
-          : {},
-      ),
+      repeat: repeatDetector,
     })
   : undefined;
-
-// One ledger for every run path — chat, routine, handoff — so the roster reads one table.
-const runLedger = createRunLedger(database);
 
 // One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
 // a revoked key or a deleted coworker takes effect on the next question rather than on restart.
@@ -538,14 +626,6 @@ const coworkerCall = createCoworkerCall({
     resolveRuntimeAgents(
       () => loadAgentsForActor(actor),
       tenantPackage.model,
-      () =>
-        resolveModelApiKey({
-          encryptionKey: config.keyEncryptionKey,
-          reader: credentialStore,
-          provider: tenantPackage.model.provider,
-          keyId: tenantPackage.model.credentialSecretRef,
-          environment: process.env,
-        }),
       stallGuard,
     ),
   auditStore: bootAuditStore,
@@ -564,24 +644,19 @@ const coworkerCall = createCoworkerCall({
       agentProfileStore.get(actor, exchange.callerId).catch(() => null),
       agentProfileStore.get(actor, exchange.targetId).catch(() => null),
     ]);
-    await appendToSoloConversation(
-      database,
-      {
-        agentId: exchange.targetId,
-        userId: exchange.actorId,
-        // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
-        heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
-        // The question quoted line by line, so a multi-line ask stays one block rather than
-        // becoming a quote and then loose prose.
-        body: `${exchange.question
-          .split("\n")
-          .map((line) => `> ${line}`)
-          .join("\n")}\n\n${exchange.answer}`,
-        at: exchange.at,
-      },
-      (threadId, agentId, messages) =>
-        lafRunner.adoptSnapshot(threadId, agentId, messages as never),
-    );
+    await appendToSoloConversation(database, {
+      agentId: exchange.targetId,
+      userId: exchange.actorId,
+      // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
+      heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
+      // The question quoted line by line, so a multi-line ask stays one block rather than
+      // becoming a quote and then loose prose.
+      body: `${exchange.question
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n")}\n\n${exchange.answer}`,
+      at: exchange.at,
+    });
   },
 });
 
@@ -600,14 +675,6 @@ const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
   resolveRuntimeAgents(
     () => loadAgentsForActor(actor),
     tenantPackage.model,
-    () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: tenantPackage.model.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
     stallGuard,
   );
 
@@ -618,29 +685,53 @@ const routineService = createRoutineService({
     resolveRuntimeAgents(
       () => loadAgentsForActor(actor),
       tenantPackage.model,
-      () =>
-        resolveModelApiKey({
-          encryptionKey: config.keyEncryptionKey,
-          reader: credentialStore,
-          provider: tenantPackage.model.provider,
-          keyId: tenantPackage.model.credentialSecretRef,
-          environment: process.env,
-        }),
       stallGuard,
     ),
   auditStore: bootAuditStore,
   ledger: runLedger,
   lane: botLane,
-  // And the answer lands in the Bot's own conversation, where a person already reads.
-  deliver: createRoutineDelivery(database, (threadId, agentId, messages) =>
-    lafRunner.adoptSnapshot(threadId, agentId, messages as never),
-  ),
+  // And the answer lands in the Bot's own conversation, where a person already reads — plus a
+  // notification when there is nobody connected to read it, which for a routine is the normal case.
+  deliver: createRoutineDelivery(database, (event) => {
+    channelEvents.deliver(event);
+    noticeFinished(event);
+  }),
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({
     ...(computerGateway ? { gateway: computerGateway } : {}),
     pluginStore,
   }),
 });
+
+/**
+ * The runtime's own thread routes, with the thread they are about to answer for read first.
+ *
+ * CopilotKit's local thread endpoints reach the runner through SYNCHRONOUS methods —
+ * `getThreadMessages` returns a `Message[]`, and the handler maps it straight into a `Response` —
+ * so a read that has to reach Postgres cannot happen inside them. The runner used to sidestep that
+ * by loading every thread in the deployment at boot and answering from memory. This is the
+ * alternative: one read, for the one thread this request names, taken here where awaiting is
+ * allowed. `/threads` itself takes a summary read that touches no message body.
+ */
+const copilotEndpoint = new Hono()
+  .use("/api/copilotkit/threads", async (context, next) => {
+    if (context.req.method === "GET") await lafRunner.primeThreadList();
+    return next();
+  })
+  .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
+    await lafRunner.prime(context.req.param("threadId"));
+    return next();
+  })
+  .route(
+    "/",
+    mountCopilotRuntime(
+      tenantPackage.model,
+      loadAgentsForActor,
+      identifyActor,
+      stallGuard,
+      lafRunner,
+    ),
+  );
 
 const app = createApp(
   config,
@@ -653,35 +744,8 @@ const app = createApp(
     createAuditStore(database),
   ),
   createPackageStatusReader(database),
-  createConnectorAdminService(
-    tenantPackage.knowledgeSources,
-    database,
-    createCredentialAdminService(
-      config.keyEncryptionKey,
-      credentialStore,
-      createAuditStore(database),
-    ),
-  ),
   createOnboardingStore(database),
-  // The runtime call: the model, per-actor agent loading, and the two identity
-  // functions are how a run is attributed to a person.
-  mountCopilotRuntime(
-    config,
-    tenantPackage.model,
-    loadAgentsForActor,
-    () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: tenantPackage.model.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
-    identifyUser,
-    identifyActor,
-    stallGuard,
-    lafRunner,
-  ),
+  copilotEndpoint,
   computerClient,
   computerGateway,
   policyStore,
@@ -702,9 +766,6 @@ const app = createApp(
   threadIdentity,
   // Where a person answers what the boundary stopped to ask, whichever half of the product asked.
   approvals,
-  // The laf.watch poller; the surface mounts only when it exists.
-  watchService,
-  digestService,
   // One Bot asking another, over the same loader and keys the runtime itself uses.
   coworkerCall,
   routineService,
@@ -727,10 +788,14 @@ const app = createApp(
       pluginStore,
     }),
     emit: (frame) => channelEvents.deliverRoom(frame),
+    // The roster row on every OTHER tab, after the message that moved it has committed — and a
+    // notification for a member who has no tab at all. See `createFinishedNotice`.
+    announce: (event) => {
+      channelEvents.deliver(event);
+      noticeFinished(event);
+    },
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
-    onAppended: (threadId, agentId, messages) =>
-      lafRunner.adoptSnapshot(threadId, agentId, messages as never),
   }),
   createThreadMessageReader(database),
   standingApprovals,
@@ -761,6 +826,74 @@ const app = createApp(
         },
       }
     : undefined,
+  // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's
+  // own review model; see the probe above.
+  autoReviewCapable,
+  /*
+   * What `/health` asks. The three things a deployment is made of, each answered by the same route
+   * the product itself uses, so a check cannot pass against a path nothing else takes.
+   *
+   * The computer is included only when one is configured: a deployment without it is not degraded,
+   * it is a deployment without a browser.
+   */
+  {
+    database: async () => {
+      await database.execute(sql`select 1`);
+      return true;
+    },
+    agentBot: async () => {
+      const response = await fetch(
+        new URL("/health", config.managedAgentAgUiUrl),
+        // Its own bound as well as the route's: the route stops waiting after two seconds, but only
+        // this stops the socket, and a health poll every ten seconds must not leave one behind.
+        { signal: AbortSignal.timeout(2_000) },
+      );
+      return response.ok;
+    },
+    ...(computerClient
+      ? {
+          computer: async () =>
+            // The id is a label on the answer, not a route: `status` asks the computer's own
+            // /health, which belongs to no Bot.
+            (await computerClient.status("health")).state === "ready",
+        }
+      : {}),
+  },
+  /*
+   * Taking your data with you, and leaving.
+   *
+   * The plugin store's own retirement is passed rather than reimplemented — it revokes each
+   * `mcp_user_token` through the vault and writes the disconnection rows, and it finds the
+   * credential by `key_id` rather than through a join table that has already cascaded away.
+   *
+   * The computer is passed for the same reason it is passed to the gateway: a Bot's browser profile
+   * is a directory of somebody's logins, and no row deletion touches it.
+   */
+  {
+    exporter: createAccountExport(database),
+    deletion: createAccountDeletion({
+      database,
+      retireConnectionsFor: pluginStore.retireConnectionsFor,
+      ...(computerClient ? { computerClient } : {}),
+    }),
+    auditStore: bootAuditStore,
+  },
+  /*
+   * What is waiting for a person, and how long answers take.
+   *
+   * The metric reads the trail rather than the outbox on purpose (see approval-metrics.ts), and it
+   * is resolved per request rather than captured, so the window a caller asks for is the window it
+   * measures. `BOT_TIME_ZONE` decides what "night" is, the same clock the Bot's own browser and
+   * prompt are given — the VM may be anywhere and the person is in Korea.
+   */
+  {
+    outbox: notificationOutbox,
+    approvalMetrics: (days: number) =>
+      readApprovalMetrics(database, {
+        days,
+        timeZone: process.env.BOT_TIME_ZONE ?? "",
+      }),
+  },
 );
 
 /**
@@ -930,21 +1063,32 @@ if (config.devNoAuth) {
   );
 }
 
-// The activity listener holds a connection of its own for the life of the process. Released on the
-// way out, so a watch-mode restart does not leave one behind on every reload.
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    void channelActivityListener.stop().finally(() => process.exit(0));
-  });
-}
-
 console.info(`LAF Agent server listening on http://localhost:${port}`);
-// Zero disables the clock; sources can still be polled by hand from the surface.
-const watchTickMs = Number.parseInt(
-  process.env.LAF_WATCH_TICK_MS ?? "60000",
-  10,
-);
-watchService.start(watchTickMs);
-digestService.start(watchTickMs);
-// Routines share the watch's clock resolution; a routine is never due at finer grain than a tick.
-routineService.start(watchTickMs);
+/*
+ * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
+ * wall-clock times, not intervals — so a shorter tick would only mean more queries finding
+ * nothing. It was once shared with the watch poller's tick, which is gone.
+ */
+routineService.start(60_000);
+
+/*
+ * The retention sweep, on the same shape of clock as the routine tick and for the same reason: one
+ * process on one VM, and nothing to install.
+ *
+ * SIX HOURS, NOT TWENTY-FOUR. A day-long interval on a machine that is restarted most days is a
+ * sweep that never runs — the timer is reset by every boot and never reaches its deadline. Six
+ * hours means the deployment prunes even if somebody redeploys twice a day, and the work is a
+ * handful of deletes against an indexed timestamp.
+ *
+ * `AUDIT_RETENTION_DAYS=0` switches it off, tick included, and then nothing here is scheduled at all.
+ */
+const retention = createRetentionJob({
+  database,
+  days: retentionDays(),
+});
+void retention.runOnce().catch((error) => {
+  console.warn(
+    `retention: first sweep failed — ${error instanceof Error ? error.message : String(error)}`,
+  );
+});
+retention.start(6 * 60 * 60_000);

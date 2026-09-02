@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can. The updater, the process plugin and the shell's opener are deliberately absent: the shell updates itself from Rust and exposes one narrow `open_external` command, so a page that runs somebody else's script cannot make this process install software, restart itself, or hand a URL of any scheme to the operating system.",
+  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can. The updater, the process plugin, the store, autostart, deep-link and the shell's opener are deliberately absent: the shell updates itself from Rust, owns its own tray settings, and exposes three narrow commands, so a page that runs somebody else's script cannot make this process install software, restart itself, register a URL scheme, start with the machine, or hand a URL of any scheme to the operating system. The three `allow-*` entries at the end are the shell's own commands: an app command reaching this window from a REMOTE origin is refused unless it is named here AND in build.rs's app manifest, with no error at build time and a rejected promise the bridge reads as 'no shell' — which is how the badge and the link opener were dead for a release without anybody noticing.",
   "windows": ["main"],
   "remote": {
     "urls": [
@@ -26,6 +26,9 @@
     "core:window:allow-set-focus",
     "notification:default",
     "core:window:allow-set-badge-count",
-    "core:window:allow-set-badge-label"
+    "core:window:allow-set-badge-label",
+    "allow-set-badge",
+    "allow-open-external",
+    "allow-post-notice"
   ]
 }

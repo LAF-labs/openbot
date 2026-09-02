@@ -16,7 +16,10 @@
  *
  * What is deliberately NOT offered: `computer_request_help` and `computer_request_secret`. Both
  * exist to hand the wheel to a person at the screen, and there is no screen. A run that needs one
- * says so in its answer instead, which is the honest outcome.
+ * says so in its answer instead, which is the honest outcome. That exclusion is now a property of
+ * the catalogue (`needsPerson`) rather than a hand-kept list here, so the prompt and the toolset
+ * cannot disagree about it — which they did: the prompt told a routine to call a tool the routine
+ * had never been given.
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -25,6 +28,12 @@ import type {
   Message,
   Tool,
 } from "@ag-ui/client";
+import type { PromptMode } from "../../../shared/prompt";
+import {
+  noteTexts,
+  toolResultText,
+} from "../../../shared/prompt/tool-results.ko";
+import { UNATTENDED_COMPUTER_TOOLS } from "../../../shared/tools/computer";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -79,13 +88,15 @@ export type UnattendedRunOptions = {
    */
   maxSteps?: number;
   /**
-   * What the run is told about its situation, ahead of the instruction.
+   * Where this run is happening, forwarded to the endpoint so the prompt can be composed for it.
    *
-   * A routine gets `UNATTENDED_NOTE` — nobody is watching, do not wait for anyone. A room turn gets
-   * something else entirely: who is in the room and how to talk in it. Same loop either way, which
-   * is the point of the parameter rather than a second loop.
+   * A routine is told nobody is watching; a room turn is told how a room works. Same loop either
+   * way, which is the point of one parameter rather than a second loop — but the WORDS are no
+   * longer passed in from here. They live in `shared/prompt/mode`, composed by the one middleware
+   * every run path already goes through, so a Bot cannot be told one thing in a room and another
+   * in a routine by two files that never read each other.
    */
-  preamble?: string;
+  mode: Extract<PromptMode, "room" | "routine">;
   /**
    * What the Bot remembers going in, placed between the situation note and the instruction.
    *
@@ -130,16 +141,6 @@ export type UnattendedRunResult = {
 };
 
 const DEFAULT_MAX_STEPS = 12;
-
-/**
- * Told to the model once, up front. It changes what a good answer is: a Bot that would normally
- * ask "shall I sign in for you?" has nobody to ask, and should say that rather than wait.
- */
-const UNATTENDED_NOTE =
-  "This run is unattended: it was started by a schedule, and nobody is watching the screen. " +
-  "Use your tools to actually look things up rather than guessing. If something needs a " +
-  "person — a sign-in, a code, an approval — say exactly what in your answer and stop; do not " +
-  "wait for them and do not try another way round it.";
 
 /**
  * A run that did not get to an answer, carrying the turns it did take.
@@ -225,11 +226,6 @@ export async function runUnattended(
   let awaiting: string | null = null;
 
   target.setMessages([
-    {
-      id: randomUUID(),
-      role: "system",
-      content: options.preamble ?? UNATTENDED_NOTE,
-    },
     ...(options.history ?? []),
     { id: randomUUID(), role: "user", content: instruction },
   ]);
@@ -272,7 +268,8 @@ export async function runUnattended(
     const before = target.messages.length;
     await withDeadline(
       target.runAgent(
-        { tools },
+        // The mode travels as a forwarded prop, which is where the prompt middleware reads it.
+        { tools, forwardedProps: { mode: options.mode } },
         {
           ...options.watch,
           onRunErrorEvent: ({ event }) => {
@@ -350,8 +347,8 @@ export async function runUnattended(
       if (outOfSteps) {
         outcome = {
           ok: false,
-          reason:
-            "This run has used up its tool budget. Answer with what you have found so far.",
+          code: "laf:tool_budget_spent",
+          reason: toolResultText("laf:tool_budget_spent"),
         };
       } else {
         outcome = await withDeadline(
@@ -392,7 +389,8 @@ export async function runUnattended(
           toolCallId: call.id,
           content: JSON.stringify({
             ok: false,
-            reason: "This run is over. Nothing more will be executed.",
+            code: "laf:run_over",
+            reason: toolResultText("laf:run_over"),
           }),
         });
       }
@@ -431,24 +429,40 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       ok: false,
       awaitingApproval: true,
       approvalId: error.approvalId,
-      question: error.question,
+      // The facts, for the room's card to say in Korean. It was the server's English sentence, which
+      // a Korean-speaking member then read out into the room.
+      subject: error.subject,
       rule: error.rule,
       // Carried so a room can offer the wider button too. Undefined where the question had no
       // derivable scope, which the room reads the same way the one-to-one card does.
       scope: error.scope,
-      reason:
-        "A person has to allow that, and nobody is here right now. The request is waiting for " +
-        "them. Say what you were waiting for and stop.",
+      expiresAt: error.expiresAt,
+      code: "laf:nobody_answered",
+      reason: toolResultText("laf:nobody_answered"),
     };
   }
   if (
     error instanceof ActionRefusedError ||
     error instanceof PluginRefusedError
   ) {
+    /*
+     * CODE IN, KOREAN OUT, THROUGH THE ONE TABLE.
+     *
+     * The message on both of these is a `laf:` fact now, not a sentence — the policy stopped writing
+     * English the moment the surface started composing its own (§4-2). What the MODEL reads is the
+     * Korean beside that code in `shared/prompt/tool-results.ko.ts`, which is the same table the
+     * browser's tools read, so a refusal says the same thing to a Bot whether its turn is being
+     * driven by a person's tab or by a routine at three in the morning.
+     *
+     * Anything without a code passes through unchanged, and visibly: a sentence from somewhere
+     * upstream reaching a Bot is a regression, and swallowing it would hide the next one.
+     */
+    const code = error.message.startsWith("laf:") ? error.message : undefined;
     return {
       ok: false,
       refused: true,
-      reason: error.message,
+      ...(code ? { code } : {}),
+      reason: code ? toolResultText(code) : error.message,
       rule: error.rule,
     };
   }
@@ -458,192 +472,40 @@ export function outcomeOfError(error: unknown): ToolOutcome {
   };
 }
 
-const REF_PARAMS = {
-  ref: {
-    type: "string",
-    description: "Ref of the element, from your most recent snapshot",
-  },
-  snapshotId: {
-    type: "number",
-    description: "The snapshotId that ref came from",
-  },
-} as const;
-
 /**
- * The computer tools, described in the same words the browser uses.
+ * The computer tools, from the one catalogue.
  *
- * The descriptions are the model-facing contract and they were tuned in the browser's
- * registrations; a second set of words here would drift, and a Bot would then behave differently
- * at six in the morning than it does at noon for no reason anybody could point to.
+ * Not "described in the same words the browser uses" any more — literally the same objects. The
+ * words were copied here by hand and had already drifted: `computer_read_file` said the workspace
+ * survives "between runs" here and "between conversations" in the browser, which is one Bot being
+ * told two different things about the same folder depending on what started it.
+ *
+ * `needsPerson` is what the exclusion is made of. See the module comment.
  */
 function computerTools(): Tool[] {
-  return [
-    {
-      name: "computer_navigate",
-      description:
-        "Open a web page on your own computer. Use this when asked to look at, visit, open or " +
-        "check a website. Returns the page title and its readable text, so answer from what comes " +
-        "back rather than telling the person to go and look.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "Full web address to open, including https://",
-          },
-        },
-        required: ["url"],
-      },
-    },
-    {
-      name: "computer_read",
-      description:
-        "Read the page currently open on your computer, without opening anything. Use this after " +
-        "you have navigated or acted, to see what the page says now.",
-      parameters: { type: "object", properties: {} },
-    },
-    {
-      name: "computer_snapshot",
-      description:
-        "List the things on the current page you can act on: fields, buttons, links and " +
-        "checkboxes, each with a ref, its label and its current value. Call this BEFORE clicking " +
-        "or typing, and use the refs it returns. Always send back the snapshotId it gives you.",
-      parameters: { type: "object", properties: {} },
-    },
-    {
-      name: "computer_click",
-      description:
-        "Click something on the page: a button, a link, a checkbox or a radio option. Give the " +
-        "ref from your most recent snapshot and the snapshotId it came from.",
-      parameters: {
-        type: "object",
-        properties: REF_PARAMS,
-        required: ["ref", "snapshotId"],
-      },
-    },
-    {
-      name: "computer_type",
-      description:
-        "Enter text into a field on the page. Give the ref of the field from your most recent " +
-        "snapshot and the snapshotId it came from. This replaces whatever the field already " +
-        "contains.",
-      parameters: {
-        type: "object",
-        properties: {
-          ...REF_PARAMS,
-          text: { type: "string", description: "The text to enter" },
-          submit: {
-            type: "boolean",
-            description:
-              "Press Enter after typing, to submit a single-field form",
-          },
-        },
-        required: ["ref", "snapshotId", "text"],
-      },
-    },
-    {
-      name: "computer_key",
-      description:
-        "Press a key, such as Enter, Tab or Escape. Give a ref to press it while a particular " +
-        "field is focused.",
-      parameters: {
-        type: "object",
-        properties: {
-          key: {
-            type: "string",
-            description: "Key name, such as Enter, Tab or Escape",
-          },
-          ref: {
-            type: "string",
-            description: "Optional ref to press the key on",
-          },
-          snapshotId: {
-            type: "number",
-            description:
-              "The snapshotId the ref came from, required if ref is given",
-          },
-        },
-        required: ["key"],
-      },
-    },
-    {
-      name: "computer_scroll",
-      description:
-        "Scroll the page down, or up with a negative amount, to bring more of a long page into view.",
-      parameters: {
-        type: "object",
-        properties: {
-          deltaY: {
-            type: "number",
-            description: "Pixels to scroll; positive is down. Defaults to 600.",
-          },
-        },
-      },
-    },
-    {
-      name: "computer_list_files",
-      description:
-        "List what is in your workspace: every file and folder you have saved, with sizes. Call " +
-        "this FIRST before reading a file whose exact name you are not sure of. Never guess a " +
-        "filename.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description:
-              "Optional folder to list. Omit for the whole workspace.",
-          },
-        },
-      },
-    },
-    {
-      name: "computer_read_file",
-      description:
-        "Read a file you saved earlier in your own workspace. Paths are relative to your " +
-        "workspace, such as notes.md or reports/august.csv. Your workspace survives between runs, " +
-        "so use this to pick up notes you made before.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description: "Path relative to your workspace, such as notes.md",
-          },
-        },
-        required: ["path"],
-      },
-    },
-    {
-      name: "computer_write_file",
-      description:
-        "Save a file in your own workspace so you still have it later. Paths are relative to " +
-        "your workspace and folders are created as needed. Set append to true to add to the end " +
-        "of an existing file rather than replacing it. Text only.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description:
-              "Path relative to your workspace, such as reports/august.csv",
-          },
-          contents: { type: "string", description: "The text to save" },
-          append: {
-            type: "boolean",
-            description: "Add to the end of the file instead of replacing it",
-          },
-        },
-        required: ["path", "contents"],
-      },
-    },
-  ];
+  return UNATTENDED_COMPUTER_TOOLS.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }));
 }
 
 const asRef = (args: Record<string, unknown>) =>
   typeof args.ref === "string" && typeof args.snapshotId === "number"
     ? { ref: args.ref, snapshotId: args.snapshotId }
     : null;
+
+/**
+ * A computer result, with the facts the browser noticed put into words.
+ *
+ * The container ships `{code, message}` and knows no locale; the Korean a Bot reads is looked up
+ * here, the same way a refusal's is. Without this a routine reads `laf:dialog` — a string it has
+ * never seen — and goes on believing its click worked.
+ */
+const withNotes = <T extends Record<string, unknown>>(result: T) => {
+  const said = noteTexts(result.notes);
+  return said ? { ...result, notes: said } : result;
+};
 
 export type UnattendedToolsOptions = {
   /** Absent when no computer is configured; the Bot then runs with plugin tools only. */
@@ -710,18 +572,59 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           case "computer_navigate":
             return {
               ok: true,
-              ...(await gateway.navigate(
-                c,
-                botId,
-                actor,
-                String(args.url ?? ""),
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.navigate(
+                  c,
+                  botId,
+                  actor,
+                  String(args.url ?? ""),
+                  approvalId,
+                ),
+              ),
             };
           case "computer_read":
-            return { ok: true, ...(await gateway.read(botId)) };
+            return { ok: true, ...withNotes(await gateway.read(botId)) };
           case "computer_snapshot":
-            return { ok: true, ...(await gateway.snapshot(botId)) };
+            return { ok: true, ...withNotes(await gateway.snapshot(botId)) };
+          case "computer_switch_tab": {
+            if (typeof args.index !== "number") {
+              return { ok: false, reason: "A tab index is required." };
+            }
+            return {
+              ok: true,
+              ...withNotes(
+                await gateway.switchTab(
+                  c,
+                  botId,
+                  actor,
+                  { index: args.index },
+                  approvalId,
+                ),
+              ),
+            };
+          }
+          case "computer_upload_file": {
+            const target = asRef(args);
+            if (!target || typeof args.path !== "string" || !args.path.trim()) {
+              return {
+                ok: false,
+                reason: "A ref, its snapshotId and a file path are required.",
+              };
+            }
+            return {
+              ok: true,
+              ...withNotes(
+                await gateway.uploadFile(
+                  c,
+                  botId,
+                  actor,
+                  { ...target, path: args.path.trim() },
+                  undefined,
+                  approvalId,
+                ),
+              ),
+            };
+          }
           case "computer_click": {
             const target = asRef(args);
             if (!target)
@@ -731,14 +634,16 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               };
             return {
               ok: true,
-              ...(await gateway.click(
-                c,
-                botId,
-                actor,
-                target,
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.click(
+                  c,
+                  botId,
+                  actor,
+                  target,
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_type": {
@@ -751,18 +656,20 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.type(
-                c,
-                botId,
-                actor,
-                {
-                  ...target,
-                  text: args.text,
-                  submit: args.submit === true,
-                },
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.type(
+                  c,
+                  botId,
+                  actor,
+                  {
+                    ...target,
+                    text: args.text,
+                    submit: args.submit === true,
+                  },
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_key": {
@@ -774,30 +681,34 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.key(
-                c,
-                botId,
-                actor,
-                { key: args.key, ...(asRef(args) ?? {}) },
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.key(
+                  c,
+                  botId,
+                  actor,
+                  { key: args.key, ...(asRef(args) ?? {}) },
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_scroll":
             return {
               ok: true,
-              ...(await gateway.scroll(
-                c,
-                botId,
-                actor,
-                {
-                  ...(typeof args.deltaY === "number"
-                    ? { deltaY: args.deltaY }
-                    : {}),
-                },
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.scroll(
+                  c,
+                  botId,
+                  actor,
+                  {
+                    ...(typeof args.deltaY === "number"
+                      ? { deltaY: args.deltaY }
+                      : {}),
+                  },
+                  approvalId,
+                ),
+              ),
             };
           case "computer_list_files":
             return {

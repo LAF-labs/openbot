@@ -62,8 +62,16 @@ export type RoomFrame =
       /** What "always" would cover; absent means the room's card offers "this once" alone. */
       scope?: { kind: "host" | "file" | "tool"; value: string };
       approvalId: string;
-      question: string;
+      /**
+       * What is being asked about, in facts — never a sentence.
+       *
+       * `unknown` here and checked by `askSubjectOf` where it is read: this arrives over a socket,
+       * and a card must not compose a sentence out of a shape it did not recognise.
+       */
+      subject: unknown;
       rule: string;
+      /** When the question stops being answerable, for the countdown on the card. */
+      expiresAt?: string;
       answered?: boolean;
     })
   /** `failures`: members that could not take their turn at all. Silence is not the same thing. */

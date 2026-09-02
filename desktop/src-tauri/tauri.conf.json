@@ -15,8 +15,10 @@
         "url": "https://agent.laf-co.com",
         "width": 1400,
         "height": 900,
-        "minWidth": 800,
-        "minHeight": 600,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "visible": false,
         "zoomHotkeysEnabled": false
       }
@@ -41,6 +43,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lafagent"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFOUE0MjM1RkVDN0Q1MzUKUldRMTFjZitOVUthUHQxSjVrWlFCekRiN00zakl5WnR1KzdNWDFoYkhLZHkwWTVOUXdETk4zWDEK",
       "endpoints": [

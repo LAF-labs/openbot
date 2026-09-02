@@ -72,7 +72,7 @@ const CALLBACK = `${PUBLIC_URL}/api/plugins/oauth/callback`;
 /** What the injected registration hands back, so a test can say which client the URL is asking as. */
 const REGISTERED: OAuthClient = { clientId: "dyn-connect", clientSecret: "" };
 
-const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /** Every self-registration this deployment attempted, so "once, not twice" is assertable. */
 const registrations: { registrationUrl: string; redirectUri: string }[] = [];
@@ -140,7 +140,11 @@ const asPerson = (options?: { connected?: boolean; store?: unknown }) =>
     options,
   );
 
-const connect = (hono: Hono, id = serverId, query = ""): Promise<Response> =>
+const connect = async (
+  hono: Hono,
+  id = serverId,
+  query = "",
+): Promise<Response> =>
   hono.request(`http://t/api/plugins/servers/${id}/connect${query}`, {
     method: "POST",
   });
@@ -291,8 +295,10 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(asPerson({ connected: false }));
 
     expect(response.status).toBe(503);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toContain("BETTER_AUTH_URL");
+    const body = (await response.json()) as { error: string; code: string };
+    // The code is the fact; the sentence beside it is a placeholder until the surface says this in
+    // Korean. Asserting the sentence is asserting a translation that has not happened yet.
+    expect(body.code).toBe("laf:no_public_url");
     expect(registrations).toEqual([]);
   });
 
@@ -300,10 +306,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(asPerson(), `not-a-vendor-${suite}`);
 
     expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      `not-a-vendor-${suite} is not connected as an individual person.`,
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:not_a_personal_connection");
     // Refused on the entry, before anything is asked of the store or the vendor.
     expect(registrations).toEqual([]);
   });
@@ -333,10 +337,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(hono);
 
     expect(response.status).toBe(409);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      "Notion has not been added to this deployment yet. An administrator has to add it first.",
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:server_not_added");
   });
 
   test("a vendor that refuses this deployment's registration answers 502, naming it", async () => {
@@ -351,10 +353,8 @@ describe("a connect this deployment cannot complete", () => {
     const response = await connect(hono);
 
     expect(response.status).toBe(502);
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe(
-      "Notion refused this deployment's registration. Try again, and check the vendor's status if it persists.",
-    );
+    const body = (await response.json()) as { error: string; code: string };
+    expect(body.code).toBe("laf:registration_refused");
   });
 });
 
@@ -404,8 +404,8 @@ describe("the first person to connect", () => {
 
     // And the proof matches: the challenge the vendor is shown is the S256 of the verifier that only
     // this deployment can read out of the state.
-    expect(challengeFor(state?.verifier ?? "")).toBe(
-      url.searchParams.get("code_challenge"),
+    expect(url.searchParams.get("code_challenge")).toBe(
+      challengeFor(state?.verifier ?? ""),
     );
     // Which is the point of sealing rather than signing: the verifier travels on the same URL as the
     // code will, and every log that URL passes through would otherwise hold enough to redeem it.

@@ -1,23 +1,17 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
-import { BuiltInAgent } from "@copilotkit/runtime/v2";
+import { BASE_KO } from "../../shared/prompt";
 import {
+  botPromptMessage,
+  botTimeZone,
   buildAgents,
-  builtInAgentConfiguration,
   createRequestAgents,
+  promptMessageId,
   registeredAgentFromRow,
   resolveRuntimeAgents,
-  standingRoleMessage,
 } from "../src/copilot";
 
 // Every agent row now joins its profile, so the row a coworker is built from always names it.
-const assistantRow = {
-  id: "general-assistant",
-  name: "General Assistant",
-  type: "built_in" as const,
-  title: "Everyday Work",
-  roleDescription: "Help with everyday work.",
-};
 const riskRow = {
   id: "risk",
   name: "Risk",
@@ -26,23 +20,14 @@ const riskRow = {
   roleDescription: "Investigate policies and controls.",
 };
 
+const model = {
+  provider: "openai" as const,
+  defaultModel: "laf-1",
+  supportsEffort: true,
+};
+
 describe("registered Copilot agents", () => {
-  test("normalizes built-in and remote rows", () => {
-    expect(
-      registeredAgentFromRow({
-        ...assistantRow,
-        configuration: { systemPrompt: "Be helpful." },
-      }),
-    ).toEqual({
-      id: "general-assistant",
-      name: "General Assistant",
-      type: "built_in",
-      standing: standingRoleMessage(assistantRow).content,
-      systemPrompt: "Be helpful.",
-      // A row that does not carry one — anything reading agents without selecting the column —
-      // lands on the same value the column defaults to, rather than on undefined.
-      effort: "balanced",
-    });
+  test("normalizes a remote row into a profile the prompt is composed from", () => {
     expect(
       registeredAgentFromRow({
         ...riskRow,
@@ -53,18 +38,48 @@ describe("registered Copilot agents", () => {
       name: "Risk",
       type: "remote_ag_ui",
       endpoint: "http://risk.internal/ag-ui",
-      standingMessage: standingRoleMessage(riskRow),
+      /*
+       * The durable half only. The finished system message is built per RUN, because one of the
+       * things it says is what time it is — held here, a long-lived process would tell every Bot
+       * the moment it started for as long as it lived.
+       */
+      profile: {
+        id: "risk",
+        name: "Risk",
+        title: "Risk & Compliance",
+        roleDescription: "Investigate policies and controls.",
+      },
       // A remote Bot carries it too, and that is the whole point: every Bot anybody creates is one.
       effort: "balanced",
     });
   });
 
+  /**
+   * A `built_in` row resolves to nothing at all.
+   *
+   * The branch that ran one — CopilotKit's `BuiltInAgent`, the Responses API, `forceReasoning` —
+   * is deleted. It was unreachable: the package ships `agents: []` and migration 0024 released
+   * the packaged Bots as ordinary remote ones. What it carried was a SECOND way for a prompt and
+   * an effort to reach a model, which is the shape that hides a setting going nowhere.
+   */
+  test("resolves a built-in row to nothing, without taking the roster down", () => {
+    expect(
+      registeredAgentFromRow({
+        id: "general-assistant",
+        name: "General Assistant",
+        type: "built_in",
+        title: "Everyday Work",
+        roleDescription: "Help with everyday work.",
+        configuration: { systemPrompt: "Be helpful." },
+      }),
+    ).toBeNull();
+  });
+
   test("rejects malformed agent configurations", () => {
     const rows = [
-      { ...assistantRow, configuration: {} },
-      { ...assistantRow, configuration: null },
-      { ...assistantRow, configuration: [] },
-      { ...assistantRow, configuration: { systemPrompt: "   " } },
+      { ...riskRow, configuration: {} },
+      { ...riskRow, configuration: null },
+      { ...riskRow, configuration: [] },
       { ...riskRow, configuration: { endpoint: "" } },
       { ...riskRow, configuration: { endpoint: "not a URL" } },
       { ...riskRow, configuration: { endpoint: "ftp://risk.internal/ag-ui" } },
@@ -75,13 +90,7 @@ describe("registered Copilot agents", () => {
     }
   });
 
-  test("trims built-in prompts and preserves valid remote endpoint strings", () => {
-    expect(
-      registeredAgentFromRow({
-        ...assistantRow,
-        configuration: { systemPrompt: "  Be helpful.  " },
-      }),
-    ).toMatchObject({ systemPrompt: "Be helpful." });
+  test("preserves a valid remote endpoint string", () => {
     expect(
       registeredAgentFromRow({
         ...riskRow,
@@ -90,142 +99,20 @@ describe("registered Copilot agents", () => {
     ).toMatchObject({ endpoint: "https://risk.internal:443/ag-ui" });
   });
 
-  const assistant = {
-    id: "general-assistant",
-    name: "General Assistant",
-    type: "built_in" as const,
-    standing: "You are General Assistant, Everyday work.",
-    systemPrompt: "Be helpful.",
-    effort: "balanced" as const,
-  };
-
-  test("configures an OpenAI built-in agent", () => {
-    expect(
-      builtInAgentConfiguration(
-        assistant,
-        { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-        "openai-secret",
-      ),
-    ).toEqual({
-      model: "openai/gpt-4.1",
-      prompt: "You are General Assistant, Everyday work.\n\nBe helpful.",
-      apiKey: "openai-secret",
-      // `forceReasoning` too: without it the provider drops the effort for every model name it does
-      // not recognise, which includes the one this product actually serves. See the wire test.
-      providerOptions: {
-        openai: { reasoningEffort: "medium", forceReasoning: true },
-      },
-    });
-  });
-
-  test("carries the Bot's own effort into the call", () => {
-    // The three the schema names, in the words the provider uses. A person choosing between "low"
-    // and "high" is being asked to reason about somebody's API, so the translation happens here.
-    const effortOf = (effort: "quick" | "balanced" | "thorough") =>
-      (
-        builtInAgentConfiguration(
-          { ...assistant, effort },
-          { provider: "openai", defaultModel: "gpt-5", supportsEffort: true },
-          "openai-secret",
-        ) as { providerOptions?: { openai?: { reasoningEffort?: string } } }
-      ).providerOptions?.openai?.reasoningEffort;
-
-    expect(effortOf("quick")).toBe("low");
-    expect(effortOf("balanced")).toBe("medium");
-    expect(effortOf("thorough")).toBe("high");
-  });
-
-  test("sends nothing at all where the model takes no effort setting", () => {
-    /*
-     * The whole reason the flag exists. A model that does not reason answers a request carrying the
-     * parameter with a 400 on some providers and silence on others, so a Bot somebody set to
-     * "thorough" on a deployment running gpt-4.1 must send exactly what it sent before — not a
-     * default effort, not an empty object, nothing.
-     */
-    expect(
-      builtInAgentConfiguration(
-        { ...assistant, effort: "thorough" },
-        { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: false },
-        "openai-secret",
-      ),
-    ).toEqual({
-      model: "openai/gpt-4.1",
-      prompt: "You are General Assistant, Everyday work.\n\nBe helpful.",
-      apiKey: "openai-secret",
-    });
-  });
-
-  test("fails an unavailable built-in agent through the AG-UI lifecycle", async () => {
+  test("constructs every agent as an AG-UI endpoint", () => {
     const agents = buildAgents(
-      [
-        {
-          id: "general-assistant",
-          name: "General Assistant",
-          type: "built_in",
-          standing: "You are General Assistant.",
-          systemPrompt: "Be helpful.",
-          effort: "balanced",
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      null,
+      [remoteAgent("http://risk.internal/ag-ui")],
+      model,
     );
-    const agent = agents["general-assistant"];
-    if (!agent) {
-      throw new Error("Expected the built-in agent");
-    }
-    let lifecycleError: Error | undefined;
-    const consoleError = spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      await expect(
-        agent.runAgent(undefined, {
-          onRunFailed: ({ error }) => {
-            lifecycleError = error;
-          },
-        }),
-      ).rejects.toThrow("Add the package credential or set OPENAI_API_KEY");
-    } finally {
-      consoleError.mockRestore();
-    }
-    expect(lifecycleError?.message).toContain(
-      "Add the package credential or set OPENAI_API_KEY",
-    );
-  });
-
-  test("constructs built-in and remote agents together", () => {
-    const agents = buildAgents(
-      [
-        {
-          id: "general-assistant",
-          name: "General Assistant",
-          type: "built_in",
-          systemPrompt: "Be helpful.",
-        },
-        {
-          id: "risk",
-          name: "Risk",
-          type: "remote_ag_ui",
-          endpoint: "http://risk.internal/ag-ui",
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      "openai-secret",
-    );
-
-    expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
+    expect(agents.agent_expense).toBeInstanceOf(HttpAgent);
   });
 
   /*
-   * The watch goes on the fetch of a remote Bot and nowhere else.
-   *
-   * A built-in agent talks to a model provider through the AI SDK rather than over an AG-UI stream,
-   * so there is no response body here to watch and nothing for the guard to be given. Asserting the
-   * Bot's own name reaches it matters because that name is what the person is shown when its stream
-   * goes quiet, and a guard handed the wrong one would say so convincingly.
+   * The watch goes on the fetch of a remote Bot, because the middleware works in AG-UI events and
+   * a stall is the absence of one. Asserting the Bot's own name reaches it matters because that
+   * name is what the person is shown when its stream goes quiet.
    */
-  test("hands a remote Bot's fetch to the stall guard, and a built-in Bot none", () => {
+  test("hands a remote Bot's fetch to the stall guard", () => {
     const watched: { id: string; name: string }[] = [];
     const stallGuard = {
       watch: (bot: { id: string; name: string }) => {
@@ -236,27 +123,13 @@ describe("registered Copilot agents", () => {
     };
 
     const agents = buildAgents(
-      [
-        {
-          id: "general-assistant",
-          name: "General Assistant",
-          type: "built_in",
-          systemPrompt: "Be helpful.",
-        },
-        {
-          id: "risk",
-          name: "Risk",
-          type: "remote_ag_ui",
-          endpoint: "http://risk.internal/ag-ui",
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      "openai-secret",
+      [remoteAgent("http://risk.internal/ag-ui")],
+      model,
       stallGuard,
     );
 
-    expect(watched).toEqual([{ id: "risk", name: "Risk" }]);
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
+    expect(watched).toEqual([{ id: "agent_expense", name: "Expense Manager" }]);
+    expect(agents.agent_expense).toBeInstanceOf(HttpAgent);
   });
 
   /*
@@ -264,26 +137,16 @@ describe("registered Copilot agents", () => {
    *
    * @ag-ui/client fills `fetch` in with a wrapper of its own whenever the config does not carry one,
    * so a remote Bot always has a function there and asserting that it does asserts nothing at all.
-   * The same registration is built twice, with a guard whose watch returns a fetch nothing else
-   * could have produced and then without one, and the two are compared.
    */
   test("leaves a remote Bot's fetch alone when no timeout is configured", () => {
     const sentinel = async () => new Response(null);
-    const registered = [
-      {
-        id: "risk",
-        name: "Risk",
-        type: "remote_ag_ui" as const,
-        endpoint: "http://risk.internal/ag-ui",
-      },
-    ];
-    const model = { provider: "openai" as const, defaultModel: "gpt-4.1" };
+    const registered = [remoteAgent("http://risk.internal/ag-ui")];
 
-    const guarded = buildAgents(registered, model, null, {
+    const guarded = buildAgents(registered, model, {
       watch: () => sentinel,
       stop: () => undefined,
-    }).risk;
-    const unguarded = buildAgents(registered, model, null).risk;
+    }).agent_expense;
+    const unguarded = buildAgents(registered, model).agent_expense;
     if (!(guarded instanceof HttpAgent) || !(unguarded instanceof HttpAgent)) {
       throw new Error("Expected the remote agent");
     }
@@ -292,134 +155,218 @@ describe("registered Copilot agents", () => {
     expect(unguarded.fetch).not.toBe(sentinel);
   });
 
-  test("resolves fresh built-in agents and credentials for every request", async () => {
-    const registered = [
-      {
-        id: "general-assistant",
-        name: "General Assistant",
-        type: "built_in" as const,
-        systemPrompt: "Be helpful.",
-      },
-    ];
-    let resolutionCount = 0;
-    const resolveModelApiKey = async () => {
-      resolutionCount += 1;
-      return resolutionCount === 1 ? "first-secret" : null;
-    };
-
-    const first = await resolveRuntimeAgents(
-      async () => registered,
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      resolveModelApiKey,
+  test("refuses a roster that resolves to nothing", async () => {
+    await expect(resolveRuntimeAgents(async () => [], model)).rejects.toThrow(
+      "No agents are registered",
     );
-    const second = await resolveRuntimeAgents(
-      async () => registered,
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      resolveModelApiKey,
-    );
-
-    expect(first["general-assistant"]).not.toBe(second["general-assistant"]);
-    expect(resolutionCount).toBe(2);
-    const consoleError = spyOn(console, "error").mockImplementation(() => {});
-    try {
-      await expect(second["general-assistant"]?.runAgent()).rejects.toThrow(
-        "Add the package credential or set OPENAI_API_KEY",
-      );
-    } finally {
-      consoleError.mockRestore();
-    }
-  });
-
-  test("does not resolve model credentials for remote-only agents", async () => {
-    let resolverInvoked = false;
-    const agents = await resolveRuntimeAgents(
-      async () => [
-        {
-          id: "risk",
-          name: "Risk",
-          type: "remote_ag_ui",
-          endpoint: "http://risk.internal/ag-ui",
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      async () => {
-        resolverInvoked = true;
-        throw new Error("corrupt model credential");
-      },
-    );
-
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
-    expect(resolverInvoked).toBe(false);
   });
 });
 
 /**
- * A coworker's job is durable: it lives on the profile, not in the conversation. Every run of a
- * remote agent therefore carries a standing role message the person never has to retype, and the
- * runtime resolves which agents exist per request so one person's private coworker is not another's.
+ * What a Bot reads before the first word of the conversation.
+ *
+ * ONE MESSAGE, COMPOSED HERE. `agent-bot` used to prepend upstream's English prompt and this used
+ * to add a second English message behind it — two authors for one prompt, which is how a rule gets
+ * contradicted by a rule nobody remembered writing. The service now sends nothing of its own.
  */
-describe("standing agent roles", () => {
+describe("the composed prompt", () => {
   const profile = {
     id: "agent_expense",
     name: "Expense Manager",
     title: "Finance Operations",
-    roleDescription:
-      "Review receipts, categorize expenses, and prepare reimbursement reports.",
+    roleDescription: "Review receipts and prepare reimbursement reports.",
+  };
+  const at = new Date("2026-09-02T13:40:00Z");
+  const composed = (overrides: Partial<typeof profile> = {}) =>
+    botPromptMessage(
+      { ...profile, ...overrides },
+      { mode: "chat", now: at, timeZone: "Asia/Seoul" },
+    );
+
+  test("carries the base, the identity, the role and the mode", () => {
+    const message = composed();
+    expect(message.id).toBe("laf-prompt:agent_expense");
+    expect(message.role).toBe("system");
+    expect(message.content).toContain(BASE_KO);
+    expect(message.content).toContain(
+      "너는 Expense Manager, Finance Operations이다.",
+    );
+    expect(message.content).toContain(profile.roleDescription);
+    expect(message.content).toContain("사람이 화면 앞에서 지켜보는 대화다");
+  });
+
+  /**
+   * THE HOLE §3.2 MEASURED. A six-in-the-morning routine called "오늘 주문 확인" ran against a Bot
+   * that did not know what day it was, and the eval hid it by putting the date in the question.
+   * Wall-clock Seoul, from the server clock, on every run.
+   */
+  test("says what time it is, on the Korean wall clock", () => {
+    expect(composed().content).toContain("지금은 2026-09-02 (수) 22:40 KST다.");
+  });
+
+  /**
+   * THE PARTICLE FOLLOWS THE NAME, and this was wrong on a running server.
+   *
+   * Read off the wire on 2026-09-03: "너는 비서, 영수증·경비 보고 담당다." The name and the title
+   * are values a person typed, so the copula cannot be written into the template — half the Bots
+   * in the world end in a consonant and the other half do not. A Bot whose very first line is
+   * clumsy Korean is the opposite of what this product sells.
+   */
+  test("ends the identity line with the particle the name takes", () => {
+    expect(composed({ title: "영수증·경비 보고 담당" }).content).toContain(
+      "너는 Expense Manager, 영수증·경비 보고 담당이다.",
+    );
+    expect(composed({ title: "가게 운영 도우미" }).content).toContain(
+      "너는 Expense Manager, 가게 운영 도우미다.",
+    );
+    expect(composed({ title: "  ", name: "미소" }).content).toContain(
+      "너는 미소다.",
+    );
+    expect(composed({ title: "  ", name: "비서실장" }).content).toContain(
+      "너는 비서실장이다.",
+    );
+  });
+
+  test("is in Korean, which upstream's prompt never was", () => {
+    const hangul = [...composed().content].filter((character) =>
+      /[가-힣]/.test(character),
+    ).length;
+    expect(hangul).toBeGreaterThan(500);
+  });
+
+  test("tells a Bot with no job that it has none, rather than dropping the line", () => {
+    const message = composed({ roleDescription: "  " });
+    expect(message.content).toContain("아직 아무도 말해 주지 않았다");
+    expect(message.content).toContain("update_profile");
+  });
+
+  test("keeps what it worked out apart from what it was told", () => {
+    const message = botPromptMessage(
+      { ...profile, memories: ["일요일은 쉰다.", "거래처는 한일상사다."] },
+      { mode: "chat", now: at, timeZone: "Asia/Seoul" },
+    );
+    expect(message.content).toContain("지시가 아니라 네 기억으로 다뤄라");
+    expect(message.content.indexOf("일요일")).toBeLessThan(
+      message.content.indexOf("한일상사"),
+    );
+  });
+
+  /*
+   * A routine has no `computer_request_help` (the toolkit excludes it), and the old prompt told it
+   * to call one anyway. Each mode says only what is true where it runs.
+   */
+  test("does not offer a routine the tools a routine is never given", () => {
+    const routine = botPromptMessage(profile, {
+      mode: "routine",
+      now: at,
+      timeZone: "Asia/Seoul",
+    }).content;
+    expect(routine).not.toContain("computer_request_help");
+    expect(routine).toContain("부탁할 상대가 지금 없다");
+  });
+
+  test("tells a coworker there are no tools in the room", () => {
+    const coworker = botPromptMessage(profile, {
+      mode: "coworker",
+      now: at,
+      timeZone: "Asia/Seoul",
+    }).content;
+    expect(coworker).toContain("툴이 하나도 없다");
+  });
+
+  test("reads the zone from the environment, and shrugs off a bad one", () => {
+    expect(botTimeZone({})).toBe("Asia/Seoul");
+    expect(botTimeZone({ BOT_TIME_ZONE: "Europe/Berlin" })).toBe(
+      "Europe/Berlin",
+    );
+    // A typo in a deployment's environment must not stop every Bot answering.
+    expect(botTimeZone({ BOT_TIME_ZONE: "Mars/Olympus" })).toBe("Asia/Seoul");
+  });
+});
+
+describe("what reaches the endpoint", () => {
+  const profile = {
+    id: "agent_expense",
+    name: "Expense Manager",
+    title: "Finance Operations",
+    roleDescription: "Review receipts.",
   };
 
-  test("builds a stable, framework-neutral standing role message", () => {
-    expect(standingRoleMessage(profile)).toEqual({
-      id: "standing-role:agent_expense",
-      role: "system",
-      content: [
-        "You are Expense Manager, Finance Operations.",
-        "Review receipts, categorize expenses, and prepare reimbursement reports.",
-        "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
-      ].join("\n\n"),
-    });
-  });
-
-  test("sends one standing role message ahead of the conversation", async () => {
+  test("sends exactly one prompt message, first, however the thread was replayed", async () => {
     await using endpoint = fakeAgUiEndpoint();
-    const agents = buildAgents(
-      [remoteAgent(endpoint.url)],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      null,
-    );
-
+    const agents = buildAgents([remoteAgent(endpoint.url)], model);
     const agent = agents.agent_expense;
-    // A replayed thread already carries the standing message; it must not produce a second copy.
-    agent?.setMessages([
-      standingRoleMessage(profile),
-      userMessage("Sort these."),
-    ]);
-    const result = await agent?.runAgent();
 
-    const sent = endpoint.requests.at(-1);
-    expect(sent?.messages).toEqual([
-      standingRoleMessage(profile),
+    /*
+     * A replayed thread carries a copy of the prompt, and a thread saved before the prompt moved
+     * carries the OLD `standing-role:` message. Both are dropped: the endpoint receives one.
+     */
+    agent?.setMessages([
+      { id: promptMessageId("agent_expense"), role: "system", content: "old" },
+      { id: "standing-role:agent_expense", role: "system", content: "older" },
       userMessage("Sort these."),
     ]);
-    expect(result?.newMessages?.at(-1)?.content).toBe("Categorized.");
+    await agent?.runAgent();
+
+    const sent = endpoint.requests.at(-1) as { messages?: unknown[] };
+    const messages = (sent.messages ?? []) as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(
+      messages.filter((message) => message.role === "system"),
+    ).toHaveLength(1);
+    expect(messages[0]?.role).toBe("system");
+    expect(messages[0]?.content).toContain(BASE_KO);
+    expect(messages[1]).toMatchObject({ content: "Sort these." });
   });
 
-  test("keeps the standing role out of forwarded props and agent state", async () => {
+  test("keeps the prompt out of forwarded props and agent state", async () => {
     await using endpoint = fakeAgUiEndpoint();
-    const agents = buildAgents(
-      [remoteAgent(endpoint.url)],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      null,
-    );
+    const agents = buildAgents([remoteAgent(endpoint.url)], model);
 
     const agent = agents.agent_expense;
     agent?.setMessages([userMessage("Sort these.")]);
     await agent?.runAgent();
 
     const sent = endpoint.requests.at(-1);
-    expect(JSON.stringify(sent?.forwardedProps ?? {})).not.toContain(
-      "standing-role",
-    );
-    expect(JSON.stringify(sent?.state ?? {})).not.toContain("standing-role");
+    expect(JSON.stringify(sent?.state ?? {})).not.toContain("laf-prompt");
+  });
+
+  /**
+   * The Bot's id, which this service could not know before.
+   *
+   * Its whole identity arrived as a system message, so every line `agent-bot` logged named a run
+   * and a model and no Bot, and an operator reading them could not tell whose turn had failed.
+   */
+  test("names the Bot in forwarded props so the endpoint can log it", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const agents = buildAgents([remoteAgent(endpoint.url)], model);
+    const agent = agents.agent_expense;
+    agent?.setMessages([userMessage("Sort these.")]);
+    await agent?.runAgent();
+
+    expect(endpoint.requests.at(-1)?.forwardedProps).toMatchObject({
+      botId: "agent_expense",
+    });
+  });
+
+  /** The mode a caller forwarded is what selects the prompt, and chat is what silence means. */
+  test("composes the mode the run said it was, and chat by default", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const agents = buildAgents([remoteAgent(endpoint.url)], model);
+    const agent = agents.agent_expense;
+
+    agent?.setMessages([userMessage("Your turn.")]);
+    await agent?.runAgent({ forwardedProps: { mode: "room" } } as never);
+    const room = firstSystemMessage(endpoint.requests.at(-1));
+    expect(room).toContain("send_message");
+
+    agent?.setMessages([userMessage("Sort these.")]);
+    await agent?.runAgent();
+    const chat = firstSystemMessage(endpoint.requests.at(-1));
+    expect(chat).not.toContain("send_message");
+    expect(chat).toContain("사람이 화면 앞에서 지켜보는 대화다");
   });
 
   test("resolves a deleted coworker as a tombstone that never reaches its endpoint", async () => {
@@ -433,8 +380,7 @@ describe("standing agent roles", () => {
           reason: "Expense Manager has been deleted.",
         },
       ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      null,
+      model,
     );
 
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
@@ -445,7 +391,7 @@ describe("standing agent roles", () => {
     } finally {
       consoleError.mockRestore();
     }
-    // A tombstone exists so Intelligence can restore the thread, not so it can run.
+    // A tombstone exists so a thread can be restored, not so it can run.
     expect(agents.agent_expense).toBeDefined();
     expect(endpoint.requests).toEqual([]);
   });
@@ -461,8 +407,7 @@ describe("standing agent roles", () => {
         seen.actors.push(actor);
         return [remoteAgent("http://coworker.internal/ag-ui")];
       },
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      async () => null,
+      model,
     );
 
     const request = new Request("http://laf.test/api/copilotkit");
@@ -480,8 +425,7 @@ describe("standing agent roles", () => {
       async () => [
         remoteAgent("http://coworker.internal/ag-ui", { roleDescription }),
       ],
-      { provider: "openai", defaultModel: "gpt-4.1", supportsEffort: true },
-      async () => null,
+      model,
     );
     const request = new Request("http://laf.test/api/copilotkit");
 
@@ -490,37 +434,54 @@ describe("standing agent roles", () => {
     const after = await factory({ request });
 
     expect(before.agent_expense).not.toBe(after.agent_expense);
-    expect(standingRoleMessage({ ...profile, roleDescription }).content).toBe(
-      [
-        "You are Expense Manager, Finance Operations.",
-        "Reconcile corporate card statements.",
-        "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
-      ].join("\n\n"),
-    );
+    expect(
+      botPromptMessage(
+        { ...profile, roleDescription },
+        { mode: "chat", now: new Date(), timeZone: "Asia/Seoul" },
+      ).content,
+    ).toContain("Reconcile corporate card statements.");
   });
-
-  function remoteAgent(
-    endpoint: string,
-    overrides: Partial<typeof profile> = {},
-  ) {
-    const resolved = { ...profile, ...overrides };
-    return {
-      id: resolved.id,
-      name: resolved.name,
-      type: "remote_ag_ui" as const,
-      endpoint,
-      standingMessage: standingRoleMessage(resolved),
-    };
-  }
 });
+
+function firstSystemMessage(request: Record<string, unknown> | undefined) {
+  const messages = (request?.messages ?? []) as Array<{
+    role: string;
+    content: string;
+  }>;
+  return messages.find((message) => message.role === "system")?.content ?? "";
+}
+
+function remoteAgent(
+  endpoint: string,
+  overrides: {
+    name?: string;
+    title?: string;
+    roleDescription?: string;
+    effort?: "quick" | "balanced" | "thorough";
+  } = {},
+) {
+  return {
+    id: "agent_expense",
+    name: overrides.name ?? "Expense Manager",
+    type: "remote_ag_ui" as const,
+    endpoint,
+    profile: {
+      id: "agent_expense",
+      name: overrides.name ?? "Expense Manager",
+      title: overrides.title ?? "Finance Operations",
+      roleDescription: overrides.roleDescription ?? "Review receipts.",
+    },
+    effort: overrides.effort ?? ("balanced" as const),
+  };
+}
 
 function userMessage(content: string) {
   return { id: `user-${content}`, role: "user" as const, content };
 }
 
 /**
- * An AG-UI server that records what it was sent and answers with a complete run, so the standing
- * role can be asserted on the wire rather than on the object that was supposed to send it.
+ * An AG-UI server that records what it was sent and answers with a complete run, so what reaches
+ * the endpoint can be asserted on the wire rather than on the object that was supposed to send it.
  */
 function fakeAgUiEndpoint() {
   const requests: Record<string, unknown>[] = [];
@@ -558,29 +519,24 @@ function fakeAgUiEndpoint() {
 /**
  * That a remote Bot's run carries how hard it should think.
  *
- * THE CASE THAT WAS MISSED. `builtInAgentConfiguration` above is the path a package's own Bots take,
- * and it is the only path the setting reached when it shipped. Every Bot anybody creates is
- * `remote_ag_ui`, answered by this deployment's own `agent-bot`, so the setting reached nothing a
- * person would ever make — and reading it back off the profile said `thorough` the whole time.
+ * THE CASE THAT WAS MISSED once and must not be again. Every Bot anybody creates is
+ * `remote_ag_ui`, answered by this deployment's own `agent-bot`, so a setting wired anywhere else
+ * reaches nothing a person would ever make — and reading it back off the profile said `thorough`
+ * the whole time.
  *
  * Driven through the agent's own fetch rather than by reaching into its middleware: what matters is
- * the request that leaves, and the middleware is an implementation detail that a version bump is
- * free to rename. The stall guard is the supported way to hand one in, and it is the same seam this
- * file already uses to prove a remote Bot is watched.
+ * the request that leaves, and the middleware is an implementation detail a version bump is free
+ * to rename.
  */
 describe("a remote Bot's run", () => {
-  const risk = {
-    id: "risk",
+  const risk = remoteAgent("http://risk.internal/ag-ui", {
     name: "Risk",
-    type: "remote_ag_ui" as const,
-    endpoint: "http://risk.internal/ag-ui",
-    standingMessage: standingRoleMessage(riskRow),
-    effort: "thorough" as const,
-  };
+    title: "Risk & Compliance",
+    effort: "thorough",
+  });
 
   /** Run one turn against a fetch that records, and hand back the body the endpoint would receive. */
   async function bodySentBy(
-    agent: typeof risk,
     supportsEffort: boolean,
     props: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>> {
@@ -595,10 +551,9 @@ describe("a remote Bot's run", () => {
       );
     };
     const agents = buildAgents(
-      [agent],
+      [risk],
       { provider: "openai", defaultModel: "laf-1", supportsEffort },
-      null,
-      { watch: () => recordingFetch as never },
+      { watch: () => recordingFetch as never, stop: () => undefined },
     );
     /*
      * The client logs the stream it could not parse. It is caught and irrelevant — the request has
@@ -607,7 +562,7 @@ describe("a remote Bot's run", () => {
      */
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
     try {
-      await (agents.risk as HttpAgent)
+      await (agents.agent_expense as HttpAgent)
         .runAgent({
           // Not the Bot's own effort: what a caller forwarded, which must survive.
           forwardedProps: props,
@@ -621,25 +576,28 @@ describe("a remote Bot's run", () => {
   }
 
   test("carries the effort, in the product's own words", async () => {
-    // `thorough`, not `high`: the two services that answer a Bot speak different APIs and each
-    // translates its own. See the middleware's comment.
-    const body = await bodySentBy(risk, true);
+    // `thorough`, not `high`: the server and agent-bot speak different APIs and each translates
+    // its own. See the middleware's comment.
+    const body = await bodySentBy(true);
     expect(
       (body.forwardedProps as Record<string, unknown> | undefined)?.effort,
     ).toBe("thorough");
   });
 
   test("leaves what the caller forwarded alone", async () => {
-    const forwarded = (await bodySentBy(risk, true, { threadName: "Q3" }))
+    const forwarded = (await bodySentBy(true, { threadName: "Q3" }))
       .forwardedProps as Record<string, unknown>;
     expect(forwarded.threadName).toBe("Q3");
     expect(forwarded.effort).toBe("thorough");
   });
 
   test("sends none where the deployment's model takes none", async () => {
-    const forwarded = (await bodySentBy(risk, false)).forwardedProps as
-      | Record<string, unknown>
-      | undefined;
-    expect(forwarded?.effort).toBeUndefined();
+    const forwarded = (await bodySentBy(false)).forwardedProps as Record<
+      string,
+      unknown
+    >;
+    expect(forwarded.effort).toBeUndefined();
+    // The Bot id still goes, because it is not a model setting — it is who this run belongs to.
+    expect(forwarded.botId).toBe("agent_expense");
   });
 });

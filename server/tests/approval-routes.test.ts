@@ -12,11 +12,14 @@ import {
 import type { ComputerClient } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
+  ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
+import { createApprovalWaiter } from "../src/rooms/wait-for-approval";
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * The surface a person answers on, exercised as the browser reaches it.
@@ -39,7 +42,6 @@ const SNAPSHOT: SnapshotResult = {
 };
 
 const ASKING: ActionPolicy = {
-  mode: "enforce",
   deny: [],
   ask: ['contains(element.name, "submit")'],
   allow: ["true"],
@@ -162,7 +164,7 @@ describe("answering a question", () => {
       botId: "bot-1",
       actor: DRIVER.id,
       rule: "r",
-      question: "q",
+      subject: A_CLICK,
       fingerprint: "f",
       target: { type: "computer", id: "bot-1" },
     });
@@ -245,7 +247,9 @@ describe("answering a question", () => {
       expect(record.fingerprint).toBeUndefined();
       expect(record.actor).toBeUndefined();
       expect(record.target).toBeUndefined();
-      expect(record.question).toContain("Submit order");
+      // What DOES cross is the subject, because the surface has to draw the question — as facts,
+      // in the shape `app/src/lib/approvals.ts` writes a Korean sentence from.
+      expect(record.subject).toEqual(A_CLICK);
     }
   });
 
@@ -296,12 +300,12 @@ describe("answering a question", () => {
     expect(theirs.approvals).toEqual([]);
   });
 
-  test("a declined answer stops the action without pretending it was refused by a rule", async () => {
+  test("a No answered on the surface stops the action from being asked again", async () => {
     const { app, ask, rows, gateway, calls } = await surface();
     const asked = await ask("bot-1");
 
     await answer(app)("bot-1", asked.approvalId, false);
-    // Presenting a No asks again rather than going through, and nothing reached the computer.
+    // Presenting the spent No does not open a second question: it is refused, and the row says why.
     await expect(
       gateway.click(
         "bot-1",
@@ -311,13 +315,16 @@ describe("answering a question", () => {
         undefined,
         asked.approvalId,
       ),
-    ).rejects.toThrow(ActionNeedsApprovalError);
+    ).rejects.toThrow(ActionRefusedError);
     expect(calls).toEqual([]);
     expect(rows.map((row) => row.eventType)).toEqual([
       "approval.requested",
       "approval.denied",
-      "approval.requested",
+      "computer.action_refused",
     ]);
+    expect(
+      (rows.at(-1)?.payload.decision as { code?: string } | undefined)?.code,
+    ).toBe("laf:declined_recently");
   });
 
   test("an answer is spendable only on the action it was given for", async () => {
@@ -372,8 +379,11 @@ describe("answering with always", () => {
     expect(granted?.scopeValue).toBe("example.com");
     expect(granted?.rule).toBe('contains(element.name, "submit")');
     expect(granted?.grantedBy).toBe(MANAGER.id);
-    // The sentence they were reading, kept so the list can show it back to them later.
-    expect(granted?.question).toBe(asked.question);
+    // The facts they were reading, kept so the list can say it back to them later. This asserted
+    // `question` against `question` until the sentence became a subject (migration 0026) — two
+    // fields that no longer exist on either side, so it was `undefined` matching `undefined` and
+    // the row could have been stored with no subject at all without this noticing.
+    expect(granted?.subject).toEqual(asked.subject);
   });
 
   test("the body cannot name its own scope", async () => {
@@ -507,7 +517,7 @@ describe("taking an allowance back", () => {
       botId: "bot-1",
       rule: "r",
       scope: { kind: "host", value: "example.com" },
-      question: "q",
+      subject: A_CLICK,
       grantedBy: MANAGER.id,
     });
 
@@ -531,5 +541,68 @@ describe("taking an allowance back", () => {
     >;
     expect(body).toHaveProperty("standing");
     expect(body).not.toHaveProperty("approvals");
+  });
+});
+
+/**
+ * The whole path, end to end, on the seam this wave changed.
+ *
+ * A governed click raises the question, a room turn holds for it, a person answers on the route, and
+ * the held turn resumes. Nothing polls anything: the registry, the gateway, the routes and the
+ * waiter are one process, which is the deployment (docs/laf/deployment-model.md). Before this, the
+ * same journey ran a DELETE and a SELECT against `computer_approvals` every second for up to two
+ * minutes and resumed up to a second after the button was pressed. The clock never moves in these
+ * two tests, so a waiter that polled could not pass either of them.
+ */
+describe("a room turn held on a question, and let go by an answer", () => {
+  /** Settled or not, decided without letting a timer run. */
+  const settled = async <T>(promise: Promise<T>) =>
+    await Promise.race([
+      promise.then(() => true),
+      Promise.resolve().then(() => false),
+    ]);
+
+  test("resumes on the answer, and the grant then spends on the very action", async () => {
+    const { app, approvals, ask, gateway, calls, rows } = await surface();
+    const wait = createApprovalWaiter(approvals);
+    const asked = await ask("bot-1");
+    expect(calls).toEqual([]);
+
+    const held = wait("bot-1", asked.approvalId);
+    expect(await settled(held)).toBe(false);
+
+    expect((await answer(app)("bot-1", asked.approvalId, true)).status).toBe(
+      200,
+    );
+    expect(await held).toBe("granted");
+
+    // And the turn does what it was holding to do, with the id it was holding.
+    await gateway.click(
+      "bot-1",
+      "bot-1",
+      DRIVER,
+      { ref: "e9", snapshotId: 7 },
+      undefined,
+      asked.approvalId,
+    );
+    expect(calls).toEqual(["click"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "approval.requested",
+      "approval.granted",
+      "computer.action_allowed",
+    ]);
+  });
+
+  test("resumes on a refusal too, and the click never happens", async () => {
+    const { app, approvals, ask, calls } = await surface();
+    const wait = createApprovalWaiter(approvals);
+    const asked = await ask("bot-1");
+
+    const held = wait("bot-1", asked.approvalId);
+    expect((await answer(app)("bot-1", asked.approvalId, false)).status).toBe(
+      200,
+    );
+    expect(await held).toBe("denied");
+    expect(calls).toEqual([]);
   });
 });

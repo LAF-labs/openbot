@@ -44,6 +44,28 @@ const SCREEN_PANEL_WIDTH = 320;
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
+  /**
+   * THE TWO REQUESTS THIS SCREEN CANNOT DRAW WITHOUT, STARTED TOGETHER AND BEFORE IT MOUNTS.
+   *
+   * On mount, the channel was fetched first; the Bot's id only exists once it lands; the header's
+   * name comes from the roster; and the settings pane's profile comes from the Bot. That is a
+   * three-deep waterfall on a screen somebody just clicked a roster row to reach, and it is three
+   * round trips of a spinner rather than one.
+   *
+   * The two that do not depend on each other start here, in parallel, while the router is still
+   * navigating. `ensureQueryData` is a cache read when the roster already fetched the list, which
+   * is the common case — opening a second channel costs one request, not two.
+   *
+   * Deliberately not awaited as a pair that can fail the navigation: a channel that cannot be read
+   * still has a screen to draw, and the roster is not worth blocking on at all.
+   */
+  loader: async ({ context, params }) => {
+    const channel = context.queryClient.ensureQueryData(
+      channelQueryOptions(params.channelId),
+    );
+    const roster = context.queryClient.ensureQueryData(agentListQueryOptions());
+    await Promise.allSettled([channel, roster]);
+  },
   component: RouteComponent,
 });
 
@@ -152,8 +174,15 @@ function RouteComponent() {
          * this one share a baseline across the whole window. The divider is gone because there is
          * nothing to divide: the transcript below is the same surface, and a line drawn across the
          * top of a conversation reads as a toolbar the conversation is filed under.
+         *
+         * It is also what the window is dragged by. `titleBarStyle: "Overlay"` in the shell means
+         * there is no title bar left to grab; `data-tauri-drag-region` gives this row that job and
+         * is inert in a browser tab.
          */}
-        <div className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3">
+        <div
+          className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3"
+          data-tauri-drag-region
+        >
           {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
           <div className="flex min-w-0 items-center gap-1.5">
             <motion.div
@@ -239,7 +268,7 @@ function RouteComponent() {
               ) : null}
             </Button>
             <Button
-              aria-label={t("Channel coworker")}
+              aria-label={t("Bot in this conversation")}
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
@@ -303,7 +332,7 @@ function ChannelBody({
   if (!defaultAgentId) {
     return (
       <p className="p-8 text-muted-foreground text-sm">
-        {t("This channel has no coworker in it.")}
+        {t("This conversation has no Bot in it.")}
       </p>
     );
   }
