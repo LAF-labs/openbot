@@ -28,6 +28,7 @@ import { Route as AuthedAdminCredentialsRouteImport } from './routes/_authed/adm
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/plugins'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedSettingsAccountRouteImport } from './routes/_authed/settings/account'
 import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
@@ -127,6 +128,11 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsAccountRoute = AuthedSettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsConnectedAccountsRoute =
   AuthedSettingsConnectedAccountsRouteImport.update({
     id: '/connected-accounts',
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/_authed/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/plugins': typeof AuthedAdminPluginsRoute
+  '/_authed/settings/account': typeof AuthedSettingsAccountRoute
   '/_authed/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
@@ -247,6 +256,7 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/account'
     | '/settings/connected-accounts'
     | '/admin/'
     | '/settings/'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/credentials'
     | '/admin/playground'
     | '/admin/plugins'
+    | '/settings/account'
     | '/settings/connected-accounts'
     | '/admin'
     | '/settings'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/credentials'
     | '/_authed/admin/playground'
     | '/_authed/admin/plugins'
+    | '/_authed/settings/account'
     | '/_authed/settings/connected-accounts'
     | '/_authed/_app/'
     | '/_authed/admin/'
@@ -445,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/account': {
+      id: '/_authed/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthedSettingsAccountRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/connected-accounts': {
       id: '/_authed/settings/connected-accounts'
       path: '/connected-accounts'
@@ -509,11 +528,13 @@ const AuthedAdminRouteRouteWithChildren =
   AuthedAdminRouteRoute._addFileChildren(AuthedAdminRouteRouteChildren)
 
 interface AuthedSettingsRouteRouteChildren {
+  AuthedSettingsAccountRoute: typeof AuthedSettingsAccountRoute
   AuthedSettingsConnectedAccountsRoute: typeof AuthedSettingsConnectedAccountsRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
+  AuthedSettingsAccountRoute: AuthedSettingsAccountRoute,
   AuthedSettingsConnectedAccountsRoute: AuthedSettingsConnectedAccountsRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }

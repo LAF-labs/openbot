@@ -20,6 +20,17 @@ const ITEMS = [
     title: t("General"),
     linkOptions: { to: "/settings" },
   },
+  /*
+   * Its own row rather than a link buried in General.
+   *
+   * Taking your data and ending your account are the two things somebody has to be able to FIND
+   * without being told where they are — a page reachable only by scrolling past appearance settings
+   * is a page that does not really exist.
+   */
+  {
+    title: t("Your data"),
+    linkOptions: { to: "/settings/account" },
+  },
 ];
 
 export function SettingsSidebar({

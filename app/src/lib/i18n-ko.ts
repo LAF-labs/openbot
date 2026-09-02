@@ -1005,4 +1005,39 @@ export const ko: Record<string, string> = {
     "이미 답했거나, 10분이 지나 만료되었습니다. 멈춰 있는 일은 없습니다.",
   "Go to your Bots": "내 봇으로 가기",
   "Open the conversation": "대화 열기",
+  // 내 데이터 — 내보내기와 계정 삭제(설정 > 내 데이터).
+  "Your data": "내 데이터",
+  "What this deployment holds about you, how to take a copy of it, and how to end it.":
+    "이곳이 나에 대해 무엇을 갖고 있는지, 그것을 어떻게 내려받고 어떻게 끝내는지.",
+  "Take a copy": "내려받기",
+  "Download everything": "전부 내려받기",
+  "One file: your profile, your Bots and what they remember, every conversation, your routines and skills, and the record of what you did. No passwords, no connected-service keys, nobody else's data.":
+    "파일 하나에 담깁니다 — 내 계정 정보, 내 봇과 봇이 기억하는 것, 모든 대화, 루틴과 스킬, 그리고 내가 한 일의 기록. 비밀번호도, 연결한 서비스의 키도, 다른 사람의 것도 들어 있지 않습니다.",
+  Download: "내려받기",
+  Leave: "떠나기",
+  "Delete this account": "계정 삭제",
+  "Your Bots and everything they learned, every conversation, your routines, your skills and the allowances you gave all go. Your Bots' browsers are wiped, so every site they were signed in to is signed out.":
+    "내 봇과 봇이 배운 것, 모든 대화, 루틴, 스킬, 내가 준 상시 허용이 전부 사라집니다. 봇의 브라우저도 지워지므로 봇이 로그인해 두었던 사이트는 모두 로그아웃됩니다.",
+  "What stays is the record of what was done, kept for a year under a code instead of your name — and backups taken in the last 30 days, until they age out.":
+    "남는 것은 무슨 일이 있었는지의 기록입니다. 1년 동안 보관되며, 이름 대신 식별 코드로 남습니다. 그리고 최근 30일 안에 만들어진 백업은 보관 기간이 끝날 때까지 남아 있습니다.",
+  "This cannot be undone. Take a copy first.":
+    "되돌릴 수 없습니다. 먼저 내려받아 두세요.",
+  "Type your email address to confirm.":
+    "확인을 위해 내 이메일 주소를 입력하세요.",
+  "Type {email} to confirm.": "확인을 위해 {email}을(를) 입력하세요.",
+  "Delete everything": "전부 삭제",
+  "That is not the email address on this account.":
+    "이 계정의 이메일 주소가 아닙니다.",
+  "This account is already gone.": "이미 삭제된 계정입니다.",
+  "Leave from your own account page instead.":
+    "본인 계정은 내 데이터 화면에서 삭제하세요.",
+  "Your account is gone": "계정이 삭제되었습니다",
+  "Nothing of yours is left here. The record of what was done keeps a code instead of your name, and it is kept for a year.":
+    "이곳에 내 것은 남아 있지 않습니다. 무슨 일이 있었는지의 기록만 이름 대신 식별 코드로 1년 동안 보관됩니다.",
+  "Backups taken in the last 30 days still hold a copy until they age out. Nothing new is written to them.":
+    "최근 30일 안에 만들어진 백업에는 사본이 남아 있으며, 보관 기간이 끝나면 지워집니다. 새로 기록되는 것은 없습니다.",
+  "Back to the sign-in page": "로그인 화면으로",
+  // 감사 기록의 두 줄 — 내보내기와 계정 삭제.
+  "A person took a copy of their data": "사람이 자기 데이터를 내려받음",
+  "An account was deleted": "계정이 삭제됨",
 };
