@@ -139,8 +139,7 @@ function ComputersPage() {
             {t("Every Bot is sharing one computer.")}
           </span>{" "}
           {t(
-            "They share its logins, its files and its session, so a Bot can reach what another signed into. Set {variable} to give each Bot its own.",
-            { variable: "COMPUTER_SUPERVISOR_URL" },
+            "They share its logins, its files and its session, so a Bot can reach what another signed into. That is the design — one computer per account — and what keeps a Bot in bounds is the boundary in front of it, not a separate computer.",
           )}
         </p>
       ) : isolation === "per-bot" ? (

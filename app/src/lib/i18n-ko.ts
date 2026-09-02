@@ -478,8 +478,8 @@ export const ko: Record<string, string> = {
     "이 봇이 당신에 대해 알아낸 것들이고, 대화가 끝나도 남습니다. 내 것은 나만 봅니다.",
   Forget: "잊기",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
-  "They share its logins, its files and its session, so a Bot can reach what another signed into. Set {variable} to give each Bot its own.":
-    "로그인, 파일, 세션을 공유하므로 한 봇이 다른 봇이 로그인한 곳에 접근할 수 있습니다. 각 봇에게 따로 주려면 {variable}을 설정하세요.",
+  "They share its logins, its files and its session, so a Bot can reach what another signed into. That is the design — one computer per account — and what keeps a Bot in bounds is the boundary in front of it, not a separate computer.":
+    "로그인, 파일, 세션을 함께 씁니다. 그래서 한 봇이 다른 봇이 로그인해 둔 곳에 닿을 수 있습니다. 이것은 의도된 설계입니다 — 계정마다 컴퓨터 한 대. 봇을 선 안에 두는 것은 컴퓨터를 따로 주는 것이 아니라 그 앞에 놓인 경계입니다.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
   "This cannot be connected yet. An administrator has to finish setting it up first.":
