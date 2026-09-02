@@ -413,6 +413,19 @@ export function createApprovalRegistry(
     ttlMs?: number;
     /** How long a decline stands. See DECLINE_STICKS_MS. */
     declineStickyMs?: number;
+    /**
+     * A question nobody answered in the time it had.
+     *
+     * The one ending of a question that produces no row anywhere else: a grant and a refusal are
+     * both a person acting and are audited as one (`approval-routes.ts`), and an expiry is the
+     * absence of that. It is what the notification outbox turns into `approval.expired`, and
+     * without it "nobody was reached" and "somebody decided not to" look identical from outside.
+     *
+     * Called synchronously from the sweep, so it must do nothing slow and must not throw — the
+     * sweep runs inside every read of this registry. A throw is swallowed here rather than left to
+     * take a caller's read down with it.
+     */
+    onExpire?: (approval: PendingApproval) => void;
   } = {},
 ): ApprovalRegistry {
   const now = options.now ?? (() => Date.now());
@@ -459,6 +472,16 @@ export function createApprovalRegistry(
       if (Date.parse(approval.expiresAt) <= at) {
         open.delete(id);
         settle(id, null);
+        // Only the ones nobody answered. An answered question that was never spent expires too, and
+        // announcing that as "nobody was reached" would be false about the one case where somebody
+        // definitely was.
+        if (approval.granted === undefined && options.onExpire) {
+          try {
+            options.onExpire(approval);
+          } catch {
+            // A notification is not worth a read of this registry. See the option's own comment.
+          }
+        }
       }
     }
   };

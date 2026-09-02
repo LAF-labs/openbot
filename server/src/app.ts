@@ -35,6 +35,9 @@ import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
 import { createHealthRoute, type HealthProbes } from "./health";
+import type { ApprovalMetrics } from "./notifications/approval-metrics";
+import type { NotificationOutbox } from "./notifications/outbox";
+import { createNotificationRoutes } from "./notifications/routes";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
@@ -232,6 +235,18 @@ export function createApp(
    * success and removes nothing.
    */
   accountService?: AccountService,
+  /**
+   * The notification outbox and the number it exists to make measurable. Last, like everything new.
+   *
+   * Absent leaves both routes unmounted and the answering handler telling nobody it was answered,
+   * which is the honest degraded behaviour: a deployment with no outbox has nothing to list, and a
+   * page that asked would get a 404 rather than an empty list it would read as "nothing is waiting".
+   */
+  notifications?: {
+    outbox: NotificationOutbox;
+    /** How long answers take. Absent answers 503 on the metric and leaves the door working. */
+    approvalMetrics?: (days: number) => Promise<ApprovalMetrics>;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -476,6 +491,31 @@ export function createApp(
         auditStore,
         requireUser,
         standingApprovals,
+        // An answered question stops being a thing anybody is waiting on. See the outbox.
+        notifications
+          ? (approvalId) => {
+              void notifications.outbox
+                .markSeenForApproval(approvalId)
+                .catch(() => undefined);
+            }
+          : undefined,
+      ),
+    );
+  }
+
+  /*
+   * What is waiting for the person asking, and how long answers take.
+   *
+   * One mount under `/api`, holding `/me/notifications` and `/admin/metrics/approvals`, because
+   * they are the door and the measurement of the same thing — see notifications/routes.ts.
+   */
+  if (notifications) {
+    app.route(
+      "/api",
+      createNotificationRoutes(
+        requireUser,
+        notifications.outbox,
+        notifications.approvalMetrics,
       ),
     );
   }

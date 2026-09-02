@@ -42,6 +42,19 @@ export function createApprovalRoutes(
    * widening it has nowhere to record.
    */
   standing?: StandingApprovalStore,
+  /**
+   * "They have answered, so stop telling them about it."
+   *
+   * The notification outbox, reached as one function rather than as a store, so this file goes on
+   * knowing nothing about how somebody was told — a webhook, the page's own socket, a message on
+   * their phone one day. Absent leaves every notification for this question sitting unseen until
+   * the person opens the list, which is not wrong so much as untidy: the question is gone and the
+   * row says it is still waiting.
+   *
+   * Fire-and-forget after the answer has been recorded. An outbox that is having a bad minute must
+   * not turn a person's yes into a 500.
+   */
+  onAnswered?: (approvalId: string) => void,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -171,6 +184,9 @@ export function createApprovalRoutes(
       ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
       payload: payloadFor(answered.approval, record.id),
     });
+
+    // After the row, never before it: the trail is the record and the notification is bookkeeping.
+    onAnswered?.(answered.approval.id);
 
     /*
      * "And stop asking me about this."

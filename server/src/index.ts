@@ -53,7 +53,18 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
-import { withApprovalNotifications } from "./notifications/notify";
+import { createAlimtalkAdapter } from "./notifications/alimtalk";
+import { readApprovalMetrics } from "./notifications/approval-metrics";
+import { withOutboxWatch } from "./notifications/from-audit";
+import {
+  createFinishedNotice,
+  createSocketAdapter,
+} from "./notifications/in-app";
+import {
+  createWebhookAdapter,
+  withApprovalNotifications,
+} from "./notifications/notify";
+import { createNotificationOutbox } from "./notifications/outbox";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
@@ -184,6 +195,32 @@ const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
  * second instance for the carrier to reach.
  */
 const channelEvents = createChannelEventHub();
+/**
+ * One outbox for "somebody has to be told", and every door it goes out through.
+ *
+ * Built here, before anything that raises a notification, because there is exactly one of these and
+ * the things that write into it — a boundary opening a question, a Bot asking for a password, a
+ * routine finishing at seven in the morning — are spread across the process. Three doors:
+ *
+ *   socket    the page itself, when somebody is connected. The common case, and the fast one.
+ *   webhook   `LAF_NOTIFY_WEBHOOK_URL`, unchanged in what it sends but now carrying the row's id.
+ *   alimtalk  a slot, deferred by decision §7-4. It never claims delivery; see the adapter.
+ *
+ * The socket goes first because it is the only door that is free and instantaneous, and the order
+ * is otherwise cosmetic — they are offered the row together (see `outbox.ts`).
+ */
+const notificationOutbox = createNotificationOutbox({
+  database,
+  adapters: [
+    createSocketAdapter(channelEvents),
+    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
+      ? [createWebhookAdapter(process.env.LAF_NOTIFY_WEBHOOK_URL)]
+      : []),
+    createAlimtalkAdapter(),
+  ],
+});
+/** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
+const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
 const channelStore = createChannelStore(
   database,
   agentProfileStore,
@@ -240,19 +277,35 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
  * one on a tool call are the same interruption to the same person, and a registry per subsystem
  * would mean the surface somebody happens to be looking at decides which of them they can answer.
  */
-// The buzz on "blocked on you": a webhook today, AlimTalk once that channel
-// clears review. Absent both, the question still waits on the surface.
+// The buzz on "blocked on you" goes through the outbox above, which writes the
+// row and then offers it to every door. Absent all of them, the question still
+// waits on the surface.
 //
 // A Map in this process, which is where a pending question belongs: one process
 // per VM by decision (docs/laf/deployment-model.md), a question is about a live
 // browser session and a live turn, and a restart is an honest withdrawal of it.
 // It is also what lets the room be TOLD an answer instead of asking every second
 // — see `waitFor`.
-const approvals = withApprovalNotifications(createApprovalRegistry(), {
-  ...(process.env.LAF_NOTIFY_WEBHOOK_URL
-    ? { webhookUrl: process.env.LAF_NOTIFY_WEBHOOK_URL }
-    : {}),
-});
+//
+// `onExpire` is the one ending of a question that writes no row anywhere else:
+// ten minutes with nobody answering. It is what makes "the notification was
+// never delivered" and "somebody said no" different facts in the list.
+const approvals = withApprovalNotifications(
+  createApprovalRegistry({
+    onExpire: (approval) => {
+      void notificationOutbox
+        .enqueue({
+          kind: "approval.expired",
+          botId: approval.botId,
+          userId: approval.actor,
+          approvalId: approval.id,
+          subject: approval.subject,
+        })
+        .catch(() => undefined);
+    },
+  }),
+  { outbox: notificationOutbox },
+);
 
 /**
  * The allowances, in the database, because an allowance whose whole point is to outlive the turn
@@ -546,7 +599,16 @@ const stallGuard = createStallGuard({
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
-      auditStore: bootAuditStore,
+      /*
+       * The trail, with one ear on it.
+       *
+       * `computer_request_help` and `computer_request_secret` are the two moments a Bot stops for a
+       * person WITHOUT going through the approval registry, so neither reaches the buzz on
+       * `request`. Both already write a row here, on exactly the right occasions and holding
+       * exactly the right two ids, so the row is the seam — see notifications/from-audit.ts. The
+       * gateway goes on knowing nothing about notifications.
+       */
+      auditStore: withOutboxWatch(bootAuditStore, notificationOutbox),
       // Read on every decision rather than captured once, so a rule an administrator adds while the
       // server is running applies to the very next action instead of after a restart.
       policy: () => policyStore.get(),
@@ -628,10 +690,12 @@ const routineService = createRoutineService({
   auditStore: bootAuditStore,
   ledger: runLedger,
   lane: botLane,
-  // And the answer lands in the Bot's own conversation, where a person already reads.
-  deliver: createRoutineDelivery(database, (event) =>
-    channelEvents.deliver(event),
-  ),
+  // And the answer lands in the Bot's own conversation, where a person already reads — plus a
+  // notification when there is nobody connected to read it, which for a routine is the normal case.
+  deliver: createRoutineDelivery(database, (event) => {
+    channelEvents.deliver(event);
+    noticeFinished(event);
+  }),
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({
     ...(computerGateway ? { gateway: computerGateway } : {}),
@@ -724,8 +788,12 @@ const app = createApp(
       pluginStore,
     }),
     emit: (frame) => channelEvents.deliverRoom(frame),
-    // The roster row on every OTHER tab, after the message that moved it has committed.
-    announce: (event) => channelEvents.deliver(event),
+    // The roster row on every OTHER tab, after the message that moved it has committed — and a
+    // notification for a member who has no tab at all. See `createFinishedNotice`.
+    announce: (event) => {
+      channelEvents.deliver(event);
+      noticeFinished(event);
+    },
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
   }),
@@ -809,6 +877,22 @@ const app = createApp(
       ...(computerClient ? { computerClient } : {}),
     }),
     auditStore: bootAuditStore,
+  },
+  /*
+   * What is waiting for a person, and how long answers take.
+   *
+   * The metric reads the trail rather than the outbox on purpose (see approval-metrics.ts), and it
+   * is resolved per request rather than captured, so the window a caller asks for is the window it
+   * measures. `BOT_TIME_ZONE` decides what "night" is, the same clock the Bot's own browser and
+   * prompt are given — the VM may be anywhere and the person is in Korea.
+   */
+  {
+    outbox: notificationOutbox,
+    approvalMetrics: (days: number) =>
+      readApprovalMetrics(database, {
+        days,
+        timeZone: process.env.BOT_TIME_ZONE ?? "",
+      }),
   },
 );
 

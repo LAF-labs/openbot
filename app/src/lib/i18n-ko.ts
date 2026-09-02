@@ -886,6 +886,10 @@ export const ko: Record<string, string> = {
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
   "{name} needs you": "{name}이(가) 기다립니다",
+  "It finished while you were away.": "자리를 비운 사이에 일을 마쳤습니다.",
+  "It stopped before it finished.": "끝내지 못하고 멈췄습니다.",
+  "It needs something only you can give.":
+    "당신만 줄 수 있는 것을 기다리고 있습니다.",
   "In a room": "방에서 대화 중",
   "The room could not take that message.": "방이 이 메시지를 받지 못했습니다.",
   "The room could not be reached. Check the connection and try again.":

@@ -13,7 +13,9 @@
  *   cascade  sessions.user_id, accounts.user_id, user_roles.user_id,
  *            channel_memberships.user_id, channel_threads.user_id,
  *            agent_preferences.user_id, agent_memories.owner_user_id,
- *            mcp_user_credentials.user_id, skills.owner_user_id
+ *            mcp_user_credentials.user_id, skills.owner_user_id,
+ *            laf_notifications.user_id  ← the outbox is addressed to a person and is worth
+ *                                         nothing without them (migration 0029)
  *   SET NULL agent_profiles.owner_user_id  ← a Bot would survive its owner, unowned and running
  *            laf_routines.created_by_id    ← deliberate: a routine outlives its author (see laf.ts)
  *

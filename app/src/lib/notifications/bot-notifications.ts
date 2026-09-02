@@ -221,8 +221,17 @@ export function showNotice(
     title: string;
     body: string;
     tag: string;
-    /** Where acting on this notice should land somebody. */
-    destination: NoticeDestination;
+    /**
+     * Where acting on this notice should land somebody, when there is such a place.
+     *
+     * OPTIONAL, because one of the two kinds does not have one. A Bot that has stopped to ask for a
+     * password (`run.needs_you`) is the most blocked a Bot ever is, and there is no page in this app
+     * that is about that moment — the person hands the value over in whatever conversation they were
+     * already having. Refusing to raise the notice for want of a destination would mean the one
+     * interruption that cannot be worked around silently interrupts nobody; a click with nowhere to
+     * go brings the window forward, which is what the person needed.
+     */
+    destination?: NoticeDestination;
   },
   onClick: () => void,
 ): void {
@@ -246,7 +255,7 @@ export function showNotice(
       title: options.title,
       body: noticeBody(options.body),
       silent: kind === "finished",
-      destination: options.destination,
+      ...(options.destination ? { destination: options.destination } : {}),
     }).then((shown) => {
       if (!shown) showWebNotice(kind, options, onClick);
     });

@@ -141,8 +141,19 @@ services:
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
       LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
+      # The AlimTalk door: passed through, and READ BY NOTHING YET. The channel and the template go
+      # through KakaoTalk's review, which is weeks and happens outside this repository (decision
+      # §7-4), so the adapter is a slot that never claims delivery — see
+      # server/src/notifications/alimtalk.ts and docs/laf/notifications.md. Setting these changes
+      # nothing today; they are here so the holes are visible before the review clears.
+      LAF_ALIMTALK_BASE_URL: ${LAF_ALIMTALK_BASE_URL:-}
+      LAF_ALIMTALK_API_KEY: ${LAF_ALIMTALK_API_KEY:-}
+      LAF_ALIMTALK_SENDER_KEY: ${LAF_ALIMTALK_SENDER_KEY:-}
+      LAF_ALIMTALK_TEMPLATE_CODE: ${LAF_ALIMTALK_TEMPLATE_CODE:-}
+      LAF_ALIMTALK_TO: ${LAF_ALIMTALK_TO:-}
       # How long the trail and the run records are kept, in days. Empty is 365 (the decision in
       # docs/laf/redesign-2026-09.md §7-7); 0 keeps everything and switches the nightly sweep off.
+      # The notification outbox rides the same sweep on a fixed thirty days of its own.
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-}
     logging: *logging
     depends_on:
