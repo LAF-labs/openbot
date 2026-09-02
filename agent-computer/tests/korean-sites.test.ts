@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -137,12 +144,8 @@ const refFor = (
   return found.ref;
 };
 
-beforeAll(async () => {
-  if (!HAS_BROWSER) return;
-  fixture = serveFixture();
-  profilesDir = await mkdtemp(join(tmpdir(), "laf-profiles-"));
-  workspaceDir = await mkdtemp(join(tmpdir(), "laf-workspace-"));
-  const port = await freePort();
+/** Start the computer on `base` and wait for it to answer, or give up saying so. */
+async function startComputer(port: number) {
   base = `http://127.0.0.1:${port}`;
   child = Bun.spawn(["bun", join(import.meta.dir, "../src/index.ts")], {
     env: {
@@ -161,6 +164,37 @@ beforeAll(async () => {
     await Bun.sleep(100);
   }
   throw new Error("the computer did not start");
+}
+
+let port = 0;
+
+beforeAll(async () => {
+  if (!HAS_BROWSER) return;
+  fixture = serveFixture();
+  profilesDir = await mkdtemp(join(tmpdir(), "laf-profiles-"));
+  workspaceDir = await mkdtemp(join(tmpdir(), "laf-workspace-"));
+  port = await freePort();
+  await startComputer(port);
+});
+
+/*
+ * ONE TIMEOUT MUST NOT TAKE THE REST OF THE FILE WITH IT.
+ *
+ * Every test here drives ONE spawned computer over HTTP, and bun kills a timed-out test's
+ * subprocesses. Measured on a loaded machine: the three stop-and-navigate cycles below ran past
+ * their sixty seconds, bun reaped the child, and every later test then failed with
+ * `ConnectionRefused` on a port with nothing behind it — one slow test reported as several broken
+ * features, which is the reading that sends somebody looking in the wrong place. The tests that
+ * follow a casualty are now honest about themselves again.
+ *
+ * A live child costs one `/health` call. Restarting is the exceptional path.
+ */
+beforeEach(async () => {
+  if (!HAS_BROWSER) return;
+  const answering = await fetch(`${base}/health`).catch(() => null);
+  if (answering?.ok) return;
+  child?.kill();
+  await startComputer(port);
 });
 
 afterAll(async () => {
