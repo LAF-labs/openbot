@@ -30,6 +30,7 @@ import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/p
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
+import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
 
@@ -137,6 +138,12 @@ const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   path: '/agents/',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppApproveApprovalIdRoute =
+  AuthedAppApproveApprovalIdRouteImport.update({
+    id: '/approve/$approvalId',
+    path: '/approve/$approvalId',
+    getParentRoute: () => AuthedAppRoute,
+  } as any)
 const AuthedAppChannelChannelIdRoute =
   AuthedAppChannelChannelIdRouteImport.update({
     id: '/channel/$channelId',
@@ -168,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
@@ -189,6 +197,7 @@ export interface FileRoutesByTo {
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
@@ -215,6 +224,7 @@ export interface FileRoutesById {
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/_app/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts'
     | '/admin/'
     | '/settings/'
+    | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
     | '/agents/'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts'
     | '/admin'
     | '/settings'
+    | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
     | '/agents'
@@ -286,6 +298,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
+    | '/_authed/_app/approve/$approvalId'
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
     | '/_authed/_app/agents/'
@@ -446,6 +459,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppAgentsIndexRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/approve/$approvalId': {
+      id: '/_authed/_app/approve/$approvalId'
+      path: '/approve/$approvalId'
+      fullPath: '/approve/$approvalId'
+      preLoaderRoute: typeof AuthedAppApproveApprovalIdRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/channel/$channelId': {
       id: '/_authed/_app/channel/$channelId'
       path: '/channel/$channelId'
@@ -505,6 +525,7 @@ interface AuthedAppRouteChildren {
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
+  AuthedAppApproveApprovalIdRoute: typeof AuthedAppApproveApprovalIdRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
   AuthedAppChannelNewRoute: typeof AuthedAppChannelNewRoute
   AuthedAppAgentsIndexRoute: typeof AuthedAppAgentsIndexRoute
@@ -514,6 +535,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
+  AuthedAppApproveApprovalIdRoute: AuthedAppApproveApprovalIdRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
   AuthedAppChannelNewRoute: AuthedAppChannelNewRoute,
   AuthedAppAgentsIndexRoute: AuthedAppAgentsIndexRoute,
