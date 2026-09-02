@@ -126,6 +126,10 @@ everything that talks to it. The three compose publishes — Postgres, `agent-co
 published to every interface. The addresses built from them are separate settings, so a moved service
 also needs its URL changed: `DATABASE_URL`, `AGENT_COMPUTER_URL` and `MANAGED_AGENT_AG_UI_URL`.
 
+`POSTGRES_MAX_CONNECTIONS` sets PostgreSQL's connection limit, and defaults to its own default of
+100. A deployment runs one API server process and never approaches it. It is raised only to run
+more than one test suite at once against the same server; see [development](development.md).
+
 To run two deployments on one Docker host, give the second one its own `COMPOSE_PROJECT_NAME`.
 Container and volume names are global to a host, and the project name is what keeps each
 deployment's containers and volumes its own.

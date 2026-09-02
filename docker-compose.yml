@@ -5,6 +5,14 @@ services:
       POSTGRES_DB: openbot
       POSTGRES_USER: openbot
       POSTGRES_PASSWORD: openbot
+    # PostgreSQL's own default, left alone for a deployment: one VM runs one API server process and
+    # never comes near 100. It is a knob because one test run peaks at 67 connections — every test
+    # file that touches the database holds its own small pool for the length of the run — so two
+    # gates at once exhaust the default and fail with "sorry, too many clients already", which reads
+    # as a broken test and is a full connection table. Parallel local runs want 300; see
+    # docs/development.md.
+    command:
+      ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-100}"]
     ports:
       # Loopback only. Nothing off this host has any business here: the API reaches the database as
       # `postgres:5432` on the compose network, and a person on the VM reaches it through the tunnel
