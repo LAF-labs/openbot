@@ -34,6 +34,25 @@ only warnings: the public example encryption key, and `LAF_DEV_NO_AUTH`.
 A development `.env` copied onto a VM fails loudly instead of quietly serving
 the internet as one signed-in administrator.
 
+Three bounds are in the file because a VM is finite and the failure mode of
+each is the whole deployment stopping, not one service misbehaving:
+
+- **Logs.** Every service logs through `json-file` capped at 10MB × 5. Docker's
+  default is unbounded, and a full disk stops Postgres.
+- **The browser.** `agent-computer` gets `mem_limit: 3g` and `shm_size: 1g`.
+  Chromium is the one process here that can eat the machine; past the limit the
+  kernel kills the browser, which restarts, instead of killing whatever the OOM
+  killer would otherwise pick on a 6GB box — which is Postgres.
+- **`web`** has a healthcheck at last, against Caddy's own admin API on the
+  container's loopback. The front door is the one service whose death is the
+  product's death, and it had nothing.
+
+`POSTGRES_PASSWORD` comes from `.env` now, defaulting to `openbot` so that
+existing deployments are unchanged. It is worth setting on a new one — but only
+**before the first start**, because the password lives in the postgres volume
+once that volume exists; changing it later is an `ALTER USER` inside the running
+database, not an edit to `.env`.
+
 ## One value names the deployment
 
 ```
@@ -109,8 +128,21 @@ and on manual dispatch (`:edge`, optionally promoting `:stable`). The compose
 file names them with one channel switch:
 
 ```
-IMAGE_TAG=stable   # released (default) · edge = main · vX.Y.Z = pinned
+IMAGE_TAG=stable   # released (default) · vX.Y.Z = pinned · edge = the last manual dispatch
 ```
+
+`:edge` is **not** "main". Nothing publishes on a push to `main`: `:edge` moves
+only when somebody runs Images by hand, so an `:edge` deployment is sitting on
+whichever commit was dispatched last, which may be weeks old.
+
+**Nothing is published until the checks pass.** Every build in `images.yml`
+waits on `.github/workflows/checks.yml` — format, lint, types, the test floor
+and the app build — run against the tag being published. It is the same file CI
+runs on pull requests and branch pushes, called twice rather than copied, so
+there is one definition of the gate. Before it existed, a `v*` tag moved
+`:stable` in parallel with a CI run it did not wait for and that tags did not
+even start: measured on v0.3.2, untested code reached the fleet's default
+channel two minutes after the tag was pushed.
 
 So a deployment — human or the external provisioner — never compiles:
 
@@ -157,6 +189,11 @@ Then edit `.env` by hand. The values that have no usable default:
 | the credentials naming them | `<PROVIDER>_OAUTH_CLIENT_ID` / `_SECRET` per direct provider, or `LAF_OIDC_ISSUER` + `LAF_OIDC_CLIENT_ID` for the broker |
 | `INITIAL_ADMIN_EMAILS` | who is an administrator on first sign-in |
 | `SIGN_IN_ALLOWED_EMAILS` | who may sign in at all. Unset means anyone the provider authenticates gets an account here, which on a one-person VM is the wrong default |
+| `BOT_MODEL` | shipped set in `.env.example` and it must stay set: `agent-bot` refuses to start without it rather than answering on a model nobody chose. The fallback for the API server's own half is `tenant/laf/model.yaml`, and it is the only one in the repository |
+
+`OPENAI_API_KEY` and `OPENAI_BASE_URL` go with it — the deployed default is
+served through OpenRouter, so the key is that account's and the base URL is
+theirs.
 
 Remove `LAF_DEV_NO_AUTH` while you are in there. It is refused in
 production, so leaving it in is a failed start rather than a security hole, but
@@ -229,6 +266,42 @@ A `200 https` means DNS, both firewalls, ACME and the static build all
 worked — the whole chain in one line. `docker compose ps` should show `server`
 healthy; if it is restarting, its logs name the missing setting directly,
 because `config.ts` refuses by name rather than crashing on an undefined.
+
+`server` healthy now means something. `/health` used to return the constant
+`{"status":"ok"}` — it said that with the database refusing connections and with
+`agent-bot` gone, so the container read healthy while the product was dead. It
+now probes the database, `agent-bot` and the Bot's computer, answers 503 when
+any of them is down, and names which:
+
+```bash
+docker compose exec -T server bun -e "const r = await fetch('http://localhost:3001/health'); console.log(r.status, await r.text())"
+# 200 {"status":"ok","checks":{"database":"ok","agentBot":"ok","computer":"ok"}}
+```
+
+Asked from inside the container because `server` is unpublished — there is no
+port on the host to curl. The answer is cached for a few seconds, so polling it
+costs nothing.
+
+## Upgrading
+
+```bash
+scripts/upgrade.sh
+```
+
+Dump, pull, `up -d`, then wait for that `/health` to answer ok, with the exact
+rollback printed if it does not. The bare `docker compose pull && up -d` is the
+same upgrade without any of that: no dump to go back to, no waiting, and no
+check — so an upgrade that left the deployment answering 503 finishes looking
+exactly like one that worked.
+
+The dump lands in `/var/backups/laf` (`BACKUP_DIR` moves it), beside a file
+recording what was running **by digest**. That file is not a nicety: a
+deployment on `IMAGE_TAG=stable` cannot recover its previous version from
+`.env` after the pull, because `stable` has already moved.
+
+Nothing pulls on its own. There is no `pull_policy: always` in the compose file
+on purpose, so a reboot or an unrelated `up -d` re-runs what is already on the
+machine rather than quietly moving the deployment to a new image.
 
 ## Backups
 
