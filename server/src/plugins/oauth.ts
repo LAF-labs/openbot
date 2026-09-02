@@ -76,12 +76,69 @@ export type ConnectState = {
 };
 
 /**
- * What is actually sealed: the state, plus when it stops being one.
+ * What is actually sealed: the state, when it stops being one, and which one it is.
  *
  * The expiry travels inside the sealed value because sealing says nothing about freshness. Nobody
  * can move it without the key, and this deployment checks it on the way out.
+ *
+ * `jti` is what makes a state SINGLE-USE. Everything else about this flow was already bound — the
+ * person, the server, the PKCE verifier — but nothing recorded that a state had been spent, so the
+ * same callback URL could be replayed until the vendor happened to refuse the spent code. The
+ * authorization code is the vendor's to make single-use; the state is ours, and until this it was
+ * not.
  */
-type SealedState = ConnectState & { exp: number };
+type SealedState = ConnectState & { exp: number; jti: string };
+
+/**
+ * The states this process has already redeemed, and when each stops mattering.
+ *
+ * IN MEMORY, and that is the right shape here rather than a shortcut. One API process per VM is the
+ * deployment decision (docs/laf/deployment-model.md), so this process is every process; a table
+ * would be a row written and swept for a fact that lives ten minutes. It cannot grow without bound
+ * either — an entry outlives its own state by nothing, and the sweep below runs on every write.
+ *
+ * A restart forgets them. What that costs is precisely the replay window of a state minted before
+ * the restart and redeemed after it, which is bounded by the same ten minutes and requires the
+ * attacker to have had the URL already.
+ */
+const spentStates = new Map<string, number>();
+
+/**
+ * Take this state, or say it has already been taken.
+ *
+ * The sweep is here rather than on a timer so that nothing has to be cancelled at shutdown, and it
+ * is cheap: the map only ever holds the states redeemed inside one TTL.
+ */
+function claimState(jti: string, exp: number, now: number): boolean {
+  for (const [id, expiry] of spentStates) {
+    if (expiry <= now) spentStates.delete(id);
+  }
+  if (spentStates.has(jti)) return false;
+  spentStates.set(jti, exp);
+  return true;
+}
+
+/** Forget every spent state. For tests, which must not inherit each other's redemptions. */
+export function forgetSpentConnectStates(): void {
+  spentStates.clear();
+}
+
+/**
+ * Why a state was not accepted, as a code rather than as a sentence.
+ *
+ * The callback tells the person none of this — every failure ends the same way, because spelling out
+ * which is which tells anybody probing the endpoint how far they got. The code is for the caller and
+ * for the test, and it is what makes "refused because it was replayed" assertable at all.
+ */
+export type ConnectStateRefusal =
+  /** Altered, expired, sealed by another key or for another purpose, or missing a field. */
+  | "laf:state_unreadable"
+  /** Real, and already spent. */
+  | "laf:state_replayed";
+
+export type RedeemedState =
+  | { ok: true; state: ConnectState }
+  | { ok: false; fact: ConnectStateRefusal };
 
 /**
  * Where the vendor sends somebody back to.
@@ -158,8 +215,100 @@ export async function sealConnectState(
   encryptionKey: string,
   now: number = Date.now(),
 ): Promise<string> {
-  const payload: SealedState = { ...state, exp: now + STATE_TTL_MS };
+  const payload: SealedState = {
+    ...state,
+    exp: now + STATE_TTL_MS,
+    // Random rather than derived. Two flows started in the same millisecond by the same person for
+    // the same server must be two states, or redeeming one would spend the other.
+    jti: randomBytes(16).toString("base64url"),
+  };
   return seal(JSON.stringify(payload), encryptionKey, CONNECT_LABEL);
+}
+
+/**
+ * What a state says, with everything checked and nothing spent yet.
+ *
+ * Split from {@link readConnectState} so the redemption can see `jti` and `exp`, which no caller
+ * outside this module has any use for.
+ */
+async function openConnectState(
+  sealed: string,
+  encryptionKey: string,
+  now: number,
+): Promise<SealedState | null> {
+  const value = await unseal(sealed, encryptionKey, CONNECT_LABEL);
+  if (!value) return null;
+
+  try {
+    const payload = JSON.parse(value) as Partial<SealedState>;
+
+    if (
+      typeof payload.userId !== "string" ||
+      !payload.userId ||
+      typeof payload.serverId !== "string" ||
+      !payload.serverId ||
+      typeof payload.verifier !== "string" ||
+      !payload.verifier ||
+      /*
+       * A state with no `jti` cannot be spent, so it is not a state this build issued and it is not
+       * one this build will accept. Fail-closed on the field that makes single use possible, for the
+       * same reason as every other missing field: the alternative is a state that can be replayed
+       * because of how it was written rather than because anybody decided so.
+       */
+      typeof payload.jti !== "string" ||
+      !payload.jti ||
+      typeof payload.exp !== "number" ||
+      payload.exp <= now
+    ) {
+      return null;
+    }
+
+    return {
+      userId: payload.userId,
+      serverId: payload.serverId,
+      verifier: payload.verifier,
+      jti: payload.jti,
+      exp: payload.exp,
+      // Only the one name is recognised; anything else becomes the default rather than being carried.
+      returnTo: payload.returnTo === "admin" ? "admin" : "settings",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open a state and spend it, so the same callback cannot be walked twice.
+ *
+ * WHAT THIS ADDS TO {@link readConnectState}. Everything about this flow was already bound to one
+ * request — the person, the server, the PKCE verifier, ten minutes — and none of it recorded that a
+ * request had been ANSWERED. So a callback URL, which is held by every log, proxy and browser
+ * history it passes through, stayed redeemable until the vendor happened to refuse the spent code:
+ * whether a replay attached a second grant was somebody else's implementation detail.
+ *
+ * Spent whether or not the redemption that follows succeeds. A state stands for one attempt, and a
+ * vendor refusing the code is an attempt; letting it be retried would mean the window stays open for
+ * exactly the cases where something already went wrong.
+ */
+export async function redeemConnectState(
+  sealed: string,
+  encryptionKey: string,
+  now: number = Date.now(),
+): Promise<RedeemedState> {
+  const opened = await openConnectState(sealed, encryptionKey, now);
+  if (!opened) return { ok: false, fact: "laf:state_unreadable" };
+  if (!claimState(opened.jti, opened.exp, now)) {
+    return { ok: false, fact: "laf:state_replayed" };
+  }
+  return {
+    ok: true,
+    state: {
+      userId: opened.userId,
+      serverId: opened.serverId,
+      verifier: opened.verifier,
+      returnTo: opened.returnTo,
+    },
+  };
 }
 
 /**
@@ -175,35 +324,14 @@ export async function readConnectState(
   encryptionKey: string,
   now: number = Date.now(),
 ): Promise<ConnectState | null> {
-  const value = await unseal(sealed, encryptionKey, CONNECT_LABEL);
-  if (!value) return null;
-
-  try {
-    const payload = JSON.parse(value) as Partial<SealedState>;
-
-    if (
-      typeof payload.userId !== "string" ||
-      !payload.userId ||
-      typeof payload.serverId !== "string" ||
-      !payload.serverId ||
-      typeof payload.verifier !== "string" ||
-      !payload.verifier ||
-      typeof payload.exp !== "number" ||
-      payload.exp <= now
-    ) {
-      return null;
-    }
-
-    return {
-      userId: payload.userId,
-      serverId: payload.serverId,
-      verifier: payload.verifier,
-      // Only the one name is recognised; anything else becomes the default rather than being carried.
-      returnTo: payload.returnTo === "admin" ? "admin" : "settings",
-    };
-  } catch {
-    return null;
-  }
+  const opened = await openConnectState(sealed, encryptionKey, now);
+  if (!opened) return null;
+  return {
+    userId: opened.userId,
+    serverId: opened.serverId,
+    verifier: opened.verifier,
+    returnTo: opened.returnTo,
+  };
 }
 
 /**

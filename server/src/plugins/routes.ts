@@ -8,8 +8,8 @@ import {
   challengeFor,
   connectedAccountsUrlFor,
   createVerifier,
-  readConnectState,
   redeemAuthorizationCode,
+  redeemConnectState,
   redirectUriFor,
   sealConnectState,
 } from "./oauth";
@@ -429,11 +429,25 @@ export function createPluginRoutes(
     if (!connect?.publicUrl) return context.redirect(failed);
 
     const code = context.req.query("code");
-    const state = await readConnectState(
+    if (!code) return context.redirect(failed);
+
+    /*
+     * Redeemed, not merely read: a state stands for one attempt and is spent here whatever happens
+     * next. The callback URL is held by every log, proxy and browser history it passes through, so
+     * without this a second walk down the same URL was refused only if the VENDOR happened to refuse
+     * the spent code — somebody else's implementation detail deciding whether a replay attached a
+     * second grant.
+     *
+     * The refusal carries a code (`laf:state_replayed` and `laf:state_unreadable`) which is
+     * deliberately not shown: every failure ends the same way, because telling a caller which of
+     * them it was tells anybody probing this endpoint how far they got.
+     */
+    const opened = await redeemConnectState(
       context.req.query("state") ?? "",
       connect.encryptionKey,
     );
-    if (!code || !state) return context.redirect(failed);
+    if (!opened.ok) return context.redirect(failed);
+    const { state } = opened;
 
     /*
      * Is the person in the state still somebody here?
