@@ -32,6 +32,25 @@ export const AGENT_REFUSALS: Record<string, string> = {
     "That looks like a password, so it was not saved.",
   "laf:memory_too_long": "That is too long to remember.",
   "laf:memory_empty": "There was nothing to remember.",
+  /*
+   * What the Bot form itself can be refused for, one code per field.
+   *
+   * These reached the screen as the parser's own English — "Name must be text between 1 and 80
+   * characters." — under a Korean label, on the one form every person meets on their first day.
+   * The server names which field now and this table says it in Korean; the sentences name the
+   * bound, because a refusal that does not say what would be accepted makes somebody guess.
+   */
+  "laf:agent_input_not_object": "That change could not be read. Try again.",
+  "laf:agent_name_invalid": "A Bot needs a name, of 80 characters or fewer.",
+  "laf:agent_title_too_long": "A job title can be up to 120 characters.",
+  "laf:agent_role_too_long": "A description can be up to 1,000 characters.",
+  "laf:agent_visibility_invalid": "Choose who can see this Bot.",
+  "laf:agent_endpoint_refused": "That address cannot be used.",
+  "laf:agent_avatar_invalid": "That face cannot be used.",
+  "laf:agent_effort_invalid": "Choose how hard this Bot thinks.",
+  "laf:agent_auto_review_too_long":
+    "That instruction can be up to 1,000 characters.",
+  "laf:agent_auth_header_invalid": "That header name cannot be used.",
 };
 
 export type AgentInput = {
