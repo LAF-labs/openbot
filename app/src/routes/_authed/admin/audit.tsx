@@ -466,6 +466,13 @@ export const DECISIONS: Record<string, string> = {
   // refusal — but it is emphatically not the "Allowed" every unlabelled row used to fall back to.
   "credential.rotation_refused": "Could not be replaced",
   "credential.revoked": "Credential retired",
+
+  // A person taking their data, and a person leaving. Neither is a permission and neither is a
+  // refusal — they are the two ends of somebody's relationship with this deployment, and the
+  // deletion row is written under a code rather than a name because by the time it commits there is
+  // no name left to write.
+  "account.exported": "A person took a copy of their data",
+  "account.deleted": "An account was deleted",
 };
 
 /**

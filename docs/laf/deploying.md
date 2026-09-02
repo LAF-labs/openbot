@@ -339,6 +339,18 @@ alarm for a broken upload is the fleet monitor reading the bucket, not the
 script grading itself. A VM without that file is back to the old limit — the
 dumps survive a bad migration or a fat-fingered delete, not the machine.
 
+**백업은 사람이 떠난 뒤에도 그 사람을 갖고 있다.** `POST /api/me/delete`는
+데이터베이스와 봇의 브라우저 프로필을 지우지만, 어제 만든 덤프는 지우지 못한다 —
+덤프는 그 시점의 전체 사본이고 이 저장소의 코드가 닿지 않는 곳(VM의 `/var/backups/laf`와
+객체 스토리지 버킷)에 있다. 그래서 **보존 기간은 30일이고, 실제 파기는 이 백업 스크립트가
+한다**(결정: `redesign-2026-09.md` §7-7). `laf-backup-db`는 지금 최신 14벌만 남기므로 로컬
+사본은 이미 2주 안에 사라지지만, **원격 버킷에는 만료 규칙이 없다** — 버킷에
+30일 수명주기 정책을 걸거나, 업로드 뒤 30일이 지난 객체를 지우는 한 줄을 스크립트에
+넣어야 한다. 그 전까지 "계정을 지웠다"는 문장은 데이터베이스에 대해서만 참이다. 계정
+삭제 요청을 받았고 그 사람이 30일을 기다릴 수 없다면, 그때는 해당 시점 이후의 덤프를 손으로
+지우는 것 말고 방법이 없다 — 덤프는 한 사람만 골라낼 수 있는 형식이 아니다. 사람에게
+설명해야 하는 내용은 `docs/laf/data-lifecycle.md`에 그 사람의 말로 적혀 있다.
+
 ## The shell
 
 The installed app is a separate release and needs one thing this repository

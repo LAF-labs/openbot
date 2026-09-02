@@ -262,6 +262,23 @@ export const auditEventTypes = [
   "component.function_called",
   "component.function_refused",
   "component.function_failed",
+
+  /*
+   * A person taking their data with them, and a person leaving.
+   *
+   * `account.exported` is recorded when the export is ASKED FOR, not when it arrives: the whole of
+   * somebody's account leaving this deployment is the event, and a row written only on a completed
+   * download would miss the one case anybody investigates.
+   *
+   * `account.deleted` is the last thing written under the departing person, and it is written under
+   * their PSEUDONYM — `deleted-<hash>`, the same string every earlier row of theirs is re-pointed
+   * at. It carries the counts per table, so "what was removed" is answerable a year later from a
+   * trail in which nothing else about them can be resolved to a person. The payload also says
+   * whether the Bot's browser profile on disk was actually wiped, because that lives in a volume no
+   * row can speak for.
+   */
+  "account.exported",
+  "account.deleted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

@@ -1,5 +1,6 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { type AccountService, createAccountRoutes } from "./account/routes";
 import type { CoworkerCall } from "./agents/coworker-call";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -223,6 +224,14 @@ export function createApp(
    * `health.ts` for why a constant was worse than nothing.
    */
   healthProbes?: HealthProbes,
+  /**
+   * Taking your data with you, and leaving. Last, like everything new here.
+   *
+   * Absent leaves the three routes unmounted, which is the honest degraded behaviour: a deployment
+   * that cannot delete an account must answer 404 rather than draw a page whose button reports
+   * success and removes nothing.
+   */
+  accountService?: AccountService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -524,6 +533,11 @@ export function createApp(
       createSandboxedRoutes(sandboxedStore, requireUser),
     );
   }
+
+  // Export, deletion and the admin removal, under `/api` because two are the person's own and one
+  // is an administrator's. See account/routes.ts.
+  if (accountService)
+    app.route("/api", createAccountRoutes(accountService, requireUser));
 
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));

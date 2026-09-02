@@ -197,6 +197,13 @@
       "when": 1788368056844,
       "tag": "0027_wandering_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788470000000,
+      "tag": "0028_pipa_lifecycle",
+      "breakpoints": true
     }
   ]
 }

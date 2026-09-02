@@ -141,6 +141,9 @@ services:
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
       LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
+      # How long the trail and the run records are kept, in days. Empty is 365 (the decision in
+      # docs/laf/redesign-2026-09.md §7-7); 0 keeps everything and switches the nightly sweep off.
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-}
     logging: *logging
     depends_on:
       postgres:
