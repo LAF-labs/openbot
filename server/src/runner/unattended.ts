@@ -29,7 +29,10 @@ import type {
   Tool,
 } from "@ag-ui/client";
 import type { PromptMode } from "../../../shared/prompt";
-import { toolResultText } from "../../../shared/prompt/tool-results.ko";
+import {
+  noteTexts,
+  toolResultText,
+} from "../../../shared/prompt/tool-results.ko";
 import { UNATTENDED_COMPUTER_TOOLS } from "../../../shared/tools/computer";
 import {
   type ActionActor,
@@ -475,6 +478,18 @@ const asRef = (args: Record<string, unknown>) =>
     ? { ref: args.ref, snapshotId: args.snapshotId }
     : null;
 
+/**
+ * A computer result, with the facts the browser noticed put into words.
+ *
+ * The container ships `{code, message}` and knows no locale; the Korean a Bot reads is looked up
+ * here, the same way a refusal's is. Without this a routine reads `laf:dialog` — a string it has
+ * never seen — and goes on believing its click worked.
+ */
+const withNotes = <T extends Record<string, unknown>>(result: T) => {
+  const said = noteTexts(result.notes);
+  return said ? { ...result, notes: said } : result;
+};
+
 export type UnattendedToolsOptions = {
   /** Absent when no computer is configured; the Bot then runs with plugin tools only. */
   gateway?: ComputerGateway;
@@ -540,18 +555,59 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           case "computer_navigate":
             return {
               ok: true,
-              ...(await gateway.navigate(
-                c,
-                botId,
-                actor,
-                String(args.url ?? ""),
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.navigate(
+                  c,
+                  botId,
+                  actor,
+                  String(args.url ?? ""),
+                  approvalId,
+                ),
+              ),
             };
           case "computer_read":
-            return { ok: true, ...(await gateway.read(botId)) };
+            return { ok: true, ...withNotes(await gateway.read(botId)) };
           case "computer_snapshot":
-            return { ok: true, ...(await gateway.snapshot(botId)) };
+            return { ok: true, ...withNotes(await gateway.snapshot(botId)) };
+          case "computer_switch_tab": {
+            if (typeof args.index !== "number") {
+              return { ok: false, reason: "A tab index is required." };
+            }
+            return {
+              ok: true,
+              ...withNotes(
+                await gateway.switchTab(
+                  c,
+                  botId,
+                  actor,
+                  { index: args.index },
+                  approvalId,
+                ),
+              ),
+            };
+          }
+          case "computer_upload_file": {
+            const target = asRef(args);
+            if (!target || typeof args.path !== "string" || !args.path.trim()) {
+              return {
+                ok: false,
+                reason: "A ref, its snapshotId and a file path are required.",
+              };
+            }
+            return {
+              ok: true,
+              ...withNotes(
+                await gateway.uploadFile(
+                  c,
+                  botId,
+                  actor,
+                  { ...target, path: args.path.trim() },
+                  undefined,
+                  approvalId,
+                ),
+              ),
+            };
+          }
           case "computer_click": {
             const target = asRef(args);
             if (!target)
@@ -561,14 +617,16 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               };
             return {
               ok: true,
-              ...(await gateway.click(
-                c,
-                botId,
-                actor,
-                target,
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.click(
+                  c,
+                  botId,
+                  actor,
+                  target,
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_type": {
@@ -581,18 +639,20 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.type(
-                c,
-                botId,
-                actor,
-                {
-                  ...target,
-                  text: args.text,
-                  submit: args.submit === true,
-                },
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.type(
+                  c,
+                  botId,
+                  actor,
+                  {
+                    ...target,
+                    text: args.text,
+                    submit: args.submit === true,
+                  },
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_key": {
@@ -604,30 +664,34 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             }
             return {
               ok: true,
-              ...(await gateway.key(
-                c,
-                botId,
-                actor,
-                { key: args.key, ...(asRef(args) ?? {}) },
-                undefined,
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.key(
+                  c,
+                  botId,
+                  actor,
+                  { key: args.key, ...(asRef(args) ?? {}) },
+                  undefined,
+                  approvalId,
+                ),
+              ),
             };
           }
           case "computer_scroll":
             return {
               ok: true,
-              ...(await gateway.scroll(
-                c,
-                botId,
-                actor,
-                {
-                  ...(typeof args.deltaY === "number"
-                    ? { deltaY: args.deltaY }
-                    : {}),
-                },
-                approvalId,
-              )),
+              ...withNotes(
+                await gateway.scroll(
+                  c,
+                  botId,
+                  actor,
+                  {
+                    ...(typeof args.deltaY === "number"
+                      ? { deltaY: args.deltaY }
+                      : {}),
+                  },
+                  approvalId,
+                ),
+              ),
             };
           case "computer_list_files":
             return {

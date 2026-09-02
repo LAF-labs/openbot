@@ -53,7 +53,9 @@ import type {
   SecretRequest,
   SnapshotElement,
   SnapshotResult,
+  SwitchTabInput,
   TypeInput,
+  UploadFileInput,
   WriteFileInput,
 } from "./schema";
 
@@ -980,6 +982,63 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     },
 
     /**
+     * Moving to another tab, governed as the read it is.
+     *
+     * It goes through the gateway rather than straight to the client for the audit row: which page a
+     * Bot was on when it pressed something is the question every trail is read to answer, and a tab
+     * change that left no row would make that unanswerable.
+     */
+    switchTab(
+      computerId: string,
+      botId: string,
+      actor: ActionActor,
+      input: SwitchTabInput,
+      approvalId?: string,
+    ) {
+      return govern(
+        computerId,
+        "computer_switch_tab",
+        botId,
+        actor,
+        { ...(approvalId ? { approvalId } : {}) },
+        () => as(botId).switchTab(input),
+      );
+    },
+
+    /**
+     * Handing a workspace file to a page.
+     *
+     * Its own intent, `upload`, and in the shipped policy's `ask` list. Everything else a Bot does
+     * with a file stays inside its own workspace; this is the one call that takes something out of
+     * it and gives it to somebody else's website, and the thing it hands over may be the 정산 내역
+     * it wrote this morning.
+     */
+    uploadFile(
+      computerId: string,
+      botId: string,
+      actor: ActionActor,
+      input: UploadFileInput,
+      signal?: AbortSignal,
+      approvalId?: string,
+    ) {
+      return govern(
+        computerId,
+        "computer_upload_file",
+        botId,
+        actor,
+        {
+          ref: input.ref,
+          // The file is part of the subject, so a rule about which files may leave the workspace has
+          // something to match on, and so the audit row names what was handed over.
+          filePath: input.path,
+          ...(signal ? { signal } : {}),
+          ...(approvalId ? { approvalId } : {}),
+        },
+        () => as(botId).uploadFile(input, signal),
+      );
+    },
+
+    /**
      * The file tools, governed like everything else.
      *
      * The read is governed too, unlike reading a page. A page was permitted when it was opened; the
@@ -1109,7 +1168,12 @@ function intentOf(
     case "computer_snapshot":
     case "computer_screenshot":
     case "computer_scroll":
+    // Looking at a tab the browser already has open changes nothing on any website. What it changes
+    // is which page the NEXT action lands on, and that action is judged on its own.
+    case "computer_switch_tab":
       return "read";
+    case "computer_upload_file":
+      return "upload";
     case "computer_read_file":
       return "read_file";
     case "computer_write_file":

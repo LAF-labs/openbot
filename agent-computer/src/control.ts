@@ -74,6 +74,50 @@ export const TAKE_CONTROL_FIRST =
   "Take control before driving the computer yourself.";
 
 /**
+ * Who was driving when the process died, as far as the next process may believe it.
+ *
+ * THE FAIL-SAFE ONLY EVER MAKES CONTROL STICKIER. A restart in the middle of a takeover used to hand
+ * the wheel back to the Bot in silence — the person was still in front of a login form, and the Bot
+ * was free to click on it. So a saved `human` is restored, and a saved `bot` is not "restored" at
+ * all, it is simply the default: there is no path here by which reading a file can take control away
+ * from a person.
+ *
+ * A PENDING SECRET REQUEST IS DROPPED. It named a ref from a snapshot of a page in a browser that no
+ * longer exists, so the masked box would be pointed at nothing; and a person typing their password
+ * into a box that quietly goes nowhere is worse than being asked again. The Bot is told, with
+ * `laf:secret_request_lost`, so it asks again against a fresh snapshot instead of waiting for an
+ * answer nobody can give.
+ *
+ * Anything unreadable is treated as nothing, and nothing is the Bot holding the wheel.
+ */
+export function restoredControl(saved: unknown): {
+  state?: ControlState;
+  secretLost: boolean;
+} {
+  if (!saved || typeof saved !== "object") return { secretLost: false };
+  const held = saved as Partial<ControlState>;
+  const secretLost =
+    typeof held.secretWanted === "string" && !!held.secretWanted;
+  if (held.holder !== "human") return { secretLost };
+  return {
+    state: {
+      holder: "human",
+      since:
+        typeof held.since === "string" && held.since
+          ? held.since
+          : new Date().toISOString(),
+      // What they were asked to do survives with them: they are still standing in front of it.
+      ...(typeof held.reason === "string" && held.reason
+        ? { reason: held.reason }
+        : {}),
+      // Somebody holding the wheel is not somebody waiting to be given it.
+      requested: false,
+    },
+    secretLost,
+  };
+}
+
+/**
  * The wheel, as a state machine.
  *
  * A factory rather than a module-level `let` so a test can have its own, and so two of these cannot
@@ -82,11 +126,29 @@ export const TAKE_CONTROL_FIRST =
  */
 export function createControl(
   now: () => string = () => new Date().toISOString(),
+  options: {
+    /** What survived the last life of this process. See {@link restoredControl}. */
+    initial?: ControlState;
+    /**
+     * Told after every change, so it can be written down.
+     *
+     * A callback rather than a path, because this module has no filesystem in it and a state machine
+     * that opens files cannot be tested without one.
+     */
+    onChange?: (state: ControlState) => void;
+  } = {},
 ) {
-  let state: ControlState = {
+  let state: ControlState = options.initial ?? {
     holder: "bot",
     since: now(),
     requested: false,
+  };
+
+  /** The new state, handed to whoever is keeping it, and to the caller. */
+  const changed = (): ControlState => {
+    const copy = { ...state };
+    options.onChange?.(copy);
+    return copy;
   };
 
   return {
@@ -110,7 +172,7 @@ export function createControl(
             ? reason.trim()
             : "The assistant needs a person to continue.",
       };
-      return this.get();
+      return changed();
     },
 
     /** The Bot asking for one value it must not be told, naming the field it goes in. */
@@ -134,7 +196,7 @@ export function createControl(
         secretSnapshotId:
           typeof input.snapshotId === "number" ? input.snapshotId : undefined,
       };
-      return this.get();
+      return changed();
     },
 
     /**
@@ -161,6 +223,7 @@ export function createControl(
         secretRef: undefined,
         secretSnapshotId: undefined,
       };
+      changed();
     },
 
     /**
@@ -177,7 +240,7 @@ export function createControl(
         reason: state.reason,
         requested: false,
       };
-      return this.get();
+      return changed();
     },
 
     /**
@@ -194,7 +257,7 @@ export function createControl(
         since: now(),
         requested: false,
       };
-      return this.get();
+      return changed();
     },
 
     /**

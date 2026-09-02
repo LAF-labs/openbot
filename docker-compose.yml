@@ -226,6 +226,10 @@ services:
     environment:
       # The secret every caller must present. The container refuses to start without it.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-}
+      # The same variable the API server reads, because the browser has a clock too: without it
+      # Chromium ran on UTC and every Korean site the Bot opened rendered yesterday's date after
+      # 09:00 KST. Empty falls back to Asia/Seoul in the code, so the default lives in one place.
+      BOT_TIME_ZONE: ${BOT_TIME_ZONE:-}
     volumes:
       - agent-workspace:/workspace
       # Chromium's user-data directory is volume-backed so logins survive container restarts.
@@ -240,10 +244,10 @@ services:
     # pass --disable-dev-shm-usage so it writes to /tmp instead and survives; this makes the shared
     # memory real, so it does not have to.
     shm_size: 1g
-    # STILL UNBOUNDED: Chromium's disk cache, which grows inside the agent-profiles volume for the
-    # life of the deployment. `--disk-cache-size` would bound it, but the launch args are a literal
-    # list in agent-computer/src/profiles.ts and not read from the environment, so it is a code
-    # change and belongs to the browser wave rather than to this file.
+    # Chromium's disk cache is bounded now: `--disk-cache-size=100MB` is in the launch args in
+    # agent-computer/src/profiles.ts, where the rest of them are. It stayed a code change rather
+    # than becoming another variable here — a cache size is not something a deployment tunes.
+    # A browser nobody has used for ten minutes closes itself, which is the other half of this.
     # Gives Chromium time to flush its profile after SIGTERM before Docker sends SIGKILL.
     stop_grace_period: 30s
     healthcheck:

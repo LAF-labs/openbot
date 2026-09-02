@@ -18,7 +18,11 @@ import type {
   SecretRequest,
   SecretResult,
   SnapshotResult,
+  SwitchTabInput,
+  SwitchTabResult,
   TypeInput,
+  UploadFileInput,
+  UploadFileResult,
   WriteFileInput,
   WriteFileResult,
 } from "./schema";
@@ -320,6 +324,28 @@ export function createComputerClient(options: ComputerClientOptions) {
         caller?: AbortSignal,
       ): Promise<ActionResult> {
         return (await post("/scroll", input, caller)) as ActionResult;
+      },
+
+      /**
+       * Move to another tab.
+       *
+       * Nothing on any website changes because somebody looked at a different page of it, which is
+       * why the gateway governs this as a read. What it does change is where the next action lands,
+       * so the computer retires the refs from the last snapshot when it happens.
+       */
+      async switchTab(
+        input: SwitchTabInput,
+        caller?: AbortSignal,
+      ): Promise<SwitchTabResult> {
+        return (await post("/tabs/switch", input, caller)) as SwitchTabResult;
+      },
+
+      /** Hand a file from the Bot's workspace to a file input on the page. */
+      async uploadFile(
+        input: UploadFileInput,
+        caller?: AbortSignal,
+      ): Promise<UploadFileResult> {
+        return (await post("/upload", input, caller)) as UploadFileResult;
       },
 
       /**

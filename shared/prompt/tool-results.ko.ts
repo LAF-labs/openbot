@@ -7,11 +7,13 @@
  * 모델이 읽는 한국어 문장은 여기에 산다. 표면이 사람에게 보여 줄 한국어는 `t()`가 따로 갖는다 —
  * 같은 사실을 두 독자가 다르게 읽어야 하기 때문이다.
  *
- * 코드를 쓰는 곳: `agent-computer/src/control.ts`(제어 보유), `runner/unattended.ts`(예산·종료·
- * 대기), `app/src/lib/copilot/computer-tools.tsx`(대기·비밀값·인계).
+ * 코드를 쓰는 곳: `agent-computer/src/control.ts`(제어 보유), `agent-computer/src/index.ts`(스테일
+ * ref, 그리고 아래 `notes`의 사실들), `runner/unattended.ts`(예산·종료·대기),
+ * `app/src/lib/copilot/computer-tools.tsx`(대기·비밀값·인계).
  *
- * 아직 코드가 아닌 곳: `agent-computer/src/index.ts:250,276`의 스테일 ref와 예산 문장. 그 파일은
- * 지금 다른 작업이 고치고 있어 건드리지 않았다. 옮길 때 `laf:stale_refs`가 여기 있다.
+ * `notes`는 아무도 묻지 않은 사실이 툴 결과에 얹혀 나오는 자리다. 경고창은 Playwright가 툴 호출이
+ * 끝나기도 전에 닫아 버리고, 다운로드는 클릭이 돌아오기 전에 끝난다 — 그래서 브라우저는 코드와
+ * 사실만 실어 보내고, 봇이 읽는 한국어는 여기서 붙는다(`noteTexts`).
  */
 
 /** 모델이 읽는 사실 코드. `laf:` 접두사는 영어 문장이 실수로 가질 수 없는 표식이다. */
@@ -26,6 +28,41 @@ export const TOOL_RESULT_KO: Record<string, string> = {
 
   "laf:stale_refs":
     "페이지가 바뀌어서 지금 들고 있는 ref는 더 이상 맞지 않는다. computer_snapshot을 다시 찍고 새 ref로 하라.",
+
+  /*
+   * 브라우저가 알아서 알아낸 것들. 툴 결과의 `notes`로 온다.
+   *
+   * 경고창이 특히 중요하다: alert("로그인이 필요합니다")를 브라우저가 닫아 버리면 봇에게는
+   * "눌렀는데 아무 일도 없었다"만 남고, 그러면 같은 클릭을 다시 누른다.
+   */
+  "laf:dialog":
+    "페이지가 알림창을 띄웠고 그 내용이 message에 있다. 알림(alert)은 확인을 눌러 줬고, 확인/취소를 묻는 창(confirm)과 입력창(prompt)은 취소를 눌렀다 — 그런 창의 확인을 네가 대신 누르지는 않는다. 눌러야 넘어가는 일이면 computer_request_help로 사람에게 부탁해라. 방금 한 행동이 아무 일도 안 한 것처럼 보이면 대개 이 창이 이유다.",
+
+  "laf:frame_opaque":
+    "이 페이지 안에 든 다른 문서(iframe) 하나를 읽지 못했다. 결제창·인증창이 대개 그렇다. 그 안의 내용이 필요하면 computer_request_help로 사람에게 넘겨라.",
+
+  "laf:downloaded":
+    "파일이 네 작업 공간 downloads/ 아래에 저장됐다. path에 경로가 있고 computer_read_file로 열 수 있다.",
+
+  "laf:download_too_large":
+    "내려받은 파일이 작업 공간 한도보다 커서 저장하지 않고 지웠다. 그 파일은 사람이 직접 받아야 한다고 말해라.",
+
+  "laf:download_failed":
+    "파일을 내려받다가 실패해서 저장된 것이 없다. 다시 눌러 보거나, 안 되면 사람에게 말해라.",
+
+  "laf:secret_request_lost":
+    "네가 부탁한 비밀값 입력이 컴퓨터가 다시 시작되면서 사라졌다. 아무도 입력하지 않았다. 아직 필요하면 computer_snapshot을 새로 찍고 computer_request_secret으로 다시 부탁해라.",
+
+  "laf:tab_missing":
+    "그 번호의 탭이 없다. computer_snapshot을 다시 찍고 tabs 목록의 index를 다시 봐라.",
+
+  /*
+   * 사람에게도 봇에게도 고칠 것이 없는, 서버가 봇을 지목하지 않고 부른 경우. 코드가 여기 있는
+   * 이유는 하나다 — 이 문장이 봇에게 닿았다면 그건 배포의 버그이고, 봇이 우회를 시도하는 대신
+   * 그대로 전하는 편이 낫다.
+   */
+  "laf:bot_header_missing":
+    "어느 봇의 컴퓨터인지 말하지 않은 요청이라 컴퓨터가 거절했다. 네가 고칠 수 있는 것이 아니니 다른 길을 찾지 말고 사람에게 그대로 알려라.",
 
   "laf:tool_budget_spent":
     "이 실행은 툴 예산을 다 썼다. 지금까지 찾아낸 것으로 답해라.",
@@ -105,4 +142,32 @@ export const TOOL_RESULT_KO: Record<string, string> = {
 /** 코드에 해당하는 모델용 문장. 모르는 코드는 그대로 돌려준다 — 사실은 사실이므로 삼키지 않는다. */
 export function toolResultText(code: string): string {
   return TOOL_RESULT_KO[code] ?? code;
+}
+
+/** 툴 결과에 얹혀 온 사실 하나. 코드와, 코드마다 다른 사실 몇 개. */
+export type ToolNote = { code: string } & Record<string, unknown>;
+
+/**
+ * 브라우저가 실어 보낸 사실들에 모델이 읽을 문장을 붙인다.
+ *
+ * 컴퓨터는 `{code, kind, message}`만 보낸다 — 로케일을 모르는 서비스가 봇이 읽을 말을 정하면
+ * 안 되기 때문이다(§4 원칙 2). 그 말을 붙이는 곳이 여기이고, 표면과 무인 실행이 각각 한 줄로
+ * 부른다. 코드가 아닌 것이 섞여 오면 버리지 않고 그대로 지나가게 둔다.
+ */
+export function noteTexts(notes: unknown): string[] | undefined {
+  if (!Array.isArray(notes)) return undefined;
+  const said = notes
+    .filter(
+      (note): note is ToolNote =>
+        !!note && typeof note === "object" && typeof note.code === "string",
+    )
+    .map((note) => {
+      const text = toolResultText(note.code);
+      // 경고창의 message 처럼, 문장만으로는 쓸모없고 사실이 붙어야 뜻이 생기는 것들.
+      const message = typeof note.message === "string" ? note.message : "";
+      const path = typeof note.path === "string" ? note.path : "";
+      const detail = message || path;
+      return detail ? `${text} (${detail})` : text;
+    });
+  return said.length ? said : undefined;
 }

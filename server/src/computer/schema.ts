@@ -38,8 +38,17 @@ export type NavigateResult = {
   text: string;
   /** True when the page was longer than the extract, so the Bot can say so rather than guess. */
   truncated: boolean;
+  /**
+   * The iframes whose text was merged in, and the ones that would not answer.
+   *
+   * A Korean site puts its real content in an iframe more often than not. `code:
+   * "laf:frame_opaque"` marks one that could not be read — a payment or 본인인증 window, usually —
+   * which is a different fact from there being nothing in it.
+   */
+  frames?: { url: string; chars: number; code?: string }[];
   /** Wall-clock ms the navigation took, for the progress line in the transcript. */
   elapsedMs: number;
+  notes?: ComputerNote[];
 };
 
 export type ScreenshotResult = {
@@ -83,6 +92,30 @@ export type SnapshotElement = {
   checked?: boolean;
 };
 
+/**
+ * One tab the Bot's browser has open.
+ *
+ * Mirrors `TabSummary` in `agent-computer/src/profiles.ts`, duplicated for the same reason
+ * `SnapshotElement` is: two deployables with no code in common.
+ */
+export type TabSummary = {
+  /** Position in the browser's own list. What `computer_switch_tab` takes. */
+  index: number;
+  title: string;
+  url: string;
+  /** The one the next action lands on. */
+  active: boolean;
+};
+
+/**
+ * Something the browser noticed that nothing asked about.
+ *
+ * A dialog the page opened, a file it downloaded, a secret request lost to a restart. Each is a
+ * `code` and its facts — never a sentence: the Korean a model reads is looked up from the code in
+ * `shared/prompt/tool-results.ko.ts`, and the words a person reads come from `t()`.
+ */
+export type ComputerNote = { code: string } & Record<string, unknown>;
+
 export type SnapshotResult = {
   /**
    * Which snapshot these refs belong to. Must be sent back with every action.
@@ -97,6 +130,36 @@ export type SnapshotResult = {
   elements: SnapshotElement[];
   /** True when the page had more interactive elements than the snapshot describes. */
   truncated: boolean;
+  /**
+   * Every tab, so a Bot can see the one a `target=_blank` link just opened.
+   *
+   * Optional because a computer that has not been redeployed does not send it; an absent list means
+   * "this computer does not report tabs", never "there is only one".
+   */
+  tabs?: TabSummary[];
+  /** Anything the browser noticed since the last call. See {@link ComputerNote}. */
+  notes?: ComputerNote[];
+};
+
+export type SwitchTabInput = { index: number };
+export type SwitchTabResult = {
+  action: "switch_tab";
+  index: number;
+  tabs: TabSummary[];
+  url: string;
+  notes?: ComputerNote[];
+};
+
+/** A file from the Bot's own workspace, handed to a file input on the page. */
+export type UploadFileInput = ActionTarget & { path: string };
+export type UploadFileResult = {
+  action: "upload_file";
+  ref: string;
+  /** As the Bot named it, relative to its workspace. Never the path inside the container. */
+  path: string;
+  url: string;
+  element?: { role: string; name: string };
+  notes?: ComputerNote[];
 };
 
 /** Common to every acting call: which element, and which snapshot the ref came from. */
@@ -136,6 +199,13 @@ export type ActionResult = {
   /** Where the page ended up, which is how a Bot notices that its click navigated. */
   url: string;
   elapsedMs: number;
+  /**
+   * What the browser noticed while this ran.
+   *
+   * A click that opens `alert("로그인이 필요합니다")` returns exactly as a click that did nothing:
+   * Playwright answers the dialog before the call comes back. The reason rides here.
+   */
+  notes?: ComputerNote[];
 };
 
 /** Absent path means the whole workspace. */

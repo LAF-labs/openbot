@@ -120,9 +120,13 @@ is the one seam every path goes through — chat, rooms and routines alike.
 
 ### The computer reads the Bot from a header
 
-`agent-computer` takes the Bot from `x-openbot-bot-id` and **falls back to a
-default** when it is absent. A query string is not a different Bot; it is
-silently the wrong one, on a blank page belonging to nobody.
+`agent-computer` takes the Bot from `x-openbot-bot-id` and **refuses without
+it** — 400 `laf:bot_header_missing` on every route but `/health` and
+`/computers`. It used to fall back to `"shared"` while the server fell back to
+`"default"`, which is the blank page belonging to nobody, twice, answering as
+though it had worked. The live-screen socket is the one exception and only
+because a websocket upgrade carries no custom header: it accepts `?bot=`, and
+the header still wins.
 
 ### Korean is not optional
 
