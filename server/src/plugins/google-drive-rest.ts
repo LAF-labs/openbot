@@ -284,7 +284,7 @@ const driveQuery = (query: string) => {
  * Reused rather than reimplemented so the empty case and the size cap behave identically across both
  * transports. The empty case is the one that matters: a search that matched nothing has to SAY so,
  * because an empty string reads to a model as "the tool had nothing to say" and gets filled in from
- * memory — which for a knowledge connector is the exact failure the lane exists to prevent.
+ * memory — which for a connector somebody searches is the exact failure it exists to prevent.
  */
 function asResult(text: string): McpCallResult {
   const joined = text.trim();

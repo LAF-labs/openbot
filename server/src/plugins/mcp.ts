@@ -39,7 +39,7 @@ export const MAX_RESULT_CHARS = 20_000;
  * The empty case is the one that earns the separation. A tool that matched nothing used to produce
  * an empty string, and an empty string is the worst thing to put in front of a model: it reads as
  * "the tool had nothing to say" rather than "there is nothing there", and the model closes the gap
- * from memory. For a knowledge connector that is precisely the failure the whole slice exists to
+ * from memory. For a server a Bot searches, that is precisely the failure a connector exists to
  * prevent — an answer with nothing behind it. So nothing is stated, in words.
  */
 export function resultText(content: unknown): {
