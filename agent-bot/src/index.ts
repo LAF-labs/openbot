@@ -18,14 +18,20 @@ import { textOf } from "../../shared/message-content";
 
 const PORT = Number.parseInt(process.env.PORT ?? "4200", 10);
 /**
- * Which model drives the Bot.
+ * Which model drives the Bot. No default, on purpose.
  *
- * `gpt-5.5` works through `/v1/chat/completions`, which is the API this file uses.
+ * It used to fall back to `gpt-5.5` while the tenant package fell back to `gpt-4.1` and the
+ * deployment ran `z-ai/glm-5.3-flash`: three answers to one question, and the two written here were
+ * both wrong. A default in this file cannot be the deployment's decision — it is not where the
+ * deployment is described — so the fallback lives once, in the tenant package's `model.yaml`, and
+ * `BOT_MODEL` carries it here. Unset, the service refuses to start (see the bottom of this file)
+ * rather than answering on a model nobody chose.
  *
- * `gpt-5.6-*` models require the Responses API for tool use and cannot be used by this
+ * Whatever it names is sent verbatim through `/v1/chat/completions`, which is the API this file
+ * uses. `gpt-5.6-*` models require the Responses API for tool use and cannot be used by this
  * chat-completions streaming loop.
  */
-const MODEL = process.env.BOT_MODEL ?? "gpt-5.5";
+const MODEL = process.env.BOT_MODEL?.trim() ?? "";
 
 /**
  * Where that model is answered from.
@@ -405,6 +411,18 @@ export async function runAgent(
  * the first.
  */
 if (import.meta.main) {
+  /*
+   * Loudly, and here rather than at module scope: a throw while this file is being imported would
+   * take the test suite's own import of `runAgent` with it, and a suite that never runs reports
+   * nothing rather than failing. Nothing that serves a person gets past this line without a model.
+   */
+  if (!MODEL) {
+    console.error(
+      "BOT_MODEL is not set. This service sends the model name verbatim to OPENAI_BASE_URL and has no default of its own — the deployment's model is declared once, in the tenant package's model.yaml, and docker-compose passes BOT_MODEL through from .env. Set it there (.env.example ships it set) and start again.",
+    );
+    process.exit(1);
+  }
+
   serve({
     port: PORT,
     idleTimeout: 120,

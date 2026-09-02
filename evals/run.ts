@@ -20,7 +20,11 @@ import { runAgent } from "../agent-bot/src/index";
 import { callsOf, eventsOfSse, type StreamEvent, usageOf } from "./lib";
 import { SCENARIOS, streamProblems, turnText } from "./scenarios";
 
-const MODEL = process.env.BOT_MODEL ?? "gpt-5.5";
+/**
+ * The candidate. No default: this file exists to certify one named model, and a fallback here is a
+ * report that says PASS about a model nobody asked about.
+ */
+const MODEL = process.env.BOT_MODEL?.trim() ?? "";
 const RUNS = Math.max(
   1,
   Number.parseInt(process.env.EVAL_RUNS ?? "1", 10) || 1,
@@ -31,6 +35,13 @@ const SCENARIO_TIMEOUT_MS = 180_000;
 if (!process.env.OPENAI_API_KEY) {
   console.error(
     "OPENAI_API_KEY is not set. The eval calls a real model; there is nothing to certify without one.",
+  );
+  process.exit(1);
+}
+
+if (!MODEL) {
+  console.error(
+    "BOT_MODEL is not set. The eval certifies the model it is given by name, so there is no default to fall back to: BOT_MODEL=candidate/name bun run eval:model.",
   );
   process.exit(1);
 }

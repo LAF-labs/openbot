@@ -1,7 +1,15 @@
 model:
   provider: openai
   credential_secret_ref: openai-api-key
-  default_model: ${BOT_MODEL:-gpt-4.1}
+  # THE ONE DEFAULT. This line is where the deployment's model is decided when `.env` says nothing.
+  #
+  # There were four of them and they disagreed: `gpt-4.1` here, `gpt-5.5` in agent-bot, `gpt-5.5`
+  # in the eval, `gpt-5.5` in docker-compose — while every deployment actually runs
+  # `z-ai/glm-5.3-flash` through OpenRouter, chosen by the ritual in docs/laf/eval-pack.md and
+  # recorded in 4ef8c4c. Four defaults meant the value nobody set was different in each half of the
+  # product, and no one of them was the truth. agent-bot and the eval now carry none and refuse to
+  # run without BOT_MODEL; this is the fallback, and it is the model the eval certified.
+  default_model: ${BOT_MODEL:-z-ai/glm-5.3-flash}
   # Whether this deployment's model reasons, and therefore takes an effort setting.
   #
   # AN ASSERTION, NOT A DESCRIPTION. The model provider decides on its own whether to send an effort
