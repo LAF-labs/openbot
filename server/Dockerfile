@@ -15,6 +15,9 @@ COPY desktop/package.json desktop/package.json
 RUN bun install --frozen-lockfile
 
 COPY server server
+# The prompt and the tool catalogue live beside the workspaces, not inside one; the app imports
+# them through the @shared alias and the server through a relative path, so both images need them.
+COPY shared shared
 # The tenant package is read at run time, so the image that runs the API has to carry it. Without
 # this the container starts, reads TENANT_PACKAGE_DIR, and dies looking for a directory that only
 # ever existed on the machine the image was built from.

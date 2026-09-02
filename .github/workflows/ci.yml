@@ -25,4 +25,4 @@ jobs:
   # The checks live in checks.yml so that this workflow and the one that publishes images run the
   # same definition rather than two copies of it. See that file.
   checks:
-    uses: ./.github/workflows/checks.yml
+    uses: $/.github/workflows/checks.yml

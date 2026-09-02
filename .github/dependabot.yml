@@ -18,6 +18,10 @@ updates:
       day: monday
       time: "06:00"
       timezone: Asia/Seoul
+    # A week between a release and a pull request about it: a package pulled the day it ships is
+    # how a bad release reaches every fork before its author has heard.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       # Security fixes travel on their own so they are not held up behind a major version bump
@@ -41,6 +45,10 @@ updates:
       day: monday
       time: "06:00"
       timezone: Asia/Seoul
+    # A week between a release and a pull request about it: a package pulled the day it ships is
+    # how a bad release reaches every fork before its author has heard.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       actions:

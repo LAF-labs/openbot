@@ -24,6 +24,9 @@ RUN bun install --frozen-lockfile
 
 COPY app app
 COPY server server
+# The prompt and the tool catalogue live beside the workspaces, not inside one; the app imports
+# them through the @shared alias and the server through a relative path, so both images need them.
+COPY shared shared
 COPY tenant tenant
 COPY scripts scripts
 # Every workspace's tsconfig extends this one, and vite resolves the chain while building. Missing,
