@@ -96,8 +96,12 @@ export function createComputerRoutes(
     try {
       return context.json(
         await gateway.navigate(
-          context.req.param("botId") ?? "default",
-          context.req.param("botId") ?? "default",
+          // No `?? "default"`. It was the server's half of a pair of silent fallbacks — the computer
+          // had `"shared"` at the other end — and between them an unnamed call landed on a browser
+          // belonging to nobody and answered as though it had worked. This route declares `:botId`,
+          // so the value is there; `act()` below refuses when it somehow is not.
+          botIdOf(context),
+          botIdOf(context),
           {
             id: context.var.actor.id,
             ...(context.var.actor.email === DEV_ACTOR.email
@@ -222,6 +226,46 @@ export function createComputerRoutes(
         asApprovalId(body),
       ),
     ),
+  );
+
+  /**
+   * Move the Bot to another one of its open tabs.
+   *
+   * An acting route although it changes nothing on any site: it goes through the gateway so the trail
+   * says which page the Bot was on when it pressed the next thing.
+   */
+  routes.post("/:botId/tabs/switch", requireUser, (context) =>
+    act(context, (botId, actor, body) => {
+      if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
+        return { error: "A tab index is required." };
+      }
+      return gateway.switchTab(
+        botId,
+        botId,
+        actor,
+        { index: body.index },
+        asApprovalId(body),
+      );
+    }),
+  );
+
+  /** Hand one of the Bot's own files to a file input on the page. */
+  routes.post("/:botId/upload", requireUser, (context) =>
+    act(context, (botId, actor, body, signal) => {
+      const ref = asRef(body);
+      if (!ref) return badRef;
+      if (typeof body?.path !== "string" || !body.path.trim()) {
+        return { error: "A file path is required." };
+      }
+      return gateway.uploadFile(
+        botId,
+        botId,
+        actor,
+        { ...ref, path: body.path.trim() },
+        signal,
+        asApprovalId(body),
+      );
+    }),
   );
 
   /**
@@ -641,10 +685,16 @@ async function act(
     signal: AbortSignal,
   ) => Promise<unknown> | BadRequest,
 ) {
-  // Always present on these routes, which all declare `:botId`. The fallback exists because this
-  // helper is typed against a generic context that cannot know that, and a thrown "undefined bot"
-  // would be a worse outcome than naming the one shared computer.
-  const botId = context.req.param("botId") ?? "default";
+  // Always present on these routes, which all declare `:botId`. It used to fall back to `"default"`
+  // here — the server's half of a pair of fallbacks that put an unnamed call on a browser belonging
+  // to nobody. There is no computer worth naming when nobody said which, so this refuses instead.
+  const botId = context.req.param("botId");
+  if (!botId) {
+    return context.json(
+      { error: "laf:bot_header_missing", code: "laf:bot_header_missing" },
+      400,
+    );
+  }
   const record = context.var.actor;
   const body = (await context.req.json().catch(() => null)) as Record<
     string,
@@ -750,6 +800,18 @@ function asApprovalId(
   return typeof body?.approvalId === "string" && body.approvalId
     ? body.approvalId
     : undefined;
+}
+
+/**
+ * Which Bot this call is about.
+ *
+ * Every route here declares `:botId`, so the parameter is always there and this is a formality —
+ * which is precisely why it must not be `?? "default"`. That fallback, and the computer's matching
+ * `"shared"`, are how a call that named no Bot used to be answered by a browser belonging to nobody.
+ * An empty string reaches the gateway as a Bot with no name, is refused there, and is visible.
+ */
+function botIdOf(context: ComputerContext): string {
+  return context.req.param("botId") ?? "";
 }
 
 function asRef(

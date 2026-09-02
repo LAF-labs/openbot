@@ -125,6 +125,35 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
     }),
   },
   {
+    name: "computer_switch_tab",
+    description:
+      "열려 있는 다른 탭으로 옮긴다. 링크를 눌렀는데 화면이 그대로면 대개 새 탭이 열린 것이다 — computer_snapshot이 함께 주는 tabs 목록에서 그 탭의 index를 보고 이것을 부른다. 옮기면 앞서 받은 ref는 모두 쓸 수 없으니 computer_snapshot을 다시 찍는다.",
+    parameters: object(
+      {
+        index: {
+          type: "number",
+          description: "tabs 목록에 있는 그 탭의 index. 첫 탭이 0.",
+        },
+      },
+      ["index"],
+    ),
+  },
+  {
+    name: "computer_upload_file",
+    description:
+      "네 작업 공간에 있는 파일을 페이지의 첨부 칸에 올린다. computer_snapshot으로 파일 선택 칸의 ref를 먼저 찾고, 작업 공간 기준 경로를 준다. 예: downloads/정산내역.xlsx. 네가 가진 파일을 남의 사이트로 넘기는 일이라 사람에게 확인을 받을 수 있다.",
+    parameters: object(
+      {
+        ...REF,
+        path: {
+          type: "string",
+          description: "작업 공간 기준 경로. 예: downloads/정산내역.xlsx",
+        },
+      },
+      ["ref", "snapshotId", "path"],
+    ),
+  },
+  {
     name: "computer_request_secret",
     needsPerson: true,
     description:

@@ -45,6 +45,23 @@ type Props = {
 
 export function LiveScreen({ computerId, driving, onProblem }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * WHERE THE KEYBOARD ACTUALLY GOES, AND WHY IT IS NOT THE CANVAS.
+   *
+   * Measured inside the shipping image, driving Chrome's own IME path with
+   * `Input.imeSetComposition`: with a focusable canvas focused, the page received NOTHING — no
+   * composition events, no input, not even the text. With a textarea focused, the whole sequence
+   * arrived and ended with `compositionend` carrying 한. Chrome turns the IME off entirely unless an
+   * editable element has focus, so a Korean word typed at a canvas is not "split into jamo", it is
+   * the Latin letters printed on those keys, or nothing at all.
+   *
+   * So the focus target while driving is a real editable element, kept out of sight, and the canvas
+   * goes back to being a picture with a mouse over it. It is the same thing noVNC does for the same
+   * reason. Nothing is ever read out of it: it is emptied on every keystroke, and what is sent is
+   * the composed word from `compositionend` — one `Input.insertText`, the same door a paste uses,
+   * and the same door the demonstration recorder counts without reading.
+   */
+  const keyboardRef = useRef<HTMLTextAreaElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   /** The size of the frames Chrome is sending, which is what input coordinates are relative to. */
   const frameSize = useRef<{ width: number; height: number } | null>(null);
@@ -176,31 +193,42 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   );
 
   /**
-   * The canvas takes focus when control is handed over.
+   * The keyboard field takes focus when control is handed over.
    *
-   * It has to: the keystroke handlers below moved off `window` and onto this element, and until it
-   * holds focus there is nothing for them to fire on.
+   * It has to: the keystroke handlers moved off `window` and onto that element, and until it holds
+   * focus there is nothing for them to fire on — and no IME either.
    */
   useEffect(() => {
     if (!driving) return;
-    canvasRef.current?.focus();
+    keyboardRef.current?.focus();
   }, [driving]);
 
   /**
    * Keystrokes, forwarded while driving.
    *
-   * ON THE CANVAS, NOT ON THE WINDOW — this was a keyboard trap in the WCAG 2.1.2 sense. Window
+   * ON ONE ELEMENT, NOT ON THE WINDOW — this was a keyboard trap in the WCAG 2.1.2 sense. Window
    * listeners with an unconditional `preventDefault` swallowed Tab for the whole page, so once a
    * person took control there was no key that could move focus anywhere: "Hand back" was two
-   * centimetres away and unreachable without a mouse. A focusable canvas keeps Tab and typing
-   * directed at the remote page while the canvas holds focus, and returns the keyboard to the app
-   * the moment it does not.
-   *
-   * The old comment claimed a canvas cannot hold focus. With `tabIndex` it can.
+   * centimetres away and unreachable without a mouse. Keeping them on the focused field keeps Tab
+   * and typing directed at the remote page while it holds focus, and returns the keyboard to the
+   * app the moment it does not.
    */
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Escape leaves, and Tab is how somebody gets back out to Hand back.
     if (event.key === "Escape" || event.key === "Tab") return;
+    /*
+     * KOREAN IS NOT TYPED ONE KEY PER LETTER.
+     *
+     * While the IME is composing, every keystroke arrives here with `key === "Process"` (or
+     * `keyCode` 229) and the letters a person is actually assembling are not in any of them. Sent
+     * on as key events, ㅎ + ㅏ + ㄴ reached the remote page as three separate jamo and 한 never
+     * appeared. The composed word arrives once, at `compositionend`, and that is what is sent —
+     * which is the same door a paste already uses.
+     */
+    if (event.nativeEvent.isComposing || event.key === "Process") {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     send({
       type: "key",
@@ -213,8 +241,12 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       modifiers: modifierBits(event),
     });
   };
-  const handleKeyUp = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+  const handleKeyUp = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape" || event.key === "Tab") return;
+    if (event.nativeEvent.isComposing || event.key === "Process") {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     send({
       type: "key",
@@ -225,53 +257,89 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
     });
   };
   /** Paste arrives as one block; CDP inserts it as text rather than key events. */
-  const handlePaste = (event: React.ClipboardEvent<HTMLCanvasElement>) => {
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = event.clipboardData?.getData("text");
     if (!text) return;
     event.preventDefault();
     send({ type: "text", text });
   };
+  /**
+   * A finished Korean word, sent whole.
+   *
+   * The same message a paste sends, for the same reason: `Input.insertText` puts text into the page
+   * without pretending to be a keyboard, and a composed syllable is not a keystroke. The recorder
+   * this passes through counts that typing happened and never reads the value (`demonstration.ts`),
+   * exactly as it does for a paste.
+   */
+  const handleCompositionEnd = (
+    event: React.CompositionEvent<HTMLTextAreaElement>,
+  ) => {
+    const text = event.data;
+    // Emptied whether or not anything is sent: what is in this field is never read again, and a
+    // field that keeps what somebody typed is a field holding a password.
+    event.currentTarget.value = "";
+    if (!text) return;
+    send({ type: "text", text });
+  };
 
   return (
-    <canvas
-      ref={canvasRef}
-      // max-h/max-w rather than h-auto w-full: the expanded screen used to overflow a short window
-      // and scroll, with the bottom of the Bot's page below the fold.
-      className={`block max-h-full max-w-full outline-none focus-visible:ring-2 focus-visible:ring-ring ${driving ? "cursor-crosshair" : ""}`}
-      role={driving ? "application" : undefined}
-      tabIndex={driving ? 0 : undefined}
-      // Only forward input during takeover.
-      {...(driving
-        ? {
-            onKeyDown: handleKeyDown,
-            onKeyUp: handleKeyUp,
-            onPaste: handlePaste,
-            onMouseDown: onMouse("pressed"),
-            onMouseUp: onMouse("released"),
-            onMouseMove: onMouse("moved"),
-            onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
-            onWheel: (event: React.WheelEvent<HTMLCanvasElement>) => {
-              const point = at(event);
-              if (!point) return;
-              event.preventDefault();
-              send({
-                type: "wheel",
-                ...point,
-                deltaX: event.deltaX,
-                deltaY: event.deltaY,
-                modifiers: modifierBits(event),
-              });
-            },
-          }
-        : {})}
-      aria-label={
-        driving
-          ? t(
-              "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.",
-            )
-          : t("The assistant's screen, live")
-      }
-      data-connected={connected}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        // max-h/max-w rather than h-auto w-full: the expanded screen used to overflow a short window
+        // and scroll, with the bottom of the Bot's page below the fold.
+        className={`block max-h-full max-w-full outline-none ${driving ? "cursor-crosshair" : ""}`}
+        // Only forward input during takeover.
+        {...(driving
+          ? {
+              onMouseDown: (event: React.MouseEvent<HTMLCanvasElement>) => {
+                // Clicking the picture must not take the keyboard away from the field that has the
+                // IME on it. The canvas is not focusable, so this only has to put focus back where a
+                // browser may have moved it.
+                keyboardRef.current?.focus();
+                onMouse("pressed")(event);
+              },
+              onMouseUp: onMouse("released"),
+              onMouseMove: onMouse("moved"),
+              onContextMenu: (event: React.MouseEvent) =>
+                event.preventDefault(),
+              onWheel: (event: React.WheelEvent<HTMLCanvasElement>) => {
+                const point = at(event);
+                if (!point) return;
+                event.preventDefault();
+                send({
+                  type: "wheel",
+                  ...point,
+                  deltaX: event.deltaX,
+                  deltaY: event.deltaY,
+                  modifiers: modifierBits(event),
+                });
+              },
+            }
+          : {})}
+        aria-hidden={driving ? true : undefined}
+        aria-label={driving ? undefined : t("The assistant's screen, live")}
+        data-connected={connected}
+      />
+      {driving ? (
+        <textarea
+          ref={keyboardRef}
+          /*
+           * Out of sight, in focus. One pixel and clipped rather than `hidden` or
+           * `display:none`, because a hidden element cannot hold focus and an unfocused one gets no
+           * IME. `readOnly` is not set either: a field a browser considers read-only is a field it
+           * turns the IME off for, which is the whole failure this exists to fix.
+           */
+          className="absolute h-px w-px overflow-hidden border-0 p-0 opacity-0 outline-none"
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onPaste={handlePaste}
+          onCompositionEnd={handleCompositionEnd}
+          aria-label={t(
+            "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.",
+          )}
+        />
+      ) : null}
+    </>
   );
 }

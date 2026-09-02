@@ -1,5 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { toolResultText } from "@shared/prompt/tool-results.ko";
+import { noteTexts, toolResultText } from "@shared/prompt/tool-results.ko";
 import { computerTool } from "@shared/tools/computer";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
@@ -271,7 +271,16 @@ async function sendToComputer(
     };
   }
 
-  return { ok: true, ...(body ?? {}) };
+  /*
+   * The facts the browser noticed, put into the words the model reads.
+   *
+   * The computer ships `{code: "laf:dialog", message}` and knows no locale, the same way it ships
+   * `laf:human_has_control`. Translated here, on the one path every successful computer call comes
+   * back through, so an alert the page raised reads as a sentence rather than as a symbol the model
+   * has never seen. The person's own words for the same fact are `t()`'s job, on the line below.
+   */
+  const said = body ? noteTexts(body.notes) : undefined;
+  return { ok: true, ...(body ?? {}), ...(said ? { notes: said } : {}) };
 }
 
 /** What a computer tool's render can read back out of its own result. */
@@ -729,6 +738,83 @@ export function ComputerTools() {
           // Show the path, never file contents.
           detail={
             outcome.refused === true
+              ? labelForCode(outcome.code, outcome.reason)
+              : typeof args?.path === "string"
+                ? args.path
+                : undefined
+          }
+          refused={outcome.refused === true}
+          failed={didNotWork(outcome)}
+        />
+      );
+    },
+  });
+
+  useFrontendTool({
+    ...fromCatalogue<{ index: number }>("computer_switch_tab"),
+    handler: async (input: { index: number }, call: ToolCallContext = {}) =>
+      callComputer(
+        bot.current,
+        "/tabs/switch",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+        call,
+      ),
+    render: ({ result, status, toolCallId }) => {
+      const outcome = outcomeOf(result) as ComputerOutcome & {
+        tabs?: { title?: string; active?: boolean }[];
+      };
+      const active = outcome.tabs?.find((tab) => tab.active);
+      return (
+        <ActionLine
+          toolCallId={toolCallId}
+          running={status !== "complete"}
+          label={t("Switched tab")}
+          detail={
+            outcome.refused === true || didNotWork(outcome)
+              ? labelForCode(outcome.code, outcome.reason)
+              : // The tab's own title, which is what a person would call it. Never the url: it is
+                // long, and half of it is a session id.
+                (active?.title ?? undefined)
+          }
+          refused={outcome.refused === true}
+          failed={didNotWork(outcome)}
+        />
+      );
+    },
+  });
+
+  useFrontendTool({
+    ...fromCatalogue<{ ref: string; snapshotId: number; path: string }>(
+      "computer_upload_file",
+    ),
+    handler: async (
+      input: { ref: string; snapshotId: number; path: string },
+      call: ToolCallContext = {},
+    ) =>
+      callComputer(
+        bot.current,
+        "/upload",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+        call,
+      ),
+    render: ({ args, result, status, toolCallId }) => {
+      const outcome = outcomeOf(result);
+      return (
+        <ActionLine
+          toolCallId={toolCallId}
+          running={status !== "complete"}
+          label={t("Attached file")}
+          // The path, which is what was handed over. Never the contents.
+          detail={
+            outcome.refused === true || didNotWork(outcome)
               ? labelForCode(outcome.code, outcome.reason)
               : typeof args?.path === "string"
                 ? args.path

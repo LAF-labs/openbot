@@ -165,6 +165,7 @@ export const ko: Record<string, string> = {
     "notes/ 밖에 파일을 쓰기 전에 묻기",
   "Ask me first": "먼저 묻기",
   "Asked a person": "사람에게 물음",
+  "Attached file": "파일 첨부",
   "Asked because of this rule. Allowing covers this one action.":
     "이 규칙 때문에 묻습니다. 허용은 이 행동 한 번에만 적용됩니다.",
   "Asks about every Enter the Bot presses, because a form submits from Enter in any of its fields. Expect to be asked while it is filling one in, not only at the end.":
@@ -698,6 +699,7 @@ export const ko: Record<string, string> = {
   "Start channel": "채널 시작",
   Stop: "정지",
   "Stop the Bot": "봇 정지",
+  "Switched tab": "탭 이동",
   "Summarise what I did yesterday from the channel, then list what is left.":
     "채널에서 어제 한 일을 요약하고, 남은 일을 목록으로.",
   Summary: "요약",

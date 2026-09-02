@@ -187,9 +187,20 @@ export const SECRET_FIELD_RULE = `intent == "type" && (element.type == "password
  * and visible in the audit trail. The `allow: ["true"]` line is a decision somebody wrote down rather
  * than a default that fell out of an empty list.
  */
+/**
+ * Handing one of the Bot's own files to a website.
+ *
+ * Every other rule here is about a label or a host, because the risk is in what a click does. This
+ * one is about a direction: the workspace holds what a Bot has written down over every task it has
+ * ever run, and an upload is the only call that takes a piece of that out and gives it to somebody
+ * else. The button says nothing about it — a file input is usually called 파일 선택 — so there is
+ * nothing for a rule about labels to see.
+ */
+export const UPLOAD_RULE = 'intent == "upload"';
+
 export const DEFAULT_ACTION_POLICY: ActionPolicy = {
   deny: [SECRET_FIELD_RULE],
-  ask: [MONEY_WORD_RULE, MONEY_HOST_RULE, REPEAT_RULE],
+  ask: [MONEY_WORD_RULE, MONEY_HOST_RULE, UPLOAD_RULE, REPEAT_RULE],
   allow: ["true"],
 };
 
