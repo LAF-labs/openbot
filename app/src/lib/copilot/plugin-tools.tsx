@@ -5,7 +5,7 @@ import { Streamdown } from "streamdown";
 import * as z from "zod";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
-import { useActiveBotId } from "@/lib/copilot/active-bot";
+import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { markdownComponents } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
@@ -19,7 +19,9 @@ import {
  */
 export function PluginTools() {
   const botId = useActiveBotId();
-  const { data } = useQuery(agentPluginsQueryOptions(botId));
+  // The registration stays; the fifteen-second grant poll only runs once a surface names a Bot.
+  const declared = useDeclaredBotId();
+  const { data } = useQuery(agentPluginsQueryOptions(declared));
   const granted: GrantedPlugins = data ?? { tools: [], skills: [] };
 
   /** Keep previously offered tools mounted so mid-run revocations can return explicit refusals. */
