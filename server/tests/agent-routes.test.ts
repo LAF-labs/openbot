@@ -697,10 +697,11 @@ describe("how hard a Bot thinks", () => {
 /**
  * The one field a Bot must never write.
  *
- * `update_state` posts to `/profile`, which merges: a Bot changes its own name, its job and its
- * routines there. The auto-review instruction is the sentence deciding whether that Bot gets asked
- * about anything, so a Bot that could write it would have no boundary at all — and the shortest
- * path from a helpful Bot to that is a page telling it to be helpful.
+ * `update_profile` posts to `/profile`, which merges: a Bot changes its own name and its job
+ * there. The auto-review instruction is the sentence deciding whether that Bot gets asked about
+ * anything, so a Bot that could write it would have no boundary at all — and the shortest path
+ * from a helpful Bot to that is a page telling it to be helpful. Splitting `update_state` in two
+ * did not open a second door: `manage_routine` reaches the routines API, which has no such field.
  */
 describe("the auto-review instruction", () => {
   test("goes through on the replacing input, which only a person posts to", () => {
@@ -744,7 +745,7 @@ describe("the auto-review instruction", () => {
 
   test("a Bot's own tool cannot set it", async () => {
     const store = fakeStore();
-    // The shape `update_state` posts. It may carry a name and a description, and this alongside
+    // The shape `update_profile` posts. It may carry a name and a description, and this alongside
     // them must change nothing rather than fail: a Bot told "no" is a Bot that tries again in
     // another shape, and the field simply not reaching the store is the end of the conversation.
     const response = await appFor(store).request("/agent-1/profile", {

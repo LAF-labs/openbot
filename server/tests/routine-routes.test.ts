@@ -185,7 +185,7 @@ describe("the routines surface, as its owner", () => {
     expect(await response.text()).not.toContain("triggerTokenHash");
   });
 
-  test("a create without a Bot or a schedule refuses with a fact code", async () => {
+  test("a create without a Bot refuses with a fact code", async () => {
     const service = fakeService();
     const response = await appAs(OWNER, service).request(
       "http://laf.test/",
@@ -195,7 +195,30 @@ describe("the routines surface, as its owner", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       code: "laf:routine_incomplete",
-      error: "Name a Bot and a schedule.",
+      error: "Name a Bot.",
+    });
+    expect(service.calls).toEqual([]);
+  });
+
+  /*
+   * A MISSING SCHEDULE IS ITS OWN CODE, and this is why.
+   *
+   * A Bot creates routines too (`manage_routine`), and it always names itself, so the only half it
+   * can get wrong is the schedule. "Pick a Bot and a schedule" answers a question it did not ask;
+   * the Korean for this code points it at `update_profile` instead, because a duty with no time
+   * attached is a job, not a routine — which is the confusion the tool split exists to end.
+   */
+  test("a create without a schedule says which half is missing", async () => {
+    const service = fakeService();
+    const response = await appAs(OWNER, service).request(
+      "http://laf.test/",
+      post({ agentId: "bot-1", name: "아침 점검", instruction: "확인" }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: "laf:routine_needs_schedule",
+      error: "Name a schedule.",
     });
     expect(service.calls).toEqual([]);
   });

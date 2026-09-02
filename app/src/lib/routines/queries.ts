@@ -72,7 +72,17 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
   "laf:routine_cap_reached":
     "This account already holds as many routines as it can. Delete one to make room.",
   "laf:routine_not_found": "That routine is no longer there.",
-  "laf:routine_incomplete": "Pick a Bot and a schedule first.",
+  "laf:routine_incomplete": "Pick a Bot first.",
+  /*
+   * The three a Bot can provoke, because a Bot creates routines too now (`manage_routine`).
+   *
+   * They reach this screen as well: the same route answers both callers, and a refusal that had
+   * words only for the Bot would fall through to the server's English sentence here — the exact
+   * failure this table was written to end.
+   */
+  "laf:routine_needs_name": "Give the routine a name.",
+  "laf:routine_needs_instruction": "Say what the routine should do each time.",
+  "laf:routine_needs_schedule": "Say when it should run.",
 };
 
 export async function routineRequest(path: string, init?: RequestInit) {

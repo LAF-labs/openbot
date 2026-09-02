@@ -56,7 +56,7 @@ and still runs.
 | | |
 | --- | --- |
 | **Blank Bots, and onboarding** | No shipped personas. A first run that ends with one Bot of your own. |
-| **A Bot shapes itself** | `update_state` — it writes its own name, its job, its routines, and how hard it thinks, from inside the conversation. |
+| **A Bot shapes itself** | `update_profile` and `manage_routine` — it writes its own name, its job, how hard it thinks and the routines it runs, from inside the conversation. |
 | **Suggestions, not a catalogue** | Thirty-two jobs to start from, dealt a handful at a time, one per kind of work. |
 | **Answering a boundary for good** | `Always allow`, scoped to a site, a file or a tool — and the scope is on the button, so what you agree to is what happens. |
 | **"Do not ask me about…"** | A sentence you write once; a model applies it to each stopped action. Everything it lets through is recorded as seen by nobody. |
