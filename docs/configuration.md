@@ -43,6 +43,9 @@ they are gone.
 | `AGENT_STALL_TIMEOUT_MS`        | `0` (watchdog off)     | How long a Bot's stream may say nothing before the deployment ends the turn. Refuses to start on anything that is not a whole number ≥ 0. |
 | `BOT_SEATS_PER_ACCOUNT`         | `5`                    | Bots one person may have. Enforced where a Bot is created, so a sixth fails to exist rather than existing with no computer to reach.  |
 | `LAF_NOTIFY_WEBHOOK_URL`        | unset                  | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                                                                |
+| `PUBLIC_ORIGIN`                 | unset                  | The address this deployment answers as, scheme included. Caddy's certificate and the API's cookie origin come from it, and it is what the fleet identifies this customer by. Required once `LAF_FLEET_WEBHOOK_URL` is set. |
+| `LAF_FLEET_WEBHOOK_URL`         | unset                  | Where a sign-up and a withdrawal reach the fleet tool, which creates and destroys the machine. Unset is silent, and the server says so once at boot: a withdrawal then completes here and the VM outlives the person who left it. |
+| `LAF_FLEET_WEBHOOK_SECRET`      | unset                  | Signs the exact body bytes: `x-laf-signature: sha256=<hex HMAC-SHA256>`. **Required once the URL is set** — the server refuses to start otherwise, because the endpoint on the other end destroys machines. |
 | `COPILOTKIT_TELEMETRY_DISABLED` | `true`                 | Set by the server on itself before the runtime loads. Set it to something else deliberately if you want the runtime's telemetry.      |
 
 `BOT_MODEL` is read by `agent-bot`, not by the API server — see [Bot endpoint](#bot-endpoint) below.

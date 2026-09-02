@@ -151,6 +151,16 @@ services:
       LAF_ALIMTALK_SENDER_KEY: ${LAF_ALIMTALK_SENDER_KEY:-}
       LAF_ALIMTALK_TEMPLATE_CODE: ${LAF_ALIMTALK_TEMPLATE_CODE:-}
       LAF_ALIMTALK_TO: ${LAF_ALIMTALK_TO:-}
+      # The deployment's own name, and the one thing the fleet identifies a customer by. The web
+      # service has always had it; the API server needs it too now that it signs notices with it.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # Where a sign-up and a withdrawal reach the fleet tool, which is the only thing that can
+      # create or destroy this machine. Unset, a person who leaves is gone from the database and the
+      # VM outlives them — the server says so once at boot rather than leaving it to be discovered
+      # on an invoice. The secret is required once the URL is set (it signs the body, and the
+      # endpoint on the other end destroys machines); the server refuses to start without it.
+      LAF_FLEET_WEBHOOK_URL: ${LAF_FLEET_WEBHOOK_URL:-}
+      LAF_FLEET_WEBHOOK_SECRET: ${LAF_FLEET_WEBHOOK_SECRET:-}
       # How long the trail and the run records are kept, in days. Empty is 365 (the decision in
       # docs/laf/redesign-2026-09.md §7-7); 0 keeps everything and switches the nightly sweep off.
       # The notification outbox rides the same sweep on a fixed thirty days of its own.

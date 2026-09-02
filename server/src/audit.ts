@@ -295,6 +295,23 @@ export const auditEventTypes = [
    */
   "account.exported",
   "account.deleted",
+
+  /*
+   * The fleet tool being told that somebody arrived or left, and the times it could not be told.
+   *
+   * A VM is created when a person signs up and destroyed when they withdraw, and the deciding
+   * machine is somewhere else (`fleet/notify.ts`). So "the account is gone" and "the fleet knows
+   * the account is gone" are two different facts, and the second is the one that decides whether a
+   * customer keeps being billed for a machine nobody is on.
+   *
+   * The failure has its own type rather than a field, because it is the row somebody goes looking
+   * for: a withdrawal whose notice never landed leaves a deployment that is correct in every other
+   * respect and a VM that outlives the person who left it. Neither row carries the body — the
+   * status and the headcount are what an operator needs, and a copy of the payload would keep an
+   * origin and an actor in a table that outlives the account by a year.
+   */
+  "fleet.notified",
+  "fleet.notify_failed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

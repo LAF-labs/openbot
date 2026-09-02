@@ -83,6 +83,22 @@ export type DeploymentConfig = {
      */
     repeatWindowMs?: number;
   };
+  /**
+   * Where a person arriving and a person leaving reach the fleet tool.
+   *
+   * Absent means this deployment tells nobody, which is the correct state on a laptop and the wrong
+   * one on a VM: a withdrawal would be complete in the database and invisible to the only thing
+   * that can destroy the machine. Said out loud at boot rather than inferred, for that reason.
+   *
+   * `origin` is `PUBLIC_ORIGIN` and it is how the fleet knows which customer this is. It travels
+   * with the pair rather than being read at the call site, so a deployment cannot end up signing a
+   * notice that names nobody.
+   */
+  fleet?: {
+    webhookUrl: string;
+    secret: string;
+    origin: string;
+  };
 };
 
 type Environment = Record<string, string | undefined>;
@@ -330,6 +346,39 @@ function computerConfig(
 }
 
 /**
+ * The fleet webhook, or a refusal to start.
+ *
+ * Optional as a whole and strict once it exists, the same shape as every half-configured thing in
+ * this file. The URL alone would post an unsigned notice, and the endpoint on the other end
+ * destroys machines — so a receiver that accepted one would take instructions from anybody who
+ * could reach it. `PUBLIC_ORIGIN` is required for the same class of reason: the fleet identifies a
+ * customer by origin, so a notice with an empty one is one nobody can act on, delivered and
+ * recorded as though it had worked.
+ */
+function fleetConfig(environment: Environment): DeploymentConfig["fleet"] {
+  const webhookUrl = url(environment, "LAF_FLEET_WEBHOOK_URL");
+  if (!webhookUrl) {
+    return undefined;
+  }
+
+  const secret = optional(environment, "LAF_FLEET_WEBHOOK_SECRET");
+  if (!secret) {
+    throw new Error(
+      "LAF_FLEET_WEBHOOK_URL is set, so LAF_FLEET_WEBHOOK_SECRET must be too: the fleet destroys machines on these notices and will not act on an unsigned one",
+    );
+  }
+
+  const origin = optional(environment, "PUBLIC_ORIGIN");
+  if (!origin) {
+    throw new Error(
+      "LAF_FLEET_WEBHOOK_URL is set, so PUBLIC_ORIGIN must be too: the fleet identifies a customer by origin, never by email, and a notice without one names nobody",
+    );
+  }
+
+  return { webhookUrl, secret, origin };
+}
+
+/**
  * A duration in milliseconds, or a refusal to start.
  *
  * Refused rather than quietly defaulted, for the same reason a malformed policy is. An operator who
@@ -433,5 +482,6 @@ export function loadConfig(
     auth: authConfig(environment, providers),
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),
+    fleet: fleetConfig(environment),
   };
 }

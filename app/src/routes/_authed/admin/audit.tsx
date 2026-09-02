@@ -480,6 +480,12 @@ export const DECISIONS: Record<string, string> = {
   // no name left to write.
   "account.exported": "A person took a copy of their data",
   "account.deleted": "An account was deleted",
+
+  // Not a permission and not a refusal either: the machine this deployment runs on is created and
+  // destroyed elsewhere, and these two say whether that elsewhere heard about it. The failure is
+  // the one worth finding — an account that is gone here and still paid for there.
+  "fleet.notified": "The fleet was told",
+  "fleet.notify_failed": "The fleet could not be told",
 };
 
 /**

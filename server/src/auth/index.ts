@@ -12,10 +12,53 @@ import {
   users,
   verifications,
 } from "../db/schema";
+import { countAccounts, type FleetNotifier } from "../fleet/notify";
 import { createSignInAllowlist } from "./allowlist";
 import { roleForEmail } from "./roles";
 
-export function createAuth(config: DeploymentConfig, database: Database) {
+/**
+ * The fleet learns that this machine now has somebody on it.
+ *
+ * The same envelope the withdrawal sends, so the fleet's records can be reconciled against a
+ * deployment rather than only corrected when one empties: `remainingAccounts` after a sign-up and
+ * after a withdrawal are the same fact counted at two ends. The id, never the address — no email
+ * crosses this wire.
+ *
+ * OUT HERE, rather than inline in the hook below, because everything inside `betterAuth`'s
+ * configuration is somebody else's to call and cannot be driven from a test. A notice that reaches
+ * nothing looks exactly like one that worked, which is the failure this whole file is guarding.
+ */
+export async function announceArrival(
+  database: Database,
+  fleet: FleetNotifier | undefined,
+  userId: string,
+): Promise<void> {
+  if (!fleet) return;
+  try {
+    await fleet.notify({
+      event: "account.created",
+      actor: userId,
+      remainingAccounts: await countAccounts(database),
+    });
+  } catch (error) {
+    // Swallowed, like the withdrawal's. Somebody is mid-sign-in and this is a reconciliation
+    // signal; failing their first visit over it would be the worse of the two outcomes.
+    console.error(
+      "[fleet] an arrival could not be reported:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+export function createAuth(
+  config: DeploymentConfig,
+  database: Database,
+  /**
+   * The fleet tool, told when an account appears so its records and this deployment's can be
+   * reconciled. Absent on a laptop and on any deployment with no `LAF_FLEET_WEBHOOK_URL`.
+   */
+  fleet?: FleetNotifier,
+) {
   const authConfig = config.auth;
   if (!authConfig) {
     throw new Error("Authentication is not configured.");
@@ -120,6 +163,15 @@ export function createAuth(config: DeploymentConfig, database: Database) {
                 role: roleForEmail(user.email, authConfig.initialAdminEmails),
               })
               .onConflictDoNothing();
+
+            /*
+             * NOT AWAITED, unlike the withdrawal's. This runs inside somebody's very first sign-in,
+             * with the OAuth dance already behind them and a blank screen in front of them; a fleet
+             * that is slow or down would be felt as a sign-in that hangs and then works. The
+             * deletion awaits its own because there a person is watching a button and the notice is
+             * what says the machine may go.
+             */
+            void announceArrival(database, fleet, user.id);
           },
         },
       },

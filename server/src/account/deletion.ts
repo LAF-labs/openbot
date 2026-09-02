@@ -87,6 +87,7 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { countAccounts, type FleetNotifier } from "../fleet/notify";
 import { pseudonymFor } from "./pseudonym";
 
 /** How many rows each part of the deletion actually removed. Written into the trail as it stands. */
@@ -114,6 +115,14 @@ export type AccountDeletionDependencies = {
    * simply lost its configuration, and an audit row claiming a clean wipe would be a lie.
    */
   computerClient?: ComputerClient;
+  /**
+   * The fleet tool, which is the only thing that can destroy the machine this runs on.
+   *
+   * Absent on a deployment that was never told where the fleet is — a laptop, or a VM whose `.env`
+   * has no `LAF_FLEET_WEBHOOK_URL`. There the withdrawal is complete here and nowhere else, which
+   * is why the absence gets a line at boot instead of being silent (see `fleet/notify.ts`).
+   */
+  fleet?: FleetNotifier;
 };
 
 export type AccountDeletion = {
@@ -127,7 +136,8 @@ export type AccountDeletion = {
 export function createAccountDeletion(
   dependencies: AccountDeletionDependencies,
 ): AccountDeletion {
-  const { database, retireConnectionsFor, computerClient } = dependencies;
+  const { database, retireConnectionsFor, computerClient, fleet } =
+    dependencies;
 
   return {
     async delete({ userId, by }) {
@@ -554,6 +564,34 @@ export function createAccountDeletion(
 
         return tally;
       });
+
+      /*
+       * THE FLEET, TOLD AFTER THE COMMIT AND NEVER BEFORE.
+       *
+       * A VM is destroyed when the last person on it withdraws, and the thing that destroys it is
+       * somewhere else. `remainingAccounts` is counted here — after the transaction, so the row
+       * just deleted is genuinely gone from the count — because zero is what tells the fleet this
+       * machine has nobody left, and a count taken a moment earlier says one.
+       *
+       * Wrapped even though the notifier's own contract is never to throw. What is being protected
+       * is the person, not the notifier: everything above has already committed, so an exception
+       * raised from here would answer a completed withdrawal with a 500 and leave somebody
+       * believing their account is still there.
+       */
+      if (fleet) {
+        try {
+          await fleet.notify({
+            event: "account.deleted",
+            actor: pseudonym,
+            remainingAccounts: await countAccounts(database),
+          });
+        } catch (error) {
+          console.error(
+            "[fleet] a withdrawal could not be reported:",
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
 
       return {
         deleted: true,

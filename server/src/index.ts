@@ -53,6 +53,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
+import { createFleetNotifier } from "./fleet/notify";
 import { createAlimtalkAdapter } from "./notifications/alimtalk";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
 import { withOutboxWatch } from "./notifications/from-audit";
@@ -155,6 +156,30 @@ const database = createDatabase(config.databaseUrl);
  * its audit trail is unavailable.
  */
 const bootAuditStore = createAuditStore(database);
+/**
+ * The fleet tool, which created this machine and is the only thing that can destroy it.
+ *
+ * Built next to the audit store because that is the only thing it needs, and before `createAuth`
+ * and the account routes, which are the two places a person arrives and leaves.
+ *
+ * The absence is announced. A deployment with no fleet webhook is correct on a laptop and wrong on
+ * a VM, and the wrongness is invisible from every surface: a withdrawal completes, the person is
+ * told their account is gone, and the machine keeps running and keeps being paid for because
+ * nothing outside this process ever heard. So it says so once, at boot, where an operator reading
+ * the logs of a deployment that is behaving perfectly can still see it.
+ */
+const fleetNotifier = config.fleet
+  ? createFleetNotifier({ ...config.fleet, auditStore: bootAuditStore })
+  : undefined;
+if (!fleetNotifier) {
+  console.info(
+    JSON.stringify({
+      type: "fleet-webhook",
+      configured: false,
+      note: "LAF_FLEET_WEBHOOK_URL is unset. Sign-ups and withdrawals on this deployment reach nothing: a person who leaves is gone from here and the machine outlives them.",
+    }),
+  );
+}
 // One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
 // one module writes it. Built before the runner because the runner opens its rows through it.
 const runLedger = createRunLedger(database);
@@ -239,7 +264,9 @@ const componentStore = createComponentStore(database);
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
 await recordTenantPackage(database, tenantPackage);
-const auth = config.auth ? createAuth(config, database) : undefined;
+const auth = config.auth
+  ? createAuth(config, database, fleetNotifier)
+  : undefined;
 // Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
 // (see computer/assignment.ts).
 const computerClient = config.computer
@@ -868,6 +895,9 @@ const app = createApp(
    *
    * The computer is passed for the same reason it is passed to the gateway: a Bot's browser profile
    * is a directory of somebody's logins, and no row deletion touches it.
+   *
+   * And the fleet, because leaving has one consequence this process cannot carry out: the machine
+   * itself. Absent, the withdrawal is complete here and nowhere else — see the boot line above.
    */
   {
     exporter: createAccountExport(database),
@@ -875,6 +905,7 @@ const app = createApp(
       database,
       retireConnectionsFor: pluginStore.retireConnectionsFor,
       ...(computerClient ? { computerClient } : {}),
+      ...(fleetNotifier ? { fleet: fleetNotifier } : {}),
     }),
     auditStore: bootAuditStore,
   },

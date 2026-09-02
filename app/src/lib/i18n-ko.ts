@@ -1164,4 +1164,7 @@ export const ko: Record<string, string> = {
   // 감사 기록의 두 줄 — 내보내기와 계정 삭제.
   "A person took a copy of their data": "사람이 자기 데이터를 내려받음",
   "An account was deleted": "계정이 삭제됨",
+  // 가입·탈퇴가 함대(VM을 만들고 없애는 쪽)에 닿았는지.
+  "The fleet was told": "함대에 전달됨",
+  "The fleet could not be told": "함대에 전달하지 못함",
 };

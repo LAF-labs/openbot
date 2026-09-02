@@ -319,3 +319,51 @@ describe("the broker provider (laf)", () => {
     expect(config.auth?.providers).toEqual({});
   });
 });
+
+/**
+ * The fleet webhook, which is optional as a whole and strict once it exists.
+ *
+ * Both refusals are about the same thing: the endpoint on the other end destroys machines. An
+ * unsigned notice is one anybody who can reach it can forge, and a notice with no origin names no
+ * customer — and both would look like a working feature, because the POST succeeds either way.
+ */
+describe("telling the fleet about a withdrawal", () => {
+  const withFleet = {
+    ...baseEnvironment,
+    PUBLIC_ORIGIN: "https://shop1.agent.laf-co.com",
+    LAF_FLEET_WEBHOOK_URL: "https://fleet.laf-co.test/hooks/deployments",
+    LAF_FLEET_WEBHOOK_SECRET: "a-shared-fleet-secret",
+  };
+
+  test("is absent, and silent, when no URL is given", () => {
+    expect(loadConfig(baseEnvironment).fleet).toBeUndefined();
+    // The origin alone configures nothing: a deployment has always had one.
+    expect(
+      loadConfig({ ...baseEnvironment, PUBLIC_ORIGIN: "https://a.test" }).fleet,
+    ).toBeUndefined();
+  });
+
+  test("carries the origin the fleet knows this customer by", () => {
+    expect(loadConfig(withFleet).fleet).toEqual({
+      webhookUrl: "https://fleet.laf-co.test/hooks/deployments",
+      secret: "a-shared-fleet-secret",
+      origin: "https://shop1.agent.laf-co.com",
+    });
+  });
+
+  test("refuses to start with a URL and no secret", () => {
+    const { LAF_FLEET_WEBHOOK_SECRET: _secret, ...unsigned } = withFleet;
+    expect(() => loadConfig(unsigned)).toThrow("LAF_FLEET_WEBHOOK_SECRET");
+  });
+
+  test("refuses to start with a URL and no PUBLIC_ORIGIN", () => {
+    const { PUBLIC_ORIGIN: _origin, ...anonymous } = withFleet;
+    expect(() => loadConfig(anonymous)).toThrow("PUBLIC_ORIGIN");
+  });
+
+  test("refuses a URL that is not one", () => {
+    expect(() =>
+      loadConfig({ ...withFleet, LAF_FLEET_WEBHOOK_URL: "fleet.laf-co.test" }),
+    ).toThrow("LAF_FLEET_WEBHOOK_URL must be a valid URL");
+  });
+});

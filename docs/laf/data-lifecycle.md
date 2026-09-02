@@ -141,6 +141,45 @@ DELETE를 거부한다. 마이그레이션 0028이 낸 통로는 딱 두 개이�
 
 **4. 백업.** §4.
 
+### 탈퇴가 함대에 닿는 길
+
+**행을 지우는 것으로 끝이 아니다.** 한 사람에게 VM 한 대가 가고, 그 VM은 가입할 때
+만들어지고 탈퇴할 때 없어진다. 만들고 없애는 쪽은 이 저장소가 아니라 **함대 도구**
+(`laf-control`, 별도 비공개 저장소)다. 그런데 버튼이 눌린 순간을 아는 것은 이 배포뿐이다.
+그래서 삭제가 커밋된 **뒤에** 이 배포가 함대에 한 번 알린다.
+
+```
+POST {LAF_FLEET_WEBHOOK_URL}
+x-laf-event: account.deleted
+x-laf-signature: sha256=<본문 바이트의 HMAC-SHA256, hex>
+
+{"event":"account.deleted","origin":"<PUBLIC_ORIGIN>","actor":"<가명>",
+ "remainingAccounts":0,"at":"<ISO 시각>"}
+```
+
+**함대가 실제로 보는 값은 `remainingAccounts`다.** "누가 떠났다"가 아니라 "몇 명
+남았다"이고, 0이면 이 VM에 아무도 없다는 뜻이다. 직원 계정이 남아 있는 배포를 통째로
+없애는 사고는 이벤트 이름만 보고 움직일 때 난다. 트랜잭션이 커밋된 다음에 세기 때문에
+그 숫자는 지운 사람을 이미 뺀 값이다.
+
+**이메일은 이 선을 넘지 않는다.** 함대는 고객을 **origin**(`PUBLIC_ORIGIN`)으로만
+식별한다. `actor`는 감사 기록에 남는 그 가명(`deleted-<해시>`)이다 — 방금 잊어달라고 한
+사람의 주소가 이 저장소 바깥으로 나가는 일은 없다. 가입 때도 같은 봉투로 한 번 보내며
+(`account.created`), 그때의 `actor`는 계정 id다.
+
+**서명한다.** 받는 쪽이 하는 일이 기계를 부수는 것이므로, 보낸 본문 바이트 그대로에
+HMAC-SHA256을 걸어 `x-laf-signature`에 싣는다. `LAF_FLEET_WEBHOOK_URL`을 설정했는데
+`LAF_FLEET_WEBHOOK_SECRET`이 없으면 **서버가 아예 뜨지 않는다.**
+
+**실패해도 탈퇴를 되돌리지 않는다.** 네트워크 실패와 5xx에 대해 세 번까지 다시 보내고,
+그래도 안 되면 감사 기록에 `fleet.notify_failed` 한 줄(상태만, 본문은 없음)을 남기고
+끝낸다. 성공하면 `fleet.notified`다. 행은 이미 지워진 뒤이므로, 여기서 예외를 던지는 것은
+"삭제됐습니다" 대신 오류 화면을 보여주는 것과 같다.
+
+**설정하지 않으면 조용하다.** 그리고 그 사실을 부팅 로그에 한 줄 남긴다. 노트북에서는
+맞는 상태지만 VM에서는 **사람은 떠났는데 기계는 계속 돌고 계속 청구되는** 상태이고,
+그것은 어느 화면에서도 보이지 않는다.
+
 ---
 
 ## 4. 보존 기간과 백업 파기
@@ -195,6 +234,8 @@ DELETE를 거부한다. 마이그레이션 0028이 낸 통로는 딱 두 개이�
 | 가명 | `server/src/account/pseudonym.ts` |
 | 보존 기간 청소 | `server/src/account/retention.ts` |
 | 세 개의 라우트 | `server/src/account/routes.ts` |
+| 탈퇴·가입을 함대에 알리는 웹훅 | `server/src/fleet/notify.ts` |
 | append-only 트리거와 그 두 통로 | `server/drizzle/0028_pipa_lifecycle.sql` |
 | 화면 | `app/src/routes/_authed/settings/account.tsx` |
 | 두 사람이 있는 배포에서 한 사람만 지워지는지 | `server/tests/account-lifecycle.integration.test.ts` |
+| 함대가 죽어 있어도 탈퇴가 끝나는지 | `server/tests/fleet-notices.integration.test.ts` |
