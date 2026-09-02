@@ -9,8 +9,6 @@
       "https://agent.laf-co.com",
       "https://*.agent.laf-co.com/*",
       "https://*.agent.laf-co.com",
-      "https://sajuhook.com/*",
-      "https://sajuhook.com",
       "http://localhost:3010/*",
       "http://localhost:3010"
     ]

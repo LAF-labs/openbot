@@ -21,9 +21,12 @@ and `remote.urls` in `capabilities/default.json`. Change only the first and
 everything appears to work — the window loads, the app runs — while the badge,
 the notifications and outward links silently stop, because the bridge
 feature-detects and finds nothing. The grant carries the wildcard
-`https://*.agent.laf-co.com` for the deployments the entry hands people to,
-plus `sajuhook.com`, which predates the product domain and lives on an apex of
-its own. A phone build will use the same address.
+`https://*.agent.laf-co.com` for the deployments the entry hands people to, and
+nothing else: every deployment is `<name>.agent.laf-co.com`, so one build opens
+the whole fleet. The apex exception that used to sit here — a customer on a
+domain of their own — was retired on 2026-09-03 and is not coming back; a
+deployment outside the wildcard is a binary of its own, which is the thing this
+grant exists to avoid. A phone build will use the same address.
 
 `withGlobalTauri` is on: the page is not bundled, so it cannot `import`
 `@tauri-apps/api` — the global is the only way the SPA can ask the shell for

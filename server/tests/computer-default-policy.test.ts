@@ -102,7 +102,7 @@ async function gatewayOn(snapshot: SnapshotResult) {
   return { gateway, calls, rows };
 }
 
-const SHOP = pageOf("https://sajuhook.example/admin/settlement", [
+const SHOP = pageOf("https://shop.example/admin/settlement", [
   { ref: "e1", role: "button", name: "다음" },
   { ref: "e2", role: "button", name: "출금 승인" },
   { ref: "e3", role: "textbox", name: "아이디" },
@@ -222,7 +222,7 @@ describe("the boundary a deployment starts with", () => {
     await gateway.type("default", "bot-1", ACTOR, {
       ref: "e3",
       snapshotId: 7,
-      text: "sajuhook",
+      text: "storeowner",
     });
     expect(calls).toEqual(["type"]);
   });

@@ -89,12 +89,12 @@ function shapesOf(
     {
       kind: "browser",
       ...base,
-      host: "admin.sajuhook.com",
+      host: "admin.example.com",
       path: "/settlements",
       element: { role: "button", name: "출금 승인" },
     },
     { kind: "browser", ...base, element: { role: "button", name: "Submit" } },
-    { kind: "browser", ...base, host: "admin.sajuhook.com" },
+    { kind: "browser", ...base, host: "admin.example.com" },
     { kind: "browser", ...base },
   ];
 }
@@ -140,7 +140,7 @@ describe("saying what a Bot is about to do", () => {
       describeSubject({
         kind: "browser",
         intent: "activate",
-        host: "admin.sajuhook.com",
+        host: "admin.example.com",
         element: { role: "button", name: "출금 승인" },
         reason: "policy_ask",
       }),

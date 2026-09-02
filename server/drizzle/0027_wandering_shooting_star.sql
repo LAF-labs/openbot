@@ -1,6 +1,6 @@
 -- THE SENTENCE AN ALLOWANCE WAS GRANTED AGAINST BECOMES THE FACTS IT WAS GRANTED ABOUT.
 --
--- `question` held one English sentence — "The Bot wants to press “출금 승인” on admin.sajuhook.com."
+-- `question` held one English sentence — "The Bot wants to press “출금 승인” on admin.example.com."
 -- — assembled by `describeAsk` in `computer/policy.ts` and rendered verbatim on the Boundaries page,
 -- in a product whose surface is Korean. That function is gone (docs/laf/redesign-2026-09.md §5.1(b)):
 -- the server sends the facts and the surface owns the words. Nothing can compose that sentence any

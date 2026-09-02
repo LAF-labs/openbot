@@ -56,7 +56,7 @@ database, not an edit to `.env`.
 ## One value names the deployment
 
 ```
-PUBLIC_ORIGIN=https://sajuhook.com
+PUBLIC_ORIGIN=https://<name>.agent.laf-co.com
 ```
 
 It does two jobs: Caddy takes a certificate for it, and the API issues cookies
@@ -70,8 +70,20 @@ opens the product's entry page, `https://agent.laf-co.com`, and
 a deployment born at a subdomain there is reached by signing in at the entry —
 one build for the whole fleet rather than a binary per deployment.
 
-An origin outside that wildcard — an apex of its own, the way `sajuhook.com` is
-— is **two values in `desktop/src-tauri`, and they move together**:
+**The wildcard is the only supported shape.** A customer is a name under
+`agent.laf-co.com` and nothing else; an apex of its own is no longer supported
+(decision 2026-09-03, which retired the one deployment that had one). Two things
+follow from that, and they are the reasons:
+
+- **One build for the whole fleet.** The origin is compiled into the shell, so a
+  deployment outside the wildcard is its own installer, its own signed release
+  and its own update feed — per customer.
+- **One sign-in entry.** People arrive at `https://agent.laf-co.com` and are
+  walked to their own deployment. An origin the entry cannot hand anybody to is
+  reachable only by someone who already knows the address.
+
+The origin still lives in **two values in `desktop/src-tauri`, and they move
+together** — they name the entry and the wildcard rather than one customer:
 
 1. `tauri.conf.json` → `app.windows[0].url`
 2. `capabilities/default.json` → `remote.urls`
@@ -207,7 +219,7 @@ you. There are two shapes, and `AUTH_PROVIDERS` declares whichever is used:
 console with the redirect URI `{PUBLIC_ORIGIN}/api/auth/callback/<provider>`:
 
 ```
-https://sajuhook.com/api/auth/callback/google
+https://<name>.agent.laf-co.com/api/auth/callback/google
 ```
 
 **The fleet's broker** — `laf`, one generic OIDC provider that fronts all three,
@@ -257,7 +269,7 @@ that looks like.
 Reading the logs is not the check. Ask the deployment:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code} %{scheme}\n' https://sajuhook.com
+curl -sS -o /dev/null -w '%{http_code} %{scheme}\n' https://<name>.agent.laf-co.com
 docker compose ps
 docker compose logs web --tail=30
 ```
