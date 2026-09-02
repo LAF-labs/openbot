@@ -31,11 +31,13 @@ function context(overrides: Partial<PolicyContext> = {}): PolicyContext {
 }
 
 const permissive: ActionPolicy = {
-  mode: "enforce",
   deny: [],
   ask: [],
   allow: ["true"],
 };
+
+/** A button a rule about paying would match, for the cases that need one. */
+const PAY = { ref: "e13", role: "button", name: "Pay now" };
 
 describe("evaluateActionPolicy", () => {
   test("an absent policy refuses, rather than permitting everything", () => {
@@ -47,7 +49,7 @@ describe("evaluateActionPolicy", () => {
 
   test("an empty allow list refuses", () => {
     const decision = evaluateActionPolicy(
-      { mode: "enforce", deny: [], ask: [], allow: [] },
+      { deny: [], ask: [], allow: [] },
       context(),
     );
     expect(decision.allowed).toBe(false);
@@ -98,26 +100,28 @@ describe("evaluateActionPolicy", () => {
 
   test("a broken allow expression does not permit", () => {
     const decision = evaluateActionPolicy(
-      { mode: "enforce", deny: [], ask: [], allow: ["also not ( valid"] },
+      { deny: [], ask: [], allow: ["also not ( valid"] },
       context(),
     );
     expect(decision.allowed).toBe(false);
     expect(decision.source).toBe("default");
   });
 
-  test("dry-run records a refusal but lets the work continue", () => {
+  test("a refused action does not go on to run, whatever a policy says about modes", () => {
+    // `dry-run` recorded a refusal and let the action happen. It is gone (§7-10), and a policy that
+    // still carries the field is enforced rather than believed — otherwise removing the mode would
+    // quietly turn every deployment that had switched the boundary off back on without saying so,
+    // or, worse, keep honouring it.
     const decision = evaluateActionPolicy(
       {
-        mode: "dry-run",
         deny: ['contains(element.name, "submit")'],
         ask: [],
         allow: ["true"],
-      },
+      } as ActionPolicy,
       context(),
     );
-    // Both halves matter: the trail must show it was refused, and the Bot must not be blocked.
     expect(decision.allowed).toBe(false);
-    expect(decision.forward).toBe(true);
+    expect(decision.forward).toBe(false);
   });
 
   test("rules can be written against the tool, the host and the Bot", () => {
@@ -154,19 +158,17 @@ describe("evaluateActionPolicy", () => {
 describe("parseActionPolicy", () => {
   test("accepts a well-formed policy", () => {
     const result = parseActionPolicy({
-      mode: "dry-run",
       deny: ['contains(element.name, "pay")'],
       allow: ["true"],
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.policy.mode).toBe("dry-run");
       expect(result.policy.deny).toHaveLength(1);
     }
   });
 
-  test("defaults the lists but never the mode", () => {
-    const result = parseActionPolicy({ mode: "enforce" });
+  test("defaults the lists", () => {
+    const result = parseActionPolicy({});
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.policy.deny).toEqual([]);
@@ -175,12 +177,29 @@ describe("parseActionPolicy", () => {
     }
   });
 
+  test("a policy that still names a mode parses, and the mode does not survive it", () => {
+    // Somebody's saved policy, or a copied `.env` line, from when `dry-run` existed. Refusing it
+    // would stop a deployment booting over a field that no longer means anything; believing it
+    // would leave the boundary switched off. It parses, and what comes out enforces.
+    const result = parseActionPolicy({
+      mode: "dry-run",
+      deny: ['contains(element.name, "pay")'],
+      allow: ["true"],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.keys(result.policy)).not.toContain("mode");
+      expect(
+        evaluateActionPolicy(result.policy, context({ element: PAY })).forward,
+      ).toBe(false);
+    }
+  });
+
   test("a policy written before the ask list existed still parses", () => {
     // Every deployment already running has a saved policy with two lists in it. Rejecting one, or
     // reading its absence as anything other than "asks nobody anything", would change what an
     // existing boundary means at the moment the server came back up.
     const result = parseActionPolicy({
-      mode: "enforce",
       deny: ['contains(element.name, "pay")'],
       allow: ["true"],
     });
@@ -190,7 +209,6 @@ describe("parseActionPolicy", () => {
 
   test("keeps the ask rules it was given", () => {
     const result = parseActionPolicy({
-      mode: "enforce",
       deny: [],
       ask: ['intent == "write_file"'],
       allow: ["true"],
@@ -201,18 +219,14 @@ describe("parseActionPolicy", () => {
   });
 
   test("rejects an ask list that is not a list of expressions", () => {
-    expect(parseActionPolicy({ mode: "enforce", ask: "everything" }).ok).toBe(
-      false,
-    );
-    expect(parseActionPolicy({ mode: "enforce", ask: [7] }).ok).toBe(false);
+    expect(parseActionPolicy({ ask: "everything" }).ok).toBe(false);
+    expect(parseActionPolicy({ ask: [7] }).ok).toBe(false);
   });
 
   test.each([
     ["not an object", "nonsense"],
-    ["a missing mode", { deny: [], allow: [] }],
-    ["an unknown mode", { mode: "advisory", deny: [], allow: [] }],
-    ["a non-list deny", { mode: "enforce", deny: "everything" }],
-    ["a list of non-strings", { mode: "enforce", allow: [1, 2] }],
+    ["a non-list deny", { deny: "everything" }],
+    ["a list of non-strings", { allow: [1, 2] }],
   ])("rejects %s rather than coercing it", (_label, input) => {
     // Rejected, not repaired. An operator must never be told a rule was stored when it was stored
     // differently, because they would believe a restriction is in force when it is not.
@@ -225,7 +239,6 @@ describe("the second door", () => {
     // Form submission can happen through a keypress as well as a click, so policy must see both
     // activation paths.
     const policy = {
-      mode: "enforce" as const,
       deny: ['tool.name == "computer_key" && key == "Enter"'],
       ask: [],
       allow: ["true"],
@@ -257,7 +270,6 @@ describe("the second door", () => {
     // keypress ever arrives as an action of its own. A boundary written about clicking and about
     // `key` watched the one call that submits a single-field form go straight past it.
     const policy = {
-      mode: "enforce" as const,
       deny: [
         '(intent == "activate" && contains(element.name, "submit")) || (tool.name == "computer_key" && key == "Enter") || submit',
       ],
@@ -308,7 +320,6 @@ describe("a rule written about what an action does", () => {
   });
 
   const policy = {
-    mode: "enforce" as const,
     deny: ['intent == "activate" && contains(element.name, "submit")'],
     ask: [],
     allow: ["true"],
@@ -400,7 +411,7 @@ describe("a rule that names an identifier only some actions carry", () => {
 
   test("unguarded, it refuses a navigation that has no key at all", () => {
     const decision = evaluateActionPolicy(
-      { mode: "enforce", deny: ['key == "Enter"'], ask: [], allow: ["true"] },
+      { deny: ['key == "Enter"'], ask: [], allow: ["true"] },
       navigating,
     );
     // Failing closed on an unevaluable rule is the safe answer. The shipped preset carries the guard
@@ -411,7 +422,6 @@ describe("a rule that names an identifier only some actions carry", () => {
   test("guarded by the tool name, the navigation is allowed", () => {
     const decision = evaluateActionPolicy(
       {
-        mode: "enforce",
         deny: ['tool.name == "computer_key" && key == "Enter"'],
         ask: [],
         allow: ["true"],
@@ -424,7 +434,6 @@ describe("a rule that names an identifier only some actions carry", () => {
   test("and the guarded rule still refuses the keypress it is about", () => {
     const decision = evaluateActionPolicy(
       {
-        mode: "enforce",
         deny: ['tool.name == "computer_key" && key == "Enter"'],
         ask: [],
         allow: ["true"],
@@ -504,16 +513,13 @@ describe("asking a person", () => {
     expect(decision.source).toBe("ask");
   });
 
-  test("dry-run records the question and interrupts nobody", () => {
-    // The promise of dry-run is that switching a policy on changes nothing, so an ask there is a note
-    // saying where somebody would have been stopped, not a stop.
-    const decision = evaluateActionPolicy(
-      { ...asking, mode: "dry-run" },
-      context(),
-    );
+  test("an ask stops the action, and does not let it through as a note", () => {
+    // What `dry-run` used to do to an ask: record the question and carry on. Nothing happens now
+    // until somebody says so, which is the only reading of "ask me first" a person would expect.
+    const decision = evaluateActionPolicy(asking, context());
     expect(decision.source).toBe("ask");
     expect(decision.allowed).toBe(false);
-    expect(decision.forward).toBe(true);
+    expect(decision.forward).toBe(false);
   });
 
   test("the question names what is about to happen, and not the rule", () => {
@@ -598,7 +604,6 @@ describe("asking a person", () => {
     // default-ask: an action no rule mentions is still refused rather than put to somebody.
     const decision = evaluateActionPolicy(
       {
-        mode: "enforce",
         deny: [],
         ask: ['tool.name == "computer_write_file"'],
         allow: [],
@@ -621,7 +626,6 @@ describe("asking a person", () => {
  */
 describe("a rule about a Bot repeating itself", () => {
   const repeating: ActionPolicy = {
-    mode: "enforce",
     deny: ["repeat.count >= 10"],
     ask: [],
     allow: ["true"],
@@ -658,7 +662,7 @@ describe("a rule about a Bot repeating itself", () => {
  * it is not — which is the one behaviour this parser exists to prevent.
  */
 describe("standing allowances in a policy", () => {
-  const base = { mode: "enforce", deny: [], ask: [], allow: ["true"] };
+  const base = { deny: [], ask: [], allow: ["true"] };
 
   test("absent means allowed, so an older policy still means what it meant", () => {
     const parsed = parseActionPolicy(base);

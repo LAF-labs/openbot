@@ -56,6 +56,20 @@ export type Ask = {
    * into nothing is a worse trade than the tokens it saves.
    */
   maxTokens?: number;
+  /**
+   * How long the model may think before it answers, where it is a model that thinks at all.
+   *
+   * The other half of the trap above. Removing the ceiling stops a reasoning model returning an
+   * empty message; it does not stop it spending thirty seconds on "is this read-only", which times
+   * out and asks the person anyway. Sent as `reasoning_effort`, which is what this deployment's
+   * chat-completions endpoint takes — the same setting the runtime sends per Bot, by another road
+   * (see `copilot.ts`, which goes through the SDK and has to force it past a name heuristic).
+   *
+   * Omitted entirely unless the deployment says its model reasons (`model.yaml supports_effort`).
+   * A model that does not take the field can refuse the whole request over it, so guessing here
+   * would trade an empty answer for no answer.
+   */
+  reasoningEffort?: "low" | "medium" | "high";
 };
 
 /**
@@ -107,6 +121,9 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
           // about, and a write-up that changed every time it was asked would be a lottery.
           temperature: 0,
           ...(ask.maxTokens === undefined ? {} : { max_tokens: ask.maxTokens }),
+          ...(ask.reasoningEffort === undefined
+            ? {}
+            : { reasoning_effort: ask.reasoningEffort }),
           messages: [
             { role: "system", content: ask.system },
             { role: "user", content: ask.user },

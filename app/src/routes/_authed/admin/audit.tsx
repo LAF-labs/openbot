@@ -402,6 +402,9 @@ export const DECISIONS: Record<string, string> = {
   // answered, which is the same complaint as an action that was allowed and then did not happen.
   "agent.stream_stalled": "The Bot stopped responding",
   "computer.policy_loaded": "Boundary at start-up",
+  // Somebody edited the rules. The payload carries their reason, and says so when the switch that
+  // decides whether a person sees an action at all was the thing that moved.
+  "computer.policy_changed": "The boundary was changed",
   "computer.isolation_loaded": "Isolation at start-up",
   "computer.control_taken": "A person took the wheel",
   "computer.control_released": "The wheel was handed back",

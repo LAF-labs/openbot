@@ -105,6 +105,54 @@ describe("parseAriaSnapshot, against captured output", () => {
     expect(byName.get("Submit order")).not.toHaveProperty("checked");
   });
 
+  /**
+   * A PASSWORD BOX LOOKS EXACTLY LIKE A NAME FIELD IN HERE.
+   *
+   * Playwright reports `input[type=password]` as a `textbox` — that is its ARIA role — and the ai
+   * snapshot's flags are about state (`[checked]`, `[disabled]`), not about markup. So the boundary,
+   * whose flat rule is that a Bot must never type a password into a page, had nothing in the
+   * snapshot to decide on: the server's contract has carried an `element.type` field the whole time
+   * and nothing ever put a value in it.
+   *
+   * The caller reads the types out of the DOM in one call and hands over the labels; the join is by
+   * name, because that is the only thing the accessible tree and the DOM both have. It is not exact,
+   * which is why the shipped rule also matches the field's own label — see `default-policy.ts`.
+   */
+  test("marks the textbox a password input's label names", () => {
+    const yaml = [
+      '- textbox "아이디" [ref=e1]',
+      '- textbox "비밀번호" [ref=e2]',
+      '- button "로그인" [ref=e3]',
+    ].join("\n");
+
+    const byRef = new Map(
+      parseAriaSnapshot(yaml, ["비밀번호"]).elements.map((e) => [e.ref, e]),
+    );
+    expect(byRef.get("e2")?.type).toBe("password");
+    // And nothing else is marked. Over-marking costs a Bot the use of an ordinary field.
+    expect(byRef.get("e1")).not.toHaveProperty("type");
+    expect(byRef.get("e3")).not.toHaveProperty("type");
+  });
+
+  test("marks nothing when the page has no password input", () => {
+    const yaml = '- textbox "비밀번호" [ref=e1]';
+    // A field somebody labelled 비밀번호 that is not a password input stays unmarked here. The label
+    // is a signal, and it is the policy's to read; this function reports what the DOM said.
+    expect(parseAriaSnapshot(yaml).elements[0]).not.toHaveProperty("type");
+  });
+
+  test("does not mark a button that happens to share a label", () => {
+    const yaml = [
+      '- button "비밀번호" [ref=e1]',
+      '- textbox "비밀번호" [ref=e2]',
+    ].join("\n");
+    const byRef = new Map(
+      parseAriaSnapshot(yaml, ["비밀번호"]).elements.map((e) => [e.ref, e]),
+    );
+    expect(byRef.get("e1")).not.toHaveProperty("type");
+    expect(byRef.get("e2")?.type).toBe("password");
+  });
+
   test("empty and unparseable input produce no elements rather than throwing", () => {
     expect(parseAriaSnapshot("").elements).toEqual([]);
     expect(parseAriaSnapshot("\t- [[[ not yaml").elements).toEqual([]);

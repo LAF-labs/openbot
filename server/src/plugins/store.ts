@@ -3073,7 +3073,6 @@ export function createPluginStore(options: PluginStoreOptions) {
         reachedAs: reachedAsFor(entry, input.actorId),
         decision: {
           allowed: verdict.allowed || approved !== undefined,
-          mode: verdict.mode,
           rule: verdict.matched,
           source: verdict.source,
           carriedOut,

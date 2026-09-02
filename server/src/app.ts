@@ -204,6 +204,18 @@ export function createApp(
    */
   pluginConnect?: ConnectConfig,
   /**
+   * Whether this deployment's model can actually judge a "do not ask me about" instruction.
+   *
+   * Asked of the model rather than assumed, once, and cached — see `createAutoReviewProbe`. It is
+   * here because the alternative is a control on every Bot's profile that saves, draws, and reaches
+   * nothing, which is the exact failure CLAUDE.md names: if a deployment's model cannot do the
+   * thing, do not draw the control.
+   *
+   * Absent reads as capable, which is what a deployment with no probe wired up should look like:
+   * the feature behaves as it did, and the surface draws the control it has always drawn.
+   */
+  autoReviewCapable?: () => Promise<boolean>,
+  /**
    * What `/health` asks before it answers. Last, like everything new here.
    *
    * Absent, the endpoint reports no checks and stays 200 — an embedding that supplied no probes is
@@ -214,6 +226,17 @@ export function createApp(
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
+  /**
+   * What the deployment can do, asked per request and answered from a cache.
+   *
+   * One function so that a second place cannot answer differently, which is how a control comes to
+   * be drawn on one screen and dead on the next.
+   */
+  const capabilities = async () => ({
+    effort: deploymentEffort !== false,
+    autoReview: autoReviewCapable ? await autoReviewCapable() : true,
+  });
+
   app.route("/health", createHealthRoute(healthProbes));
   /*
    * What this deployment can do, for anybody who asks — and it is anybody: this endpoint has no
@@ -223,6 +246,13 @@ export function createApp(
    *
    * Kept rather than removed because the deployment's own smoke test uses it to decide whether
    * anything is answering at all before it starts asking real questions of it.
+   */
+  /*
+   * WHAT THIS DEPLOYMENT CAN DO IS NOT PUBLISHED HERE. It is on `/api/me`, behind the session
+   * guard, beside the person it is being drawn for. This endpoint is reachable by anyone, the two
+   * booleans are about which controls to draw rather than about who is asking, and there is nothing
+   * an anonymous caller needs them for — see the note above and `health.test.ts`, which pins the
+   * body to one field for exactly that reason.
    */
   app.get("/api/capabilities", (context) => context.json({ status: "ok" }));
   app.on(["GET", "POST"], "/api/auth/*", (context) => {
@@ -258,15 +288,18 @@ export function createApp(
     /*
      * What this deployment can do, beside who is asking.
      *
-     * Here rather than on its own endpoint because it is one boolean and this is the call the app
-     * already makes before it draws anything. Today it says whether the model takes an effort
-     * setting: a deployment whose model does not reason must not offer a control that silently does
-     * nothing, and the surface cannot work that out for itself — the model is never sent to it, and
-     * it should not have to know model names to draw a form.
+     * Here as well as on `/api/capabilities` because this is the call the app already makes before
+     * it draws anything, and a second round trip to find out whether to draw a control is a control
+     * that flickers. Both read one function, so they cannot disagree.
+     *
+     * Two booleans, and each one is a control that must not be drawn where it does nothing: whether
+     * the model takes an effort setting, and whether it can judge a "do not ask me about"
+     * instruction. The surface cannot work either out for itself — it is never told which model this
+     * deployment serves, and it should not have to know model names to draw a form.
      */
     return context.json({
       user: { ...actor, onboarded },
-      deployment: { effort: deploymentEffort !== false },
+      deployment: await capabilities(),
     });
   });
 
@@ -419,6 +452,8 @@ export function createApp(
         requireUser,
         demonstrations,
         writeUp,
+        // So a change to the boundary itself lands in the same trail as the actions it governs.
+        auditStore,
       ),
     );
   }

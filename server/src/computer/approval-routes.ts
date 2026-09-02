@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import { requireAdmin, requireAdminRoute } from "../auth/guards";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -58,41 +58,49 @@ export function createApprovalRoutes(
    * names the Bot, the rule and the scope. `GET /api/approvals/:botId` next door is readable by any
    * signed-in person, which is its own thing to fix; this one is not going to inherit it.
    */
-  routes.get("/standing", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
+  routes.get("/standing", requireUser, requireAdminRoute, async (context) => {
     const botId = context.req.query("bot");
     return context.json({
       standing: (await standing?.list(botId || undefined)) ?? [],
     });
   });
 
-  /** Ask to be asked again. The row stays and is marked; see the table's own comment. */
-  routes.delete("/standing/:id", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) return denied;
-    const record = context.var.actor;
-    const revoked = await standing?.revoke(
-      context.req.param("id") ?? "",
-      record.id,
-    );
-    // Already withdrawn, or never granted here. Nothing is broken and there is nothing to retry —
-    // the same conflict an answered question reports, for the same reason.
-    if (!revoked) {
-      return context.json(
-        { error: "That allowance is no longer standing." },
-        409,
+  /**
+   * Ask to be asked again. The row stays and is marked; see the table's own comment.
+   *
+   * The guard is in the route's declaration rather than inside the handler, like the read above it:
+   * these two are the list of places a boundary has been stood down and the button that puts one
+   * back, and a check that lives in the middle of a function body is a check an unrelated edit can
+   * drop while everything still compiles.
+   */
+  routes.delete(
+    "/standing/:id",
+    requireUser,
+    requireAdminRoute,
+    async (context) => {
+      const record = context.var.actor;
+      const revoked = await standing?.revoke(
+        context.req.param("id") ?? "",
+        record.id,
       );
-    }
-    await recordAuditEvent(auditStore, {
-      eventType: "approval.standing_revoked",
-      targetType: "bot",
-      targetId: revoked.botId,
-      ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
-      payload: standingPayload(revoked, record.id),
-    });
-    return context.json(revoked);
-  });
+      // Already withdrawn, or never granted here. Nothing is broken and there is nothing to retry —
+      // the same conflict an answered question reports, for the same reason.
+      if (!revoked) {
+        return context.json(
+          { error: "That allowance is no longer standing." },
+          409,
+        );
+      }
+      await recordAuditEvent(auditStore, {
+        eventType: "approval.standing_revoked",
+        targetType: "bot",
+        targetId: revoked.botId,
+        ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
+        payload: standingPayload(revoked, record.id),
+      });
+      return context.json(revoked);
+    },
+  );
 
   /**
    * The questions this Bot is waiting on, for the surface to poll.

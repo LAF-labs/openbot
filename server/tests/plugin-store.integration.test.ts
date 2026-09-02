@@ -50,7 +50,7 @@ const serverId = `plugtest-${suite}`;
 const toolName = "search_things";
 const ref = `${serverId}/${toolName}`;
 
-let policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+let policy: ActionPolicy = { deny: [], allow: ["true"] };
 
 /** The deployment's one registry, shared with the computer in a real deployment. */
 const approvals = createApprovalRegistry();
@@ -193,7 +193,6 @@ describe("the policy is asked as well as the grant", () => {
   test("a granted tool is still refused by a deny rule, and the rule is named", async () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
-      mode: "enforce",
       deny: [`mcp.server == "${serverId}"`],
       allow: ["true"],
     };
@@ -209,7 +208,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { mode: "enforce", deny: [], allow: ["true"] };
+      policy = { deny: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginRefusedError);
@@ -234,7 +233,6 @@ describe("the policy is asked as well as the grant", () => {
     // this deny rule must NOT catch it. The assertion is that the call gets past the policy, which
     // it proves by failing at the network instead of as a refusal.
     policy = {
-      mode: "enforce",
       deny: ['intent == "write_tool"'],
       allow: ["true"],
     };
@@ -250,7 +248,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { mode: "enforce", deny: [], allow: ["true"] };
+      policy = { deny: [], allow: ["true"] };
     }
 
     expect(thrown).not.toBeInstanceOf(PluginRefusedError);
@@ -272,7 +270,6 @@ describe("a boundary written about the browser does not refuse tool calls", () =
      * test is the unguarded one.
      */
     policy = {
-      mode: "enforce",
       deny: ['contains(element.name, "submit")'],
       allow: ["true"],
     };
@@ -288,7 +285,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { mode: "enforce", deny: [], allow: ["true"] };
+      policy = { deny: [], allow: ["true"] };
     }
 
     // Not a refusal. It gets as far as the network, which is where this test stops caring.
@@ -308,7 +305,6 @@ describe("a boundary can ask a person about a tool call", () => {
   test("stops the call and asks, rather than refusing it", async () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
-      mode: "enforce",
       deny: [],
       ask: [`mcp.server == "${serverId}"`],
       allow: ["true"],
@@ -325,7 +321,7 @@ describe("a boundary can ask a person about a tool call", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { mode: "enforce", deny: [], allow: ["true"] };
+      policy = { deny: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginNeedsApprovalError);
@@ -362,7 +358,6 @@ describe("a boundary can ask a person about a tool call", () => {
   test("an answer is good for the call it was given for, and not for another", async () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
-      mode: "enforce",
       deny: [],
       ask: [`mcp.server == "${serverId}"`],
       allow: ["true"],
@@ -417,7 +412,7 @@ describe("a boundary can ask a person about a tool call", () => {
         ),
       ).toBe(true);
     } finally {
-      policy = { mode: "enforce", deny: [], allow: ["true"] };
+      policy = { deny: [], allow: ["true"] };
     }
   });
 });

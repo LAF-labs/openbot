@@ -164,6 +164,7 @@ export const ko: Record<string, string> = {
   Bot: "봇",
   Boundaries: "경계",
   "Boundary at start-up": "시작 시 경계 적용",
+  "The boundary was changed": "경계를 바꿈",
   Bunny: "토끼",
   Cactus: "선인장",
   "Cactus in a hat": "모자 쓴 선인장",
@@ -339,8 +340,6 @@ export const ko: Record<string, string> = {
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있어요.",
   "Nobody matches that.": "일치하는 봇이 없습니다.",
-  "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on.":
-    "아무것도 멈추지 않습니다. 규칙에 걸리는 행동은 거부됐을 것으로 기록만 됩니다 — 규칙을 켜기 전에 시험해 보는 방법입니다.",
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
   Notifications: "알림",
@@ -409,7 +408,6 @@ export const ko: Record<string, string> = {
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
   "Stop browser": "브라우저 정지",
-  "Stop the action": "행동을 멈춤",
   Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
@@ -432,8 +430,6 @@ export const ko: Record<string, string> = {
   "The Bot asked for a secret": "봇이 비밀값을 요청함",
   "The Bot asked for help": "봇이 도움을 요청함",
   "The Bot declined": "봇이 거절함",
-  "The Bot is stopped and told which rule refused it.":
-    "봇이 멈추고, 어떤 규칙이 막았는지 전달받습니다.",
   "The Bot repeated itself": "봇이 같은 일을 반복함",
   "The Bot stopped responding": "봇이 응답을 멈춤",
   "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.":
@@ -502,8 +498,8 @@ export const ko: Record<string, string> = {
   "Today {time}": "오늘 {time}",
   "Toggle Sidebar": "사이드바 여닫기",
   "Try again": "다시 시도",
-  "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. Worth adding while a match is recorded and allowed, before it starts refusing anybody's work.":
-    "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 실제로 거부하기 전에 '기록만' 상태로 먼저 시험해 보세요.",
+  "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. This one refuses; the boundary already asks on the fifth, which is the gentler place to start.":
+    "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 이 규칙은 거부합니다. 기본 경계는 다섯 번째에서 묻기부터 시작합니다.",
   Unhide: "숨김 해제",
   "Unhiding…": "해제 중…",
   Unpin: "고정 해제",
@@ -651,7 +647,6 @@ export const ko: Record<string, string> = {
   "Read file": "파일 읽기",
   "Read the page": "페이지 읽기",
   "Reading…": "읽는 중…",
-  "Record it and allow it": "기록하고 허용",
   Refresh: "새로고침",
   "Refresh tools": "툴 새로고침",
   "Refund card": "환불 카드",
@@ -724,7 +719,6 @@ export const ko: Record<string, string> = {
   "What this deployment can reach, and which Bots may reach it. Adding is account-wide; enabling is per Bot.":
     "이 배포가 닿을 수 있는 곳과, 어느 봇이 닿아도 되는지. 추가는 계정 단위, 부여는 봇 단위입니다.",
   When: "언제",
-  "When a rule matches": "규칙이 일치하면",
   "Working…": "처리 중…",
   "Workspace skills": "워크스페이스 스킬",
   "Write a component and watch it render as you type.":
@@ -938,6 +932,15 @@ export const ko: Record<string, string> = {
   Save: "저장",
   "Getting past without asking": "묻지 않고 넘어가기",
   "A person may settle it in advance": "미리 정해둘 수 있음",
+  "Why this is changing": "바꾸는 이유",
+  "Changing this needs a reason, which is kept in the audit trail.":
+    "이 설정을 바꾸려면 이유를 적어야 하고, 그 이유는 감사 기록에 남습니다.",
+  "This deployment's model cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.":
+    "지금은 이 배포의 모델이 이 문장을 읽어내지 못해, 여기 적은 내용이 적용되지 않고 모든 행동을 물어봅니다. 내용은 그대로 보관되며, 모델이 답할 수 있게 되면 저절로 다시 동작합니다.",
+  "Saying no stops it being asked again for a while.":
+    "거절하면 같은 행동은 한동안 다시 묻지 않고 거절됩니다.",
+  "Saying no is remembered: the same action is refused for the next half hour instead of being asked about again.":
+    "거절은 기억됩니다. 같은 행동은 이후 30분 동안 다시 묻지 않고 거절됩니다.",
   "Two things can settle a question without anybody seeing the action: “always” on a card, and a Bot's own “do not ask me about” instruction. Both are recorded, and every allowance is listed below and can be taken back.":
     "아무도 그 행동을 보지 않은 채 질문이 정리되는 경로가 둘 있습니다 — 카드의 “항상”, 그리고 봇에 적어둔 “이건 묻지 마세요”. 둘 다 기록에 남고, 허용된 항목은 아래에 모두 나열되며 취소할 수 있습니다.",
   "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, no Bot's own instruction is consulted, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.":

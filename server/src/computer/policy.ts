@@ -2,9 +2,14 @@
  * Whether a Bot may take one particular action on one particular page.
  *
  * Mirrors the policy engine in CopilotKit's enterprise agent gateway rather than being re-derived, so
- * a rule written here means the same thing there. Kept from it: CEL expressions, `dry-run` vs
- * `enforce`, default-deny, and fail-closed evaluation. Added here: a `deny` list, because an
- * allow-only policy can only forbid one thing by withdrawing permission from everything.
+ * a rule written here means the same thing there. Kept from it: CEL expressions, default-deny, and
+ * fail-closed evaluation. Added here: a `deny` list, because an allow-only policy can only forbid one
+ * thing by withdrawing permission from everything.
+ *
+ * DROPPED FROM IT: `dry-run`. It decided, recorded a refusal and let the action happen anyway, which
+ * made it a second switch beside `settleWithoutAsking` that could stand the whole boundary down —
+ * and the deployment this product ships to is one person's business, not an enterprise trying a rule
+ * out against a quarter's traffic first. Everything enforces (docs/laf/redesign-2026-09.md §7-10).
  *
  * CEL instead of a rule table. The boundary a company wants is a sentence: "never click anything
  * that says Submit on a page outside our own domain". A table of columns can express the shapes we
@@ -22,18 +27,9 @@
  * configuration, so the first rule anybody ever wrote here would silently do nothing.
  */
 import { evaluate } from "cel-js";
-
-export type PolicyMode = "dry-run" | "enforce";
+import { isSecretField } from "./default-policy";
 
 export type ActionPolicy = {
-  /**
-   * `enforce` blocks. `dry-run` decides and records, and lets everything through.
-   *
-   * Dry-run exists so an operator can write a rule against real traffic and read the audit trail
-   * before it starts refusing anybody's work. A governance feature nobody dares switch on is not a
-   * governance feature.
-   */
-  mode: PolicyMode;
   /** Evaluated first. Any expression true means refused, whatever `ask` or `allow` says. */
   deny: string[];
   /**
@@ -112,9 +108,22 @@ export type PolicyContext = {
    * same call when the thing acted on is the same, whatever was typed into it, so ten searches typed
    * into one box and one file read ten times while a Bot works through it are both ten repeats, and
    * `repeat.count >= 10` refuses the tenth. It is a backstop against the loop that actually happens,
-   * not a guarantee, which is the argument for trying a rule about it in `dry-run` first.
+   * rather than a guarantee.
    */
   repeat: { count: number };
+  /**
+   * The control being acted on, with empty strings where there is nothing to say.
+   *
+   * OPTIONAL IN THE TYPE, ALWAYS SUPPLIED IN PRODUCTION, and the difference is worth the sentence.
+   * cel-js throws on a field that is not in the context, a thrown `deny` denies and a thrown `ask`
+   * asks — so an absent `element` turns one rule about button labels into a deployment that stops
+   * every keypress the server could not attach to a control. Both callers therefore fill it in:
+   * the plugin store with empty strings because an MCP call has no element (`plugins/store.ts`), and
+   * the gateway with whatever it resolved from its own snapshot, blank when that was nothing.
+   *
+   * `type` is an input's type where the page said so, and empty otherwise. A rule about password
+   * fields wants both it and the label; see `default-policy.ts`.
+   */
   element?: {
     ref: string;
     role: string;
@@ -221,7 +230,6 @@ export type PolicyContext = {
 
 export type PolicyDecision = {
   allowed: boolean;
-  mode: PolicyMode;
   /** Which expression decided it, so the audit row can say why and an operator can find the rule. */
   matched: string | null;
   /**
@@ -233,11 +241,31 @@ export type PolicyDecision = {
    * tell an action a person consented to from one nothing ever questioned.
    */
   source: "deny" | "ask" | "allow" | "default";
-  /** True when the action should actually be carried out. False for a refusal in `enforce`. */
+  /** True when the action should actually be carried out. False for a refusal. */
   forward: boolean;
   /** Why, in words that go in front of a person. */
   reason: string;
+  /**
+   * What happened, as a code rather than as a sentence.
+   *
+   * `reason` is English prose assembled here, and the surface is Korean; a screen that rendered this
+   * server's sentences would show a Korean reader English whatever the dictionary said. A code is a
+   * fact the surface can own the words for, and the trail can be queried on. Present only where
+   * there is something more specific to say than "a rule refused this".
+   */
+  code?: FactCode;
 };
+
+/**
+ * The facts this module reports, for a surface to phrase and a Bot to act on.
+ *
+ * `laf:` so a reader can tell ours from a vendor's, and so grepping for the set is one search.
+ */
+export type FactCode =
+  /** Typing a secret into a page. The Bot's next move is `computer_request_secret`. */
+  | "laf:use_request_secret"
+  /** A person already said no to this exact action, recently enough that it still stands. */
+  | "laf:declined_recently";
 
 /**
  * String helpers, registered as CEL globals.
@@ -334,7 +362,6 @@ export function evaluateActionPolicy(
   policy: ActionPolicy | null | undefined,
   context: PolicyContext,
 ): PolicyDecision {
-  const mode: PolicyMode = policy?.mode ?? "enforce";
   const deny = policy?.deny ?? [];
   const ask = policy?.ask ?? [];
   const allow = policy?.allow ?? [];
@@ -346,13 +373,15 @@ export function evaluateActionPolicy(
     if (matches(expression, context, true)) {
       return {
         allowed: false,
-        mode,
         matched: expression,
         source: "deny",
-        // dry-run records the refusal and lets the work continue, which is what makes it safe to
-        // switch on against live traffic.
-        forward: mode === "dry-run",
+        forward: false,
         reason: describeRefusal(context, expression),
+        // A Bot refused at a password box has somewhere else to go, and being told so is the
+        // difference between it asking the person for the value and it giving up on the task.
+        ...(isSecretField(context)
+          ? { code: "laf:use_request_secret" as const }
+          : {}),
       };
     }
   }
@@ -365,14 +394,10 @@ export function evaluateActionPolicy(
     if (matches(expression, context, true)) {
       return {
         allowed: false,
-        mode,
         matched: expression,
         source: "ask",
-        // Nothing happens until somebody says so, except in dry-run, where the whole promise is that
-        // switching the policy on changes nothing. A dry-run ask is a note in the trail saying "here
-        // is where you would have been interrupted", which is precisely what an operator trying a
-        // rule out against real traffic wants to find out before it starts stopping anybody.
-        forward: mode === "dry-run",
+        // Nothing happens until somebody says so.
+        forward: false,
         reason: describeAsk(context),
       };
     }
@@ -382,7 +407,6 @@ export function evaluateActionPolicy(
     if (matches(expression, context, false)) {
       return {
         allowed: true,
-        mode,
         matched: expression,
         source: "allow",
         forward: true,
@@ -393,10 +417,9 @@ export function evaluateActionPolicy(
 
   return {
     allowed: false,
-    mode,
     matched: null,
     source: "default",
-    forward: mode === "dry-run",
+    forward: false,
     reason:
       "No rule in this deployment's policy permits that action, so it was refused. " +
       "An administrator can add one.",

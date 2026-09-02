@@ -12,16 +12,24 @@ import { t } from "@/lib/i18n";
  * actions are recorded in Audit with the matching rule.
  */
 
-type PolicyMode = "dry-run" | "enforce";
-
 type ActionPolicy = {
-  mode: PolicyMode;
   deny: string[];
   ask: string[];
   allow: string[];
   /** Absent means allowed, matching the server. See the section below. */
   settleWithoutAsking?: "allowed" | "off";
 };
+
+/**
+ * What a save carries beside the rules.
+ *
+ * `reason` is never stored on the policy and is not part of it: it goes in the audit row the server
+ * writes for the change. It is required by this page rather than by the route, because the thing
+ * worth being able to argue with afterwards is a person standing the boundary down — and a server
+ * that refused a policy change over a missing sentence would be a server that can stop a deployment
+ * from tightening its own rules.
+ */
+type PolicyChange = ActionPolicy & { reason?: string };
 
 type Preset = { label: string; rule: string; cost?: string };
 
@@ -62,7 +70,11 @@ const PRESETS: Preset[] = [
     label: "Stop a Bot repeating itself",
     // The count includes the attempt being decided, so this refuses the tenth, not the eleventh.
     rule: "repeat.count >= 10",
-    cost: "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. Worth adding while a match is recorded and allowed, before it starts refusing anybody's work.",
+    // The advice at the end used to be "try it in dry-run first", which is no longer a thing this
+    // page can offer. Asking is what a deployment reaches for while it finds out whether a rule is
+    // right, and asking is already the shipped answer to repetition — this preset is for the
+    // deployment that has decided it wants the loop stopped outright.
+    cost: "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. This one refuses; the boundary already asks on the fifth, which is the gentler place to start.",
   },
   {
     label: "Stay off social media",
@@ -104,6 +116,8 @@ function BoundariesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [askDraft, setAskDraft] = useState("");
+  /** Why the switch below is being moved. Required, and kept only in the audit row. */
+  const [settleReason, setSettleReason] = useState("");
   /**
    * The places this boundary has been stood down, and by whose hand.
    *
@@ -185,7 +199,7 @@ function BoundariesPage() {
    * further down the page, well below the fold — so the rule was gone, and the explanation was
    * somewhere they were not looking.
    */
-  const save = useCallback(async (next: ActionPolicy): Promise<boolean> => {
+  const save = useCallback(async (next: PolicyChange): Promise<boolean> => {
     setSaving(true);
     setSaved(false);
     try {
@@ -290,33 +304,12 @@ function BoundariesPage() {
       }
       title={t("Boundaries")}
     >
-      <PageSection title={t("When a rule matches")}>
-        <div className="mt-2 flex gap-2">
-          {(["enforce", "dry-run"] as PolicyMode[]).map((mode) => (
-            <Button
-              key={mode}
-              aria-pressed={policy.mode === mode}
-              className={policy.mode === mode ? "bg-foreground/5" : undefined}
-              disabled={saving}
-              onClick={() => void save({ ...policy, mode })}
-              size="sm"
-              variant="outline"
-            >
-              {mode === "enforce"
-                ? t("Stop the action")
-                : t("Record it and allow it")}
-            </Button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {policy.mode === "enforce"
-            ? t("The Bot is stopped and told which rule refused it.")
-            : t(
-                "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on.",
-              )}
-        </p>
-      </PageSection>
-
+      {/*
+       * The mode buttons are gone. "Record it and allow it" was a second switch that stood the whole
+       * boundary down — every rule on this page matched, was written to the trail, and let the
+       * action happen — sitting above the rules it silently suspended. What a rule does now is stop
+       * the action, always, which is the only thing this page ever said it did.
+       */}
       <PageSection title={t("It may never")}>
         {policy.deny.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
@@ -489,8 +482,7 @@ function BoundariesPage() {
             "The Bot stops and waits where one of these matches, and carries on with the same action if somebody allows it. Checked after the rules above and before the ones below, so something you have forbidden stays forbidden and is never offered as a question.",
           )}{" "}
           {t(
-            "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.",
-            { mode: t("Record it and allow it") },
+            "Saying no is remembered: the same action is refused for the next half hour instead of being asked about again.",
           )}
         </p>
       </PageSection>
@@ -516,11 +508,26 @@ function BoundariesPage() {
                   ? "bg-foreground/5"
                   : undefined
               }
-              disabled={saving}
-              key={choice}
-              onClick={() =>
-                void save({ ...policy, settleWithoutAsking: choice })
+              // The reason is required, so the button that would change this is not pressable
+              // without one — rather than pressable and then refused, which teaches people to type
+              // a full stop into the box.
+              disabled={
+                saving ||
+                ((policy.settleWithoutAsking ?? "allowed") !== choice &&
+                  settleReason.trim().length === 0)
               }
+              key={choice}
+              onClick={() => {
+                if ((policy.settleWithoutAsking ?? "allowed") === choice)
+                  return;
+                void save({
+                  ...policy,
+                  settleWithoutAsking: choice,
+                  reason: settleReason.trim(),
+                }).then((ok) => {
+                  if (ok) setSettleReason("");
+                });
+              }}
               size="sm"
               variant="outline"
             >
@@ -530,7 +537,25 @@ function BoundariesPage() {
             </Button>
           ))}
         </div>
+        {/*
+         * WHY, AND IT IS NOT OPTIONAL.
+         *
+         * This is the one control on the page that decides whether anybody sees an action at all,
+         * and the two directions are both worth a sentence: switching it off costs somebody their
+         * afternoon to approvals, and switching it on means actions start going through unseen. A
+         * change with nobody's reasoning attached is one nobody can argue with in three months.
+         */}
+        <div className="mt-2 flex gap-2">
+          <Input
+            aria-label={t("Why this is changing")}
+            className="min-w-0 flex-1 text-sm"
+            onChange={(event) => setSettleReason(event.target.value)}
+            placeholder={t("Why this is changing")}
+            value={settleReason}
+          />
+        </div>
         <p className="mt-2 text-xs text-muted-foreground">
+          {t("Changing this needs a reason, which is kept in the audit trail.")}{" "}
           {(policy.settleWithoutAsking ?? "allowed") === "allowed"
             ? t(
                 "Two things can settle a question without anybody seeing the action: “always” on a card, and a Bot's own “do not ask me about” instruction. Both are recorded, and every allowance is listed below and can be taken back.",

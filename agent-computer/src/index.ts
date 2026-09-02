@@ -225,8 +225,46 @@ async function snapshotPage(
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await target.title(),
-    ...parseAriaSnapshot(yaml),
+    ...parseAriaSnapshot(yaml, await passwordLabels(target)),
   };
+}
+
+/**
+ * What the page's password boxes are called, so the snapshot can mark them.
+ *
+ * THE ACCESSIBLE TREE DOES NOT SAY. Playwright reports `<input type="password">` as a `textbox`, the
+ * same as a name field, and the boundary's whole rule about secrets is that a Bot must not type into
+ * one. So the type is read from the DOM in one call — `evaluateAll` on the whole set, not a
+ * round trip per element — and joined to the tree by the label, which is the only thing both sides
+ * have. See `parseAriaSnapshot` for what that join can and cannot do.
+ *
+ * The name is computed the way a screen reader would resolve the common cases, in the order
+ * Playwright itself prefers: an explicit label, then the wrapping one, then aria-label, then the
+ * placeholder. Anything cleverer would drift from Playwright's own computation and stop matching,
+ * which fails silently — so the field's own label is a second signal in the rule itself.
+ *
+ * Never throws. A page that is navigating under us costs the marking, not the snapshot.
+ */
+async function passwordLabels(target: Page): Promise<string[]> {
+  try {
+    return await target
+      .locator('input[type="password"]')
+      .evaluateAll((nodes: Element[]) =>
+        nodes.map((node: Element) => {
+          const input = node as HTMLInputElement;
+          const labelled = input.labels?.[0]?.textContent ?? "";
+          return (
+            labelled ||
+            input.getAttribute("aria-label") ||
+            input.getAttribute("placeholder") ||
+            input.getAttribute("title") ||
+            ""
+          );
+        }),
+      );
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -881,18 +919,31 @@ serve<StreamData>({
               return null;
             }
             const element = (named ?? under) as HTMLElement;
+            /*
+             * THE LABEL, NEVER THE TEXT ON THE PAGE.
+             *
+             * This is read while a person is demonstrating a task in their own browser, and what it
+             * returns is written into the recording that a model is later asked to write up. It used
+             * to fall back to eighty characters of the element's own `innerText`, which is whatever
+             * the page happened to be showing at that point: a one-time code, an account number, a
+             * balance. The recorder is built so that nothing anybody typed is ever kept
+             * (`demonstration.ts`), and this was the same secret arriving by the other door — read
+             * off the screen instead of off the keyboard.
+             *
+             * A label is an author's name for a control and does not carry somebody's data. Where
+             * there is none, the press is recorded as a press with no name, which the recorder
+             * already handles and which a person reading the draft can correct.
+             */
             const label =
               element.getAttribute("aria-label") ??
               element.getAttribute("title") ??
               element.getAttribute("placeholder") ??
               element.getAttribute("alt") ??
-              // Trimmed hard: a container's text can be the whole page, and a label nobody can read
-              // is no better than none.
-              (element.innerText ?? "").trim().slice(0, 80);
+              "";
             return {
               role:
                 element.getAttribute("role") ?? element.tagName.toLowerCase(),
-              name: (label ?? "").replace(/\s+/g, " ").trim(),
+              name: label.replace(/\s+/g, " ").trim(),
             };
           },
           { x: body.x, y: body.y },

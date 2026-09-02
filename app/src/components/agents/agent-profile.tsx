@@ -544,6 +544,19 @@ function MemoriesCard({ agentId }: { agentId: string }) {
   );
 }
 
+/**
+ * NOT DRAWN WHERE THIS DEPLOYMENT'S MODEL CANNOT DO IT, for the same reason the effort card is not.
+ *
+ * This card is a promise that a sentence somebody writes will be read against each stopped action.
+ * On a model that cannot answer a yes/no inside the boundary's timeout the promise is silently
+ * false — they keep being asked, exactly as if the box were empty — and the server measures that
+ * once at boot rather than guessing (see `createAutoReviewProbe`).
+ *
+ * A Bot that already has an instruction saved gets a sentence instead of nothing at all. Removing
+ * the card outright would leave somebody believing a rule they wrote is in force, which is the same
+ * lie in a quieter voice; the instruction is still there and comes back the moment the deployment
+ * can honour it.
+ */
 function AutoReviewCard({
   agentId,
   instruction,
@@ -552,11 +565,29 @@ function AutoReviewCard({
   instruction: string;
 }) {
   const queryClient = useQueryClient();
+  const { data: user } = useQuery(currentUserQueryOptions());
   const { data: profile } = useQuery(agentQueryOptions(agentId));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
   const [draft, setDraft] = useState(instruction);
   const labelId = useId();
   const dirty = draft.trim() !== instruction.trim();
+
+  if (user && !user.deployment.autoReview) {
+    if (!instruction.trim()) return null;
+    return (
+      <section className="flex flex-col gap-1 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+        <h2 className="font-medium text-base">{t("Do not ask me about")}</h2>
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "This deployment's model cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.",
+          )}
+        </p>
+        <p className="rounded-lg bg-background px-3 py-2 text-pretty text-sm">
+          {instruction}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createAutoReviewProbe,
   createModelAutoReviewer,
   type ReviewSubject,
   verdictFrom,
@@ -22,12 +23,17 @@ const SUBJECT: ReviewSubject = {
 };
 
 /** A reviewer whose model answers with exactly this content. */
-function reviewerSaying(content: unknown, ok = true) {
+function reviewerSaying(
+  content: unknown,
+  ok = true,
+  options: { supportsEffort?: boolean } = {},
+) {
   const seen: Array<Record<string, unknown>> = [];
   const reviewer = createModelAutoReviewer({
     baseUrl: "http://model.test/v1",
     model: "laf-1",
     apiKey: async () => "test-key",
+    ...options,
     fetch: (async (_url: unknown, init?: { body?: unknown }) => {
       seen.push(JSON.parse(String(init?.body ?? "{}")));
       return ok
@@ -135,5 +141,115 @@ describe("the reviewer", () => {
       "host",
       "question",
     ]);
+  });
+
+  /**
+   * THE BUG THAT MADE THIS WHOLE FEATURE A LIE.
+   *
+   * `maxTokens: 200` was sized for `{"allowed": true, "reason": "…"}`. This deployment's model is a
+   * reasoning one: it spent the two hundred thinking and returned an empty message, which is
+   * `unreadable`, which is a no. Every "do not ask me about…" anybody wrote was saved, drawn on the
+   * profile, and never once applied — and the only sign was `autoReview: could not be reached` on
+   * the row recording the question they were asked anyway.
+   */
+  test("puts no ceiling on the answer", async () => {
+    const { reviewer, seen } = reviewerSaying('{"allowed":true,"reason":"ok"}');
+    await reviewer("Reading is fine.", SUBJECT);
+    expect(seen[0]).not.toHaveProperty("max_tokens");
+  });
+
+  test("asks a reasoning model for the least thinking it does", async () => {
+    // The other half: removing the cap stops an empty answer, and does nothing about thirty seconds
+    // spent on "is this read-only", which times out and asks the person just the same.
+    const { reviewer, seen } = reviewerSaying(
+      '{"allowed":true,"reason":"ok"}',
+      true,
+      {
+        supportsEffort: true,
+      },
+    );
+    await reviewer("Reading is fine.", SUBJECT);
+    expect(seen[0]?.reasoning_effort).toBe("low");
+  });
+
+  test("sends no effort at all where the deployment says its model does not reason", async () => {
+    // A model that does not take the field can refuse the whole request over it, which would trade
+    // an empty answer for no answer. The deployment asserts this; nothing here guesses from a name.
+    const { reviewer, seen } = reviewerSaying('{"allowed":true,"reason":"ok"}');
+    await reviewer("Reading is fine.", SUBJECT);
+    expect(seen[0]).not.toHaveProperty("reasoning_effort");
+  });
+});
+
+/**
+ * WHETHER TO DRAW THE CONTROL AT ALL.
+ *
+ * CLAUDE.md: if a deployment's model cannot do the thing, do not draw the control. The probe is how
+ * the deployment finds out, and these are the two answers that decide it.
+ */
+describe("the auto-review probe", () => {
+  function probeAnswering(
+    content: unknown,
+    options: { ok?: boolean; supportsEffort?: boolean } = {},
+  ) {
+    const seen: Array<Record<string, unknown>> = [];
+    const probe = createAutoReviewProbe({
+      baseUrl: "http://model.test/v1",
+      model: "laf-1",
+      apiKey: async () => "test-key",
+      ...(options.supportsEffort === undefined
+        ? {}
+        : { supportsEffort: options.supportsEffort }),
+      fetch: (async (_url: unknown, init?: { body?: unknown }) => {
+        seen.push(JSON.parse(String(init?.body ?? "{}")));
+        return options.ok === false
+          ? new Response("nope", { status: 500 })
+          : Response.json({ choices: [{ message: { content } }] });
+      }) as never,
+    });
+    return { probe, seen };
+  }
+
+  test("a readable answer means the control can be drawn", async () => {
+    const { probe } = probeAnswering('{"allowed":true,"reason":"yes"}');
+    expect(await probe()).toBe(true);
+  });
+
+  test("an empty message means it cannot", async () => {
+    // Exactly what a reasoning model returns when its budget goes on thinking. The feature would
+    // behave this way in front of every real action, so the capability says so rather than letting
+    // somebody write an instruction that quietly does nothing.
+    const { probe } = probeAnswering("");
+    expect(await probe()).toBe(false);
+  });
+
+  test("prose instead of a verdict means it cannot either", async () => {
+    const { probe } = probeAnswering("Yes, that is English.");
+    expect(await probe()).toBe(false);
+  });
+
+  test("a provider that is down means it cannot", async () => {
+    const { probe } = probeAnswering("", { ok: false });
+    expect(await probe()).toBe(false);
+  });
+
+  test("asks once and remembers a yes, because a model that can answer goes on being able to", async () => {
+    const { probe, seen } = probeAnswering('{"allowed":true,"reason":"yes"}');
+    expect(await probe()).toBe(true);
+    expect(await probe()).toBe(true);
+    expect(await probe()).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  test("measures the call the judge actually makes", async () => {
+    // A probe that tested something easier than the real thing would pass while the real thing went
+    // on timing out — same model, same effort, same parser.
+    const { probe, seen } = probeAnswering('{"allowed":true,"reason":"yes"}', {
+      supportsEffort: true,
+    });
+    await probe();
+    expect(seen[0]?.model).toBe("laf-1");
+    expect(seen[0]?.reasoning_effort).toBe("low");
+    expect(seen[0]).not.toHaveProperty("max_tokens");
   });
 });

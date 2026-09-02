@@ -98,7 +98,19 @@ const SYSTEM = [
   'Reply with JSON and nothing else: {"allowed": true|false, "reason": "<one short sentence>"}.',
 ].join("\n");
 
-export type ModelReviewerOptions = ModelCall & { timeoutMs?: number };
+export type ModelReviewerOptions = ModelCall & {
+  timeoutMs?: number;
+  /**
+   * Whether this deployment's model reasons, and therefore takes an effort setting.
+   *
+   * True sends the lowest one. A judgement about whether an action is read-only is a
+   * classification, not a problem — the thinking budget is where the twenty seconds go, and the
+   * feature that never once fired was losing them to it. Read from the same `supports_effort` the
+   * Bot's own runs read, because a deployment whose model does not take the field can have the
+   * whole request refused over it.
+   */
+  supportsEffort?: boolean;
+};
 
 /**
  * The judge, as one model call.
@@ -127,7 +139,18 @@ export function createModelAutoReviewer(
         JSON.stringify(subject),
       ].join("\n"),
       timeoutMs,
-      maxTokens: 200,
+      /*
+       * NO CEILING, AND THIS IS THE BUG THAT MADE THE FEATURE A LIE.
+       *
+       * It was two hundred tokens, sized for `{"allowed": true, "reason": "…"}`. This deployment's
+       * model is a reasoning one: it spent the two hundred thinking, returned an empty message, and
+       * an empty message is `unreadable`, which is a no. So every "do not ask me about…" instruction
+       * anybody wrote was saved, drawn, and never once applied — the person kept being asked, and
+       * the only trace was `autoReview: could not be reached` on the row recording the question.
+       * `model-call.ts` had already measured and written this down for the write-up; the same trap
+       * was sitting here the whole time. The timeout is the bound that matters.
+       */
+      ...(options.supportsEffort ? { reasoningEffort: "low" as const } : {}),
     });
     // No credential, a dead provider, a timeout. All of them mean nobody has decided this, which is
     // the same as a no — and it is why nothing here is retried: the person is right there.
@@ -136,6 +159,73 @@ export function createModelAutoReviewer(
     // to a boundary — which asks a person either way.
     if (!answer.ok) return { allowed: false, reason: "" };
     return verdictFrom(answer.text);
+  };
+}
+
+/**
+ * WHETHER THIS DEPLOYMENT CAN DO THIS AT ALL, asked of the model rather than assumed.
+ *
+ * The control on a Bot's profile — "do not ask me about…" — is a promise that a sentence somebody
+ * writes will be applied to their actions. On a model that cannot answer a yes/no inside the timeout
+ * that promise is false, and the failure is silent: they keep being asked, exactly as if they had
+ * written nothing. CLAUDE.md's rule for that case is not "log it", it is do not draw the control.
+ *
+ * So one trivial question, once, and the answer decides whether the control exists. It is the same
+ * call the judge makes — same endpoint, same model, same timeout, same effort — because a probe that
+ * tested something easier than the real thing would pass while the real thing still timed out.
+ *
+ * Cached, and asymmetrically: a yes is kept for the life of the process, because a model that can
+ * answer does not stop being able to. A no is kept only briefly, because the usual cause is a
+ * provider having a bad minute, and hiding somebody's control until the next restart over that is
+ * its own kind of lie.
+ */
+export function createAutoReviewProbe(
+  options: ModelReviewerOptions & { retryAfterMs?: number },
+): () => Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
+  const retryAfterMs = options.retryAfterMs ?? 5 * 60_000;
+  const now = () => Date.now();
+
+  let answered: Promise<boolean> | null = null;
+  let refusedAt = 0;
+
+  const askOnce = async (): Promise<boolean> => {
+    const answer = await askModel(options, {
+      system:
+        'You answer with one word. Reply with JSON and nothing else: {"allowed": true, "reason": "yes"}.',
+      user: "Is this sentence written in English? Answer in the JSON you were asked for.",
+      timeoutMs,
+      ...(options.supportsEffort ? { reasoningEffort: "low" as const } : {}),
+    });
+    if (!answer.ok) {
+      console.error(
+        JSON.stringify({
+          type: "auto-review-probe-failed",
+          model: options.model,
+          because: answer.because,
+        }),
+      );
+      return false;
+    }
+    // Readable, not correct. What is being measured is whether a verdict can be got out of this
+    // model within the timeout, and `verdictFrom` is the same parser the judge uses — a model that
+    // answers in prose fails here for the same reason it would fail in front of a real action.
+    return verdictFrom(answer.text).allowed;
+  };
+
+  return () => {
+    // `refusedAt` at zero covers both the good answer and the one in flight, so callers arriving
+    // during a probe share it rather than each starting another.
+    if (answered && (refusedAt === 0 || now() - refusedAt < retryAfterMs)) {
+      return answered;
+    }
+    refusedAt = 0;
+    const attempt = askOnce().then((able) => {
+      refusedAt = able ? 0 : now();
+      return able;
+    });
+    answered = attempt;
+    return attempt;
   };
 }
 
