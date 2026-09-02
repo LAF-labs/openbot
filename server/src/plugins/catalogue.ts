@@ -18,9 +18,18 @@
  * forgery primitive pointed at the deployment's own network.
  */
 
-// The one place browsing and this check agree on: the addresses that hold the deployment's own
-// cloud credentials. `target.ts` imports nothing itself, so asking it here adds no dependency.
-import { isNeverAllowedHostname } from "../computer/target";
+// The one place browsing and this check agree on: the ranges, the names, and — here only — where a
+// name actually resolves. See `net/host-verdict.ts` for why the two callers share the predicates
+// and not one entry point.
+import {
+  type HostResolver,
+  isAddressLiteral,
+  isCloudMetadataHostname,
+  isLoopbackHostname,
+  isNotPubliclyRoutableName,
+  normalizeHostname,
+  resolvedHostVerdict,
+} from "../net/host-verdict";
 // Type-only, so naming the transport here creates no import cycle with the registry that resolves it.
 import type { TransportKind } from "./transport";
 
@@ -420,8 +429,14 @@ function readsAsCredential(name: string): boolean {
  * No address literals, localhost or internal suffixes, because those point at the deployment rather
  * than a vendor service.
  *
- * This is static URL validation: it checks the literal host string and scheme before storage. DNS
- * resolution and per-request network policy are separate deployment controls.
+ * THE HALF THAT CAN BE DECIDED FROM THE STRING. Where the name actually points is
+ * {@link resolvedCustomUrlRefusal}, which is what `addCustomServer` asks and which needs a resolver
+ * and an await. Kept separate rather than folded in, because these two answers have different costs
+ * and different failure modes: this one is arithmetic and cannot be wrong about the network, and the
+ * other one touches it.
+ *
+ * The ranges and the names are {@link ../net/host-verdict}'s, which is also what a Bot's browser
+ * asks before it navigates. They used to be two lists of the same addresses.
  */
 export function customUrlRefusal(raw: string): string | null {
   let url: URL;
@@ -470,45 +485,58 @@ export function customUrlRefusal(raw: string): string | null {
     return "Put the credential in the token field rather than in the address.";
   }
 
-  // A trailing dot is the root-anchored spelling of the same name and resolves to the same place, so
-  // they are stripped here rather than added to each comparison below. Without it "localhost."
-  // misses the equality test, "vault.internal." misses the suffix tests, and "database." picks up
-  // the dot that the single-label test keys on, so the fully qualified form of every name this
-  // function refuses walks straight through it.
-  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  // Normalised once, in the shared module: a trailing dot is the root-anchored spelling of the same
+  // name and resolves to the same place, so without stripping it "localhost." misses the equality
+  // test, "vault.internal." misses the suffix tests, and "database." picks up the dot that the
+  // single-label test keys on.
+  const host = normalizeHostname(url.hostname);
 
-  // Bracketed IPv6 arrives with the brackets already stripped by URL, so the colon test catches it.
-  if (host.includes(":") || /^[0-9.]+$/.test(host)) {
+  if (isAddressLiteral(host)) {
     return "Give a hostname rather than an IP address.";
   }
-  /*
-   * The cloud metadata endpoint, by name rather than by luck.
-   *
-   * `metadata.goog` is Google's own short alias for it, published beside `metadata.google.internal`,
-   * and it carries a dot and none of the suffixes below, so it read as an ordinary vendor name. The
-   * long spelling was refused only incidentally, by the `.internal` test.
-   *
-   * Asked of the list browsing already uses rather than a second copy here. That list holds the
-   * aliases somebody has already had to think about, and a new alias added there should not have to
-   * be remembered here as well.
-   */
-  if (isNeverAllowedHostname(host)) {
+  // The cloud metadata endpoint, by name rather than by luck — asked of the same list a Bot's
+  // browser asks, so an alias added there does not have to be remembered here as well.
+  if (isCloudMetadataHostname(host)) {
     return "That address holds this deployment's own cloud credentials.";
   }
-  if (host === "localhost" || host.endsWith(".localhost")) {
+  if (isLoopbackHostname(host)) {
     return "That address is local to the deployment.";
   }
-  if (
-    host.endsWith(".internal") ||
-    host.endsWith(".local") ||
-    host.endsWith(".localdomain") ||
-    // How a Kubernetes service is addressed from inside the cluster. It carries dots and none of
-    // the suffixes above, so without this it reads as an ordinary vendor name.
-    host.endsWith(".svc") ||
-    !host.includes(".")
-  ) {
+  if (isNotPubliclyRoutableName(host)) {
     return "That address is not reachable from outside this network.";
   }
 
   return null;
+}
+
+/**
+ * The whole question, including where the name actually points.
+ *
+ * WHY THE STRING WAS NEVER ENOUGH. Every rule in {@link customUrlRefusal} reads the name somebody
+ * typed, and a name is not an address. `mcp.example.com` is an ordinary public hostname right up
+ * until its A record says `10.0.0.5`, and whoever controls a DNS zone controls that completely — so
+ * a static deny-list of names refuses the obvious spellings of "the deployment's own network" and
+ * admits every non-obvious one. This is the one place in the product where a person hands the
+ * deployment an arbitrary address to keep and to send a credential to, so it is worth a round trip.
+ *
+ * A name that will not resolve is refused. The deployment would have nothing to send a request to
+ * either way, and failing open here would mean a slow resolver is all it takes to skip the check.
+ *
+ * `resolve` is injected by tests, which must never depend on somebody else's DNS.
+ */
+export async function resolvedCustomUrlRefusal(
+  raw: string,
+  options: { resolve?: HostResolver } = {},
+): Promise<string | null> {
+  const refusal = customUrlRefusal(raw);
+  if (refusal) return refusal;
+
+  // Safe by now: `customUrlRefusal` refuses anything that will not parse.
+  const host = normalizeHostname(new URL(raw).hostname);
+  const verdict = await resolvedHostVerdict(host, options);
+  if (verdict.allowed) return null;
+
+  return verdict.fact === "laf:host_unresolvable"
+    ? "That address does not resolve, so this deployment cannot tell where it points."
+    : "That address resolves to somewhere inside this network.";
 }

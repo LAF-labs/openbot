@@ -9,7 +9,7 @@ import {
   type CatalogueEntry,
   catalogueEntry,
   classifyTool,
-  customUrlRefusal,
+  resolvedCustomUrlRefusal,
   resolveServerUrl,
   serverCredentialKind,
 } from "./catalogue";
@@ -646,7 +646,13 @@ export function createServers(
       credentialId?: string;
       by: string;
     }): Promise<ServerRecord> {
-      const refusal = customUrlRefusal(input.url);
+      /*
+       * Resolved, not merely read. A name is not an address: `mcp.example.com` is an ordinary public
+       * hostname right up until its A record says 10.0.0.5, and the static rules cannot see that.
+       * This is the one call in the product that hands the deployment an arbitrary address to keep
+       * and to send a credential to, so it is the one that pays for a DNS round trip.
+       */
+      const refusal = await resolvedCustomUrlRefusal(input.url);
       if (refusal) throw new CustomServerRefusedError(refusal);
 
       // A custom server may not take a curated entry's slug. The slug prefixes tool names and is
