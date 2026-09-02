@@ -13,9 +13,10 @@
  * be tested against a real provider. Naming it keeps "what is this?" from arriving as an empty
  * question.
  *
- * Shared by `agent-bot` and `agent-langgraph` because they are two implementations of one
- * contract, and a Bot that answered differently depending on which runtime a deployment happens to
- * run is the failure this file exists to prevent.
+ * In `shared/` because it is a reading of the AG-UI contract rather than one service's code. It had
+ * a second reader until 2026-08 — an upstream LangGraph runtime, deleted with the rest of the
+ * per-Bot container plane — and a Bot that answered differently depending on which runtime read the
+ * message is the failure it exists to prevent, whenever there is a second one again.
  */
 
 /**
