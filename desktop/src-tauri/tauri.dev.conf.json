@@ -7,8 +7,10 @@
         "url": "http://localhost:3010",
         "width": 1400,
         "height": 900,
-        "minWidth": 800,
-        "minHeight": 600,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "visible": false,
         "zoomHotkeysEnabled": false
       }

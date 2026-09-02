@@ -52,18 +52,27 @@ describe("in the shell", () => {
     ]);
   });
 
-  test("a notification asks for permission once and sends when granted", async () => {
-    const sent: unknown[] = [];
+  /**
+   * A notice goes through the shell's OWN command, not the notification plugin's binding.
+   *
+   * Two things ride on that and both are invisible if it regresses to the plugin: the tray's mute,
+   * which a page able to post directly could route around, and the destination, which is the only
+   * record of where the notice pointed once the plugin has shown it and forgotten it.
+   */
+  test("a notification asks for permission once and posts through the shell", async () => {
+    const calls: Array<[string, unknown]> = [];
     let asked = 0;
     (globalThis as WindowWithTauri).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args: unknown) => {
+          calls.push([command, args]);
+        },
+      },
       notification: {
         isPermissionGranted: async () => false,
         requestPermission: async () => {
           asked += 1;
           return "granted";
-        },
-        sendNotification: (options: unknown) => {
-          sent.push(options);
         },
       },
     };
@@ -72,27 +81,76 @@ describe("in the shell", () => {
         title: "리스크 분석가",
         body: "확인",
         silent: true,
+        destination: { kind: "approve", id: "a1" },
       }),
     ).toBe(true);
     expect(asked).toBe(1);
-    expect(sent).toEqual([
-      { title: "리스크 분석가", body: "확인", silent: true },
+    expect(calls).toEqual([
+      [
+        "post_notice",
+        {
+          title: "리스크 분석가",
+          body: "확인",
+          silent: true,
+          destination: { kind: "approve", id: "a1" },
+        },
+      ],
+    ]);
+  });
+
+  /** A notice with nowhere to go is still a notice; the shell is told so rather than left guessing. */
+  test("a notice with no destination says so", async () => {
+    const calls: Array<[string, unknown]> = [];
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args: unknown) => {
+          calls.push([command, args]);
+        },
+      },
+      notification: { isPermissionGranted: async () => true },
+    };
+    expect(
+      await showShellNotice({ title: "x", body: "y", silent: false }),
+    ).toBe(true);
+    expect(calls).toEqual([
+      [
+        "post_notice",
+        { title: "x", body: "y", silent: false, destination: null },
+      ],
     ]);
   });
 
   test("a refused permission falls back rather than throwing", async () => {
     (globalThis as WindowWithTauri).__TAURI__ = {
+      core: {
+        invoke: async () => {
+          throw new Error("must not be called");
+        },
+      },
       notification: {
         isPermissionGranted: async () => false,
         requestPermission: async () => "denied",
-        sendNotification: () => {
-          throw new Error("must not be called");
-        },
       },
     };
     expect(
       await showShellNotice({ title: "x", body: "y", silent: false }),
     ).toBe(false);
+  });
+
+  /**
+   * A shell that refused because the person muted it in the tray answers the same as one that
+   * posted: handled. Falling back to the webview's own notification would undo the switch they had
+   * just pressed — and `post_notice` resolving with nothing to say is exactly what a mute looks
+   * like from here.
+   */
+  test("a shell that stayed quiet is not a shell that failed", async () => {
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      core: { invoke: async () => undefined },
+      notification: { isPermissionGranted: async () => true },
+    };
+    expect(
+      await showShellNotice({ title: "x", body: "y", silent: false }),
+    ).toBe(true);
   });
 
   /**
@@ -113,7 +171,6 @@ describe("in the shell", () => {
           granted = true;
           return "granted";
         },
-        sendNotification: () => {},
       },
     };
 
@@ -132,7 +189,6 @@ describe("in the shell", () => {
       notification: {
         isPermissionGranted: async () => false,
         requestPermission: async () => "denied",
-        sendNotification: () => {},
       },
     };
     expect(await requestShellNoticePermission()).toBe("denied");

@@ -994,4 +994,15 @@ export const ko: Record<string, string> = {
   "Pressed the {key} key": "{key} 키 누르기",
   "The model is busy. Try again in a moment.":
     "모델이 바쁩니다. 잠시 후 다시 시도해 주세요.",
+  // The page one notification, and one `lafagent://approve/<id>` link, lands on.
+  "A Bot is waiting for you": "봇이 기다리고 있어요",
+  "Your Bot stopped here and is waiting. It carries on the moment you answer.":
+    "봇이 여기서 멈춰 기다리고 있습니다. 답하면 바로 이어서 합니다.",
+  "The request could not be loaded. It may just be the connection.":
+    "요청을 불러오지 못했습니다. 연결 문제일 수 있어요.",
+  "Nothing is waiting for an answer": "답을 기다리는 것이 없습니다",
+  "It was already answered, or it waited ten minutes and expired. Nothing is held up.":
+    "이미 답했거나, 10분이 지나 만료되었습니다. 멈춰 있는 일은 없습니다.",
+  "Go to your Bots": "내 봇으로 가기",
+  "Open the conversation": "대화 열기",
 };

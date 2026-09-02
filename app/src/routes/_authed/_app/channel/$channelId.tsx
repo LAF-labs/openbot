@@ -174,8 +174,15 @@ function RouteComponent() {
          * this one share a baseline across the whole window. The divider is gone because there is
          * nothing to divide: the transcript below is the same surface, and a line drawn across the
          * top of a conversation reads as a toolbar the conversation is filed under.
+         *
+         * It is also what the window is dragged by. `titleBarStyle: "Overlay"` in the shell means
+         * there is no title bar left to grab; `data-tauri-drag-region` gives this row that job and
+         * is inert in a browser tab.
          */}
-        <div className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3">
+        <div
+          className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3"
+          data-tauri-drag-region
+        >
           {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
           <div className="flex min-w-0 items-center gap-1.5">
             <motion.div

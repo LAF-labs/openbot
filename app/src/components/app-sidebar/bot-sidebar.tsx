@@ -443,8 +443,16 @@ export function BotSidebar() {
       {/*
        * The title row is the height of the window chrome it sits under, so the desktop build's
        * traffic lights land in it instead of on top of the search field.
+       *
+       * AND IT IS THE WINDOW'S HANDLE. The shell sets `titleBarStyle: "Overlay"`, which puts the
+       * traffic lights over this row and takes away the bar the window used to be dragged by — so
+       * without `data-tauri-drag-region` the reserved 44px was empty space that also could not move
+       * the window. The attribute is inert in a browser tab.
        */}
-      <div className="flex h-[var(--sand-titlebar-block)] shrink-0 items-center justify-end gap-0.5 px-2.5">
+      <div
+        className="flex h-[var(--sand-titlebar-block)] shrink-0 items-center justify-end gap-0.5 px-2.5"
+        data-tauri-drag-region
+      >
         {/* Only once there is something to reveal: an eye over an empty set is a control that
          * teaches nothing and never does anything. */}
         {(hidden.data ?? []).length > 0 ? (

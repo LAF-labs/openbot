@@ -8,8 +8,20 @@ function json<T>(path: string): T {
   return JSON.parse(readFileSync(join(repositoryRoot, path), "utf8")) as T;
 }
 
-type WindowConfig = { label: string; url?: string };
-type TauriConfig = { app?: { windows?: WindowConfig[] } };
+function read(path: string): string {
+  return readFileSync(join(repositoryRoot, path), "utf8");
+}
+
+type WindowConfig = {
+  label: string;
+  url?: string;
+  minWidth?: number;
+  titleBarStyle?: string;
+};
+type TauriConfig = {
+  app?: { windows?: WindowConfig[] };
+  plugins?: { "deep-link"?: { desktop?: { schemes?: string[] } } };
+};
 
 function windowOrigins(path: string): string[] {
   const windows = json<TauriConfig>(path).app?.windows ?? [];
@@ -66,4 +78,78 @@ test("the development window differs from the deployed one only in its origin", 
     return rest;
   };
   expect(withoutUrl(development)).toEqual(withoutUrl(deployed));
+});
+
+/**
+ * The window cannot be made smaller than the layout inside it.
+ *
+ * `minWidth` was 800 against a layout whose own minimum is the roster plus the detail pane plus a
+ * conversation — 1024. Between the two the app did not break; it just could not be used, because
+ * the pane laid over a conversation that had nowhere left to go. The two numbers are written down
+ * in different files in different languages, so this is the one place they are read together.
+ */
+test("the window cannot be dragged smaller than the layout it holds", () => {
+  const styles = read("app/src/styles.css");
+  const px = (name: string) => {
+    const found = styles.match(new RegExp(`--sand-${name}:\\s*(\\d+)px`));
+    expect(found).not.toBeNull();
+    return Number(found?.[1]);
+  };
+  const layoutMinimum =
+    px("sidebar-width") + px("info-pane-width") + px("chat-min-width");
+  // Asserted rather than assumed: a variable renamed to nothing would otherwise make this pass.
+  expect(layoutMinimum).toBeGreaterThan(900);
+
+  for (const path of [
+    "desktop/src-tauri/tauri.conf.json",
+    "desktop/src-tauri/tauri.dev.conf.json",
+  ]) {
+    const window = json<TauriConfig>(path).app?.windows?.[0];
+    expect(window?.minWidth).toBeGreaterThanOrEqual(layoutMinimum);
+  }
+});
+
+/**
+ * An overlay title bar takes away the bar the window was dragged by.
+ *
+ * `titleBarStyle: "Overlay"` is what makes the 44px `--sand-titlebar-block` reservation mean
+ * something — the traffic lights land in it rather than above it — and in the same move it removes
+ * the only part of the window a person could grab. Every row that reserves that height has to carry
+ * `data-tauri-drag-region`, or the installed app is one whose window cannot be moved.
+ */
+test("every row that reserves the title bar's height can move the window", () => {
+  const style = json<TauriConfig>("desktop/src-tauri/tauri.conf.json").app
+    ?.windows?.[0]?.titleBarStyle;
+  expect(style).toBe("Overlay");
+
+  for (const path of [
+    "app/src/components/app-sidebar/bot-sidebar.tsx",
+    "app/src/routes/_authed/_app/channel/$channelId.tsx",
+  ]) {
+    // The reservation and the handle on the same element: the attribute has to sit inside the tag
+    // that opened with that height, before that tag closes.
+    const opened = read(path).match(
+      /<div[^>]*h-\[var\(--sand-titlebar-block\)\][^>]*>/,
+    );
+    expect(opened?.[0]).toContain("data-tauri-drag-region");
+  }
+});
+
+/**
+ * The scheme is named in two files and has to be the same word in both.
+ *
+ * `plugins.deep-link.desktop.schemes` is what the bundler turns into macOS's `CFBundleURLTypes` and
+ * the Windows registry key — it decides which links the operating system hands over. `lib.rs`
+ * decides which ones are accepted. Name one `lafagent` and the other anything else and every link
+ * opens the app and then goes nowhere, silently, which looks exactly like a link that was wrong.
+ */
+test("the scheme the shell registers is the scheme it answers", () => {
+  const registered = json<TauriConfig>("desktop/src-tauri/tauri.conf.json")
+    .plugins?.["deep-link"]?.desktop?.schemes;
+  expect(registered).toEqual(["lafagent"]);
+
+  const answered = read("desktop/src-tauri/src/lib.rs").match(
+    /const SCHEME: &str = "([^"]+)"/,
+  );
+  expect(answered?.[1]).toBe(registered?.[0]);
 });
