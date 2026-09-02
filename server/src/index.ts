@@ -2,6 +2,9 @@ import "./telemetry-off";
 import { serve } from "bun";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { createAccountDeletion } from "./account/deletion";
+import { createAccountExport } from "./account/export";
+import { createRetentionJob, retentionDays } from "./account/retention";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -775,6 +778,25 @@ const app = createApp(
         }
       : {}),
   },
+  /*
+   * Taking your data with you, and leaving.
+   *
+   * The plugin store's own retirement is passed rather than reimplemented — it revokes each
+   * `mcp_user_token` through the vault and writes the disconnection rows, and it finds the
+   * credential by `key_id` rather than through a join table that has already cascaded away.
+   *
+   * The computer is passed for the same reason it is passed to the gateway: a Bot's browser profile
+   * is a directory of somebody's logins, and no row deletion touches it.
+   */
+  {
+    exporter: createAccountExport(database),
+    deletion: createAccountDeletion({
+      database,
+      retireConnectionsFor: pluginStore.retireConnectionsFor,
+      ...(computerClient ? { computerClient } : {}),
+    }),
+    auditStore: bootAuditStore,
+  },
 );
 
 /**
@@ -951,3 +973,25 @@ console.info(`LAF Agent server listening on http://localhost:${port}`);
  * nothing. It was once shared with the watch poller's tick, which is gone.
  */
 routineService.start(60_000);
+
+/*
+ * The retention sweep, on the same shape of clock as the routine tick and for the same reason: one
+ * process on one VM, and nothing to install.
+ *
+ * SIX HOURS, NOT TWENTY-FOUR. A day-long interval on a machine that is restarted most days is a
+ * sweep that never runs — the timer is reset by every boot and never reaches its deadline. Six
+ * hours means the deployment prunes even if somebody redeploys twice a day, and the work is a
+ * handful of deletes against an indexed timestamp.
+ *
+ * `AUDIT_RETENTION_DAYS=0` switches it off, tick included, and then nothing here is scheduled at all.
+ */
+const retention = createRetentionJob({
+  database,
+  days: retentionDays(),
+});
+void retention.runOnce().catch((error) => {
+  console.warn(
+    `retention: first sweep failed — ${error instanceof Error ? error.message : String(error)}`,
+  );
+});
+retention.start(6 * 60 * 60_000);
