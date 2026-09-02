@@ -134,6 +134,7 @@ services:
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
       BOT_SEATS_PER_ACCOUNT: ${BOT_SEATS_PER_ACCOUNT:-}
       COMPUTER_REPEAT_WINDOW_MS: ${COMPUTER_REPEAT_WINDOW_MS:-}
+      AGENT_COMPUTER_POLICY: ${AGENT_COMPUTER_POLICY:-}
       # Where "a Bot is blocked on you" is delivered while the AlimTalk channel is still in review.
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
