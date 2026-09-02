@@ -178,7 +178,10 @@ for (const pattern of TEST_FILE_GLOBS) {
     cwd: projectRoot,
     onlyFiles: true,
   })) {
-    if (!path.split("/").includes("node_modules")) discovered.add(path);
+    // Agent worktrees under .claude/ are whole checkouts; their tests are counted in their own runs.
+    const parts = path.split("/");
+    if (!parts.includes("node_modules") && !parts.includes(".claude"))
+      discovered.add(path);
   }
 }
 
