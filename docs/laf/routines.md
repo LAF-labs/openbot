@@ -56,20 +56,37 @@ handoff one hop by construction.
 clock of an IANA zone, optionally restricted to weekdays 0–6; rows written
 before zones existed read as UTC). The whole
 scheduler is one column: a tick claims a due routine by advancing `nextRunAt`
-in a conditional UPDATE, so two server processes ticking the same table cannot
-both fire it. The claim precedes the run — a crash mid-run costs one execution
-rather than repeating one.
+in a conditional UPDATE. The claim precedes the run — a crash mid-run costs one
+execution rather than repeating one, and a tick that overlaps the previous one
+on the single server process cannot fire the same routine twice.
+
+A window more than an hour late is **skipped**, not fired
+(`MISSED_WINDOW_MS`). A VM that was off overnight would otherwise deliver
+yesterday's seven o'clock briefing at nine, and an hourly monitor that missed six
+windows would deliver six of them at once. The claim is what makes the skip safe
+to record: exactly one pass takes the row, so exactly one `routine.skipped` row
+is written — with how many minutes late it was — and the clock is already on the
+next window either way.
 
 ## Records
 
 Each routine keeps its last twenty runs (`laf_routine_runs`), which is what an
 operator actually reads. The history of record is `audit_events`: every firing
-writes a `routine.ran` row, whichever way it went.
+writes a `routine.ran` row whichever way it went, and a window that was let go
+writes `routine.skipped`.
+
+## Ownership
+
+A routine belongs to the **Bot's owner**, not only to whoever typed it. Staff
+leave, and a shop owner locked out of the routines running on their own Bot has
+no way in. The cap is counted per person.
 
 ## Limits
 
-Twenty routines per account. Enforced at creation, inside the transaction, so
-two requests racing for the last slot serialize.
+Twenty routines per person. Enforced at creation, inside the transaction, so two
+requests racing for the last slot serialize. The refusal carries a code
+(`laf:routine_cap_reached`) and the surface writes the sentence — the server's
+own English is a fallback for a code the app does not know.
 
 ## Surface
 
