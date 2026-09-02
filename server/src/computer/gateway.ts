@@ -20,6 +20,7 @@
 import { type AuditStore, recordAuditEvent } from "../audit";
 import {
   type ApprovalRegistry,
+  type AskSubject,
   createApprovalRegistry,
   fingerprintOf,
   type PendingApproval,
@@ -35,12 +36,11 @@ import {
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
+import { settle } from "./settle";
 import {
   type AllowanceScope,
   allowanceFor,
   createStandingApprovalStore,
-  scopeKeyOf,
-  type StandingApproval,
   type StandingApprovalStore,
 } from "./standing-approvals";
 import type {
@@ -61,20 +61,18 @@ export class ActionRefusedError extends Error {
   /** The rule that refused it, so the surface can show which one and an operator can find it. */
   readonly rule: string | null;
   /**
-   * What kind of refusal this was, as a code the surface can phrase itself.
+   * What kind of refusal this was, as a code each reader phrases for itself.
    *
-   * Null for the ordinary case, where the rule is the whole story. Set where there is a next move
-   * worth naming — a password box the Bot should be asking a person to fill, an answer somebody
-   * already gave. See `FactCode`.
+   * THE MESSAGE IS THE CODE. It used to be an English sentence the policy assembled, and it went out
+   * of the route as `error`, into a Korean-speaking model as a tool result and onto a Korean screen
+   * as the reason an action was blocked. Now the code is the whole of what crosses: the model's
+   * Korean is in `shared/prompt/tool-results.ko.ts`, the person's is in `i18n-ko.ts`, and neither is
+   * written by this file. See `FactCode`.
    */
-  readonly code: FactCode | null;
+  readonly code: FactCode;
 
-  constructor(
-    reason: string,
-    rule: string | null,
-    code: FactCode | null = null,
-  ) {
-    super(reason);
+  constructor(rule: string | null, code: FactCode) {
+    super(code);
     this.name = "ActionRefusedError";
     this.rule = rule;
     this.code = code;
@@ -93,26 +91,35 @@ export class ActionRefusedError extends Error {
 export class ActionNeedsApprovalError extends Error {
   /** What the caller presents once somebody has answered. */
   readonly approvalId: string;
-  /** The question in the words a person is being shown, so the Bot can say what it is waiting for. */
-  readonly question: string;
+  /** What is being asked about, in facts. The sentence is composed where it is read. */
+  readonly subject: AskSubject;
   /** The rule that asked, so the surface can name the boundary the way a refusal does. */
   readonly rule: string;
   /**
    * What answering "always" would cover, so the card can say it on the button.
    *
-   * Carried out with the question rather than fetched back: the sentence a person reads and the
-   * scope that gets granted have to be the same fact, and a surface that went and asked separately
-   * could show one and grant the other. Absent means the card offers only "this once".
+   * Carried out with the question rather than fetched back: the facts a person reads and the scope
+   * that gets granted have to be the same record, and a surface that went and asked separately could
+   * show one and grant the other. Absent means the card offers only "this once".
    */
   readonly scope: AllowanceScope | undefined;
+  /**
+   * When the question stops being answerable.
+   *
+   * Carried because the card is drawn from this reply and from nothing else, and a card with no
+   * clock on it simply vanished after ten minutes with nothing having said it would
+   * (docs/laf/redesign-2026-09.md §5.6(g)-7).
+   */
+  readonly expiresAt: string;
 
   constructor(approval: PendingApproval) {
-    super(approval.question);
+    super("laf:awaiting_approval");
     this.name = "ActionNeedsApprovalError";
     this.approvalId = approval.id;
-    this.question = approval.question;
+    this.subject = approval.subject;
     this.rule = approval.rule;
     this.scope = approval.scope;
+    this.expiresAt = approval.expiresAt;
   }
 }
 
@@ -405,224 +412,130 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
             matched: null,
             source: "deny",
             forward: false,
-            reason:
-              "This server has not seen the computer's screen, so a rule about the page or the " +
-              "element could not be decided. Take a snapshot and try the action again.",
+            code: "laf:blind_action",
           } satisfies PolicyDecision)
         : evaluateActionPolicy(policy, context);
 
     /**
-     * A decision that wants a person, resolved before anything is recorded as having happened.
+     * A DECISION THAT WANTS A PERSON, SETTLED IN THE ONE PLACE THAT SETTLES THEM.
      *
-     * Two outcomes and no third: either an approval already exists for this exact action, in which
-     * case the row below says so and names who gave it, or the question is opened and the call stops
-     * here. Nothing is written as allowed or refused in the second case, because neither happened:
-     * `approval.requested` is the record of where the turn actually got to.
-     *
-     * Dry-run never reaches this branch, because the policy forwards an ask there for the same
-     * reason it forwards a deny: a mode that promises to change nothing must not start interrupting
-     * people.
+     * The sequence this used to run inline — spend a presented approval, honour a No that still
+     * stands, look for an allowance, ask the Bot's own instruction, open the question — is in
+     * `settle.ts`, because the plugin store ran a second copy of it without the instruction and with
+     * the repeat count nailed to one. Everything about the decision is there; everything about
+     * recording it is here, where the target and the shape of a computer's audit row are known.
      */
-    let approvedBy: string | undefined;
-    /**
-     * Set when the yes came from an allowance rather than from somebody looking at this action.
+    const fingerprint = fingerprintOf({
+      botId,
+      toolName,
+      ref,
+      key: subject.key,
+      submit: subject.submit,
+      filePath,
+      pageUrl,
+    });
+    /*
+     * What a standing allowance for this action would have to cover.
      *
-     * Kept apart so the trail can say which it was. "Allowed by Sam" and "allowed by an allowance Sam
-     * granted last Tuesday" are different facts about how much attention this action received, and a
-     * row that reported the second as the first would overstate the review every time.
+     * Derived from the same fields the policy was given, by the same function the next action will
+     * use, so the scope printed on the button and the scope checked afterwards cannot differ.
      */
-    let allowedByStanding: StandingApproval | null = null;
-    /**
-     * Set when the yes came from the owner's instruction rather than from anybody at all.
-     *
-     * Kept apart from `approvedBy` for the same reason a standing allowance is, and more so: this
-     * action was seen by no person and by no earlier decision about this particular thing. A trail
-     * that reported it as an approval would be describing a review that never happened.
-     */
-    let allowedByReview: ReviewVerdict | null = null;
-    if (decision.source === "ask" && !decision.forward) {
-      const fingerprint = fingerprintOf({
+    const allowance = allowanceFor({
+      tool: toolName,
+      host: hostOf(pageUrl),
+      filePath,
+    });
+    const settled = await settle(
+      {
         botId,
-        toolName,
-        ref,
-        key: subject.key,
-        submit: subject.submit,
-        filePath,
-        pageUrl,
-      });
-      const presented = subject.approvalId
-        ? await approvals.consume(subject.approvalId, fingerprint)
-        : undefined;
-
-      /*
-       * A NO THAT STICKS.
-       *
-       * Declining used to leave the row and nothing else: the next attempt found no approval to
-       * spend and opened a fresh question, so a model that had been told no could ask again, and
-       * again, and the only thing standing between somebody and being worn down was their patience.
-       * "Deny" has to mean "not this", not "not this second".
-       *
-       * Refused rather than asked, before anything is opened, and before the standing allowance and
-       * the auto-review are consulted — a person's own answer about THIS action outranks both.
-       * Presenting a fresh grant is the one way past it, which is what makes the row on the surface
-       * still work if somebody changes their mind.
-       */
-      if (
-        !presented?.ok &&
-        (await approvals.recentlyDeclined(botId, fingerprint))
-      ) {
-        const refusal: PolicyDecision = {
-          ...decision,
-          allowed: false,
-          forward: false,
-          source: "deny",
-          reason:
-            "Somebody was asked about this and said no, so it will not be asked again for now. " +
-            "Do something else, or ask them to allow it.",
-          code: "laf:declined_recently",
-        };
-        await write(auditStore, {
-          toolName,
-          botId,
-          actor,
-          computerId,
+        actorId: actor.id,
+        subject: askSubjectOf({
+          intent,
+          pageUrl,
+          filePath,
           element,
-          ref,
-          ...(subject.key ? { key: subject.key } : {}),
-          filePath,
-          pageUrl,
-          decision: refusal,
-        });
-        throw new ActionRefusedError(
-          refusal.reason,
-          refusal.matched,
-          "laf:declined_recently",
-        );
-      }
+          matched: decision.matched,
+          repeatCount: repetition.count,
+        }),
+        action: toolName,
+        fingerprint,
+        allowance,
+        rule: decision.matched ?? "",
+        target: { type: "computer", id: computerId },
+        ...(subject.approvalId
+          ? { presentedApprovalId: subject.approvalId }
+          : {}),
+        policyVerdict: decision,
+      },
+      {
+        policy: options.policy,
+        approvals,
+        standing,
+        ...(options.autoReview ? { autoReview: options.autoReview } : {}),
+      },
+    );
 
-      /*
-       * What a standing allowance for this action would have to cover.
-       *
-       * Derived here, from the same fields the policy was given, so that the scope offered on the
-       * button and the scope checked on the next action are computed by one function from one set of
-       * facts. Deriving it twice from two places is how a person ends up granting something other
-       * than what stops them being asked.
-       */
-      const allowance = allowanceFor({
-        tool: toolName,
-        host: hostOf(pageUrl),
+    if (settled.outcome === "asked") {
+      // Nothing is written as allowed or refused, because neither happened: `approval.requested` is
+      // the record of where the turn actually got to.
+      await writeApprovalEvent(auditStore, {
+        botId,
+        actor,
+        computerId,
+        approval: settled.approval,
+        toolName,
+        pageUrl,
         filePath,
+        ...(settled.autoReview ? { autoReview: settled.autoReview } : {}),
       });
-      const rule = decision.matched ?? "";
-      /*
-       * WHETHER THIS QUESTION CAN BE ANSWERED FOR GOOD AT ALL.
-       *
-       * A deployment that has decided every one of these actions gets a pair of eyes says so here,
-       * and one switch then does the whole job: nothing standing is honoured, and the approval goes
-       * out without a scope — which is already how the card and the answering route read "there is
-       * nothing to grant". One decision, expressed once, rather than the same rule written into a
-       * lookup, a button and a handler and kept in agreement by hand.
-       */
-      const mayStand = (policy?.settleWithoutAsking ?? "allowed") === "allowed";
-      /*
-       * Looked up before the question is opened, and only for an `ask`. A `deny` never reaches this
-       * branch, so nothing a deployment has forbidden can be waved through by an allowance — which
-       * is the one property that makes this a convenience rather than a hole.
-       */
-      const already =
-        presented?.ok || !mayStand
-          ? null
-          : await standing.find(botId, rule, scopeKeyOf(allowance));
-
-      /*
-       * The owner's own sentence, asked about this action, and only after the cheap answers.
-       *
-       * Third, deliberately: a presented approval and a standing allowance are a lookup each, and
-       * this is a model call on the path of an action a Bot is waiting to take. It runs only when
-       * the first two found nothing, only for an `ask`, and only where the deployment permits a
-       * question to be settled without eyes on it.
-       */
-      const reviewed =
-        presented?.ok || already || !mayStand || !options.autoReview
-          ? null
-          : await options.autoReview(botId, {
-              action: toolName,
-              host: hostOf(pageUrl) || undefined,
-              file: filePath,
-              // What the SERVER resolved from its own snapshot. A judge shown a label the caller
-              // supplied would be deciding on the attacker's description of the attacker's button.
-              element: element
-                ? { role: element.role, name: element.name }
-                : undefined,
-              question: decision.reason,
-            });
-
-      if (presented?.ok && presented.approval.answeredBy) {
-        approvedBy = presented.approval.answeredBy;
-      } else if (already) {
-        approvedBy = already.grantedBy;
-        allowedByStanding = already;
-      } else if (reviewed?.allowed) {
-        // Nobody's name goes on this. `approvedBy` stays undefined, so the row cannot read as a
-        // person having stood behind it — which is the one thing this record must never claim.
-        allowedByReview = reviewed;
-      } else {
-        // Every unsuccessful presentation asks again rather than failing: an expired approval, an id
-        // spent already, a person's No being replayed, and an approval granted for a different button
-        // all mean the same thing here, which is that nobody has agreed to THIS. Asking twice is
-        // annoying and safe; guessing which of those deserves an error is neither.
-        //
-        // An approval with nobody's name on it lands here too. Nothing can produce one, because an
-        // answer always records who gave it and an unanswered approval cannot be spent, and it asks
-        // again rather than falling back to the person whose turn raised the question: crediting
-        // consent to whoever was driving the Bot is the one thing this record must never do.
-        const pending = await approvals.request({
-          botId,
-          actor: actor.id,
-          rule,
-          question: decision.reason,
-          fingerprint,
-          // Absent where the deployment has turned allowances off: the card then offers two buttons
-          // and the answering route has nothing to grant, without either of them knowing why.
-          ...(mayStand ? { scope: allowance } : {}),
-          // Where the answer's own row will be filed, decided here where what the question is about
-          // is still known. See PendingApproval.target.
-          target: { type: "computer", id: computerId },
-        });
-        await writeApprovalEvent(auditStore, {
-          botId,
-          actor,
-          computerId,
-          approval: pending,
-          toolName,
-          pageUrl,
-          filePath,
-          ...(reviewed ? { autoReview: reviewed } : {}),
-        });
-        throw new ActionNeedsApprovalError(pending);
-      }
+      throw new ActionNeedsApprovalError(settled.approval);
     }
 
-    // What the boundary settled on, once a person's answer is folded in. The source stays `ask`, so
-    // the row reads as "allowed, because somebody was asked and said yes" rather than as an ordinary
-    // permission nobody ever questioned.
-    const settled: PolicyDecision = allowedByReview
-      ? {
-          ...decision,
-          allowed: true,
-          forward: true,
-          reason: `Allowed by this Bot's auto-review instruction, which was asked because of the rule \`${decision.matched}\`: ${allowedByReview.reason}`,
-        }
-      : approvedBy
-        ? {
-            ...decision,
-            allowed: true,
-            forward: true,
-            reason: allowedByStanding
-              ? `Allowed by a standing allowance ${approvedBy} granted for ${allowedByStanding.scope}, asked because of the rule \`${decision.matched}\`.`
-              : `Allowed by ${approvedBy}, who was asked because of the rule \`${decision.matched}\`.`,
-          }
-        : decision;
+    if (settled.outcome === "refused") {
+      /*
+       * A refusal `settle` reached rather than the policy — a No that still stands — is recorded as
+       * a deny with its own code. The policy's own refusals keep the verdict they arrived with.
+       */
+      const refusal: PolicyDecision =
+        settled.code === decision.code
+          ? decision
+          : {
+              ...decision,
+              allowed: false,
+              forward: false,
+              source: "deny",
+              code: settled.code,
+            };
+      await write(auditStore, {
+        toolName,
+        botId,
+        actor,
+        computerId,
+        element,
+        ref,
+        ...(subject.key ? { key: subject.key } : {}),
+        filePath,
+        pageUrl,
+        decision: refusal,
+      });
+      throw new ActionRefusedError(refusal.matched, settled.code);
+    }
+
+    /*
+     * What the boundary settled on, once a person's answer is folded in.
+     *
+     * The source stays `ask`, so the row reads as "allowed, because somebody was asked and said yes"
+     * rather than as an ordinary permission nobody ever questioned. WHICH of the three yeses it was
+     * is in the fields below and never folded into a sentence: "allowed by Sam", "allowed by an
+     * allowance Sam granted last Tuesday" and "allowed by an instruction nobody read today" are
+     * different amounts of attention, and the last two are the rows an investigator is looking for.
+     */
+    const approvedBy = settled.approvedBy;
+    const allowedByStanding = settled.allowance;
+    const allowedByReview = settled.autoReviewed;
+    const carried: PolicyDecision = decision.forward
+      ? decision
+      : { ...decision, allowed: true, forward: true };
 
     await write(auditStore, {
       toolName,
@@ -634,7 +547,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       ...(subject.key ? { key: subject.key } : {}),
       filePath,
       pageUrl,
-      decision: settled,
+      decision: carried,
       ...(approvedBy ? { approvedBy } : {}),
       ...(allowedByStanding
         ? {
@@ -646,14 +559,6 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         : {}),
       ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
     });
-
-    if (!settled.forward) {
-      throw new ActionRefusedError(
-        settled.reason,
-        settled.matched,
-        settled.code ?? null,
-      );
-    }
 
     let result: T;
     try {
@@ -678,7 +583,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         ref,
         filePath,
         pageUrl,
-        decision: settled,
+        decision: carried,
         ...(approvedBy ? { approvedBy } : {}),
         ...(allowedByStanding
           ? {
@@ -1092,10 +997,20 @@ export type ComputerGateway = ReturnType<typeof createComputerGateway>;
  */
 const ACTIVATING_KEYS = new Set(["Enter", "NumpadEnter", "Space", " "]);
 
-function intentOf(
-  toolName: string,
-  key: string | undefined,
-): PolicyContext["intent"] {
+/**
+ * The intents this gateway can produce, which is every one that is not about somebody else's server.
+ *
+ * Named so that both readers of an intent take the same value: the policy context, whose union also
+ * covers MCP calls, and the subject a person is shown, whose union also covers a tool call and the
+ * unrecognised case. A plain `PolicyContext["intent"]` here would let `read_tool` into a browser
+ * subject, which is a sentence about a page that no page was involved in.
+ */
+type BrowserIntent = Extract<
+  PolicyContext["intent"],
+  AskSubject["intent"] | undefined
+>;
+
+function intentOf(toolName: string, key: string | undefined): BrowserIntent {
   switch (toolName) {
     case "computer_click":
       return "activate";
@@ -1376,10 +1291,15 @@ async function writeApprovalEvent(
       actor: entry.actor.id,
       approval: entry.approval.id,
       rule: entry.approval.rule,
-      // The question as a person read it. Element labels are things a page displays rather than
-      // things anybody typed, which is why the reason text is safe to keep here; see the note on
-      // `write` above.
-      reason: entry.approval.question,
+      /*
+       * What was being asked about, in the same facts the card was drawn from — not the sentence.
+       *
+       * The row used to hold the English sentence the policy assembled, which meant the trail was
+       * the only place that sentence still existed once the surface started composing its own: two
+       * descriptions of one question, drifting. Element labels are things a page displays rather
+       * than things anybody typed, which is why they are safe to keep here; see `write` above.
+       */
+      subject: entry.approval.subject,
       ...(entry.toolName ? { action: entry.toolName } : {}),
       ...(entry.pageUrl ? { page: entry.pageUrl } : {}),
       ...(entry.filePath ? { file: entry.filePath } : {}),
@@ -1403,4 +1323,70 @@ function hostOf(url: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * The path, for a card that would otherwise say only which site.
+ *
+ * The query string is deliberately dropped. It is where an order number, an email address and a
+ * session token live, and this string is rendered on a screen and written into an audit payload —
+ * the same reasoning that keeps typed text out of both.
+ */
+function pathOf(url: string): string {
+  try {
+    const path = new URL(url).pathname;
+    return path === "/" ? "" : path;
+  } catch {
+    return "";
+  }
+}
+
+/** Whether the rule that asked was one about a Bot going round in circles. See `REPEAT_RULE`. */
+function isAboutRepetition(expression: string | null): boolean {
+  return expression !== null && /\brepeat\s*\./.test(expression);
+}
+
+/**
+ * What is about to happen, as the facts a person is shown.
+ *
+ * Assembled here, once, from what the SERVER resolved: the element off its own snapshot, the host
+ * off the URL it is about to open. The sentence used to be assembled in `policy.ts`, in English,
+ * and rendered as-is on three Korean screens — see {@link AskSubject}.
+ */
+function askSubjectOf(input: {
+  intent: BrowserIntent;
+  pageUrl: string;
+  filePath: string | undefined;
+  element: SnapshotElement | undefined;
+  /** The expression that asked, to tell a question about repetition from any other. */
+  matched: string | null;
+  repeatCount: number;
+}): AskSubject {
+  const reason = isAboutRepetition(input.matched) ? "repeat" : "policy_ask";
+  const repeated =
+    reason === "repeat" ? { repeatCount: input.repeatCount } : {};
+  // A file call has nothing to do with whatever the browser is showing, so its subject names no
+  // host: saying one would send somebody to a page that has nothing to do with it.
+  if (input.filePath) {
+    return {
+      kind: "file",
+      intent: input.intent ?? "act",
+      file: { path: input.filePath },
+      ...repeated,
+      reason,
+    };
+  }
+  const host = hostOf(input.pageUrl);
+  const path = pathOf(input.pageUrl);
+  return {
+    kind: "browser",
+    intent: input.intent ?? "act",
+    ...(host ? { host } : {}),
+    ...(path ? { path } : {}),
+    ...(input.element
+      ? { element: { role: input.element.role, name: input.element.name } }
+      : {}),
+    ...repeated,
+    reason,
+  };
 }

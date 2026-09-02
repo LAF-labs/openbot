@@ -194,7 +194,7 @@ export function createApprovalRoutes(
           botId: answered.approval.botId,
           rule: answered.approval.rule,
           scope,
-          question: answered.approval.question,
+          subject: answered.approval.subject,
           grantedBy: record.id,
         });
         await recordAuditEvent(auditStore, {
@@ -230,8 +230,8 @@ export function createApprovalRoutes(
  * What an allowance records: which Bot, which boundary, and exactly how wide.
  *
  * The scope in both halves — as one string and split — so a reader filtering the trail can find
- * every allowance about one host without knowing how the key is spelled, and the question is the
- * sentence the person was reading when they widened it.
+ * every allowance about one host without knowing how the key is spelled, and the subject is what the
+ * Bot was about to do when they widened it.
  */
 function standingPayload(standing: StandingApproval, actor: string) {
   return {
@@ -242,7 +242,7 @@ function standingPayload(standing: StandingApproval, actor: string) {
     scope: standing.scope,
     scopeKind: standing.scopeKind,
     scopeValue: standing.scopeValue,
-    reason: standing.question,
+    ...(standing.subject ? { subject: standing.subject } : {}),
     grantedBy: standing.grantedBy,
   };
 }
@@ -253,9 +253,10 @@ function payloadFor(approval: PendingApproval, answeredBy: string) {
     actor: answeredBy,
     approval: approval.id,
     rule: approval.rule,
-    // The question as a person read it, so the trail records what they were shown rather than a
-    // reconstruction of it.
-    reason: approval.question,
+    // What they were shown, in the same facts the card was drawn from. A sentence here would be a
+    // second description of the question, written by a server that does not speak the language the
+    // person answered in.
+    subject: approval.subject,
     // Who was driving when the boundary stopped, which is usually not who answered. The gap between
     // the two is the reason this is its own row.
     asked: approval.actor,

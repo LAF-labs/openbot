@@ -345,9 +345,10 @@ export function createRoomService(options: RoomServiceOptions) {
                   memberId: member.id,
                   memberName: member.name,
                   approvalId: question.approvalId,
-                  question: question.question,
+                  subject: question.subject,
                   rule: question.rule,
                   ...(question.scope ? { scope: question.scope } : {}),
+                  expiresAt: question.expiresAt,
                   answered,
                 }),
             });

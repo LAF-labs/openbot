@@ -1,6 +1,12 @@
 import type { AuditStore } from "../audit";
-import type { ApprovalRegistry, PendingApproval } from "../computer/approvals";
+import type {
+  ApprovalRegistry,
+  AskSubject,
+  PendingApproval,
+} from "../computer/approvals";
+import type { ReviewSubject, ReviewVerdict } from "../computer/auto-review";
 import type { ActionPolicy } from "../computer/policy";
+import type { RepeatDetector } from "../computer/repeat";
 import type {
   AllowanceScope,
   StandingApprovalStore,
@@ -172,26 +178,29 @@ export class PluginRefusedError extends Error {
 export class PluginNeedsApprovalError extends Error {
   /** What the caller presents once somebody has answered. */
   readonly approvalId: string;
-  /** The question in the words a person is being shown, so the Bot can say what it is waiting for. */
-  readonly question: string;
+  /** What is being asked about, in facts. The sentence is composed where it is read. */
+  readonly subject: AskSubject;
   /** The rule that asked, so the surface can name the boundary the way a refusal does. */
   readonly rule: string;
   /**
    * What answering "always" would cover, so the card can say it on the button.
    *
-   * Carried out with the question rather than fetched back: the sentence a person reads and the
-   * scope that gets granted have to be the same fact, and a surface that went and asked separately
-   * could show one and grant the other. Absent means the card offers only "this once".
+   * Carried out with the question rather than fetched back: the facts a person reads and the scope
+   * that gets granted have to be the same record, and a surface that went and asked separately could
+   * show one and grant the other. Absent means the card offers only "this once".
    */
   readonly scope: AllowanceScope | undefined;
+  /** When it stops being answerable, so the card can show how long is left. */
+  readonly expiresAt: string;
 
   constructor(approval: PendingApproval) {
-    super(approval.question);
+    super("laf:awaiting_approval");
     this.name = "PluginNeedsApprovalError";
     this.approvalId = approval.id;
-    this.question = approval.question;
+    this.subject = approval.subject;
     this.rule = approval.rule;
     this.scope = approval.scope;
+    this.expiresAt = approval.expiresAt;
   }
 }
 
@@ -356,6 +365,27 @@ export type PluginStoreOptions = {
    * that one is required; a missing allowance store only means nobody has been given the shortcut.
    */
   standing?: StandingApprovalStore;
+  /**
+   * The Bot owner's own sentence about what they do not want to be asked, applied per call.
+   *
+   * Wired here as well as on the computer since 2026-09: a person who wrote "don't ask me about
+   * anything read-only" meant it about their Bot, and until this existed it held for a click and not
+   * for a call to the same information through somebody else's server. It never gets past a guard
+   * floor — see `computer/settle.ts`, which is where the decision is made for both paths.
+   */
+  autoReview?: (
+    botId: string,
+    subject: ReviewSubject,
+  ) => Promise<ReviewVerdict | null>;
+  /**
+   * The counter that says how many times this Bot has just made this exact call.
+   *
+   * The same detector the computer gateway feeds, because "the same Bot going round in circles" is
+   * one fact about one Bot rather than one per subsystem. Absent leaves every call counted as a
+   * first attempt, which is what this path did until 2026-09 — `repeat: { count: 1 }`, hard-coded,
+   * so the shipped `repeat.count >= 5` rule was false here however many times a stuck model called.
+   */
+  repeat?: RepeatDetector;
 };
 
 /**

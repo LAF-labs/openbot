@@ -10,6 +10,7 @@ import {
 import { createDatabase } from "../src/db/client";
 import { computerStandingApprovals } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * One contract, two stores, same as the approval registry next door.
@@ -33,7 +34,7 @@ const GRANT = {
   botId: BOT,
   rule: RULE,
   scope: { kind: "host", value: "wttr.in" } as const,
-  question: "The Bot wants to open wttr.in.",
+  subject: A_CLICK,
   grantedBy: "boss",
 };
 

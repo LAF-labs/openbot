@@ -5,6 +5,7 @@ import {
   type RoomQuestion,
 } from "../src/rooms/approval-relay";
 import type { ToolOutcome, UnattendedToolkit } from "../src/runner/unattended";
+import { A_CLICK } from "./support/subjects";
 
 /**
  * What happens between a member's action stopping at a boundary and the person seeing a result.
@@ -18,7 +19,7 @@ const ASKING: ToolOutcome = {
   ok: false,
   awaitingApproval: true,
   approvalId: "ap_1",
-  question: "Open wttr.in?",
+  subject: A_CLICK,
   rule: "true",
   reason: "A person has to allow that.",
 };

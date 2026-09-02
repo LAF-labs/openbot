@@ -243,15 +243,19 @@ export type PolicyDecision = {
   source: "deny" | "ask" | "allow" | "default";
   /** True when the action should actually be carried out. False for a refusal. */
   forward: boolean;
-  /** Why, in words that go in front of a person. */
-  reason: string;
   /**
    * What happened, as a code rather than as a sentence.
    *
-   * `reason` is English prose assembled here, and the surface is Korean; a screen that rendered this
-   * server's sentences would show a Korean reader English whatever the dictionary said. A code is a
-   * fact the surface can own the words for, and the trail can be queried on. Present only where
-   * there is something more specific to say than "a rule refused this".
+   * IT USED TO BE A SENTENCE. `reason` held English prose assembled here — "This deployment's policy
+   * does not allow that: “Submit order” on example.com is blocked by the rule …" — and it went out
+   * to a Korean screen and to a Korean-speaking model as written. The surface owns the words now
+   * (docs/laf/redesign-2026-09.md §4-2): this says which fact it is, `matched` says which rule, and
+   * the sentence is composed where somebody reads it — `i18n-ko.ts` for a person,
+   * `shared/prompt/tool-results.ko.ts` for the model.
+   *
+   * Present on every refusal. Absent on an `ask`, where nothing has been refused and the question
+   * itself carries the facts (see {@link AskSubject}), and on an `allow`, where there is nothing to
+   * say.
    */
   code?: FactCode;
 };
@@ -265,7 +269,13 @@ export type FactCode =
   /** Typing a secret into a page. The Bot's next move is `computer_request_secret`. */
   | "laf:use_request_secret"
   /** A person already said no to this exact action, recently enough that it still stands. */
-  | "laf:declined_recently";
+  | "laf:declined_recently"
+  /** A `deny` rule matched. `matched` names it. */
+  | "laf:policy_denied"
+  /** Nothing in the policy permits it. Not the same fact as a rule forbidding it. */
+  | "laf:no_rule_allows"
+  /** The server has not seen the screen, so a rule about the page could not be decided. */
+  | "laf:blind_action";
 
 /**
  * String helpers, registered as CEL globals.
@@ -376,12 +386,11 @@ export function evaluateActionPolicy(
         matched: expression,
         source: "deny",
         forward: false,
-        reason: describeRefusal(context, expression),
         // A Bot refused at a password box has somewhere else to go, and being told so is the
         // difference between it asking the person for the value and it giving up on the task.
-        ...(isSecretField(context)
-          ? { code: "laf:use_request_secret" as const }
-          : {}),
+        code: isSecretField(context)
+          ? ("laf:use_request_secret" as const)
+          : ("laf:policy_denied" as const),
       };
     }
   }
@@ -396,9 +405,9 @@ export function evaluateActionPolicy(
         allowed: false,
         matched: expression,
         source: "ask",
-        // Nothing happens until somebody says so.
+        // Nothing happens until somebody says so. No code: nothing has been refused, and what the
+        // question is about travels as the caller's `AskSubject` rather than as a sentence here.
         forward: false,
-        reason: describeAsk(context),
       };
     }
   }
@@ -410,7 +419,6 @@ export function evaluateActionPolicy(
         matched: expression,
         source: "allow",
         forward: true,
-        reason: "Permitted by policy.",
       };
     }
   }
@@ -420,82 +428,9 @@ export function evaluateActionPolicy(
     matched: null,
     source: "default",
     forward: false,
-    reason:
-      "No rule in this deployment's policy permits that action, so it was refused. " +
-      "An administrator can add one.",
+    // A different fact from `laf:policy_denied`, and worth its own code: nobody forbade this, the
+    // deployment simply has no rule that permits it, and the next move is an administrator adding
+    // one rather than an argument about the rule that fired.
+    code: "laf:no_rule_allows",
   };
-}
-
-/**
- * The verb a person reads, chosen from what the action does rather than which tool ran.
- *
- * A question phrased as "allow computer_write_file?" asks somebody to translate an implementation
- * detail before they can decide, and a question nobody understands gets answered yes.
- */
-const ASK_VERBS: Record<string, string> = {
-  activate: "press",
-  type: "type into",
-  navigate: "open",
-  read: "look at",
-  read_file: "read",
-  write_file: "write to",
-  list_files: "list",
-  read_tool: "call",
-  write_tool: "call",
-};
-
-/**
- * The question itself: what is about to happen, in one sentence.
- *
- * The rule that asked is deliberately not in here. It travels beside the question as its own field,
- * so the surface can show it as a rule and the trail can record it as one, and a person reading the
- * prompt is not made to parse CEL before they can answer a question about a button.
- */
-function describeAsk(context: PolicyContext): string {
-  return `The Bot wants to ${ASK_VERBS[context.intent ?? ""] ?? "act on"} ${subjectOf(context)}.`;
-}
-
-/** A refusal a person can act on: what was refused, and on what. */
-function describeRefusal(context: PolicyContext, expression: string): string {
-  // A file or tool refusal must not be phrased as happening "on <host>": neither the workspace nor
-  // somebody else's server has anything to do with whatever page the browser happens to be showing,
-  // and saying so sends somebody to the wrong place.
-  if (context.mcp) {
-    return (
-      `This deployment's policy does not allow that: ${subjectOf(context)} ` +
-      `is blocked by the rule \`${expression}\`.`
-    );
-  }
-  if (context.file?.path) {
-    return (
-      `This deployment's policy does not allow that: the file ${context.file.path} ` +
-      `is blocked by the rule \`${expression}\`.`
-    );
-  }
-  const what = context.element?.name
-    ? `“${context.element.name}”`
-    : `a ${context.tool.name.replace("computer_", "")} action`;
-  return (
-    `This deployment's policy does not allow that: ${what} on ${context.page.host} ` +
-    `is blocked by the rule \`${expression}\`.`
-  );
-}
-
-/**
- * The thing an action is aimed at, named the way the person who has to decide would name it.
- *
- * Every branch is checked for content rather than presence, because a caller judging something that
- * is not a browser action fills the browser fields in with empty strings on purpose: a rule about
- * element names must evaluate to false against a tool call rather than becoming unevaluable and
- * therefore matching. Reading those blanks as "a file" produced a question with a hole in it, "The
- * Bot wants to call .", which is a sentence nobody can answer and which arrived attached to two
- * buttons.
- */
-function subjectOf(context: PolicyContext): string {
-  if (context.mcp) return `${context.mcp.tool} on ${context.mcp.server}`;
-  if (context.file?.path) return context.file.path;
-  if (context.element?.name) {
-    return `“${context.element.name}” on ${context.page.host}`;
-  }
-  return context.page.host || "this page";
 }

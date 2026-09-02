@@ -27,20 +27,24 @@
  * text, no arguments, no model-written prose.
  */
 
+import type { AskSubject } from "./approvals";
 import { askModel, type ModelCall } from "./model-call";
 
-/** What is being decided, in the fields the judge is given and nothing else. */
+/**
+ * What is being decided, in the fields the judge is given and nothing else.
+ *
+ * The same facts a person would be shown on the card, and deliberately so: the judge is standing in
+ * for somebody reading that card, and giving it more than they get would mean an instruction that
+ * passes actions a person looking at the same question would have stopped. It used to carry a
+ * `question` field holding the English sentence the policy assembled; that sentence no longer
+ * exists, and what it said is in `subject.intent` and `subject.element` where the judge can read it
+ * without prose in the middle.
+ */
 export type ReviewSubject = {
   /** The tool about to run — `computer_click`, `computer_write_file`, an MCP tool's reference. */
   action: string;
-  /** The site the action lands on, where there is one. */
-  host?: string | undefined;
-  /** The file a write is aimed at, where there is one. */
-  file?: string | undefined;
-  /** What the server resolved from its own snapshot, never what a caller claimed. */
-  element?: { role: string; name: string } | undefined;
-  /** The sentence the policy would have put in front of a person. */
-  question: string;
+  /** What the action is. Host, element, file, tool — resolved by the server, never claimed. */
+  subject: AskSubject;
 };
 
 export type ReviewVerdict = {

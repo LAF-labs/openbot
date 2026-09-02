@@ -13,17 +13,18 @@
  * Pure functions only, so every rule here is pinned by tests.
  */
 
+import type { AskGuard } from "../computer/approvals";
+
 export type ToolAnnotations = Record<string, unknown> | null | undefined;
 
 /**
  * Why a call must stop for a person even when the written policy allows it.
  *
- * `money` and `external` are the contract's x-laf/effect classes: actions whose
- * target lives in their arguments, which no scope decided in advance can cover.
- * `destructive` is the server's own declaration. `unannotated` is a tool that
- * declared nothing — treated as the most dangerous thing it could have said.
+ * One list, defined where it travels: a guard goes out on the approval, and the surface writes the
+ * sentence for it, so {@link ../computer/approvals#AskGuard} holds the four names and this is the
+ * contract's own word for the same thing. Two spellings of one list is the shape that drifts.
  */
-export type LafGuard = "money" | "external" | "destructive" | "unannotated";
+export type LafGuard = AskGuard;
 
 export type LafClassification = {
   /** What the policy engine is told; the honest read/write split. */
@@ -32,19 +33,15 @@ export type LafClassification = {
   guard: LafGuard | null;
 };
 
-/** How the ask is phrased, per guard, for the approval card. */
-export function guardQuestion(guard: LafGuard, toolName: string): string {
-  switch (guard) {
-    case "money":
-      return `'${toolName}'은(는) 돈을 움직인다고 선언된 툴입니다. 이 호출을 허용할까요?`;
-    case "external":
-      return `'${toolName}'은(는) 외부로 나가는 행동(발신·게시 등)으로 선언된 툴입니다. 이 호출을 허용할까요?`;
-    case "destructive":
-      return `'${toolName}'은(는) 파괴적일 수 있다고 선언된 툴입니다. 이 호출을 허용할까요?`;
-    case "unannotated":
-      return `'${toolName}'은(는) 위험도를 선언하지 않아 최고 위험으로 취급됩니다. 이 호출을 허용할까요?`;
-  }
-}
+/*
+ * `guardQuestion` WAS HERE, and what it was is worth the note.
+ *
+ * Four Korean sentences, written on the server, put into the approval's `question` field — the same
+ * field the browser path filled with English ones assembled by `describeAsk`. One field, two
+ * languages, depending on which subsystem had stopped the Bot (docs/laf/redesign-2026-09.md §3.1).
+ * The guard now travels as a fact on the subject and `app/src/lib/approvals.ts` writes the sentence,
+ * in the one place a person's language is known.
+ */
 
 /**
  * Classify a custom-server tool from its own declaration.
