@@ -183,6 +183,13 @@
       "when": 1788361888289,
       "tag": "0025_simple_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788364368909,
+      "tag": "0026_one_conversation_store",
+      "breakpoints": true
     }
   ]
 }

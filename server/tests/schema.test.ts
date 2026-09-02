@@ -93,6 +93,39 @@ describe("LAF Agent database schema", () => {
   });
 
   /*
+   * The migration behind it, and the half of it that is a DATA migration.
+   *
+   * Dropping the old table without moving its rows across is every conversation in the deployment
+   * gone, and it would type-check, pass every unit test, and be discovered by somebody opening the
+   * app. The `INSERT … SELECT` and the self-heal for the double-encoded rows are what this asserts.
+   */
+  test("ships the migration that moves the conversations across", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0026_one_conversation_store.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    expect(normalized).toContain(`CREATE TABLE "laf_thread_messages"`);
+    expect(normalized).toContain(
+      `INSERT INTO "laf_thread_messages" ("thread_id", "seq", "message", "at")`,
+    );
+    // The double-encoded rows are re-parsed rather than read as an empty conversation.
+    expect(normalized).toContain(`WHEN 'string' THEN`);
+    expect(normalized).toContain(`DROP TABLE "laf_thread_snapshots" CASCADE`);
+    // And the copy happens BEFORE the drop, which is the whole difference.
+    expect(
+      normalized.indexOf(`INSERT INTO "laf_thread_messages"`),
+    ).toBeLessThan(normalized.indexOf(`DROP TABLE "laf_thread_snapshots"`));
+    expect(normalized).toContain(
+      `ALTER TABLE "intelligence_channel_mappings" RENAME TO "channel_threads"`,
+    );
+    expect(normalized).toContain(
+      `ALTER TABLE "laf_routines" RENAME COLUMN "daily_utc" TO "daily_local"`,
+    );
+  });
+
+  /*
    * The upstream knowledge plane is gone, and this is the assertion that it stays gone.
    *
    * `documents`, `chunks`, `document_acls`, `sync_runs`, `connector_cursors`,
