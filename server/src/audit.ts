@@ -210,6 +210,15 @@ export const auditEventTypes = [
   "coworker.asked",
   /** A routine fired, and how it went. The run record prunes; this row is the history of record. */
   "routine.ran",
+  /**
+   * A routine's window came and went while nothing was running, and was let go rather than caught up.
+   *
+   * The evidence that a scheduled thing did not happen. Without it, a machine down overnight leaves
+   * a routine with a gap in its history and nothing anywhere saying whether it was skipped, failed,
+   * or was never armed — three different problems that look identical from a missing row. Carries
+   * how late the window was, so "the VM was off for nine hours" is readable from the trail.
+   */
+  "routine.skipped",
 
   /*
    * What a Bot may answer with, decided per Bot and recorded like anything else it is trusted with.

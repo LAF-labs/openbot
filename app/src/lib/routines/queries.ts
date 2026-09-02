@@ -59,6 +59,22 @@ export const routineKeys = {
   runs: (routineId: string) => ["routine-runs", routineId] as const,
 };
 
+/**
+ * The refusals the routines API names, translated here because the code is a fact and this surface
+ * owns the words — the same arrangement as MODEL_FAILURES in lib/copilot/stopped-turn.ts.
+ *
+ * The screen renders these straight into the create and delete forms, and what it rendered before
+ * was the server's own English sentence: "This account holds 20 routines already. Delete one to
+ * make room." on a Korean page. `app/tests/routines-copy.test.ts` walks this table, because `t()`
+ * called on a variable is invisible to the i18n coverage test.
+ */
+export const ROUTINE_REFUSALS: Record<string, string> = {
+  "laf:routine_cap_reached":
+    "This account already holds as many routines as it can. Delete one to make room.",
+  "laf:routine_not_found": "That routine is no longer there.",
+  "laf:routine_incomplete": "Pick a Bot and a schedule first.",
+};
+
 export async function routineRequest(path: string, init?: RequestInit) {
   const response = await fetch(path, {
     credentials: "include",
@@ -70,10 +86,14 @@ export async function routineRequest(path: string, init?: RequestInit) {
     unknown
   > | null;
   if (!response.ok) {
-    // The server's sentence when there is one. `statusText` is "Internal Server Error", which
-    // tells a person nothing they can act on.
+    const known =
+      typeof body?.code === "string" ? ROUTINE_REFUSALS[body.code] : undefined;
+    // The code first, the server's sentence only where there is no code for what happened.
+    // `statusText` is "Internal Server Error", which tells a person nothing they can act on.
     throw new Error(
-      String(body?.error ?? t("That did not go through. Try again.")),
+      known
+        ? t(known)
+        : String(body?.error ?? t("That did not go through. Try again.")),
     );
   }
   return body;

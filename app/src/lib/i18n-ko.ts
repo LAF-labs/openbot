@@ -21,6 +21,7 @@ export const ko: Record<string, string> = {
   "A routine is work this Bot repeats on a schedule.":
     "루틴은 이 봇이 일정에 따라 반복하는 작업이에요.",
   "A routine ran": "루틴이 실행됨",
+  "A routine's window was skipped": "루틴 실행 시각을 건너뜀",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",
@@ -595,6 +596,11 @@ export const ko: Record<string, string> = {
   tools: "도구",
   Failed: "실패",
   "This routine has not run yet.": "아직 실행된 적이 없습니다.",
+  // What the routines API refuses with. See ROUTINE_REFUSALS in lib/routines/queries.ts.
+  "This account already holds as many routines as it can. Delete one to make room.":
+    "이 계정이 만들 수 있는 루틴을 모두 채웠습니다. 하나를 지우고 다시 만들어 주세요.",
+  "That routine is no longer there.": "그 루틴은 이제 없습니다.",
+  "Pick a Bot and a schedule first.": "먼저 봇과 실행 시각을 골라 주세요.",
   "No routines yet. Give a Bot something to do every morning.":
     "루틴이 아직 없습니다. 봇에게 매일 아침 할 일을 하나 맡겨보세요.",
   "Pick a face": "얼굴 고르기",
