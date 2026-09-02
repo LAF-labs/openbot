@@ -174,7 +174,9 @@ describe("channel activity delivery", () => {
      * read would find the row as it was before — a plain SELECT under `read committed` does not
      * block on an uncommitted write, it reads the old version — and the assertion below would fail.
      */
-    let readOnDelivery: Promise<string | null | undefined> | null = null;
+    // `as` on the initialiser, not just an annotation: assigned only inside the callback below,
+    // TypeScript narrows the plain form to `null` and calls the assertion at the end unsatisfiable.
+    let readOnDelivery = null as Promise<string | null | undefined> | null;
     const detach = hub.register(owner.id, (payload) => {
       delivered.push(JSON.parse(payload));
       readOnDelivery = database

@@ -159,7 +159,12 @@ async function makePerson(label: string): Promise<Person> {
     scope: "host=example.test",
     scopeKind: "host",
     scopeValue: "example.test",
-    question: "May it read example.test?",
+    subject: {
+      kind: "browser",
+      intent: "read",
+      host: "example.test",
+      reason: "policy_ask",
+    },
     grantedBy: id,
   });
   // A vault row of the shape `retireConnectionsFor` finds: the person's id is the key.

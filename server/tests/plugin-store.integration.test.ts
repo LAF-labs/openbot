@@ -54,7 +54,7 @@ const serverId = `plugtest-${suite}`;
 const toolName = "search_things";
 const ref = `${serverId}/${toolName}`;
 
-let policy: ActionPolicy = { deny: [], allow: ["true"] };
+let policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /** The deployment's one registry, shared with the computer in a real deployment. */
 const approvals = createApprovalRegistry();
@@ -198,6 +198,7 @@ describe("the policy is asked as well as the grant", () => {
     await store.grant("mcp", ref, holderId, "admin@laf.local");
     policy = {
       deny: [`mcp.server == "${serverId}"`],
+      ask: [],
       allow: ["true"],
     };
 
@@ -212,7 +213,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginRefusedError);
@@ -238,6 +239,7 @@ describe("the policy is asked as well as the grant", () => {
     // it proves by failing at the network instead of as a refusal.
     policy = {
       deny: ['intent == "write_tool"'],
+      ask: [],
       allow: ["true"],
     };
 
@@ -252,7 +254,7 @@ describe("the policy is asked as well as the grant", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).not.toBeInstanceOf(PluginRefusedError);
@@ -275,6 +277,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
      */
     policy = {
       deny: ['contains(element.name, "submit")'],
+      ask: [],
       allow: ["true"],
     };
 
@@ -289,7 +292,7 @@ describe("a boundary written about the browser does not refuse tool calls", () =
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     // Not a refusal. It gets as far as the network, which is where this test stops caring.
@@ -325,7 +328,7 @@ describe("a boundary can ask a person about a tool call", () => {
     } catch (error) {
       thrown = error;
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
 
     expect(thrown).toBeInstanceOf(PluginNeedsApprovalError);
@@ -423,7 +426,7 @@ describe("a boundary can ask a person about a tool call", () => {
         ),
       ).toBe(true);
     } finally {
-      policy = { deny: [], allow: ["true"] };
+      policy = { deny: [], ask: [], allow: ["true"] };
     }
   });
 });

@@ -307,7 +307,7 @@ describe("the ends of an unattended run", () => {
     const agent = fakeAgent(turns);
     const offered: number[] = [];
     (agent as { runAgent: unknown }).runAgent = async (
-      parameters?: { tools?: unknown[] },
+      parameters?: { tools?: unknown[]; forwardedProps?: unknown },
       subscriber?: { onRunFinishedEvent?: () => unknown },
     ) => {
       offered.push(parameters?.tools?.length ?? -1);

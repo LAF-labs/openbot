@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { UnofficialStatusCode } from "hono/utils/http-status";
 import {
   AgentNotFoundError,
   createAgentProfileStore,
@@ -64,6 +65,17 @@ function fakeStore(
     async get(receivedActor, id) {
       calls.push(["get", receivedActor, id]);
       return channel({ id });
+    },
+    async list(receivedActor) {
+      calls.push(["list", receivedActor]);
+      return [];
+    },
+    async setLastRead(receivedActor, id, at, options) {
+      calls.push(["setLastRead", receivedActor, id, at, options]);
+      return { previous: null, at };
+    },
+    async recordActivity(receivedActor, id, activity) {
+      calls.push(["recordActivity", receivedActor, id, activity]);
     },
   };
 
@@ -278,7 +290,9 @@ describe("channel routes", () => {
     });
     const app = appFor(store);
     app.onError((error, context) =>
-      context.json({ sentinel: error.message }, 599),
+      // 599 is outside Hono's official union; `UnofficialStatusCode` is the cast Hono documents
+      // for exactly this, and the number is a sentinel no route here produces.
+      context.json({ sentinel: error.message }, 599 as UnofficialStatusCode),
     );
 
     const response = await app.request("http://laf.test/", {
@@ -531,7 +545,13 @@ describe("channel store integration", () => {
     const otherUserMiddleware: MiddlewareHandler<{
       Variables: AppVariables;
     }> = async (context, next) => {
-      context.set("actor", otherUser);
+      // The routes' actor is an `AuthenticatedActor`, which carries the address; `AgentActor` does
+      // not. Setting the narrower one left `actor.email` undefined for anything downstream reading
+      // it, and nothing said so.
+      context.set("actor", {
+        ...otherUser,
+        email: `${otherUser.id}@example.test`,
+      });
       await next();
     };
 

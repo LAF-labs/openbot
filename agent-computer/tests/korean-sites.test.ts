@@ -53,6 +53,10 @@ async function freePort(): Promise<number> {
   const held = Bun.serve({ port: 0, fetch: () => new Response("") });
   const port = held.port;
   await held.stop(true);
+  // `Bun.serve` reports no port for a unix-socket server, so the type is optional. Nothing here
+  // asks for one, and a run that somehow got one would otherwise fetch `http://localhost:undefined`
+  // and read as the fixture site being down.
+  if (port === undefined) throw new Error("Bun.serve returned no port.");
   return port;
 }
 

@@ -4,10 +4,16 @@ import {
   currentUserQueryOptions,
   UNREACHABLE,
 } from "../src/lib/auth/queries";
+import { stubFetch } from "./support/fetch";
 
 test("uses a stable key for the current authenticated user", () => {
   expect(authKeys.currentUser()).toEqual(["auth", "current-user"]);
-  expect(currentUserQueryOptions().queryKey).toEqual(["auth", "current-user"]);
+  // Spread first: TanStack brands a query key with the types it carries, and the branded tuple is
+  // not comparable to a plain array of the same strings.
+  expect([...currentUserQueryOptions().queryKey]).toEqual([
+    "auth",
+    "current-user",
+  ]);
 });
 
 /**
@@ -31,23 +37,24 @@ test("answers, rather than rejecting, however the request fails", async () => {
 
   try {
     for (const status of [401, 503]) {
-      globalThis.fetch = (async () =>
-        new Response(JSON.stringify({ error: "no" }), {
-          status,
-        })) as typeof fetch;
+      globalThis.fetch = stubFetch(
+        async () =>
+          new Response(JSON.stringify({ error: "no" }), {
+            status,
+          }),
+      );
       expect(await run()).toBeNull();
     }
 
     for (const status of [500, 502, 504]) {
-      globalThis.fetch = (async () =>
-        new Response("{}", { status })) as typeof fetch;
+      globalThis.fetch = stubFetch(async () => new Response("{}", { status }));
       expect(await run()).toBe(UNREACHABLE);
     }
 
     // No response at all: offline, DNS, or a proxy that closed the connection.
-    globalThis.fetch = (async () => {
+    globalThis.fetch = stubFetch(async () => {
       throw new TypeError("Failed to fetch");
-    }) as typeof fetch;
+    });
     expect(await run()).toBe(UNREACHABLE);
   } finally {
     globalThis.fetch = original;

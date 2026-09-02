@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { COMPUTER_TOOLS, computerTool } from "../shared/tools/computer";
+import {
+  COMPUTER_TOOLS,
+  type ComputerTool,
+  computerTool,
+} from "../shared/tools/computer";
 import { asStandardSchema } from "../shared/tools/standard-schema";
 import * as evalTools from "../evals/tools";
 
@@ -29,12 +33,19 @@ function descriptionLiteralsIn(source: string): string[] {
   return [...source.matchAll(/description:\s*("|`)/g)].map((match) => match[0]);
 }
 
+/** The catalogue entry for a name, refusing to compare against a lookup that found nothing. */
+function tool(name: string): ComputerTool {
+  const found = computerTool(name);
+  if (!found) throw new Error(`The catalogue has no tool named ${name}.`);
+  return found;
+}
+
 describe("the computer tool catalogue", () => {
   test("the eval pack holds the catalogue's own objects", () => {
     // `toBe`, not `toEqual`: a copy with identical fields is exactly the failure being prevented.
-    expect(evalTools.NAVIGATE).toBe(computerTool("computer_navigate"));
-    expect(evalTools.SNAPSHOT).toBe(computerTool("computer_snapshot"));
-    expect(evalTools.READ_FILE).toBe(computerTool("computer_read_file"));
+    expect(evalTools.NAVIGATE).toBe(tool("computer_navigate"));
+    expect(evalTools.SNAPSHOT).toBe(tool("computer_snapshot"));
+    expect(evalTools.READ_FILE).toBe(tool("computer_read_file"));
     expect(evalTools.ALL_COMPUTER_TOOLS).toBe(COMPUTER_TOOLS);
   });
 

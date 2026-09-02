@@ -56,8 +56,11 @@ describe("the first run", () => {
     await client.ensureQueryData(options);
     await client.invalidateQueries({ queryKey: authKeys.currentUser() });
 
-    const seen = await client.ensureQueryData(options);
-    expect(seen.onboarded).toBe(false);
+    // `toMatchObject`, because the query's declared answer is a union that includes null and
+    // "unreachable"; `.onboarded` is not a property of all of it.
+    expect(await client.ensureQueryData(options)).toMatchObject({
+      onboarded: false,
+    });
   });
 
   test("refetching every copy is what the guard then reads", async () => {
@@ -71,8 +74,9 @@ describe("the first run", () => {
       type: "all",
     });
 
-    const seen = await client.ensureQueryData(options);
-    expect(seen.onboarded).toBe(true);
+    expect(await client.ensureQueryData(options)).toMatchObject({
+      onboarded: true,
+    });
   });
 
   test("the welcome screen is the one doing it", async () => {

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  /*
+   * The tests that belong to no workspace.
+   *
+   * `tests/` sits above every package — it is the suite that asserts about the repository itself:
+   * the compose file, the desktop shell's manifest, the tenant package, the tool catalogue. Every
+   * workspace has a `typecheck` script and `bun run --filter '*' typecheck` runs all of them, so
+   * this directory was the one part of the tree that `tsc` had never been pointed at. It is now,
+   * from the root script.
+   */
+  "include": ["tests"]
+}

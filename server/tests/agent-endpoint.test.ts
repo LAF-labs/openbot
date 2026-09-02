@@ -3,6 +3,8 @@ import { agentAuthHeaders, storeAgentAuth } from "../src/agents/auth-header";
 import { testAgentConnection } from "../src/agents/connection-test";
 import { checkAgentEndpoint } from "../src/agents/endpoint";
 import { parseAgentInput } from "../src/agents/routes";
+import { credentialStoreStub } from "./support/credentials";
+import { stubFetch } from "./support/fetch";
 
 /** A 32-byte key, as the vault expects. */
 const TEST_KEY = Buffer.alloc(32, 7).toString("base64");
@@ -122,11 +124,13 @@ describe("the connection test", () => {
 
   test("an AG-UI stream is reported as working, with what came back", async () => {
     const result = await testAgentConnection(endpoint, {
-      fetchImpl: async () =>
-        new Response(
-          'data: {"type":"RUN_STARTED"}\n\ndata: {"type":"TEXT_MESSAGE_CONTENT","delta":"hi"}\n\ndata: {"type":"RUN_FINISHED"}\n\n',
-          { status: 200, headers: { "content-type": "text/event-stream" } },
-        ),
+      fetchImpl: stubFetch(
+        async () =>
+          new Response(
+            'data: {"type":"RUN_STARTED"}\n\ndata: {"type":"TEXT_MESSAGE_CONTENT","delta":"hi"}\n\ndata: {"type":"RUN_FINISHED"}\n\n',
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.events).toContain("RUN_STARTED");
@@ -135,11 +139,13 @@ describe("the connection test", () => {
   test("a reachable address that is not an agent says so, and says what it sent", async () => {
     // The most common mistake: pointing at the app's home page instead of its AG-UI path.
     const result = await testAgentConnection(endpoint, {
-      fetchImpl: async () =>
-        new Response("<!doctype html><html><body>hello</body></html>", {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        }),
+      fetchImpl: stubFetch(
+        async () =>
+          new Response("<!doctype html><html><body>hello</body></html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain("text/html");
@@ -147,7 +153,7 @@ describe("the connection test", () => {
 
   test("an authentication failure suggests the fix rather than the status code", async () => {
     const result = await testAgentConnection(endpoint, {
-      fetchImpl: async () => new Response("no", { status: 401 }),
+      fetchImpl: stubFetch(async () => new Response("no", { status: 401 })),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -159,9 +165,9 @@ describe("the connection test", () => {
   test("an unreachable address explains the direction of the connection", async () => {
     // The server dials the agent, so the failure message names that direction.
     const result = await testAgentConnection(endpoint, {
-      fetchImpl: async () => {
+      fetchImpl: stubFetch(async () => {
         throw new Error("connection refused");
-      },
+      }),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain("reachable from");
@@ -172,26 +178,28 @@ describe("the connection test", () => {
     let called = false;
     const result = await testAgentConnection("http://169.254.169.254/", {
       allowPrivateHosts: true,
-      fetchImpl: async () => {
+      fetchImpl: stubFetch(async () => {
         called = true;
         return new Response("", { status: 200 });
-      },
+      }),
     });
     expect(result.ok).toBe(false);
     expect(called).toBe(false);
   });
 
   test("headers are sent, so an agent behind a key can be tested", async () => {
-    let seen: string | null = null;
+    // `as string | null` rather than a bare `null`: assigned only inside the stub, TypeScript
+    // narrows the plain form to `null` and then refuses the assertion below as unsatisfiable.
+    let seen = null as string | null;
     await testAgentConnection(endpoint, {
       headers: { authorization: "Bearer abc123" },
-      fetchImpl: async (_url, init) => {
+      fetchImpl: stubFetch(async (_url, init) => {
         seen = (init?.headers as Record<string, string>)?.authorization ?? null;
         return new Response('data: {"type":"RUN_STARTED"}\n\n', {
           status: 200,
           headers: { "content-type": "text/event-stream" },
         });
-      },
+      }),
     });
     expect(seen).toBe("Bearer abc123");
   });
@@ -213,15 +221,15 @@ describe("the key a customer's agent sits behind", () => {
   test("it goes to the vault, and only a reference comes back", async () => {
     // The value must never be stored on the agent row: everything that can read an agent could then
     // read the key, and revoking it would mean editing the agent.
-    let stored: { kind: string; keyId: string } | null = null;
+    let stored = null as { kind: string; keyId: string } | null;
     const auth = await storeAgentAuth({
-      store: {
+      store: credentialStoreStub({
         create: async (value) => {
           stored = { kind: value.kind, keyId: value.keyId };
           return { ...vaultRow, encryptedValue: value.encryptedValue };
         },
         revoke: async () => new Date(),
-      } as never,
+      }),
       encryptionKey: TEST_KEY,
       agentId: "agent-1",
       header: "Authorization",
@@ -237,13 +245,13 @@ describe("the key a customer's agent sits behind", () => {
   test("the value is encrypted at rest, not stored in the clear", async () => {
     let written = "";
     await storeAgentAuth({
-      store: {
+      store: credentialStoreStub({
         create: async (value) => {
           written = value.encryptedValue;
-          return vaultRow as never;
+          return vaultRow;
         },
         revoke: async () => new Date(),
-      } as never,
+      }),
       encryptionKey: TEST_KEY,
       agentId: "agent-1",
       header: "Authorization",

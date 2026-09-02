@@ -4,6 +4,7 @@ import {
   CoworkerCallError,
   createCoworkerCall,
 } from "../src/agents/coworker-call";
+import type { AgentActor } from "../src/agents/profile-types";
 import type { AuditEventInput } from "../src/audit";
 
 /**
@@ -11,7 +12,10 @@ import type { AuditEventInput } from "../src/audit";
  * reasons a route can map, and a row lands in the trail whichever way it went.
  */
 
-const ACTOR = { id: "dev-local-user", role: "administrator" } as never;
+// `as never` here erased the type AND hid that "administrator" is not a role this deployment has:
+// `UserRole` is "admin" | "user". Typed properly, so a fixture cannot claim a role that does not
+// exist and the assertions below can read `ACTOR.id` at all.
+const ACTOR: AgentActor = { id: "dev-local-user", role: "admin" };
 
 function fakeAgent(reply: string | Error, delayMs = 0) {
   let received: string | undefined;

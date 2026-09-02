@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import type { Message } from "@ag-ui/core";
 import { normalizeStoredMessages } from "../src/lib/channels/thread-history";
+
+/**
+ * The tool calls on a message, if it is the kind that has any.
+ *
+ * `Message` is a union and only the assistant arm carries `toolCalls`, so reading the property off
+ * the union is not something TypeScript will do — even here, where every fixture is an assistant.
+ */
+const toolCallsOf = (message: Message | undefined) =>
+  message && "toolCalls" in message ? message.toolCalls : undefined;
 
 describe("stored history, in the agent's shape", () => {
   test("a runtime-shaped tool call becomes an AG-UI one", () => {
@@ -16,7 +26,7 @@ describe("stored history, in the agent's shape", () => {
         ],
       },
     ]);
-    expect(message?.toolCalls).toEqual([
+    expect(toolCallsOf(message)).toEqual([
       {
         id: "c1",
         type: "function",
@@ -47,12 +57,12 @@ describe("stored history, in the agent's shape", () => {
         toolCalls: [{ id: "c2", name: "y", args: { n: 1 } }],
       },
     ]);
-    expect(kept?.toolCalls?.[0]).toEqual({
+    expect(toolCallsOf(kept)?.[0]).toEqual({
       id: "c1",
       type: "function",
       function: { name: "x", arguments: "{}" },
     });
-    expect(objectArgs?.toolCalls?.[0]?.function.arguments).toBe('{"n":1}');
+    expect(toolCallsOf(objectArgs)?.[0]?.function.arguments).toBe('{"n":1}');
   });
 
   test("messages without an id, and non-arrays, are dropped rather than sent", () => {

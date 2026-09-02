@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { UnofficialStatusCode } from "hono/utils/http-status";
 import {
   AgentNotFoundError,
   AgentNotManageableError,
@@ -47,6 +48,8 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     pinnedAt: null,
     notify: true,
     deletedAt: null,
+    endpoint: null,
+    hasAuth: false,
     ...overrides,
   };
 }
@@ -84,6 +87,9 @@ function fakeStore(
     },
     async setHidden(receivedActor, id, hidden) {
       calls.push(["setHidden", receivedActor, id, hidden]);
+    },
+    async setPreferences(receivedActor, id, patch) {
+      calls.push(["setPreferences", receivedActor, id, patch]);
     },
     async softDelete(receivedActor, id) {
       calls.push(["softDelete", receivedActor, id]);
@@ -355,6 +361,8 @@ describe("agent lifecycle routes", () => {
           pinnedAt: null,
           notify: true,
           systemOwned: false,
+          endpoint: null,
+          hasAuth: false,
           canManage: true,
           mine: true,
         },
@@ -371,6 +379,8 @@ describe("agent lifecycle routes", () => {
           pinnedAt: null,
           notify: true,
           systemOwned: false,
+          endpoint: null,
+          hasAuth: false,
           canManage: false,
           mine: false,
         },
@@ -387,6 +397,8 @@ describe("agent lifecycle routes", () => {
           pinnedAt: null,
           notify: true,
           systemOwned: true,
+          endpoint: null,
+          hasAuth: false,
           canManage: false,
           mine: false,
         },
@@ -569,7 +581,9 @@ describe("agent lifecycle routes", () => {
     });
     const app = appFor(store);
     app.onError((error, context) =>
-      context.json({ sentinel: error.message }, 599),
+      // 599 is outside Hono's official union; `UnofficialStatusCode` is the cast Hono documents
+      // for exactly this, and the number is a sentinel no route here produces.
+      context.json({ sentinel: error.message }, 599 as UnofficialStatusCode),
     );
 
     const response = await app.request("http://laf.test/agent-1/duplicate", {

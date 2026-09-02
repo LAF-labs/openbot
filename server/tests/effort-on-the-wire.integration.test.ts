@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type OpenAI from "openai";
 import { buildAgents } from "../src/copilot";
 
 /**
@@ -24,13 +23,24 @@ type ProviderRequest = {
   reasoning_effort?: string;
 };
 
+/**
+ * One chunk of a chat completion, as much of it as this file uses.
+ *
+ * Written out rather than imported from `openai`. That package is `agent-bot`'s dependency, not
+ * this workspace's, so the import resolved to nothing here — invisible while the type was erased
+ * before Bun ever ran the file, and a hard error the moment `server/tests` was typechecked.
+ */
+type CompletionChunk = {
+  choices: { delta: { content?: string }; finish_reason: string | null }[];
+};
+
 /** An empty stream. The request is the assertion; nothing is expected to come back. */
 function emptyCompletion() {
   return {
     async *[Symbol.asyncIterator]() {
       yield {
         choices: [{ delta: { content: "네." }, finish_reason: "stop" }],
-      } as unknown as OpenAI.Chat.Completions.ChatCompletionChunk;
+      } satisfies CompletionChunk;
     },
   };
 }

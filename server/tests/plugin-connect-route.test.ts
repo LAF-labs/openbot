@@ -72,7 +72,7 @@ const CALLBACK = `${PUBLIC_URL}/api/plugins/oauth/callback`;
 /** What the injected registration hands back, so a test can say which client the URL is asking as. */
 const REGISTERED: OAuthClient = { clientId: "dyn-connect", clientSecret: "" };
 
-const policy: ActionPolicy = { deny: [], allow: ["true"] };
+const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
 /** Every self-registration this deployment attempted, so "once, not twice" is assertable. */
 const registrations: { registrationUrl: string; redirectUri: string }[] = [];
@@ -140,7 +140,11 @@ const asPerson = (options?: { connected?: boolean; store?: unknown }) =>
     options,
   );
 
-const connect = (hono: Hono, id = serverId, query = ""): Promise<Response> =>
+const connect = async (
+  hono: Hono,
+  id = serverId,
+  query = "",
+): Promise<Response> =>
   hono.request(`http://t/api/plugins/servers/${id}/connect${query}`, {
     method: "POST",
   });
@@ -404,8 +408,8 @@ describe("the first person to connect", () => {
 
     // And the proof matches: the challenge the vendor is shown is the S256 of the verifier that only
     // this deployment can read out of the state.
-    expect(challengeFor(state?.verifier ?? "")).toBe(
-      url.searchParams.get("code_challenge"),
+    expect(url.searchParams.get("code_challenge")).toBe(
+      challengeFor(state?.verifier ?? ""),
     );
     // Which is the point of sealing rather than signing: the verifier travels on the same URL as the
     // code will, and every log that URL passes through would otherwise hold enough to redeem it.

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { getTableName } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import {
   accounts,
   agentPreferences,
@@ -134,14 +134,17 @@ describe("LAF Agent database schema", () => {
    * and a routine outlives the person who typed it.
    */
   test("names a parent for every laf_* row that has one", async () => {
+    // Imported as itself. It used to be cast to `Record<string, never>` so that `references` could
+    // take `never` — which made every table below `never` too, so nothing in this test was checked
+    // against the schema it is about.
     const {
       computerStandingApprovals,
       lafRoutineRuns,
       lafRoutines,
       lafThreadRuns,
-    } = (await import("../src/db/schema")) as Record<string, never>;
+    } = await import("../src/db/schema");
 
-    const references = (table: never) =>
+    const references = (table: PgTable) =>
       getTableConfig(table).foreignKeys.map((foreignKey) => {
         const reference = foreignKey.reference();
         return [
