@@ -98,16 +98,11 @@ export function SkillFields({
                   <FieldError errors={field.state.meta.errors} />
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    {slugLocked ? (
-                      "A command cannot be changed. To rename a skill, write a new one and delete this."
-                    ) : (
-                      <>
-                        What you type after a slash.{" "}
-                        <code>
-                          /{"{"}command{"}"}
-                        </code>
-                      </>
-                    )}
+                    {slugLocked
+                      ? t(
+                          "A command cannot be changed. To rename a skill, write a new one and delete this.",
+                        )
+                      : t("What you type after a slash, like /standup.")}
                   </p>
                 )}
               </Field>
@@ -161,8 +156,9 @@ export function SkillFields({
                   <FieldError errors={field.state.meta.errors} />
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    Shown beside the command in this list and in the{" "}
-                    <code>/</code> menu. Optional.
+                    {t(
+                      "Shown beside the command in this list and in the / menu. Optional.",
+                    )}
                   </p>
                 )}
               </Field>
@@ -228,7 +224,7 @@ export function SkillFields({
         >
           {([canSubmit, isSubmitting]) => (
             <Button disabled={!canSubmit || isSubmitting} type="submit">
-              {isSubmitting ? "Saving…" : submitLabel}
+              {isSubmitting ? t("Saving…") : submitLabel}
             </Button>
           )}
         </form.Subscribe>

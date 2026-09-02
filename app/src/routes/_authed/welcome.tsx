@@ -118,9 +118,17 @@ function Welcome() {
             <h1 className="font-semibold text-2xl">
               {t("Your team of always-on Bots")}
             </h1>
+            {/*
+             * IT USED TO SAY THEY KEEP WORKING WHEN THIS WINDOW IS CLOSED, AND THAT IS HALF TRUE.
+             *
+             * A routine and a room run on the server and do carry on. A one-to-one turn does not:
+             * the browser is what drives it, so closing the window ends it (docs/laf/user-guide.md
+             * §7 says exactly this, in a table). Promising it on the first screen somebody ever
+             * sees is a promise the product breaks the first time they close a laptop mid-answer.
+             */}
             <p className="text-muted-foreground">
               {t(
-                "Each one is a colleague you can hand real work to. They keep working when this window is closed.",
+                "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.",
               )}
             </p>
             <Button className="w-full" onClick={() => setStep("computer")}>

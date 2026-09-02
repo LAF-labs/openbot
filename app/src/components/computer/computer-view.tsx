@@ -369,7 +369,7 @@ export function ComputerView({
                 disabled={!secret || sendingSecret}
                 className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
               >
-                {sendingSecret ? "Sending…" : "Send to the page"}
+                {sendingSecret ? t("Sending…") : t("Send to the page")}
               </button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">

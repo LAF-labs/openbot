@@ -15,6 +15,14 @@ import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -69,6 +77,8 @@ function SkillsPage() {
   const { data, isPending } = useQuery(pluginsPageQueryOptions());
   const { data: me } = useQuery(currentUserQueryOptions());
   const [error, setError] = useState<string | null>(null);
+  /** The slug being confirmed, or null. One dialog for the page, not one per row. */
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   const mutate = useMutation({
     mutationFn: async (run: () => Promise<Response>) => {
@@ -77,7 +87,7 @@ function SkillsPage() {
         const body = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
-        throw new Error(body?.error ?? "That did not work.");
+        throw new Error(body?.error ?? t("That did not work."));
       }
     },
     onError: (caught: Error) => setError(caught.message),
@@ -123,6 +133,59 @@ function SkillsPage() {
             {error}
           </p>
         ) : null}
+
+        {/*
+         * ONE DIALOG FOR THE PAGE. A skill is gone the moment it is deleted and any Bot carrying it
+         * loses the command; asking is the same courtesy a routine and a Bot already get.
+         */}
+        <Dialog
+          onOpenChange={(open) => {
+            if (!open) setConfirmingDelete(null);
+          }}
+          open={confirmingDelete !== null}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {t("Delete {command}?", {
+                  command: `/${confirmingDelete ?? ""}`,
+                })}
+              </DialogTitle>
+              <DialogDescription>
+                {t(
+                  "The command stops working and any Bot carrying it loses it. This cannot be undone.",
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                onClick={() => setConfirmingDelete(null)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={mutate.isPending}
+                onClick={() => {
+                  const slug = confirmingDelete;
+                  if (!slug) return;
+                  setConfirmingDelete(null);
+                  mutate.mutate(() =>
+                    fetch(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
+                      method: "DELETE",
+                      credentials: "include",
+                    }),
+                  );
+                }}
+                size="sm"
+                variant="destructive"
+              >
+                {mutate.isPending ? t("Deleting…") : t("Delete")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <PageSection
           action={
@@ -211,23 +274,14 @@ function SkillsPage() {
                               {t("Edit")}
                             </DropdownMenuItem>
                             {/*
-                             * Deleting is immediate and there is no undo. It is behind a menu rather
-                             * than sitting on the row for that reason, and the slug is named in the
-                             * label so the destructive item says WHICH skill it destroys — a menu
-                             * opened over the wrong row is the ordinary way this goes wrong.
+                             * Deleting is irreversible, so it asks — the same way deleting a routine
+                             * and deleting a Bot ask. It used to go on the click: the menu item was
+                             * named for its slug and that was the whole safeguard, which is no
+                             * safeguard at all against the ordinary mistake of opening the menu over
+                             * the wrong row. The slug stays in the label, and now in the question.
                              */}
                             <DropdownMenuItem
-                              onClick={() =>
-                                mutate.mutate(() =>
-                                  fetch(
-                                    `/api/plugins/skills/${encodeURIComponent(skill.slug)}`,
-                                    {
-                                      method: "DELETE",
-                                      credentials: "include",
-                                    },
-                                  ),
-                                )
-                              }
+                              onClick={() => setConfirmingDelete(skill.slug)}
                               variant="destructive"
                             >
                               {t("Delete {command}", {

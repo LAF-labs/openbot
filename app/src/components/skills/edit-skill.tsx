@@ -38,7 +38,7 @@ export function EditSkill({ slug }: { slug: string }) {
         const body = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
-        throw new Error(body?.error ?? "The skill could not be saved.");
+        throw new Error(body?.error ?? t("The skill could not be saved."));
       }
       return response.json();
     },
@@ -51,14 +51,14 @@ export function EditSkill({ slug }: { slug: string }) {
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
         <p className="text-muted-foreground text-sm">
           {isPending
-            ? "Loading…"
+            ? t("Loading…")
             : /*
                * Said plainly rather than shown as an empty form. A skill can be missing because it
                * was deleted in another tab, or because the link names one that is somebody else's —
                * and an empty form here would invite them to write it back into existence under a
                * slug they may not own.
                */
-              "That skill no longer exists, or it is not yours to edit."}
+              t("That skill no longer exists, or it is not yours to edit.")}
         </p>
       </div>
     );
@@ -69,8 +69,10 @@ export function EditSkill({ slug }: { slug: string }) {
       <header>
         <h1 className="text-2xl font-semibold">{t("Edit skill")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Changes apply the next time <code>/{skill.slug}</code> is used. Agents
-          already carrying it keep it.
+          {t(
+            "Changes apply the next time {command} is used. Bots already carrying it keep it.",
+            { command: `/${skill.slug}` },
+          )}
         </p>
       </header>
 

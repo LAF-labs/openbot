@@ -110,8 +110,8 @@ export const ko: Record<string, string> = {
   title: "직함",
   "what it is for": "무엇을 하는 봇인지",
   "Your team of always-on Bots": "언제나 켜져 있는 당신의 봇 팀",
-  "Each one is a colleague you can hand real work to. They keep working when this window is closed.":
-    "각자 실제로 일을 맡길 수 있는 동료입니다. 이 창을 닫아도 계속 일합니다.",
+  "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.":
+    "각자 실제로 일을 맡길 수 있는 동료입니다. 루틴과 여러 봇이 있는 대화방은 창을 닫아도 계속 돌고, 지금 같은 일대일 대화는 창이 열려 있는 동안 진행됩니다.",
   "They share one computer": "봇들은 컴퓨터 한 대를 함께 씁니다",
   "Your Bots work on a real browser of their own — they open pages, read them, and fill things in.":
     "봇은 진짜 브라우저에서 일합니다 — 페이지를 열고, 읽고, 입력합니다.",
@@ -441,6 +441,32 @@ export const ko: Record<string, string> = {
     "전달되지 않았습니다. 다시 시도하세요.",
   "All {seats} Bot seats on this account are taken. Delete one to make room.":
     "이 계정의 봇 자리 {seats}개가 모두 찼습니다. 하나를 지우면 자리가 납니다.",
+  Advanced: "고급",
+  "That did not work.": "잘 되지 않았습니다.",
+  "The connection could not be tested.": "연결을 시험해 보지 못했습니다.",
+  "Could not start the conversation.": "대화를 시작하지 못했습니다.",
+  "No Bots in this conversation": "이 대화에 봇이 없습니다",
+  "No matching commands": "일치하는 명령이 없습니다",
+  "Send message": "메시지 보내기",
+  "Queue message": "메시지 대기열에 넣기",
+  "Send to the page": "페이지로 보내기",
+  "Sending…": "보내는 중…",
+  "A command cannot be changed. To rename a skill, write a new one and delete this.":
+    "명령은 바꿀 수 없습니다. 이름을 바꾸려면 새로 하나 만들고 이것을 지우세요.",
+  "What you type after a slash, like /standup.":
+    "빗금 뒤에 입력하는 말입니다. 예: /standup",
+  "Shown beside the command in this list and in the / menu. Optional.":
+    "이 목록과 / 메뉴에서 명령 옆에 표시됩니다. 선택 사항입니다.",
+  "The skill could not be saved.": "스킬을 저장하지 못했습니다.",
+  "That skill no longer exists, or it is not yours to edit.":
+    "그 스킬은 더 이상 없거나, 내가 고칠 수 있는 것이 아닙니다.",
+  "Changes apply the next time {command} is used. Bots already carrying it keep it.":
+    "고친 내용은 다음에 {command} 를 쓸 때부터 적용됩니다. 이미 가지고 있는 봇은 그대로 가지고 있습니다.",
+  "Delete {command}?": "{command} 를 지울까요?",
+  "The command stops working and any Bot carrying it loses it. This cannot be undone.":
+    "그 명령은 더 이상 동작하지 않고, 가지고 있던 봇에서도 사라집니다. 되돌릴 수 없습니다.",
+  "Only for pointing this Bot at something you host yourself. Leave it alone and it runs here.":
+    "직접 운영하는 곳에 이 봇을 연결할 때만 씁니다. 건드리지 않으면 이 서버에서 그대로 돕니다.",
   "That change could not be read. Try again.":
     "그 변경 내용을 읽지 못했습니다. 다시 시도하세요.",
   "Nothing was changed.": "바뀐 것이 없습니다.",
