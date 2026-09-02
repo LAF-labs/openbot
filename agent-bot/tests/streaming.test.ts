@@ -156,8 +156,15 @@ describe("how hard to think", () => {
         forwardedProps,
         state: {},
       } as never,
+      /*
+       * The FIRST request, not the last.
+       *
+       * `fakeCompletion([])` is an empty completion, and an empty completion is now retried once
+       * at a lower effort — so recording every call would report `medium` for a Bot set to
+       * `thorough` and prove the opposite of what this asks.
+       */
       (async (request: Record<string, unknown>) => {
-        sent = request;
+        if (Object.keys(sent).length === 0) sent = request;
         return fakeCompletion([]) as never;
       }) as never,
     );

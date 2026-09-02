@@ -2,14 +2,21 @@ import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { serve } from "bun";
 import OpenAI from "openai";
-import { SYSTEM_PROMPT } from "../../shared/bot-prompt";
 import { textOf } from "../../shared/message-content";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 
 /**
  * The built-in Bot is an AG-UI HTTP service registered the same way as any customer-provided Bot.
  *
  * It publishes no tools of its own. Every callable tool arrives in `input.tools`, forwarded by the
  * runtime from the surface registration.
+ *
+ * IT PUBLISHES NO PROMPT OF ITS OWN EITHER, and that is newer. It used to prepend upstream's
+ * English system prompt to every request, so a Bot read two system messages written by two
+ * different places — and the second one contradicted the first (one said "answer in plain
+ * language", the room's said "plain text is invisible here"). The whole prompt is now composed by
+ * the server, in `shared/prompt`, and arrives as an ordinary system message. This service forwards
+ * what it is given.
  *
  * The loop runs on the client. When this emits a tool call it ends the run; the surface executes the
  * tool, appends the result, and starts a new run with the fuller conversation. That keeps the tool
@@ -41,6 +48,36 @@ const BASE_URL = process.env.OPENAI_BASE_URL?.trim() || undefined;
 /** Often enough that no sane stall timeout fires between two; rare enough to be nothing on the wire. */
 const HEARTBEAT_MS = 15_000;
 
+/**
+ * The longest one model request may take before this service gives up on it.
+ *
+ * There was no bound at all. A provider that accepts a request and then never finishes it held the
+ * turn open until something further up the chain got bored, and the person watched a spinner with
+ * nothing behind it. Generous — a reasoning model on a long page genuinely takes a minute — and
+ * finite, which is the whole point.
+ */
+const REQUEST_TIMEOUT_MS = 120_000;
+
+/**
+ * How many of the most recent tool results are forwarded whole.
+ *
+ * A page's readable text comes back up to 6,000 characters (`agent-computer`), and in Korean that
+ * is roughly as many tokens. Ten steps of browsing therefore put forty to sixty thousand tokens of
+ * page text in front of the model, most of it pages it has already finished with, and every one of
+ * those turns is paid for again. The recent ones are what the model is still working from; the
+ * older ones only have to be recognisable.
+ */
+const TOOL_RESULTS_IN_FULL = 4;
+
+/** How much of an older tool result survives. Enough to know what page it was. */
+const TRIMMED_TOOL_RESULT_CHARS = 500;
+
+/** Effort, one step down. Lowered once when a completion comes back empty — see `runAgent`. */
+const LOWER_EFFORT: Record<string, "low" | "medium"> = {
+  high: "medium",
+  medium: "low",
+};
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseURL: BASE_URL,
@@ -55,18 +92,40 @@ const openai = new OpenAI({
  */
 export type CompletionProvider = (
   request: Parameters<typeof openai.chat.completions.create>[0],
+  /** Aborted when the request outlives `REQUEST_TIMEOUT_MS`. Optional, so a test fake may ignore it. */
+  options?: { signal?: AbortSignal },
 ) => Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
 
-const liveProvider: CompletionProvider = (request) =>
-  openai.chat.completions.create({ ...request, stream: true });
+const liveProvider: CompletionProvider = (request, options) =>
+  openai.chat.completions.create({ ...request, stream: true }, options);
+
+/**
+ * Which tool results are old enough to be trimmed.
+ *
+ * By position, not by tool name: the name of the tool a result answers is only knowable by walking
+ * back to the assistant message that called it, and the thing that actually costs tokens is length.
+ * A short result — an approval question, a saved file — is under the cut either way, so the rule
+ * that reads on length is the same rule as the one that reads on "is this page text", without
+ * needing to be right about which tool produced it.
+ */
+function trimOldToolResults(
+  messages: readonly RunAgentInput["messages"][number][],
+): Set<number> {
+  const toolResults: number[] = [];
+  messages.forEach((message, index) => {
+    if (message.role === "tool") toolResults.push(index);
+  });
+  return new Set(toolResults.slice(0, -TOOL_RESULTS_IN_FULL));
+}
 
 /** Translate the conversation AG-UI carries into the shape the model provider expects. */
-function toProviderMessages(input: RunAgentInput) {
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-  ];
+export function toProviderMessages(input: RunAgentInput) {
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+  const trimmable = trimOldToolResults(input.messages);
+  let at = -1;
 
   for (const message of input.messages) {
+    at += 1;
     if (message.role === "user") {
       // Not `String(content)`: a user message's content can be an array of parts, and stringifying
       // one hands the model "[object Object]" with nothing anywhere saying so. See message-content.
@@ -78,11 +137,19 @@ function toProviderMessages(input: RunAgentInput) {
       continue;
     }
     if (message.role === "tool") {
-      // Tool results are appended so the model can continue from the completed call.
+      /*
+       * Tool results are appended so the model can continue from the completed call — the older
+       * ones cut, and SAID TO BE CUT. A silent truncation is read by the model as "that page did
+       * not say anything about it", which is a confident wrong answer rather than a missing one.
+       */
+      const content = textOf(message.content);
       messages.push({
         role: "tool",
         tool_call_id: message.toolCallId,
-        content: textOf(message.content),
+        content:
+          trimmable.has(at) && content.length > TRIMMED_TOOL_RESULT_CHARS
+            ? `${content.slice(0, TRIMMED_TOOL_RESULT_CHARS)}\n${toolResultText("laf:tool_result_trimmed")}`
+            : content,
       });
       continue;
     }
@@ -122,11 +189,9 @@ function toProviderTools(input: RunAgentInput) {
 /**
  * How hard to think, as the caller asked and this API spells it.
  *
- * The words on the wire are the product's — `quick`, `balanced`, `thorough` — because the two
- * services that answer a Bot speak different APIs and would otherwise each need the other's
- * spelling: the built-in path sends `reasoning: { effort }` to the Responses API and this one sends
- * `reasoning_effort` to chat completions. Each end translates its own, so a third would be one
- * file, not a change everywhere upstream.
+ * The words on the wire are the product's — `quick`, `balanced`, `thorough` — because the server
+ * and this service speak different APIs and would otherwise each need the other's spelling. Each
+ * end translates its own, so a third would be one file, not a change everywhere upstream.
  *
  * Undefined for anything else, including nothing at all. A caller that says nothing gets exactly
  * the request this service made before the setting existed, which is the only safe reading of
@@ -142,6 +207,20 @@ function reasoningEffortOf(
   if (effort === "balanced") return "medium";
   if (effort === "thorough") return "high";
   return undefined;
+}
+
+/**
+ * Which Bot this run belongs to, for this service's own log.
+ *
+ * It had no way to know. A Bot's whole identity arrived as a system message, so every line this
+ * service logged named a run and a model and no Bot, and an operator reading them could not tell
+ * whose turn had failed. The server puts it in `forwardedProps`; this only reads it.
+ */
+export function botIdOf(input: RunAgentInput): string {
+  const forwarded = input.forwardedProps;
+  if (!forwarded || typeof forwarded !== "object") return "unknown-bot";
+  const botId = (forwarded as Record<string, unknown>).botId;
+  return typeof botId === "string" && botId ? botId : "unknown-bot";
 }
 
 /**
@@ -162,10 +241,27 @@ export function runErrorCodeOf(error: unknown): string {
   return "laf:model_failed";
 }
 
+/** Nothing said and nothing asked for. Distinct from a Bot with nothing to add, which is a choice. */
+function isEmptyTurn(turn: {
+  textOpen: boolean;
+  toolCalls: Map<number, { name: string | null }>;
+}): boolean {
+  return (
+    !turn.textOpen &&
+    ![...turn.toolCalls.values()].some((call) => call.name !== null)
+  );
+}
+
 export async function runAgent(
   input: RunAgentInput,
   provider: CompletionProvider = liveProvider,
+  /**
+   * How long one model request may take. Overridable so a test can prove the bound exists without
+   * waiting two minutes for it — a two-minute test is a test somebody eventually deletes.
+   */
+  options: { timeoutMs?: number } = {},
 ): Promise<Response> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const encoder = new EventEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -198,112 +294,183 @@ export async function runAgent(
         }
       }, HEARTBEAT_MS);
 
+      /** Whose turn this is, for this service's own log. See `botIdOf`. */
+      const botId = botIdOf(input);
+      /** Set by the deadline below, read by the catch: a timeout is not a provider failure. */
+      let timedOut = false;
+
+      /**
+       * One request to the model, streamed out as it arrives.
+       *
+       * Split out so an EMPTY completion can be tried once more at a lower effort. Nothing is
+       * emitted for an empty turn by construction — text opens on the first content delta and a
+       * tool call opens on its first id-and-name — so a retry cannot leave half an answer on the
+       * wire in front of the second attempt.
+       */
+      const runTurn = async (effort: "low" | "medium" | "high" | undefined) => {
+        /*
+         * The bound that was missing. A provider that accepted the request and then went quiet held
+         * the turn open for as long as it liked. Aborted AND raced against nothing else: the signal
+         * is what stops the work, and the abort is what makes the `for await` below throw.
+         */
+        const abort = new AbortController();
+        const expiry = setTimeout(() => {
+          timedOut = true;
+          abort.abort();
+        }, timeoutMs);
+        expiry.unref?.();
+
+        try {
+          const completion = await provider(
+            {
+              model: MODEL,
+              messages: toProviderMessages(input),
+              tools: toProviderTools(input),
+              stream: true,
+              // The final chunk then carries token counts. Part of the OpenAI spec since 2024 and
+              // answered by every compatible endpoint measured here; a provider that ignores it
+              // simply sends no usage chunk, and the run proceeds without a usage event.
+              stream_options: { include_usage: true },
+              // Omitted rather than sent as a default: a model that does not reason answers a
+              // request carrying this with a 400 on some providers and silence on others, and a
+              // deployment that has not said its model reasons must get the request it always got.
+              ...(effort ? { reasoning_effort: effort } : {}),
+            },
+            { signal: abort.signal },
+          );
+
+          const messageId = `msg_${input.runId}`;
+          let textOpen = false;
+          /*
+           * Providers stream a tool call's arguments in fragments across many chunks, keyed only by
+           * index. Each fragment is FORWARDED AS IT ARRIVES and also kept, because the two halves
+           * serve different readers: `@ag-ui/client` reassembles the fragments into the finished call
+           * (`arguments += delta`), and anything watching the stream can read the partial value.
+           *
+           * It used to buffer everything and emit one TOOL_CALL_START / ARGS / END after the model
+           * had finished. Measured: with that, a room turn showed nothing at all while a Bot wrote —
+           * speaking in a room IS a tool call, so the whole message arrived at once or not at all,
+           * and every Bot a person creates in this product runs through this service.
+           */
+          const toolCalls = new Map<
+            number,
+            {
+              id: string | null;
+              name: string | null;
+              /** Fragments that arrived before the call could legally open. */
+              pending: string;
+              started: boolean;
+            }
+          >();
+
+          let usage: OpenAI.CompletionUsage | null = null;
+          /** Why the model stopped. `length` means the answer was cut off mid-sentence. */
+          let finishReason: string | null = null;
+          for await (const chunk of completion) {
+            // The usage chunk has no choices; read it before the delta guard skips it.
+            if (chunk.usage) usage = chunk.usage;
+            const reason = chunk.choices[0]?.finish_reason;
+            if (reason) finishReason = reason;
+            const delta = chunk.choices[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              if (!textOpen) {
+                send({
+                  type: "TEXT_MESSAGE_START",
+                  messageId,
+                  role: "assistant",
+                } as BaseEvent);
+                textOpen = true;
+              }
+              send({
+                type: "TEXT_MESSAGE_CONTENT",
+                messageId,
+                delta: delta.content,
+              } as BaseEvent);
+            }
+
+            for (const call of delta.tool_calls ?? []) {
+              const existing = toolCalls.get(call.index) ?? {
+                id: null as string | null,
+                name: null as string | null,
+                pending: "",
+                started: false,
+              };
+              if (call.id) existing.id = call.id;
+              if (call.function?.name) existing.name = call.function.name;
+              toolCalls.set(call.index, existing);
+
+              /*
+               * A call opens only once BOTH its id and its name are known, and the fragments that
+               * arrived before that moment go out right behind the open. Providers do not agree on
+               * order — measured: one sends an arguments fragment before the name, another sends
+               * the id a chunk after the name — and opening early put an ARGS event on the wire for
+               * an id no START had announced, which AG-UI's verifier rejects and the whole run
+               * fails on. The old all-at-the-end buffering was order-proof; this keeps that
+               * property while still forwarding as soon as forwarding is legal.
+               */
+              if (call.function?.arguments) {
+                existing.pending += call.function.arguments;
+              }
+              if (!existing.started && existing.id && existing.name) {
+                existing.started = true;
+                send({
+                  type: "TOOL_CALL_START",
+                  toolCallId: existing.id,
+                  toolCallName: existing.name,
+                  parentMessageId: messageId,
+                } as BaseEvent);
+              }
+              if (existing.started && existing.pending) {
+                send({
+                  type: "TOOL_CALL_ARGS",
+                  toolCallId: existing.id,
+                  delta: existing.pending,
+                } as BaseEvent);
+                existing.pending = "";
+              }
+            }
+          }
+
+          return { messageId, textOpen, toolCalls, usage, finishReason };
+        } finally {
+          clearTimeout(expiry);
+        }
+      };
+
       try {
         const effort = reasoningEffortOf(input);
-        const completion = await provider({
-          model: MODEL,
-          messages: toProviderMessages(input),
-          tools: toProviderTools(input),
-          stream: true,
-          // The final chunk then carries token counts. Part of the OpenAI spec since 2024 and
-          // answered by every compatible endpoint measured here; a provider that ignores it
-          // simply sends no usage chunk, and the run proceeds without a usage event.
-          stream_options: { include_usage: true },
-          // Omitted rather than sent as a default: a model that does not reason answers a request
-          // carrying this with a 400 on some providers and silence on others, and a deployment that
-          // has not said its model reasons must get the request it always got.
-          ...(effort ? { reasoning_effort: effort } : {}),
-        });
+        let turn = await runTurn(effort);
 
-        const messageId = `msg_${input.runId}`;
-        let textOpen = false;
         /*
-         * Providers stream a tool call's arguments in fragments across many chunks, keyed only by
-         * index. Each fragment is FORWARDED AS IT ARRIVES and also kept, because the two halves
-         * serve different readers: `@ag-ui/client` reassembles the fragments into the finished call
-         * (`arguments += delta`), and anything watching the stream can read the partial value.
+         * AN EMPTY COMPLETION IS A REASONING BUDGET SPENT ON THINKING.
          *
-         * It used to buffer everything and emit one TOOL_CALL_START / ARGS / END after the model
-         * had finished. Measured: with that, a room turn showed nothing at all while a Bot wrote —
-         * speaking in a room IS a tool call, so the whole message arrived at once or not at all,
-         * and every Bot a person creates in this product runs through this service.
+         * No text, no tool calls, RUN_FINISHED — which every reader downstream takes for a Bot that
+         * chose to say nothing. In a room that is a legitimate silence; in a chat it is a Bot that
+         * ignored the person. Same trap `model-call.ts` records for `askModel`, same answer: ask
+         * again with less of the budget going to deliberation. Once only — a model that comes back
+         * empty twice is not going to come back full on the third.
          */
-        const toolCalls = new Map<
-          number,
-          {
-            id: string | null;
-            name: string | null;
-            /** Fragments that arrived before the call could legally open. */
-            pending: string;
-            started: boolean;
+        if (isEmptyTurn(turn)) {
+          const lowered = effort ? LOWER_EFFORT[effort] : undefined;
+          if (lowered) {
+            console.warn(
+              `[agent-bot] ${botId} answered empty at effort ${effort}; retrying at ${lowered}`,
+            );
+            turn = await runTurn(lowered);
           }
-        >();
-
-        let usage: OpenAI.CompletionUsage | null = null;
-        for await (const chunk of completion) {
-          // The usage chunk has no choices; read it before the delta guard skips it.
-          if (chunk.usage) usage = chunk.usage;
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) continue;
-
-          if (delta.content) {
-            if (!textOpen) {
-              send({
-                type: "TEXT_MESSAGE_START",
-                messageId,
-                role: "assistant",
-              } as BaseEvent);
-              textOpen = true;
-            }
+          if (isEmptyTurn(turn)) {
+            console.warn(`[agent-bot] ${botId} answered empty; giving up`);
             send({
-              type: "TEXT_MESSAGE_CONTENT",
-              messageId,
-              delta: delta.content,
+              type: "CUSTOM",
+              name: "laf.empty_answer",
+              value: { botId },
             } as BaseEvent);
           }
-
-          for (const call of delta.tool_calls ?? []) {
-            const existing = toolCalls.get(call.index) ?? {
-              id: null as string | null,
-              name: null as string | null,
-              pending: "",
-              started: false,
-            };
-            if (call.id) existing.id = call.id;
-            if (call.function?.name) existing.name = call.function.name;
-            toolCalls.set(call.index, existing);
-
-            /*
-             * A call opens only once BOTH its id and its name are known, and the fragments that
-             * arrived before that moment go out right behind the open. Providers do not agree on
-             * order — measured: one sends an arguments fragment before the name, another sends the
-             * id a chunk after the name — and opening early put an ARGS event on the wire for an id
-             * no START had announced, which AG-UI's verifier rejects and the whole run fails on.
-             * The old all-at-the-end buffering was order-proof; this keeps that property while
-             * still forwarding as soon as forwarding is legal.
-             */
-            if (call.function?.arguments) {
-              existing.pending += call.function.arguments;
-            }
-            if (!existing.started && existing.id && existing.name) {
-              existing.started = true;
-              send({
-                type: "TOOL_CALL_START",
-                toolCallId: existing.id,
-                toolCallName: existing.name,
-                parentMessageId: messageId,
-              } as BaseEvent);
-            }
-            if (existing.started && existing.pending) {
-              send({
-                type: "TOOL_CALL_ARGS",
-                toolCallId: existing.id,
-                delta: existing.pending,
-              } as BaseEvent);
-              existing.pending = "";
-            }
-          }
         }
+
+        const { messageId, textOpen, toolCalls, usage, finishReason } = turn;
 
         if (textOpen) {
           send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
@@ -338,6 +505,23 @@ export async function runAgent(
             }
           }
           send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+        }
+
+        /*
+         * THE ANSWER STOPPED MID-SENTENCE AND NOTHING SAID SO.
+         *
+         * `finish_reason: "length"` was never read, so a cut-off answer was delivered as a finished
+         * one and the person read half a paragraph with no way to know there had been more. A
+         * CUSTOM event rather than a RUN_ERROR: the half that arrived is real and worth keeping,
+         * and the surface says so in Korean beside it.
+         */
+        if (finishReason === "length") {
+          console.warn(`[agent-bot] ${botId} hit the length limit mid-answer`);
+          send({
+            type: "CUSTOM",
+            name: "laf.answer_truncated",
+            value: { botId },
+          } as BaseEvent);
         }
 
         /*
@@ -378,10 +562,12 @@ export async function runAgent(
          * front of an instant refusal is how a working feature looks broken. The full error still
          * goes to this service's own log, where an operator reads it and no customer does.
          */
-        console.error("[agent-bot] run failed:", error);
+        console.error(`[agent-bot] ${botId} run failed:`, error);
         send({
           type: "RUN_ERROR",
-          message: runErrorCodeOf(error),
+          // A timeout is its own next step — the request was accepted and never came back — so it
+          // is its own code rather than being flattened into "the model failed".
+          message: timedOut ? "laf:model_timed_out" : runErrorCodeOf(error),
         } as BaseEvent);
       } finally {
         clearInterval(heartbeat);
