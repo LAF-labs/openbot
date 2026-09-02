@@ -1,5 +1,5 @@
 {
-  "name": "@laf/agent-computer",
+  "name": "agent-computer",
   "license": "MIT",
   "private": true,
   "type": "module",

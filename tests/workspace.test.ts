@@ -14,7 +14,7 @@ function packageManifest(path: string) {
 }
 
 describe("LAF Agent workspace", () => {
-  test("defines the app, server, agent-bot and desktop packages", () => {
+  test("defines the app, server, both agents and the desktop packages", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { workspaces: string[] };
@@ -22,12 +22,16 @@ describe("LAF Agent workspace", () => {
     /*
      * Pinned, so a new workspace is a decision and not a side effect of a stray package.json.
      * `desktop` is the installable shell (Tauri): a window onto the deployed origin, holding no
-     * product logic, which is why it is a workspace and not a fourth runtime.
+     * product logic, which is why it is a workspace and not a fifth runtime.
+     *
+     * `agent-computer` was outside this list until 2026-09, which is why root `typecheck` had never
+     * seen the service that drives the browser.
      */
     expect(rootManifest.workspaces).toEqual([
       "app",
       "server",
       "agent-bot",
+      "agent-computer",
       "desktop",
     ]);
 

@@ -14,6 +14,7 @@ COPY package.json bun.lock ./
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY agent-bot/package.json agent-bot/package.json
+COPY agent-computer/package.json agent-computer/package.json
 # The shell is a workspace even though no image builds it, and bun refuses to install against a
 # lockfile whose workspaces it cannot all find. Omitting this builds locally, where the install
 # layer is cached, and fails the first time somebody builds on a fresh machine — which is a
