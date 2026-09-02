@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
 import { createApp } from "../src/app";
 import {
   auditEventTypes,
@@ -93,18 +92,11 @@ describe("audit payload redaction", () => {
   });
 });
 
-describe("audit event immutability", () => {
-  test("installs a database trigger that rejects updates and deletes", async () => {
-    const migration = await readFile(
-      new URL("../drizzle/0000_schema.sql", import.meta.url),
-      "utf8",
-    );
-
-    expect(migration).toContain("CREATE FUNCTION prevent_audit_event_mutation");
-    expect(migration).toContain("BEFORE UPDATE OR DELETE ON audit_events");
-    expect(migration).toContain("Audit events are append-only");
-  });
-});
+/*
+ * The append-only guarantee is asserted against a running PostgreSQL, in
+ * `audit-append-only.integration.test.ts`. What used to be here read the migration file and matched
+ * three strings in it — which proves the SQL was written, and nothing at all about whether it ran.
+ */
 
 describe("admin audit API", () => {
   test("returns a filtered audit page to an administrator", async () => {

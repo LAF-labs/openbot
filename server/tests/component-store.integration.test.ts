@@ -361,15 +361,56 @@ describe("what a component may read", () => {
   });
 
   test("every shipped function reads real rows and bounds its own arguments", async () => {
+    /*
+     * `toBeDefined()` on both calls was what stood here, under a comment about a table scan
+     * somebody asked for over the wire. It passed for a function that ignored its bound entirely —
+     * the clamped value and the hostile one both return an object.
+     *
+     * So the bound is read off the answer. `botActivity` echoes the number of days it settled on,
+     * which is the clamp itself; both functions cap their row count, which is the thing the clamp
+     * exists to cap. A function that grew a third argument would be caught by the shape check at the
+     * end rather than passing unexamined.
+     */
+    const rows = (result: unknown) =>
+      (result as { rows?: unknown[] }).rows ?? [];
+
     for (const entry of DATA_FUNCTIONS) {
-      // Run with nothing, which is what a component sends before the model has supplied anything, and
-      // with a hostile number: a value from the browser is a claim, and an unbounded one is a table
-      // scan somebody asked for over the wire.
-      expect(await entry.run(database, {})).toBeDefined();
-      expect(
-        await entry.run(database, { days: 100_000, limit: 100_000 }),
-      ).toBeDefined();
+      // What a component sends before the model has supplied anything.
+      const bare = await entry.run(database, {});
+      expect([entry.name, Array.isArray(rows(bare))]).toEqual([
+        entry.name,
+        true,
+      ]);
+
+      // And a value from the browser, which is a claim rather than a number.
+      const hostile = await entry.run(database, {
+        days: 100_000,
+        limit: 100_000,
+      });
+      expect([entry.name, rows(hostile).length]).toEqual([
+        entry.name,
+        expect.any(Number),
+      ]);
+      // 12 for botActivity and 50 for recentRefusals — the widest either will ever return, whatever
+      // the caller asked for.
+      expect(rows(hostile).length).toBeLessThanOrEqual(50);
     }
+
+    // The clamp itself, on the one function that reports what it settled on: 90 days is the ceiling
+    // and 7 is what a caller who said nothing gets.
+    const activity = DATA_FUNCTIONS.find((one) => one.name === "botActivity");
+    if (!activity) throw new Error("botActivity is no longer shipped");
+    expect(await activity.run(database, { days: 100_000 })).toMatchObject({
+      days: 90,
+    });
+    expect(await activity.run(database, { days: -5 })).toMatchObject({
+      days: 1,
+    });
+    expect(await activity.run(database, {})).toMatchObject({ days: 7 });
+    // A string where a number was promised falls back rather than reaching the interval.
+    expect(await activity.run(database, { days: "all of them" })).toMatchObject(
+      { days: 7 },
+    );
   });
 
   test("a function this build does not ship cannot be run", async () => {
