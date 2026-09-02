@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   decideNotice,
   noticeBody,
   type NoticeRequest,
+  readNotificationSupport,
   THROTTLE_MS,
   throttleKey,
 } from "../src/lib/notifications/bot-notifications";
@@ -126,5 +127,46 @@ describe("which room is on screen", () => {
   test("any other screen is no room at all", () => {
     expect(openChannelFrom("/settings")).toBeNull();
     expect(openChannelFrom("/")).toBeNull();
+  });
+});
+
+/**
+ * WHO IS ACTUALLY GOING TO SHOW THE NOTICE.
+ *
+ * The synchronous check reads `window.Notification`, which WKWebView does not have — so in the
+ * desktop shell the app called its own notifications unsupported and hid the control that turns
+ * them on, while the shell had been posting them through the OS all along.
+ */
+describe("what will show a notice", () => {
+  type WindowWithTauri = typeof globalThis & { __TAURI__?: unknown };
+
+  afterEach(() => {
+    (globalThis as WindowWithTauri).__TAURI__ = undefined;
+  });
+
+  test("the shell answers for itself, whatever the webview lacks", async () => {
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      notification: {
+        isPermissionGranted: async () => true,
+        requestPermission: async () => "granted",
+        sendNotification: () => {},
+      },
+    };
+    expect(await readNotificationSupport()).toBe("granted");
+  });
+
+  test("a shell that has not been asked yet is something to ask about", async () => {
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      notification: {
+        isPermissionGranted: async () => false,
+        requestPermission: async () => "granted",
+        sendNotification: () => {},
+      },
+    };
+    expect(await readNotificationSupport()).toBe("ask");
+  });
+
+  test("without a shell the browser answers, and in this runtime it has nothing to offer", async () => {
+    expect(await readNotificationSupport()).toBe("unsupported");
   });
 });

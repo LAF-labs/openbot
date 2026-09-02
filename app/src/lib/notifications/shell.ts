@@ -84,6 +84,43 @@ export async function openExternal(url: string): Promise<boolean> {
 }
 
 /**
+ * Whether the shell may already post notices, or nothing when there is no shell.
+ *
+ * The shell answers with a boolean and no third state: Tauri's plugin has `isPermissionGranted`,
+ * which is false both for "the person said no" and for "nobody has asked yet". So "not granted" is
+ * reported as something still worth asking about, which is the honest reading of a boolean — and
+ * asking again on a denied system is a no-op rather than a second popup.
+ */
+export async function shellNoticePermission(): Promise<
+  "granted" | "ask" | null
+> {
+  const notification = shell()?.notification;
+  if (!notification?.sendNotification) return null;
+  try {
+    return (await notification.isPermissionGranted?.()) ? "granted" : "ask";
+  } catch {
+    return null;
+  }
+}
+
+/** Ask the OS, through the shell. Null when there is no shell to ask through. */
+export async function requestShellNoticePermission(): Promise<
+  "granted" | "denied" | null
+> {
+  const notification = shell()?.notification;
+  if (!notification?.sendNotification) return null;
+  try {
+    if (await notification.isPermissionGranted?.()) return "granted";
+    if (!notification.requestPermission) return null;
+    return (await notification.requestPermission()) === "granted"
+      ? "granted"
+      : "denied";
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Show a native notification through the shell. Resolves false when there is no shell or it was
  * not permitted, so the caller can fall back to the webview's own `Notification`.
  *
