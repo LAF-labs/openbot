@@ -315,3 +315,86 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
       }>
     >(),
 });
+
+/**
+ * One outbox for "somebody has to be told", whatever is going to tell them.
+ *
+ * THE PROBLEM IT SOLVES is that a Bot blocked on a person reached that person through whichever
+ * surface happened to be open. The buzz webhook fired from inside the approval registry and
+ * remembered nothing, so nobody could answer "did that question ever reach anybody"; the page
+ * worked out "a Bot is waiting" from its own tab, so a question raised while nobody was looking
+ * reached nothing at all; and the number this product is judged by — how long a person takes to
+ * answer, at night — had no row to be counted from. One row per thing worth interrupting somebody
+ * about, written once, then offered to every door in turn.
+ *
+ * IT IS A QUEUE, NOT THE TRAIL. `audit_events` is the record of what happened and refuses to be
+ * edited; these rows are marked as they are delivered and seen, and are deleted after thirty days
+ * by the retention tick. Nothing here is evidence of anything — the approval's own `approval.*`
+ * rows are, which is why the KPI in `notifications/approval-metrics.ts` is computed from those and
+ * never from this table.
+ *
+ * `kind` IS TEXT AND NOT AN ENUM, deliberately. It is a product word — the list of things worth
+ * interrupting somebody about — and adding one should be a line of TypeScript rather than a
+ * migration. Nothing in SQL branches on it; `NotificationKind` in `notifications/outbox.ts` is the
+ * list, and the door and the adapters are what read it.
+ *
+ * NO FOREIGN KEY ON `bot_id`, one on `user_id`. A notification that cannot be written is a person
+ * who is never told, so the Bot's id is carried as text the way `laf_thread_messages.thread_id` is:
+ * an id, not a row, and a Bot deleted between the question and the sweep must not turn the insert
+ * on the path that was trying to reach somebody into an exception. The person is the opposite case
+ * — the rows are addressed to them, they are worth nothing once the account is gone, and the
+ * cascade is what stops a departure leaving a queue behind that nobody owns.
+ */
+export const lafNotifications = pgTable(
+  "laf_notifications",
+  {
+    id: text("id").primaryKey(),
+    /** One of `NotificationKind`. See the note above on why this is not an enum. */
+    kind: text("kind").notNull(),
+    botId: text("bot_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The question this is about, for the rows that are about one. */
+    approvalId: text("approval_id"),
+    /** The room it happened in, for the rows that happened in one. */
+    channelId: text("channel_id"),
+    /**
+     * What the action was, in facts — the same `AskSubject` the approval card is drawn from.
+     *
+     * Carried so a door can say what is waiting without going back to a registry that lives in
+     * another process's memory and has already forgotten. The words are still the surface's: the
+     * server sends facts, here as everywhere else.
+     */
+    subject: jsonb("subject"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /**
+     * Which doors took it. Appended to, never replaced, so a row says every way it went out.
+     *
+     * An array rather than a boolean because there are several doors and they fail independently:
+     * "the webhook took it and nobody was connected" and "the page had it the whole time" are
+     * different mornings, and one `delivered` flag cannot tell them apart.
+     */
+    deliveredVia: text("delivered_via")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** When the FIRST door took it. Null means nothing has managed to deliver it yet. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /** When the person actually looked. Set by the in-app door, or by answering the question. */
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+  },
+  (table) => [
+    // The door's own read: this person's rows, newest first.
+    index("laf_notifications_user_created_at_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    // Answering a question marks its rows seen, and arrives holding only the approval's id.
+    index("laf_notifications_approval_idx").on(table.approvalId),
+    // The thirty-day sweep, which is a range over this column and nothing else.
+    index("laf_notifications_created_at_idx").on(table.createdAt),
+  ],
+);
