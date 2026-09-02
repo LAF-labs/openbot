@@ -12,6 +12,9 @@
  * two tables that grow forever on a VM nobody prunes; §3.5 already names the range query on
  * `laf_thread_runs.started_at` as the one that gets slower every day.
  *
+ * AND THE NOTIFICATION OUTBOX, on a cutoff of its own — thirty days, not a year, because a message
+ * about something is not the something. See NOTIFICATION_RETENTION_DAYS below.
+ *
  * THE TRAIL IS DELETED THROUGH THE FUNCTION, NOT WITH A DELETE. `audit_events_append_only` refuses
  * an ordinary DELETE and goes on refusing one — migration 0028 opened exactly two named exits and
  * this is the second of them. The run tables have no such trigger and are deleted normally; saying
@@ -25,9 +28,26 @@
 import { lt, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafThreadRuns } from "../db/schema";
+import { purgeNotificationsBefore } from "../notifications/outbox";
 
 /** A year, in days. The number §7-7 settled on; the variable is what a deployment can move. */
 export const DEFAULT_RETENTION_DAYS = 365;
+
+/**
+ * Thirty days for the notification outbox, and it is not the trail's number.
+ *
+ * A notification is a message about something, not the something: the approval's own `approval.*`
+ * rows are what a year of retention is for, and they are what the KPI is computed from. A row here
+ * is worth keeping only long enough that a person who was away for a few weeks still sees what was
+ * waiting, so it is a fixed number rather than a knob — a deployment that wants a longer memory of
+ * what happened already has one, in the trail.
+ *
+ * It rides the same tick, which means `AUDIT_RETENTION_DAYS=0` — a deployment under an obligation
+ * to keep everything — keeps these too. Said out loud rather than worked around: the switch is
+ * "prune nothing", and a queue that kept pruning under it would be the sweep having an opinion the
+ * operator did not ask for.
+ */
+export const NOTIFICATION_RETENTION_DAYS = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -36,6 +56,8 @@ export type RetentionOutcome = {
   auditEvents: number;
   threadRuns: number;
   routineRuns: number;
+  /** Outbox rows, on their own thirty-day cutoff. See NOTIFICATION_RETENTION_DAYS. */
+  notifications: number;
 };
 
 export type RetentionJob = {
@@ -106,11 +128,25 @@ export function createRetentionJob(input: {
         .where(lt(lafRoutineRuns.startedAt, cutoff))
         .returning({ id: lafRoutineRuns.id });
 
+      /*
+       * A cutoff of its own, thirty days rather than the trail's year, and a plain DELETE.
+       *
+       * The outbox has no append-only trigger and needs none: it is a delivery queue whose rows are
+       * marked as they are delivered and seen. Saying so here rather than routing it through
+       * `audit_purge_before` for symmetry, because the symmetry would be a lie about what this
+       * table is.
+       */
+      const notifications = await purgeNotificationsBefore(
+        database,
+        new Date(now().getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
+      );
+
       const outcome: RetentionOutcome = {
         cutoff: cutoff.toISOString(),
         auditEvents: auditEventCount,
         threadRuns: threadRuns.length,
         routineRuns: routineRuns.length,
+        notifications,
       };
       /*
        * ONE LINE, ALWAYS, INCLUDING THE RUN THAT REMOVED NOTHING. A job that logs only when it did
@@ -121,7 +157,8 @@ export function createRetentionJob(input: {
       log(
         `retention: kept ${days} days (before ${outcome.cutoff}) — ` +
           `${outcome.auditEvents} audit, ${outcome.threadRuns} runs, ` +
-          `${outcome.routineRuns} routine runs removed`,
+          `${outcome.routineRuns} routine runs removed; ` +
+          `${outcome.notifications} notifications removed (kept ${NOTIFICATION_RETENTION_DAYS} days)`,
       );
       return outcome;
     } finally {
