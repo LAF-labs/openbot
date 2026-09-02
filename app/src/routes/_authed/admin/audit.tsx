@@ -450,6 +450,9 @@ export const DECISIONS: Record<string, string> = {
 
   "coworker.asked": "One Bot asked another",
   "routine.ran": "A routine ran",
+  // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
+  // and a row that reads as an accident hides the decision.
+  "routine.skipped": "A routine's window was skipped",
   "model.usage": "Model usage recorded",
 
   "configuration.changed": "Configuration changed",

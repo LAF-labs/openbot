@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import {
   AgentNotFoundError,
   AgentNotManageableError,
@@ -739,5 +739,108 @@ describe("the seat cap", () => {
     });
     createdAgentIds.push(created.id);
     expect(created.name).toContain("Mine");
+  });
+
+  /**
+   * The cap under a burst, which is the only condition it was ever actually at risk in.
+   *
+   * The count sat inside the transaction under a comment saying that racing creates "serialize
+   * here". They did not: read committed hands every transaction its own snapshot, so six creates
+   * for an account with one seat left all read the same number, all pass the check and all insert.
+   * Nothing downstream catches it — a seat cap is a count, and there is no constraint that counts
+   * rows. The fix is `pg_advisory_xact_lock` on the owner before counting; this is what tells the
+   * two apart, because both spellings pass every sequential test in this file.
+   *
+   * One connection per racer on purpose. At the shared pool's two, the pool would do the queuing
+   * and the test would go green against the broken version.
+   */
+  async function raceForTheLastSeat(
+    racers: number,
+    attempt: (
+      store: AgentProfileStore,
+      owner: AgentActor,
+      sourceAgentId: string,
+    ) => Promise<unknown>,
+  ) {
+    const owner = await createUser();
+    const seats = 3;
+    const racingDatabase = createDatabase(databaseUrl, { max: racers });
+    const racingStore = createAgentProfileStore(
+      racingDatabase,
+      managedAgentAgUiUrl,
+      undefined,
+      seats,
+    );
+    // Two of three seats spoken for, so exactly one of the racers can be seated.
+    const source = await createProfileFixture({ owner, visibility: "private" });
+    await createProfileFixture({ owner, visibility: "private" });
+
+    try {
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: racers }, () =>
+          attempt(racingStore, owner, source.agentId),
+        ),
+      );
+      for (const outcome of outcomes) {
+        if (outcome.status === "fulfilled") {
+          createdAgentIds.push((outcome.value as AgentProfile).id);
+        }
+      }
+      const [held] = await database
+        .select({ count: count() })
+        .from(agentProfiles)
+        .where(
+          and(
+            eq(agentProfiles.ownerUserId, owner.id),
+            isNull(agentProfiles.deletedAt),
+          ),
+        );
+      return { held: Number(held?.count ?? 0), outcomes, seats };
+    } finally {
+      await racingDatabase.$client.close();
+    }
+  }
+
+  function expectExactlyOneSeated(
+    outcomes: PromiseSettledResult<unknown>[],
+    held: number,
+    seats: number,
+  ) {
+    expect(outcomes.filter((one) => one.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected") {
+        expect(outcome.reason).toBeInstanceOf(RosterFullError);
+      }
+    }
+    // The table agrees, which is the assertion that survives a change of error type.
+    expect(held).toBe(seats);
+  }
+
+  test("six creates racing for the last seat seat exactly one Bot", async () => {
+    const { held, outcomes, seats } = await raceForTheLastSeat(
+      6,
+      (store, owner) =>
+        store.create(owner, {
+          name: `Racer ${randomUUID()}`,
+          title: "Racing For The Last Seat",
+          roleDescription: "Only one of these may come to exist.",
+          visibility: "private",
+        }),
+    );
+
+    expectExactlyOneSeated(outcomes, held, seats);
+  });
+
+  test("duplicate races the same lock, not a copy of the check", async () => {
+    // The count was copy-pasted into `duplicate`, comment and all; a fix applied to `create` alone
+    // would leave the same hole open to anybody pressing Duplicate twice.
+    const { held, outcomes, seats } = await raceForTheLastSeat(
+      4,
+      (store, owner, sourceAgentId) => store.duplicate(owner, sourceAgentId),
+    );
+
+    expectExactlyOneSeated(outcomes, held, seats);
   });
 });
