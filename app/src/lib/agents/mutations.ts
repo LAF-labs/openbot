@@ -1,10 +1,38 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { t } from "../i18n";
 import {
   type AgentEffort,
   type AgentProfile,
   type AgentVisibility,
   agentKeys,
 } from "./queries";
+
+/**
+ * What the agents API can refuse, in this surface's own words.
+ *
+ * The seat refusal used to arrive as "This account's computer seats five Bots, and all five seats
+ * are taken." — an English sentence on a Korean screen, with the five written into the prose while
+ * `BOT_SEATS_PER_ACCOUNT` is a setting. The server sends a fact code and the number now; this table
+ * owns the sentence, which puts `t()` on a variable and so out of `i18n-coverage.test.ts`'s sight.
+ * The table is checked in and finite, so `agent-refusals.test.ts` walks it — the same pair
+ * `ROUTINE_REFUSALS` and `routines-copy.test.ts` make.
+ */
+export const AGENT_REFUSALS: Record<string, string> = {
+  "laf:seats_full":
+    "All {seats} Bot seats on this account are taken. Delete one to make room.",
+  /*
+   * The rest are the codes `/profile` and `/memories` answer with. A Bot's own tool is their usual
+   * caller, but this app posts to `/profile` too — the effort buttons do — so a person can reach
+   * them, and a person reaching one must not be handed the server's English.
+   */
+  "laf:profile_invalid": "That change could not be read. Try again.",
+  "laf:profile_no_fields": "Nothing was changed.",
+  "laf:profile_not_found": "That Bot is no longer there.",
+  "laf:memory_looks_like_a_secret":
+    "That looks like a password, so it was not saved.",
+  "laf:memory_too_long": "That is too long to remember.",
+  "laf:memory_empty": "There was nothing to remember.",
+};
 
 export type AgentInput = {
   name: string;
@@ -62,12 +90,19 @@ async function agentRequest(
     body: init.body ? JSON.stringify(init.body) : undefined,
   });
   if (!response.ok) {
-    // The server's message is the useful one: it names the field or the permission that failed.
-    const message = await response
-      .json()
-      .then((body: { error?: string }) => body.error)
-      .catch(() => undefined);
-    throw new Error(message ?? "Coworker operation failed");
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+      seats?: number;
+    } | null;
+    const known = body?.code ? AGENT_REFUSALS[body.code] : undefined;
+    // The code first, the server's sentence only where there is no code for what happened — it
+    // names the field or the permission that failed, which is more use than nothing.
+    throw new Error(
+      known
+        ? t(known, { seats: body?.seats ?? "" })
+        : (body?.error ?? t("That did not go through. Try again.")),
+    );
   }
   return response;
 }

@@ -439,6 +439,16 @@ export const ko: Record<string, string> = {
     "클라이언트를 저장하지 못했습니다. 다시 시도해 주세요.",
   "That did not go through. Try again.":
     "전달되지 않았습니다. 다시 시도하세요.",
+  "All {seats} Bot seats on this account are taken. Delete one to make room.":
+    "이 계정의 봇 자리 {seats}개가 모두 찼습니다. 하나를 지우면 자리가 납니다.",
+  "That change could not be read. Try again.":
+    "그 변경 내용을 읽지 못했습니다. 다시 시도하세요.",
+  "Nothing was changed.": "바뀐 것이 없습니다.",
+  "That Bot is no longer there.": "그 봇은 더 이상 없습니다.",
+  "That looks like a password, so it was not saved.":
+    "비밀번호처럼 보여서 저장하지 않았습니다.",
+  "That is too long to remember.": "기억해 두기에는 너무 깁니다.",
+  "There was nothing to remember.": "기억할 내용이 없습니다.",
   "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
   "The Bot may still be working. An administrator can check whether its computer is running.":
     "봇은 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",

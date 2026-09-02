@@ -77,18 +77,24 @@ export class AgentNotManageableError extends Error {
 }
 
 /**
- * The account's computer seats five Bots, and every seat is taken.
+ * The account's computer has no seat left for another Bot.
  *
  * The cap is a fact about the computer, not about the roster table: an account gets one virtual
- * computer and up to five Bots share it (assignment.ts). It is enforced here, where a Bot comes to
- * exist, because a sixth Bot must fail to be created — not get created and then fail to reach a
- * computer, which would look like an outage instead of a limit.
+ * computer and a fixed number of Bots share it (assignment.ts). It is enforced here, where a Bot
+ * comes to exist, because a sixth Bot must fail to be created — not get created and then fail to
+ * reach a computer, which would look like an outage instead of a limit.
+ *
+ * A FACT CODE AND A NUMBER, NOT A SENTENCE. This threw "…seats five Bots, and all five seats are
+ * taken" — English, on a Korean screen, with the five written into the prose while
+ * `BOT_SEATS_PER_ACCOUNT` is a setting a deployment can change. Both halves were wrong in the same
+ * place. The server sends what happened and how many seats there are; the surface owns the words,
+ * the way `ROUTINE_REFUSALS` already does (app/src/lib/routines/queries.ts).
  */
 export class RosterFullError extends Error {
-  constructor() {
-    super(
-      "This account's computer seats five Bots, and all five seats are taken.",
-    );
+  readonly code = "laf:seats_full";
+
+  constructor(readonly seats: number) {
+    super(`This account's computer seats ${seats} Bots, and all are taken.`);
     this.name = "RosterFullError";
   }
 }
@@ -274,7 +280,7 @@ async function reserveSeat(
       ),
     );
   if (Number(seated?.count ?? 0) >= seats) {
-    throw new RosterFullError();
+    throw new RosterFullError(seats);
   }
 }
 

@@ -760,7 +760,13 @@ function mapStoreError(context: Context, error: unknown): Response {
   }
   if (error instanceof RosterFullError) {
     // 409 rather than 400: the request was well-formed, the account is simply full.
-    return context.json({ error: error.message }, 409);
+    //
+    // The code and the number are what the surface renders; `error` stays for a caller that is not
+    // this app — a log, a script — and is never the sentence a person reads.
+    return context.json(
+      { error: error.message, code: error.code, seats: error.seats },
+      409,
+    );
   }
   throw error;
 }
