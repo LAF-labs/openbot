@@ -9,6 +9,7 @@ import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   auditEvents,
+  credentials,
   mcpServers,
   mcpUserCredentials,
   users,
@@ -247,6 +248,16 @@ afterAll(async () => {
     await database
       .delete(mcpUserCredentials)
       .where(eq(mcpUserCredentials.userId, id));
+    /*
+     * And the grant in the vault, which one test in here now really does write. Scoped to this
+     * suite's own people: `key_id` holds the user id for an `mcp_user_token`, so this cannot reach
+     * a real person's Notion grant on a database somebody uses.
+     */
+    await database
+      .delete(credentials)
+      .where(
+        and(eq(credentials.kind, "mcp_user_token"), eq(credentials.keyId, id)),
+      );
     await database.delete(users).where(eq(users.id, id));
   }
   if (!serverWasAlreadyConfigured) {
@@ -606,6 +617,62 @@ describe("a vendor that will not trade the code", () => {
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
+    });
+  });
+});
+
+/**
+ * The same callback URL, walked twice.
+ *
+ * The URL carrying the state and the code is held by every log, proxy and browser history it passes
+ * through. Nothing here recorded that a state had been ANSWERED, so a replay was refused only if the
+ * vendor happened to refuse the spent code — somebody else's implementation detail deciding whether
+ * a second grant got attached to somebody's row.
+ *
+ * This is the one test in the file that lets a write land, deliberately: "the second one wrote
+ * nothing" is only worth anything next to a first one that wrote something. Both people's vault rows
+ * are cleaned up in `afterAll`.
+ */
+describe("a callback that arrives twice", () => {
+  test("connects once, and the replay is refused with nothing written", async () => {
+    const state = await stateFor({
+      userId: personId,
+      serverId,
+      verifier: "verifier-for-the-replay-test-1234567890",
+    });
+    const url = callbackUrl({ code: "code-once", state });
+
+    const grantingVendor = () =>
+      new Response(
+        JSON.stringify({ refresh_token: "rt-once", scope: "read" }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+    const asked = await withVendor(grantingVendor, async (asked) => {
+      const first = await appWith({ store: holdingAClient() }).request(url);
+      expect(first.headers.get("location")).toBe(
+        `${APP_URL}/settings/connected-accounts?connected=${serverId}`,
+      );
+      expect(await written(personId)).toEqual({
+        connections: 1,
+        connectedEvents: 1,
+      });
+
+      // The identical request again, against a vendor that would happily hand out a second grant.
+      // Only our own refusal stops it.
+      const second = await appWith({ store: holdingAClient() }).request(url);
+      expect(second.headers.get("location")).toBe(FAILED);
+      return asked;
+    });
+
+    // One exchange, not two: the state was spent before the code was ever presented again.
+    expect(asked).toHaveLength(1);
+    expect(await written(personId)).toEqual({
+      connections: 1,
+      connectedEvents: 1,
     });
   });
 });

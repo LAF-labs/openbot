@@ -8,8 +8,10 @@ import {
   challengeFor,
   connectedAccountsUrlFor,
   createVerifier,
+  forgetSpentConnectStates,
   readConnectState,
   redeemAuthorizationCode,
+  redeemConnectState,
   redirectUriFor,
   registerDynamicClient,
   sealConnectState,
@@ -342,6 +344,131 @@ describe("the state that travels through the vendor", () => {
     );
 
     expect(state.length).toBeLessThan(1_024);
+  });
+});
+
+/* ── one state, one attempt ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * A state is spent when it is redeemed, and a second walk down the same URL is refused.
+ *
+ * WHAT WAS MISSING. Everything about this flow was already bound to one request — the person, the
+ * server, the PKCE verifier, ten minutes — and none of it recorded that a request had been ANSWERED.
+ * A callback URL is held by every log, proxy and browser history it passes through, so a replay was
+ * refused only if the VENDOR happened to refuse the spent code: somebody else's implementation
+ * detail deciding whether a second grant got attached.
+ *
+ * The refusal carries a code rather than a sentence, and the callback shows neither: every failure
+ * there ends the same way, because telling a caller which one it was tells anybody probing the
+ * endpoint how far they got. The code exists so this property can be asserted at all.
+ */
+describe("a state is good for one redemption", () => {
+  beforeEach(() => {
+    forgetSpentConnectStates();
+  });
+
+  test("the first redemption reads it and the second is refused", async () => {
+    const sealed = await sealConnectState(
+      { userId: "user-1", serverId: "notion", verifier: "v-1" },
+      KEY,
+      NOW,
+    );
+
+    expect(await redeemConnectState(sealed, KEY, NOW)).toEqual({
+      ok: true,
+      state: {
+        userId: "user-1",
+        serverId: "notion",
+        verifier: "v-1",
+        returnTo: "settings",
+      },
+    });
+    expect(await redeemConnectState(sealed, KEY, NOW)).toEqual({
+      ok: false,
+      fact: "laf:state_replayed",
+    });
+  });
+
+  test("two flows started in the same moment are two states", async () => {
+    // Same person, same server, same millisecond — the shape a derived id would collapse into one,
+    // where redeeming either would spend both.
+    const one = await sealConnectState(
+      { userId: "user-1", serverId: "notion", verifier: "v-1" },
+      KEY,
+      NOW,
+    );
+    const two = await sealConnectState(
+      { userId: "user-1", serverId: "notion", verifier: "v-2" },
+      KEY,
+      NOW,
+    );
+
+    expect((await redeemConnectState(one, KEY, NOW)).ok).toBe(true);
+    expect((await redeemConnectState(two, KEY, NOW)).ok).toBe(true);
+  });
+
+  test("everything unusable is one refusal, with its own code", async () => {
+    for (const nonsense of ["", "nonsense", "a.b"]) {
+      expect(await redeemConnectState(nonsense, KEY, NOW)).toEqual({
+        ok: false,
+        fact: "laf:state_unreadable",
+      });
+    }
+
+    const stale = await sealConnectState(
+      { userId: "user-1", serverId: "notion", verifier: "v-1" },
+      KEY,
+      NOW,
+    );
+    expect(await redeemConnectState(stale, KEY, NOW + 30 * 60_000)).toEqual({
+      ok: false,
+      fact: "laf:state_unreadable",
+    });
+  });
+
+  /**
+   * A state with no id cannot be spent, so it is not one this build will accept.
+   *
+   * This is the shape an older build's state has, and it is the shape a downgrade produces. Accepted,
+   * it would be replayable for exactly the reason this change exists — because of how it was written
+   * rather than because anybody decided so.
+   */
+  test("a state from before single use is refused rather than trusted", async () => {
+    const withoutAnId = await seal(
+      JSON.stringify({
+        userId: "user-1",
+        serverId: "notion",
+        verifier: "v-1",
+        exp: NOW + 60_000,
+      }),
+      KEY,
+      CONNECT_LABEL,
+    );
+
+    expect(await redeemConnectState(withoutAnId, KEY, NOW)).toEqual({
+      ok: false,
+      fact: "laf:state_unreadable",
+    });
+    expect(await readConnectState(withoutAnId, KEY, NOW)).toBeNull();
+  });
+
+  test("a spent state stops being remembered once it could not have been used anyway", async () => {
+    const sealed = await sealConnectState(
+      { userId: "user-1", serverId: "notion", verifier: "v-1" },
+      KEY,
+      NOW,
+    );
+    expect((await redeemConnectState(sealed, KEY, NOW)).ok).toBe(true);
+
+    /*
+     * The sweep is what keeps this map bounded, and it is only safe because an entry outlives its own
+     * state by nothing: by the time it is forgotten the state is expired, so the replay it was
+     * guarding against is refused by the expiry instead.
+     */
+    expect(await redeemConnectState(sealed, KEY, NOW + 30 * 60_000)).toEqual({
+      ok: false,
+      fact: "laf:state_unreadable",
+    });
   });
 });
 
