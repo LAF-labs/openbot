@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
-import { type AgentPreset, pickSuggestions } from "@/lib/agents/presets";
+import {
+  type AgentPreset,
+  pickSuggestions,
+  workPattern,
+} from "@/lib/agents/presets";
 import { authKeys } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
@@ -216,28 +220,36 @@ function Welcome() {
                   {t("Show me others")}
                 </button>
               </div>
-              {suggestions.map((preset) => (
-                <button
-                  className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
-                  key={preset.id}
-                  onClick={() => applyPreset(preset)}
-                  type="button"
-                >
-                  <Mascot
-                    className="size-8 shrink-0 rounded-lg"
-                    seed={preset.avatarSeed}
-                    size={32}
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium text-[13px]">
-                      {t(preset.name)}
+              {suggestions.map((preset) => {
+                const pattern = workPattern(preset.pattern);
+                return (
+                  <button
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    type="button"
+                  >
+                    <Mascot
+                      className="size-8 shrink-0 rounded-lg"
+                      seed={preset.avatarSeed}
+                      size={32}
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      {/* The kind of work first: on somebody's first minute, "당직·감시" says more
+                          about what a Bot is for than any name it could be given. */}
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {t(pattern.name)} · {t(pattern.connection)}
+                      </span>
+                      <span className="truncate font-medium text-[13px]">
+                        {t(preset.name)}
+                      </span>
+                      <span className="truncate text-[12px] text-muted-foreground">
+                        {t(preset.roleDescription)}
+                      </span>
                     </span>
-                    <span className="truncate text-[12px] text-muted-foreground">
-                      {t(preset.roleDescription)}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </section>
 
             <fieldset className="flex flex-wrap justify-center gap-2">

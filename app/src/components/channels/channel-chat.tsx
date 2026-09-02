@@ -527,7 +527,7 @@ export function ChannelChat({
           channel.active ? null : (
             <p className="pb-2 text-sm text-muted-foreground" role="status">
               {t(
-                "This coworker has been deleted. The conversation stays readable, but it can no longer reply.",
+                "This Bot has been deleted. The conversation stays readable, but it can no longer reply.",
               )}
             </p>
           )

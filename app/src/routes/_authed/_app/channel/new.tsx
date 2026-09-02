@@ -148,18 +148,16 @@ function RouteComponent() {
         >
           <ComboboxInput
             // The control that decides who the conversation goes to announced as "combobox, blank".
-            aria-label={t("Choose a coworker")}
+            aria-label={t("Choose a Bot")}
             className="h-8 w-full max-w-xs text-sm"
             disabled={recipients.length >= MAX_RECIPIENTS}
             placeholder={
-              recipients.length === 0
-                ? t("Choose a coworker…")
-                : t("Add another…")
+              recipients.length === 0 ? t("Choose a Bot…") : t("Add another…")
             }
           />
           <ComboboxContent className="min-w-0 max-w-lg" sideOffset={8}>
             <ComboboxEmpty>
-              {rosterPending ? t("Loading coworkers…") : t("No agents found.")}
+              {rosterPending ? t("Loading Bots…") : t("No Bots found.")}
             </ComboboxEmpty>
             <ComboboxList>
               {(item: AgentProfile) => (

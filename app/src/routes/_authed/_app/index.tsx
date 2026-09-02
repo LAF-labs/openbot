@@ -127,7 +127,7 @@ function RouteComponent() {
             size="sm"
             variant="outline"
           >
-            {t("New agent")}
+            {t("New Bot")}
           </Button>
         </div>
       ) : null}

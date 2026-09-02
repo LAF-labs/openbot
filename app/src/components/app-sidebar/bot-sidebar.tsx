@@ -74,7 +74,7 @@ const SIDEBAR_WIDTH = "var(--sand-sidebar-width)";
 const FOOTER_LINKS = [
   { to: "/routines", icon: IconClock, label: "Routines" },
   { to: "/skills", icon: IconBox, label: "Skills" },
-  { to: "/agents", icon: IconBolt, label: "Agents" },
+  { to: "/agents", icon: IconBolt, label: "Bots" },
 ] as const;
 
 /**

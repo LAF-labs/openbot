@@ -80,7 +80,7 @@ const ConnectedAccountsPage = () => {
              a service themselves, and telling them to would be sending them at a locked door. */
           <PageEmpty>
             {t(
-              "Nothing to connect yet. A service appears here once an administrator has added it on the Plugins page.",
+              "Nothing to connect yet. An administrator has to set one up first.",
             )}
           </PageEmpty>
         ) : (

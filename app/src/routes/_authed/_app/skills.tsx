@@ -116,7 +116,7 @@ function SkillsPage() {
         description={t(
           "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.",
         )}
-        title={t("Agent Skills")}
+        title={t("Skills")}
       >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
