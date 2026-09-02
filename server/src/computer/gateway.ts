@@ -375,9 +375,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     /*
      * A snapshot this process never took is an unknown page, not an empty one.
      *
-     * `cached` is read from the per-process map above. Behind a load balancer the click lands on a
-     * process that never snapshotted the window, so `page` and `element` are blank and every rule
-     * written against them silently stops matching. Refusing is the only answer consistent with the
+     * `cached` is read from the map above, which a restart empties and a Bot that has not looked at
+     * anything yet has never filled. Then `page` and `element` are blank and every rule written
+     * against them silently stops matching. Refusing is the only answer consistent with the
      * rest of this boundary, where an absent policy denies and a broken deny expression still denies:
      * a rule that cannot be evaluated must not be read as a rule that did not fire.
      *

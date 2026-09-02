@@ -36,12 +36,38 @@ gateway 스냅샷 캐시)는 미봉책이 아니라 **이 결정에 의해 옳�
 
 ## 이 결정이 바뀌면 (예: 중앙 멀티프로세스 운영으로 전환)
 
-그때 Postgres 등 프로세스 밖으로 옮겨야 하는 상태 목록:
+**2026-09-02, 이 결정에 코드를 맞췄다.** 그 전까지 저장소에는 승인·반복의 **DB
+변형**이 함께 있었고 서버가 배선한 것은 그쪽이었다 — 근거는 각자의 docstring에
+적힌 "여러 서버 뒤의 로드밸런서"였다. 이 문서가 없다고 못 박은 배포 형태다.
+채널 활동 전달의 LISTEN/NOTIFY(전용 커넥션 + 그것만을 위한 SIGINT 처리)도 같은
+이유로 있었다. 셋 다 지웠다(마이그레이션 0025가
+`computer_approvals`·`computer_repeat_calls`·`computer_repeat_reports`를 DROP;
+전달은 커밋 후 `ChannelEventHub.deliver`). git이 기억한다.
 
-- 승인 대기 (`server/src/computer/approvals.ts` 계열 — in-process Map)
-- repeat 카운트 (`server/src/computer/repeat.ts`)
-- gateway 스냅샷 캐시 (upstream도 "next"라고 밝힌 그 캐시)
+그래서 아래는 "언젠가 옮길 것" 목록이 아니라 **지금 프로세스 안에 있는 상태의
+전체 목록**이다. 멀티프로세스로 가는 날의 출발점은 이 목록이다:
+
+- 대기 중인 승인 질문 — `server/src/computer/approvals.ts`의 Map. 10분 TTL,
+  fingerprint 바인딩, 1회용. 재시작하면 사라지고, 봇이 다시 묻는다.
+- 붙는 No — 같은 파일의 `createDeclineMemory`. 30분, `(botId, fingerprint)` 키.
+- 승인 대기자 — 같은 파일의 `waitFor`. 룸의 턴이 쥐고 있는 프로미스이며,
+  `rooms/wait-for-approval.ts`가 이것 하나로 폴링을 대체했다(브라우저 쪽
+  `app/src/lib/approvals.ts`의 HTTP 폴링은 그대로 — 브라우저는 서버의 프로미스를
+  기다릴 수 없다).
+- repeat 카운트와 임계 보고 표식 — `server/src/computer/repeat.ts`의 중첩 Map
+  (봇당 64키, 256봇 상한). 임계 감사 행 자체는 `recordAuditEvent`로 DB에 남는다.
+- gateway 스냅샷 캐시 — `server/src/computer/gateway.ts` (upstream도 "next"라고
+  밝힌 그 캐시).
+- 채널·룸 소켓과 전달 — `server/src/channels/events.ts`의 `ChannelEventHub`.
+  **커밋 후에 전달한다**: 트랜잭션을 쥔 쪽이 트랜잭션이 끝난 뒤 `deliver`를
+  부른다(NOTIFY가 공짜로 주던 보장을 코드가 대신 진다).
+- OAuth `state` 1회용 집합 — `server/src/plugins/` (§5.4 b, 별도 작업).
+- 봇 레인·룸 레인 — `server/src/runner/bot-lane.ts`. 한 계정에 브라우저가
+  하나이므로 한 프로세스 안의 큐로 충분하다.
 - 스톨 워치독은 예외 — 스트림을 쥔 프로세스에 있는 것이 맞으므로 그대로 둔다.
+
+DB에 남는 것(재시작을 넘어 살아야 하는 것)은 정책(`action_policy`), 상시
+허용(`computer_standing_approvals`), 라우틴, 대화, 자격증명, 감사다.
 
 ## m0의 끝, 그리고 테스트 투자 순서
 

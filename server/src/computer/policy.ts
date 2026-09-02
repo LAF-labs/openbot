@@ -100,9 +100,9 @@ export type PolicyContext = {
    * It is wrong in both directions, and a rule written against it has to be worth both. Under, three
    * ways: the window is time-based, so a Bot slow enough to spread its attempts wider than the window
    * never trips this, and one that varies a single argument each time round is thirty calls; the
-   * count is held by the process that served the call, so a deployment behind two API replicas
-   * splits every count and a rule about ten attempts fires at twenty or never; and a call to another
-   * server's tools over MCP is not counted at all, because only the computer gateway counts.
+   * detector holds a bounded number of calls per Bot and Bots at once (`repeat.ts`), so a Bot whose
+   * loop opens after sixty-four distinct calls is uncounted until one of them ages out; and a call to
+   * another server's tools over MCP is not counted at all, because only the computer gateway counts.
    *
    * Over, once, and that one costs somebody their Bot rather than their evidence. Two calls are the
    * same call when the thing acted on is the same, whatever was typed into it, so ten searches typed
@@ -329,9 +329,9 @@ function matches(
 /**
  * Does any rule that can refuse read the page or the element?
  *
- * `page` and `element` reach a rule from the snapshot the gateway took, which the gateway holds in
- * the process that took it. A deployment running a second server process routes the next call to a
- * process that never snapshotted that window, and both fields arrive blank: `page.host == "admin"`
+ * `page` and `element` reach a rule from the snapshot the gateway took, and the gateway's cache of
+ * those is emptied by a restart and was never filled for a Bot that has not looked at anything yet.
+ * Then both fields arrive blank: `page.host == "admin"`
  * compares against "" and never fires. The rule stops refusing, the audit row says the action was
  * permitted, and nothing anywhere says the boundary went quiet — the failure this file is otherwise
  * written to avoid, where an absent policy denies and a broken deny expression still denies.

@@ -643,7 +643,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
           ),
         )
         .returning();
-      if (!claimed) continue; // Another process moved the clock first.
+      // Somebody else already took this window: an overlapping tick, or a `runNow` that arrived
+      // over HTTP while this pass was walking the list. One process, but not one caller.
+      if (!claimed) continue;
 
       /*
        * How late this window is, measured against the moment it was supposed to fire — `row`, not
