@@ -100,14 +100,46 @@ bun run build
 
 Integration tests expect a PostgreSQL database with pgvector. Use `start.sh` or point `DATABASE_URL` at a compatible database.
 
-They write to whichever database `DATABASE_URL` names and leave their rows behind, so running
-them against the development database leaves test Bots and channels in the app. Point
-`DATABASE_URL` at a database of their own to keep the two apart. Every test's cleanup is scoped
-to the rows that test created — an unscoped `delete(table)` in an `afterEach` once erased every
-routine a person had made, each time the suite ran. Keep it that way: a new integration test
-deletes by its own actor, prefix or Bot id, never the table.
+`bun run test:ci` is the one that keeps them off your own data. It reads `DATABASE_URL` for its
+server and credentials only, then runs everything in `<name>_test` on that server — created and
+migrated on first use:
 
-CI uses `bun run test:ci` to verify the expected test count in addition to normal tests.
+```sh
+DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
+```
+
+Two runs at once need two databases, or they interfere with each other exactly the way they used
+to interfere with the development database. Give each one a name:
+
+```sh
+LAF_TEST_DB_SUFFIX=mybranch DATABASE_URL=... bun run test:ci   # runs in openbot_test_mybranch
+```
+
+They also need connections. One run peaks at 67 of PostgreSQL's default 100 — every test file that
+touches the database holds its own small pool for the whole run — so a second one fails on `sorry,
+too many clients already`, which reads as broken tests and is a full connection table. Raise the
+limit before running two:
+
+```sh
+POSTGRES_MAX_CONNECTIONS=300 docker compose up -d postgres
+```
+
+It takes effect on container recreation, not on restart, and the default stays 100 so a deployment
+is unaffected.
+
+Bare `bun test` still writes to whatever `DATABASE_URL` names, so it is for one file at a time
+against a database you are willing to lose.
+
+Test rows still get cleaned up, because the tests share the test database with each other. Every
+test's cleanup is scoped to the rows that test created — an unscoped `delete(table)` in an
+`afterEach` once erased every routine a person had made, each time the suite ran. Keep it that way:
+a new integration test deletes by its own actor, prefix or Bot id, never the table.
+
+`test:ci` also verifies the expected test count, one floor per workspace (`server`, `app`,
+`agent-computer`, and `root` for `tests/` plus `agent-bot/`). A file that throws while being
+imported reports no failure at all — its tests simply never register — so the count is asserted
+alongside the result. Lower a floor in `scripts/test-ci.ts` when tests are deliberately removed,
+and say why.
 
 `bun run test:smoke` is separate and needs a deployment that is up:
 
