@@ -267,11 +267,12 @@ export function createCredentialStore(
         /**
          * The previous credential, locked for the rest of the transaction.
          *
-         * Two replicas rotating the same secret would otherwise both read it
-         * as live and both act; the second waits here and then finds it
-         * revoked. Its identity is read alongside its state so a rotation
-         * aimed at the wrong id is refused rather than silently retiring a
-         * secret the caller never named.
+         * Two rotations of the same secret in flight at once would otherwise
+         * both read it as live and both act; the second waits here and then
+         * finds it revoked. One process is not one request — two admin calls
+         * are two transactions on two pooled connections. Its identity is read
+         * alongside its state so a rotation aimed at the wrong id is refused
+         * rather than silently retiring a secret the caller never named.
          */
         const [previous] = await transaction
           .select({

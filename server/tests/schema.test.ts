@@ -88,6 +88,61 @@ describe("LAF Agent database schema", () => {
     }
   });
 
+  /*
+   * The state that belongs in memory, and the assertion that it stays out of the database.
+   *
+   * `computer_approvals`, `computer_repeat_calls` and `computer_repeat_reports` were the database
+   * twins of the approval registry and the repeat counter, and the server wired them rather than
+   * the Maps beside them. Their stated reason was several servers behind a load balancer; this
+   * deployment is one API process per VM (docs/laf/deployment-model.md), so the code was arguing
+   * with the decision record. Migration 0025 drops all three, and a schema file that reintroduces
+   * one fails here.
+   *
+   * `computer_standing_approvals` is deliberately NOT in this list. An allowance whose whole point
+   * is to outlive the turn must outlive the process, so it stays in the database — the test below
+   * is what says so.
+   */
+  test("does not define the pending state it moved back into memory", async () => {
+    const schema = (await import("../src/db/schema")) as Record<
+      string,
+      unknown
+    >;
+
+    for (const name of [
+      "computerApprovals",
+      "computerRepeatCalls",
+      "computerRepeatReports",
+    ]) {
+      expect(schema[name]).toBeUndefined();
+    }
+    expect(schema.computerStandingApprovals).toBeDefined();
+  });
+
+  /*
+   * The migration behind the assertion above. A table removed from the schema with no migration
+   * behind it leaves the table standing on every database that already has it, and nothing here or
+   * in the type system would say so — the same trap the pin-and-notification test below covers from
+   * the other direction.
+   */
+  test("ships the migration that drops the three orphaned tables", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0025_simple_selene.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    for (const table of [
+      "computer_approvals",
+      "computer_repeat_calls",
+      "computer_repeat_reports",
+    ]) {
+      // `IF EXISTS`, so a database created after this migration — which never had them — walks the
+      // chain without stopping.
+      expect(normalized).toContain(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
+    expect(normalized).not.toContain(`"computer_standing_approvals"`);
+  });
+
   test("includes Better Auth's verified Google identity records", () => {
     expect(Object.keys(users)).toContain("emailVerified");
     expect(Object.keys(sessions)).toEqual(

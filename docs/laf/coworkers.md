@@ -214,8 +214,9 @@ member cannot leave the room stuck with Stop showing — and because frames
 are not replayed, a socket that reconnects mid-turn makes the room let the
 turn go and re-read everything: a `room.done` lost with the connection would
 otherwise leave the composer disabled with no way out. A turn that really is
-still running says so with its next frame. Deltas are instance-local by
-design; the settled message goes through `pg_notify` like any other. The
+still running says so with its next frame. Every frame and the settled
+message go out through the one in-process hub, after the write that earned
+them has committed (there is one server process — `deployment-model.md`). The
 room's transcript is read from `/api/channels/:id/messages`, which serves
 the snapshot directly — the runtime's own thread endpoint is answered by our
 runner only in local mode, and every message in a room is written by the

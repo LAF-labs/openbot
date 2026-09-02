@@ -10,6 +10,13 @@
  * restart is that every open question was withdrawn, and the safe way to guarantee that is to keep
  * the questions somewhere a restart empties.
  *
+ * A `computer_approvals` table once stood beside this and was what the server actually wired, on the
+ * argument that several servers behind a load balancer each hold half the questions. This deployment
+ * is one process on one VM (docs/laf/deployment-model.md), so that argument described somebody
+ * else's product while this file's own first paragraph said the opposite. The table and its registry
+ * were deleted on 2026-09-02 by decision §7-1; git holds them if the deployment ever changes shape,
+ * and the list to start from is in the decision record.
+ *
  * The important part is the fingerprint. An approval registry without one is a dialog box: a person
  * presses Allow, an id comes back, and the model may then spend that id on any action it likes.
  * Binding an approval to a hash of the action it was granted for is what stops "yes, click Place
@@ -23,9 +30,6 @@
  * the surface a person answers on decides which half of a Bot's work they can see.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, isNull, lte } from "drizzle-orm";
-import type { Database } from "../db/client";
-import { computerApprovals } from "../db/schema/computer";
 import type { AllowanceScope } from "./standing-approvals";
 
 /**
@@ -274,16 +278,37 @@ export type ApprovalRegistry = {
    * no about one button carries on with the rest of its work.
    */
   recentlyDeclined: (botId: string, fingerprint: string) => Promise<boolean>;
+  /**
+   * Hold until this question is answered, or until there is nothing left to wait for.
+   *
+   * The answered approval, or null — expired, spent, never open here, the wait abandoned, or the
+   * bound run out. Null is one reason on purpose, the same way `answer` reports one: a caller does
+   * the same thing with all of them, which is carry on without a grant.
+   *
+   * THIS IS WHY THE QUESTIONS ARE IN THIS PROCESS. The room used to ask `pending` once a second for
+   * two minutes — a hundred and twenty list-builds and, while the registry was a table, a hundred
+   * and twenty DELETE + SELECT pairs — to learn something that happened in the same process, in a
+   * function it could simply have been told about. One process means the answer arrives on the same
+   * heap the question is waiting on, so a promise settles at the moment somebody presses the button
+   * rather than up to a second later.
+   *
+   * `timeoutMs` is the caller's bound and defaults to what is left of the question's own ten
+   * minutes, so nothing waits on a question that can no longer be answered.
+   */
+  waitFor: (
+    botId: string,
+    approvalId: string,
+    options?: { signal?: AbortSignal; timeoutMs?: number },
+  ) => Promise<PendingApproval | null>;
 };
 
 /**
- * The Nos, remembered for both registries by one piece of code.
+ * The Nos, remembered beside the questions they answered.
  *
- * In memory in both, deliberately. A pending question is already in memory in the variant this
- * deployment runs (docs/laf/deployment-model.md, and decision §7-1), so a decline outliving a
- * restart while the question it answered does not would be the odd half: the Bot would be refused
- * for something nobody in this process ever asked about. A restart forgets both, the Bot asks again,
- * and a person answers again — which is the behaviour a restart is allowed to have.
+ * In memory, like the questions (docs/laf/deployment-model.md, and decision §7-1). A decline
+ * outliving a restart while the question it answered does not would be the odd half: the Bot would
+ * be refused for something nobody in this process ever asked about. A restart forgets both, the Bot
+ * asks again, and a person answers again — which is the behaviour a restart is allowed to have.
  */
 function createDeclineMemory(now: () => number, stickyMs: number) {
   const until = new Map<string, number>();
@@ -322,16 +347,42 @@ export function createApprovalRegistry(
   const open = new Map<string, PendingApproval>();
 
   /**
+   * Who is holding for each question, so an answer can be handed to them rather than found.
+   *
+   * A set per question rather than one waiter, because a room turn and a chat turn can be waiting
+   * on the same id — and because a waiter that walked away has to be able to remove itself without
+   * taking anybody else's wait with it.
+   */
+  const waiting = new Map<
+    string,
+    Set<(answered: PendingApproval | null) => void>
+  >();
+
+  /** Hand every holder of this question its ending, once. */
+  const settle = (id: string, answered: PendingApproval | null) => {
+    const holders = waiting.get(id);
+    if (!holders) return;
+    waiting.delete(id);
+    for (const hand of holders) hand(answered);
+  };
+
+  /**
    * Drop what has run out, on every read.
    *
    * On read rather than on a timer, because a timer keeps a process alive and adds a thing that can
    * be forgotten in a test; nothing here matters until somebody looks, and everything that looks
    * sweeps first.
+   *
+   * A waiter is told, because from where it is standing an expiry and an answer are the same event:
+   * the question it was holding for is over.
    */
   const sweep = () => {
     const at = now();
     for (const [id, approval] of open) {
-      if (Date.parse(approval.expiresAt) <= at) open.delete(id);
+      if (Date.parse(approval.expiresAt) <= at) {
+        open.delete(id);
+        settle(id, null);
+      }
     }
   };
 
@@ -384,6 +435,8 @@ export function createApprovalRegistry(
       open.set(id, answered);
       // A No outlives the question it answered. See DECLINE_STICKS_MS.
       if (!granted) declines.record(approval.botId, approval.fingerprint);
+      // Whoever is holding for this hears it here, in the same tick the person's answer landed.
+      settle(id, answered);
       return { ok: true, approval: answered };
     },
 
@@ -405,174 +458,60 @@ export function createApprovalRegistry(
       // make "yes" mean "yes, as often as you like", which is not what anybody pressing Allow on one
       // button thinks they are agreeing to.
       open.delete(id);
+      // Nobody should still be holding for a question that was answered before it was spent, but a
+      // wait that outlived its answer must not outlive the question itself.
+      settle(id, null);
       return { ok: true, approval };
     },
 
     recentlyDeclined: async (botId, fingerprint) =>
       declines.stands(botId, fingerprint),
-  };
-}
 
-/**
- * The same registry, kept where every process can see it.
- *
- * The Map above is correct on one machine and wrong on two, which is the deployment this is for:
- * several servers behind a load balancer, and a person who answers on whichever one the balancer
- * picked. A question raised on one process and answered on another is reported by the Map as "no
- * longer open" — indistinguishable from an expiry — and the Bot waits out its ten minutes for an
- * answer it was already given. Nothing logs a failure, because from inside each process nothing
- * failed. That is the shape this module exists to avoid.
- *
- * What kept the Map honest survives the move: an approval still runs out in ten minutes and is still
- * bound to one action by fingerprint, so the worst a row can buy is the action a person approved,
- * within minutes of approving it. The two races the Map decided by arriving first are now decided by
- * the database: answering is `UPDATE ... WHERE granted IS NULL` and spending is `DELETE ... RETURNING`,
- * so a second tab cannot overturn a decision and two processes cannot both spend one grant.
- */
-export function createDatabaseApprovalRegistry(
-  database: Database,
-  options: {
-    now?: () => number;
-    ttlMs?: number;
-    declineStickyMs?: number;
-  } = {},
-): ApprovalRegistry {
-  const now = options.now ?? (() => Date.now());
-  const ttlMs = options.ttlMs ?? APPROVAL_TTL_MS;
-  /*
-   * The one part of this variant that is not in the table, and the honest place to say so: a decline
-   * sticks within the process that recorded it. Giving it a column is a migration in aid of a module
-   * that is being deleted — the deployment runs the Map above (decision §7-1) — and a decline that
-   * did not stick at all was the failure being fixed, so the shared implementation goes in both and
-   * the same contract test proves it in both.
-   */
-  const declines = createDeclineMemory(
-    now,
-    options.declineStickyMs ?? DECLINE_STICKS_MS,
-  );
+    waitFor: async (botId, approvalId, options = {}) => {
+      sweep();
+      const approval = open.get(approvalId);
+      // Gone, or another Bot's: the same nothing an expiry leaves behind, reported the same way.
+      if (!approval || approval.botId !== botId) return null;
+      if (approval.granted !== undefined) return approval;
+      if (options.signal?.aborted) return null;
 
-  /** Drop what has run out, on every read, exactly as the in-memory registry does. */
-  const sweep = async () => {
-    await database
-      .delete(computerApprovals)
-      .where(lte(computerApprovals.expiresAt, new Date(now())));
-  };
+      /*
+       * The bound. The caller's, or what is left of the question's own ten minutes — never
+       * unbounded, because a promise nobody ever settles is a turn that never ends.
+       *
+       * A real timer rather than the injected clock: this is the backstop, and the paths that
+       * actually end a wait (an answer, a sweep, an abort) are all events. A test that moves a fake
+       * clock and reads the registry sweeps, and the sweep settles the wait.
+       */
+      const bound =
+        options.timeoutMs ??
+        Math.max(0, Date.parse(approval.expiresAt) - now());
 
-  const asApproval = (row: typeof computerApprovals.$inferSelect) => {
-    const approval: PendingApproval = {
-      id: row.id,
-      botId: row.botId,
-      actor: row.actor,
-      rule: row.rule ?? "",
-      question: row.question,
-      fingerprint: row.fingerprint,
-      // Both columns or neither: `request` writes them together, and a half-written pair could not
-      // be shown on a button without guessing at the missing half.
-      ...(row.scopeKind && row.scopeValue !== null
-        ? {
-            scope: {
-              kind: row.scopeKind as AllowanceScope["kind"],
-              value: row.scopeValue,
-            },
+      const holders =
+        waiting.get(approvalId) ??
+        new Set<(answered: PendingApproval | null) => void>();
+      waiting.set(approvalId, holders);
+
+      return new Promise<PendingApproval | null>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const hand = (answered: PendingApproval | null) => {
+          if (timer) clearTimeout(timer);
+          options.signal?.removeEventListener("abort", abandon);
+          // This set, not whatever the map holds now: `settle` drops the map entry before handing
+          // anything out, and a later waiter may already have put a fresh set in its place.
+          holders.delete(hand);
+          if (holders.size === 0 && waiting.get(approvalId) === holders) {
+            waiting.delete(approvalId);
           }
-        : {}),
-      target: { type: row.targetType, id: row.targetId },
-      requestedAt: row.requestedAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
-      ...(row.granted === null ? {} : { granted: row.granted }),
-      ...(row.answeredBy === null ? {} : { answeredBy: row.answeredBy }),
-    };
-    return approval;
-  };
+          resolve(answered);
+        };
+        const abandon = () => hand(null);
 
-  return {
-    request: async (input) => {
-      await sweep();
-      const at = now();
-      const [row] = await database
-        .insert(computerApprovals)
-        .values({
-          id: randomUUID(),
-          botId: input.botId,
-          actor: input.actor,
-          rule: input.rule,
-          question: input.question,
-          fingerprint: input.fingerprint,
-          ...(input.scope
-            ? { scopeKind: input.scope.kind, scopeValue: input.scope.value }
-            : {}),
-          targetType: input.target.type,
-          targetId: input.target.id,
-          requestedAt: new Date(at),
-          expiresAt: new Date(at + ttlMs),
-        })
-        .returning();
-      if (!row) throw new Error("the approval could not be opened");
-      return asApproval(row);
+        holders.add(hand);
+        timer = setTimeout(abandon, bound);
+        timer.unref?.();
+        options.signal?.addEventListener("abort", abandon, { once: true });
+      });
     },
-
-    pending: async (botId) => {
-      await sweep();
-      const rows = await database
-        .select()
-        .from(computerApprovals)
-        .where(eq(computerApprovals.botId, botId))
-        .orderBy(computerApprovals.requestedAt);
-      return rows.map(asApproval);
-    },
-
-    answer: async (id, botId, actor, granted) => {
-      await sweep();
-      // `granted IS NULL` is the whole guard. Two people, or one person in two tabs, race here and
-      // exactly one row comes back; the loser is told the question is no longer open, which is true.
-      const [row] = await database
-        .update(computerApprovals)
-        .set({ granted, answeredBy: actor })
-        .where(
-          and(
-            eq(computerApprovals.id, id),
-            eq(computerApprovals.botId, botId),
-            isNull(computerApprovals.granted),
-          ),
-        )
-        .returning();
-      if (!row) return { ok: false, reason: "no longer open" };
-      // A No outlives the question it answered. See DECLINE_STICKS_MS.
-      if (!granted) declines.record(row.botId, row.fingerprint);
-      return { ok: true, approval: asApproval(row) };
-    },
-
-    consume: async (id, fingerprint) => {
-      await sweep();
-      const [found] = await database
-        .select()
-        .from(computerApprovals)
-        .where(eq(computerApprovals.id, id));
-      if (!found) return { ok: false, reason: "unknown" };
-      if (found.granted === null) return { ok: false, reason: "unanswered" };
-      if (found.granted === false) return { ok: false, reason: "declined" };
-      if (found.fingerprint !== fingerprint) {
-        // Left in place rather than burned, as in the Map: a mismatch is the replay this exists to
-        // stop, and destroying the row would take the person's grant away from the action they meant.
-        return { ok: false, reason: "a different action" };
-      }
-      // Single use, decided by the delete rather than by the read above. Two processes can both pass
-      // the checks; only one gets a row back, and the other is told the same thing a spent approval
-      // has always told it.
-      const [spent] = await database
-        .delete(computerApprovals)
-        .where(
-          and(
-            eq(computerApprovals.id, id),
-            eq(computerApprovals.granted, true),
-          ),
-        )
-        .returning();
-      if (!spent) return { ok: false, reason: "unknown" };
-      return { ok: true, approval: asApproval(spent) };
-    },
-
-    recentlyDeclined: async (botId, fingerprint) =>
-      declines.stands(botId, fingerprint),
   };
 }

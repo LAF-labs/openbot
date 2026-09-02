@@ -13,9 +13,9 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
-import {
-  CHANNEL_ACTIVITY_TOPIC,
-  type ChannelActivityEvent,
+import type {
+  AnnounceChannelActivity,
+  ChannelActivityEvent,
 } from "../channels/events";
 import { previewOf } from "../channels/preview";
 import { soloChannelFor } from "../channels/solo-channel";
@@ -160,6 +160,8 @@ export function createRoutineDelivery(
     agentId: string,
     messages: StampedMessage[],
   ) => void,
+  /** Moves the roster row on every open tab. Absent in tests; the row is still written. */
+  announce?: AnnounceChannelActivity,
 ) {
   return async (delivery: RoutineDelivery): Promise<void> => {
     const target = await appendToSoloConversation(
@@ -223,9 +225,12 @@ export function createRoutineDelivery(
 
     /*
      * And announced, the way a message typed into the room is (channels/routes.ts,
-     * recordActivity): the same event on the same topic, so the roster row moves and the open
+     * recordActivity): the same event to the same hub, so the roster row moves and the open
      * transcript picks the message up without anybody reloading. Without this the delivery was a
      * row in Postgres that the screen learned about from a four-second poll, or not at all.
+     *
+     * Nothing here is inside a transaction — the append and the roster update are each their own —
+     * so the write above has committed by the time this line runs. See `channels/events.ts`.
      */
     const members = await database
       .select({ userId: channelMemberships.userId })
@@ -240,9 +245,7 @@ export function createRoutineDelivery(
       lastMessageAt: (row.lastMessageAt ?? delivery.at).toISOString(),
       lastMessageAgentId: delivery.agentId,
     };
-    await database.execute(
-      sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
-    );
+    announce?.(event);
   };
 }
 

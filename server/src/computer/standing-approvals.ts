@@ -132,12 +132,17 @@ export type StandingApprovalStore = {
 };
 
 /**
- * The store, in memory.
+ * The store, in memory. FOR TESTS ONLY — nothing wires this.
  *
- * What the gateway's own tests run against, so a test about a boundary does not need a database.
- * Held to the same contract as the one below by `standing-approvals-contract.test.ts`; a deployment
- * runs the database one, because an allowance whose whole purpose is to outlive the turn must
- * outlive the process too.
+ * It survives the deletion of the approval and repeat Maps' database twins (decision §7-1) because
+ * it is the mirror image of them: those were a database copy of state that belongs in memory, and
+ * this is a memory copy of state that belongs in the database. It exists so a test about a boundary
+ * can run without one — `computer-gateway.test.ts` and `approval-routes.test.ts` both inject it —
+ * and `standing-approvals.integration.test.ts` holds the two to one contract so the one nobody
+ * ships cannot be the only one that works.
+ *
+ * A deployment runs the database store below, because an allowance whose whole purpose is to
+ * outlive the turn must outlive the process too.
  */
 export function createStandingApprovalStore(
   options: { now?: () => number } = {},
@@ -200,7 +205,7 @@ export function createStandingApprovalStore(
 }
 
 /**
- * The same store, where every process and every restart can see it.
+ * The same store, where a restart can still see it.
  *
  * The one a deployment runs. An allowance held in a Map is withdrawn by a deploy without anybody
  * saying so, and quietly returning everybody to being asked is precisely the state this feature
@@ -209,7 +214,8 @@ export function createStandingApprovalStore(
  * `grant` inserts and lets the partial unique index decide the race, then reads back: two tabs
  * pressing the button at the same moment produce one live row, and both are told about that one.
  * `revoke` is `UPDATE ... WHERE revoked_at IS NULL`, so a second press is told there was nothing
- * left to withdraw rather than overwriting who withdrew it and when.
+ * left to withdraw rather than overwriting who withdrew it and when. Two tabs, not two servers:
+ * one process serves both requests and they are still two transactions.
  */
 export function createDatabaseStandingApprovalStore(
   database: Database,
