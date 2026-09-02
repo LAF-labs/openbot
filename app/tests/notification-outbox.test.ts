@@ -10,6 +10,7 @@ import {
   bodyFor,
   noticeKindOf,
 } from "../src/lib/notifications/use-bot-notifications";
+import { stubFetch } from "./support/fetch";
 
 /**
  * The page's half of the outbox.
@@ -109,22 +110,24 @@ describe("which of the two interruptions a row is", () => {
 
 describe("reading the door", () => {
   test("maps the server's row onto the frame the page already handles", async () => {
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          notifications: [
-            {
-              id: "notification-2",
-              kind: "run.finished",
-              botId: "bot-2",
-              channelId: "channel-2",
-              createdAt: "2026-09-03T14:00:00.000Z",
-              deliveredVia: [],
-            },
-          ],
-        }),
-        { status: 200 },
-      )) as typeof fetch;
+    globalThis.fetch = stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            notifications: [
+              {
+                id: "notification-2",
+                kind: "run.finished",
+                botId: "bot-2",
+                channelId: "channel-2",
+                createdAt: "2026-09-03T14:00:00.000Z",
+                deliveredVia: [],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
 
     const rows = await readNotifications();
     expect(rows).toEqual([
@@ -142,9 +145,9 @@ describe("reading the door", () => {
   });
 
   test("a server that could not be asked is null, never an empty list", async () => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = stubFetch(async () => {
       throw new Error("offline");
-    }) as typeof fetch;
+    });
     // The distinction `readApprovals` already makes: a page must never read a failed request as
     // "nothing is waiting for you".
     expect(await readNotifications()).toBeNull();
