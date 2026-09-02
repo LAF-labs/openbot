@@ -1,5 +1,10 @@
 import type { Message } from "@ag-ui/core";
-import { type AllowanceScope, allowanceScopeOf } from "@/lib/approvals";
+import {
+  type AllowanceScope,
+  allowanceScopeOf,
+  type AskSubject,
+  askSubjectOf,
+} from "@/lib/approvals";
 import type { RoomFrame } from "./room-frames";
 
 /**
@@ -43,8 +48,11 @@ export type RoomApproval = {
   approvalId: string;
   memberId: string;
   memberName: string;
-  question: string;
+  /** What it is about, in facts. The card writes the Korean; see `lib/approvals.ts`. */
+  subject: AskSubject | undefined;
   rule: string;
+  /** When it stops being answerable, for the countdown on the card. Empty when unknown. */
+  expiresAt: string;
   /** What "always" would cover, or absent when only this once is on offer. See lib/approvals.ts. */
   scope?: AllowanceScope;
 };
@@ -105,10 +113,10 @@ export function applyRoomFrame(
     if (state.approvals.some((a) => a.approvalId === frame.approvalId)) {
       return state;
     }
-    const { memberId, memberName, approvalId, question, rule } = frame;
-    // Validated rather than spread through: the frame arrives over a socket, and a scope this
-    // surface cannot vouch for should leave the card offering "this once" rather than a button
-    // whose words it had to guess at.
+    const { memberId, memberName, approvalId, rule } = frame;
+    // Validated rather than spread through: the frame arrives over a socket, and neither a scope nor
+    // a subject this surface cannot vouch for should reach a card — one would be a button whose
+    // words it had to guess at, the other a sentence about an action nobody described.
     const scope = allowanceScopeOf(frame.scope);
     return {
       ...state,
@@ -118,9 +126,10 @@ export function applyRoomFrame(
           memberId,
           memberName,
           approvalId,
-          question,
+          subject: askSubjectOf(frame.subject),
           rule,
           ...(scope ? { scope } : {}),
+          expiresAt: typeof frame.expiresAt === "string" ? frame.expiresAt : "",
         },
       ],
     };

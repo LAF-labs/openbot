@@ -189,8 +189,10 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
           memberId: ids[at] ?? approval.botId,
           // Never the raw id: "a4f1c… is waiting for your answer" tells a person nothing.
           memberName: memberNames.get(ids[at] ?? "") ?? t("A coworker"),
-          question: approval.question,
+          // The facts the card writes its sentence from, and the clock it counts down.
+          subject: approval.subject,
           rule: approval.rule,
+          expiresAt: approval.expiresAt,
         })),
     );
     setRoom((state) => mergeApprovals(state, open));

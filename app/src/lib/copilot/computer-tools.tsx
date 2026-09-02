@@ -11,6 +11,7 @@ import {
 } from "@/components/computer/take-the-wheel";
 import {
   allowanceScopeOf,
+  askSubjectOf,
   closeQuestion,
   openQuestion,
   pauseFrom,
@@ -69,6 +70,17 @@ const OUTCOME_LABELS: Record<string, string> = {
   "laf:computer_unreachable": "The Bot's computer could not be reached",
   "laf:nobody_answered": "Nobody answered in time",
   "laf:request_cancelled": "The request was cancelled",
+  /*
+   * The boundary's own refusals, which used to arrive as English sentences the server had assembled
+   * and this line printed as they came. Five facts rather than one, because what a person does next
+   * differs: a rule to edit, a rule to add, a snapshot to take, an answer they already gave, and a
+   * password box that has its own door (§5.1(b)).
+   */
+  "laf:policy_denied": "A rule refused it",
+  "laf:no_rule_allows": "No rule allows it",
+  "laf:blind_action": "The screen had not been read yet",
+  "laf:declined_recently": "You said no to this recently",
+  "laf:use_request_secret": "It asked for a secret instead",
 };
 
 /** The words for a line, from the code where there is one and from the server's text otherwise. */
@@ -168,9 +180,11 @@ async function callComputer(
   openQuestion(toolCallId, {
     approvalId,
     botId,
-    question: String(outcome.question ?? outcome.reason ?? ""),
+    // The facts, not a sentence: the card writes the Korean. See lib/approvals.ts.
+    subject: askSubjectOf(outcome.subject),
     rule: typeof outcome.rule === "string" ? outcome.rule : null,
     scope: allowanceScopeOf(outcome.scope),
+    expiresAt: typeof outcome.expiresAt === "string" ? outcome.expiresAt : "",
   });
   try {
     const answer = await waitForApproval(botId, approvalId, signal);
@@ -242,8 +256,9 @@ async function sendToComputer(
         // happened here: the scope was added at both ends and dropped in the middle, with every
         // test on both sides green.
         ...pause,
-        reason:
-          (body?.error as string) ?? "Somebody is being asked about that.",
+        // Never seen by anybody in the ordinary case — the caller above waits and sends the same
+        // request again — but a Korean sentence rather than the code if a caller ever reports it.
+        reason: toolResultText("laf:awaiting_approval"),
       };
     }
     /*

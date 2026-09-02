@@ -1,13 +1,17 @@
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { alwaysLabel } from "@/components/channels/allowance-label";
 import {
   answerApproval,
   closeQuestion,
+  describeSubject,
   questionOn,
   watchQuestions,
 } from "@/lib/approvals";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { useCountdown } from "@/lib/use-countdown";
 
 /**
  * A transcript line that grew buttons, for the one action a boundary wanted a person to see.
@@ -39,6 +43,15 @@ export function ApprovalRequest({
   const [problem, setProblem] = useState<string | null>(null);
   /** Names the group, so the buttons announce what they are answering. */
   const questionId = useId();
+  const timeLeft = useCountdown(asking?.expiresAt);
+  /*
+   * Only an administrator can open the Boundaries page — it sends everybody else back to the home
+   * screen — so only an administrator is told that is where an allowance is taken back. The sentence
+   * was on every card, and for most people it named a page they cannot reach
+   * (docs/laf/redesign-2026-09.md §5.6(g)-6).
+   */
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const mayEditBoundaries = currentUser?.role === "admin";
 
   const answer = useCallback(
     async (granted: boolean, always = false) => {
@@ -72,6 +85,15 @@ export function ApprovalRequest({
 
   if (!asking) return null;
 
+  /*
+   * The words are chosen here from the facts the server sent, never sent as words. A subject this
+   * build cannot read says so plainly rather than rendering a blank: somebody about to press Allow
+   * has to be able to tell "it wants to press 결제하기" from "we do not know what it wants".
+   */
+  const question = asking.subject
+    ? describeSubject(asking.subject)
+    : t("It is waiting on an answer about something this screen cannot name.");
+
   return (
     /*
      * A GROUP, NAMED BY THE QUESTION, WITH A POLITE ANNOUNCER.
@@ -84,18 +106,29 @@ export function ApprovalRequest({
      */
     <div className="rounded-md border border-border bg-card px-3 py-2">
       <div aria-atomic="true" aria-live="polite" className="sr-only">
-        {t("Waiting for your answer: {question}", {
-          question: asking.question,
-        })}
+        {t("Waiting for your answer: {question}", { question })}
       </div>
       <p className="text-sm" id={questionId}>
-        {asking.question}
+        {question}
       </p>
-      {asking.rule ? (
-        <p className="mt-1 break-all font-mono text-muted-foreground text-xs">
-          {asking.rule}
-        </p>
-      ) : null}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {asking.rule ? (
+          <span className="break-all font-mono text-muted-foreground text-xs">
+            {asking.rule}
+          </span>
+        ) : null}
+        {/*
+         * THE CLOCK, BECAUSE THE CARD LEAVES WITHOUT ONE OTHERWISE. Ten minutes after it was
+         * raised the question expires and the buttons stop working; before this there was nothing
+         * on the card that said so, and somebody who stepped away came back to a Bot that had
+         * given up for a reason the screen never mentioned.
+         */}
+        {timeLeft ? (
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {timeLeft}
+          </span>
+        ) : null}
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
           // Described by the question rather than wrapped in a group role: "Allow" on its own says
@@ -137,9 +170,14 @@ export function ApprovalRequest({
       </div>
       <p className="mt-1.5 text-muted-foreground text-xs">
         {asking.scope
-          ? t(
-              "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
-            )
+          ? mayEditBoundaries
+            ? t(
+                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
+              )
+            : // Same promise, no page named: Boundaries is admin-only and sends everybody else home.
+              t(
+                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.",
+              )
           : t(
               "Asked because of this rule. Allowing covers this one action.",
             )}{" "}
