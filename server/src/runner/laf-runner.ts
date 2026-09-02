@@ -36,6 +36,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadRuns } from "../db/schema";
 import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
+import { redactSecretTyping } from "./secret-redaction";
 import {
   appendMessages,
   messagesFor,
@@ -404,7 +405,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   override getThreadMessages(threadId: string): Message[] {
     const live = super.getThreadMessages(threadId);
     const stored = this.primed.get(threadId)?.messages ?? [];
-    if (live.length === 0) return stored;
+    if (live.length === 0) return redactSecretTyping(stored, stored);
     /*
      * BOTH, WITH THE LIVE COPY'S ORDER. The live copy belongs to the vendored runner and only ever
      * grows through a run; something else can add to a conversation without running it — a routine
@@ -412,8 +413,17 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      * in Postgres, where the live copy cannot see it. Preferring live outright meant the roster
      * showed the answer and the transcript did not; preferring the store outright loses the tool
      * calls of a turn that is still in flight.
+     *
+     * AND THE REDACTION AGAIN, ON THE WAY OUT. Measured, not assumed: the vendored runner's thread
+     * store is a PROCESS-WIDE SINGLETON ("Process-wide singleton backing every InMemoryAgentRunner"
+     * — @copilotkit/runtime, runner/in-memory.cjs), so the live copy of a turn survives this class
+     * being constructed again and is the copy the merge prefers for any message id both hold. A
+     * credential taken out of the row on the way in therefore came straight back out of memory on
+     * every read of this route until the process restarted, which is not a redaction — it is a
+     * redaction-shaped thing that the product's own read path walked around. Same pure rule as the
+     * write, with the stored copy as what it already decided.
      */
-    return mergeKeepingStoredOnly(stored, live);
+    return redactSecretTyping(mergeKeepingStoredOnly(stored, live), stored);
   }
 
   /** The user's side, written the moment a run starts: a crash mid-turn keeps it. */

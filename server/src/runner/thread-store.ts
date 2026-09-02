@@ -25,6 +25,7 @@ import type { Message } from "@ag-ui/client";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafThreadMessages } from "../db/schema";
+import { redactSecretTyping } from "./secret-redaction";
 
 /**
  * A message as this store holds it: AG-UI's shape plus the two things AG-UI cannot carry.
@@ -36,11 +37,15 @@ import { lafThreadMessages } from "../db/schema";
  * read path casts rather than validates. Stamping on the server is also the only way the two sides
  * of a conversation share one clock.
  *
+ * `lafRedacted` says this row is not what arrived: a `computer_type` argument was taken out of it
+ * because the boundary refused the typing as a secret. See `secret-redaction.ts`.
+ *
  * This is the ONLY definition. There were three (`StampedMessage` twice, `StoredMessage` once).
  */
 export type StoredMessage = Message & {
   lafAt?: string;
   lafAgentId?: string;
+  lafRedacted?: boolean;
 };
 
 /**
@@ -195,6 +200,11 @@ const LOCK_CLASS = 0x1af7;
  * next run's input carrying the same message id. The row keeps its `seq` and its `at`, so a richer
  * copy never reorders a conversation or restamps it.
  *
+ * One thing is NOT written as it arrived: a `computer_type` argument the boundary refused as a
+ * secret. `secret-redaction.ts` decides that, and it is applied here rather than in a caller
+ * because "updated in place when the incoming copy differs" is exactly the path an unredacted copy
+ * would come back on.
+ *
  * Returns the thread as it now stands, in order.
  */
 export async function appendMessages(
@@ -232,11 +242,21 @@ export async function appendMessages(
       if (message) stored.set(message.id, { seq: row.seq, message });
     }
 
-    const known = stampsOf([...stored.values()].map((row) => row.message));
-    const speakers = speakersOf([...stored.values()].map((row) => row.message));
-    const merged = attribute(
-      stamp(incoming, known, new Set(stored.keys()), at.toISOString()),
-      speakers,
+    const heldMessages = [...stored.values()].map((row) => row.message);
+    const known = stampsOf(heldMessages);
+    const speakers = speakersOf(heldMessages);
+    /*
+     * The credential comes out here, INSIDE the lock and before anything is written, so the row and
+     * the list this function returns are the same object. Doing it in the callers instead would mean
+     * three places to get it right — runner, room, routine — and the one that got it wrong would be
+     * the one nobody thought typed anything.
+     */
+    const merged = redactSecretTyping(
+      attribute(
+        stamp(incoming, known, new Set(stored.keys()), at.toISOString()),
+        speakers,
+      ),
+      heldMessages,
     );
 
     /*
