@@ -503,6 +503,9 @@ describe("two ticks over one service", () => {
         instruction: `run ${name}`,
         schedule: { kind: "interval", minutes: 10 },
       });
+      // A second apart, so "first" is created first as far as the service can tell: both fall due at
+      // the same instant, and the pass runs older routines before newer ones.
+      clock = new Date(clock.getTime() + 1_000);
     }
 
     clock = new Date("2026-08-20T07:11:00Z");

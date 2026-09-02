@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
+  asc,
   and,
   count,
   desc,
@@ -619,8 +620,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
     const due = await database
       .select()
       .from(lafRoutines)
-      .where(
-        and(eq(lafRoutines.enabled, true), lte(lafRoutines.nextRunAt, at)),
+      .where(and(eq(lafRoutines.enabled, true), lte(lafRoutines.nextRunAt, at)))
+      // Oldest due first, then creation order: a pass is one sequential lane, and which routine
+      // goes first must not depend on the order Postgres happened to return the rows.
+      .orderBy(
+        asc(lafRoutines.nextRunAt),
+        asc(lafRoutines.createdAt),
+        asc(lafRoutines.id),
       );
 
     let ran = 0;
