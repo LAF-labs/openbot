@@ -10,7 +10,6 @@ import {
   NO_SECRET_PENDING,
   TAKE_CONTROL_FIRST,
 } from "./control";
-import { identity } from "./identity";
 import { createProfiles, VIEWPORT } from "./profiles";
 import {
   type InputMessage,
@@ -596,10 +595,13 @@ serve<StreamData>({
         // `browser` kept as it was: it is in the published contract and start.sh reads it.
         browser: profile?.running ?? false,
         profile,
-        // Which Bot this computer can prove it is, when the deployment runs SPIRE. Null is a
-        // deployment without it, not a failure, and it is reported rather than omitted so the
-        // difference between "no identity here" and "identity broken" is visible.
-        identity: await identity(),
+        /*
+         * NO `identity` FIELD. It reported what the local SPIRE agent said this computer was, and
+         * SPIRE went with the per-Bot container plane in 2026-08. Nothing has set
+         * `SPIFFE_ENDPOINT_SOCKET` since, so the field was `null` in every deployment this
+         * repository can produce, and nothing read it. A health field that is always null is a
+         * claim the deployment cannot back.
+         */
       });
     }
 

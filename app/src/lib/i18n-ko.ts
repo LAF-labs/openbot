@@ -146,8 +146,6 @@ export const ko: Record<string, string> = {
   "Ask before submitting a form": "폼 제출 전에 묻기",
   "Ask before writing a file outside notes/":
     "notes/ 밖에 파일을 쓰기 전에 묻기",
-  "Ask it to open a page and watch it work.":
-    "페이지를 열어 달라고 하고, 일하는 모습을 지켜보세요.",
   "Ask me first": "먼저 묻기",
   "Asked a person": "사람에게 물음",
   "Asked because of this rule. Allowing covers this one action.":
@@ -170,7 +168,6 @@ export const ko: Record<string, string> = {
   Bot: "봇",
   Boundaries: "경계",
   "Boundary at start-up": "시작 시 경계 적용",
-  "Browser Bot": "브라우저 봇",
   Bunny: "토끼",
   Cactus: "선인장",
   "Cactus in a hat": "모자 쓴 선인장",
@@ -222,7 +219,6 @@ export const ko: Record<string, string> = {
   "Continue with Google": "Google로 계속하기",
   "Continue with Kakao": "카카오로 계속하기",
   "Continue with Naver": "네이버로 계속하기",
-  Conversations: "대화 목록",
   Copied: "복사됨",
   "Copy this reply": "이 답장 복사",
   "Could not be read": "읽지 못함",
@@ -235,10 +231,8 @@ export const ko: Record<string, string> = {
     "Google Drive 연결을 저장하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
-  "Could not start Google sign-in.": "Google 로그인을 시작하지 못했습니다.",
   "Could not start sign-in.": "로그인을 시작하지 못했습니다.",
   "Create a routine": "루틴 만들기",
-  "Create coworker": "봇 만들기",
   "Creating…": "만드는 중…",
   "Credential saved": "자격증명 저장됨",
   Credentials: "자격증명",
@@ -248,7 +242,6 @@ export const ko: Record<string, string> = {
     "봇이 대화 중에 그릴 수 있는 사용자 정의 조각.",
   "Daily at {time}": "매일 {time}",
   Dark: "다크",
-  "Dark theme": "다크 테마",
   Decision: "결정",
   Delete: "삭제",
   "Delete it": "삭제",
@@ -295,7 +288,6 @@ export const ko: Record<string, string> = {
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
   "Explore agents": "에이전트 둘러보기",
-  "Face {number}": "얼굴 {number}",
   Channel: "채널",
   "Finance operations": "재무 운영",
   "Following something up": "확인하는 중",
@@ -304,8 +296,6 @@ export const ko: Record<string, string> = {
   Frog: "개구리",
   "Get started": "시작하기",
   Ghost: "유령",
-  "Give this Bot something to do on a schedule.":
-    "이 봇에게 시간표대로 할 일을 하나 맡겨보세요.",
   "Going in circles": "같은 일 반복",
   Gorilla: "고릴라",
   "Granted access": "가져온 권한",
@@ -338,8 +328,6 @@ export const ko: Record<string, string> = {
   "Loading coworkers…": "봇 불러오는 중…",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
-  "Make one and it will be here, ready to be asked.":
-    "하나 만들면 여기에서 바로 부를 수 있어요.",
   "Mark as unread": "읽지 않음으로 표시",
   "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
     "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 됩니다.",
@@ -354,7 +342,6 @@ export const ko: Record<string, string> = {
   "Never submit a form": "폼은 절대 제출하지 않기",
   "Never type into a password field": "비밀번호 칸에는 절대 입력하지 않기",
   "Night Shift": "야간 근무",
-  "No Bots match your search": "검색과 일치하는 봇이 없습니다",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No Bots yet.": "아직 봇이 없습니다.",
   "No public agents to explore yet.": "아직 둘러볼 공개 에이전트가 없습니다.",
@@ -406,7 +393,6 @@ export const ko: Record<string, string> = {
   "Run {name} now": "'{name}' 지금 실행",
   "Running a routine": "루틴 실행 중",
   "Running {name}…": "'{name}' 실행 중…",
-  "Running…": "실행 중…",
   "Save changes": "변경 저장",
   "Save skill": "스킬 저장",
   Seal: "물범",
@@ -481,8 +467,6 @@ export const ko: Record<string, string> = {
   "The machines Bots run their tools on.": "봇이 도구를 실행하는 컴퓨터.",
   "The page you asked for does not exist, or no longer does.":
     "요청하신 페이지가 없거나, 더 이상 존재하지 않습니다.",
-  "The role you write here applies in every channel this coworker works in.":
-    "여기 적는 역할은 이 봇이 일하는 모든 채널에 적용됩니다.",
   "The run history could not be loaded.": "실행 기록을 불러오지 못했습니다.",
   "The sample arguments are not valid JSON, so there is nothing to draw with.":
     "샘플 인자가 올바른 JSON이 아니어서 그릴 것이 없습니다.",
@@ -505,8 +489,6 @@ export const ko: Record<string, string> = {
     "이 봇이 당신에 대해 알아낸 것들이고, 대화가 끝나도 남습니다. 내 것은 나만 봅니다.",
   Forget: "잊기",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
-  "They are still there. This was a problem reaching us.":
-    "채널은 그대로 있습니다. 서버에 닿지 못한 문제입니다.",
   "They share its logins, its files and its session, so a Bot can reach what another signed into. Set {variable} to give each Bot its own.":
     "로그인, 파일, 세션을 공유하므로 한 봇이 다른 봇이 로그인한 곳에 접근할 수 있습니다. 각 봇에게 따로 주려면 {variable}을 설정하세요.",
   "This Bot is waiting for you. Open its screen":
@@ -564,7 +546,6 @@ export const ko: Record<string, string> = {
   "The assistant's screen, updating live": "어시스턴트의 화면 — 실시간 갱신 중",
   "Take control — the assistant asked for you":
     "제어 잡기 — 어시스턴트가 도움을 요청했어요",
-  "Press Escape to close": "Esc를 누르면 닫힙니다",
   "Click anywhere or press Escape to close":
     "아무 곳이나 클릭하거나 Esc를 누르면 닫힙니다",
   "Webhook trigger — shown only once": "웹훅 트리거 — 지금 한 번만 표시됩니다",
@@ -584,10 +565,7 @@ export const ko: Record<string, string> = {
   "Every N minutes": "N분마다",
   "Time (UTC)": "시각 (UTC)",
   Minutes: "분",
-  "Daily at {time} UTC": "매일 {time} UTC",
   "Every {minutes} minutes": "{minutes}분마다",
-  "Run now": "지금 실행",
-  Enabled: "켜짐",
   Ran: "성공",
   "1 turn": "1턴",
   turns: "턴",
@@ -621,6 +599,9 @@ export const ko: Record<string, string> = {
   "Loading the boundary…": "경계 불러오는 중…",
   "Loading the trail…": "기록 불러오는 중…",
   "Loading…": "불러오는 중…",
+  "Load more": "더 보기",
+  "{count} events so far": "지금까지 {count}건",
+  "{count} events, and that is all of them": "{count}건, 이게 전부입니다",
   "Log out": "로그아웃",
   "May read": "읽기 허용",
   Message: "메시지",
@@ -629,18 +610,13 @@ export const ko: Record<string, string> = {
   "My standup skill": "나의 스탠드업 스킬",
   Name: "이름",
   "New agent": "새 에이전트",
-  "New coworker": "새 봇",
   "New skill": "새 스킬",
   "No agents found.": "에이전트가 없습니다.",
   "No auth providers are configured.": "설정된 로그인 제공자가 없습니다.",
-  "No channels match your search": "검색과 일치하는 채널이 없습니다",
   "No computers yet. One appears the first time a Bot opens a page.":
     "아직 컴퓨터가 없습니다. 봇이 처음 페이지를 열면 나타납니다.",
   "No connectors. They come from this deployment's knowledge sources.":
     "커넥터가 없습니다. 이 배포의 지식 소스에서 옵니다.",
-  "No coworker by that name.": "그 이름의 봇이 없습니다.",
-  "Nothing here is named “{query}”, and nobody has said it recently either.":
-    "“{query}”라는 이름의 채널도, 최근 그런 말이 오간 채널도 없어요.",
   "Yesterday {time}": "어제 {time}",
   "nothing saved yet": "아직 저장된 것 없음",
   "No credentials are configured.": "등록된 자격증명이 없습니다.",
@@ -704,8 +680,6 @@ export const ko: Record<string, string> = {
   "Scroll to end": "끝으로 스크롤",
   "Scroll to start": "처음으로 스크롤",
   Scrolled: "스크롤함",
-  "Search channels": "채널 검색",
-  "Search...": "검색...",
   Secret: "비밀 값",
   "Service account JSON key": "서비스 계정 JSON 키",
   "Services you have connected with your own account. A Bot answers with what your account can see, and nothing it cannot.":
@@ -722,8 +696,6 @@ export const ko: Record<string, string> = {
   Slug: "슬러그",
   "Start a new channel": "새 채널 시작",
   "Start channel": "채널 시작",
-  "Start talking to agents and your channels will appear here.":
-    "에이전트와 대화를 시작하면 채널이 여기에 나타나요.",
   Stop: "정지",
   "Stop the Bot": "봇 정지",
   "Summarise what I did yesterday from the channel, then list what is left.":
@@ -751,8 +723,6 @@ export const ko: Record<string, string> = {
     "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
   Untitled: "제목 없음",
-  "Use the dark appearance across {product}.":
-    "{product} 전체에 어두운 테마를 사용합니다.",
   "Vendor documentation": "공급자 문서",
   Visibility: "공개 범위",
   "Waiting for the assistant's screen…": "어시스턴트 화면을 기다리는 중…",
@@ -784,13 +754,11 @@ export const ko: Record<string, string> = {
   "You do not own an Agent to put this on yet.":
     "이것을 붙일 내 에이전트가 아직 없습니다.",
   "You don't have any agents created.": "만든 에이전트가 없습니다.",
-  "You don't have channels yet": "아직 채널이 없습니다",
   "You have control of this browser.":
     "이 브라우저는 당신이 제어하고 있습니다.",
   "You have control.": "제어 중입니다.",
   "Your agents": "내 에이전트",
   "Your agents could not be loaded.": "에이전트를 불러오지 못했습니다.",
-  "Your channels could not be loaded.": "채널을 불러오지 못했습니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
   Yours: "추가한 서버",
@@ -969,17 +937,9 @@ export const ko: Record<string, string> = {
   Quick: "빠르게",
   Balanced: "보통",
   Thorough: "꼼꼼하게",
-  "Answering for good": "한 번에 답하기",
-  "A person may answer once and for all": "사람이 한 번에 답할 수 있음",
   "Ask every time": "매번 묻기",
-  "A question can be answered with “always”, and the same kind of action is allowed after that without anybody being asked. Every allowance is listed below and can be taken back.":
-    "질문에 “항상”으로 답할 수 있고, 그 뒤로 같은 종류의 행동은 아무에게도 묻지 않고 허용됩니다. 허용된 항목은 아래에 모두 나열되며 언제든 취소할 수 있습니다.",
-  "Every action a rule above matches is put in front of a person, every time. The wider button is not offered, and allowances already granted are not in force — they are still listed below, and come back if this is switched on again.":
-    "위 규칙에 걸리는 행동은 매번 사람 앞에 놓입니다. 넓게 허용하는 버튼은 제공되지 않고, 이미 허용된 항목도 효력이 없습니다 — 아래에 그대로 남아 있고, 다시 켜면 되살아납니다.",
   "Suspended — it asks about these again": "중지됨 — 이 항목들은 다시 묻습니다",
   "how hard it thinks ({level})": "생각 깊이 ({level})",
-  "These are not in force. Answering for good is switched off above, so every action they cover is being asked about again — they are kept so that switching it back on restores what somebody decided, rather than starting from nothing.":
-    "지금은 효력이 없습니다. 위에서 “한 번에 답하기”가 꺼져 있어, 여기 해당하는 행동도 매번 다시 묻습니다 — 다시 켜면 누군가 내린 결정이 그대로 되살아나도록 남겨둡니다.",
   "Do not ask me about": "이건 묻지 마세요",
   "When this Bot is stopped for your permission, this is read first. Write what you are happy for it to get on with; it is asked about everything else.":
     "이 봇이 허락을 받으려고 멈추면 이 내용을 먼저 읽습니다. 그냥 진행해도 괜찮은 것을 적어두세요. 나머지는 전부 물어봅니다.",
