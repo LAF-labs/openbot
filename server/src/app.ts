@@ -33,6 +33,7 @@ import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
+import { createHealthRoute, type HealthProbes } from "./health";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
@@ -202,10 +203,18 @@ export function createApp(
    * consent flow, which is the honest degraded behaviour for a deployment with no public URL.
    */
   pluginConnect?: ConnectConfig,
+  /**
+   * What `/health` asks before it answers. Last, like everything new here.
+   *
+   * Absent, the endpoint reports no checks and stays 200 — an embedding that supplied no probes is
+   * not a degraded deployment. The process that runs a deployment supplies all three; see
+   * `health.ts` for why a constant was worse than nothing.
+   */
+  healthProbes?: HealthProbes,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
-  app.get("/health", (context) => context.json({ status: "ok" }));
+  app.route("/health", createHealthRoute(healthProbes));
   /*
    * What this deployment can do, for anybody who asks — and it is anybody: this endpoint has no
    * session guard, so every field added here is published. It once reported a runtime `mode` and an

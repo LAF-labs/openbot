@@ -1,10 +1,30 @@
+# Every service's logs, bounded.
+#
+# Docker's default json-file driver has no limit at all: a deployment that runs for months writes
+# until the disk is full, and a full disk on a one-VM-per-person deployment stops Postgres, which
+# stops everything. 10MB × 5 is a couple of days of a busy Bot and 50MB per service at worst.
+#
+# An anchor rather than five copies, so the next service added either inherits the bound or visibly
+# does not.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:17
     environment:
       POSTGRES_DB: openbot
       POSTGRES_USER: openbot
-      POSTGRES_PASSWORD: openbot
+      # From .env, defaulting to the value every existing deployment already has, so this file can
+      # be updated under a running VM without the database refusing its own password. A deployment
+      # that wants its own sets POSTGRES_PASSWORD before the volume is first created — changing it
+      # afterwards needs `ALTER USER` inside the running database, because the password lives in
+      # the volume and not in this file.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openbot}
+    logging: *logging
     # PostgreSQL's own default, left alone for a deployment: one VM runs one API server process and
     # never comes near 100. It is a knob because one test run peaks at 67 connections — every test
     # file that touches the database holds its own small pool for the length of the run — so two
@@ -38,7 +58,8 @@ services:
       dockerfile: server/Dockerfile
     command: ["bun", "x", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
     environment:
-      DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
+      DATABASE_URL: postgres://openbot:${POSTGRES_PASSWORD:-openbot}@postgres:5432/openbot
+    logging: *logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +81,7 @@ services:
       # LAF_DEV_NO_AUTH. Both are survivable mistakes locally and neither is survivable here,
       # so a deployment says which one it is rather than hoping nobody copied a development .env.
       NODE_ENV: production
-      DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
+      DATABASE_URL: postgres://openbot:${POSTGRES_PASSWORD:-openbot}@postgres:5432/openbot
       KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY:-}
       TENANT_PACKAGE_DIR: ${TENANT_PACKAGE_DIR:-../tenant/laf}
       # Every Bot a person creates is answered here. Only package-shipped Bots are built in.
@@ -100,10 +121,24 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       BOT_MODEL: ${BOT_MODEL:-}
       AGENT_STALL_TIMEOUT_MS: ${AGENT_STALL_TIMEOUT_MS:-}
+      # Four settings the server reads and this file did not pass, which made them settings that
+      # exist on a laptop and nowhere else: on a VM they were permanently the built-in default,
+      # whatever the person's .env said. Empty is not "no value" for any of them — each falls back
+      # to the one default in the code or in the tenant package, so the default stays in one place
+      # and this file only carries it across the container boundary.
+      #
+      # REVIEW_MODEL is the one with teeth: it names the small, fast model that judges a Bot's
+      # "do not ask me about reading" instruction, and without it that judgement runs on the
+      # flagship model — ten to thirty seconds per yes/no, in front of somebody waiting.
+      REVIEW_MODEL: ${REVIEW_MODEL:-}
+      BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
+      BOT_SEATS_PER_ACCOUNT: ${BOT_SEATS_PER_ACCOUNT:-}
+      COMPUTER_REPEAT_WINDOW_MS: ${COMPUTER_REPEAT_WINDOW_MS:-}
       # Where "a Bot is blocked on you" is delivered while the AlimTalk channel is still in review.
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
       LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
+    logging: *logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +186,25 @@ services:
       # certificate, and five of those in a week is a Let's Encrypt rate limit measured in days.
       - caddy-data:/data
       - caddy-config:/config
+    logging: *logging
+    # The front door had no health of its own, so `docker compose ps` called it up while it was
+    # serving nothing — and the front door is the one service whose death is the whole product's
+    # death.
+    #
+    # Caddy's own admin API, on the container's loopback, rather than a request to the site: the
+    # site address is PUBLIC_ORIGIN, so an in-container request for `localhost` matches no site
+    # block and a request for the real name either leaves the machine or is redirected to https and
+    # a certificate this container is not the one answering for. `/config/` needs neither the name
+    # nor TLS, and it answers only once Caddy has loaded a configuration — which is the thing being
+    # asked about. wget is busybox's, already in the alpine image; the admin listener is
+    # loopback-only by default and is not published anywhere.
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q --spider http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       server:
         condition: service_started
@@ -173,6 +227,20 @@ services:
       - agent-workspace:/workspace
       # Chromium's user-data directory is volume-backed so logins survive container restarts.
       - agent-profiles:/profiles
+    logging: *logging
+    # A browser is the one process here that can eat the machine. The recommended VM is 6GB plus a
+    # 4GB swapfile and the whole stack idles at 1.1GB, so 3GB is roughly "Chromium may take half of
+    # this machine and no more": past that the kernel kills the browser, which restarts, rather than
+    # killing whatever the OOM killer picks — which on a box like this is Postgres.
+    mem_limit: 3g
+    # Docker's default /dev/shm is 64MB, which Chromium exhausts on ordinary pages. The launch args
+    # pass --disable-dev-shm-usage so it writes to /tmp instead and survives; this makes the shared
+    # memory real, so it does not have to.
+    shm_size: 1g
+    # STILL UNBOUNDED: Chromium's disk cache, which grows inside the agent-profiles volume for the
+    # life of the deployment. `--disk-cache-size` would bound it, but the launch args are a literal
+    # list in agent-computer/src/profiles.ts and not read from the environment, so it is a code
+    # change and belongs to the browser wave rather than to this file.
     # Gives Chromium time to flush its profile after SIGTERM before Docker sends SIGKILL.
     stop_grace_period: 30s
     healthcheck:
@@ -200,7 +268,14 @@ services:
       # Unset means OpenAI. Set, it is any endpoint speaking the same API, and BOT_MODEL is sent
       # to it verbatim.
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-      BOT_MODEL: ${BOT_MODEL:-gpt-5.5}
+      # No default here. There were four of them across this repository and they disagreed —
+      # `gpt-5.5` in this file, `gpt-5.5` in the Bot, `gpt-4.1` in the tenant package, and
+      # `z-ai/glm-5.3-flash` in the .env every deployment actually runs. The deployment's model is
+      # one decision, so it is written once: the tenant package's model.yaml carries the fallback
+      # the server reads, and this Bot refuses to start rather than answering on a model nobody
+      # chose. Set BOT_MODEL in .env; .env.example ships it set.
+      BOT_MODEL: ${BOT_MODEL:-}
+    logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:4200/health')\""]
       interval: 10s
