@@ -1,6 +1,6 @@
 import "./telemetry-off";
 import { serve } from "bun";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -732,6 +732,36 @@ const app = createApp(
         },
       }
     : undefined,
+  /*
+   * What `/health` asks. The three things a deployment is made of, each answered by the same route
+   * the product itself uses, so a check cannot pass against a path nothing else takes.
+   *
+   * The computer is included only when one is configured: a deployment without it is not degraded,
+   * it is a deployment without a browser.
+   */
+  {
+    database: async () => {
+      await database.execute(sql`select 1`);
+      return true;
+    },
+    agentBot: async () => {
+      const response = await fetch(
+        new URL("/health", config.managedAgentAgUiUrl),
+        // Its own bound as well as the route's: the route stops waiting after two seconds, but only
+        // this stops the socket, and a health poll every ten seconds must not leave one behind.
+        { signal: AbortSignal.timeout(2_000) },
+      );
+      return response.ok;
+    },
+    ...(computerClient
+      ? {
+          computer: async () =>
+            // The id is a label on the answer, not a route: `status` asks the computer's own
+            // /health, which belongs to no Bot.
+            (await computerClient.status("health")).state === "ready",
+        }
+      : {}),
+  },
 );
 
 /**
