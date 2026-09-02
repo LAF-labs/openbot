@@ -1,7 +1,7 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { Mascot } from "@/components/agents/mascot";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -79,6 +79,14 @@ function SkillsPage() {
   const [error, setError] = useState<string | null>(null);
   /** The slug being confirmed, or null. One dialog for the page, not one per row. */
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  /*
+   * The words the dialog keeps while it fades out.
+   *
+   * Measured: pressing 삭제 clears the slug, and the dialog spends its closing animation asking
+   * "/ 를 지울까요?" — a question about nothing, in front of somebody who has just answered it. The
+   * dialog is unmounted by then as far as the state is concerned; it is still on screen.
+   */
+  const askedAbout = useRef("");
 
   const mutate = useMutation({
     mutationFn: async (run: () => Promise<Response>) => {
@@ -148,7 +156,7 @@ function SkillsPage() {
             <DialogHeader>
               <DialogTitle>
                 {t("Delete {command}?", {
-                  command: `/${confirmingDelete ?? ""}`,
+                  command: `/${askedAbout.current}`,
                 })}
               </DialogTitle>
               <DialogDescription>
@@ -281,7 +289,10 @@ function SkillsPage() {
                              * the wrong row. The slug stays in the label, and now in the question.
                              */}
                             <DropdownMenuItem
-                              onClick={() => setConfirmingDelete(skill.slug)}
+                              onClick={() => {
+                                askedAbout.current = skill.slug;
+                                setConfirmingDelete(skill.slug);
+                              }}
                               variant="destructive"
                             >
                               {t("Delete {command}", {

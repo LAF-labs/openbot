@@ -90,7 +90,23 @@ function Welcome() {
         method: "POST",
         credentials: "include",
       });
-      await queryClient.invalidateQueries({ queryKey: authKeys.currentUser() });
+      /*
+       * REFETCH, NOT INVALIDATE, AND `type: "all"` IS THE WHOLE FIX.
+       *
+       * Measured: the first Bot was created, `onboarded_at` was stamped, and the screen stayed on
+       * the welcome form with the person's own words still in it — and pressing 시작하기 again did
+       * nothing at all, because the double-click guard had already latched. A dead button on the
+       * first screen of the product.
+       *
+       * `invalidateQueries` only marks the entry stale; it refetches ACTIVE queries, and nothing on
+       * this screen observes the current user. `ensureQueryData` in `_authed`'s guard then answered
+       * from the cache — still `onboarded: false` — and redirected the navigation straight back
+       * here. The two halves each behaved correctly and the person was in a loop.
+       */
+      await queryClient.refetchQueries({
+        queryKey: authKeys.currentUser(),
+        type: "all",
+      });
       await navigate({ to: "/agents", search: { agent: agent.id } });
     } catch {
       // Released only on failure: on success this screen is going away, and re-arming the button
