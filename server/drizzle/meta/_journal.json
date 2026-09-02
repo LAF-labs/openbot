@@ -176,6 +176,13 @@
       "when": 1788356312596,
       "tag": "0024_glorious_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788361888289,
+      "tag": "0025_simple_selene",
+      "breakpoints": true
     }
   ]
 }
