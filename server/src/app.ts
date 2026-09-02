@@ -437,8 +437,6 @@ export function createApp(
         // deployment must not. Passed from configuration rather than defaulted here, so "hosted and
         // permissive" cannot happen by forgetting something.
         config.computer?.allowPrivateHosts ?? false,
-        // A Bot's own refusal goes in the same trail as everything else it does.
-        auditStore,
         coworkerCall,
         // What the roster shows as busy, read from the one ledger every run path writes.
         readWorking,

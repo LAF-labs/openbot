@@ -24,6 +24,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      /*
+       * The prompt and the tool catalogue are not the app's to copy.
+       *
+       * `shared/` is the one source for what a Bot is told and what tools it has; the surface
+       * registers from it and the server's unattended loop imports the same objects. Plain
+       * dependency-free TypeScript, so it bundles like any other module.
+       */
+      "@shared": path.resolve(__dirname, "../shared"),
     },
   },
   server: {
