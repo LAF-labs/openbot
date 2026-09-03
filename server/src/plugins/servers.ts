@@ -9,6 +9,7 @@ import {
   type CatalogueEntry,
   catalogueEntry,
   classifyTool,
+  hostAdmissible,
   resolvedCustomUrlRefusal,
   resolveServerUrl,
   serverCredentialKind,
@@ -542,11 +543,33 @@ export function createServers(
     });
   }
 
-  return {
+  /**
+   * The URL this deployment stored for a server, or null when it holds none.
+   *
+   * A read of one column rather than {@link requireServer}, because the callback that needs it has
+   * nothing useful to do with a thrown error: every failure there ends the same way, back at the app
+   * with nothing written.
+   */
+  async function storedServerUrl(serverId: string): Promise<string | null> {
+    const [row] = await database
+      .select({ url: mcpServers.url })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, serverId))
+      .limit(1);
+    return row?.url ?? null;
+  }
+
+  /*
+   * Named rather than returned anonymously, because one of these calls another: the ensure below is
+   * the add path with an existence check in front of it, and reaching it through `this` would break
+   * the moment the store re-exported the method on its own (`store.ts` does exactly that).
+   */
+  const registry = {
     requireServer,
     requireCredentialOfKind,
     refreshTools,
     listServers,
+    storedServerUrl,
 
     /**
      * Add a server from the catalogue.
@@ -628,6 +651,75 @@ export function createServers(
       const added = servers.find((server) => server.id === resolved.entry.key);
       if (!added) throw new CatalogueEntryUnknownError(input.key);
       return added;
+    },
+
+    /**
+     * The server row for a catalogue entry somebody is about to connect, created if it is missing.
+     *
+     * The gesture this exists for is one press of 연결 on a settings page. Everything that made
+     * adding a server an administrator's decision — a URL somebody typed, a credential somebody
+     * pasted — is absent here: the address comes from the reviewed entry, the application comes from
+     * the fleet's own configuration, and the only thing a person supplies is a shop name that is
+     * checked against the entry's anchored pattern before it is stored.
+     *
+     * Idempotent. A row already pointing at the same address is left exactly as it is, so pressing
+     * 연결 again does not rewrite what a person has, and the tool listing is only paid for once.
+     *
+     * A per-instance vendor whose name CHANGED is repointed, and that is deliberate: somebody
+     * correcting a mall id means the old one was wrong. Their existing grant belongs to the old
+     * mall and stops working — which is what the consent they are in the middle of replaces.
+     */
+    async ensureCatalogueServer(input: {
+      key: string;
+      /** The customer's own name at a per-instance vendor. A Cafe24 mall id, not a secret. */
+      instanceName?: string;
+      by: string;
+    }): Promise<{ url: string; added: boolean }> {
+      const entry = catalogueEntry(input.key);
+      if (!entry) throw new CatalogueEntryUnknownError(input.key);
+
+      /*
+       * The host, built from the entry's own template rather than from anything a caller sent whole.
+       * Lower-cased because a hostname is, and because a person typing their shop's name will
+       * capitalise it about half the time.
+       */
+      let instanceHost: string | undefined;
+      if (entry.host === null) {
+        const name = (input.instanceName ?? "").trim().toLowerCase();
+        const template = entry.instanceHostTemplate;
+        if (!name || !template) {
+          throw new CustomServerRefusedError(
+            `${entry.title} needs the name of the shop to connect to.`,
+          );
+        }
+        instanceHost = template.replace("{name}", name);
+        // Said here rather than left to `resolveServerUrl` returning null, which the caller would
+        // report as "this deployment does not know that vendor" — true of nothing that happened.
+        if (!hostAdmissible(entry, instanceHost)) {
+          throw new CustomServerRefusedError(
+            `'${name}' is not a name ${entry.title} gives a shop.`,
+          );
+        }
+      }
+
+      const resolved = resolveServerUrl(input.key, instanceHost);
+      if (!resolved) throw new CatalogueEntryUnknownError(input.key);
+
+      const [existing] = await database
+        .select({ url: mcpServers.url })
+        .from(mcpServers)
+        .where(eq(mcpServers.id, input.key))
+        .limit(1);
+      if (existing?.url === resolved.url) {
+        return { url: resolved.url, added: false };
+      }
+
+      await registry.addServer({
+        key: input.key,
+        ...(instanceHost ? { instanceHost } : {}),
+        by: input.by,
+      });
+      return { url: resolved.url, added: true };
     },
 
     /**
@@ -923,6 +1015,8 @@ export function createServers(
       });
     },
   };
+
+  return registry;
 }
 
 export type Servers = ReturnType<typeof createServers>;

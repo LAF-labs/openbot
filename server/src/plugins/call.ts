@@ -345,10 +345,25 @@ export function createCallPath(
       const effect = declared
         ? declared.effect
         : classifyTool(entry, toolName, advertised.length > 0);
-      // Three-way on purpose: a declared guard of null means "no floor", which
-      // `??` would silently promote to the harshest floor there is.
+      /*
+       * Three-way on purpose: a declared guard of null means "no floor", which
+       * `??` would silently promote to the harshest floor there is.
+       *
+       * A CURATED entry gets its floor from the reviewed catalogue rather than
+       * from annotations, and the direction matters. A custom server declares
+       * its own risk and is believed because the declaration is pinned by hash;
+       * a vendor's remote server declares whatever it likes, and letting that
+       * decide would let Gmail tell us that sending mail is read-only. So
+       * `guardedTools` is this repository's word about somebody else's product,
+       * and it is the only word here — which is why the REST adapters carry no
+       * annotations of their own to disagree with it.
+       */
       const guard: LafGuard | null =
-        entry !== null ? null : declared ? declared.guard : "unannotated";
+        entry !== null
+          ? (entry.guardedTools?.[toolName] ?? null)
+          : declared
+            ? declared.guard
+            : "unannotated";
 
       const args = withoutEmptyOptionals(
         input.args,

@@ -11,7 +11,11 @@ import {
   mcpServers,
   mcpUserCredentials,
 } from "../db/schema";
-import { type CatalogueEntry, catalogueEntry } from "./catalogue";
+import {
+  authEndpointsFor,
+  type CatalogueEntry,
+  catalogueEntry,
+} from "./catalogue";
 import { type OAuthClients, TOKEN_TIMEOUT_MS } from "./oauth-client";
 import {
   iso,
@@ -206,10 +210,39 @@ export function createConnections(
       );
     }
 
+    /*
+     * The vendor's token endpoint, with a per-instance vendor's own host filled in.
+     *
+     * Read from the entry AND the stored row rather than from the entry alone: Cafe24 serves one
+     * token endpoint per mall, so `entry.auth.tokenUrl` is a template and the address a refresh
+     * token is actually sent to is the mall's. Null means the row does not name a host this entry
+     * would be pointed at, which is a refusal — a refresh token must never be posted to an address
+     * that failed the admissibility check.
+     */
+    const endpoints = authEndpointsFor(entry, row.url);
+    if (!endpoints) {
+      throw new PluginRefusedError(
+        `${entry.title} is not at an address this deployment will send a credential to.`,
+        null,
+        "laf:vendor_address_unusable",
+      );
+    }
     // Held before the critical section, because narrowing does not survive into a closure and this
     // is where the entry is known to be a `user-oauth` one.
-    const { tokenUrl } = entry.auth;
+    const { tokenUrl } = endpoints;
+    const { tokenAuth } = entry.auth;
     const { title } = entry;
+    /**
+     * The fleet's own application for this vendor, when the entry consents under one.
+     *
+     * Read before anything touches the vault, because for these entries the vault holds no client
+     * at all: LAF registered the application once and every VM carries the same pair in its
+     * environment. Absent here means the deployment was configured without it, and the vault path
+     * below says so in the words of whoever can fix it.
+     */
+    const shared = entry.auth.sharedClient
+      ? context.sharedClient(entry.auth.sharedClient)
+      : null;
     /*
      * Where to register again, for a vendor that issues its own clients — and undefined for one an
      * administrator registered with by hand, where there is nothing this deployment could do about a
@@ -251,7 +284,7 @@ export function createConnections(
      */
     const clientReplaced = `${title} no longer recognises this deployment's OAuth client, so this cannot be called. The deployment has registered itself again — connect ${title} again in Settings.`;
 
-    if (!row.credentialId) {
+    if (!shared && !row.credentialId) {
       // The person did their part; the deployment has not. Refused before anything queues, because
       // a deployment holding no client has the same answer for everybody asking.
       throw new PluginRefusedError(noClient, null);
@@ -265,6 +298,16 @@ export function createConnections(
      * carried in from before the queue names the evicted one.
      */
     async function currentClient(): Promise<StoredClient> {
+      /*
+       * The fleet's application short-circuits the vault entirely.
+       *
+       * `registeredAt: null` is the honest answer and it matters downstream: the eviction recovery
+       * measures its backoff against when this deployment last registered ITSELF, and it never
+       * registered this one. A shared application that a vendor stops recognising is the fleet's to
+       * fix in one console, not something a tool call should try to replace on its own.
+       */
+      if (shared) return { client: shared, registeredAt: null };
+
       /*
        * When the client was stored comes back with it, from the vault row itself rather than from a
        * column of our own. It is what the retry below measures its backoff against, and a left join
@@ -397,6 +440,7 @@ export function createConnections(
             tokenUrl,
             client: stored.client,
             refreshToken,
+            ...(tokenAuth ? { tokenAuth } : {}),
           });
 
           /*
@@ -600,8 +644,22 @@ export function createConnections(
       if (!held) return { disconnected: false };
 
       const entry = catalogueEntry(input.serverId);
+      /*
+       * The address a revocation is sent to, resolved the same way the refresh is: from the entry
+       * AND the row, so a per-instance vendor's revoke endpoint is the mall's own. A row that names
+       * no admissible host leaves `endpoints` null, and the local half below still runs — a
+       * disconnect must never be held hostage by an address we would not post to anyway.
+       */
+      const [stored] = await database
+        .select({ url: mcpServers.url })
+        .from(mcpServers)
+        .where(eq(mcpServers.id, input.serverId))
+        .limit(1);
+      const endpoints = entry
+        ? authEndpointsFor(entry, stored?.url ?? null)
+        : null;
       let vendorRevoked = false;
-      if (entry?.auth.kind === "user-oauth") {
+      if (entry?.auth.kind === "user-oauth" && endpoints) {
         /*
          * Read for one purpose and never returned: telling the vendor this grant is over. The
          * client goes with it because RFC 7009 lets a vendor demand client authentication, and a
@@ -613,7 +671,15 @@ export function createConnections(
             credentials,
             held.credentialId,
           );
-          const client = await oauthClients.storedOAuthClient(input.serverId);
+          /*
+           * The fleet's application first, because for these entries there is no vault client to
+           * find and RFC 7009 lets a vendor demand the client on a revocation.
+           */
+          const client =
+            (entry.auth.sharedClient
+              ? context.sharedClient(entry.auth.sharedClient)
+              : null) ??
+            (await oauthClients.storedOAuthClient(input.serverId));
           const params = new URLSearchParams({
             token: refreshToken,
             token_type_hint: "refresh_token",
@@ -624,7 +690,7 @@ export function createConnections(
               params.set("client_secret", client.clientSecret);
             }
           }
-          const response = await fetch(entry.auth.revokeUrl, {
+          const response = await fetch(endpoints.revokeUrl, {
             method: "POST",
             headers: { "content-type": "application/x-www-form-urlencoded" },
             body: params,

@@ -152,6 +152,67 @@ export function redirectUriFor(publicUrl: string): string {
 }
 
 /**
+ * Where a RELAYED vendor sends somebody back: the fleet's address, not this deployment's.
+ *
+ * WHY A RELAY EXISTS AT ALL. Google and Cafe24 both compare `redirect_uri` for exact equality with
+ * what the OAuth application was registered with, and neither accepts a wildcard. LAF registers one
+ * application per vendor for the whole fleet, and the fleet is `*.agent.laf-co.com` — a set with no
+ * fixed members, since the next customer's origin does not exist yet. There is therefore no string
+ * that could be registered, and the relay is the one address that can be: one registered value, one
+ * hop, and the browser lands on the customer's own callback with the code still in its hand.
+ *
+ * One segment per shared APPLICATION rather than per catalogue entry, because that is what the
+ * vendor checks against: five Google entries consent under one Google application, so one
+ * `…/relay/google` is registered once and serves all five. Which entry a consent was for is inside
+ * the sealed state, where the callback reads it.
+ */
+export function relayRedirectUriFor(relayUrl: string, family: string): string {
+  return `${relayUrl.replace(/\/+$/, "")}/${family}`;
+}
+
+/**
+ * Which customer a relayed consent belongs to, as one label the relay can read without a key.
+ *
+ * `<slug>.<sealed>` — the slug of `https://<slug>.agent.laf-co.com`, then this deployment's own
+ * sealed state. A sealed value is base64url (`A-Za-z0-9-_`) and a slug is a DNS label, so neither
+ * half can contain the separator and the split is unambiguous at the first dot.
+ *
+ * THE SLUG IS NOT A CREDENTIAL AND CARRIES NO TRUST. It tells the relay which allow-listed customer
+ * to hand the browser back to, and that is all: the relay looks it up in the fleet's own list, so a
+ * slug naming somewhere else reaches nowhere. Everything that decides anything — who is connecting,
+ * which server, the PKCE verifier, single use, ten minutes — is inside the sealed half, which the
+ * relay cannot read, cannot alter without destroying, and cannot forge.
+ */
+export function relayStateFor(slug: string, sealed: string): string {
+  return `${slug}.${sealed}`;
+}
+
+/**
+ * The sealed half of a state, whether or not a relay left its label on the front.
+ *
+ * Tolerant on purpose, and it costs nothing: the relay is expected to strip the slug before handing
+ * the browser back, but a relay that forwards the state verbatim is a working relay too, and the
+ * only thing this deployment ever believes is what {@link redeemConnectState} can open. Anything
+ * before the first dot is discarded rather than checked, because there is nothing here it could
+ * usefully be checked against — the state's own contents are the check.
+ */
+export function sealedPartOf(state: string): string {
+  const marker = state.indexOf(".");
+  return marker === -1 ? state : state.slice(marker + 1);
+}
+
+/**
+ * Is this a name that can stand in front of a state, and in front of the product domain?
+ *
+ * One DNS label: lower-case letters, digits and hyphens, no dots. The dot matters twice over — it is
+ * the state's separator, and a slug containing one would name a deeper host than the fleet's
+ * allow-list expects.
+ */
+export function isCustomerSlug(slug: string): boolean {
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(slug);
+}
+
+/**
  * Where the callback sends somebody when it is done, succeeded or failed.
  *
  * Absolute, on the app's origin, because the callback lands on the API and those are two different
@@ -420,16 +481,27 @@ export async function redeemAuthorizationCode(input: {
   code: string;
   redirectUri: string;
   verifier: string;
+  /**
+   * How this vendor wants the client proved. `basic` moves the id and secret out of the body and
+   * into an `Authorization` header, which Cafe24 requires and refuses the exchange without — the
+   * kind of failure that arrives only after somebody has already consented.
+   */
+  tokenAuth?: "basic";
 }): Promise<RedeemedGrant | null> {
+  const basic = input.tokenAuth === "basic" && input.clientSecret !== "";
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     code: input.code,
-    client_id: input.clientId,
     redirect_uri: input.redirectUri,
     code_verifier: input.verifier,
   });
+  // In the header instead, for a vendor that authenticates the client there. Both halves move
+  // together: an id in the body beside a Basic header is the same client stated twice.
+  if (!basic) params.set("client_id", input.clientId);
   // A public (DCR) client proves itself with PKCE, and some vendors refuse an unexpected empty field.
-  if (input.clientSecret) params.set("client_secret", input.clientSecret);
+  if (!basic && input.clientSecret) {
+    params.set("client_secret", input.clientSecret);
+  }
 
   /*
    * A transport failure refuses like an HTTP one, because the caller cannot tell them apart and
@@ -443,7 +515,16 @@ export async function redeemAuthorizationCode(input: {
   try {
     response = await fetch(input.tokenUrl, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        ...(basic
+          ? {
+              authorization: `Basic ${Buffer.from(
+                `${input.clientId}:${input.clientSecret}`,
+              ).toString("base64")}`,
+            }
+          : {}),
+      },
       body: params,
       /*
        * A redirect is a refusal, not a detour to be followed.

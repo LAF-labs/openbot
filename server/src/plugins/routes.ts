@@ -2,7 +2,12 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
-import { CATALOGUE, catalogueEntry } from "./catalogue";
+import {
+  authEndpointsFor,
+  CATALOGUE,
+  type CatalogueEntry,
+  catalogueEntry,
+} from "./catalogue";
 import {
   authorizationUrlFor,
   challengeFor,
@@ -11,8 +16,17 @@ import {
   redeemAuthorizationCode,
   redeemConnectState,
   redirectUriFor,
+  relayRedirectUriFor,
+  relayStateFor,
+  sealedPartOf,
   sealConnectState,
 } from "./oauth";
+import {
+  connectableCatalogue,
+  entryIsConnectable,
+  NO_SHARED_CLIENTS,
+  type SharedClientLookup,
+} from "./shared-clients";
 import {
   CatalogueEntryUnknownError,
   CustomServerRefusedError,
@@ -40,6 +54,24 @@ export type ConnectConfig = {
   appUrl?: string | undefined;
   encryptionKey: string;
   personHasAccess: (userId: string) => Promise<boolean>;
+  /**
+   * The OAuth applications LAF registered once for the whole fleet. Absent means none, which leaves
+   * every entry that consents under one out of the catalogue this surface offers.
+   */
+  sharedClient?: SharedClientLookup;
+  /**
+   * The fleet's relay, and this deployment's own name in front of it.
+   *
+   * Absent means every vendor is told this deployment's own callback, which is correct on a laptop
+   * and for a vendor that registers a client per deployment (Notion). Present, an entry marked
+   * `relay` is told the relay's address instead — the only value a fleet-wide application can have
+   * registered, since `*.agent.laf-co.com` is not a redirect URI any vendor will accept.
+   *
+   * `slug` is derived from `PUBLIC_ORIGIN` at boot and refuses to start when the origin is not under
+   * the product domain (`server/src/config.ts`), so by the time it is here it names a customer the
+   * fleet can look up.
+   */
+  relay?: { url: string; slug: string };
 };
 
 /**
@@ -65,6 +97,53 @@ export function createPluginRoutes(
   connect?: ConnectConfig,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+
+  const sharedClient = connect?.sharedClient ?? NO_SHARED_CLIENTS;
+
+  /** The fleet's application for this entry, or null when it consents under one of its own. */
+  const sharedClientFor = (entry: CatalogueEntry): OAuthClient | null =>
+    entry.auth.kind === "user-oauth" && entry.auth.sharedClient
+      ? sharedClient(entry.auth.sharedClient)
+      : null;
+
+  /**
+   * Whether this consent goes through the fleet's relay, and under whose name.
+   *
+   * Both halves have to be true: the entry says its vendor checks `redirect_uri` against one
+   * registered value, and this deployment knows where the relay is. A deployment without a relay
+   * configured — a laptop — sends its own callback, which is what a vendor registered against
+   * `http://localhost:3001` expects.
+   */
+  const relayFor = (entry: CatalogueEntry) =>
+    entry.relay && connect?.relay ? connect.relay : null;
+
+  /**
+   * Where this vendor is told to send the browser back.
+   *
+   * The SAME value in both legs, which is the property that matters: a vendor compares the
+   * `redirect_uri` on the token exchange against the one on the authorization request and refuses
+   * the exchange if they differ. Written once here so the two call sites cannot drift.
+   */
+  const redirectUriOf = (entry: CatalogueEntry, publicUrl: string): string => {
+    const relayed = relayFor(entry);
+    if (!relayed) return redirectUriFor(publicUrl);
+    // The shared APPLICATION's name, not the entry's: five Google connectors consent under one
+    // Google application, which has one registered redirect URI between them.
+    const family =
+      entry.auth.kind === "user-oauth" ? entry.auth.sharedClient : undefined;
+    return relayRedirectUriFor(relayed.url, family ?? entry.key);
+  };
+
+  /** The first label of a stored per-instance URL — the mall id somebody typed, read back. */
+  const instanceNameOf = (url: string | undefined): string | null => {
+    if (!url) return null;
+    try {
+      const label = new URL(url).hostname.split(".")[0];
+      return label || null;
+    } catch {
+      return null;
+    }
+  };
 
   const actorEmail = (context: { var: AppVariables }) =>
     context.var.actor?.email ?? "unknown";
@@ -250,11 +329,37 @@ export function createPluginRoutes(
     }
   });
 
-  /** Which `user-oauth` servers this person has connected, for their own settings surface. */
+  /**
+   * Which `user-oauth` servers this person has connected, and which they could.
+   *
+   * `available` is the 연결 screen's whole list, and it is the CATALOGUE rather than what an
+   * administrator has added: on a one-person deployment there is nobody else to add anything, and a
+   * screen that said "an administrator has to set one up first" would be pointing at the person
+   * reading it. An entry only appears once this deployment actually holds the application behind it
+   * — see {@link entryIsConnectable} — because a 연결 button in front of a vendor with no
+   * credentials is a control that cannot do the thing it offers.
+   *
+   * FACTS ONLY, no prose. The Korean name of a connector and the sentence about what a Bot can then
+   * do belong to the surface (`app/src/lib/plugins/connect-cards.ts`); what the server owes it is
+   * which entries exist, whether one needs a mall id typed in, and what is stored for it now.
+   */
   routes.get("/connections", requireUser, async (context) => {
     const connections = await store.connectionsFor(context.var.actor.id);
+    const stored = await store.listServers();
     return context.json({
       connections,
+      available: connectableCatalogue(sharedClient).map((entry) => ({
+        id: entry.key,
+        /** True for a vendor that gives every customer their own hostname (Cafe24's mall id). */
+        needsInstanceHost: entry.host === null,
+        /**
+         * The name this deployment already has for a per-instance vendor, so somebody reconnecting
+         * is not asked to remember their own mall id. Null when nothing is stored yet.
+         */
+        instanceName: instanceNameOf(
+          stored.find((server) => server.id === entry.key)?.url,
+        ),
+      })),
       // Shown to an administrator so they can register a client at the vendor with the exact value
       // this deployment will send. Null means the deployment has no public URL and cannot connect.
       redirectUri: connect?.publicUrl
@@ -333,6 +438,95 @@ export function createPluginRoutes(
     }
 
     /*
+     * The fleet never configured this vendor, so there is no application to consent under.
+     *
+     * Refused rather than attempted, and it is the same refusal the catalogue listing acts on: an
+     * entry that reaches this point without credentials would send somebody to a consent screen
+     * that ends in `invalid_client`, which reads as their own account being at fault.
+     */
+    if (!entryIsConnectable(entry, sharedClient)) {
+      return context.json(
+        {
+          error: `${entry.title} is not configured on this deployment.`,
+          code: "laf:connector_not_configured",
+        },
+        409,
+      );
+    }
+
+    /*
+     * The one thing a person types, for a vendor that gives every customer its own hostname.
+     *
+     * Not a secret — a mall id is on the shop's own address bar — which is why it is a plain field
+     * on the card and is stored as part of the server's URL rather than in the vault. It is checked
+     * against the entry's anchored pattern before anything is stored, by `addServer`, so what
+     * arrives here can only ever become a host this entry was reviewed for.
+     */
+    const body = (await context.req.json().catch(() => null)) as {
+      instanceName?: unknown;
+    } | null;
+    const instanceName =
+      typeof body?.instanceName === "string" ? body.instanceName.trim() : "";
+    if (entry.host === null && !instanceName) {
+      return context.json(
+        {
+          error: `${entry.title} needs the name of the shop this deployment should connect to.`,
+          code: "laf:instance_name_required",
+        },
+        400,
+      );
+    }
+
+    /*
+     * The server row, created on the spot if this is the first press.
+     *
+     * WHY THE PRESS IS ENOUGH. Adding a curated server used to be an administrator's act, and on a
+     * deployment shared by a company it still reads that way. This one is not shared: one VM per
+     * person (docs/laf/deployment-model.md), the entry is reviewed in code with a pinned host, and
+     * the application it consents under is the fleet's rather than anything typed here. What is
+     * left for an administrator to decide is nothing, and making somebody visit an admin page to
+     * unlock a button on their own settings page is ceremony in front of a decision nobody makes.
+     *
+     * The audit row `addServer` writes still says who did it and when.
+     */
+    let serverUrl: string;
+    try {
+      const ensured = await store.ensureCatalogueServer({
+        key: serverId,
+        ...(instanceName ? { instanceName } : {}),
+        by: actorEmail(context),
+      });
+      serverUrl = ensured.url;
+    } catch (error) {
+      if (
+        error instanceof CustomServerRefusedError ||
+        error instanceof CatalogueEntryUnknownError
+      ) {
+        return context.json(
+          { error: error.message, code: "laf:instance_name_refused" },
+          400,
+        );
+      }
+      throw error;
+    }
+
+    /*
+     * The vendor's three addresses, with a per-instance vendor's own host filled in. Null means the
+     * stored row does not name a host this entry would be pointed at, which cannot happen right
+     * after `ensureCatalogueServer` accepted it and is refused rather than assumed away.
+     */
+    const endpoints = authEndpointsFor(entry, serverUrl);
+    if (!endpoints) {
+      return context.json(
+        {
+          error: `${entry.title} is not at an address this deployment will send a consent to.`,
+          code: "laf:instance_name_refused",
+        },
+        400,
+      );
+    }
+
+    /*
      * A dynamic entry introduces the deployment itself on first use; a manual one still waits for
      * an administrator. Registration lives here, on the one handler that already refuses without a
      * public URL — the redirect URI it registers is guaranteed to exist.
@@ -345,6 +539,9 @@ export function createPluginRoutes(
     let client: OAuthClient | null;
     try {
       client =
+        // The fleet's own application first: it is not in the vault and never will be, so a lookup
+        // there would find nothing and send the person off to register something themselves.
+        sharedClientFor(entry) ??
         (await store.oauthClientFor(serverId)) ??
         (entry.auth.clientRegistration === "dynamic"
           ? await store.ensureOAuthClient(serverId, actorEmail(context))
@@ -392,15 +589,25 @@ export function createPluginRoutes(
       context.req.query("returnTo") === "admin" ? "admin" : "settings";
 
     const verifier = createVerifier();
+    const sealed = await sealConnectState(
+      { userId: context.var.actor.id, serverId, verifier, returnTo },
+      connect.encryptionKey,
+    );
+    const relayed = relayFor(entry);
     return context.json({
       authorizationUrl: authorizationUrlFor({
-        auth: entry.auth,
+        auth: { ...entry.auth, authorizationUrl: endpoints.authorizationUrl },
         clientId: client.clientId,
-        redirectUri: redirectUriFor(connect.publicUrl),
-        state: await sealConnectState(
-          { userId: context.var.actor.id, serverId, verifier, returnTo },
-          connect.encryptionKey,
-        ),
+        redirectUri: redirectUriOf(entry, connect.publicUrl),
+        /*
+         * The customer's name in front of the sealed state, and ONLY when the consent is relayed.
+         *
+         * The relay reads that name to know which of the fleet's deployments to hand the browser
+         * back to; it cannot read anything else, because the rest is sealed with a key only this
+         * deployment holds. A vendor that answers us directly is told a bare state, so nothing about
+         * which customer this is travels where it is not needed.
+         */
+        state: relayed ? relayStateFor(relayed.slug, sealed) : sealed,
         codeChallenge: challengeFor(verifier),
       }),
     });
@@ -450,7 +657,15 @@ export function createPluginRoutes(
      * them it was tells anybody probing this endpoint how far they got.
      */
     const opened = await redeemConnectState(
-      context.req.query("state") ?? "",
+      /*
+       * The sealed half, whatever the relay left in front of it.
+       *
+       * The relay is expected to strip the customer's name before handing the browser back, and one
+       * that forwards the state verbatim is a working relay too. Nothing before the first dot is
+       * believed either way: this deployment's own seal is the only thing here that decides
+       * anything, and it names the person, the server and the PKCE verifier itself.
+       */
+      sealedPartOf(context.req.query("state") ?? ""),
       connect.encryptionKey,
     );
     if (!opened.ok) return context.redirect(failed);
@@ -474,16 +689,31 @@ export function createPluginRoutes(
     const entry = catalogueEntry(state.serverId);
     if (entry?.auth.kind !== "user-oauth") return context.redirect(failed);
 
-    const client = await store.oauthClientFor(state.serverId);
+    const client =
+      sharedClientFor(entry) ?? (await store.oauthClientFor(state.serverId));
     if (!client) return context.redirect(failed);
 
+    /*
+     * The token endpoint, resolved against the row the connect handler ensured. A per-instance
+     * vendor's is its own, and a row naming a host this entry would not be pointed at ends the flow
+     * here rather than posting a code to it.
+     */
+    const endpoints = authEndpointsFor(
+      entry,
+      await store.storedServerUrl(state.serverId),
+    );
+    if (!endpoints) return context.redirect(failed);
+
     const grant = await redeemAuthorizationCode({
-      tokenUrl: entry.auth.tokenUrl,
+      tokenUrl: endpoints.tokenUrl,
       clientId: client.clientId,
       clientSecret: client.clientSecret,
       code,
-      redirectUri: redirectUriFor(connect.publicUrl),
+      // The SAME value the consent went out with, relay and all: a vendor compares the two and
+      // refuses an exchange whose redirect URI does not match the request that earned the code.
+      redirectUri: redirectUriOf(entry, connect.publicUrl),
       verifier: state.verifier,
+      ...(entry.auth.tokenAuth ? { tokenAuth: entry.auth.tokenAuth } : {}),
     });
     if (!grant) return context.redirect(failed);
 

@@ -30,8 +30,24 @@ import {
   normalizeHostname,
   resolvedHostVerdict,
 } from "../net/host-verdict";
+import type { LafGuard } from "./laf-contract";
 // Type-only, so naming the transport here creates no import cycle with the registry that resolves it.
 import type { TransportKind } from "./transport";
+
+/**
+ * A vendor LAF registered ONE OAuth application with, for the whole fleet.
+ *
+ * The platform registers; the customer consents. A shop owner never obtains an API key and never
+ * sees a developer console — whatever a vendor lets a platform register once becomes a single
+ * 연결 button in this product, and the only thing the person does is say yes in their own account.
+ * The client id and secret therefore come from this deployment's environment (one value per family,
+ * the same value on every VM in the fleet) rather than from a vault row somebody pasted into.
+ *
+ * A closed union rather than a string, so adding a vendor is a change to this file and to
+ * {@link ./shared-clients} together: an entry naming a family with no environment variables behind
+ * it should not typecheck.
+ */
+export type SharedClientFamily = "google" | "cafe24";
 
 /**
  * How a server is authenticated, and whose credential does it.
@@ -52,6 +68,16 @@ export type CatalogueAuth =
    */
   | {
       kind: "user-oauth";
+      /**
+       * The three addresses, either absolute or as a `{host}` template.
+       *
+       * A template is for a vendor that gives every customer their own hostname and serves its OAuth
+       * endpoints there too (Cafe24: `https://<mallid>.cafe24api.com/api/v2/oauth/…`). `{host}` is
+       * replaced with the ORIGIN of the server row this deployment already stored, and only after
+       * {@link hostAdmissible} has accepted it against the entry's anchored pattern — see
+       * {@link authEndpointsFor}. It is never replaced with anything a caller supplied at the time,
+       * because these are the addresses an authorization code and a refresh token are sent to.
+       */
       authorizationUrl: string;
       tokenUrl: string;
       /** Where a disconnect is sent, so revocation happens at the vendor and not just here. */
@@ -71,6 +97,22 @@ export type CatalogueAuth =
       clientRegistration?: "dynamic";
       /** The RFC 7591 endpoint. Pinned https, required when `clientRegistration` is `dynamic`. */
       registrationUrl?: string;
+      /**
+       * The fleet-wide OAuth application this entry consents under, when there is one.
+       *
+       * Present means the client comes from configuration and is the same on every VM: nobody
+       * pastes anything and the vault holds no client for this server. Absent keeps the two older
+       * shapes — a client the deployment registered for itself (`dynamic`), or one an administrator
+       * obtained by hand.
+       */
+      sharedClient?: SharedClientFamily;
+      /**
+       * How the token endpoint wants the client proved. Absent means the client id and secret go in
+       * the form body, which is what every vendor here but Cafe24 accepts; `basic` puts them in an
+       * `Authorization: Basic` header, which is what Cafe24 REQUIRES and refuses the exchange
+       * without.
+       */
+      tokenAuth?: "basic";
       /**
        * Vendor-specific consent-URL parameters. Google's offline/consent pair lives HERE rather
        * than in `authorizationUrlFor`, so one vendor's requirements are never sent to another —
@@ -95,6 +137,15 @@ export type CatalogueEntry = {
    * anchored at both ends so it cannot match a host that merely ends in the vendor's domain.
    */
   hostPattern?: string;
+  /**
+   * How the customer's own name becomes a host, for a per-instance vendor.
+   *
+   * `{name}` is what the person typed on the connect card — a Cafe24 mall id, which is on the shop's
+   * own address bar and is not a secret. The result is checked against {@link hostPattern} before
+   * anything is stored, so this template is a convenience for building the address and never the
+   * thing that admits it.
+   */
+  instanceHostTemplate?: string;
   /** The path the MCP endpoint is served at. Frozen here, never taken from a caller. */
   path: string;
   /**
@@ -122,6 +173,33 @@ export type CatalogueEntry = {
    * over-inclusive.
    */
   writeTools: readonly string[];
+  /**
+   * Tools a person answers for every time, whatever the written boundary says short of `deny`.
+   *
+   * WHY THIS IS HERE AND NOT ON THE TOOL. A custom server declares its own risk with annotations and
+   * is believed, because the definition it declared is pinned by hash (docs/laf/mcp-contract.md).
+   * A curated entry is the opposite arrangement: the reviewed word is THIS file's, so annotations
+   * arriving from the vendor — or written into one of our own REST adapters — decide nothing, and
+   * `call.ts` reads the floor from here. Putting them on the tool as well would be two sources for
+   * one decision, and the one a reader would trust is the one that does nothing.
+   *
+   * Only the four names a person can be shown a sentence for (`app/src/lib/approvals.ts`), and each
+   * has to be TRUE of the tool: a card telling somebody an append "can destroy something" is a
+   * boundary lying in the other direction. A write that is neither outward nor destructive is left
+   * to the written policy through its `write_tool` intent.
+   */
+  guardedTools?: Readonly<Record<string, LafGuard>>;
+  /**
+   * Whether this vendor answers to the fleet's relay instead of to this deployment's own callback.
+   *
+   * Google and Cafe24 both check `redirect_uri` for exact equality against what the OAuth
+   * application was registered with, and neither accepts a wildcard. One application shared by the
+   * whole fleet therefore cannot name `https://<customer>.agent.laf-co.com/…`, because there is no
+   * such string to register — there is one per customer, and there will be more tomorrow. So the
+   * registered value is the relay's, the relay reads which customer it is from the state, and the
+   * browser is handed back to that customer's own callback. See docs/laf/connections.md.
+   */
+  relay?: true;
   /**
    * Which protocol reaches this vendor. Absent means MCP, which is what every entry was.
    *
@@ -191,6 +269,14 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
       // Read-only, because nothing in this slice writes to anybody's Drive.
       scopes: Object.freeze(["https://www.googleapis.com/auth/drive.readonly"]),
       /*
+       * One Google application for the whole fleet and for every Google entry below it.
+       *
+       * Incremental consent is what makes that safe to share: each entry asks for its own scopes and
+       * nothing else, so connecting Drive grants Drive. A person who never connects Gmail has never
+       * agreed to Gmail, whatever the application is capable of asking for.
+       */
+      sharedClient: "google",
+      /*
        * `offline` and `consent` are both load bearing FOR GOOGLE. Without `access_type=offline`
        * Google returns no refresh token; without `prompt=consent` a reconnect returns none either.
        * They are Google parameters, so they live on Google's entry.
@@ -208,8 +294,191 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
      * into something the policy engine has never heard of.
      */
     writeTools: Object.freeze(["create_file", "copy_file"]),
+    relay: true,
     docsUrl:
       "https://developers.google.com/workspace/guides/configure-mcp-servers",
+  },
+  {
+    key: "google-sheets",
+    title: "Google Sheets",
+    vendor: "Google",
+    summary: "Rows in the spreadsheets of whoever is asking.",
+    host: "https://sheets.googleapis.com",
+    path: "/v4/spreadsheets",
+    transport: "google-sheets-rest",
+    auth: {
+      kind: "user-oauth",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      /*
+       * Read AND write, unlike Drive, because a spreadsheet is where a small business keeps the
+       * thing it wants a Bot to add a row to. `spreadsheets.readonly` would make every write tool
+       * below fail at the vendor, which is the shape of a control that does nothing.
+       */
+      scopes: Object.freeze(["https://www.googleapis.com/auth/spreadsheets"]),
+      sharedClient: "google",
+      authorizationParams: Object.freeze({
+        access_type: "offline",
+        prompt: "consent",
+      }),
+    },
+    writeTools: Object.freeze(["append_sheet_row", "update_sheet_values"]),
+    /*
+     * Only the overwrite. An append adds a row and takes nothing away, so calling it destructive on
+     * the card would be a sentence that is not true; it is still a write, so a deployment's own
+     * `intent == "write_tool"` rule reaches it.
+     */
+    guardedTools: Object.freeze({ update_sheet_values: "destructive" as const }),
+    relay: true,
+    docsUrl: "https://developers.google.com/sheets/api/reference/rest",
+  },
+  {
+    key: "gmail",
+    title: "Gmail",
+    vendor: "Google",
+    summary: "Mail in the mailbox of whoever is asking.",
+    host: "https://gmail.googleapis.com",
+    path: "/gmail/v1/users/me",
+    transport: "gmail-rest",
+    auth: {
+      kind: "user-oauth",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      /*
+       * `gmail.compose` covers drafting AND sending, so `gmail.send` beside it would be a second
+       * permission for something already granted — a scope nobody remembers agreeing to.
+       *
+       * Both are RESTRICTED scopes at Google: the application needs a security assessment before
+       * anybody outside the test users can consent. That is the fleet's paperwork, once, and it is
+       * why this entry disappears from the catalogue until the application exists (see
+       * ./shared-clients).
+       */
+      scopes: Object.freeze([
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+      ]),
+      sharedClient: "google",
+      authorizationParams: Object.freeze({
+        access_type: "offline",
+        prompt: "consent",
+      }),
+    },
+    writeTools: Object.freeze(["create_draft", "send_message"]),
+    // A draft stays in the person's own mailbox; a send leaves and cannot be recalled.
+    guardedTools: Object.freeze({ send_message: "external" as const }),
+    relay: true,
+    docsUrl: "https://developers.google.com/gmail/api/reference/rest",
+  },
+  {
+    key: "google-calendar",
+    title: "Google Calendar",
+    vendor: "Google",
+    summary: "The calendar of whoever is asking.",
+    host: "https://www.googleapis.com",
+    path: "/calendar/v3",
+    transport: "google-calendar-rest",
+    auth: {
+      kind: "user-oauth",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      // Events, not the whole calendar: nothing here creates or deletes calendars themselves.
+      scopes: Object.freeze([
+        "https://www.googleapis.com/auth/calendar.events",
+      ]),
+      sharedClient: "google",
+      authorizationParams: Object.freeze({
+        access_type: "offline",
+        prompt: "consent",
+      }),
+    },
+    writeTools: Object.freeze(["create_event"]),
+    /*
+     * `external`, not merely a write. An event lands on a calendar other people read, and Google
+     * mails every attendee it is given — so the effect of this call leaves the deployment for
+     * somebody else's inbox, which is the one thing a person should be asked about every time.
+     */
+    guardedTools: Object.freeze({ create_event: "external" as const }),
+    relay: true,
+    docsUrl: "https://developers.google.com/calendar/api/v3/reference",
+  },
+  {
+    key: "google-business-profile",
+    title: "Google Business Profile",
+    vendor: "Google",
+    summary: "Locations and reviews of the business asking.",
+    /*
+     * One product, three Google hosts. Reviews are only on the legacy v4 API and have been for
+     * years; accounts and locations moved to their own v1 services. This is the reviews host
+     * because reviews are what the connector exists for, and the adapter pins the other two beside
+     * it in reviewed code (see ./google-business-rest) rather than taking either from a caller.
+     */
+    host: "https://mybusiness.googleapis.com",
+    path: "/v4",
+    transport: "google-business-rest",
+    auth: {
+      kind: "user-oauth",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      // Google publishes exactly one scope for this product; there is no read-only half of it.
+      scopes: Object.freeze(["https://www.googleapis.com/auth/business.manage"]),
+      sharedClient: "google",
+      authorizationParams: Object.freeze({
+        access_type: "offline",
+        prompt: "consent",
+      }),
+    },
+    writeTools: Object.freeze(["reply_to_review"]),
+    // A reply is published under the business's name where anybody can read it.
+    guardedTools: Object.freeze({ reply_to_review: "external" as const }),
+    relay: true,
+    docsUrl:
+      "https://developers.google.com/my-business/reference/rest/v4/accounts.locations.reviews",
+  },
+  {
+    key: "cafe24",
+    title: "Cafe24",
+    vendor: "Cafe24",
+    summary: "Orders, products and board posts of one mall.",
+    /*
+     * Per-instance: every mall answers on its own hostname, so the customer's mall id is the only
+     * thing a person types when connecting — and it is not a secret, which is why it is a plain
+     * field on the card rather than anything the vault holds.
+     *
+     * Anchored at both ends, so a host that merely ends in the vendor's domain is refused.
+     */
+    host: null,
+    hostPattern: "^https://[a-z0-9][a-z0-9-]{1,48}\\.cafe24api\\.com$",
+    instanceHostTemplate: "https://{name}.cafe24api.com",
+    path: "/api/v2/admin",
+    transport: "cafe24-rest",
+    auth: {
+      kind: "user-oauth",
+      // Templates: Cafe24 serves its OAuth endpoints on the mall's own host too.
+      authorizationUrl: "{host}/api/v2/oauth/authorize",
+      tokenUrl: "{host}/api/v2/oauth/token",
+      revokeUrl: "{host}/api/v2/oauth/revoke",
+      scopes: Object.freeze([
+        "mall.read_order",
+        "mall.write_order",
+        "mall.read_product",
+        "mall.read_community",
+      ]),
+      sharedClient: "cafe24",
+      // Cafe24 authenticates the client on the Authorization header and refuses the body form.
+      tokenAuth: "basic",
+    },
+    writeTools: Object.freeze(["update_order_status"]),
+    /*
+     * `external`: changing an order's status is what tells the buyer their parcel shipped. The
+     * effect is a message to somebody who is not in this room, so a person answers for it each time.
+     */
+    guardedTools: Object.freeze({ update_order_status: "external" as const }),
+    relay: true,
+    docsUrl: "https://developers.cafe24.com/docs/api/admin",
   },
   {
     key: "notion",
@@ -297,6 +566,47 @@ export function serverCredentialKind(entry: CatalogueEntry): "mcp" | null {
 
 export function catalogueEntry(key: string): CatalogueEntry | null {
   return BY_KEY.get(key) ?? null;
+}
+
+/**
+ * The three OAuth addresses for one entry, with a per-instance vendor's host filled in.
+ *
+ * `serverUrl` is the address this deployment already stored for the server — the catalogue's own for
+ * a fixed vendor, the admitted instance URL for a per-instance one. Its ORIGIN is what `{host}`
+ * becomes, and only after {@link hostAdmissible} accepts it again: a row could have been written by
+ * an older build, and these are the addresses an authorization code and a refresh token go to, so
+ * the check is repeated at the moment of use rather than trusted from the moment of storage.
+ *
+ * Null when a template has no host to resolve against, or a host this entry would not be pointed at.
+ * Every caller turns that into a refusal, because the alternative is sending somebody's grant to an
+ * address nobody reviewed.
+ */
+export function authEndpointsFor(
+  entry: CatalogueEntry,
+  serverUrl: string | null,
+): { authorizationUrl: string; tokenUrl: string; revokeUrl: string } | null {
+  if (entry.auth.kind !== "user-oauth") return null;
+  const { authorizationUrl, tokenUrl, revokeUrl } = entry.auth;
+  const templated = [authorizationUrl, tokenUrl, revokeUrl].some((address) =>
+    address.includes("{host}"),
+  );
+  if (!templated) return { authorizationUrl, tokenUrl, revokeUrl };
+
+  if (!serverUrl) return null;
+  let origin: string;
+  try {
+    origin = new URL(serverUrl).origin;
+  } catch {
+    return null;
+  }
+  if (!hostAdmissible(entry, origin)) return null;
+
+  const fill = (address: string) => address.replaceAll("{host}", origin);
+  return {
+    authorizationUrl: fill(authorizationUrl),
+    tokenUrl: fill(tokenUrl),
+    revokeUrl: fill(revokeUrl),
+  };
 }
 
 /**

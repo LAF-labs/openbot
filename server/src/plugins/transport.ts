@@ -1,5 +1,10 @@
+import * as cafe24Rest from "./cafe24-rest";
 import type { CatalogueEntry } from "./catalogue";
+import * as gmailRest from "./gmail-rest";
+import * as businessRest from "./google-business-rest";
+import * as calendarRest from "./google-calendar-rest";
 import * as driveRest from "./google-drive-rest";
+import * as sheetsRest from "./google-sheets-rest";
 import type { McpCallResult, McpTool } from "./mcp";
 import * as mcp from "./mcp";
 
@@ -68,11 +73,32 @@ export type VendorTransport = {
  * A closed union rather than a string, so adding one is a change to this file and to the registry
  * below together. An entry naming a transport that does not exist should not typecheck.
  */
-export type TransportKind = "mcp" | "google-drive-rest";
+export type TransportKind =
+  | "mcp"
+  | "google-drive-rest"
+  | "google-sheets-rest"
+  | "gmail-rest"
+  | "google-calendar-rest"
+  | "google-business-rest"
+  | "cafe24-rest";
 
+/*
+ * One adapter per PRODUCT, not one per vendor.
+ *
+ * Google's five entries could have been one module with a switch in it, and that is the version
+ * where adding Gmail's send changes the file Drive's search lives in. They are separate because
+ * they are separately granted, separately consented to and separately reviewed: a person who
+ * connected Sheets has agreed to Sheets, and the code that reaches their mailbox should not even be
+ * loaded by that decision.
+ */
 const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   mcp,
   "google-drive-rest": driveRest,
+  "google-sheets-rest": sheetsRest,
+  "gmail-rest": gmailRest,
+  "google-calendar-rest": calendarRest,
+  "google-business-rest": businessRest,
+  "cafe24-rest": cafe24Rest,
 };
 
 /**

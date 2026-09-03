@@ -24,6 +24,10 @@ import {
   exchangeRefreshTokenOverHttp,
 } from "./oauth-client";
 import { createServers, unlistedAdvertisedTools } from "./servers";
+import {
+  NO_SHARED_CLIENTS,
+  type SharedClientLookup,
+} from "./shared-clients";
 import { createSkillsAndGrants } from "./skills-and-grants";
 
 /**
@@ -349,7 +353,17 @@ export type PluginStoreOptions = {
     tokenUrl: string;
     client: OAuthClient;
     refreshToken: string;
+    tokenAuth?: "basic";
   }) => Promise<AccessToken>;
+  /**
+   * The OAuth applications LAF registered once for the whole fleet, by vendor.
+   *
+   * Defaults to nothing configured, which leaves every connector on the two older shapes: a client
+   * the deployment registers for itself, or one an administrator pasted in. The process that runs a
+   * deployment passes the real lookup (`server/src/index.ts`); a suite that does not care inherits
+   * the empty one rather than reaching `process.env` from inside the store.
+   */
+  sharedClient?: SharedClientLookup;
   /** RFC 7591 self-registration, for entries whose clientRegistration is dynamic. */
   registerClient?: (input: {
     registrationUrl: string;
@@ -416,7 +430,10 @@ export type PluginContext = {
     tokenUrl: string;
     client: OAuthClient;
     refreshToken: string;
+    tokenAuth?: "basic";
   }) => Promise<AccessToken>;
+  /** The fleet's own OAuth applications, resolved once. See {@link ./shared-clients}. */
+  readonly sharedClient: SharedClientLookup;
   readonly registerClient: (input: {
     registrationUrl: string;
     redirectUri: string;
@@ -438,6 +455,7 @@ export function createPluginStore(options: PluginStoreOptions) {
     encryptionKey: options.encryptionKey,
     exchangeRefreshToken:
       options.exchangeRefreshToken ?? exchangeRefreshTokenOverHttp,
+    sharedClient: options.sharedClient ?? NO_SHARED_CLIENTS,
     registerClient: options.registerClient ?? registerDynamicClient,
     injectedVendor: options.callVendor,
   };
@@ -456,6 +474,9 @@ export function createPluginStore(options: PluginStoreOptions) {
 
   return {
     addServer: servers.addServer,
+    /** The row one press of 연결 needs, made on the spot. See `servers.ts` for why a press is enough. */
+    ensureCatalogueServer: servers.ensureCatalogueServer,
+    storedServerUrl: servers.storedServerUrl,
     addCustomServer: servers.addCustomServer,
     approveToolDefinition: servers.approveToolDefinition,
     removeServer: servers.removeServer,

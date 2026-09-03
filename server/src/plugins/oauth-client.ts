@@ -66,21 +66,35 @@ export async function exchangeRefreshTokenOverHttp(input: {
   tokenUrl: string;
   client: OAuthClient;
   refreshToken: string;
+  /** The vendor's client-authentication style, from its catalogue entry. See `oauth.ts`. */
+  tokenAuth?: "basic";
 }): Promise<AccessToken> {
+  const basic = input.tokenAuth === "basic" && input.client.clientSecret !== "";
   const params = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: input.refreshToken,
-    client_id: input.client.clientId,
   });
+  // In the header instead, for a vendor that authenticates the client there — the same split the
+  // authorization-code redemption in `oauth.ts` makes, and for the same vendor.
+  if (!basic) params.set("client_id", input.client.clientId);
   // A public (DCR) client proves itself without one, and some vendors refuse an unexpected empty
   // field outright. The same guard the authorization-code redemption in `oauth.ts` uses.
-  if (input.client.clientSecret) {
+  if (!basic && input.client.clientSecret) {
     params.set("client_secret", input.client.clientSecret);
   }
 
   const response = await fetch(input.tokenUrl, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      ...(basic
+        ? {
+            authorization: `Basic ${Buffer.from(
+              `${input.client.clientId}:${input.client.clientSecret}`,
+            ).toString("base64")}`,
+          }
+        : {}),
+    },
     body: params,
     /*
      * A redirect is a refusal here too. This request carries the client secret AND somebody's

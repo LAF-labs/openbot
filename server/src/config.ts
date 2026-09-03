@@ -10,6 +10,12 @@
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
+import { isCustomerSlug } from "./plugins/oauth";
+import type { SharedClientFamily } from "./plugins/catalogue";
+import {
+  type SharedOAuthClient,
+  sharedClientsFrom,
+} from "./plugins/shared-clients";
 
 export type DeploymentConfig = {
   databaseUrl: string;
@@ -98,6 +104,25 @@ export type DeploymentConfig = {
     webhookUrl: string;
     secret: string;
     origin: string;
+  };
+  /**
+   * What this deployment can offer as a one-press 연결, and how a vendor gets the browser back.
+   *
+   * Both halves are the FLEET's rather than this deployment's, which is the whole shape of the
+   * decision: LAF registers one OAuth application per vendor and one relay address, and every VM
+   * carries the same values. A customer never sees a developer console.
+   */
+  connectors: {
+    /** The applications LAF registered, by vendor. Missing means that vendor is not offered here. */
+    clients: Partial<Record<SharedClientFamily, SharedOAuthClient>>;
+    /**
+     * The fleet's relay, and this deployment's own name in front of it.
+     *
+     * Absent means every vendor is told this deployment's own callback, which is right on a laptop
+     * and for a vendor that registers a client per deployment. Present, it is the one address a
+     * fleet-wide application can have registered — see docs/laf/connections.md.
+     */
+    relay?: { url: string; slug: string; productDomain: string };
   };
 };
 
@@ -379,6 +404,84 @@ function fleetConfig(environment: Environment): DeploymentConfig["fleet"] {
 }
 
 /**
+ * The fleet's OAuth relay, and the name this deployment answers to underneath the product domain.
+ *
+ * WHY A SLUG HAS TO BE DERIVED AT ALL. Google and Cafe24 compare `redirect_uri` for exact equality
+ * with what the application was registered with, and neither accepts a wildcard — so one
+ * application shared by the fleet cannot name `https://<customer>.agent.laf-co.com/…`, because
+ * there is one such string per customer and the next one does not exist yet. The relay is the one
+ * address that CAN be registered, and the only thing it needs in order to hand the browser back is
+ * which customer this consent belongs to. That is the slug, and it travels in front of the sealed
+ * state (`plugins/oauth.ts`).
+ *
+ * THE PRODUCT DOMAIN IS DERIVED FROM THE RELAY, not configured a fourth time. The relay lives at
+ * `auth.<product domain>`, so its parent domain is the domain every customer is a name under, and
+ * a deployment that sets the relay has already said which fleet it belongs to. `LAF_PRODUCT_DOMAIN`
+ * overrides it for the case that arrangement stops holding, and is otherwise not set anywhere.
+ *
+ * REFUSES TO START rather than guessing. A `PUBLIC_ORIGIN` outside the product domain has no slug
+ * the fleet's allow-list would recognise, so every consent from that deployment would die at the
+ * relay — after the person had already said yes at the vendor, which is the worst moment to find
+ * out. The same reasoning as every other half-configured thing in this file.
+ */
+function connectorsConfig(
+  environment: Environment,
+): DeploymentConfig["connectors"] {
+  const clients = sharedClientsFrom(environment);
+
+  const relayUrl = url(environment, "LAF_OAUTH_RELAY_URL");
+  if (!relayUrl) return { clients };
+
+  const relay = new URL(relayUrl);
+  if (relay.protocol !== "https:" && relay.hostname !== "localhost") {
+    throw new Error(
+      "LAF_OAUTH_RELAY_URL must be https: it is the address vendors are told to send an authorization code to",
+    );
+  }
+
+  const labels = relay.hostname.split(".");
+  const productDomain =
+    optional(environment, "LAF_PRODUCT_DOMAIN") ?? labels.slice(1).join(".");
+  if (!productDomain) {
+    throw new Error(
+      "LAF_OAUTH_RELAY_URL names no product domain (it should live at auth.<domain>), so set LAF_PRODUCT_DOMAIN",
+    );
+  }
+
+  const origin = optional(environment, "PUBLIC_ORIGIN");
+  if (!origin) {
+    throw new Error(
+      "LAF_OAUTH_RELAY_URL is set, so PUBLIC_ORIGIN must be too: the relay hands the browser back to this deployment by name, and a deployment with no origin has none",
+    );
+  }
+
+  let hostname: string;
+  try {
+    hostname = new URL(origin).hostname;
+  } catch {
+    throw new Error("PUBLIC_ORIGIN must be a valid URL");
+  }
+
+  const suffix = `.${productDomain}`;
+  const slug = hostname.endsWith(suffix)
+    ? hostname.slice(0, -suffix.length)
+    : "";
+  // One label, and a real one. A slug carrying a dot would name a deeper host than the fleet's
+  // allow-list holds, and it is also the separator the state is split on.
+  if (!isCustomerSlug(slug)) {
+    throw new Error(
+      `PUBLIC_ORIGIN (${origin}) is not one name under ${productDomain}, so the OAuth relay has no customer to hand the browser back to. Every deployment on the relay is https://<name>${suffix}`,
+    );
+  }
+
+  return {
+    clients,
+    // No trailing slash: the provider segment is appended to this.
+    relay: { url: relayUrl.replace(/\/+$/, ""), slug, productDomain },
+  };
+}
+
+/**
  * A duration in milliseconds, or a refusal to start.
  *
  * Refused rather than quietly defaulted, for the same reason a malformed policy is. An operator who
@@ -483,5 +586,6 @@ export function loadConfig(
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),
     fleet: fleetConfig(environment),
+    connectors: connectorsConfig(environment),
   };
 }
