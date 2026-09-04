@@ -134,9 +134,18 @@ export function createPluginRoutes(
     return relayRedirectUriFor(relayed.url, family ?? entry.key);
   };
 
-  /** The first label of a stored per-instance URL — the mall id somebody typed, read back. */
-  const instanceNameOf = (url: string | undefined): string | null => {
-    if (!url) return null;
+  /**
+   * The first label of a stored per-instance URL — the mall id somebody typed, read back.
+   *
+   * Only for an entry that HAS one. Every hostname has a first label, so reading it unconditionally
+   * answered "sheets" for Google Sheets and "mybusiness" for Business Profile: a name the person
+   * never typed, sent to a surface that would have shown it back to them as their own.
+   */
+  const instanceNameOf = (
+    entry: CatalogueEntry,
+    url: string | undefined,
+  ): string | null => {
+    if (entry.host !== null || !url) return null;
     try {
       const label = new URL(url).hostname.split(".")[0];
       return label || null;
@@ -357,6 +366,7 @@ export function createPluginRoutes(
          * is not asked to remember their own mall id. Null when nothing is stored yet.
          */
         instanceName: instanceNameOf(
+          entry,
           stored.find((server) => server.id === entry.key)?.url,
         ),
       })),
