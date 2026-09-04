@@ -87,15 +87,23 @@ function whatHappened(subject: AskSubject | undefined): string {
   return "웹에서 하는 작업";
 }
 
-/** The moment, in the timezone the person is standing in. */
+/**
+ * The moment, in the timezone the person is standing in.
+ *
+ * Written by hand rather than through `Intl.DateTimeFormat("ko-KR", { dateStyle: "short" })`,
+ * because that string depends on the ICU the runtime was built with: the CI runner printed
+ * "26. 9. 4." where a laptop printed "2026. 9. 4.". Text that reaches somebody's phone must not
+ * change with the machine that sent it. Seoul has no daylight saving, so the offset is a constant.
+ */
 function whenItHappened(iso: string): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
-  return new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(at);
+  const seoul = new Date(at.getTime() + 9 * 60 * 60 * 1000);
+  const hours = seoul.getUTCHours();
+  const meridiem = hours < 12 ? "오전" : "오후";
+  const clock = hours % 12 === 0 ? 12 : hours % 12;
+  const minutes = String(seoul.getUTCMinutes()).padStart(2, "0");
+  return `${seoul.getUTCFullYear()}. ${seoul.getUTCMonth() + 1}. ${seoul.getUTCDate()}. ${meridiem} ${clock}:${minutes}`;
 }
 
 /**
