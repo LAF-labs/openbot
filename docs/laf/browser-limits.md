@@ -122,3 +122,7 @@ bunx playwright install chromium   # 없으면 이 파일의 13개가 skip된다
 | `laf:tab_missing` | 그 번호의 탭이 없다 |
 | `laf:stale_refs` | 스냅샷이 낡았다. 다시 찍어야 한다 |
 | `laf:bot_header_missing` | 어느 봇인지 말하지 않은 호출(배포 버그) |
+
+## 사이트 연결 카탈로그
+
+로그인이 필요한 국내 서비스는 `shared/sites/catalogue.ts`에 이름·로그인 주소·"연결하면 봇이 하는 일"·서명인 판정이 데이터로 있고, 앱의 "사이트 연결" 카드가 그것을 그린다. 사이트를 더하는 것은 표에 행 하나이지 마이그레이션이 아니다. 사람이 로그인을 인계한 뒤 돌려주면 봇이 화면을 읽어 연결 여부를 적고, 이후 모든 탐색이 같은 판정으로 "다시 로그인 필요"를 갱신한다(`server/src/computer/site-connections.ts`).

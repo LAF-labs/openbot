@@ -25,6 +25,7 @@ import {
   fingerprintOf,
   type PendingApproval,
 } from "./approvals";
+import { siteForUrl } from "../../../shared/sites/catalogue";
 import type { ComputerClient } from "./client";
 import {
   type ActionPolicy,
@@ -178,6 +179,26 @@ export type ComputerGatewayOptions = {
    * existed, so a test that says nothing about allowances is testing what it always was.
    */
   standing?: StandingApprovalStore;
+  /**
+   * Told whenever a navigation lands on a site in the 사이트 연결 catalogue.
+   *
+   * THIS IS THE HALF THAT KEEPS THE CARD HONEST. A person connects 배민 once, in March; whether
+   * that session is still good in September is only knowable by looking at the page, and the thing
+   * that looks at the page every morning is the routine, not the settings screen. So the ordinary
+   * navigation path reports what it saw — signed in, or back at the login wall — and the card is
+   * drawn from that rather than from the day somebody last pressed a button.
+   *
+   * Synchronous and returning nothing, deliberately: this is bookkeeping on the success path of
+   * somebody's actual work, and it must not be able to fail it or slow it down. The gateway knows
+   * nothing about the table underneath. Absent — every test that does not care, and every
+   * deployment without a database — changes nothing else about a navigation.
+   */
+  siteSeen?: (seen: {
+    userId: string;
+    siteId: string;
+    botId: string;
+    signedIn: boolean;
+  }) => void;
 };
 
 /**
@@ -225,6 +246,34 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
 
   async function read(botId: string): Promise<ReadResult> {
     return as(botId).read();
+  }
+
+  /**
+   * Report a landing on a catalogue site, if it is one and if a real person is behind the call.
+   *
+   * `actor.userId` is omitted for the local development actor, and that omission is about
+   * ATTRIBUTION — a fixture is not a person, so it does not become the actor of an audit row. It is
+   * not about existence: `initializeDevActorUser` writes that fixture into `users` on boot, so it
+   * owns rows like anybody else and the id is what a connection belongs to. Hence the fallback,
+   * without which the whole feature is invisible in local development for a reason that only
+   * applies to the trail.
+   */
+  function noteSiteVisit(
+    botId: string,
+    actor: ActionActor,
+    url: string,
+    text: string | undefined,
+  ): void {
+    const userId = actor.userId ?? actor.id;
+    if (!userId || !options.siteSeen) return;
+    const site = siteForUrl(url);
+    if (!site) return;
+    options.siteSeen({
+      userId,
+      siteId: site.id,
+      botId,
+      signedIn: site.signedIn(url, text ?? ""),
+    });
   }
 
   /**
@@ -772,7 +821,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * including one that permits everything. This adds the record and the per-Bot decision on top: a
      * refusal by either produces a row, so navigation denials are visible in the audit trail.
      */
-    navigate(
+    async navigate(
       computerId: string,
       botId: string,
       actor: ActionActor,
@@ -786,7 +835,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        */
       approvalId?: string,
     ) {
-      return govern(
+      const result = await govern(
         computerId,
         "computer_navigate",
         botId,
@@ -794,6 +843,13 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         { targetUrl: url, ...(approvalId ? { approvalId } : {}) },
         () => as(botId).navigate(url),
       );
+      /*
+       * The page that actually loaded, not the one that was asked for. A login wall redirects, and
+       * the redirect is precisely the information worth having: `nid.naver.com` is not one of
+       * 스마트스토어's hosts, so it reads as "not signed in" without any special case.
+       */
+      noteSiteVisit(botId, actor, result.url, result.text);
+      return result;
     },
 
     click(

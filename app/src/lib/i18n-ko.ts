@@ -1167,4 +1167,129 @@ export const ko: Record<string, string> = {
   // 가입·탈퇴가 함대(VM을 만들고 없애는 쪽)에 닿았는지.
   "The fleet was told": "함대에 전달됨",
   "The fleet could not be told": "함대에 전달하지 못함",
+
+  // 사이트 연결 — 화면의 말.
+  "Site connections": "사이트 연결",
+  "The sites you work in every day. No keys and no developer registration: you sign in once on a Bot's own browser, hand it back, and it stays signed in.":
+    "매일 들어가는 사이트들입니다. API 키도, 개발자 등록도 필요 없습니다. 봇의 브라우저에 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
+  "Make a Bot first — a site is connected on a Bot's own browser.":
+    "먼저 봇을 만들어 주세요. 사이트 연결은 봇의 브라우저에 로그인하는 일입니다.",
+  "Which Bot's browser?": "어느 봇의 브라우저에 로그인할까요?",
+  "Connected · {name}": "연결됨 · {name}",
+  "Needs signing in again": "다시 로그인 필요",
+  "Not connected yet": "아직 연결 안 됨",
+  "A joint certificate or simple authentication is yours to do, and the Bot cannot keep it: you authenticate each time and hand the browser back.":
+    "공동인증서·간편인증은 봇이 대신 못 합니다. 열 때마다 직접 인증하고 브라우저를 돌려주세요.",
+  "Last seen {date}": "{date}에 확인",
+  "on {name}'s browser": "{name}의 브라우저",
+  "Opening…": "여는 중…",
+  "Authenticate now and hand back": "지금 인증하고 돌려주기",
+  "Sign in again": "다시 로그인",
+  "The boundary would not open that address. Which sites a Bot may open is an administrator's decision.":
+    "허락 규칙이 이 주소를 열지 않았습니다. 봇이 어느 사이트를 열 수 있는지는 관리자가 정합니다.",
+  "Somebody has to allow this before the page will open.":
+    "허락을 받아야 이 페이지가 열립니다.",
+  "The Bot's browser could not be reached.": "봇의 브라우저에 닿지 못했습니다.",
+  "That page still looks like a login screen, so nothing was recorded. Try again when you are through.":
+    "아직 로그인 화면으로 보여서 아무것도 기록하지 않았습니다. 로그인을 마친 뒤 다시 해 주세요.",
+  "Log in on {name}, then hand it back.": "{name}에 로그인한 뒤 돌려주세요.",
+  "Checking the page…": "화면을 확인하는 중…",
+
+  // 사이트 연결 — 사이트 이름. shared/sites/catalogue.ts의 표를 그대로 따른다.
+  "Naver Smart Store Seller Centre": "네이버 스마트스토어 판매자센터",
+  "Naver Smart Place": "네이버 스마트플레이스",
+  "Naver Booking and Talk Partner Centre": "네이버 예약·톡톡 파트너센터",
+  "Coupang Wing": "쿠팡 윙",
+  "Baemin for Owners": "배달의민족 사장님",
+  "Coupang Eats Store": "쿠팡이츠 스토어",
+  "Yogiyo for Owners": "요기요 사장님",
+  Hometax: "홈택스",
+  "Daangn Business": "당근비즈니스",
+  "CatchTable for Owners": "캐치테이블 사장님",
+  "Toss Payments Merchant Admin": "토스페이먼츠 상점관리자",
+  "Naver Search Ads": "네이버 검색광고",
+  "Instagram on the web": "인스타그램(웹)",
+  "KakaoTalk Channel Admin": "카카오톡 채널 관리자센터",
+  "Cafe24 Shop Admin": "카페24 관리자",
+
+  // 사이트 연결 — 연결하면 봇이 할 수 있는 일, 한 문장씩.
+  "Read today's orders and the enquiries nobody has answered yet.":
+    "오늘 들어온 주문과 아직 답하지 않은 문의를 봇이 읽습니다.",
+  "Read the reviews on your shop's listing and check what it says about you.":
+    "가게 정보에 달린 리뷰를 읽고, 소개에 적힌 내용이 맞는지 확인합니다.",
+  "Read tomorrow's bookings and the Talk messages waiting for a reply.":
+    "내일 예약과 답장을 기다리는 톡톡 문의를 봇이 읽습니다.",
+  "Read what has to ship today and which products are blocked or out of stock.":
+    "오늘 출고할 주문과 품절·판매중지된 상품을 봇이 읽습니다.",
+  "Read yesterday's sales, the orders behind them and what is due to be settled.":
+    "어제 매출과 주문, 정산 예정 금액을 봇이 읽습니다.",
+  "Read yesterday's orders overnight and check the shop is open when it should be.":
+    "밤사이 들어온 주문을 읽고, 영업 상태가 맞는지 확인합니다.",
+  "Read new reviews and tell you which ones are worth a reply today.":
+    "새 리뷰를 읽고 오늘 답글이 필요한 것을 알려 줍니다.",
+  "Read what has been issued and what is due, once you have authenticated it yourself.":
+    "직접 인증해 주면, 발행 내역과 다가오는 기한을 봇이 읽습니다.",
+  "Read the reviews and enquiries left on your neighbourhood business page.":
+    "동네가게 페이지에 달린 후기와 문의를 봇이 읽습니다.",
+  "Read today's reservations, in order, and who did not turn up.":
+    "오늘 예약을 시간순으로 읽고, 노쇼가 있었는지 확인합니다.",
+  "Read yesterday's payments and cancellations and what is due to be settled.":
+    "어제 결제와 취소 내역, 정산 예정 금액을 봇이 읽습니다.",
+  "Read what the ads spent, what they brought in, and which campaigns have stopped.":
+    "광고비와 성과, 멈춘 캠페인을 봇이 읽습니다.",
+  "Read the comments and messages your shop's account has been left.":
+    "가게 계정에 달린 댓글과 받은 메시지를 봇이 읽습니다.",
+  "Read the chats waiting for a reply and how the channel is doing.":
+    "답장을 기다리는 채팅과 채널 현황을 봇이 읽습니다.",
+  "Read the mall's orders and which products are running low, for a mall not on the OAuth path.":
+    "쇼핑몰 주문과 재고가 얼마 남지 않은 상품을 봇이 읽습니다.",
+
+  // 사이트 연결 — 눌러서 바로 시켜 보는 첫 일.
+  "Sort out the orders that came in today.": "오늘 들어온 주문 목록을 정리해줘",
+  "Show me the enquiries nobody has answered.": "답변 안 한 문의를 보여줘",
+  "Tell me which products are about to run out.":
+    "품절 임박한 상품이 있는지 알려줘",
+  "Sort out the reviews that came in this week.":
+    "이번 주에 달린 리뷰를 정리해줘",
+  "Check whether the opening hours on the listing are right.":
+    "등록된 영업시간이 실제와 맞는지 확인해줘",
+  "Put tomorrow's bookings in order of time.":
+    "내일 예약을 시간순으로 정리해줘",
+  "Show me the Talk messages nobody has replied to.":
+    "답장 안 한 톡톡 문의를 보여줘",
+  "Sort out the orders that have to ship today.": "오늘 출고할 주문을 정리해줘",
+  "Check whether any product is blocked or out of stock.":
+    "품절이나 판매중지로 막힌 상품이 있는지 확인해줘",
+  "Sort out yesterday's sales and how many orders there were.":
+    "어제 매출과 주문 건수를 정리해줘",
+  "Tell me what is due to be settled and when.":
+    "정산 예정 금액과 날짜를 알려줘",
+  "Sort out the orders that came in yesterday.": "어제 들어온 주문을 정리해줘",
+  "Check the shop's opening state is what it should be right now.":
+    "지금 영업 상태가 맞는지 확인해줘",
+  "Sort out the new reviews and tell me which need a reply.":
+    "새 리뷰를 정리하고 답글이 필요한 것을 알려줘",
+  "Sort out yesterday's sales.": "어제 매출을 정리해줘",
+  "Sort out the tax invoices issued this month.":
+    "이번 달 전자세금계산서 발행 내역을 정리해줘",
+  "Tell me which filing deadlines are coming up.":
+    "다가오는 신고 기한을 알려줘",
+  "Sort out the new reviews and enquiries.": "새로 달린 후기와 문의를 정리해줘",
+  "Tell me how this week's neighbourhood post did.":
+    "이번 주 단골 소식 반응을 알려줘",
+  "Put today's reservations in order of time.":
+    "오늘 예약을 시간순으로 정리해줘",
+  "Check whether anybody did not turn up.": "노쇼가 있었는지 확인해줘",
+  "Sort out yesterday's payments and cancellations.":
+    "어제 결제와 취소 내역을 정리해줘",
+  "Sort out yesterday's ad spend and clicks.":
+    "어제 광고비와 클릭수를 정리해줘",
+  "Tell me which campaigns have run out of budget.":
+    "예산이 소진된 캠페인이 있는지 알려줘",
+  "Sort out the new comments and messages.": "새 댓글과 메시지를 정리해줘",
+  "Tell me how this week's posts did.": "이번 주 게시물 반응을 알려줘",
+  "Show me the chats nobody has replied to.": "답장 안 한 채팅을 보여줘",
+  "Tell me how many new friends the channel got this week.":
+    "이번 주에 새로 늘어난 친구 수를 알려줘",
+  "Tell me which products are running low.": "재고가 부족한 상품을 알려줘",
 };

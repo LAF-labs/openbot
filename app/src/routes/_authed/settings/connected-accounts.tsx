@@ -12,6 +12,7 @@ import {
   ConnectionStrip,
   ConnectOutcome,
 } from "@/components/plugins/connections";
+import { SiteConnections } from "@/components/sites/site-connections";
 import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { t } from "@/lib/i18n";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -101,6 +102,8 @@ const ConnectedAccountsPage = () => {
           </PageRows>
         )}
       </PageSection>
+
+      <SiteConnections />
     </PageShell>
   );
 };

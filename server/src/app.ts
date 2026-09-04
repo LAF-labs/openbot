@@ -30,6 +30,8 @@ import type { DemonstrationRecorder } from "./computer/demonstration";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
+import type { SiteConnectionStore } from "./computer/site-connections";
+import { createSiteRoutes } from "./computer/site-routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
@@ -247,6 +249,15 @@ export function createApp(
     /** How long answers take. Absent answers 503 on the metric and leaves the door working. */
     approvalMetrics?: (days: number) => Promise<ApprovalMetrics>;
   },
+  /**
+   * Which business sites this person has signed into on a Bot's browser. Last, like everything new.
+   *
+   * Absent leaves the 사이트 연결 routes unmounted, and the section then draws every card as "not
+   * connected yet" — which is honest: a deployment that cannot remember a connection genuinely does
+   * not know about one. Nothing else changes; the handoff itself is the ordinary navigate-and-take-
+   * the-wheel path and works without any of this.
+   */
+  siteConnections?: SiteConnectionStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -480,6 +491,15 @@ export function createApp(
         auditStore,
       ),
     );
+
+    // The 사이트 연결 cards. Mounted with the computer because "look at the page and tell me
+    // whether it is signed in" is a read of a browser, and there is no browser without one.
+    if (siteConnections) {
+      app.route(
+        "/api/sites",
+        createSiteRoutes(computerGateway, siteConnections, requireUser),
+      );
+    }
   }
 
   // Answering is its own surface because asking is not only the computer's. See approval-routes.ts.

@@ -32,6 +32,7 @@ import {
 import { createComputerClient } from "./computer/client";
 import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createComputerGateway } from "./computer/gateway";
+import { createSiteConnectionStore } from "./computer/site-connections";
 import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
@@ -623,6 +624,15 @@ const stallGuard = createStallGuard({
  * by the same policy, written to the same audit trail and held for the same approvals as one
  * somebody watched.
  */
+/**
+ * Which business sites this person has signed into on a Bot's browser.
+ *
+ * Built before the gateway because the gateway writes through it: every navigation that lands on a
+ * catalogue host reports what it saw, which is the only thing that can tell somebody in September
+ * that the login they did in March has expired.
+ */
+const siteConnections = createSiteConnectionStore(database);
+
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
@@ -643,6 +653,14 @@ const computerGateway = computerClient
       standing: standingApprovals,
       autoReview: autoReviewFor,
       repeat: repeatDetector,
+      /*
+       * Bookkeeping on the success path of somebody's actual work, so it swallows its own failures
+       * — the same discipline the outbox states: a card losing its freshness is a small loss, a
+       * routine failing because a card could not be updated is not a trade anybody would make.
+       */
+      siteSeen: (seen) => {
+        void siteConnections.record(seen).catch(() => undefined);
+      },
     })
   : undefined;
 
@@ -925,6 +943,9 @@ const app = createApp(
         timeZone: process.env.BOT_TIME_ZONE ?? "",
       }),
   },
+  // Which business sites this person has signed into on a Bot's browser. The same store the
+  // gateway writes through above, so the card and the morning routine agree about one row.
+  siteConnections,
 );
 
 /**

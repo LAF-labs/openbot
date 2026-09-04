@@ -398,3 +398,59 @@ export const lafNotifications = pgTable(
     index("laf_notifications_created_at_idx").on(table.createdAt),
   ],
 );
+
+/**
+ * Which sites this person has signed into on a Bot's browser, and when it was last seen working.
+ *
+ * WHAT IT IS NOT: a credential store. Nothing here is a secret, because the session itself is not
+ * here — it is a cookie in the Chromium profile on this person's own VM
+ * (`agent-computer/src/profiles.ts`), which is durable and never leaves the machine. These four
+ * facts are only what the 사이트 연결 card needs in order to stop guessing: whether the person has
+ * ever done the handoff, when, on which Bot's browser, and whether the last time anything looked at
+ * that site it was still logged in.
+ *
+ * ONE ROW PER PERSON PER SITE. `bot_id` is which browser the session was last seen in rather than
+ * part of the identity: a person signs in once and the card is about the site, not about the
+ * profile directory it happened to land in — but the card still names the Bot, because a browser
+ * profile is per Bot and a card that did not say which one would be quietly claiming more than it
+ * knows.
+ *
+ * NO FOREIGN KEY ON `bot_id`, one on `user_id`, for the reason `laf_notifications` gives: the write
+ * happens on the success path of a navigation, and a Bot deleted between the login and this
+ * morning's routine must not turn a bookkeeping write into an exception on the path that was doing
+ * somebody's work. The person is the opposite: these rows are theirs and are worth nothing once the
+ * account is gone.
+ */
+export const lafSiteConnections = pgTable(
+  "laf_site_connections",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** An id from `shared/sites/catalogue.ts`. Text, so adding a site is not a migration. */
+    siteId: text("site_id").notNull(),
+    /** Whose browser the session was last seen in. */
+    botId: text("bot_id").notNull(),
+    /** The first time the handoff finished with the page reading as signed in. */
+    connectedAt: timestamp("connected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** The last time anything — a person, a chat, a routine — saw that page still signed in. */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /**
+     * The last look found the login wall instead.
+     *
+     * Kept rather than deleting the row, because "you signed in here in March and it has expired"
+     * is a different thing to tell somebody than "you have never connected this", and it is the one
+     * that explains why this morning's routine came back empty.
+     */
+    needsLogin: boolean("needs_login").notNull().default(false),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.siteId] }),
+    // The card list's own read: this person's rows, all of them, once per screen.
+    index("laf_site_connections_user_idx").on(table.userId),
+  ],
+);
