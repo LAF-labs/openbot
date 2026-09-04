@@ -1,4 +1,8 @@
-import { CATALOGUE, type CatalogueEntry, type SharedClientFamily } from "./catalogue";
+import {
+  CATALOGUE,
+  type CatalogueEntry,
+  type SharedClientFamily,
+} from "./catalogue";
 
 /**
  * The OAuth applications LAF registered once, for the whole fleet, read from this deployment's

@@ -32,7 +32,8 @@ import {
 /** Where the account list lives. Pinned here; see the note above. */
 const ACCOUNTS_HOST = "https://mybusinessaccountmanagement.googleapis.com/v1";
 /** Where a location's own details live. Pinned here; see the note above. */
-const LOCATIONS_HOST = "https://mybusinessbusinessinformation.googleapis.com/v1";
+const LOCATIONS_HOST =
+  "https://mybusinessbusinessinformation.googleapis.com/v1";
 
 const DEFAULT_REVIEWS = 20;
 const MAX_REVIEWS = 50;
@@ -89,7 +90,9 @@ const TOOLS: readonly McpTool[] = Object.freeze([
 
 export const listNeedsCredential = false;
 
-export async function listTools(_connection: RestConnection): Promise<McpTool[]> {
+export async function listTools(
+  _connection: RestConnection,
+): Promise<McpTool[]> {
   return TOOLS.map((tool) => ({ ...tool }));
 }
 
@@ -138,11 +141,17 @@ export async function callTool(
   const base = connection.url.replace(/\/+$/, "");
 
   if (toolName === "list_locations") {
-    const accounts = await vendorRequest("Google Business Profile", connection, {
-      url: `${ACCOUNTS_HOST}/accounts`,
-    });
+    const accounts = await vendorRequest(
+      "Google Business Profile",
+      connection,
+      {
+        url: `${ACCOUNTS_HOST}/accounts`,
+      },
+    );
     if (!accounts.ok) return failure(accounts.message);
-    const accountBody = await readJson<{ accounts?: Account[] }>(accounts.response);
+    const accountBody = await readJson<{ accounts?: Account[] }>(
+      accounts.response,
+    );
     if (!accountBody) {
       return failure("구글 비즈니스 프로필이 읽을 수 없는 답을 보냈습니다.");
     }
@@ -150,12 +159,18 @@ export async function callTool(
     const lines: string[] = [];
     for (const account of accountBody.accounts ?? []) {
       if (!account.name) continue;
-      const listed = await vendorRequest("Google Business Profile", connection, {
-        url: `${LOCATIONS_HOST}/${account.name}/locations`,
-        query: { readMask: LOCATION_FIELDS, pageSize: "50" },
-      });
+      const listed = await vendorRequest(
+        "Google Business Profile",
+        connection,
+        {
+          url: `${LOCATIONS_HOST}/${account.name}/locations`,
+          query: { readMask: LOCATION_FIELDS, pageSize: "50" },
+        },
+      );
       if (!listed.ok) {
-        lines.push(`- ${account.accountName ?? account.name}: ${listed.message}`);
+        lines.push(
+          `- ${account.accountName ?? account.name}: ${listed.message}`,
+        );
         continue;
       }
       const body = await readJson<{ locations?: Location[] }>(listed.response);
@@ -233,7 +248,8 @@ export async function callTool(
   if (toolName === "reply_to_review") {
     const review = stringArg(args, "review");
     const comment = stringArg(args, "comment");
-    if (!review || !comment) return failure("리뷰 값과 답글 내용이 필요합니다.");
+    if (!review || !comment)
+      return failure("리뷰 값과 답글 내용이 필요합니다.");
     if (!isResourceName(review)) {
       return failure(
         "review 값이 accounts/… 형식이 아닙니다. list_reviews를 먼저 부르세요.",

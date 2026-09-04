@@ -102,9 +102,22 @@ describe("which servers this deployment will talk to", () => {
   test("every OAuth address is pinned https, and dynamic entries name their registration endpoint", () => {
     for (const entry of CATALOGUE) {
       if (entry.auth.kind !== "user-oauth") continue;
-      expect(entry.auth.authorizationUrl.startsWith("https://")).toBe(true);
-      expect(entry.auth.tokenUrl.startsWith("https://")).toBe(true);
-      expect(entry.auth.revokeUrl.startsWith("https://")).toBe(true);
+      /*
+       * A `{host}` template counts as pinned, because the only thing it can become is an origin
+       * `hostAdmissible` already accepted — and every entry's pattern is anchored on `https://`,
+       * which the test above checks. What must never appear is an ABSOLUTE address that is not
+       * https, so a template is required to be a template all the way to its first slash rather
+       * than something like `http://{host}`.
+       */
+      for (const address of [
+        entry.auth.authorizationUrl,
+        entry.auth.tokenUrl,
+        entry.auth.revokeUrl,
+      ]) {
+        expect(
+          address.startsWith("https://") || address.startsWith("{host}/"),
+        ).toBe(true);
+      }
       if (entry.auth.clientRegistration === "dynamic") {
         expect(entry.auth.registrationUrl?.startsWith("https://")).toBe(true);
       }

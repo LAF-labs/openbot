@@ -279,6 +279,14 @@ export const ko: Record<string, string> = {
     "질문하는 사람의 구글 드라이브 파일.",
   "Pages and databases of whoever is asking.":
     "질문하는 사람의 노션 페이지와 데이터베이스.",
+  "Rows in the spreadsheets of whoever is asking.":
+    "질문하는 사람의 구글 스프레드시트 내용.",
+  "Mail in the mailbox of whoever is asking.": "질문하는 사람의 지메일 편지함.",
+  "The calendar of whoever is asking.": "질문하는 사람의 구글 캘린더.",
+  "Locations and reviews of the business asking.":
+    "우리 가게의 구글 비즈니스 정보와 리뷰.",
+  "Orders, products and board posts of one mall.":
+    "카페24 쇼핑몰의 주문·상품·게시글.",
   "Connected accounts": "연결된 계정",
   "Connected accounts could not be loaded.":
     "연결된 계정을 불러오지 못했습니다.",

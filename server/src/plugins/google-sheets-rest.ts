@@ -139,7 +139,9 @@ const TOOLS: readonly McpTool[] = Object.freeze([
 /** The list is this file, so nobody's credential is needed to know what this connector can do. */
 export const listNeedsCredential = false;
 
-export async function listTools(_connection: RestConnection): Promise<McpTool[]> {
+export async function listTools(
+  _connection: RestConnection,
+): Promise<McpTool[]> {
   return TOOLS.map((tool) => ({ ...tool }));
 }
 
@@ -152,14 +154,18 @@ type SheetProperties = {
 
 /** A row of cells as one line a model can quote, with the columns kept apart. */
 const rowLine = (row: unknown[]): string =>
-  row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))).join(" | ");
+  row
+    .map((cell) => (cell === null || cell === undefined ? "" : String(cell)))
+    .join(" | ");
 
 /** Rows of strings out of whatever the model sent, or nothing usable. */
 function rowsFrom(value: unknown): string[][] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const rows = value.map((row) =>
     Array.isArray(row)
-      ? row.map((cell) => (cell === null || cell === undefined ? "" : String(cell)))
+      ? row.map((cell) =>
+          cell === null || cell === undefined ? "" : String(cell),
+        )
       : null,
   );
   return rows.every((row): row is string[] => row !== null) ? rows : null;
@@ -192,11 +198,16 @@ export async function callTool(
 
     const lines = (body.sheets ?? []).map((sheet) => {
       const grid = sheet.properties?.gridProperties;
-      const size = grid ? ` (${grid.rowCount ?? "?"}행 × ${grid.columnCount ?? "?"}열)` : "";
+      const size = grid
+        ? ` (${grid.rowCount ?? "?"}행 × ${grid.columnCount ?? "?"}열)`
+        : "";
       return `- ${sheet.properties?.title ?? "(이름 없음)"}${size}`;
     });
     return asResult(
-      [body.properties?.title ? `문서: ${body.properties.title}` : null, ...lines]
+      [
+        body.properties?.title ? `문서: ${body.properties.title}` : null,
+        ...lines,
+      ]
         .filter(Boolean)
         .join("\n"),
     );
@@ -229,7 +240,9 @@ export async function callTool(
   if (toolName === "append_sheet_row") {
     const values = args.values;
     const row = Array.isArray(values)
-      ? values.map((cell) => (cell === null || cell === undefined ? "" : String(cell)))
+      ? values.map((cell) =>
+          cell === null || cell === undefined ? "" : String(cell),
+        )
       : null;
     if (!row || row.length === 0) return failure("추가할 값이 필요합니다.");
 
@@ -247,13 +260,16 @@ export async function callTool(
     });
     if (!result.ok) return failure(result.message);
 
-    const body = await readJson<{ updates?: { updatedRange?: string } }>(result.response);
+    const body = await readJson<{ updates?: { updatedRange?: string } }>(
+      result.response,
+    );
     return asResult(`추가했습니다: ${body?.updates?.updatedRange ?? range}`);
   }
 
   if (toolName === "update_sheet_values") {
     const rows = rowsFrom(args.values);
-    if (!rows) return failure("덮어쓸 값을 행의 배열로 주세요. 예: [[\"a\",\"b\"]]");
+    if (!rows)
+      return failure('덮어쓸 값을 행의 배열로 주세요. 예: [["a","b"]]');
 
     const result = await vendorRequest("Google Sheets", connection, {
       url: `${base}/${sheetId}/values/${encodeURIComponent(range)}`,
@@ -263,9 +279,10 @@ export async function callTool(
     });
     if (!result.ok) return failure(result.message);
 
-    const body = await readJson<{ updatedCells?: number; updatedRange?: string }>(
-      result.response,
-    );
+    const body = await readJson<{
+      updatedCells?: number;
+      updatedRange?: string;
+    }>(result.response);
     return asResult(
       `${body?.updatedRange ?? range} 범위의 ${body?.updatedCells ?? 0}칸을 바꿨습니다.`,
     );

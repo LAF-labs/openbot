@@ -678,8 +678,7 @@ export function createConnections(
           const client =
             (entry.auth.sharedClient
               ? context.sharedClient(entry.auth.sharedClient)
-              : null) ??
-            (await oauthClients.storedOAuthClient(input.serverId));
+              : null) ?? (await oauthClients.storedOAuthClient(input.serverId));
           const params = new URLSearchParams({
             token: refreshToken,
             token_type_hint: "refresh_token",

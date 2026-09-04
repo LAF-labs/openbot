@@ -13,6 +13,15 @@
 export const CATALOGUE_COPY: Readonly<Record<string, { summary: string }>> = {
   notion: { summary: "Pages and databases of whoever is asking." },
   "google-drive": { summary: "Files in the Drive of whoever is asking." },
+  "google-sheets": {
+    summary: "Rows in the spreadsheets of whoever is asking.",
+  },
+  gmail: { summary: "Mail in the mailbox of whoever is asking." },
+  "google-calendar": { summary: "The calendar of whoever is asking." },
+  "google-business-profile": {
+    summary: "Locations and reviews of the business asking.",
+  },
+  cafe24: { summary: "Orders, products and board posts of one mall." },
 };
 
 /** The English key `t()` should be handed for this entry's summary, or the server's own line. */

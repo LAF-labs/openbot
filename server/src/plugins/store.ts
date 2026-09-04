@@ -24,10 +24,7 @@ import {
   exchangeRefreshTokenOverHttp,
 } from "./oauth-client";
 import { createServers, unlistedAdvertisedTools } from "./servers";
-import {
-  NO_SHARED_CLIENTS,
-  type SharedClientLookup,
-} from "./shared-clients";
+import { NO_SHARED_CLIENTS, type SharedClientLookup } from "./shared-clients";
 import { createSkillsAndGrants } from "./skills-and-grants";
 
 /**

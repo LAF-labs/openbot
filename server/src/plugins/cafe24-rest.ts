@@ -212,7 +212,9 @@ export async function callTool(
             order.payment_amount ? `${order.payment_amount}원` : "",
             order.order_status ? `상태 ${order.order_status}` : "",
             (order.items ?? [])
-              .map((item) => `${item.product_name ?? "?"}×${item.quantity ?? 1}`)
+              .map(
+                (item) => `${item.product_name ?? "?"}×${item.quantity ?? 1}`,
+              )
               .join(", "),
           ]
             .filter(Boolean)
@@ -312,7 +314,8 @@ export async function callTool(
   if (toolName === "update_order_status") {
     const orderId = stringArg(args, "orderId");
     const status = stringArg(args, "status");
-    if (!orderId || !status) return failure("주문번호와 바꿀 상태가 필요합니다.");
+    if (!orderId || !status)
+      return failure("주문번호와 바꿀 상태가 필요합니다.");
 
     const result = await vendorRequest("카페24", connection, {
       url: `${base}/orders/${encodeURIComponent(orderId)}`,

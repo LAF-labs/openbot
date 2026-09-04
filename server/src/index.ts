@@ -68,6 +68,7 @@ import {
 } from "./notifications/notify";
 import { createNotificationOutbox } from "./notifications/outbox";
 import { redirectUriFor } from "./plugins/oauth";
+import { lookupOver } from "./plugins/shared-clients";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
@@ -507,6 +508,16 @@ const autoReviewFor = async (botId: string, subject: ReviewSubject) => {
  */
 const pluginPublicUrl = config.auth?.baseUrl;
 
+/**
+ * The OAuth applications LAF registered once for the whole fleet, as one lookup.
+ *
+ * Resolved here and handed to both halves that need it — the store, which spends a refresh token,
+ * and the connect routes, which decide what a person is even offered. Reading the environment again
+ * inside either of them would be the same decision made in two places, and the one that drifts is
+ * always the one nothing renders.
+ */
+const sharedOAuthClients = lookupOver(config.connectors.clients);
+
 const pluginStore = createPluginStore({
   database,
   auditStore: bootAuditStore,
@@ -525,6 +536,9 @@ const pluginStore = createPluginStore({
    * that resolves to nothing would leave behind a client that can never complete a consent flow.
    */
   redirectUri: pluginPublicUrl ? redirectUriFor(pluginPublicUrl) : undefined,
+  // The vault holds no client for a shared-application entry and never will, so a refresh that
+  // looked only there would report "connect it again" at a connection nothing is wrong with.
+  sharedClient: sharedOAuthClients,
 });
 
 /*
@@ -869,6 +883,20 @@ const app = createApp(
           const allowed = config.auth?.allowedEmails ?? [];
           return allowed.length === 0 || allowed.includes(person.email);
         },
+        sharedClient: sharedOAuthClients,
+        /*
+         * The fleet's relay, when this deployment is on one. Absent on a laptop, and then every
+         * vendor is told this deployment's own callback — which is what a client registered against
+         * `http://localhost:3001` expects and the only thing that can work there.
+         */
+        ...(config.connectors.relay
+          ? {
+              relay: {
+                url: config.connectors.relay.url,
+                slug: config.connectors.relay.slug,
+              },
+            }
+          : {}),
       }
     : undefined,
   // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's

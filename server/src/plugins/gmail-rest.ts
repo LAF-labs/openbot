@@ -101,7 +101,9 @@ const TOOLS: readonly McpTool[] = Object.freeze([
 
 export const listNeedsCredential = false;
 
-export async function listTools(_connection: RestConnection): Promise<McpTool[]> {
+export async function listTools(
+  _connection: RestConnection,
+): Promise<McpTool[]> {
   return TOOLS.map((tool) => ({ ...tool }));
 }
 
@@ -150,7 +152,6 @@ function plainTextOf(part: GmailPart | undefined, wantHtml = false): string {
  * noise in the raw source somebody may end up reading.
  */
 export function encodedHeader(value: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ASCII range is the question here.
   if (/^[\x20-\x7e]*$/.test(value)) return value;
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}=?=`;
 }
@@ -183,14 +184,20 @@ export async function callTool(
       url: `${base}/messages`,
       query: {
         q: stringArg(args, "query") ?? undefined,
-        maxResults: String(countArg(args, "max", DEFAULT_MESSAGES, MAX_MESSAGES)),
+        maxResults: String(
+          countArg(args, "max", DEFAULT_MESSAGES, MAX_MESSAGES),
+        ),
       },
     });
     if (!listed.ok) return failure(listed.message);
 
-    const body = await readJson<{ messages?: { id?: string }[] }>(listed.response);
+    const body = await readJson<{ messages?: { id?: string }[] }>(
+      listed.response,
+    );
     if (!body) return failure("지메일이 읽을 수 없는 답을 보냈습니다.");
-    const ids = (body.messages ?? []).map((message) => message.id).filter(Boolean);
+    const ids = (body.messages ?? [])
+      .map((message) => message.id)
+      .filter(Boolean);
     if (ids.length === 0) return asResult("");
 
     /*
@@ -255,9 +262,10 @@ export async function callTool(
       return failure("받는 사람, 제목, 본문이 모두 필요합니다.");
     }
 
-    const raw = Buffer.from(mimeMessage({ to, subject, body: text }), "utf8").toString(
-      "base64url",
-    );
+    const raw = Buffer.from(
+      mimeMessage({ to, subject, body: text }),
+      "utf8",
+    ).toString("base64url");
     const draft = toolName === "create_draft";
     const result = await vendorRequest("Gmail", connection, {
       url: `${base}/${draft ? "drafts" : "messages/send"}`,

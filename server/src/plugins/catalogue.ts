@@ -329,7 +329,9 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
      * the card would be a sentence that is not true; it is still a write, so a deployment's own
      * `intent == "write_tool"` rule reaches it.
      */
-    guardedTools: Object.freeze({ update_sheet_values: "destructive" as const }),
+    guardedTools: Object.freeze({
+      update_sheet_values: "destructive" as const,
+    }),
     relay: true,
     docsUrl: "https://developers.google.com/sheets/api/reference/rest",
   },
@@ -424,7 +426,9 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
       tokenUrl: "https://oauth2.googleapis.com/token",
       revokeUrl: "https://oauth2.googleapis.com/revoke",
       // Google publishes exactly one scope for this product; there is no read-only half of it.
-      scopes: Object.freeze(["https://www.googleapis.com/auth/business.manage"]),
+      scopes: Object.freeze([
+        "https://www.googleapis.com/auth/business.manage",
+      ]),
       sharedClient: "google",
       authorizationParams: Object.freeze({
         access_type: "offline",

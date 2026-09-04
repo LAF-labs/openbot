@@ -102,7 +102,10 @@ export async function vendorRequest(
   try {
     url = new URL(input.url);
   } catch {
-    return { ok: false, message: `${vendor} could not be reached: bad address.` };
+    return {
+      ok: false,
+      message: `${vendor} could not be reached: bad address.`,
+    };
   }
   for (const [key, value] of Object.entries(input.query ?? {})) {
     if (value !== undefined && value !== "") url.searchParams.set(key, value);
@@ -119,9 +122,7 @@ export async function vendorRequest(
           : { "content-type": "application/json" }),
         ...(input.headers ?? {}),
       },
-      ...(input.body === undefined
-        ? {}
-        : { body: JSON.stringify(input.body) }),
+      ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
       /*
        * A redirect is not a detour to be followed: this request carries somebody's access token, and
        * following a 302 would hand it to whatever address the answer named. The same rule the token

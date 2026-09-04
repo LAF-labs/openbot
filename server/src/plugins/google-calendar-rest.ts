@@ -76,7 +76,9 @@ const TOOLS: readonly McpTool[] = Object.freeze([
 
 export const listNeedsCredential = false;
 
-export async function listTools(_connection: RestConnection): Promise<McpTool[]> {
+export async function listTools(
+  _connection: RestConnection,
+): Promise<McpTool[]> {
   return TOOLS.map((tool) => ({ ...tool }));
 }
 
@@ -185,7 +187,7 @@ export async function callTool(
 
     const created = await readJson<CalendarEvent>(result.response);
     return asResult(
-      `일정을 만들었습니다: ${created?.summary ?? summary} (${whenOf(created?.start) })${
+      `일정을 만들었습니다: ${created?.summary ?? summary} (${whenOf(created?.start)})${
         created?.htmlLink ? `\n${created.htmlLink}` : ""
       }`,
     );
