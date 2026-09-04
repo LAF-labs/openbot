@@ -22,6 +22,17 @@ export const CATALOGUE_COPY: Readonly<Record<string, { summary: string }>> = {
     summary: "Locations and reviews of the business asking.",
   },
   cafe24: { summary: "Orders, products and board posts of one mall." },
+  /*
+   * The two partner entries. They are not on the 연결 screen's OAuth list — they have their own
+   * cards with their own gestures — but they ARE in the catalogue the admin Plugins page draws, and
+   * this table is checked against the whole catalogue rather than against half of it.
+   */
+  "kakao-alimtalk": {
+    summary: "Template messages from this business's own KakaoTalk channel.",
+  },
+  "tax-invoice": {
+    summary: "Tax invoices issued and looked up for this business.",
+  },
 };
 
 /** The English key `t()` should be handed for this entry's summary, or the server's own line. */

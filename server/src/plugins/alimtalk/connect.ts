@@ -80,7 +80,15 @@ export function normalizePhone(raw: string): string {
     .trim()
     .replace(/^\+?82/, "0")
     .replaceAll(/\D/g, "");
-  if (!/^01[0-9]{7,8}$/.test(digits)) {
+  /*
+   * TEN OR ELEVEN DIGITS, and the first spelling of this rule allowed nine or ten — so every
+   * `010-1234-5678` in the country, which is eleven, was refused before the vendor was ever asked.
+   * Nothing about that is visible from a green typecheck: the flow simply never connected.
+   *
+   * The prefix is named rather than left as `[0-9]`, because `020` is not a mobile number and the
+   * 인증번호 has to arrive on a phone somebody is holding.
+   */
+  if (!/^01[016789][0-9]{7,8}$/.test(digits)) {
     throw new PartnerRefusedError("laf:alimtalk_phone_invalid");
   }
   return digits;

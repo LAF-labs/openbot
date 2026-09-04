@@ -39,14 +39,19 @@ const projectRoot = resolve(import.meta.dir, "..");
  * without the run going red. A floor whose margin has grown to 50% is not a floor, it is a number
  * in a comment.
  *
- * Measured on this tree, four consecutive green runs of the whole gate agreeing exactly:
+ * RE-RAISED AGAIN 2026-09-04, with the two partner connectors. 알림톡 and 세금계산서 brought
+ * thirty-nine tests to `server` and eleven to `app` — three new files against fake vendors on
+ * ephemeral ports, plus the partner half of `config` — and the two floors they landed on had drifted
+ * to 14% under. `agent-computer` and `root` are untouched: neither grew.
  *
- *     server           1,185 tests across 93 files   → 1,149
- *     app                235 tests across 37 files   →   227
+ * Measured on this tree, consecutive green runs of the whole gate agreeing exactly:
+ *
+ *     server           1,373 tests across 96 files   → 1,331
+ *     app                280 tests across 38 files   →   271
  *     agent-computer     132 tests across  8 files   →   128
  *     root                75 tests across 12 files   →    72
  *                      ─────                            ─────
- *                      1,627                            1,576
+ *                      1,860                            1,802
  *
  * Each floor is 3% under, rounded down, which is the same margin they were introduced with: enough
  * that consolidating a handful of cases does not fail the run, small enough that a file which threw
@@ -61,8 +66,8 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1149, roots: ["server"] },
-  { name: "app", floor: 227, roots: ["app"] },
+  { name: "server", floor: 1331, roots: ["server"] },
+  { name: "app", floor: 271, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 72, roots: ["tests", "agent-bot"] },
 ] as const;

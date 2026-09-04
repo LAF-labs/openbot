@@ -1319,6 +1319,14 @@ export const ko: Record<string, string> = {
     "이번 주에 새로 늘어난 친구 수를 알려줘",
   "Tell me which products are running low.": "재고가 부족한 상품을 알려줘",
   // 알림톡·세금계산서 — LAF가 계약을 들고, 가게는 자기 것을 연결한다.
+  // 서버 카탈로그가 보내는 이름과 한 줄 설명. `t(변수)`로 읽히므로
+  // plugin-catalogue-copy.test.ts가 표를 직접 훑는다.
+  "카카오 알림톡": "카카오 알림톡",
+  전자세금계산서: "전자세금계산서",
+  "Template messages from this business's own KakaoTalk channel.":
+    "가게의 카카오톡 채널로 보내는 안내 메시지.",
+  "Tax invoices issued and looked up for this business.":
+    "이 사업장이 발행하고 조회하는 세금계산서.",
   "Messaging and tax invoices": "알림톡·세금계산서",
   "Services you sign up for through this screen. There is no key to obtain and no developer account: your shop's own channel and your own business details, and that is all.":
     "이 화면에서 바로 가입하는 서비스입니다. 따로 받아야 할 키도, 개발자 계정도 없습니다. 가게의 카카오톡 채널과 사업자 정보만 있으면 됩니다.",
