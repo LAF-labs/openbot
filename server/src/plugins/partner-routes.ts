@@ -120,6 +120,43 @@ export function createPartnerRoutes(
   }
 
   /**
+   * The other direction: the grants back, then the server row and its tools.
+   *
+   * In this order on purpose. The grants are read against the tool list this build ships rather than
+   * against the table, so they can be taken back after the tool rows have gone — but doing it the
+   * other way round would leave a window where a Bot holds a grant on a tool that still exists.
+   *
+   * NEVER FAILS THE DISCONNECT, for the same reason the connect never fails on the grants: the
+   * registration is already gone at this point, and telling somebody their channel is still
+   * connected when it is not is the worse lie.
+   */
+  async function withdrawToolsFrom(
+    provider: PartnerFamily,
+    userId: string,
+    by: string,
+  ): Promise<void> {
+    try {
+      const bots = await partners.botsOwnedBy(userId);
+      for (const tool of partners.toolsOf(provider)) {
+        for (const botId of bots) {
+          await store.revoke("mcp", `${provider}/${tool.name}`, botId, by);
+        }
+      }
+      await store.removeServer(provider, by);
+    } catch (error) {
+      // A row that was never made, most likely: the tools were never offered. Nothing to undo.
+      if (error instanceof CatalogueEntryUnknownError) return;
+      console.error(
+        JSON.stringify({
+          type: "partner-tools-not-withdrawn",
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  /**
    * Every partner this deployment can actually offer, with what it knows about this person's.
    *
    * The catalogue half — the title and the summary — comes from the entry, so the words a screen
@@ -290,9 +327,15 @@ export function createPartnerRoutes(
   /**
    * One person dropping their own registration.
    *
-   * The server row goes with it, which takes the tools and every grant on them. A Bot that kept a
-   * tool it can no longer use would offer 알림톡 보내기 in its own tool list and refuse every call —
-   * a capability that exists to say no.
+   * The server row goes with it, which takes the tool rows — so a Bot stops being offered 알림톡
+   * 보내기 the moment the channel it would have sent from is gone. A capability that exists only to
+   * say no is worse than no capability.
+   *
+   * AND THE GRANTS, WHICH THE SERVER ROW DOES NOT TAKE. `plugin_grants.ref` is `<server>/<tool>` as
+   * plain text with no key behind it, so removing the server leaves the rows: measured by pressing
+   * 연결 해제 and reading the table. That state has a name — a WITHDRAWN grant — and it is drawn on
+   * the admin Plugins page as a discrepancy somebody should look into, which would be a lie here.
+   * Nothing is discrepant: the person pressed the button.
    *
    * NOTHING IS WITHDRAWN AT THE VENDOR. The 카카오톡 채널 and the 팝빌 회원 are the person's own and
    * outlive this; what stops is LAF acting as them. The audit row says so out loud.
@@ -301,12 +344,7 @@ export function createPartnerRoutes(
     answer(context, async (provider, userId) => {
       const result = await connectorFor(provider).disconnect(userId);
       if (result.disconnected) {
-        try {
-          await store.removeServer(provider, actorEmail(context));
-        } catch (error) {
-          // A row that was never made, most likely: the tools were never offered. Nothing to undo.
-          if (!(error instanceof CatalogueEntryUnknownError)) throw error;
-        }
+        await withdrawToolsFrom(provider, userId, actorEmail(context));
       }
       return result;
     }),

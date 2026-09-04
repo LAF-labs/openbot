@@ -1,8 +1,8 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
@@ -127,6 +127,7 @@ type StoreCalls = {
   ensured: string[];
   refreshed: string[];
   granted: { ref: string; botId: string }[];
+  revoked: { ref: string; botId: string }[];
   removed: string[];
 };
 
@@ -143,6 +144,9 @@ function fakeStore(calls: StoreCalls): PluginStore {
     grant: async (_kind: string, ref: string, botId: string) => {
       calls.granted.push({ ref, botId });
     },
+    revoke: async (_kind: string, ref: string, botId: string) => {
+      calls.revoked.push({ ref, botId });
+    },
     removeServer: async (serverId: string) => {
       calls.removed.push(serverId);
     },
@@ -152,7 +156,13 @@ function fakeStore(calls: StoreCalls): PluginStore {
 function appFor(
   userId: string,
   environment: Record<string, string | undefined>,
-  calls: StoreCalls = { ensured: [], refreshed: [], granted: [], removed: [] },
+  calls: StoreCalls = {
+    ensured: [],
+    refreshed: [],
+    granted: [],
+    revoked: [],
+    removed: [],
+  },
 ) {
   const partners = createPartnerRuntime({
     context: { database, auditStore },
@@ -391,8 +401,10 @@ describe("a connect reaches the Bots", () => {
       ensured: [],
       refreshed: [],
       granted: [],
+      revoked: [],
       removed: [],
     };
+    const botId = await createBot(userId);
     const { app, partners } = appFor(userId, environment, calls);
     await partners.connections.save({
       provider: "tax-invoice",
@@ -409,9 +421,21 @@ describe("a connect reaches the Bots", () => {
     /*
      * A Bot that kept a tool it can no longer use would offer 세금계산서 발행 in its own tool list
      * and refuse every call — a capability that exists to say no. Removing the server row takes the
-     * tools and every grant on them with it.
+     * tool rows with it.
      */
     expect(calls.removed).toEqual(["tax-invoice"]);
+    /*
+     * AND THE GRANTS, WHICH THE SERVER ROW DOES NOT TAKE. `plugin_grants.ref` is plain text with no
+     * key behind it — measured by pressing 연결 해제 against a live deployment and reading the
+     * table, which still held both rows. Left there they draw on the admin page as a discrepancy
+     * somebody should look into, and nothing is discrepant: the person pressed the button.
+     */
+    for (const tool of partners.toolsOf("tax-invoice")) {
+      expect(calls.revoked).toContainEqual({
+        ref: `tax-invoice/${tool.name}`,
+        botId,
+      });
+    }
   });
 
   test("disconnecting something that was never connected removes no server row", async () => {
@@ -420,6 +444,7 @@ describe("a connect reaches the Bots", () => {
       ensured: [],
       refreshed: [],
       granted: [],
+      revoked: [],
       removed: [],
     };
     const { app } = appFor(
@@ -462,6 +487,7 @@ describe("a connect reaches the Bots", () => {
       ensured: [],
       refreshed: [],
       granted: [],
+      revoked: [],
       removed: [],
     };
 
