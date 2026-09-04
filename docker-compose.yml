@@ -161,6 +161,18 @@ services:
       # endpoint on the other end destroys machines); the server refuses to start without it.
       LAF_FLEET_WEBHOOK_URL: ${LAF_FLEET_WEBHOOK_URL:-}
       LAF_FLEET_WEBHOOK_SECRET: ${LAF_FLEET_WEBHOOK_SECRET:-}
+      # The fleet's own OAuth application for Cafe24, and where relayed vendors send the browser
+      # back. Google's pair is already passed above for sign-in and is the SAME application these
+      # connectors consent under — one client, one console, both callbacks registered on it.
+      #
+      # Unset, those entries simply do not appear on the 연결 screen, which is correct on a laptop:
+      # a button in front of a vendor with no application behind it opens a consent that ends in
+      # `invalid_client`. The relay is the one address a fleet-wide client can have registered,
+      # since no vendor accepts `*.agent.laf-co.com` — see docs/laf/connections.md.
+      CAFE24_CLIENT_ID: ${CAFE24_CLIENT_ID:-}
+      CAFE24_CLIENT_SECRET: ${CAFE24_CLIENT_SECRET:-}
+      LAF_OAUTH_RELAY_URL: ${LAF_OAUTH_RELAY_URL:-}
+      LAF_PRODUCT_DOMAIN: ${LAF_PRODUCT_DOMAIN:-}
       # How long the trail and the run records are kept, in days. Empty is 365 (the decision in
       # docs/laf/redesign-2026-09.md §7-7); 0 keeps everything and switches the nightly sweep off.
       # The notification outbox rides the same sweep on a fixed thirty days of its own.
