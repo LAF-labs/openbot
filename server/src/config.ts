@@ -296,15 +296,6 @@ function authConfig(
         );
       }
     }
-    for (const name of configured) {
-      if (!declared.includes(name)) {
-        throw new Error(
-          `${name.toUpperCase()}_OAUTH_CLIENT_ID is set but AUTH_PROVIDERS does not name '${name}'. ` +
-            "The sign-in buttons are compiled from AUTH_PROVIDERS, and the API must not accept a " +
-            "sign-in the surface never offers: add it there, or remove the credentials.",
-        );
-      }
-    }
     if (lafOidc && !declared.includes("laf")) {
       throw new Error(
         "LAF_OIDC_ISSUER is set but AUTH_PROVIDERS does not name 'laf'. " +
@@ -332,10 +323,34 @@ function authConfig(
     throw new Error("Authentication requires BETTER_AUTH_URL");
   }
 
+  /*
+   * Which providers actually reach the sign-in screen, which is no longer the same set as "has
+   * credentials".
+   *
+   * `GOOGLE_OAUTH_*` acquired a second job: it is also the fleet's connector application, the one
+   * every 구글 연결 consents under (`plugins/shared-clients.ts`). A VM that signs people in through
+   * the broker therefore carries the pair without offering Google sign-in — and this function used
+   * to REFUSE TO START on exactly that combination, which made the two features mutually exclusive
+   * and was measured: `AUTH_PROVIDERS=laf` plus a Google connector client would not boot.
+   *
+   * The property that refusal was protecting is kept and is now enforced rather than complained
+   * about: what is DECLARED is what the API registers, so a credential the surface does not offer
+   * cannot be signed in with at all. With no declaration — a laptop — every configured pair is
+   * offered, exactly as before.
+   */
+  const signIn: Partial<Record<ProviderName, OAuthClient>> =
+    declared.length === 0
+      ? providers
+      : Object.fromEntries(
+          configured
+            .filter((name) => declared.includes(name))
+            .map((name) => [name, providers[name]]),
+        );
+
   return {
     baseUrl,
     secret,
-    providers,
+    providers: signIn,
     ...(lafOidc ? { lafOidc } : {}),
     trustedOrigins: commaSeparated(environment, "TRUSTED_ORIGINS").length
       ? commaSeparated(environment, "TRUSTED_ORIGINS")

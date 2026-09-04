@@ -107,11 +107,15 @@ Three providers can be configured directly, plus the fleet's own broker. Everyth
 | `LAF_DEV_NO_AUTH`                                       | Local-only fixed administrator when `true`. See below.                                                                     |
 | `OPENBOT_DEV_NO_AUTH`                                   | The pre-rename spelling. It no longer enables anything, but with `NODE_ENV=production` it still refuses to start — a stale `.env` that meant "no auth" must fail loudly rather than fall through to an authentication state nobody chose. |
 
-The declaration and the credentials must agree, and disagreement stops the server rather than being
-served: `AUTH_PROVIDERS` naming a provider with no credentials would draw a button that posts into
-an error, and credentials without the declaration would accept a sign-in the surface never offers.
-Both are refused by name. Each provider's redirect URI is the origin plus
-`/api/auth/callback/<provider>`.
+**The declaration decides what the API registers.** `AUTH_PROVIDERS` naming a provider with no
+credentials stops the server — it would draw a button that posts into an error. The other direction
+is no longer a refusal: a pair the declaration does not name is simply not offered as a sign-in, so
+the API cannot accept one the surface never shows. That is because `GOOGLE_OAUTH_*` has a second
+job — it is also the fleet's connector application, the one every 구글 연결 consents under — and a
+VM signing people in through the broker (`AUTH_PROVIDERS=laf`) carries the pair with no Google
+button. Refusing that combination made the two features mutually exclusive. With `AUTH_PROVIDERS`
+unset entirely, every configured pair is offered, which is what a laptop wants. Each provider's
+redirect URI is the origin plus `/api/auth/callback/<provider>`.
 
 `LAF_DEV_NO_AUTH=true` admits every request as one fixed administrator, `dev@laf.local`, so the
 product runs with no OAuth credentials and no consent screen. It is for a laptop. Two independent

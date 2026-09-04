@@ -171,17 +171,43 @@ describe("deployment configuration", () => {
     );
   });
 
-  test("refuses credentials the declaration does not name", () => {
-    expect(() =>
-      loadConfig({
-        ...baseEnvironment,
-        AUTH_PROVIDERS: "google",
-        NAVER_OAUTH_CLIENT_ID: "naver-client-id",
-        NAVER_OAUTH_CLIENT_SECRET: "naver-client-secret",
-      }),
-    ).toThrow(
-      "NAVER_OAUTH_CLIENT_ID is set but AUTH_PROVIDERS does not name 'naver'",
-    );
+  test("credentials the declaration does not name are not offered as a sign-in", () => {
+    /*
+     * This used to refuse to start, and refusing was wrong once `GOOGLE_OAUTH_*` acquired its
+     * second job as the fleet's connector application: a VM signing people in through the broker
+     * carries the pair and offers no Google button, and that combination would not boot.
+     *
+     * The property the refusal protected is the one asserted here, and it is now enforced instead
+     * of complained about: what the declaration does not name is not registered, so the API cannot
+     * accept a sign-in the surface never offers.
+     */
+    const config = loadConfig({
+      ...baseEnvironment,
+      AUTH_PROVIDERS: "google",
+      NAVER_OAUTH_CLIENT_ID: "naver-client-id",
+      NAVER_OAUTH_CLIENT_SECRET: "naver-client-secret",
+    });
+
+    expect(Object.keys(config.auth?.providers ?? {})).toEqual(["google"]);
+  });
+
+  test("a fleet VM signs in through the broker AND carries the connector application", () => {
+    // Measured: this is the combination the fleet actually deploys, and it refused to start.
+    const config = loadConfig({
+      ...baseEnvironment,
+      AUTH_PROVIDERS: "laf",
+      LAF_OIDC_ISSUER: "https://auth.agent.laf-co.com",
+      LAF_OIDC_CLIENT_ID: "sunny.agent.laf-co.com",
+    });
+
+    // No Google button, because none was declared…
+    expect(Object.keys(config.auth?.providers ?? {})).toEqual([]);
+    expect(config.auth?.lafOidc?.clientId).toBe("sunny.agent.laf-co.com");
+    // …and the same pair is still the application every 구글 연결 consents under.
+    expect(config.connectors.clients.google).toEqual({
+      clientId: "google-client-id",
+      clientSecret: "google-client-secret",
+    });
   });
 
   test("refuses a provider name it does not know", () => {
