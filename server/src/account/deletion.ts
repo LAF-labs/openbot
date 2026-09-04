@@ -110,6 +110,21 @@ export type AccountDeletionDependencies = {
     by: string,
   ) => Promise<{ retired: number }>;
   /**
+   * The partner registrations, retired the same way and for a sharper reason.
+   *
+   * `laf_partner_connections` cascades on the user row, so a completed deletion removes it either
+   * way. This is here for the case the cascade does not cover: a withdrawal that stops short — a VM
+   * that outlives the person for a billing cycle, a deletion that fails halfway — leaves a row this
+   * deployment would go on sending 알림톡 with, as their channel. "We removed their access" has to
+   * be true of the thing that matters, and here that is the 발신프로필 rather than the person row.
+   *
+   * Absent on a deployment with no partner runtime, which is most of them.
+   */
+  retirePartnersFor?: (
+    userId: string,
+    by: string,
+  ) => Promise<{ retired: number }>;
+  /**
    * The Bot's browser. Absent means no computer is configured, which is recorded rather than
    * silently treated as "nothing to wipe" — the profile volume may still exist on a host that has
    * simply lost its configuration, and an audit row claiming a clean wipe would be a lie.
@@ -136,8 +151,13 @@ export type AccountDeletion = {
 export function createAccountDeletion(
   dependencies: AccountDeletionDependencies,
 ): AccountDeletion {
-  const { database, retireConnectionsFor, computerClient, fleet } =
-    dependencies;
+  const {
+    database,
+    retireConnectionsFor,
+    retirePartnersFor,
+    computerClient,
+    fleet,
+  } = dependencies;
 
   return {
     async delete({ userId, by }) {
@@ -205,6 +225,17 @@ export function createAccountDeletion(
        */
       const retired = retireConnectionsFor
         ? await retireConnectionsFor(userId, pseudonym)
+        : { retired: 0 };
+
+      /*
+       * And the partner registrations, before the row they hang off is deleted.
+       *
+       * Ahead of the cascade rather than instead of it: what this adds is the audit row saying the
+       * 카카오톡 채널 and the 팝빌 회원 stopped being reachable from here, and — for a withdrawal
+       * that does not finish — that they stopped at all. See the field's own note.
+       */
+      const partnersRetired = retirePartnersFor
+        ? await retirePartnersFor(userId, pseudonym)
         : { retired: 0 };
 
       const counts = await database.transaction(async (transaction) => {
@@ -512,6 +543,7 @@ export function createAccountDeletion(
         );
 
         tally.connectionsRetired = retired.retired;
+        tally.partnersRetired = partnersRetired.retired;
 
         /*
          * THE ROW THAT SAYS IT HAPPENED, WRITTEN BEFORE THE PERSON IS GONE AND UNDER THEIR

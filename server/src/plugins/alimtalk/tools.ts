@@ -20,13 +20,12 @@ import {
   refuse,
   requiredString,
 } from "../partner-tools";
-import type { PluginContext } from "../store";
 import { normalizeRecipient } from "./connect";
-import { sendTemplateMessage, SolapiError, solapiSettings } from "./solapi";
+import { SolapiError, sendTemplateMessage, solapiSettings } from "./solapi";
 import {
   missingVariables,
-  standardTemplate,
   STANDARD_TEMPLATES,
+  standardTemplate,
   withVariableBraces,
 } from "./templates";
 
@@ -44,7 +43,11 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
     name: "alimtalk_templates",
     description:
       "이 사업장의 카카오톡 채널에 등록된 알림톡 서식과 심사 상태를 본다. 보내기 전에 어떤 서식을 쓸 수 있는지 확인할 때.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
     annotations: { readOnlyHint: true },
   },
   {
@@ -60,7 +63,9 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
         },
         template: {
           type: "string",
-          description: `보낼 서식의 코드. ${STANDARD_TEMPLATES.filter((entry) => entry.audience === "customer")
+          description: `보낼 서식의 코드. ${STANDARD_TEMPLATES.filter(
+            (entry) => entry.audience === "customer",
+          )
             .map((entry) => entry.code)
             .join(", ")} 중 하나.`,
           enum: STANDARD_TEMPLATES.filter(
@@ -70,7 +75,7 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
         variables: {
           type: "object",
           description:
-            "서식의 빈칸을 채울 값. 예: {\"상호\": \"미소상회\", \"고객명\": \"김민수\"}",
+            '서식의 빈칸을 채울 값. 예: {"상호": "미소상회", "고객명": "김민수"}',
           additionalProperties: { type: "string" },
         },
       },
@@ -90,7 +95,6 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
 ]);
 
 export function createAlimtalkTools(
-  _context: PluginContext,
   partners: PartnerConnections,
   environment: Record<string, string | undefined> = process.env,
 ) {

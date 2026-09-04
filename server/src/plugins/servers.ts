@@ -29,7 +29,6 @@ import {
   type PluginContext,
   type ServerRecord,
 } from "./store";
-import { transportFor } from "./transport";
 
 /**
  * Which servers this deployment will talk to, and what each of them says it offers.
@@ -229,8 +228,13 @@ export function createServers(
     const { row, entry } = await requireServer(serverId);
 
     try {
-      // The entry decides the protocol. For a custom server there is no entry, and MCP is right.
-      const transport = transportFor(entry);
+      /*
+       * The entry decides the protocol. For a custom server there is no entry, and MCP is right.
+       *
+       * Asked of the context rather than of the registry, because a partner entry's transport is
+       * this repository's own code assembled by the process — see `store.ts`.
+       */
+      const transport = context.transportFor(entry);
 
       /*
        * A credential only when listing actually needs one.

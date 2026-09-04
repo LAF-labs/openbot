@@ -12,6 +12,7 @@ import type {
   NotificationOutbox,
   NotificationRecord,
 } from "../src/notifications/outbox";
+import type { PartnerConnections } from "../src/plugins/partner-connections";
 import { A_CLICK } from "./support/subjects";
 
 /**
@@ -83,36 +84,57 @@ describe("the webhook door", () => {
 });
 
 describe("the alimtalk door", () => {
-  test("never claims delivery, and says why once", async () => {
+  /** A partner store that holds nothing, which is what an unconnected deployment has. */
+  const NOBODY_CONNECTED = {
+    find: async () => null,
+    templatesFor: async () => [],
+  } as unknown as PartnerConnections;
+
+  test("says the deployment holds no key, once, and never claims delivery", async () => {
     const said: string[] = [];
-    const adapter = createAlimtalkAdapter({}, (message) => said.push(message));
+    const adapter = createAlimtalkAdapter({
+      partners: NOBODY_CONNECTED,
+      environment: {},
+      log: (message) => said.push(message),
+    });
 
     expect(await adapter.deliver(RECORD)).toBe(false);
     expect(await adapter.deliver(RECORD)).toBe(false);
 
-    // One line per process, not one per question: the fact it reports does not change between
-    // notifications, and a line on every one would bury the lines that matter.
+    // One line per reason per process, not one per question: the fact it reports does not change
+    // between notifications, and a line on every one would bury the lines that matter.
     expect(said).toHaveLength(1);
-    expect(said[0]).toContain("not configured");
-    expect(said[0]).toContain("LAF_ALIMTALK_API_KEY");
+    expect(said[0]).toContain("솔라피");
   });
 
-  test("configured is still not sent, because the vendor call is deferred", async () => {
+  test("configured but unconnected stays queued, and says which", async () => {
     const said: string[] = [];
-    const adapter = createAlimtalkAdapter(
-      {
-        LAF_ALIMTALK_BASE_URL: "https://example.test",
-        LAF_ALIMTALK_API_KEY: "k",
-        LAF_ALIMTALK_SENDER_KEY: "s",
-        LAF_ALIMTALK_TEMPLATE_CODE: "t",
-        LAF_ALIMTALK_TO: "01000000000",
-      },
-      (message) => said.push(message),
-    );
+    const adapter = createAlimtalkAdapter({
+      partners: NOBODY_CONNECTED,
+      environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+      log: (message) => said.push(message),
+    });
 
-    // The one thing a stub must never do is put its name in `delivered_via`.
+    // The one thing this door must never do is put its name in `delivered_via` for a message
+    // nobody sent.
     expect(await adapter.deliver(RECORD)).toBe(false);
-    expect(said[0]).toContain("deferred");
+    expect(said[0]).toContain("카카오톡 채널");
+  });
+
+  test("a kind with no owner template is not a failure and not a log line", async () => {
+    const said: string[] = [];
+    const adapter = createAlimtalkAdapter({
+      partners: NOBODY_CONNECTED,
+      environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+      log: (message) => said.push(message),
+    });
+
+    // `approval.expired` is deliberately not an interruption: nobody can answer a question that has
+    // run out, so it belongs in the app's list and not on somebody's phone at 2am.
+    expect(await adapter.deliver({ ...RECORD, kind: "approval.expired" })).toBe(
+      false,
+    );
+    expect(said).toHaveLength(0);
   });
 });
 

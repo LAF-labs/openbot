@@ -1,4 +1,10 @@
-import { index, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  index,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 import { users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
 // lands as a JSON *string* that no SQL operator can read. See ./json.ts.

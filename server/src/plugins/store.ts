@@ -14,7 +14,7 @@ import type {
 import type { CredentialSecretReader, CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import { createCallPath } from "./call";
-import type { CatalogueEntry } from "./catalogue";
+import type { CatalogueEntry, PartnerFamily } from "./catalogue";
 import { createConnections } from "./connections";
 import type { LafGuard } from "./laf-contract";
 import { McpServerError } from "./mcp";
@@ -26,6 +26,7 @@ import {
 import { createServers, unlistedAdvertisedTools } from "./servers";
 import { NO_SHARED_CLIENTS, type SharedClientLookup } from "./shared-clients";
 import { createSkillsAndGrants } from "./skills-and-grants";
+import { transportFor, type VendorTransport } from "./transport";
 
 /**
  * Plugins: what this deployment has added, which Bots may use it, and the one path a call takes.
@@ -398,6 +399,21 @@ export type PluginStoreOptions = {
     subject: ReviewSubject,
   ) => Promise<ReviewVerdict | null>;
   /**
+   * The transports for the partner vendors this deployment is configured for.
+   *
+   * ASSEMBLED OUTSIDE AND HANDED IN, which is the whole reason it is an option rather than an
+   * import. A partner module's tools are this repository's own code and reach the database through
+   * `partner-connections.ts`, which imports this file for its refusal class — so importing the
+   * partner runtime here would close the loop `store → partner runtime → partner-tools → store`.
+   * The process builds it (`server/src/index.ts`) and passes it down.
+   *
+   * A missing entry is a partner this deployment holds no key for. Nothing should ever reach it —
+   * the catalogue listing hides the card and the connect route refuses 503 — and if something does,
+   * {@link PluginContext.transportFor} refuses rather than falling back to MCP, which would post a
+   * JSON-RPC frame at 솔라피.
+   */
+  partnerTransports?: Partial<Record<PartnerFamily, VendorTransport>>;
+  /**
    * The counter that says how many times this Bot has just made this exact call.
    *
    * The same detector the computer gateway feeds, because "the same Bot going round in circles" is
@@ -441,6 +457,33 @@ export type PluginContext = {
    * to assert what a call was about to go out with.
    */
   readonly injectedVendor: PluginStoreOptions["callVendor"];
+  /**
+   * Which transport reaches this entry, partner entries included.
+   *
+   * On the context rather than imported at the two call sites, because a partner entry's transport
+   * is not a property of the entry alone — it is whichever module this process assembled for that
+   * vendor. `transport.ts`'s registry is still the answer for everything else, unchanged.
+   */
+  readonly transportFor: (entry: CatalogueEntry | null) => VendorTransport;
+};
+
+/**
+ * A partner entry whose module this deployment did not build, refusing.
+ *
+ * Not MCP-by-default, which is what `transportFor` would otherwise give it: a JSON-RPC `tools/list`
+ * posted at 솔라피's REST host answers something, and whatever that something is would be written
+ * into `mcp_tools` as this deployment's idea of what the vendor offers.
+ */
+const PARTNER_UNAVAILABLE: VendorTransport = {
+  listNeedsCredential: false,
+  listTools: async () => [],
+  callTool: async () => {
+    throw new PluginRefusedError(
+      "laf:partner_not_configured",
+      null,
+      "laf:partner_not_configured",
+    );
+  },
 };
 
 export function createPluginStore(options: PluginStoreOptions) {
@@ -455,6 +498,10 @@ export function createPluginStore(options: PluginStoreOptions) {
     sharedClient: options.sharedClient ?? NO_SHARED_CLIENTS,
     registerClient: options.registerClient ?? registerDynamicClient,
     injectedVendor: options.callVendor,
+    transportFor: (entry) =>
+      entry?.partner
+        ? (options.partnerTransports?.[entry.partner] ?? PARTNER_UNAVAILABLE)
+        : transportFor(entry),
   };
 
   const grants = createSkillsAndGrants(context);
@@ -514,5 +561,5 @@ export function createPluginStore(options: PluginStoreOptions) {
 
 export type PluginStore = ReturnType<typeof createPluginStore>;
 
-export { exchangeRefreshTokenOverHttp, unlistedAdvertisedTools };
 export type { CatalogueEntry };
+export { exchangeRefreshTokenOverHttp, unlistedAdvertisedTools };

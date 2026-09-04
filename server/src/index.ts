@@ -32,12 +32,12 @@ import {
 import { createComputerClient } from "./computer/client";
 import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createComputerGateway } from "./computer/gateway";
-import { createSiteConnectionStore } from "./computer/site-connections";
 import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
 import { createRepeatDetector } from "./computer/repeat";
+import { createSiteConnectionStore } from "./computer/site-connections";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
@@ -68,6 +68,7 @@ import {
 } from "./notifications/notify";
 import { createNotificationOutbox } from "./notifications/outbox";
 import { redirectUriFor } from "./plugins/oauth";
+import { createPartnerRuntime } from "./plugins/partners";
 import { lookupOver } from "./plugins/shared-clients";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
@@ -223,6 +224,28 @@ const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
  */
 const channelEvents = createChannelEventHub();
 /**
+ * The two partner vendors LAF holds the account at, assembled once.
+ *
+ * BEFORE THE OUTBOX AND BEFORE THE PLUGIN STORE, because both take something from it: the AlimTalk
+ * door needs to know whose channel to send as, and the store needs the transports for the two
+ * catalogue entries whose tools are this repository's own code. Built here rather than inside the
+ * store because the partner modules import the store's refusal class — see `plugins/partners.ts`.
+ *
+ * A VM with neither key configured gets an object with nothing in it, no cards and no tools, which
+ * is a correct deployment. `config.partners` refused to start on half of either.
+ */
+const partnerRuntime = createPartnerRuntime({
+  context: { database, auditStore: bootAuditStore },
+  database,
+});
+console.info(
+  JSON.stringify({
+    type: "partner-connectors",
+    alimtalk: config.partners.alimtalk,
+    tax: config.partners.tax,
+  }),
+);
+/**
  * One outbox for "somebody has to be told", and every door it goes out through.
  *
  * Built here, before anything that raises a notification, because there is exactly one of these and
@@ -231,7 +254,9 @@ const channelEvents = createChannelEventHub();
  *
  *   socket    the page itself, when somebody is connected. The common case, and the fast one.
  *   webhook   `LAF_NOTIFY_WEBHOOK_URL`, unchanged in what it sends but now carrying the row's id.
- *   alimtalk  a slot, deferred by decision §7-4. It never claims delivery; see the adapter.
+ *   alimtalk  the phone in the owner's hand, once they have connected their own 카카오톡 채널 and
+ *             카카오 has approved LAF's template under it. Until then it declines honestly and the
+ *             row stays undelivered for the other two.
  *
  * The socket goes first because it is the only door that is free and instantaneous, and the order
  * is otherwise cosmetic — they are offered the row together (see `outbox.ts`).
@@ -243,7 +268,7 @@ const notificationOutbox = createNotificationOutbox({
     ...(process.env.LAF_NOTIFY_WEBHOOK_URL
       ? [createWebhookAdapter(process.env.LAF_NOTIFY_WEBHOOK_URL)]
       : []),
-    createAlimtalkAdapter(),
+    createAlimtalkAdapter({ partners: partnerRuntime.connections }),
   ],
 });
 /** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
@@ -539,6 +564,9 @@ const pluginStore = createPluginStore({
   // The vault holds no client for a shared-application entry and never will, so a refresh that
   // looked only there would report "connect it again" at a connection nothing is wrong with.
   sharedClient: sharedOAuthClients,
+  // The two entries whose tools are this repository's own code, for the vendors this VM has keys
+  // for. Empty leaves both entries unreachable rather than falling back to MCP — see `store.ts`.
+  partnerTransports: partnerRuntime.transports,
 });
 
 /*
@@ -950,6 +978,8 @@ const app = createApp(
     deletion: createAccountDeletion({
       database,
       retireConnectionsFor: pluginStore.retireConnectionsFor,
+      // The 발신프로필 and the 팝빌 회원, before the row they hang off goes. See the field's note.
+      retirePartnersFor: partnerRuntime.connections.retireFor,
       ...(computerClient ? { computerClient } : {}),
       ...(fleetNotifier ? { fleet: fleetNotifier } : {}),
     }),
@@ -974,6 +1004,9 @@ const app = createApp(
   // Which business sites this person has signed into on a Bot's browser. The same store the
   // gateway writes through above, so the card and the morning routine agree about one row.
   siteConnections,
+  // 알림톡 and 세금계산서: the two vendors LAF holds the account at. The same runtime the outbox's
+  // AlimTalk door and the plugin store's transports were built from, so one connect is one fact.
+  partnerRuntime,
 );
 
 /**

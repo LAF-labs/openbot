@@ -7,7 +7,7 @@ import {
   type PolicyContext,
   type PolicyDecision,
 } from "../computer/policy";
-import { settle, type SettleResult } from "../computer/settle";
+import { type SettleResult, settle } from "../computer/settle";
 import { allowanceFor } from "../computer/standing-approvals";
 import { mcpTools } from "../db/schema";
 import { type CatalogueEntry, classifyTool } from "./catalogue";
@@ -26,7 +26,6 @@ import {
   PluginRefusedError,
   toolNameFor,
 } from "./store";
-import { transportFor } from "./transport";
 
 /**
  * The one path a tool call takes: decide, record, act.
@@ -44,9 +43,15 @@ import { transportFor } from "./transport";
  * connector exists to be able to trust.
  *
  * `deployment` for a shared token; the asker's own id for a server reached as the person asking.
+ *
+ * A PARTNER ENTRY IS THE SECOND KIND, and reading it off `auth.kind` alone said the opposite. The
+ * key spent is LAF's, so `auth` is not `user-oauth` and this returned "deployment" — but the message
+ * leaves the person's OWN 카카오톡 채널 and the invoice is issued under their OWN 사업자등록번호. A
+ * row saying "deployment" about a message that went out as somebody's shop is the one lie a
+ * per-person connector's trail cannot afford.
  */
 const reachedAsFor = (entry: CatalogueEntry | null, actorId: string): string =>
-  entry?.auth.kind === "user-oauth" ? actorId : "deployment";
+  entry?.auth.kind === "user-oauth" || entry?.partner ? actorId : "deployment";
 
 /** What a settled question hands back when the call may go ahead. See `computer/settle.ts`. */
 type SettledAllowed = Extract<SettleResult, { outcome: "allowed" }>;
@@ -610,7 +615,8 @@ export function createCallPath(
           entry,
           input.actorId,
         );
-        const vendor = context.injectedVendor ?? transportFor(entry).callTool;
+        const vendor =
+          context.injectedVendor ?? context.transportFor(entry).callTool;
         const result = await vendor(
           {
             url: effectiveUrl(row, entry),

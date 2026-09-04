@@ -10,8 +10,8 @@
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
-import { isCustomerSlug } from "./plugins/oauth";
 import type { SharedClientFamily } from "./plugins/catalogue";
+import { isCustomerSlug } from "./plugins/oauth";
 import {
   type SharedOAuthClient,
   sharedClientsFrom,
@@ -123,6 +123,25 @@ export type DeploymentConfig = {
      * fleet-wide application can have registered — see docs/laf/connections.md.
      */
     relay?: { url: string; slug: string; productDomain: string };
+  };
+  /**
+   * The partner vendors LAF holds the ACCOUNT at, and whether this VM was given the keys.
+   *
+   * The third shape a connector can have, after "the person's own grant" and "a token an
+   * administrator pasted": LAF is 솔라피's and 팝빌's customer, and each business is registered
+   * underneath through a screen in this product. So the credential is fleet configuration, the same
+   * on every VM that offers the connector and absent on every VM that does not.
+   *
+   * Booleans rather than the values. The modules read their own settings out of the environment —
+   * one place that knows what a 솔라피 key looks like — and what belongs HERE is the boot-time
+   * refusal: a half-configured partner is refused before the process starts rather than discovered
+   * by somebody pressing 연결. See {@link partnersConfig}.
+   */
+  partners: {
+    /** 카카오 알림톡, through 솔라피's agency API. */
+    alimtalk: boolean;
+    /** 전자세금계산서, through 팝빌 under LAF's LinkID. */
+    tax: boolean;
   };
 };
 
@@ -497,6 +516,63 @@ function connectorsConfig(
 }
 
 /**
+ * Which partner vendors this VM was given LAF's keys for, and a refusal to start over half of one.
+ *
+ * THE RULE IS THE SAME ONE `sharedClientsFrom` KEEPS, and it is here for the same reason: a
+ * connector half configured fails at the moment somebody is trying to use it, which is the worst
+ * moment to find out. A 솔라피 key with no secret in it cannot sign a request; a 팝빌 LinkID with no
+ * secret cannot get a session token. Neither can be discovered from anything but a live call, so
+ * both are refused at boot with the name of what is wrong.
+ *
+ * ABSENT IS NOT A FAILURE. A VM with neither variable set offers neither connector, draws neither
+ * card, and is a correct deployment — which is what the two booleans say.
+ */
+function partnersConfig(
+  environment: Environment,
+): DeploymentConfig["partners"] {
+  /*
+   * 솔라피's key is `key:secret` in ONE variable because the two are issued together and are useless
+   * apart. So the half-configured state here is not a missing variable, it is a value that is not a
+   * pair — and a deployment that set `LAF_ALIMTALK_API_KEY=abc` would otherwise start, draw the
+   * card, and refuse every connect with a code that reads as the vendor's fault.
+   */
+  const alimtalkKey = optional(environment, "LAF_ALIMTALK_API_KEY");
+  if (alimtalkKey) {
+    const separator = alimtalkKey.indexOf(":");
+    if (separator <= 0 || separator === alimtalkKey.length - 1) {
+      throw new Error(
+        "LAF_ALIMTALK_API_KEY must be the pair 솔라피 issues, written apiKey:apiSecret — one half of it signs nothing",
+      );
+    }
+  } else if (optional(environment, "LAF_ALIMTALK_BASE_URL")) {
+    throw new Error(
+      "LAF_ALIMTALK_BASE_URL is set without LAF_ALIMTALK_API_KEY: an address with no key behind it is a connector that cannot complete a single call",
+    );
+  }
+
+  const linkId = optional(environment, "POPBILL_LINK_ID");
+  const secretKey = optional(environment, "POPBILL_SECRET_KEY");
+  if (Boolean(linkId) !== Boolean(secretKey)) {
+    throw new Error(
+      "POPBILL_LINK_ID and POPBILL_SECRET_KEY must be set together: the LinkID names the partner and the secret is what signs for it, and neither works alone",
+    );
+  }
+  /*
+   * Refused rather than read as false, which is the direction that costs money. `POPBILL_TEST=ture`
+   * silently meaning production is a business issuing real 세금계산서 to the 국세청 from a deployment
+   * somebody set up to try it out.
+   */
+  const isTest = optional(environment, "POPBILL_TEST");
+  if (isTest !== undefined && isTest !== "true" && isTest !== "false") {
+    throw new Error(
+      `POPBILL_TEST must be exactly "true" or "false" (it was "${isTest}"): anything else would be read as production, where an issued 세금계산서 reaches the 국세청`,
+    );
+  }
+
+  return { alimtalk: Boolean(alimtalkKey), tax: Boolean(linkId && secretKey) };
+}
+
+/**
  * A duration in milliseconds, or a refusal to start.
  *
  * Refused rather than quietly defaulted, for the same reason a malformed policy is. An operator who
@@ -602,5 +678,6 @@ export function loadConfig(
     computer: computerConfig(environment),
     fleet: fleetConfig(environment),
     connectors: connectorsConfig(environment),
+    partners: partnersConfig(environment),
   };
 }

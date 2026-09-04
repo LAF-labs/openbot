@@ -193,7 +193,10 @@ async function callSolapi<T>(call: SolapiCall): Promise<T> {
   }
 
   if (!response.ok) {
-    const body = (parsed ?? {}) as { errorCode?: string; errorMessage?: string };
+    const body = (parsed ?? {}) as {
+      errorCode?: string;
+      errorMessage?: string;
+    };
     throw new SolapiError(
       body.errorMessage ?? `solapi answered ${response.status}`,
       response.status,
@@ -201,7 +204,11 @@ async function callSolapi<T>(call: SolapiCall): Promise<T> {
     );
   }
   if (parsed === null) {
-    throw new SolapiError("solapi answered with something that is not JSON", response.status, null);
+    throw new SolapiError(
+      "solapi answered with something that is not JSON",
+      response.status,
+      null,
+    );
   }
   return parsed as T;
 }

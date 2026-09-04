@@ -18,16 +18,16 @@
 import { recordAuditEvent } from "../../audit";
 import {
   type PartnerConnections,
+  type PartnerContext,
   PartnerRefusedError,
 } from "../partner-connections";
-import type { PluginContext } from "../store";
 import {
   readTemplate,
   registerChannel,
   registerTemplate,
   requestChannelToken,
-  type SolapiSettings,
   SolapiError,
+  type SolapiSettings,
   solapiSettings,
 } from "./solapi";
 import { STANDARD_TEMPLATES } from "./templates";
@@ -76,7 +76,10 @@ export function normalizeSearchId(raw: string): string {
  * would be pedantry aimed at somebody reading their own SIM card.
  */
 export function normalizePhone(raw: string): string {
-  const digits = raw.trim().replace(/^\+?82/, "0").replaceAll(/\D/g, "");
+  const digits = raw
+    .trim()
+    .replace(/^\+?82/, "0")
+    .replaceAll(/\D/g, "");
   if (!/^01[0-9]{7,8}$/.test(digits)) {
     throw new PartnerRefusedError("laf:alimtalk_phone_invalid");
   }
@@ -85,7 +88,10 @@ export function normalizePhone(raw: string): string {
 
 /** A recipient number for a send: the same rules, said with the send's own fact. */
 export function normalizeRecipient(raw: string): string {
-  const digits = raw.trim().replace(/^\+?82/, "0").replaceAll(/\D/g, "");
+  const digits = raw
+    .trim()
+    .replace(/^\+?82/, "0")
+    .replaceAll(/\D/g, "");
   if (!/^0[1-9][0-9]{7,9}$/.test(digits)) {
     throw new PartnerRefusedError("laf:alimtalk_recipient_invalid");
   }
@@ -93,7 +99,7 @@ export function normalizeRecipient(raw: string): string {
 }
 
 export function createAlimtalkConnect(
-  context: PluginContext,
+  context: PartnerContext,
   partners: PartnerConnections,
   environment: Record<string, string | undefined> = process.env,
 ) {

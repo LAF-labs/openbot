@@ -50,6 +50,23 @@ import type { TransportKind } from "./transport";
 export type SharedClientFamily = "google" | "cafe24";
 
 /**
+ * A vendor LAF is the CUSTOMER of, where each business is registered underneath.
+ *
+ * The same platform-holds-it arrangement as {@link SharedClientFamily} and a different mechanism,
+ * which is why it is a second union rather than a third auth kind. An OAuth vendor issues a grant
+ * to the person and this deployment spends it; these two issue LAF one agency account — a 솔라피
+ * 대행사 key, a 팝빌 파트너 LinkID — and the business is REGISTERED under it by a step taken inside
+ * this product. So there is no grant, nothing rotates, and what belongs to the person is the handle
+ * the vendor issued them: a 발신프로필 senderKey, a 사업자등록번호.
+ *
+ * Closed, for the same reason the other one is: an entry naming a partner with no module and no
+ * environment variables behind it should not typecheck. `server/src/plugins/partner-connections.ts`
+ * takes its provider list from here, so a row, a tool ref, a catalogue key and a policy rule all
+ * name the connection with one word.
+ */
+export type PartnerFamily = "kakao-alimtalk" | "tax-invoice";
+
+/**
  * How a server is authenticated, and whose credential does it.
  *
  * The OAuth addresses are pinned here beside the MCP host, for the same reason and with the same
@@ -209,6 +226,19 @@ export type CatalogueEntry = {
    * here keeps that decision beside the host it applies to, and makes reversing it a one-line diff.
    */
   transport?: TransportKind;
+  /**
+   * Which partner module answers this entry, for a vendor LAF holds the account at.
+   *
+   * Present means the tools are this repository's own code and the credential is fleet
+   * configuration — never a vault row, never a person's grant — so the transport comes from the
+   * partner runtime the process assembled rather than from {@link ./transport}'s static registry
+   * (see `PluginStoreOptions.partnerTransports`). Absent is every other entry, unchanged.
+   *
+   * It is a field rather than an inference from `auth.kind` because "no credential the call path
+   * selects" and "no credential at all" are different facts, and only the first is true here: the
+   * key exists, it is LAF's, and it lives in the environment.
+   */
+  partner?: PartnerFamily;
   docsUrl: string;
 };
 
@@ -540,6 +570,66 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
       "notion-update-view",
     ]),
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
+  },
+  /*
+   * THE TWO PARTNER ENTRIES, and what makes them a different shape from everything above.
+   *
+   * Every entry before this one is a vendor the PERSON has an account with, which this deployment
+   * borrows through an OAuth grant. These two are vendors LAF has the account with: a 솔라피 대행사
+   * key and a 팝빌 파트너 LinkID, one of each for the whole fleet. The business registers underneath
+   * — its own 카카오톡 채널, its own 연동회원 — through a screen in this product, and never obtains a
+   * key, never visits a console and never sees LAF's credentials.
+   *
+   * `auth: { kind: "none" }` IS ABOUT THE CALL PATH, NOT ABOUT THE VENDOR. `deployment-bearer` is
+   * the nearest description of the truth and is the wrong field to set: it makes
+   * {@link serverCredentialKind} demand an `mcp` credential id, and there is no vault row to point
+   * at — the key is configuration, read by the partner module and by nothing else. `none` is what
+   * the path that selects credentials should do here, which is nothing.
+   *
+   * The host is pinned like every other, and like every other it comes from the vendor's published
+   * documentation. `LAF_ALIMTALK_BASE_URL` overrides where the module actually calls (a test's fake
+   * vendor, a staging host); this stays the reviewed address of record, and is what a person reading
+   * the catalogue is told this deployment talks to.
+   */
+  {
+    key: "kakao-alimtalk",
+    title: "카카오 알림톡",
+    vendor: "Solapi",
+    summary: "Template messages from this business's own KakaoTalk channel.",
+    host: "https://api.solapi.com",
+    path: "/kakao/v1",
+    auth: { kind: "none" },
+    partner: "kakao-alimtalk",
+    writeTools: Object.freeze(["alimtalk_send"]),
+    /*
+     * `external`, and it is the plainest case of it in the catalogue: the message arrives on a
+     * customer's phone with the shop's name on it, it cannot be recalled, and the number came from
+     * a model. A person answers for the exact message, every time.
+     */
+    guardedTools: Object.freeze({ alimtalk_send: "external" as const }),
+    docsUrl: "https://developers.solapi.com/references/kakao",
+  },
+  {
+    key: "tax-invoice",
+    title: "전자세금계산서",
+    vendor: "Popbill",
+    summary: "Tax invoices issued and looked up for this business.",
+    /*
+     * The production host. A deployment with `POPBILL_TEST=true` calls the test host instead, which
+     * is the module's business and not the catalogue's: the entry names where a real invoice goes.
+     */
+    host: "https://popbill.linkhub.co.kr",
+    path: "/Taxinvoice",
+    auth: { kind: "none" },
+    partner: "tax-invoice",
+    writeTools: Object.freeze(["taxinvoice_issue"]),
+    /*
+     * `money`, which is the harshest floor there is, and the only entry in this file that earns it.
+     * An issued 세금계산서 is reported to the 국세청 and is somebody's tax position; undoing one is a
+     * 수정세금계산서, not a delete. Registering a draft is a write and is left to the written policy.
+     */
+    guardedTools: Object.freeze({ taxinvoice_issue: "money" as const }),
+    docsUrl: "https://docs.popbill.com/taxinvoice/api",
   },
 ]);
 

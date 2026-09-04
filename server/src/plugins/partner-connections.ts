@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
 import { lafAlimtalkTemplates, lafPartnerConnections } from "../db/schema";
+import type { PartnerFamily } from "./catalogue";
 import type { PluginContext } from "./store";
 
 /**
@@ -17,14 +18,33 @@ import type { PluginContext } from "./store";
  * disconnecting stops LAF sending as their channel, and the channel itself is still theirs.
  */
 
-/** The two vendors this reaches, named by their catalogue key so one word serves everywhere. */
-export const PARTNER_PROVIDERS = ["kakao-alimtalk", "tax-invoice"] as const;
+/**
+ * The two vendors this reaches, named by their catalogue key so one word serves everywhere.
+ *
+ * The TYPE is the catalogue's ({@link PartnerFamily}) and this is the runtime list, annotated
+ * against it: a vendor added to one and forgotten in the other stops compiling here rather than
+ * becoming a provider with no entry, no host and no reviewed tools behind it.
+ */
+export const PARTNER_PROVIDERS: readonly PartnerFamily[] = Object.freeze([
+  "kakao-alimtalk",
+  "tax-invoice",
+]);
 
-export type PartnerProvider = (typeof PARTNER_PROVIDERS)[number];
+export type PartnerProvider = PartnerFamily;
 
 export function isPartnerProvider(value: string): value is PartnerProvider {
   return (PARTNER_PROVIDERS as readonly string[]).includes(value);
 }
+
+/**
+ * What a partner module needs from the store, and nothing else.
+ *
+ * Narrower than {@link PluginContext} on purpose, and it is what breaks the cycle: the partner
+ * runtime is ASSEMBLED OUTSIDE the store and handed in as transports, so a partner module that
+ * asked for the whole context would make `store.ts` import the modules that import `store.ts`. A
+ * `PluginContext` still satisfies it structurally, which is what a test passing one relies on.
+ */
+export type PartnerContext = Pick<PluginContext, "database" | "auditStore">;
 
 /**
  * A partner step this deployment will not take, as a fact rather than a sentence.
@@ -66,7 +86,7 @@ export type AlimtalkTemplateRow = {
   checkedAt: string | null;
 };
 
-export function createPartnerConnections(context: PluginContext) {
+export function createPartnerConnections(context: PartnerContext) {
   const { database, auditStore } = context;
 
   const toConnection = (
