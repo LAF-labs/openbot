@@ -1318,4 +1318,75 @@ export const ko: Record<string, string> = {
   "Tell me how many new friends the channel got this week.":
     "이번 주에 새로 늘어난 친구 수를 알려줘",
   "Tell me which products are running low.": "재고가 부족한 상품을 알려줘",
+  // 알림톡·세금계산서 — LAF가 계약을 들고, 가게는 자기 것을 연결한다.
+  "Messaging and tax invoices": "알림톡·세금계산서",
+  "Services you sign up for through this screen. There is no key to obtain and no developer account: your shop's own channel and your own business details, and that is all.":
+    "이 화면에서 바로 가입하는 서비스입니다. 따로 받아야 할 키도, 개발자 계정도 없습니다. 가게의 카카오톡 채널과 사업자 정보만 있으면 됩니다.",
+
+  "KakaoTalk notifications": "카카오 알림톡",
+  "Send booking confirmations and review requests from your shop's own KakaoTalk channel. No keys and no sign-up with the messaging company: a code comes to the manager's phone, you type it back, and that is it.":
+    "예약 확정, 후기 요청 같은 안내를 가게의 카카오톡 채널로 보냅니다. 문자 발송 회사에 따로 가입할 필요가 없습니다. 담당자 휴대폰으로 인증번호가 오면 그것만 입력하면 끝입니다.",
+  "Channel search ID": "채널 검색용 아이디",
+  "Channel manager's mobile number": "채널 담당자 휴대폰 번호",
+  "The code sent to that phone": "휴대폰으로 온 인증번호",
+  "Send me a code": "인증번호 받기",
+  "Send the code again": "인증번호 다시 받기",
+  "Connecting…": "연결하는 중…",
+  "Connected on {date}": "{date}에 연결됨",
+  "KakaoTalk reviews each message form before it can be sent. This usually takes a few working days.":
+    "카카오가 안내 문구를 하나씩 심사한 뒤에야 보낼 수 있습니다. 보통 영업일 며칠이 걸립니다.",
+  "Booking confirmed": "예약 확정 안내",
+  "Review request": "이용 후기 요청",
+  "Being reviewed": "심사 중",
+  "Ready to use": "사용 가능",
+  "Turned down": "반려됨",
+  "Check the review again": "심사 상태 다시 확인",
+  "Checking…": "확인하는 중…",
+
+  "Tax invoices": "전자세금계산서",
+  "Look up the tax invoices you have issued, and have a Bot prepare one for you to approve. You sign up through this screen — there is nothing to install and no separate account to buy.":
+    "발행한 세금계산서를 찾아보고, 봇이 초안을 만들어 두면 확인하고 발행합니다. 이 화면에서 바로 가입하며, 설치할 프로그램도 따로 살 계정도 없습니다.",
+  "Practice mode — nothing is really filed":
+    "연습 모드 — 실제로 신고되지 않습니다",
+  "Business registration number": "사업자등록번호",
+  "Business name": "상호",
+  "Owner's name": "대표자 성명",
+  "Who to contact": "담당자 이름",
+  "Contact number": "담당자 연락처",
+  "Contact email": "담당자 이메일",
+  "Sign up": "가입하기",
+  "Signing up…": "가입하는 중…",
+  "Business number {number} · connected on {date}":
+    "사업자등록번호 {number} · {date}에 연결됨",
+  "Certificate registered": "인증서 등록됨",
+  "valid until {date}": "{date}까지",
+  "No certificate registered yet — nothing can be issued until there is one.":
+    "아직 인증서가 등록되지 않았습니다. 등록해야 발행할 수 있습니다.",
+  "Register the certificate": "인증서 등록",
+  "Check it again": "다시 확인",
+
+  // 연결이 안 될 때 — 사람이 고칠 수 있는 것과 아닌 것을 갈라서 말한다.
+  "That does not look like a channel search ID. It is the one starting with @ in your KakaoTalk channel settings.":
+    "채널 검색용 아이디가 아닌 것 같습니다. 카카오톡 채널 관리자센터에서 @로 시작하는 그 아이디입니다.",
+  "That does not look like a mobile number. Enter the number of the person who manages the channel.":
+    "휴대폰 번호가 아닌 것 같습니다. 채널을 관리하는 분의 번호를 입력해 주세요.",
+  "That code does not look right. Check the message and type it again.":
+    "인증번호가 맞지 않는 것 같습니다. 받은 메시지를 다시 확인해 주세요.",
+  "That code was not accepted. Ask for a new one and try again.":
+    "인증번호가 받아들여지지 않았습니다. 새로 받아서 다시 시도해 주세요.",
+  "This is not connected yet.": "아직 연결되지 않았습니다.",
+  "A business registration number is ten digits. Check it and try again.":
+    "사업자등록번호는 열 자리입니다. 다시 확인해 주세요.",
+  "That does not look like a contact number. Check it and try again.":
+    "연락처가 아닌 것 같습니다. 다시 확인해 주세요.",
+  "That does not look like an email address. Check it and try again.":
+    "이메일 주소가 아닌 것 같습니다. 다시 확인해 주세요.",
+  "This machine's clock is out of step with the service, so it would not accept the request. Tell support.":
+    "이 컴퓨터의 시각이 서비스와 어긋나 요청이 거절되었습니다. 고객센터에 알려 주세요.",
+  "This service is not set up on this machine yet.":
+    "이 서비스는 아직 준비되지 않았습니다.",
+  "The service did not answer. Please try again in a moment.":
+    "서비스가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  "That did not work. Please try again.":
+    "잘 되지 않았습니다. 다시 시도해 주세요.",
 };

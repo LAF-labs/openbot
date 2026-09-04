@@ -12,6 +12,7 @@ import {
   ConnectionStrip,
   ConnectOutcome,
 } from "@/components/plugins/connections";
+import { PartnerConnections } from "@/components/partners/partner-connections";
 import { SiteConnections } from "@/components/sites/site-connections";
 import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { t } from "@/lib/i18n";
@@ -28,9 +29,10 @@ import { connectionsQueryOptions } from "@/lib/plugins/queries";
  * there is no administrator step left to wait for, and the server sends the entries it can actually
  * finish a consent for.
  *
- * Below it, the sites a Bot signs into with its own browser. Two lists because they are two
- * different promises: one is an account this deployment holds a token for, the other is a session
- * living in the Bot's browser.
+ * Below it, two more lists, because there are three different promises on this screen and not one.
+ * The first is an account this deployment holds a grant for. The second is a service LAF has the
+ * account at, where the shop registers its own thing underneath and never obtains a key. The third
+ * is a session living in the Bot's own browser, which is a login the person does themselves.
  */
 
 /** `failed`, or the id of the server that was connected. See the same schema on the Plugins page. */
@@ -109,6 +111,10 @@ const ConnectedAccountsPage = () => {
           </PageRows>
         )}
       </PageSection>
+
+      {/* Between the two, and that is the order they are useful in: a service LAF has the account
+          at is one press and one code, and a site the Bot signs into is a login you do yourself. */}
+      <PartnerConnections />
 
       <SiteConnections />
     </PageShell>
