@@ -22,6 +22,15 @@
 > 폐기했다(VM 회수). 이제 모든 배포는 `<name>.agent.laf-co.com` 하나의 와일드카드
 > 아래에 있고, 사람은 진입점 `https://agent.laf-co.com`에서 로그인해 자기 배포로 간다 —
 > 셸 하나가 함대 전체를 연다. 아래 본문은 그날의 검토 기록이므로 그대로 둔다.
+>
+> **후기 2026-09-04 (김기범).** 외부 연결의 모양을 정했다. 사업장마다 키를 받게 하지
+> 않는다 — 우리는 서비스를 제공할 뿐이다. 한 번의 OAuth로 되는 것(구글 시트·지메일·
+> 캘린더·비즈니스 프로필, 카페24)은 함대의 앱 하나가 릴레이(`auth.agent.laf-co.com`)를
+> 거쳐 모든 VM에 닿는 **원클릭 연결**로, 사업장이 저마다의 것을 등록해야 하는 것(카카오
+> 알림톡, 세금계산서)은 LAF가 벤더의 고객이 되고 사업장은 우리 화면에서 그 아래 등록하는
+> **파트너 연결**로, 그 밖에 사업장마다 키를 발급받아야만 되는 곳(네이버 스마트스토어·
+> 플레이스, 배달앱, 쿠팡 등)은 봇 브라우저에 한 번 로그인해 두는 **사이트 연결**로 한다.
+> 플랫폼 키는 `~/laf/secrets/`의 양식 하나에만 적고 `laf env push`로 함대에 심는다.
 
 ---
 
@@ -917,5 +926,8 @@ PC 우선 순서를 바꾸지 않고도 "봇이 기다린다"가 사람에게 �
 | 2026-09-03 | c49b7cf | 게이트 정리: 테스트 디렉터리 4곳이 `tsc`에 편입 — 숨어 있던 오류 83개(아무것도 단언하지 않던 초록 테스트, 실물과 다른 스텁, 잘못된 인자) 수리, 플로어 실측 −3%(server 1149·app 227·agent-computer 128·root 72), 연결·봇 입력 거절에 `laf:` 코드 + 표면 한국어, `mcp.call_repeated` 감사 행·라벨, 역순·재실행 플레이크 스윕(느린 브라우저 테스트가 이웃을 죽이던 것 수리). 병합 후 아웃박스 테스트의 fetch 캐스트 1건을 헬퍼로 | 1669 |
 | 2026-09-03 | 0b09a09 | **main 병합·발행**: `laf/redesign` → `main`(38e5bd3), 드래프트 v0.3.0~0.3.2 발행, v0.4.0은 이미지 실패(웹·서버 이미지에 `shared/` 누락, 서버 이미지는 실행 시 import 사망) + 보안 감사 지적 → Dockerfile·`images.yml`(잡별 권한, env 경유, `$/` 문법)·Dependabot 쿨다운 수리(5a4bb1d), sajuhook 흔적 제거·와일드카드만 지원(d1bd783), 탈퇴·가입이 함대에 닿는 HMAC 웹훅(0b09a09) → **v0.4.1**: CI·Images·Release 전부 성공, `:stable` 이동, 업데이터 0.4.1. **함대**: 오사카 `laf-m0`+볼륨+VCN 삭제(자원 0), sajuhook VM은 `laf destroy`로 마지막 덤프→종료→명부 archived, DNS·정문 라우팅 제거, 백업 버킷 30일 만료. 남은 클라우드는 서울 `laf-entry` 1대 | 1688 |
 | 2026-09-03 | — | **함대 수명주기 가동**: laf-control(cd1f8da 푸시)에 `laf destroy`·`reconcile`·`member remove`·accounts 신호, 가입·결제→서울 A1 1/6(춘천 폴백, 오사카 금지) 개통, 탈퇴(남은 계정 0)→즉시 파기, HMAC 이벤트 문 `POST /api/fleet/events`; 함대 API를 backend 박스에 배치(`laf backend api`: SG 443, `fleet.agent.laf-co.com`, systemd+Caddy, 실측 health 200·무서명 POST 401·80 닫힘). 개통이 고객 VM `.env`에 웹훅 URL·시크릿을 심음. GoDaddy의 `sajuhook.com` A·www 레코드 삭제 | — |
+| 2026-09-03 | d430c04 | **사이트 연결**: 사람이 봇 브라우저에서 한 번 로그인한 곳을 봇이 기억 — 카탈로그 17곳(`shared/sites/catalogue.ts`, `siteForUrl`·`signedIn` 판정), 게이트웨이 `navigate` 훅, `laf_site_connections`(0030, `connected_at` 불변·로그인 벽은 기존 행만 표시), `GET /api/sites/connections`·`POST /api/sites/:siteId/check`, 연결 화면 카드, user-guide §6. 입력한 글자가 행·감사에 없음을 직렬화로 단언(테스트 9). 소유자 어휘 테스트가 "경계"를 잡아 문구 교체 | — |
+| 2026-09-03 | d30b506 | **원클릭 연결(OAuth 릴레이·공용 클라이언트)**: 함대의 OAuth 앱 하나가 모든 VM에 닿음 — `LAF_OAUTH_RELAY_URL`, redirect_uri는 앱 단위(`…/oauth/relay/google` 하나로 구글 5종), state `<slug>.<sealed>`(슬러그는 아무것도 보증하지 않음), `GOOGLE_OAUTH_*`(로그인 쌍과 동일)·`CAFE24_*`, slug는 `PUBLIC_ORIGIN`에서 유도·제품 도메인 밖이면 부팅 거부. 카탈로그 5종(시트 4·지메일 4·캘린더 2·비즈니스 프로필 3·카페24 5 툴, `guardedTools`: 덮어쓰기=destructive, 발송·일정·리뷰 답글·주문 상태=external). 연결 화면이 "연결 가능한 카탈로그"를 그림(관리자 목록 아님), 카페24만 몰 ID 칸. 실측(스텁 릴레이+가짜 토큰 엔드포인트): 동의·교환이 같은 redirect_uri, state 재사용 거절, 해제→행 삭제+revoke. 잡은 버그 2: `/connections`가 모든 엔트리에 호스트 첫 라벨을 `instanceName`으로 실어 보냄, `AUTH_PROVIDERS=laf`+`GOOGLE_OAUTH_CLIENT_ID`면 서버 부팅 불가(함대 VM의 바로 그 조합). 게이트 1794(server 1318·app 269·agent-computer 132·root 75). laf-control 6fd1b6e: `/oauth/relay/:provider`, `laf origins sync`, `laf env push` | 구글 restricted scope 심사(`drive.readonly`·`gmail.*`) 전에는 테스트 사용자만; 메타(인스타·카카오 채널)는 브라우저 경로 |
+| 2026-09-04 | b45bbd3 | **파트너 연결(알림톡·세금계산서)**: LAF가 벤더의 고객, 각 사업장은 우리 화면에서 그 아래 등록 — 키를 받는 사람은 없다. 알림톡=솔라피(LAF 대행 키): 채널 검색 ID→인증번호→연결, 표준 템플릿 4 등록·검수 상태 표시, `alimtalk_send`=external. 세금계산서=팝빌(LAF LinkID): SDK 없이 Linkhub 인증(HMAC-SHA256 6줄 정규 문자열+본문 SHA-256, 세션 토큰 사업자번호별 캐시·2분 여유, 테스트/운영은 호스트가 아니라 서비스 ID), 회원 `laf-<사업자번호>`·비밀번호는 발급만 하고 저장 안 함, 인증서는 팝빌 팝업(`GetTaxCertURL`)을 사람이 직접, `taxinvoice_issue`=**money**(저장소 유일). 마이그레이션 0031, `/api/partners`(env 없으면 목록에서 제외, 반쪽 쌍은 부팅 거부), 파트너 트랜스포트는 `createPluginStore` 옵션(순환 의존 차단), 연결 시 모든 봇에 grant·해제 시 회수, 계정 삭제 시 파트너 정리, 아웃박스 알림톡 문(승인 요청이 소유자 휴대폰으로 실제 발화). 실측(가짜 솔라피·Linkhub·팝빌): Linkhub 서명 재계산 일치, 409 `guard`→승인→발송(`#{상호}` 치환)·`X-HTTP-Method-Override: ISSUE`. 잡은 버그: `normalizePhone`이 11자리(모든 010)를 거절, 파트너 호출의 `reachedAs`가 "deployment"로 거짓 기록, 해제가 `plugin_grants`를 남김. 게이트 1860(server 1373/플로어 1331·app 280/271·agent-computer 132·root 75) | 라이브 키로만 확인 가능한 것은 `SOLAPI_UNVERIFIED`·`POPBILL_UNVERIFIED` 데이터로 보관(connections.md가 출력): 발신프로필 키 필드명·카테고리 필수 여부·검수 결과 필드, 타 LinkID 기가입 사업자 수용 여부(거절은 그대로 표면화, 행 미기록) |
 
 남은 것: `run.failed` 알림 생산자, 관리 화면의 승인 KPI 표시, 라우틴 실행 오류 문장의 코드화, 관리자 삭제 화면, 백업 30일 파기(함대 도구), 웹뷰 내 1차 로그인 측정, 코드 서명(외부), 알림톡 어댑터 실구현(외부), 국내 추론 전환(외부). 미루기로 한 것: 첫 방문 호스트 ask(§5.1 a-5).
