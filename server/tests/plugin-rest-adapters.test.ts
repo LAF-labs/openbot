@@ -212,7 +212,7 @@ describe("Gmail", () => {
 
     expect(result.isError).toBe(false);
     expect(asked[0]?.url.pathname).toBe("/gmail/v1/users/me/messages/send");
-    const raw = (asked[0]?.body as { raw: string }).raw;
+    const raw = (asked[0]?.body as { raw: string } | undefined)?.raw ?? "";
     const mime = Buffer.from(raw, "base64url").toString("utf8");
     // A Korean subject on a raw header is what every mail client disagrees about unless it is
     // encoded; the address and the body are not.

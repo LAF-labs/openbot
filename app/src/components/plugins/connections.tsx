@@ -10,7 +10,6 @@ import {
   ConnectRefusedError,
   connectionsQueryOptions,
   disconnectServer,
-  type PluginServer,
   pluginKeys,
   saveOauthClient,
 } from "@/lib/plugins/queries";
@@ -24,7 +23,7 @@ import {
  * again" in front of a deployment that has no public address at all is how a connector that nobody
  * can ever complete looks like a flaky button.
  */
-const refusalText = (thrown: Error): string => {
+export const refusalText = (thrown: Error): string => {
   const status = thrown instanceof ConnectRefusedError ? thrown.status : 0;
   if (status === 503) {
     return t(
@@ -40,6 +39,14 @@ const refusalText = (thrown: Error): string => {
     return t(
       "The service refused this deployment's registration. Please try again in a moment.",
     );
+  }
+  /*
+   * The one refusal the PERSON can act on, which is why it is a sentence about their shop and not
+   * about the deployment. A mall id is on the address bar of the shop itself, so the fix is to look
+   * and type it again rather than to ask anybody.
+   */
+  if (status === 400) {
+    return t("Check the shop ID and try again.");
   }
   return t("The connection could not be started. Please try again.");
 };
@@ -187,19 +194,36 @@ const OAuthClientForm = ({
  * is. Only the paste-a-client half belongs to an administrator, which is why that is a prop.
  */
 export const ConnectionStrip = ({
-  server,
+  serverId,
   returnTo,
   canRegisterClient = false,
+  dynamicClient = false,
+  hasCredential = false,
+  needsInstanceHost = false,
+  instanceName = null,
 }: {
-  server: PluginServer;
+  serverId: string;
   /** Which screen the vendor sends this person back to when they are done. */
   returnTo: "admin" | "settings";
   /** Whether to offer the client form. Plugins is admin-only; Connected accounts is not. */
   canRegisterClient?: boolean;
+  /** Whether the deployment registers its own client. False is what makes the form worth drawing. */
+  dynamicClient?: boolean;
+  hasCredential?: boolean;
+  /**
+   * Whether this vendor gives every customer their own hostname, so the person types its name.
+   *
+   * A Cafe24 mall id and nothing else. It is not a secret — it is on the address bar of the shop —
+   * which is why it is a plain field here rather than anything the credential vault holds.
+   */
+  needsInstanceHost?: boolean;
+  /** What the deployment already has, so a reconnect does not ask for it again. */
+  instanceName?: string | null;
 }) => {
   const queryClient = useQueryClient();
   const { data, isPending } = useQuery(connectionsQueryOptions());
   const [error, setError] = useState<string | null>(null);
+  const [shopId, setShopId] = useState(instanceName ?? "");
   /*
    * The server said there is nothing to send anybody to consent with. Read ALONGSIDE
    * `hasCredential` rather than instead of it: a client that was stored and then revoked still
@@ -213,10 +237,15 @@ export const ConnectionStrip = ({
   const [waitingInBrowser, setWaitingInBrowser] = useState(false);
 
   const connection =
-    data?.connections.find((row) => row.serverId === server.id) ?? null;
+    data?.connections.find((row) => row.serverId === serverId) ?? null;
 
   const connect = useMutation({
-    mutationFn: () => beginConnect(server.id, returnTo),
+    mutationFn: () =>
+      beginConnect(
+        serverId,
+        returnTo,
+        needsInstanceHost ? shopId.trim() : undefined,
+      ),
     onSuccess: async (authorizationUrl) => {
       // A whole-page navigation, not a router one: the next screen belongs to the vendor — unless
       // the shell handed it to the person's own browser, which is what `openConsent` decides.
@@ -234,7 +263,7 @@ export const ConnectionStrip = ({
   });
 
   const disconnect = useMutation({
-    mutationFn: () => disconnectServer(server.id),
+    mutationFn: () => disconnectServer(serverId),
     onSuccess: () => {
       setError(null);
       void queryClient.invalidateQueries({
@@ -246,9 +275,7 @@ export const ConnectionStrip = ({
   });
 
   const wantsClient =
-    canRegisterClient &&
-    !server.dynamicClient &&
-    (!server.hasCredential || clientRefused);
+    canRegisterClient && !dynamicClient && (!hasCredential || clientRefused);
 
   return (
     <div className="space-y-2">
@@ -302,17 +329,43 @@ export const ConnectionStrip = ({
             </Button>
           </>
         ) : (
-          <Button
-            disabled={connect.isPending}
-            onClick={() => connect.mutate()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {t("Connect")}
-          </Button>
+          <>
+            {/*
+             * BEFORE the button, because it is what the button needs. A vendor that gives every
+             * customer their own hostname cannot be reached without this, and asking for it after
+             * the press would be a refusal in front of somebody who did nothing wrong.
+             */}
+            {needsInstanceHost ? (
+              <Input
+                aria-label={t("Shop ID")}
+                className="h-8 w-40 text-xs"
+                onChange={(event) => setShopId(event.target.value)}
+                placeholder={t("Shop ID")}
+                value={shopId}
+              />
+            ) : null}
+            <Button
+              disabled={
+                connect.isPending || (needsInstanceHost && !shopId.trim())
+              }
+              onClick={() => connect.mutate()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {t("Connect")}
+            </Button>
+          </>
         )}
       </div>
+
+      {/* Where to look for it, said once and only where it is asked for. Nobody knows their mall id
+          by heart, and everybody has it open in another tab. */}
+      {needsInstanceHost && !connection ? (
+        <p className="text-muted-foreground text-xs">
+          {t("The name in front of .cafe24.com in your shop's address.")}
+        </p>
+      ) : null}
 
       {/* The vendor's own words for what it handed over, shown and not interpreted. A vendor whose
           consent screen is the scoping sends none, and inventing one would assert a control that
@@ -334,7 +387,7 @@ export const ConnectionStrip = ({
         <OAuthClientForm
           onSaved={() => setClientRefused(false)}
           redirectUri={data?.redirectUri ?? null}
-          serverId={server.id}
+          serverId={serverId}
         />
       ) : null}
     </div>

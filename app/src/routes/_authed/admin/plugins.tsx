@@ -633,8 +633,10 @@ function Yours({
             <div className="border-border border-b px-4 py-3">
               <ConnectionStrip
                 canRegisterClient
+                dynamicClient={server.dynamicClient}
+                hasCredential={server.hasCredential}
                 returnTo="admin"
-                server={server}
+                serverId={server.id}
               />
             </div>
           ) : null}

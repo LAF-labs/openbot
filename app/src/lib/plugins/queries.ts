@@ -111,8 +111,30 @@ export type PluginConnection = {
   connectedAt: string;
 };
 
+/**
+ * A service this deployment can actually finish a connection to.
+ *
+ * The 연결 screen's whole list. It is the CATALOGUE rather than what somebody added, because on a
+ * one-person deployment there is nobody else to add anything — and an entry only appears once the
+ * deployment holds the OAuth application behind it, so a card that is drawn is one the button works
+ * on.
+ */
+export type AvailableConnector = {
+  id: string;
+  /** The vendor's own brand name, which is theirs in every language. */
+  title: string;
+  /** The server's English line, used only when the copy table has no Korean for this key. */
+  summary: string;
+  docsUrl: string;
+  /** True for a vendor that gives every customer their own hostname (Cafe24's mall id). */
+  needsInstanceHost: boolean;
+  /** What this deployment already has, so a reconnect does not ask for it again. */
+  instanceName: string | null;
+};
+
 export type PluginConnections = {
   connections: PluginConnection[];
+  available: AvailableConnector[];
   /**
    * The address a vendor sends the browser back to, for an administrator registering a client by
    * hand. Null means this deployment has no public URL and no connection can be completed.
@@ -217,10 +239,20 @@ export class ConnectRefusedError extends Error {
 export async function beginConnect(
   serverId: string,
   returnTo: "admin" | "settings",
+  /**
+   * The shop's own name at a per-instance vendor — a Cafe24 mall id, which is on the address bar of
+   * the shop itself and is not a secret. Sent only where the server said one is needed.
+   */
+  instanceName?: string,
 ): Promise<string> {
   const response = await fetch(
     `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${returnTo}`,
-    { method: "POST", credentials: "include" },
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(instanceName ? { instanceName } : {}),
+    },
   );
   const body = (await response.json().catch(() => null)) as {
     authorizationUrl?: string;

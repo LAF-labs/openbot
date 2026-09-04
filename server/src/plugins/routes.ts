@@ -348,9 +348,11 @@ export function createPluginRoutes(
    * — see {@link entryIsConnectable} — because a 연결 button in front of a vendor with no
    * credentials is a control that cannot do the thing it offers.
    *
-   * FACTS ONLY, no prose. The Korean name of a connector and the sentence about what a Bot can then
-   * do belong to the surface (`app/src/lib/plugins/connect-cards.ts`); what the server owes it is
-   * which entries exist, whether one needs a mall id typed in, and what is stored for it now.
+   * FACTS ONLY, no prose. `title` is the vendor's own brand name, which is theirs in every language;
+   * `summary` is this file's English and the surface is expected to replace it from its own table
+   * (`app/src/lib/plugins/catalogue-copy.ts`), which is why it is sent as a fallback rather than as
+   * the words to draw. The rest is which entries exist, whether one needs a mall id typed in, and
+   * what is stored for it now.
    */
   routes.get("/connections", requireUser, async (context) => {
     const connections = await store.connectionsFor(context.var.actor.id);
@@ -359,6 +361,9 @@ export function createPluginRoutes(
       connections,
       available: connectableCatalogue(sharedClient).map((entry) => ({
         id: entry.key,
+        title: entry.title,
+        summary: entry.summary,
+        docsUrl: entry.docsUrl,
         /** True for a vendor that gives every customer their own hostname (Cafe24's mall id). */
         needsInstanceHost: entry.host === null,
         /**

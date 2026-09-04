@@ -514,9 +514,25 @@ describe("the entries a person is offered", () => {
       "http://t/api/plugins/connections",
     );
     const body = (await response.json()) as {
-      available: { id: string; needsInstanceHost: boolean }[];
+      available: {
+        id: string;
+        title: string;
+        summary: string;
+        docsUrl: string;
+        needsInstanceHost: boolean;
+      }[];
     };
     const ids = body.available.map((entry) => entry.id);
+
+    // The vendor's own brand name travels, because it is theirs in every language and the surface
+    // has nowhere else to get it. The English summary travels as a FALLBACK — the Korean is in
+    // `app/src/lib/plugins/catalogue-copy.ts` — so an entry added here shows an English line on a
+    // Korean screen until somebody writes the words, which is the visible failure rather than a
+    // blank one.
+    const sheets = body.available.find((entry) => entry.id === "google-sheets");
+    expect(sheets?.title).toBe("Google Sheets");
+    expect(sheets?.summary).toBeTruthy();
+    expect(sheets?.docsUrl).toContain("https://");
 
     expect(ids).toContain("google-sheets");
     expect(ids).toContain("gmail");

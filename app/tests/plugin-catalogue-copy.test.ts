@@ -33,6 +33,20 @@ describe("the catalogue copy", () => {
     }
   });
 
+  test("every vendor name the server ships is readable in Korean", async () => {
+    /*
+     * The 연결 screen draws `t(entry.title)` — `t()` on a variable, invisible to
+     * `i18n-coverage.test.ts` for the same reason the summaries are. A brand name is not exempt:
+     * "Google Business Profile" on a screen for a shop owner who does not write software is four
+     * English words where "구글 비즈니스 프로필" is the thing they have actually seen.
+     */
+    const { CATALOGUE } = await import("../../server/src/plugins/catalogue");
+    const missing = CATALOGUE.map((entry) => entry.title).filter(
+      (title) => !(title in ko),
+    );
+    expect(missing).toEqual([]);
+  });
+
   test("an unknown key falls back to the sentence the server sent", () => {
     expect(catalogueSummaryKey("brand-new-vendor", "What it does.")).toBe(
       "What it does.",

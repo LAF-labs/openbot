@@ -15,15 +15,22 @@ import {
 import { SiteConnections } from "@/components/sites/site-connections";
 import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { t } from "@/lib/i18n";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { catalogueSummaryKey } from "@/lib/plugins/catalogue-copy";
+import { connectionsQueryOptions } from "@/lib/plugins/queries";
 
 /**
  * The services one person has connected with their own account.
  *
- * A personal page, not an administrator's. Which servers this deployment can reach is somebody
- * else's decision and it is made on the Plugins page; whether YOUR account is behind one of them is
- * only ever yours, and nobody can answer it on your behalf. So this page lists what an
- * administrator added and says nothing about it except what you did with it.
+ * THE LIST IS THE CATALOGUE, not what somebody added. It used to be the servers an administrator
+ * had registered, which on a deployment belonging to one person meant the page said "an
+ * administrator has to set one up first" to the only person there. The application behind each of
+ * these is the fleet's, the address is reviewed in code, and the row is made on the press — so
+ * there is no administrator step left to wait for, and the server sends the entries it can actually
+ * finish a consent for.
+ *
+ * Below it, the sites a Bot signs into with its own browser. Two lists because they are two
+ * different promises: one is an account this deployment holds a token for, the other is a session
+ * living in the Bot's browser.
  */
 
 /** `failed`, or the id of the server that was connected. See the same schema on the Plugins page. */
@@ -32,7 +39,7 @@ const connectedSearchSchema = z
   .catch({});
 
 const ConnectedAccountsPage = () => {
-  const { data, isPending, isError } = useQuery(pluginsPageQueryOptions());
+  const { data, isPending, isError } = useQuery(connectionsQueryOptions());
   const { connected } = Route.useSearch();
   const navigate = Route.useNavigate();
 
@@ -45,14 +52,7 @@ const ConnectedAccountsPage = () => {
     });
   }, [navigate]);
 
-  /*
-   * Only the servers answered with the asker's own grant. A deployment-wide token is an
-   * administrator's arrangement and there is nothing here for a person to do about it, so listing
-   * one would be offering a decision that is not theirs to make.
-   */
-  const servers = (data?.servers ?? []).filter(
-    (server) => server.authKind === "user-oauth",
-  );
+  const available = data?.available ?? [];
 
   return (
     <PageShell
@@ -66,7 +66,10 @@ const ConnectedAccountsPage = () => {
           connected={connected}
           onClear={handleClearConnected}
           titleFor={(serverId) =>
-            servers.find((server) => server.id === serverId)?.title ?? serverId
+            t(
+              available.find((entry) => entry.id === serverId)?.title ??
+                serverId,
+            )
           }
         />
 
@@ -76,25 +79,29 @@ const ConnectedAccountsPage = () => {
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("Connected accounts could not be loaded.")}
           </p>
-        ) : servers.length === 0 ? (
-          /* Said as a fact rather than as an instruction: most people reading this page cannot add
-             a service themselves, and telling them to would be sending them at a locked door. */
-          <PageEmpty>
-            {t(
-              "Nothing to connect yet. An administrator has to set one up first.",
-            )}
-          </PageEmpty>
+        ) : available.length === 0 ? (
+          /* Said as a fact and nothing more. There is nobody to send this person to: the services
+             this deployment can offer are decided by the fleet, not on this machine. */
+          <PageEmpty>{t("There is nothing to connect here yet.")}</PageEmpty>
         ) : (
           <PageRows>
-            {servers.map((server) => (
-              /* The vendor's own name and nothing else. Its catalogue summary is the server's
-                 English prose, and an English sentence on a Korean-first screen is worse than the
-                 blank it replaces — the connection state below is what this row is for. */
-              <Item key={server.id} size="sm">
+            {available.map((entry) => (
+              <Item key={entry.id} size="sm">
                 <ItemContent>
-                  <ItemTitle>{server.title}</ItemTitle>
+                  {/* Both through `t()` on a variable, which `i18n-coverage.test.ts` cannot see —
+                      `plugin-catalogue-copy.test.ts` walks the table instead. The summary falls back
+                      to the server's English line, which is the visible-and-fixable failure. */}
+                  <ItemTitle>{t(entry.title)}</ItemTitle>
+                  <p className="text-muted-foreground text-xs">
+                    {t(catalogueSummaryKey(entry.id, entry.summary))}
+                  </p>
                   <div className="mt-1 w-full">
-                    <ConnectionStrip returnTo="settings" server={server} />
+                    <ConnectionStrip
+                      instanceName={entry.instanceName}
+                      needsInstanceHost={entry.needsInstanceHost}
+                      returnTo="settings"
+                      serverId={entry.id}
+                    />
                   </div>
                 </ItemContent>
               </Item>

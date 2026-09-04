@@ -253,6 +253,7 @@ export const ko: Record<string, string> = {
   "Finish in the browser that just opened, then come back.":
     "방금 열린 브라우저에서 동의를 마친 뒤 돌아와 주세요.",
   "Check again": "다시 확인",
+  "Check the shop ID and try again.": "몰 ID를 확인하고 다시 연결해 주세요.",
   "Checking the connection…": "연결 상태를 확인하는 중…",
   "Choose a Bot": "봇 선택",
   "Choose a Bot…": "봇 선택…",
@@ -281,6 +282,23 @@ export const ko: Record<string, string> = {
     "질문하는 사람의 노션 페이지와 데이터베이스.",
   "Rows in the spreadsheets of whoever is asking.":
     "질문하는 사람의 구글 스프레드시트 내용.",
+  /*
+   * The vendors' own names, in the form a Korean shop owner reads them in.
+   * `plugin-catalogue-copy.test.ts` walks the server's catalogue and fails until every title here
+   * exists — they are drawn with `t()` on a variable, which the coverage test cannot see.
+   */
+  Notion: "노션",
+  "Google Drive": "구글 드라이브",
+  "Google Sheets": "구글 스프레드시트",
+  Gmail: "지메일",
+  "Google Calendar": "구글 캘린더",
+  "Google Business Profile": "구글 비즈니스 프로필",
+  Cafe24: "카페24",
+  "Shop ID": "몰 ID",
+  "The name in front of .cafe24.com in your shop's address.":
+    "쇼핑몰 주소에서 .cafe24.com 앞에 오는 이름입니다.",
+  "There is nothing to connect here yet.":
+    "아직 연결할 수 있는 서비스가 없습니다.",
   "Mail in the mailbox of whoever is asking.": "질문하는 사람의 지메일 편지함.",
   "The calendar of whoever is asking.": "질문하는 사람의 구글 캘린더.",
   "Locations and reviews of the business asking.":
