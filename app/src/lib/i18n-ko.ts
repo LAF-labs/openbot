@@ -67,6 +67,8 @@ export const ko: Record<string, string> = {
     "이 규칙 때문에 물었습니다. 한 번 허용은 이 행동에만, 다른 하나는 누군가 취소할 때까지 같은 행동 전부에 적용됩니다.",
   Blocked: "차단됨",
   "Bot endpoints": "봇 주소",
+  "Connect the sites you use — you can do this later":
+    "자주 쓰는 사이트 연결하기 — 나중에 해도 됩니다",
   "Could not be replaced": "교체하지 못함",
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
@@ -74,6 +76,8 @@ export const ko: Record<string, string> = {
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
   "Give the routine a name.": "루틴 이름을 지어 주세요.",
   "How it works": "일하는 방식",
+  "It arrives with a name and a face and nothing else. You say what it is for by talking to it — and you can make up to five.":
+    "이름과 얼굴만 정해진 채로 옵니다. 무엇을 맡길지는 대화하면서 정하면 됩니다. 봇은 다섯까지 만들 수 있어요.",
   "It arrives with nothing set. What it does is decided in the conversation.":
     "아무것도 정해지지 않은 채로 옵니다. 무엇을 할지는 대화하면서 정해요.",
   "It asked for a secret instead": "대신 비밀값을 요청함",
@@ -171,6 +175,8 @@ export const ko: Record<string, string> = {
   "The whole connector was removed": "커넥터 자체가 제거됨",
   "They disconnected it themselves": "본인이 직접 연결을 해제함",
   "They were removed from this deployment": "이 배포에서 제외된 사람입니다",
+  "They work on one real browser between them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.":
+    "봇들은 진짜 브라우저 하나를 함께 씁니다. 한 봇이 로그인한 사이트는 다른 봇도 로그인된 상태입니다. 팀 전체에 맡겨도 되는 것만 맡겨 주세요.",
   "This deployment registered itself": "이 배포가 스스로 등록함",
   "Time is up": "시간이 다 됐습니다",
   "Updating its own profile": "자기 프로필을 바꾸는 중",

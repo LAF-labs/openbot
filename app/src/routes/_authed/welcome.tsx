@@ -1,65 +1,37 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { Mascot, MASCOT_TILES } from "@/components/agents/mascot";
+import { MASCOT_TILES, Mascot } from "@/components/agents/mascot";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
-import { agentInputFrom, emptyAgentForm } from "@/lib/agents/form";
-import {
-  type AgentPreset,
-  pickSuggestions,
-  workPattern,
-} from "@/lib/agents/presets";
+import { createBotNow, useSeats } from "@/lib/agents/new-bot";
 import { authKeys } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
 /**
  * The first run, and the only place the product asks anybody to set anything up.
  *
- * It ends with one Bot existing, because a roster of Bots you made is the whole product and there
- * is nothing to look at before the first one. The deployment no longer ships Bots of its own, so
- * without this a new person met an empty screen and a button.
+ * TWO SCREENS, AND THE SECOND ONE IS A BUTTON. It used to be three, the last of which was a form:
+ * thirty-five faces to choose from, above a name field, above an optional description, in front of
+ * somebody who had not yet seen a Bot say a single word — every question of which the Bot itself
+ * asks better, in its own conversation, once it exists.
  *
- * THERE IS NO SKIP. Not to trap anybody — it is two screens and a name — but because every path
- * past it lands somewhere that only makes sense once a Bot exists.
+ * It still ends with one Bot existing, because a roster of Bots you made is the whole product and
+ * there is nothing to look at before the first one. And there is still no skip: it is one screen and
+ * one press, and every path past it lands somewhere that only makes sense once a Bot exists.
  */
 export const Route = createFileRoute("/_authed/welcome")({
   component: Welcome,
 });
 
-const STEPS = ["hello", "computer", "create"] as const;
-type Step = (typeof STEPS)[number];
-
 function Welcome() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
+  const seats = useSeats();
 
-  const [step, setStep] = useState<Step>("hello");
-  const [avatarSeed, setAvatarSeed] = useState(MASCOT_TILES[0]?.id ?? "r0c1");
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [role, setRole] = useState("");
+  const [step, setStep] = useState<"hello" | "create">("hello");
   const [problem, setProblem] = useState<string | null>(null);
-  /*
-   * Three, not six, and not a wall: this screen is somebody's first minute and the point of the
-   * cards is to answer "what would I even use this for", not to be chosen from. Dealt once, in an
-   * initialiser, so they hold still while they are being read.
-   */
-  const [suggestions, setSuggestions] = useState(() => pickSuggestions(3));
-
-  const applyPreset = (preset: AgentPreset) => {
-    // The translated text, not the key: these become the Bot's own words, shown and given to the
-    // model for as long as it exists.
-    setAvatarSeed(preset.avatarSeed);
-    setName(t(preset.name));
-    setTitle(t(preset.title));
-    setRole(t(preset.roleDescription));
-  };
-
   /*
    * A REF, NOT `isPending`. The mutation's flag is a render-time value, so two clicks landing in the
    * same frame both read `false` and both submit — which in onboarding means two Bots, one of the
@@ -69,50 +41,48 @@ function Welcome() {
   const submitting = useRef(false);
 
   const finish = async () => {
-    if (!name.trim() || submitting.current) return;
+    if (submitting.current) return;
     submitting.current = true;
     setProblem(null);
-    try {
-      const agent = await createAgent.mutateAsync({
-        ...agentInputFrom({
-          ...emptyAgentForm,
-          name: name.trim(),
-          title: title.trim(),
-          roleDescription: role.trim(),
-        }),
-        avatarSeed,
-      });
-      /*
-       * Marked only once the Bot exists. The other order — stamp, then create — leaves somebody who
-       * closed the laptop mid-request past the gate with no Bot and no way back to this screen.
-       */
-      await fetch("/api/me/onboarded", {
-        method: "POST",
-        credentials: "include",
-      });
-      /*
-       * REFETCH, NOT INVALIDATE, AND `type: "all"` IS THE WHOLE FIX.
-       *
-       * Measured: the first Bot was created, `onboarded_at` was stamped, and the screen stayed on
-       * the welcome form with the person's own words still in it — and pressing 시작하기 again did
-       * nothing at all, because the double-click guard had already latched. A dead button on the
-       * first screen of the product.
-       *
-       * `invalidateQueries` only marks the entry stale; it refetches ACTIVE queries, and nothing on
-       * this screen observes the current user. `ensureQueryData` in `_authed`'s guard then answered
-       * from the cache — still `onboarded: false` — and redirected the navigation straight back
-       * here. The two halves each behaved correctly and the person was in a loop.
-       */
-      await queryClient.refetchQueries({
-        queryKey: authKeys.currentUser(),
-        type: "all",
-      });
-      await navigate({ to: "/agents", search: { agent: agent.id } });
-    } catch {
-      // Released only on failure: on success this screen is going away, and re-arming the button
-      // during that teardown is another way to make a second Bot.
+    const outcome = await createBotNow({
+      create: (input) => createAgent.mutateAsync(input),
+      open: async (agentId) => {
+        /*
+         * Marked only once the Bot exists. The other order — stamp, then create — leaves somebody
+         * who closed the laptop mid-request past the gate with no Bot and no way back here.
+         */
+        await fetch("/api/me/onboarded", {
+          credentials: "include",
+          method: "POST",
+        });
+        /*
+         * REFETCH, NOT INVALIDATE, AND `type: "all"` IS THE WHOLE FIX.
+         *
+         * Measured: the first Bot was created, `onboarded_at` was stamped, and the screen stayed on
+         * the welcome form with the person's own words still in it — and pressing 시작하기 again did
+         * nothing at all, because the double-click guard had already latched. A dead button on the
+         * first screen of the product.
+         *
+         * `invalidateQueries` only marks the entry stale; it refetches ACTIVE queries, and nothing
+         * on this screen observes the current user. `ensureQueryData` in `_authed`'s guard then
+         * answered from the cache — still `onboarded: false` — and redirected the navigation
+         * straight back here. The two halves each behaved correctly and the person was in a loop.
+         */
+        await queryClient.refetchQueries({
+          queryKey: authKeys.currentUser(),
+          type: "all",
+        });
+        // Into the Bot's own conversation, where the profile card is waiting with its name and face.
+        await navigate({ search: { agent: agentId }, to: "/channel/new" });
+      },
+      seats,
+      taken: [],
+    });
+    // Released only on failure: on success this screen is going away, and re-arming the button
+    // during that teardown is another way to make a second Bot.
+    if (!outcome.ok) {
       submitting.current = false;
-      setProblem(t("That Bot could not be created. Try again."));
+      setProblem(outcome.problem);
     }
   };
 
@@ -147,33 +117,6 @@ function Welcome() {
                 "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.",
               )}
             </p>
-            <Button className="w-full" onClick={() => setStep("computer")}>
-              {t("Next")}
-            </Button>
-          </section>
-        ) : null}
-
-        {step === "computer" ? (
-          <section className="flex flex-col items-center gap-6 text-center">
-            <h1 className="font-semibold text-2xl">
-              {t("They share one computer")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t(
-                "Your Bots work on a real browser of their own — they open pages, read them, and fill things in.",
-              )}
-            </p>
-            {/*
-             * The invitation before the caution: xAI's guides all open with
-             * "connect your daily tools first", and it is the one setup act
-             * that turns an empty Bot into a useful one. Ours is a sign-in,
-             * not an integration — said as a first move, not a chore.
-             */}
-            <p className="text-muted-foreground text-sm">
-              {t(
-                "A good first move: sign the Bot's browser into the sites you check every day. From then on, that screen's work is work you can hand over.",
-              )}
-            </p>
             {/*
              * Said plainly, here, once. The Bots share a desk: a site one of them signed into is
              * signed in for all of them. That is what makes the desk useful and it is also the
@@ -181,151 +124,51 @@ function Welcome() {
              */}
             <p className="rounded-lg bg-muted/50 px-4 py-3 text-muted-foreground text-sm">
               {t(
-                "It is one computer for all of them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.",
+                "They work on one real browser between them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.",
               )}
             </p>
-            <div className="flex w-full gap-2">
-              <Button
-                className="flex-1"
-                onClick={() => setStep("hello")}
-                variant="outline"
-              >
-                {t("Back")}
-              </Button>
-              <Button className="flex-1" onClick={() => setStep("create")}>
-                {t("Next")}
-              </Button>
-            </div>
-          </section>
-        ) : null}
-
-        {step === "create" ? (
-          <form
-            className="flex flex-col gap-6"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void finish();
-            }}
-          >
-            <div className="flex flex-col items-center gap-3 text-center">
-              <Mascot className="size-20" seed={avatarSeed} size={80} />
-              <h1 className="font-semibold text-2xl">
-                {t("Make your first Bot")}
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                {t(
-                  "It starts with nothing set and can become anything. You can make up to five.",
-                )}
-              </p>
-              {/* The other teaching door, named once at the start: not every
-                  job survives being written down, and showing is allowed. */}
-              <p className="text-muted-foreground text-sm">
-                {t(
-                  "Anything hard to explain in words, you can teach by doing it once in front of the Bot.",
-                )}
-              </p>
-            </div>
-
             {/*
-             * BEFORE THE FORM, DELIBERATELY. A person who has never seen the product read "it can
-             * become anything" one line ago; three real jobs are what makes that sentence mean
-             * something. Tapping one fills every field below, including the face.
+             * A LINK THAT GOES SOMEWHERE. The invitation to sign the Bot's browser into your daily
+             * sites was here as a sentence with nothing to press — the one setup act that turns an
+             * empty Bot into a useful one, described and then abandoned. It goes to 연결 now, and
+             * it says out loud that it can wait, because on the first minute it can.
              */}
-            <section className="flex flex-col gap-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <h2 className="font-medium text-muted-foreground text-xs">
-                  {t("Or start from one of these")}
-                </h2>
-                <button
-                  className="text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-foreground hover:underline"
-                  onClick={() => setSuggestions(pickSuggestions(3))}
-                  type="button"
-                >
-                  {t("Show me others")}
-                </button>
-              </div>
-              {suggestions.map((preset) => {
-                const pattern = workPattern(preset.pattern);
-                return (
-                  <button
-                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-ring/40"
-                    key={preset.id}
-                    onClick={() => applyPreset(preset)}
-                    type="button"
-                  >
-                    <Mascot
-                      className="size-8 shrink-0 rounded-lg"
-                      seed={preset.avatarSeed}
-                      size={32}
-                    />
-                    <span className="flex min-w-0 flex-col">
-                      {/* The kind of work first: on somebody's first minute, "당직·감시" says more
-                          about what a Bot is for than any name it could be given. */}
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {t(pattern.name)} · {t(pattern.connection)}
-                      </span>
-                      <span className="truncate font-medium text-[13px]">
-                        {t(preset.name)}
-                      </span>
-                      <span className="truncate text-[12px] text-muted-foreground">
-                        {t(preset.roleDescription)}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </section>
-
-            <fieldset className="flex flex-wrap justify-center gap-2">
-              <legend className="sr-only">{t("Pick a face")}</legend>
-              {MASCOT_TILES.map((tile) => (
-                <button
-                  className={
-                    "size-8 overflow-hidden rounded-lg transition hover:scale-110" +
-                    (tile.id === avatarSeed
-                      ? " ring-2 ring-primary"
-                      : " ring-1 ring-border")
-                  }
-                  key={tile.id}
-                  onClick={() => setAvatarSeed(tile.id)}
-                  style={{ background: tile.background }}
-                  type="button"
-                >
-                  <Mascot className="size-full" seed={tile.id} size={32} />
-                </button>
-              ))}
-            </fieldset>
-
-            <Field>
-              <FieldLabel htmlFor="welcome-name">{t("Name")}</FieldLabel>
-              <Input
-                autoFocus
-                id="welcome-name"
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("Name your Bot")}
-                value={name}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="welcome-role">
-                {t("What should this Bot help with?")}{" "}
-                <span className="font-normal text-muted-foreground">
-                  {t("(Optional)")}
-                </span>
-              </FieldLabel>
-              <Textarea
-                id="welcome-role"
-                onChange={(event) => setRole(event.target.value)}
-                rows={3}
-                value={role}
-              />
-              <p className="text-muted-foreground text-sm">
-                {t(
-                  "Leave it blank and the Bot will ask you itself when you first talk to it.",
-                )}
-              </p>
-            </Field>
+            <Button
+              render={(props) => (
+                <Link to="/settings/connected-accounts" {...props} />
+              )}
+              size="sm"
+              variant="outline"
+            >
+              {t("Connect the sites you use — you can do this later")}
+            </Button>
+            <Button className="w-full" onClick={() => setStep("create")}>
+              {t("Next")}
+            </Button>
+          </section>
+        ) : (
+          <section className="flex flex-col items-center gap-6 text-center">
+            <Mascot className="size-20" seed="r4c5" size={80} />
+            <h1 className="font-semibold text-2xl">
+              {t("Make your first Bot")}
+            </h1>
+            {/*
+             * NOTHING TO FILL IN. The name and the face are given, and both are changed in one tap
+             * on the card that opens with the conversation — which is also the moment a person has
+             * any idea what they want to call it.
+             */}
+            <p className="text-muted-foreground text-sm">
+              {t(
+                "It arrives with a name and a face and nothing else. You say what it is for by talking to it — and you can make up to five.",
+              )}
+            </p>
+            {/* The other teaching door, named once at the start: not every job survives being
+                written down, and showing is allowed. */}
+            <p className="text-muted-foreground text-sm">
+              {t(
+                "Anything hard to explain in words, you can teach by doing it once in front of the Bot.",
+              )}
+            </p>
 
             {problem ? (
               <p className="text-destructive text-sm" role="alert">
@@ -333,10 +176,10 @@ function Welcome() {
               </p>
             ) : null}
 
-            <div className="flex gap-2">
+            <div className="flex w-full gap-2">
               <Button
                 className="flex-1"
-                onClick={() => setStep("computer")}
+                onClick={() => setStep("hello")}
                 type="button"
                 variant="outline"
               >
@@ -344,14 +187,17 @@ function Welcome() {
               </Button>
               <Button
                 className="flex-1"
-                disabled={!name.trim() || createAgent.isPending}
-                type="submit"
+                disabled={createAgent.isPending}
+                onClick={() => void finish()}
+                type="button"
               >
-                {createAgent.isPending ? t("Creating…") : t("Get started")}
+                {createAgent.isPending
+                  ? t("Creating…")
+                  : t("Make your first Bot")}
               </Button>
             </div>
-          </form>
-        ) : null}
+          </section>
+        )}
       </div>
     </main>
   );
