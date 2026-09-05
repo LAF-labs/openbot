@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { MASCOT_TILES, Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { Button } from "@/components/ui/button";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { createBotNow, useSeats } from "@/lib/agents/new-bot";
@@ -20,6 +20,9 @@ import { t } from "@/lib/i18n";
  * there is nothing to look at before the first one. And there is still no skip: it is one screen and
  * one press, and every path past it lands somewhere that only makes sense once a Bot exists.
  */
+/** Three fixed faces for the first screen: distinct shapes and palettes, no accessories. */
+const WELCOME_FACES = ["f:0.4.1.0", "f:1.7.0.0", "f:3.9.2.0"] as const;
+
 export const Route = createFileRoute("/_authed/welcome")({
   component: Welcome,
 });
@@ -92,11 +95,11 @@ function Welcome() {
         {step === "hello" ? (
           <section className="flex flex-col items-center gap-6 text-center">
             <div className="flex -space-x-3">
-              {MASCOT_TILES.slice(0, 3).map((tile) => (
-                <Mascot
-                  className="size-14 rounded-full ring-2 ring-background"
-                  key={tile.id}
-                  seed={tile.id}
+              {WELCOME_FACES.map((seed) => (
+                <BotAvatar
+                  className="size-14"
+                  key={seed}
+                  seed={seed}
                   size={56}
                 />
               ))}
@@ -148,7 +151,7 @@ function Welcome() {
           </section>
         ) : (
           <section className="flex flex-col items-center gap-6 text-center">
-            <Mascot className="size-20" seed="r4c5" size={80} />
+            <BotAvatar className="size-20" seed="f:2.5.0.0" size={80} />
             <h1 className="font-semibold text-2xl">
               {t("Make your first Bot")}
             </h1>

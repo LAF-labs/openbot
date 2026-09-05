@@ -1,4 +1,4 @@
-import { Mascot, mascotBackground } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 
@@ -35,11 +35,8 @@ export function AgentCard({
      * and over each other. The grid now sizes its columns and the card fills the one it is given.
      */
     <div className="group w-full overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
-      <div
-        className="flex aspect-square items-center justify-center overflow-hidden"
-        style={{ background: mascotBackground(agent.avatarSeed) }}
-      >
-        <Mascot
+      <div className="flex aspect-square items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)] p-4">
+        <BotAvatar
           className="size-full transition-transform duration-200 group-hover:scale-[1.04]"
           seed={agent.avatarSeed}
           size={144}

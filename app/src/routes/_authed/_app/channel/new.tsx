@@ -196,7 +196,6 @@ function RouteComponent() {
               ) : (
                 <>
                   <BotAvatar seed={chosen.avatarSeed} size={80} />
-                  </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="font-semibold text-[15px]">
                       {chosen.name}
