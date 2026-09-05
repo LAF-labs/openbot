@@ -11,15 +11,22 @@ export const agentFormSchema = z.object({
     .trim()
     .min(1, t("Name is required."))
     .max(80, t("Name must be 80 characters or fewer.")),
+  /*
+   * OPTIONAL, BOTH OF THEM, THE SAME WAY THE SERVER HAS THEM.
+   *
+   * They were required here and nowhere else: `server/src/agents/routes.ts` takes an empty title and
+   * an empty description on purpose — a Bot starts with nothing set and is shaped by talking to it —
+   * and every screen that makes one leaves them blank. So a Bot made yesterday could not be RENAMED
+   * today without first inventing a job title it had never been shown, on a form that refused to
+   * save and would not say which field it was refusing over.
+   */
   title: z
     .string()
     .trim()
-    .min(1, t("Title is required."))
     .max(120, t("Title must be 120 characters or fewer.")),
   roleDescription: z
     .string()
     .trim()
-    .min(1, t("Role description is required."))
     .max(1000, t("Role description must be 1000 characters or fewer.")),
   visibility: z.enum(["public", "private"]),
   /**

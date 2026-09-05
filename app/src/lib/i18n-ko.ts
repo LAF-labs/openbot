@@ -62,8 +62,11 @@ export const ko: Record<string, string> = {
   "Could not be replaced": "교체하지 못함",
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
+  "Decide what it does by talking to it.": "무엇을 맡길지 대화로 정해요.",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
   "Give the routine a name.": "루틴 이름을 지어 주세요.",
+  "It arrives with nothing set. What it does is decided in the conversation.":
+    "아무것도 정해지지 않은 채로 옵니다. 무엇을 할지는 대화하면서 정해요.",
   "It asked for a secret instead": "대신 비밀값을 요청함",
   "It is waiting on your answer.": "답을 기다리고 있습니다.",
   "It is waiting on an answer about something this screen cannot name.":
@@ -104,6 +107,7 @@ export const ko: Record<string, string> = {
   "It wants to press “{name}” on {host}.":
     "{host}에서 ‘{name}’{particle} 누르려 합니다.",
   "Model usage recorded": "모델 사용량이 기록됨",
+  "My Bots {used}/{total}": "내 봇 {used}/{total}",
   "No rule allows it": "허용하는 규칙이 없음",
   "Nobody answered in time": "아무도 답하지 않음",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
@@ -1069,6 +1073,19 @@ export const ko: Record<string, string> = {
   "Show me others": "다른 제안 보기",
   "Or start from one of these": "아니면 이 중에서 시작하세요",
 
+  // 새 봇이 아직 이름을 정하기 전에 쓰는 이름들 — BOT_NAME_WORDS(lib/agents/bot-names.ts).
+  Lantern: "초롱",
+  Pebble: "조약돌",
+  Breeze: "산들",
+  Maple: "단풍",
+  Compass: "나침반",
+  Otter: "수달",
+  Sprout: "새싹",
+  Willow: "버들",
+  Comet: "혜성",
+  Anchor: "닻",
+  Dawn: "새벽",
+  Clover: "토끼풀",
   // 업무 패턴 여덟과, 그 일이 주로 기대는 연결.
   "Night watch": "당직·감시",
   "Approval helper": "승인 보조",

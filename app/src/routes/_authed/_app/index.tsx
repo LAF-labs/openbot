@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { NewBotButton } from "@/components/agents/new-bot-button";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { Button } from "@/components/ui/button";
@@ -118,15 +119,7 @@ function RouteComponent() {
           <p className="text-center text-[13px] text-muted-foreground">
             {t("No Bots on your team yet.")}
           </p>
-          <Button
-            render={(props) => (
-              <Link to="/agents" search={{ new: true }} {...props} />
-            )}
-            size="sm"
-            variant="outline"
-          >
-            {t("New Bot")}
-          </Button>
+          <NewBotButton size="sm" variant="outline" />
         </div>
       ) : null}
 

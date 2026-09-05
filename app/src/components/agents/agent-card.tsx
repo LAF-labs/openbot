@@ -1,5 +1,6 @@
 import { Mascot, mascotBackground } from "@/components/agents/mascot";
 import type { AgentProfile } from "@/lib/agents/queries";
+import { t } from "@/lib/i18n";
 
 /**
  * A Bot as a card: the face above, the words below, nothing on top of either.
@@ -9,7 +10,23 @@ import type { AgentProfile } from "@/lib/agents/queries";
  * surface, a hairline, depth from the background step rather than a shadow — with the face's own
  * ground carrying the only colour on the card.
  */
-export function AgentCard({ agent }: { agent: AgentProfile }) {
+export function AgentCard({
+  agent,
+  status,
+}: {
+  agent: AgentProfile;
+  /** What it is doing right now, when it is doing something. */
+  status?: string;
+}) {
+  /*
+   * A NEW BOT HAS NO ROLE, AND THE SECOND LINE WAS SIMPLY BLANK.
+   *
+   * Every Bot is now made in one press with nothing set, so the ordinary card is the one with no
+   * description — and it drew a name over an empty line, which reads as a Bot that failed to load
+   * rather than one that has not been given a job. The line says what to do about it instead.
+   */
+  const line = agent.roleDescription || agent.title;
+
   return (
     /*
      * FULL WIDTH, NOT 144px. The card used to set its own width, which held as long as its grid gave
@@ -32,9 +49,19 @@ export function AgentCard({ agent }: { agent: AgentProfile }) {
         <span className="line-clamp-1 font-medium text-[13px]">
           {agent.name}
         </span>
-        <span className="line-clamp-2 text-[12px] text-muted-foreground leading-snug">
-          {agent.roleDescription}
-        </span>
+        {status ? (
+          /* A dot, because a Bot that is working is the one thing on this card worth a colour. */
+          <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+            <span className="line-clamp-1">{status}</span>
+          </span>
+        ) : (
+          <span
+            className={`line-clamp-2 text-[12px] leading-snug ${line ? "text-muted-foreground" : "text-muted-foreground/70"}`}
+          >
+            {line || t("Decide what it does by talking to it.")}
+          </span>
+        )}
       </div>
     </div>
   );

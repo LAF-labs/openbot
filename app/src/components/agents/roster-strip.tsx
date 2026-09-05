@@ -1,6 +1,7 @@
-import { Link } from "@tanstack/react-router";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { useNewBot } from "@/lib/agents/new-bot";
 import type { AgentProfile } from "@/lib/agents/queries";
+import { seatsFullMessage } from "@/lib/agents/seats";
 import { t } from "@/lib/i18n";
 
 /**
@@ -23,6 +24,7 @@ export function RosterStrip({
   selectedId: string | undefined;
   onSelect: (agentId: string) => void;
 }) {
+  const newBot = useNewBot();
   return (
     // Wraps within the composer's measure: a team of a dozen ran off the right of the screen.
     <div className="flex max-w-2xl flex-wrap items-start justify-center gap-1">
@@ -63,19 +65,28 @@ export function RosterStrip({
           </button>
         );
       })}
-      {/* `new: true` — the tile is labelled "New Bot" and so it opens the form, not the list. */}
-      <Link
-        className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
-        search={{ new: true }}
-        to="/agents"
+      {/*
+       * IT MAKES THE BOT. It used to link to a form; the form is gone, and this is the same press
+       * every other 새 봇 is — a Bot named, given a face, and its conversation opened.
+       *
+       * The reason is on `title` here and nowhere else on screen, because this tile is one of a row
+       * of faces inside a composer: a sentence under it would push the message box down the page.
+       * The roster says it in full, which is where somebody goes to do something about it.
+       */}
+      <button
+        className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent disabled:opacity-50"
+        disabled={newBot.isPending || newBot.seats.isFull}
+        onClick={() => void newBot.create()}
+        title={newBot.seats.isFull ? seatsFullMessage(newBot.seats) : undefined}
+        type="button"
       >
         <span className="inline-flex size-12 items-center justify-center rounded-full border border-border border-dashed text-[20px] text-muted-foreground transition-transform duration-150 group-hover:scale-105">
           +
         </span>
         <span className="max-w-full truncate text-[11px] text-muted-foreground leading-tight">
-          {t("New Bot")}
+          {newBot.isPending ? t("Creating…") : t("New Bot")}
         </span>
-      </Link>
+      </button>
     </div>
   );
 }

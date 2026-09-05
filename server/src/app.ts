@@ -25,6 +25,7 @@ import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
+import { MAX_BOTS_PER_COMPUTER } from "./computer/assignment";
 import type { ComputerClient } from "./computer/client";
 import type { DemonstrationRecorder } from "./computer/demonstration";
 import type { ComputerGateway } from "./computer/gateway";
@@ -284,6 +285,13 @@ export function createApp(
   const capabilities = async () => ({
     effort: deploymentEffort !== false,
     autoReview: autoReviewCapable ? await autoReviewCapable() : true,
+    /*
+     * How many Bots fit, so the roster can say "3/5" instead of leaving somebody to discover the
+     * cap by being refused. The same constant `reserveSeat` counts against, read from the same
+     * place — a surface that wrote five into its own prose would be wrong on any deployment that
+     * set `BOT_SEATS_PER_ACCOUNT` to anything else.
+     */
+    seats: MAX_BOTS_PER_COMPUTER,
   });
 
   app.route("/health", createHealthRoute(healthProbes));

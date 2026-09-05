@@ -1,27 +1,32 @@
-import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
 import { AgentProfile as AgentProfileDetail } from "@/components/agents/agent-profile";
 import { Mascot } from "@/components/agents/mascot";
-import { NewAgent } from "@/components/agents/new-agent";
+import { NewBotButton } from "@/components/agents/new-bot-button";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSeats } from "@/lib/agents/new-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { t } from "@/lib/i18n";
 
 /**
- * Creating and inspecting a coworker are search-parameter states so the roster remains mounted and
- * Back closes the detail pane.
+ * Inspecting a Bot is a search-parameter state so the roster remains mounted and Back closes the
+ * detail pane.
+ *
+ * `new` IS GONE. Creating was a third state here — a form in a 320px pane, asking for a title it
+ * threw away — and a Bot is now made by pressing the button, with no screen in between. An old
+ * `?new=true` link is simply dropped by the schema and lands on the roster, which is where somebody
+ * following one wanted to be anyway.
  */
 const agentsSearchSchema = z
   .object({
-    new: z.boolean().optional(),
     agent: z.string().optional(),
   })
   /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
@@ -34,7 +39,7 @@ export const Route = createFileRoute("/_authed/_app/agents/")({
 });
 
 function AgentsScreen() {
-  const { new: isCreating, agent: selectedAgentId } = Route.useSearch();
+  const { agent: selectedAgentId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const {
     data: agents,
@@ -42,22 +47,25 @@ function AgentsScreen() {
     isError,
     refetch,
   } = useQuery(agentListQueryOptions());
+  const { data: working } = useQuery(workingQueryOptions());
+  const seats = useSeats();
   const mine = agents?.filter((a) => a.mine);
-  const explore = agents?.filter((a) => !a.mine && a.visibility === "public");
 
-  // Creating wins if both are somehow set: it is the more recent intent.
-  const showCreate = isCreating === true;
-  const showProfile = !showCreate && selectedAgentId !== undefined;
   const close = () => navigate({ search: {} });
 
   return (
     <DetailPanel
+      /*
+       * 400px, not 320. The pane holding a Bot's profile is not the pane holding a thumbnail and a
+       * list: it carries a face, a name that can be typed in, four cards of settings and a menu, and
+       * at 320 the effort buttons and the skill switches were laid out three-to-a-line on a column
+       * narrower than the sentence explaining them.
+       */
+      detailWidth={400}
       onClose={close}
-      open={showCreate || showProfile}
+      open={selectedAgentId !== undefined}
       detail={
-        showCreate ? (
-          <NewAgent />
-        ) : selectedAgentId ? (
+        selectedAgentId ? (
           <AgentProfileDetail agentId={selectedAgentId} />
         ) : null
       }
@@ -67,22 +75,20 @@ function AgentsScreen() {
        * had no page title at all, section gaps that did not match its peers, and — because the shell
        * is where the scroller lives — no way to reach anything below the fold.
        */}
-      <PageShell
-        action={
-          <Button
-            variant="ghost"
-            size="sm"
-            render={(props) => (
-              <Link to="/agents" search={{ new: true }} {...props} />
-            )}
-          >
-            <IconPlus />
-            {t("New Bot")}
-          </Button>
-        }
-        title={t("Bots")}
-      >
-        <PageSection title={t("Your Bots")}>
+      <PageShell action={<NewBotButton />} title={t("Bots")}>
+        {/*
+         * THE COUNT IS IN THE HEADING, NOT IN A REFUSAL.
+         *
+         * Five per person is a real limit with a real reason — one VM each — and it used to be
+         * spoken exactly once, by the sixth attempt failing. A person who can see 4/5 makes the
+         * fifth one on purpose.
+         */}
+        <PageSection
+          title={t("My Bots {used}/{total}", {
+            total: seats.total,
+            used: seats.used,
+          })}
+        >
           <div className="flex flex-row">
             {!!mine?.length && (
               /*
@@ -93,10 +99,14 @@ function AgentsScreen() {
                */
               <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
                 {mine.map((agent, index) => {
+                  const run = working?.find((it) => it.agentId === agent.id);
                   return (
                     <StaggerItem index={index} key={agent.id}>
                       <Link to="/agents" search={{ agent: agent.id }}>
-                        <AgentCard agent={agent} />
+                        <AgentCard
+                          agent={agent}
+                          status={run ? workingLabel(run) : undefined}
+                        />
                       </Link>
                     </StaggerItem>
                   );
@@ -130,7 +140,12 @@ function AgentsScreen() {
               </div>
             )}
             {!isPending && !isError && !mine?.length && (
-              <Empty className="border border-dashed h-[180px]">
+              /*
+               * A DEAD END BEFORE. The empty roster said "you have not made a Bot yet" and offered
+               * nothing to press: the button was in the header, in ghost grey, above a page whose
+               * entire content was a sentence about not having pressed it.
+               */
+              <Empty className="h-auto w-full border border-dashed py-10">
                 <EmptyHeader>
                   {/* The axolotl: the one that has not grown up yet, waiting to be made. */}
                   <span className="mx-auto mb-2 inline-flex size-12 overflow-hidden rounded-full opacity-80">
@@ -143,34 +158,21 @@ function AgentsScreen() {
                   <EmptyTitle className="text-muted-foreground">
                     {t("You have not made a Bot yet.")}
                   </EmptyTitle>
+                  <p className="text-muted-foreground text-sm">
+                    {t(
+                      "It arrives with nothing set. What it does is decided in the conversation.",
+                    )}
+                  </p>
                 </EmptyHeader>
+                <NewBotButton
+                  label={t("Make your first Bot")}
+                  size="default"
+                  variant="default"
+                />
               </Empty>
             )}
           </div>
         </PageSection>
-        {/* Hidden entirely on error: the page-level line above already said what went wrong once. */}
-        {isError ? null : (
-          <PageSection title={t("Explore Bots")}>
-            <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
-              {isPending
-                ? [0, 1, 2].map((slot) => (
-                    <Skeleton className="h-[200px] rounded-xl" key={slot} />
-                  ))
-                : explore?.map((agent, index) => (
-                    <StaggerItem index={index} key={agent.id}>
-                      <Link to="/agents" search={{ agent: agent.id }}>
-                        <AgentCard agent={agent} />
-                      </Link>
-                    </StaggerItem>
-                  ))}
-            </div>
-            {!isPending && !explore?.length ? (
-              <p className="mt-4 text-muted-foreground text-sm">
-                {t("No public Bots to explore yet.")}
-              </p>
-            ) : null}
-          </PageSection>
-        )}
       </PageShell>
     </DetailPanel>
   );

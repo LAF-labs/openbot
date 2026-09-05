@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { DEFAULT_BOT_SEATS } from "@/lib/agents/seats";
 
 export type AuthenticatedUser = {
   id: string;
@@ -26,6 +27,15 @@ export type AuthenticatedUser = {
 export type Deployment = {
   effort: boolean;
   autoReview: boolean;
+  /**
+   * How many Bots this person's computer seats.
+   *
+   * A number rather than a control, and the roster draws it as "내 봇 3/5" whether or not anybody
+   * is near it — a cap somebody meets for the first time when they are refused is a cap they were
+   * never told about. `BOT_SEATS_PER_ACCOUNT` is a deployment's to change, so the surface asks
+   * rather than writing five into its own prose.
+   */
+  seats: number;
 };
 
 /** The signed-in person, and what the deployment they are on can do. */
@@ -92,6 +102,12 @@ async function currentUser(): Promise<CurrentUserResult> {
     deployment: {
       effort: body.deployment?.effort !== false,
       autoReview: body.deployment?.autoReview !== false,
+      // A server that does not say seats the product's five, which is what every deployment that
+      // has not been told otherwise actually does.
+      seats:
+        typeof body.deployment?.seats === "number" && body.deployment.seats > 0
+          ? body.deployment.seats
+          : DEFAULT_BOT_SEATS,
     },
   };
 }

@@ -18,6 +18,27 @@ describe("coworker query keys", () => {
 });
 
 describe("coworker form validation", () => {
+  /**
+   * A NAME IS THE WHOLE OF WHAT IS REQUIRED, and this is the test that was missing.
+   *
+   * The schema demanded a title and a role description that the server has always taken as
+   * optional and that no screen in the product has ever asked for. Every Bot made in the last
+   * redesign has both empty — so opening one and changing its name failed validation on two fields
+   * nobody could see, and the form simply refused to submit.
+   */
+  test("a name alone saves", () => {
+    const parsed = agentFormSchema.safeParse({
+      name: "초롱",
+      title: "",
+      roleDescription: "",
+      visibility: "private",
+      endpoint: "",
+      authValue: "",
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
   test("accepts the fields a person fills in", () => {
     expect(
       agentFormSchema.parse({
