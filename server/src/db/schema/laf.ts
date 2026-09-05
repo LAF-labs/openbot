@@ -260,6 +260,16 @@ export const lafRoutines = pgTable("laf_routines", {
   }),
   createdByRole: text("created_by_role").notNull(),
   /**
+   * Which catalogue suggestion this routine was made from, or null for one somebody wrote.
+   *
+   * The dedup key, in Hermes Agent's word for it. A suggestion is offered until a routine carrying
+   * its key exists and again once that routine is gone — so the column is on the routine and not in
+   * a ledger of acceptances, because "do you already have this" is a question about the routines,
+   * and a ledger would go on answering yes after the person deleted the thing it referred to.
+   * Text, not a reference: the catalogue is code, and dropping an entry must not orphan a routine.
+   */
+  suggestionKey: text("suggestion_key"),
+  /**
    * SHA-256 of the trigger token, for the webhook path.
    *
    * The token itself is shown once, at creation, and kept nowhere: a webhook URL is a capability,
@@ -315,6 +325,33 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
       }>
     >(),
 });
+
+/**
+ * Suggestions this person said 다음에 to, latched.
+ *
+ * A suggestion is a card the routines page offers from a curated catalogue — never a routine made
+ * on anybody's behalf — and 다음에 is meant literally as "not this one": pressed once, the card does
+ * not come back. Without the latch every visit re-offers what was declined, which is the nag wall
+ * the cap of five and this table together exist to prevent. Per person, because the catalogue is
+ * the same for everybody and the decision is not.
+ *
+ * NOTHING HERE OUTLIVES THE PERSON: the key is a catalogue word and the row cascades with the user.
+ * There is no row for an acceptance — the routine that was made carries `suggestion_key` itself.
+ */
+export const lafRoutineSuggestionDismissals = pgTable(
+  "laf_routine_suggestion_dismissals",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** A key from `routines/suggestion-catalog.ts`. Text, so a catalogue edit is not a migration. */
+    suggestionKey: text("suggestion_key").notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.suggestionKey] })],
+);
 
 /**
  * One outbox for "somebody has to be told", whatever is going to tell them.

@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
-  asc,
   and,
+  asc,
   count,
   desc,
   eq,
@@ -13,13 +13,13 @@ import {
   or,
 } from "drizzle-orm";
 import { runAgentOnce } from "../agents/coworker-call";
-import type { BotLane } from "../runner/bot-lane";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { agentProfiles, lafRoutineRuns, lafRoutines } from "../db/schema";
+import type { BotLane } from "../runner/bot-lane";
 import type { RunLedger } from "../runner/run-ledger";
 import {
   runUnattended,
@@ -156,6 +156,12 @@ export type RoutineInput = {
   name: string;
   instruction: string;
   schedule: RoutineSchedule;
+  /**
+   * The catalogue suggestion this routine is being made from, when it is. See the schema note:
+   * it is what stops the same suggestion being offered twice, and only `routines/suggestions.ts`
+   * sets it — the create route does not read it out of a body.
+   */
+  suggestionKey?: string;
 };
 
 /**
@@ -268,6 +274,7 @@ const publishedColumns = {
   enabled: lafRoutines.enabled,
   createdById: lafRoutines.createdById,
   createdByRole: lafRoutines.createdByRole,
+  suggestionKey: lafRoutines.suggestionKey,
   nextRunAt: lafRoutines.nextRunAt,
   lastRunAt: lafRoutines.lastRunAt,
   createdAt: lafRoutines.createdAt,
@@ -757,6 +764,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
             enabled: true,
             createdById: actor.id,
             createdByRole: actor.role,
+            suggestionKey: input.suggestionKey ?? null,
             nextRunAt: nextRunAt(schedule, at),
             createdAt: at,
             updatedAt: at,

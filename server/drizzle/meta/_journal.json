@@ -239,6 +239,13 @@
       "when": 1788530000000,
       "tag": "0033_drop_tax_invoice",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788540000000,
+      "tag": "0034_routine_suggestions",
+      "breakpoints": true
     }
   ]
 }
