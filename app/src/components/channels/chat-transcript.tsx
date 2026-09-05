@@ -246,7 +246,7 @@ function Queued({
                * do and nothing about which one it would happen to. The visible word stays short
                * because the bubble it sits under is the answer for everybody who can see it.
                */
-              aria-label={`Remove queued message: ${text}`}
+              aria-label={t("Remove queued message: {text}", { text })}
               className="ml-2 underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               onClick={onRemove}
               type="button"
