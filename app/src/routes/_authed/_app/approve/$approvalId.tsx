@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
-import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -42,6 +41,46 @@ export const Route = createFileRoute("/_authed/_app/approve/$approvalId")({
 
 /** The tool call this page stands in for. There is none; the card needs a key, and this is it. */
 const toolCallKey = (approvalId: string) => `approve-page:${approvalId}`;
+
+/**
+ * The frame, centred, because this is a destination and not a settings screen.
+ *
+ * It used to be `PageShell`, and that was the wrong frame: PageShell is the configuration layout —
+ * a prose column pinned to the top of the window under `py-12` — so a notice tapped from the dock
+ * opened onto one short sentence in the top-left corner: measured at 1280x900, everything the page
+ * had sat between y=48 and y=109, with 791 empty pixels under it. Every other place in this product
+ * that says "there is nothing here" is centred instead:
+ * `NotFoundScreen` in `router.tsx`, and the empty state `ConversationView` floats over the
+ * transcript. This is that shape, not a fourth dialect.
+ *
+ * PageShell is not the place to fix it. Skills, Settings, Routines and every Admin screen sit in it
+ * and are lists that must start at the top; centring there would move all of them.
+ *
+ * The scroller and `min-h-full` are the pair that matters: centring alone would clip the top of a
+ * tall question on a short window, because `main` is `overflow-hidden` and nothing in this app
+ * scrolls unless a pane says it does.
+ */
+const ApproveShell = ({
+  children,
+  description,
+  title,
+}: {
+  children: ReactNode;
+  description?: ReactNode;
+  title: string;
+}) => (
+  <div className="min-h-0 w-full flex-1 overflow-y-auto">
+    <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-4 py-12">
+      <h1 className="text-center font-semibold text-2xl">{title}</h1>
+      {description ? (
+        <p className="mt-2 max-w-prose text-pretty text-center text-muted-foreground text-sm leading-relaxed">
+          {description}
+        </p>
+      ) : null}
+      {children}
+    </div>
+  </div>
+);
 
 /**
  * The question with this id, whichever Bot raised it, or null when nothing is waiting on it.
@@ -154,28 +193,28 @@ function ApprovePage() {
 
   if (approval.isPending) {
     return (
-      <PageShell title={heading}>
+      <ApproveShell title={heading}>
         <Skeleton className="mt-6 h-28 w-full" />
-      </PageShell>
+      </ApproveShell>
     );
   }
 
   if (approval.isError) {
     return (
-      <PageShell
+      <ApproveShell
         description={t(
           "The request could not be loaded. It may just be the connection.",
         )}
         title={heading}
       >
         <Button
-          className="mt-6 self-start"
+          className="mt-6"
           onClick={() => void approval.refetch()}
           variant="outline"
         >
           {t("Try again")}
         </Button>
-      </PageShell>
+      </ApproveShell>
     );
   }
 
@@ -187,38 +226,46 @@ function ApprovePage() {
    */
   if (!waiting || waiting.granted !== undefined) {
     return (
-      <PageShell
+      <ApproveShell
         description={t(
           "It was already answered, or it waited ten minutes and expired. Nothing is held up.",
         )}
         title={t("Nothing is waiting for an answer")}
       >
-        <Button className="mt-6 self-start" render={<Link to="/" />}>
+        {/*
+         * `nativeButton={false}` OR THE PAGE LOGS AN ERROR ON EVERY LOAD. Base UI assumes what it
+         * renders is a real `<button>` and says so in the console when it is not — this one is an
+         * anchor, because a link that goes somewhere should be a link for the middle click, the
+         * "open in new tab" and the screen reader alike.
+         */}
+        <Button className="mt-6" nativeButton={false} render={<Link to="/" />}>
           {t("Go to your Bots")}
         </Button>
-      </PageShell>
+      </ApproveShell>
     );
   }
 
   return (
-    <PageShell
+    <ApproveShell
       description={t(
         "Your Bot stopped here and is waiting. It carries on the moment you answer.",
       )}
       title={heading}
     >
-      <div className="mt-6">
+      {/* The card keeps its own left-aligned reading order; only the heading above it is centred. */}
+      <div className="mt-6 w-full">
         <ApprovalRequest toolCallId={key} />
       </div>
       {channelId ? (
         <Button
-          className="mt-4 self-start"
+          className="mt-4"
+          nativeButton={false}
           render={<Link params={{ channelId }} to="/channel/$channelId" />}
           variant="ghost"
         >
           {t("Open the conversation")}
         </Button>
       ) : null}
-    </PageShell>
+    </ApproveShell>
   );
 }

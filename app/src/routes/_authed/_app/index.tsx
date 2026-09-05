@@ -54,7 +54,14 @@ function RouteComponent() {
   const skillCommands = useSkillCommands(selected?.id ?? "");
 
   return (
-    <div className="mt-8 flex w-full flex-1 flex-col items-center justify-center p-4">
+    /*
+     * NO TOP MARGIN, OR "CENTRED" IS A LIE BY EXACTLY THAT MARGIN. `justify-center` was already
+     * here, and `mt-8` was pushing the whole block 32px down inside it: measured at 1280x1080 the
+     * greeting had 420px above it and the composer 388px below. The margin is the kind of thing
+     * that gets added to nudge a block that was never centred, survives the fix that centres it,
+     * and then quietly reads as a mistake on the one screen a person opens every day.
+     */
+    <div className="flex w-full flex-1 flex-col items-center justify-center p-4">
       <div className="flex flex-col items-center">
         <h1 className="text-center font-semibold text-[26px] tracking-tight">
           {greeting()}
