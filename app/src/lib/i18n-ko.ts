@@ -1490,4 +1490,6 @@ export const ko: Record<string, string> = {
     "내 채널에서 예약 확인과 리뷰 요청을 보냅니다.",
   "Looks up the invoices you have issued, and prepares one for you to approve.":
     "발행한 세금계산서를 찾아보고, 승인만 하면 되도록 준비합니다.",
+  "The accounts and sites your Bot works with, so it answers with what you can see.":
+    "봇이 함께 쓰는 계정과 사이트입니다. 내가 볼 수 있는 것으로 답합니다.",
 };

@@ -107,10 +107,12 @@ function RouteComponent() {
             size="sm"
           >
             <ItemContent>
-              <ItemTitle>{t("Connected accounts")}</ItemTitle>
+              {/* The same word the sidebar and the page itself use. It was "연결된 계정" here and
+                  "연결" there, for one screen — and that screen is no longer only accounts. */}
+              <ItemTitle>{t("Connections")}</ItemTitle>
               <ItemDescription>
                 {t(
-                  "Services you have connected with your own account, so a Bot can answer with what you can see.",
+                  "The accounts and sites your Bot works with, so it answers with what you can see.",
                 )}
               </ItemDescription>
             </ItemContent>
