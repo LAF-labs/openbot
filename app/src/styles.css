@@ -489,6 +489,43 @@ body {
  * depends on a transitionend that never fires.
  */
 @media (prefers-reduced-motion: reduce) {
+  /*
+   * THE CATCH-ALL, BECAUSE NAMING THE UTILITIES DID NOT WORK.
+   *
+   * What used to be here was a list — `.animate-in`, `.animate-out`, `.fade-in-0`, `.zoom-in-95`
+   * and their exits — and it matched NOTHING. Not one of those utilities is written bare in this
+   * app: every dialog, dropdown, context menu and tooltip spells them `data-open:animate-in`,
+   * `data-closed:fade-out-0`, `data-[state=delayed-open]:zoom-in-95`, and a variant does not add a
+   * class, it makes a DIFFERENT one (`.data-open\:animate-in`). So the block that claimed to cover
+   * the enter and exit animations covered none of them, and the sentence promising collapsed
+   * transitions was never written at all: all 60 `transition-*` utilities, plus `animate-spin`,
+   * plus the tooltip's `slide-in-from-*`, ran at full length for somebody who had asked the
+   * operating system for less movement. For a vestibular disorder that is not a preference.
+   *
+   * Matching the property instead of the class name is the only version of this that cannot rot as
+   * the app writes new variants.
+   *
+   * Collapsed rather than removed, at 1ms: a hover still lands instantly, and Base UI's popups —
+   * which unmount on `transitionend`/`animationend` — still get their event. Setting these to `0s`
+   * is how a reduced-motion user ends up with a menu that never closes.
+   *
+   * Unlayered, so no `!important` is needed: an unlayered rule outranks a layered one whatever the
+   * specificity, and Tailwind's utilities are all layered. See the Preflight note further up this
+   * file for the mechanism, which bit this project once already.
+   *
+   * Measured with Playwright at `reducedMotion: "reduce"` against the built app: `transition-colors`
+   * 0.15s → 0.001s, `data-open:animate-in` 0.15s → 0.001s, `animate-pulse` → still at 0.65 opacity.
+   */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+    animation-iteration-count: 1;
+    transition-duration: 1ms;
+    transition-delay: 0ms;
+  }
+
   .tool-line-running {
     animation: none;
     background-image: none;
@@ -496,18 +533,16 @@ body {
   }
 
   /*
-   * These three sit outside every `@layer`, which is what lets them win: an unlayered rule outranks
-   * a layered one whatever the specificity, and Tailwind's utilities are all layered. No
-   * `!important` is needed, and none is used — see the Preflight note further up this file for the
-   * mechanism, which bit this project once already.
+   * THE ONE ANIMATION THAT KEEPS RUNNING, and it is a deliberate exception to the rule above.
+   *
+   * A spinner is not decoration: it is the only thing on the screen saying the work has not
+   * stopped. Frozen at one frame it says the opposite. Rotation in place is also the safe kind of
+   * motion — no travel across the page, no scaling, nothing that moves the reader's frame of
+   * reference — so this reduces rather than removes: two seconds a turn instead of one.
    */
-  .animate-in,
-  .animate-out,
-  .fade-in-0,
-  .fade-out-0,
-  .zoom-in-95,
-  .zoom-out-95 {
-    animation: none;
+  .animate-spin {
+    animation-duration: 2s;
+    animation-iteration-count: infinite;
   }
 
   /* Kept visible, just still: a skeleton that neither pulses nor shows is a hole in the page. */
