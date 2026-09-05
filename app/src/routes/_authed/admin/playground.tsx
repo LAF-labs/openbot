@@ -1,7 +1,7 @@
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -50,9 +50,35 @@ function PlaygroundPage() {
   const saved = components.data ?? [];
   const [draft, setDraft] = useState<Draft>(STARTER);
   const [error, setError] = useState<string | null>(null);
+  /** What the component inside the preview threw, if anything. See `sandboxGuard`. */
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const set = (field: keyof Draft) => (value: string) =>
+  useEffect(() => {
+    /*
+     * Filtered by the message this page mints rather than by origin, because a sandbox without
+     * `allow-same-origin` posts from the opaque origin `"null"` and there is nothing to compare it
+     * against. What that costs is bounded: any frame could post this shape, and all it can do is put
+     * a string of its choosing into the panel below, clipped, labelled as coming from the preview.
+     */
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; message?: unknown } | null;
+      if (data?.type !== SANDBOX_ERROR) return;
+      setPreviewError(
+        typeof data.message === "string"
+          ? data.message
+          : t("That did not work."),
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  const set = (field: keyof Draft) => (value: string) => {
+    // A failure belongs to the draft that caused it: the renderer is keyed on the draft and is
+    // rebuilt from scratch on every keystroke, so a stale message would outlive the code it was about.
+    setPreviewError(null);
     setDraft((current) => ({ ...current, [field]: value }));
+  };
 
   const parsed = (raw: string): Record<string, unknown> | null => {
     try {
@@ -234,7 +260,20 @@ function PlaygroundPage() {
 
         <div className="space-y-4">
           <div className="rounded-lg border p-4">
-            <div className="mb-2 text-sm font-medium">{t("Preview")}</div>
+            <div className="mb-2 font-medium text-sm">{t("Preview")}</div>
+            {previewError ? (
+              <p
+                className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-xs"
+                role="alert"
+              >
+                {previewError}
+                <span className="mt-1 block text-muted-foreground">
+                  {t(
+                    "This ran in a sandbox with no access to this site, so storage, cookies and same-origin requests are not available — here or in a conversation.",
+                  )}
+                </span>
+              </p>
+            ) : null}
             {sample === null ? (
               <p className="text-sm text-destructive">
                 {t(
@@ -441,38 +480,49 @@ function CodeField({
   );
 }
 
+/** The message the preview sends its host when the component inside it throws. */
+export const SANDBOX_ERROR = "laf:sandbox-error";
+
 /**
  * WHY A COMPONENT THAT TOUCHES STORAGE DIES SILENTLY, AND WHERE THE AUTHOR FINDS OUT.
  *
- * The preview runs in `@jetbrains/websandbox`, which sets `sandbox="allow-scripts"` and NOTHING
- * else (`lib/websandbox.ts`: `frame.sandbox = 'allow-scripts ' + sandboxAdditionalAttributes`, and
- * the renderer passes the empty default). A document sandboxed without `allow-same-origin` has an
- * opaque origin, so `window.localStorage` does not return null — reading the property THROWS
- * `SecurityError: … the document is sandboxed and lacks the 'allow-same-origin' flag`. The same is
- * true of `sessionStorage`, `document.cookie` and IndexedDB, and CopilotKit tells the model as much
- * in the tool description it ships.
+ * The preview runs in `@jetbrains/websandbox`, which sets the iframe's `sandbox` attribute to
+ * `allow-scripts` and NOTHING else (`lib/websandbox.ts`: `frame.sandbox = 'allow-scripts ' +
+ * sandboxAdditionalAttributes`, and the renderer passes the empty default — measured on the running
+ * page, the attribute reads exactly `"allow-scripts "`). A document sandboxed without
+ * `allow-same-origin` has an opaque origin, so `window.localStorage` does not return null: reading
+ * the property THROWS `SecurityError: … the document is sandboxed and lacks the 'allow-same-origin'
+ * flag`. The same is true of `sessionStorage`, `document.cookie` and IndexedDB, and CopilotKit tells
+ * the model as much in the tool description it ships.
  *
- * The throw lands inside the iframe, which is cross-origin to us, so nothing on this page could see
- * it: the preview simply stopped drawing halfway and the only evidence was a line in the browser
+ * The throw lands inside an iframe that is cross-origin to this page, so nothing here could see it:
+ * the preview simply stopped drawing halfway and the only evidence was a line in the browser
  * console. An author watching a live preview is exactly the person who should be told.
  *
  * A SHIM WOULD HAVE BEEN WORSE. Defining a working `localStorage` on the sandbox window is a couple
  * of lines and makes the preview draw — and then the same component fails in a conversation, where
  * the sandbox is the same and this page is not. The preview has to fail the way production fails.
  *
+ * THE MESSAGE COMES BACK OUT rather than being written into the preview document. Drawing it in
+ * there was the first attempt and it inherits the component's own CSS, which is the one stylesheet
+ * in that document: the starter card is written for a white page, so on a dark preview the
+ * explanation was near-black text on a near-black ground. Out here it is in this app's own theme,
+ * in Korean, in the panel the author is already looking at.
+ *
  * An error LISTENER rather than a `try`/`catch` around the author's code: wrapping it in a block
  * would move every top-level `function` and `const` into that block's scope, so a helper the HTML
  * calls from an `onclick` would stop existing. The listener changes nothing about how the code runs.
  */
-function sandboxGuard(): string {
-  const sentence = t(
-    "This ran in a sandbox with no access to this site, so storage, cookies and same-origin requests are not available — here or in a conversation.",
-  );
-  return `window.addEventListener("error", function (event) {
-  var box = document.createElement("pre");
-  box.setAttribute("data-laf-sandbox-error", "");
-  box.textContent = String((event && event.message) || event) + "\\n\\n" + ${JSON.stringify(sentence)};
-  (document.body || document.documentElement).appendChild(box);
-});
+export function sandboxGuard(): string {
+  return `(function () {
+  window.addEventListener("error", function (event) {
+    try {
+      window.parent.postMessage({
+        type: ${JSON.stringify(SANDBOX_ERROR)},
+        message: String((event && event.message) || event).slice(0, 300),
+      }, "*");
+    } catch (ignored) {}
+  });
+})();
 `;
 }
