@@ -4,8 +4,10 @@ import {
   discipline,
   eventsOfSse,
   hangulShare,
+  resultsOf,
   saysNumber,
   usageOf,
+  usagesOf,
 } from "../evals/lib";
 
 const sse = (events: object[]) =>
@@ -31,11 +33,54 @@ describe("reading a run back from its wire", () => {
     );
     expect(callsOf(events)).toEqual([
       {
+        id: "c1",
         name: "remember",
         rawArguments: '{"fact":"일요일 휴무"}',
         arguments: { fact: "일요일 휴무" },
       },
     ]);
+  });
+
+  test("a call the Bot service answered itself reads back with its answer", () => {
+    const events = eventsOfSse(
+      sse([
+        {
+          type: "TOOL_CALL_START",
+          toolCallId: "c1",
+          toolCallName: "tool_search",
+        },
+        { type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"query":"메일"}' },
+        { type: "TOOL_CALL_END", toolCallId: "c1" },
+        {
+          type: "TOOL_CALL_RESULT",
+          messageId: "tool_c1",
+          toolCallId: "c1",
+          content: "- mcp__gmail__send_message: 메일을 실제로 보낸다.",
+        },
+      ]),
+    );
+    expect(resultsOf(events).get("c1")).toContain("mcp__gmail__send_message");
+    expect(callsOf(events)[0]?.id).toBe("c1");
+  });
+
+  test("a run's cost is the sum of its rounds", () => {
+    const usage = (promptTokens: number) => ({
+      type: "CUSTOM",
+      name: "laf.model.usage",
+      value: {
+        promptTokens,
+        completionTokens: 5,
+        totalTokens: promptTokens + 5,
+      },
+    });
+    const events = eventsOfSse(sse([usage(1_000), usage(1_400)]));
+    expect(usagesOf(events)).toEqual({
+      promptTokens: 2_400,
+      completionTokens: 10,
+      totalTokens: 2_410,
+      requests: 2,
+    });
+    expect(usagesOf([]).requests).toBe(0);
   });
 
   test("arguments that never became JSON read as null, and discipline names them", () => {

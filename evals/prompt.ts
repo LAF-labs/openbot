@@ -18,6 +18,7 @@ import {
   type PromptMode,
   promptSkeleton,
 } from "../shared/prompt";
+import { BRIDGE_TOOLS } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { SELF_TOOLS } from "../shared/tools/self";
 
@@ -89,6 +90,11 @@ export const PROMPT_HASH = sha256(
     .join("\n\n---\n\n"),
 );
 
+/*
+ * The bridge tools are in the hash because they are schema the model reads: a change to how
+ * `tool_search` describes itself is a change to what is being measured, exactly like a change to
+ * `remember`'s description.
+ */
 export const CATALOGUE_HASH = sha256(
-  JSON.stringify([...COMPUTER_TOOLS, ...SELF_TOOLS]),
+  JSON.stringify([...COMPUTER_TOOLS, ...SELF_TOOLS, ...BRIDGE_TOOLS]),
 );

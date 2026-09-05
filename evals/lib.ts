@@ -15,6 +15,8 @@ export type StreamEvent = {
   toolCallName?: string;
   messageId?: string;
   message?: string;
+  /** A TOOL_CALL_RESULT's text: the answer to a call the Bot service settled itself. */
+  content?: string;
 };
 
 /** The `data:` lines of an SSE body, parsed. Comment lines (heartbeats) are dropped. */
@@ -33,6 +35,8 @@ export function eventsOfSse(body: string): StreamEvent[] {
 }
 
 export type ObservedCall = {
+  /** The call's id on the wire, which a result is filed against. */
+  id: string;
   name: string;
   /** The fragments, joined. */
   rawArguments: string;
@@ -69,8 +73,25 @@ export function callsOf(events: StreamEvent[]): ObservedCall[] {
     } catch {
       parsed = null;
     }
-    return { name: call.name, rawArguments: raw, arguments: parsed };
+    return { id, name: call.name, rawArguments: raw, arguments: parsed };
   });
+}
+
+/**
+ * The calls the Bot service answered itself, by id, with what it said.
+ *
+ * A bridge lookup (`tool_search`, `tool_describe` — `shared/tools/bridge.ts`) comes back inside the
+ * run as a TOOL_CALL_RESULT, and the client files it as an ordinary tool message. The harness's
+ * client loop has to do the same, or it would answer a call that already has an answer.
+ */
+export function resultsOf(events: StreamEvent[]): Map<string, string> {
+  const results = new Map<string, string>();
+  for (const event of events) {
+    if (event.type === "TOOL_CALL_RESULT" && event.toolCallId) {
+      results.set(event.toolCallId, event.content ?? "");
+    }
+  }
+  return results;
 }
 
 /** The assistant's words, joined from the text-message fragments. */
@@ -104,6 +125,33 @@ export function usageOf(events: StreamEvent[]): {
         ? found.value.cachedPromptTokens
         : null,
   };
+}
+
+/**
+ * Every usage event in a run, summed.
+ *
+ * One run is one model request unless the Bot looked something up through the bridge, in which
+ * case it is two or three, each with its own usage event. What a run COST is their sum; what one
+ * request cost is `usageOf`. `requests` says how many there were.
+ */
+export function usagesOf(events: StreamEvent[]): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  requests: number;
+} {
+  const sum = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let requests = 0;
+  for (const event of events) {
+    if (event.type !== "CUSTOM" || event.name !== "laf.model.usage") continue;
+    requests += 1;
+    const count = (key: string) =>
+      typeof event.value?.[key] === "number" ? (event.value[key] as number) : 0;
+    sum.promptTokens += count("promptTokens");
+    sum.completionTokens += count("completionTokens");
+    sum.totalTokens += count("totalTokens");
+  }
+  return { ...sum, requests };
 }
 
 /**

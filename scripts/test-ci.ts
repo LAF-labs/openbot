@@ -139,6 +139,13 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                575 tests across 68 files   →   557
  *
+ * MEASURED 2026-09-06, after the tool bridge (`shared/tools/bridge.ts`): what is never deferred
+ * walked against every catalogue by name, `tool_search` over the adapters' own Korean, the
+ * agent-bot loop's rounds and rewrites, and the eval harness reading a call the Bot service
+ * answered itself. Thirty-five tests, all under root — the bridge is shared code and agent-bot.
+ *
+ *     root               113 tests across 14 files   →   109
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -149,7 +156,7 @@ const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
   { name: "app", floor: 557, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
-  { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 109, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

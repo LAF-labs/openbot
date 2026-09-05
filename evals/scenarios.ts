@@ -19,6 +19,7 @@
  */
 
 import { toolResultText } from "../shared/prompt/tool-results.ko";
+import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
 import {
   discipline,
@@ -442,6 +443,51 @@ export const SCENARIOS: Scenario[] = [
           ),
         ],
         ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]);
+    },
+  },
+  /*
+   * THE ONE THAT ONLY EXISTS BECAUSE THE BRIDGE DOES.
+   *
+   * Behind the REALISTIC toolset — every tool a Bot with everything connected is handed — Gmail's
+   * `send_message` is not in the schema. The model has to find it (`tool_search`), and call it
+   * through `tool_call`, which `agent-bot` turns into the real call on the wire. Hermes's one
+   * regression was a hidden tool collapsing into prose; this is the check that sending mail did
+   * not.
+   */
+  {
+    id: "send-mail-through-the-bridge",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "kim@shop.kr 에게 제목 '9월 정산서'로, 정산 내역을 확인해 달라는 메일을 지메일로 보내줘.",
+      ),
+    ],
+    tools: [...REALISTIC_TOOLSET],
+    check: (turn) => {
+      const looked = turn.calls.some(
+        (call) => call.name === "tool_search" || call.name === "tool_describe",
+      );
+      const send = turn.calls.find(
+        (call) => call.name === "mcp__gmail__send_message",
+      );
+      return verdict([
+        [
+          "다리(tool_search/tool_describe)를 거치지 않음 — 스키마에 없는 이름을 지어냈거나 아예 찾지 않았다",
+          looked,
+        ],
+        [
+          "mcp__gmail__send_message가 실제 이름으로 와이어에 실리지 않음",
+          send !== undefined,
+        ],
+        [
+          "받는 사람이 kim@shop.kr이 아님",
+          String(send?.arguments?.to ?? "").includes("kim@shop.kr"),
+        ],
+        [
+          "제목이 비어 있음",
+          String(send?.arguments?.subject ?? "").trim().length > 0,
+        ],
       ]);
     },
   },
