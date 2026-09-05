@@ -32,8 +32,18 @@ import { inShell } from "@/lib/notifications/shell";
 export function NotificationPermission({
   /** Shown once there is nothing left to ask for. Absent renders nothing in that state. */
   grantedNote,
+  /**
+   * Shown where this environment cannot do notifications at all. Absent renders nothing, which is
+   * right beside a Bot's own switch — that row is about the Bot, and a browser that cannot notify
+   * is not something the Bot did. On the Settings row it is the whole answer: the heading and its
+   * paragraph were drawn there unconditionally, so a person in an environment with no notifications
+   * read a description of a feature followed by nothing at all, with no way to tell whether the
+   * control had failed to load or had never existed.
+   */
+  unsupportedNote,
 }: {
   grantedNote?: string;
+  unsupportedNote?: string;
 }) {
   /*
    * The browser can answer synchronously and the shell cannot, so the shell starts at "nothing to
@@ -55,7 +65,11 @@ export function NotificationPermission({
     };
   }, []);
 
-  if (support === "unsupported") return null;
+  if (support === "unsupported") {
+    return unsupportedNote ? (
+      <p className="pt-1 text-muted-foreground text-sm">{unsupportedNote}</p>
+    ) : null;
+  }
 
   if (support === "ask") {
     return (

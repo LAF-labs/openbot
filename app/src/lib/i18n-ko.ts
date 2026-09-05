@@ -915,6 +915,8 @@ export const ko: Record<string, string> = {
   "Unpublished, no Bot may use it": "미게시 — 어떤 봇도 쓸 수 없음",
   Language: "언어",
   "Which language the interface uses.": "인터페이스가 사용할 언어.",
+  "Which language the interface uses. Changing it reloads the screen.":
+    "인터페이스가 사용할 언어. 바꾸면 화면을 다시 불러옵니다.",
   System: "시스템 설정 따름",
   Korean: "한국어",
   English: "English",
@@ -943,6 +945,8 @@ export const ko: Record<string, string> = {
     "브라우저가 이 사이트의 알림을 차단하고 있습니다.",
   "Turn on notifications": "알림 켜기",
   "On for this browser.": "이 브라우저에서 켜져 있습니다.",
+  "Notifications cannot be turned on here.":
+    "이 환경에서는 알림을 켤 수 없습니다.",
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
   "{name} needs you": "{name}이(가) 기다립니다",
@@ -1181,7 +1185,10 @@ export const ko: Record<string, string> = {
   "Download everything": "전부 내려받기",
   "One file: your profile, your Bots and what they remember, every conversation, your routines and skills, and the record of what you did. No passwords, no connected-service keys, nobody else's data.":
     "파일 하나에 담깁니다 — 내 계정 정보, 내 봇과 봇이 기억하는 것, 모든 대화, 루틴과 스킬, 그리고 내가 한 일의 기록. 비밀번호도, 연결한 서비스의 키도, 다른 사람의 것도 들어 있지 않습니다.",
+  "It is put together when you press the button, so a full account can take a moment to start.":
+    "누르는 순간 파일을 만들기 시작합니다. 담긴 것이 많으면 시작까지 잠시 걸릴 수 있습니다.",
   Download: "내려받기",
+  "Preparing…": "준비하는 중…",
   Leave: "떠나기",
   "Delete this account": "계정 삭제",
   "Your Bots and everything they learned, every conversation, your routines, your skills and the allowances you gave all go. Your Bots' browsers are wiped, so every site they were signed in to is signed out.":

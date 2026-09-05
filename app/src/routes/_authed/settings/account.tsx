@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PageRows,
   PageSection,
@@ -14,6 +15,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
 /**
@@ -45,6 +47,21 @@ export const ACCOUNT_REFUSALS: Record<string, string> = {
   "laf:account_self_via_admin": "Leave from your own account page instead.",
 };
 
+/**
+ * The browser's copy of the server's rule, and it has to be the SAME rule.
+ *
+ * `/api/me/delete` trims and lower-cases both sides. A gate that were any stricter than that would
+ * keep the button grey in front of somebody who had typed something the server would have accepted,
+ * which is the one failure a client-side check can invent on its own.
+ */
+const confirms = (typed: string, address: string | null): boolean =>
+  address !== null &&
+  typed.trim().toLowerCase() === address.trim().toLowerCase() &&
+  address.trim().length > 0;
+
+/** How long the export button stays held after a press. Long enough for the browser to start it. */
+const PREPARING_MS = 4000;
+
 const AccountPage = () => {
   const [typed, setTyped] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -52,14 +69,45 @@ const AccountPage = () => {
   const [isGone, setIsGone] = useState(false);
 
   /*
-   * The address is read back from the refusal rather than from the session query.
+   * WHAT TO TYPE IS SHOWN, NOT GUESSED AT.
    *
-   * The server already knows what it will accept and says so in `expects`; asking the browser to
-   * compare against its own copy would mean two places deciding whether a confirmation matched, and
-   * the one that matters is the server's. So the button is always live and the FIRST press is what
-   * tells the person what to type — the same shape a wrong password takes.
+   * It used to be learned only from the server's refusal: the label said "type your email address",
+   * the button went live on one character, and the first press was what told somebody which of
+   * their addresses this account is under. That is the shape of a wrong password, and it is the
+   * wrong shape here — a password is a secret the screen must not show, and this is a string the
+   * screen already knows and is asking for as a speed bump before an irreversible act.
+   *
+   * The server still decides. `expects` from a refusal outranks the session's copy, and the POST is
+   * checked there exactly as before; this only stops the button being pressable before it can do
+   * anything but fail.
    */
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
   const [expects, setExpects] = useState<string | null>(null);
+  const confirmAddress = expects ?? currentUser?.email ?? null;
+
+  /*
+   * The download is an anchor, so nothing about the response comes back here to react to. What can
+   * be said honestly is that the press was received: the button holds for a few seconds and then
+   * comes back. Before this it was a bare link — pressed, nothing visibly happened while the server
+   * walked the account, and the second and third press each started another export.
+   */
+  const [isPreparing, setIsPreparing] = useState(false);
+  const preparingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (preparingTimer.current) clearTimeout(preparingTimer.current);
+    },
+    [],
+  );
+
+  const handleExport = () => {
+    setIsPreparing(true);
+    if (preparingTimer.current) clearTimeout(preparingTimer.current);
+    preparingTimer.current = setTimeout(
+      () => setIsPreparing(false),
+      PREPARING_MS,
+    );
+  };
 
   const handleDelete = async () => {
     setError(null);
@@ -139,6 +187,9 @@ const AccountPage = () => {
               <ItemDescription className="line-clamp-none">
                 {t(
                   "One file: your profile, your Bots and what they remember, every conversation, your routines and skills, and the record of what you did. No passwords, no connected-service keys, nobody else's data.",
+                )}{" "}
+                {t(
+                  "It is put together when you press the button, so a full account can take a moment to start.",
                 )}
               </ItemDescription>
             </ItemContent>
@@ -147,12 +198,19 @@ const AccountPage = () => {
                * An anchor, not a fetch. The response is an attachment the browser streams straight
                * to disk; pulling a whole account through JavaScript first would hold it in memory
                * for no reason and lose the progress the browser shows for free.
+               *
+               * `aria-disabled` and not `disabled`: this is an anchor, and `disabled` on an anchor
+               * is an attribute the browser ignores — the link would still navigate.
                */}
               <Button
-                render={(props) => <a href="/api/me/export" {...props} />}
+                aria-disabled={isPreparing}
+                className={isPreparing ? "pointer-events-none opacity-60" : ""}
+                render={(props) => (
+                  <a href="/api/me/export" {...props} onClick={handleExport} />
+                )}
                 variant="outline"
               >
-                {t("Download")}
+                {isPreparing ? t("Preparing…") : t("Download")}
               </Button>
             </ItemActions>
           </Item>
@@ -187,8 +245,8 @@ const AccountPage = () => {
             className="mt-2 text-muted-foreground text-sm"
             htmlFor="account-delete-confirm"
           >
-            {expects
-              ? t("Type {email} to confirm.", { email: expects })
+            {confirmAddress
+              ? t("Type {email} to confirm.", { email: confirmAddress })
               : t("Type your email address to confirm.")}
           </label>
           <Input
@@ -205,7 +263,7 @@ const AccountPage = () => {
           ) : null}
           <div>
             <Button
-              disabled={isDeleting || typed.trim().length === 0}
+              disabled={isDeleting || !confirms(typed, confirmAddress)}
               onClick={handleDelete}
               variant="destructive"
             >

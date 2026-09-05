@@ -1,7 +1,7 @@
-import { IconChevronRight } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { PersonAvatar } from "@/components/avatar/person-avatar";
 import {
   PageRows,
   PageSection,
@@ -15,6 +15,7 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
+  ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
 import {
@@ -24,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
@@ -34,6 +36,9 @@ export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
+/** Long enough for the Select popup's `duration-100` exit to have finished. */
+const MENU_DISMISS_MS = 150;
+
 function RouteComponent() {
   const { preference, setPreference } = useTheme();
   const { data: currentUser } = useQuery(currentUserQueryOptions());
@@ -42,6 +47,50 @@ function RouteComponent() {
   const signOut = useMutation(signOutMutationOptions(queryClient));
 
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  /*
+   * The language is applied once the menu has dismissed, not the instant a row inside it is
+   * clicked. `setLocaleSetting` reloads the page, and nothing on the screen said so: fired straight
+   * from `onValueChange` the reload starts with the popup still on screen, so the last frame before
+   * the white flash is an open menu — which reads as the app falling over rather than as the thing
+   * that was just asked for. Now the trigger shows the choice, the popup goes, and then the page
+   * reloads. The row says so too.
+   *
+   * A TIMER, AND BOTH OF THE OTHER TWO WAYS WERE MEASURED FAILING.
+   *
+   * `onOpenChangeComplete` waits on the exit ANIMATION, and in a window that is not on screen that
+   * animation never ends — `data-ending-style` stays on the popup and the callback never arrives.
+   * The language would have been chosen, shown on the trigger, and never applied.
+   *
+   * `onOpenChange` arrives, but in the same React batch as `onValueChange`, so a handler reading
+   * the pending value out of state reads the render's own copy: `null`, every time. Measured on
+   * this screen — English on the trigger, nothing in `localStorage`, no reload, no way to try
+   * again without picking a different language first.
+   *
+   * A timer has neither problem: it closes over the value directly, and a background tab clamps it
+   * rather than dropping it. 150ms clears the popup's `duration-100` exit.
+   */
+  const [pendingLocale, setPendingLocale] = useState<Locale | null>(null);
+  const localeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (localeTimer.current) clearTimeout(localeTimer.current);
+    },
+    [],
+  );
+
+  const handleLocaleChosen = (value: Locale | null) => {
+    // The Select's value type admits null (nothing chosen). Every row here carries one.
+    if (value === null) return;
+    const chosen = value;
+    setPendingLocale(chosen);
+    if (chosen === localeSetting) return;
+    if (localeTimer.current) clearTimeout(localeTimer.current);
+    localeTimer.current = setTimeout(
+      () => setLocaleSetting(chosen),
+      MENU_DISMISS_MS,
+    );
+  };
 
   /* A sign-out that failed silently leaves somebody believing they signed out. It has to say so. */
   const handleSignOut = async () => {
@@ -74,49 +123,59 @@ function RouteComponent() {
        * Who these preferences belong to. The description above promises "your account alone", and
        * this is the row that makes the promise concrete — plus the way out, which otherwise hides
        * behind the avatar menu.
+       *
+       * THE 연결 ROW THAT USED TO SIT UNDER IT IS GONE. It was the third copy of a link the rail
+       * already carries and the narrow nav now carries too, on a screen whose whole argument is
+       * that it is shallow: two ways to the same page from one viewport is a person wondering
+       * which of them is the different one.
        */}
       <PageSection title={t("Account")}>
         <PageRows>
           <Item size="sm">
-            <ItemContent>
-              <ItemTitle>{currentUser?.name || currentUser?.email}</ItemTitle>
-              {/* The email repeats nothing: it only renders when a name is on the line above. */}
-              {currentUser?.name ? (
-                <ItemDescription>{currentUser.email}</ItemDescription>
-              ) : null}
-            </ItemContent>
-            <ItemActions>
-              <Button
-                disabled={signOut.isPending}
-                onClick={handleSignOut}
-                variant="outline"
-              >
-                {signOut.isPending ? t("Logging out…") : t("Log out")}
-              </Button>
-            </ItemActions>
-          </Item>
-          {/*
-           * The whole row is the link, the way every other row that goes exactly one place is
-           * drawn. It sits under the account it belongs to: which services this deployment can
-           * reach is an administrator's, but whether YOUR account is behind one of them is yours.
-           */}
-          <Item
-            render={(props) => (
-              <Link to="/settings/connected-accounts" {...props} />
+            {/*
+             * Held open at the row's real height while `/api/me` is in flight. It rendered an
+             * empty title and no email until the answer came back, so the first thing this screen
+             * did on every load was jump — and on a slow connection it showed a blank row with a
+             * 로그아웃 button beside it, which is a row that looks broken rather than pending.
+             */}
+            {currentUser ? (
+              <>
+                <ItemMedia>
+                  <PersonAvatar
+                    email={currentUser.email}
+                    image={currentUser.image}
+                    name={currentUser.name}
+                    size="lg"
+                  />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{currentUser.name || currentUser.email}</ItemTitle>
+                  {/* The email repeats nothing: it only renders when a name is on the line above. */}
+                  {currentUser.name ? (
+                    <ItemDescription>{currentUser.email}</ItemDescription>
+                  ) : null}
+                </ItemContent>
+                <ItemActions>
+                  <Button
+                    disabled={signOut.isPending}
+                    onClick={handleSignOut}
+                    variant="outline"
+                  >
+                    {signOut.isPending ? t("Logging out…") : t("Log out")}
+                  </Button>
+                </ItemActions>
+              </>
+            ) : (
+              <>
+                <ItemMedia>
+                  <Skeleton className="size-11 rounded-full" />
+                </ItemMedia>
+                <ItemContent className="gap-1.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-44" />
+                </ItemContent>
+              </>
             )}
-            size="sm"
-          >
-            <ItemContent>
-              {/* The same word the sidebar and the page itself use. It was "연결된 계정" here and
-                  "연결" there, for one screen — and that screen is no longer only accounts. */}
-              <ItemTitle>{t("Connections")}</ItemTitle>
-              <ItemDescription>
-                {t(
-                  "The accounts and sites your Bot works with, so it answers with what you can see.",
-                )}
-              </ItemDescription>
-            </ItemContent>
-            <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Item>
           {signOutError ? (
             <p className="px-1 text-destructive text-sm" role="alert">
@@ -131,19 +190,23 @@ function RouteComponent() {
             <ItemContent>
               <ItemTitle>{t("Language")}</ItemTitle>
               <ItemDescription>
-                {t("Which language the interface uses.")}
+                {/* The reload is said out loud. It used to happen with no warning at all, which
+                    from the other side of the screen is the app restarting itself. */}
+                {t(
+                  "Which language the interface uses. Changing it reloads the screen.",
+                )}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Select
-                onValueChange={(value) => setLocaleSetting(value as Locale)}
-                value={localeSetting}
+                onValueChange={handleLocaleChosen}
+                value={pendingLocale ?? localeSetting}
               >
                 <SelectTrigger aria-label={t("Language")} className="w-40">
                   <SelectValue>
-                    {localeSetting === "ko"
+                    {(pendingLocale ?? localeSetting) === "ko"
                       ? t("Korean")
-                      : localeSetting === "en"
+                      : (pendingLocale ?? localeSetting) === "en"
                         ? t("English")
                         : t("System")}
                   </SelectValue>
@@ -199,6 +262,11 @@ function RouteComponent() {
            * The site's permission, beside Language and Appearance because that is what it is: one
            * answer for the whole account, not a per-Bot setting. Which Bots may use it stays on
            * the Bots — this row cannot turn any of them on or off.
+           *
+           * `unsupportedNote` is what stops this row being a heading with nothing under it. The
+           * control returns null where the environment has no notifications at all, and the
+           * heading and its paragraph were drawn regardless — so the row promised something and
+           * then showed no way to get it, on exactly the surfaces where it is impossible.
            */}
           <Item size="sm">
             <ItemContent>
@@ -208,7 +276,10 @@ function RouteComponent() {
                   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.",
                 )}
               </ItemDescription>
-              <NotificationPermission grantedNote={t("On for this browser.")} />
+              <NotificationPermission
+                grantedNote={t("On for this browser.")}
+                unsupportedNote={t("Notifications cannot be turned on here.")}
+              />
             </ItemContent>
           </Item>
         </PageRows>
