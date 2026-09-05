@@ -19,6 +19,18 @@ describe("the catalogue copy", () => {
     expect(missing).toEqual([]);
   });
 
+  test("every entry says what the Bot can do with it, in Korean", () => {
+    /*
+     * `can` is what replaced the scope string on the 연결 row. Missing Korean here is not an English
+     * line in a corner: it is the one sentence explaining what turning the switch on will let a Bot
+     * do, which is the whole basis on which somebody decides to.
+     */
+    const missing = Object.entries(CATALOGUE_COPY)
+      .filter(([, copy]) => !(copy.can in ko))
+      .map(([key]) => key);
+    expect(missing).toEqual([]);
+  });
+
   test("the table matches what the server actually ships", async () => {
     // The server's catalogue is the source of truth for WHICH keys exist; this table only owns the
     // words. Imported directly rather than duplicated, so a vendor added there fails here until

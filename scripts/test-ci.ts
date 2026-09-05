@@ -64,6 +64,14 @@ const projectRoot = resolve(import.meta.dir, "..");
  * `agent-computer` its two todos, because bun counts them and a floor that disagreed with the
  * number on the screen would be argued with rather than read.
  *
+ * RAISED AGAIN 2026-09-05, with the 연결 screen. The rewrite brought twenty-eight tests: eighteen
+ * to `app` (the overview query, what each kind of switch starts, and the source-walking guards that
+ * keep a scope string and the word 관리자 off an owner's screen) and twelve to `server` (the
+ * overview composition and turning a site off). Only `app` moved far enough to matter — its floor
+ * had drifted to 9% under — so only `app` is re-raised:
+ *
+ *     app                298 tests across 42 files   →   289
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -72,7 +80,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1364, roots: ["server"] },
-  { name: "app", floor: 280, roots: ["app"] },
+  { name: "app", floor: 289, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
