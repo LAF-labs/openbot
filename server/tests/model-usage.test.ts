@@ -27,6 +27,22 @@ describe("what a run's stream says a turn cost", () => {
     ]);
   });
 
+  test("what was served from cache is carried only when the endpoint said", () => {
+    const [said, silent] = modelUsageOf([
+      event({
+        model: "m",
+        promptTokens: 3000,
+        completionTokens: 1,
+        totalTokens: 3001,
+        cachedPromptTokens: 2816,
+      }),
+      event({ model: "m", promptTokens: 3000, completionTokens: 1 }),
+    ]);
+    expect(said?.cachedPromptTokens).toBe(2816);
+    // Absent, not zero: "not reported" and "nothing hit" are different facts about an endpoint.
+    expect(silent).not.toHaveProperty("cachedPromptTokens");
+  });
+
   test("other CUSTOM events are not usage", () => {
     expect(modelUsageOf([event({ promptTokens: 5 }, "laf.other")])).toEqual([]);
   });

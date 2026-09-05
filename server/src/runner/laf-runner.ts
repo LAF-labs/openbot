@@ -103,6 +103,14 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): Array<{
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /**
+   * Prompt tokens the provider served from its cache, only where the endpoint said so.
+   *
+   * Absent rather than zero otherwise: the monthly cost is a sum over these rows, and a row that
+   * says "0 cached" for an endpoint that never reports the number would make a prompt that caches
+   * perfectly indistinguishable from one that never does.
+   */
+  cachedPromptTokens?: number;
 }> {
   const found: ReturnType<typeof modelUsageOf> = [];
   for (const raw of events) {
@@ -117,6 +125,9 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): Array<{
       promptTokens: count("promptTokens"),
       completionTokens: count("completionTokens"),
       totalTokens: count("totalTokens"),
+      ...(typeof value.cachedPromptTokens === "number"
+        ? { cachedPromptTokens: value.cachedPromptTokens }
+        : {}),
     });
   }
   return found;

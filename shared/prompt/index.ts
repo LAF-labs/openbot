@@ -7,9 +7,15 @@
  * 받은 것을 그대로 모델에게 넘기는 멍청한 종단으로 남는다. 두 곳이 프롬프트를 가지면 둘 중
  * 어느 쪽이 실제로 읽히는지 아무도 모르게 된다.
  *
- * 조립 순서: 기본 → 지금 몇 시인지 → 이 봇이 누구인지 → 무엇을 기억하는지 → 이번 모드.
- * 모드를 마지막에 두는 이유는 모드가 이번 실행에서만 참이고, 다른 것과 부딪히면 이겨야 하기
- * 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다).
+ * 조립 순서: 기본 → 이 봇이 누구인지 → 무엇을 기억하는지 → 이번 모드 → 지금 몇 시인지.
+ * 모드가 신원과 기억 뒤에 오는 이유는 모드가 이번 실행에서만 참이고, 다른 것과 부딪히면 이겨야
+ * 하기 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다).
+ *
+ * 시계가 맨 끝에 오는 이유는 캐시다. 공급자는 프롬프트를 앞에서부터 같은 만큼만 캐시에서
+ * 읽는데(prefix cache), 매분 바뀌는 한 줄이 위에 있으면 그 뒤의 모든 것 — 직무, 기억, 모드 —
+ * 이 매 턴 새로 값을 치른다. 바뀌지 않는 글을 먼저, 이 봇에게만 해당하는 글을 그다음, 매 실행
+ * 바뀌는 글을 맨 뒤에(Hermes의 순서: stable → context → volatile, timestamp last).
+ * 실측은 `bun run eval:cache`, 숫자는 docs/laf/eval-pack.md.
  */
 import { BASE_KO } from "./base.ko";
 import { copula } from "./particles";
@@ -145,7 +151,6 @@ export function composePrompt(input: ComposePromptInput): string {
 
   return [
     BASE_KO,
-    nowLine(input.now, input.timeZone),
     title
       ? `너는 ${bot.name}, ${title}${copula(title)}.`
       : `너는 ${bot.name}${copula(bot.name)}.`,
@@ -170,6 +175,8 @@ export function composePrompt(input: ComposePromptInput): string {
         ].join("\n")
       : "",
     modeText(mode, bot.name),
+    // Last, on purpose: the one line that changes every minute. See the module comment.
+    nowLine(input.now, input.timeZone),
   ]
     .filter(Boolean)
     .join("\n\n");

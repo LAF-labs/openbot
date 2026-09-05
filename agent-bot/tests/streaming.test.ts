@@ -17,6 +17,7 @@ type Chunk = {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
   };
 };
 
@@ -240,6 +241,37 @@ describe("what a turn cost", () => {
     });
     // Counts and a model name only. The turn's words must not ride the metering event.
     expect(JSON.stringify(usage?.value)).not.toContain("안녕");
+    // An endpoint that does not say how much it served from cache leaves the field out: a zero
+    // here would be a measurement nobody took.
+    expect(usage?.value).not.toHaveProperty("cachedPromptTokens");
+  });
+
+  test("what the provider served from its cache rides the same event", async () => {
+    const events = (
+      await eventsFor([
+        { choices: [{ delta: { content: "네" } }] },
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 3_000,
+            completion_tokens: 8,
+            total_tokens: 3_008,
+            prompt_tokens_details: { cached_tokens: 2_816 },
+          },
+        },
+      ])
+    ).map(
+      (line) =>
+        JSON.parse(line) as {
+          type: string;
+          value?: Record<string, unknown>;
+        },
+    );
+    const usage = events.find((event) => event.type === "CUSTOM");
+    expect(usage?.value).toMatchObject({
+      promptTokens: 3_000,
+      cachedPromptTokens: 2_816,
+    });
   });
 
   test("a provider that reports no usage produces no usage event", async () => {

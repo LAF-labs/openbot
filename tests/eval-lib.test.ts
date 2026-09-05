@@ -97,8 +97,19 @@ describe("reading a run back from its wire", () => {
       promptTokens: 10,
       completionTokens: 2,
       totalTokens: 12,
+      // Not reported is null, not zero: the two are different facts about an endpoint.
+      cachedPromptTokens: null,
     });
     expect(usageOf([])).toBeNull();
+    expect(
+      usageOf([
+        {
+          type: "CUSTOM",
+          name: "laf.model.usage",
+          value: { promptTokens: 3000, cachedPromptTokens: 2816 },
+        },
+      ])?.cachedPromptTokens,
+    ).toBe(2816);
   });
 });
 

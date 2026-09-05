@@ -205,6 +205,28 @@ describe("the composed prompt", () => {
   });
 
   /**
+   * STABLE FIRST, VOLATILE LAST. A provider's prefix cache reads the prompt from the front for as
+   * long as it matches the last one, and the clock line used to sit second — so every minute
+   * invalidated the role, the memories and the mode behind it. Now the one line that changes on
+   * every run is the last line, and everything a Bot is told about itself sits in the cacheable
+   * part. Measured (`bun run eval:cache`, docs/laf/eval-pack.md): 1.4% of prompt tokens served
+   * from cache with the clock second, 7.5% with it last, on the same ten-turn transcript.
+   */
+  test("keeps the text that never changes first and the clock last", () => {
+    const content = composed({ roleDescription: "Chase invoices." }).content;
+    expect(content.startsWith(BASE_KO)).toBe(true);
+    expect(content.trimEnd().split("\n").at(-1)).toBe(
+      "지금은 2026-09-02 (수) 22:40 KST다.",
+    );
+    // Identity, then the job, then the mode — the mode still wins a conflict by coming later.
+    const at = (text: string) => content.indexOf(text);
+    expect(at("너는 Expense Manager")).toBeLessThan(at("Chase invoices."));
+    expect(at("Chase invoices.")).toBeLessThan(
+      at("사람이 화면 앞에서 지켜보는 대화다"),
+    );
+  });
+
+  /**
    * THE PARTICLE FOLLOWS THE NAME, and this was wrong on a running server.
    *
    * Read off the wire on 2026-09-03: "너는 비서, 영수증·경비 보고 담당다." The name and the title

@@ -590,6 +590,23 @@ export async function runAgent(
          * cost KPI is computed from. Counts only, never content.
          */
         if (usage) {
+          /*
+           * How much of the prompt the provider served from its cache, where it says so.
+           * OpenAI-style endpoints put it in `prompt_tokens_details.cached_tokens` and OpenRouter
+           * normalises to the same field; Anthropic-shaped ones say `cache_read_input_tokens`.
+           * Left OUT rather than written as zero when neither is there — a zero would read as
+           * "measured, nothing hit", which is a different fact from "this endpoint does not say".
+           */
+          const said = usage as {
+            prompt_tokens_details?: { cached_tokens?: unknown };
+            cache_read_input_tokens?: unknown;
+          };
+          const cached =
+            typeof said.prompt_tokens_details?.cached_tokens === "number"
+              ? said.prompt_tokens_details.cached_tokens
+              : typeof said.cache_read_input_tokens === "number"
+                ? said.cache_read_input_tokens
+                : undefined;
           send({
             type: "CUSTOM",
             name: "laf.model.usage",
@@ -598,6 +615,7 @@ export async function runAgent(
               promptTokens: usage.prompt_tokens,
               completionTokens: usage.completion_tokens,
               totalTokens: usage.total_tokens,
+              ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
             },
           } as BaseEvent);
         }

@@ -86,6 +86,8 @@ export function usageOf(events: StreamEvent[]): {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Prompt tokens the provider served from its cache. Null where the endpoint does not say. */
+  cachedPromptTokens: number | null;
 } | null {
   const found = events.find(
     (event) => event.type === "CUSTOM" && event.name === "laf.model.usage",
@@ -97,6 +99,10 @@ export function usageOf(events: StreamEvent[]): {
     promptTokens: count("promptTokens"),
     completionTokens: count("completionTokens"),
     totalTokens: count("totalTokens"),
+    cachedPromptTokens:
+      typeof found.value.cachedPromptTokens === "number"
+        ? found.value.cachedPromptTokens
+        : null,
   };
 }
 
