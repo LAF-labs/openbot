@@ -21,7 +21,20 @@ import { join } from "node:path";
 const SOURCE = join(import.meta.dir, "../src");
 
 /** Where a per-device answer is the right answer. Adding to this list is a decision, not a fix. */
-const DEVICE_SCOPED = ["components/theme-provider.tsx", "lib/i18n.ts"];
+const DEVICE_SCOPED = [
+  "components/theme-provider.tsx",
+  "lib/i18n.ts",
+  /*
+   * Which Bot's browser the 사이트 section starts on.
+   *
+   * A DECISION, and the argument is that it decides nothing. It is where a picker's cursor sits
+   * when the screen opens; the picker is on screen saying which Bot it landed on, and every
+   * connected row names the Bot whose browser actually holds that session — read from the server,
+   * not from here. So the worst this can be wrong about is one dropdown, in front of somebody who
+   * is looking at it, and the alternative is re-picking the same Bot every single visit.
+   */
+  "components/connections/site-rows.tsx",
+];
 
 function sourceFiles(directory: string): string[] {
   const found: string[] = [];

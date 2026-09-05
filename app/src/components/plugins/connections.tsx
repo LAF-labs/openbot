@@ -24,7 +24,43 @@ import {
  * can ever complete looks like a flaky button.
  */
 export const refusalText = (thrown: Error): string => {
-  const status = thrown instanceof ConnectRefusedError ? thrown.status : 0;
+  const refused = thrown instanceof ConnectRefusedError ? thrown : null;
+  const status = refused?.status ?? 0;
+
+  /*
+   * The code first, where the server sent one. The status alone puts two different mistakes of the
+   * person's own behind one 400 — a mall id left blank and a mall id that is not one — and reading
+   * only the status is how "가게 주소를 확인해 주세요" appeared in front of somebody who had
+   * typed nothing at all.
+   */
+  const byCode: Record<string, string> = {
+    "laf:instance_name_required": t("Type your shop's name first."),
+    "laf:instance_name_refused": t("Check the shop ID and try again."),
+    /*
+     * NOT "an administrator has to set it up". On a one-person deployment the reader IS that
+     * person, and there is no screen they could go to: which services this machine can offer is
+     * decided by the fleet before they ever see it. Said as a fact, with what actually happens
+     * next, rather than as a job somebody is waiting on.
+     */
+    "laf:connector_not_configured": t(
+      "This service is not available on this machine yet. Nothing here needs fixing — get in touch and we will turn it on.",
+    ),
+    "laf:no_oauth_client": t(
+      "This service is not available on this machine yet. Nothing here needs fixing — get in touch and we will turn it on.",
+    ),
+    "laf:no_public_url": t(
+      "This deployment has no public address, so a connection cannot be finished here.",
+    ),
+    "laf:registration_refused": t(
+      "The service refused this deployment's registration. Please try again in a moment.",
+    ),
+    "laf:server_not_added": t(
+      "The connection could not be started. Please try again.",
+    ),
+  };
+  const said = refused?.code ? byCode[refused.code] : undefined;
+  if (said) return said;
+
   if (status === 503) {
     return t(
       "This deployment has no public address, so a connection cannot be finished here.",
@@ -32,7 +68,7 @@ export const refusalText = (thrown: Error): string => {
   }
   if (status === 409) {
     return t(
-      "This cannot be connected yet. An administrator has to finish setting it up first.",
+      "This service is not available on this machine yet. Nothing here needs fixing — get in touch and we will turn it on.",
     );
   }
   if (status === 502) {
@@ -49,6 +85,32 @@ export const refusalText = (thrown: Error): string => {
     return t("Check the shop ID and try again.");
   }
   return t("The connection could not be started. Please try again.");
+};
+
+/**
+ * Why a connection this deployment holds has stopped working, in the person's own terms.
+ *
+ * A `needs_reconnect` row is the one place on this screen where nothing the person did is at fault
+ * and something of theirs has nevertheless stopped: a grant withdrawn at the vendor, a password
+ * changed, a refresh refused. The sentence has to end in the thing to do, because the switch is
+ * already sitting on and "다시 연결 필요" alone reads as a fault report rather than an instruction.
+ */
+export const connectionFailureText = (code: string | null): string => {
+  const said: Record<string, string> = {
+    "laf:refresh_refused": t(
+      "Your account signed this out. Turn it off and on again to reconnect.",
+    ),
+    "laf:credential_missing": t(
+      "The connection is gone from this machine. Turn it off and on again to reconnect.",
+    ),
+    "laf:scope_missing": t(
+      "This connection is missing something it needs. Turn it off and on again, and say yes to everything the service asks.",
+    ),
+  };
+  return (
+    (code ? said[code] : undefined) ??
+    t("This connection has stopped working. Turn it off and on again.")
+  );
 };
 
 /**

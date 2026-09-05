@@ -248,11 +248,21 @@ export function connectionsQueryOptions() {
  */
 export class ConnectRefusedError extends Error {
   readonly status: number;
+  /**
+   * The `laf:` fact the server sent alongside its English sentence, when it sent one.
+   *
+   * The status alone tells three situations apart; the code tells NINE, and two of them share a
+   * 400: a mall id that is not a mall id, and no mall id at all. Read before the status wherever
+   * both are known, because a person who can be told which of their own two mistakes it was does
+   * not have to guess.
+   */
+  readonly code: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string | null = null) {
     super(message);
     this.name = "ConnectRefusedError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -299,11 +309,14 @@ export async function beginConnect(
   const body = (await response.json().catch(() => null)) as {
     authorizationUrl?: string;
     error?: string;
+    /** The fact behind the sentence. Sent by every refusal this route has. */
+    code?: string;
   } | null;
   if (!response.ok || !body?.authorizationUrl) {
     throw new ConnectRefusedError(
       body?.error ?? "The connection could not be started.",
       response.status,
+      typeof body?.code === "string" ? body.code : null,
     );
   }
   return body.authorizationUrl;

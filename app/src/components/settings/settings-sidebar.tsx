@@ -21,6 +21,16 @@ const ITEMS = [
     linkOptions: { to: "/settings" },
   },
   /*
+   * The same argument as 내 정보 below, and it had never been made for this one: 연결 was reachable
+   * only by opening General and reading past appearance settings, which is where somebody looks
+   * exactly once — when they have been told to. It is the screen a person comes back to every time
+   * they add a service, so it is a row.
+   */
+  {
+    title: t("Connections"),
+    linkOptions: { to: "/settings/connected-accounts" },
+  },
+  /*
    * Its own row rather than a link buried in General.
    *
    * Taking your data and ending your account are the two things somebody has to be able to FIND

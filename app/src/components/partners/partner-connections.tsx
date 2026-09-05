@@ -1,49 +1,41 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import {
-  PageEmpty,
-  PageRows,
-  PageSection,
-} from "@/components/layout/page-shell";
+import { ConnectionRow } from "@/components/connections/connection-row";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
+import type { PartnerAccount } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
-import { openExternal } from "@/lib/notifications/shell";
+import { openExternal, inShell } from "@/lib/notifications/shell";
 import {
   type AlimtalkStatus,
   confirmAlimtalkCode,
   disconnectPartner,
   joinTaxMember,
-  type PartnerCard,
   type PartnerId,
-  partnerKeys,
-  partnersQueryOptions,
   refreshAlimtalkTemplates,
   refreshTaxCertificate,
   requestAlimtalkCode,
   taxCertificateUrl,
   type TaxStatus,
 } from "@/lib/partners/queries";
+import { catalogueCanKey } from "@/lib/plugins/catalogue-copy";
 
 /**
  * 알림톡 and 세금계산서 — the two services where LAF holds the account and the shop holds its own thing.
  *
- * WHY THIS IS NOT THE OAUTH LIST ABOVE IT. Every card in that list does the same thing: leave for
- * the service, say yes, come back. These two cannot work that way — neither vendor sells to a shop
- * through a consent screen — so LAF is the customer and each business is registered underneath. What
- * the person does is different too: for 알림톡 a code arrives on their phone, and for 세금계산서 they
- * fill in what they would fill in on any invoice and then register their certificate in the
- * service's own window.
+ * WHY THEY ARE A ROW LIKE ANY OTHER NOW. They used to be two hand-written cards, six hundred lines,
+ * with their own headings, their own buttons and their own idea of what "connected" looks like —
+ * beside seven OAuth cards and fifteen site cards that each had a third. The person's question in
+ * front of all twenty-four is the same one, so the row is the same row; only what the switch STARTS
+ * differs, and that difference belongs inside this file rather than on the screen.
  *
  * NOTHING HERE ASKS FOR A KEY, AND NOTHING HERE SHOWS ONE. The shop's certificate password is typed
  * in the service's own window and never reaches this app; the code from the phone is spent inside
  * one request; and the handle the service issues for the channel never crosses back to this screen
- * at all — what the card shows is the 검색용 아이디 the person typed, which is what they recognise.
+ * at all — what the row shows is the 검색용 아이디 the person typed, which is what they recognise.
  *
- * A CARD IS ONLY DRAWN WHERE IT CAN WORK. The server lists the services this deployment actually
- * holds an account for, so a machine set up without one shows nothing rather than a button that
+ * A ROW IS ONLY DRAWN WHERE IT CAN WORK. The overview lists the services this deployment actually
+ * holds an account for, so a machine set up without one shows nothing rather than a switch that
  * could only fail.
  */
 
@@ -80,7 +72,7 @@ export const partnerRefusalText = (code: string): string => {
   if (said[code]) return said[code];
   /*
    * Everything ending `_not_configured` is a 503: this machine was set up without the account
-   * behind this card. Nothing the person types fixes it and there is nobody here to send them to,
+   * behind this row. Nothing the person types fixes it and there is nobody here to send them to,
    * so it is said as a fact.
    */
   if (code.endsWith("_not_configured")) {
@@ -103,33 +95,16 @@ const templateWord = (status: "pending" | "approved" | "rejected"): string =>
 const asDate = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleDateString(activeLocale) : "";
 
-/**
- * 카카오 알림톡: the channel, then the code, then the wait.
- *
- * TWO STEPS AND THE SECOND ONE IS NOT INSTANT. The channel connects the moment the code is
- * accepted, and the four message forms LAF registers under it then go to KakaoTalk for review,
- * which takes days. The card says so, because a person who pressed 연결 and saw 연결됨 would
- * otherwise ask a Bot to send something and be told no for a reason they were never shown.
- */
-const AlimtalkCard = ({
-  card,
-  status,
-  onChanged,
-}: {
-  card: PartnerCard;
-  status: AlimtalkStatus;
-  onChanged: () => void;
-}) => {
-  const [searchId, setSearchId] = useState(status.searchId ?? "");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  /** Null until a code has actually been sent: the code box is not offered before there is one. */
-  const [codeSent, setCodeSent] = useState(false);
-  const [busy, setBusy] = useState(false);
+/** One partner step, with the busy flag and the refusal handled the same way every time. */
+function useStep(onChanged: () => void) {
+  const [isBusy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const run = useCallback(
-    async (work: () => Promise<{ ok: boolean; code?: string }>) => {
+    async (
+      work: () => Promise<{ ok: boolean; code?: string }>,
+      andThen: "refresh" | "stay" = "refresh",
+    ) => {
       setBusy(true);
       setNote(null);
       const outcome = await work();
@@ -138,125 +113,154 @@ const AlimtalkCard = ({
         setNote(partnerRefusalText(outcome.code ?? "laf:partner_unreachable"));
         return false;
       }
+      if (andThen === "refresh") onChanged();
       return true;
     },
-    [],
+    [onChanged],
   );
 
-  const handleRequestCode = useCallback(async () => {
-    const sent = await run(() => requestAlimtalkCode(searchId, phone));
-    if (sent) setCodeSent(true);
-  }, [run, searchId, phone]);
+  return { isBusy, note, setNote, run };
+}
 
-  const handleConfirm = useCallback(async () => {
-    const done = await run(() => confirmAlimtalkCode(searchId, phone, code));
-    if (done) {
-      setCode("");
-      setCodeSent(false);
-      onChanged();
-    }
-  }, [run, searchId, phone, code, onChanged]);
+/**
+ * 카카오 알림톡: the channel, then the code, then the wait.
+ *
+ * TWO STEPS AND THE SECOND ONE IS NOT INSTANT. The channel connects the moment the code is
+ * accepted, and the four message forms LAF registers under it then go to KakaoTalk for review,
+ * which takes days. The row says so, because a person who turned the switch on and saw 연결됨 would
+ * otherwise ask a Bot to send something and be told no for a reason they were never shown.
+ */
+const AlimtalkRow = ({
+  status,
+  onChanged,
+}: {
+  status: AlimtalkStatus;
+  onChanged: () => void;
+}) => {
+  const { isBusy, note, setNote, run } = useStep(onChanged);
+  const [isOpening, setOpening] = useState(false);
+  const [searchId, setSearchId] = useState(status.searchId ?? "");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  /** Null until a code has actually been sent: the code box is not offered before there is one. */
+  const [isCodeSent, setCodeSent] = useState(false);
 
   /* Only the two a Bot can send are drawn. The other two are this app's own notifications, and a
      shop owner reading a review status for a message they never send is noise. */
   const customerTemplates = status.templates.filter(
     (template) => template.audience === "customer",
   );
+  const isWaitingOnReview =
+    status.connected &&
+    customerTemplates.some((template) => template.status === "pending");
+
+  const handleToggle = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        if (!status.connected) {
+          setOpening(false);
+          setNote(null);
+          return;
+        }
+        void run(() => disconnectPartner("kakao-alimtalk"));
+        return;
+      }
+      setNote(null);
+      setOpening(true);
+    },
+    [run, setNote, status.connected],
+  );
+
+  const said = (): { text: string; tone: "muted" | "good" | "warn" } => {
+    if (status.connected) {
+      return {
+        text: isWaitingOnReview
+          ? t(
+              "Connected · {name} · KakaoTalk is still reviewing the messages",
+              {
+                name: status.searchId ?? "",
+              },
+            )
+          : t("Connected · {name} · connected on {date}", {
+              name: status.searchId ?? "",
+              date: asDate(status.connectedAt),
+            }),
+        tone: isWaitingOnReview ? "muted" : "good",
+      };
+    }
+    if (isOpening) {
+      return { text: t("Fill in the two lines below."), tone: "muted" };
+    }
+    return { text: t("Not connected"), tone: "muted" };
+  };
+
+  const state = said();
 
   return (
-    <Item size="sm">
-      <ItemContent>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ItemTitle>{t("KakaoTalk notifications")}</ItemTitle>
-          {status.connected ? (
-            <span className="font-medium text-primary text-xs">
-              {t("Connected · {name}", { name: status.searchId ?? "" })}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">
-              {t("Not connected yet")}
-            </span>
-          )}
-        </div>
-
-        <p className="mt-1 max-w-prose text-muted-foreground text-sm leading-relaxed">
-          {t(
-            "Send booking confirmations and review requests from your shop's own KakaoTalk channel. No keys and no sign-up with the messaging company: a code comes to the manager's phone, you type it back, and that is it.",
-          )}
-        </p>
-
-        {status.connected ? (
-          <>
-            <p className="mt-1 text-muted-foreground text-xs">
-              {t("Connected on {date}", { date: asDate(status.connectedAt) })}
+    <ConnectionRow
+      can={t(catalogueCanKey("kakao-alimtalk", "KakaoTalk notifications"))}
+      isBusy={isBusy}
+      isOn={status.connected || isOpening}
+      name={t("KakaoTalk notifications")}
+      note={note}
+      onToggle={handleToggle}
+      status={state.text}
+      tone={state.tone}
+      {...(status.connected
+        ? {
+            confirmText: t(
+              "Disconnect this? The Bot will not be able to use this account any more.",
+            ),
+          }
+        : {})}
+    >
+      {status.connected ? (
+        <div className="mt-2 space-y-1">
+          {customerTemplates.map((template) => (
+            <p className="text-xs" key={template.code}>
+              <span className="text-muted-foreground">
+                {template.code === "laf_reservation"
+                  ? t("Booking confirmed")
+                  : t("Review request")}
+              </span>
+              {" · "}
+              <span
+                className={
+                  template.status === "approved"
+                    ? "font-medium text-primary"
+                    : template.status === "rejected"
+                      ? "font-medium text-destructive"
+                      : "text-muted-foreground"
+                }
+              >
+                {templateWord(template.status)}
+              </span>
+              {/* KakaoTalk's own words about this shop's form. The one sentence on this screen
+                  that is not ours, because nobody here can write it for them. */}
+              {template.reason ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {template.reason}
+                </span>
+              ) : null}
             </p>
-            <div className="mt-2 space-y-1">
-              <p className="text-muted-foreground text-xs">
-                {t(
-                  "KakaoTalk reviews each message form before it can be sent. This usually takes a few working days.",
-                )}
-              </p>
-              {customerTemplates.map((template) => (
-                <p className="text-xs" key={template.code}>
-                  <span className="text-muted-foreground">
-                    {template.code === "laf_reservation"
-                      ? t("Booking confirmed")
-                      : t("Review request")}
-                  </span>
-                  {" · "}
-                  <span
-                    className={
-                      template.status === "approved"
-                        ? "font-medium text-primary"
-                        : template.status === "rejected"
-                          ? "font-medium text-destructive"
-                          : "text-muted-foreground"
-                    }
-                  >
-                    {templateWord(template.status)}
-                  </span>
-                  {/* KakaoTalk's own words about this shop's form. The one sentence on this screen
-                      that is not ours, because nobody here can write it for them. */}
-                  {template.reason ? (
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {template.reason}
-                    </span>
-                  ) : null}
-                </p>
-              ))}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void run(refreshAlimtalkTemplates).then(
-                    (done) => done && onChanged(),
-                  )
-                }
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {busy ? t("Checking…") : t("Check the review again")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void run(() => disconnectPartner(card.id)).then(
-                    (done) => done && onChanged(),
-                  )
-                }
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {t("Disconnect")}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <FieldGroup className="mt-3 max-w-md">
+          ))}
+          {isWaitingOnReview ? (
+            <Button
+              className="mt-1"
+              disabled={isBusy}
+              onClick={() => void run(refreshAlimtalkTemplates)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isBusy ? t("Checking…") : t("Check the review again")}
+            </Button>
+          ) : null}
+        </div>
+      ) : isOpening ? (
+        <div className="mt-2">
+          <FieldGroup className="max-w-md">
             <Field>
               <FieldLabel htmlFor="alimtalk-search-id">
                 {t("Channel search ID")}
@@ -278,7 +282,7 @@ const AlimtalkCard = ({
                 value={phone}
               />
             </Field>
-            {codeSent ? (
+            {isCodeSent ? (
               <Field>
                 <FieldLabel htmlFor="alimtalk-code">
                   {t("The code sent to that phone")}
@@ -291,43 +295,44 @@ const AlimtalkCard = ({
               </Field>
             ) : null}
           </FieldGroup>
-        )}
-
-        {!status.connected ? (
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
-              disabled={busy || !searchId.trim() || !phone.trim()}
-              onClick={() => void handleRequestCode()}
+              disabled={isBusy || !searchId.trim() || !phone.trim()}
+              onClick={() => {
+                void run(
+                  () => requestAlimtalkCode(searchId, phone),
+                  "stay",
+                ).then((sent) => sent && setCodeSent(true));
+              }}
               size="sm"
               type="button"
               variant="outline"
             >
-              {busy && !codeSent
-                ? t("Sending…")
-                : codeSent
-                  ? t("Send the code again")
-                  : t("Send me a code")}
+              {isCodeSent ? t("Send the code again") : t("Send me a code")}
             </Button>
-            {codeSent ? (
+            {isCodeSent ? (
               <Button
-                disabled={busy || !code.trim()}
-                onClick={() => void handleConfirm()}
+                disabled={isBusy || !code.trim()}
+                onClick={() => {
+                  void run(() =>
+                    confirmAlimtalkCode(searchId, phone, code),
+                  ).then((done) => {
+                    if (!done) return;
+                    setCode("");
+                    setCodeSent(false);
+                    setOpening(false);
+                  });
+                }}
                 size="sm"
                 type="button"
               >
-                {busy ? t("Connecting…") : t("Connect")}
+                {t("Connect")}
               </Button>
             ) : null}
           </div>
-        ) : null}
-
-        {note ? (
-          <p className="mt-2 text-destructive text-xs" role="alert">
-            {note}
-          </p>
-        ) : null}
-      </ItemContent>
-    </Item>
+        </div>
+      ) : null}
+    </ConnectionRow>
   );
 };
 
@@ -336,19 +341,21 @@ const AlimtalkCard = ({
  *
  * THE CERTIFICATE IS THE HALF NOBODY CAN DO FOR THEM. Registering a joint certificate means picking
  * a file off their own machine and typing its password, and that happens in the invoicing service's
- * own window — this app hands them the address and reads back only whether it worked. So the card
+ * own window — this app hands them the address and reads back only whether it worked. So the row
  * has two states after connecting, and the second one is the gate: nothing can be issued until the
- * certificate is registered, and the card says which one it is waiting on.
+ * certificate is registered, and the row says which one it is waiting on.
  */
-const TaxCard = ({
-  card,
+const TaxRow = ({
   status,
   onChanged,
 }: {
-  card: PartnerCard;
   status: TaxStatus;
   onChanged: () => void;
 }) => {
+  const { isBusy, note, setNote, run } = useStep(onChanged);
+  const [isOpening, setOpening] = useState(false);
+  /** The address, when nothing could be made to open it and the person has to press it. */
+  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     businessNumber: "",
     corpName: "",
@@ -357,63 +364,41 @@ const TaxCard = ({
     contactPhone: "",
     contactEmail: "",
   });
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const run = useCallback(
-    async (work: () => Promise<{ ok: boolean; code?: string }>) => {
-      setBusy(true);
-      setNote(null);
-      const outcome = await work();
-      setBusy(false);
-      if (!outcome.ok) {
-        setNote(partnerRefusalText(outcome.code ?? "laf:partner_unreachable"));
-        return false;
-      }
-      return true;
-    },
-    [],
-  );
 
   /**
-   * The certificate window, asked for and opened in one gesture.
+   * The certificate window, opened ON THE CLICK and filled in afterwards.
    *
-   * NOT FETCHED ON PAGE LOAD. The address carries a live session and the service gives it thirty
-   * seconds, so one asked for when the page opened would be dead by the time anybody pressed it.
-   * In the installed app it goes to the real browser: this is a page where somebody chooses a file
-   * and types a certificate password, and a window with no address bar is the wrong place for both.
+   * THIS IS THE WHOLE FIX. It used to await the address and then call `window.open`, which every
+   * popup blocker outside the desktop shell refuses — silently, because a blocked `window.open`
+   * returns null and nothing threw. The button reported "열었습니다" and no window ever appeared.
+   * So the window is claimed inside the gesture, while the browser still believes a person asked
+   * for it, and the address is put into it when it arrives.
+   *
+   * NOT FETCHED ON PAGE LOAD either: the address carries a live session and the service gives it
+   * thirty seconds, so one asked for when the page opened would be dead by the time anybody pressed.
    */
   const handleCertificate = useCallback(async () => {
-    setBusy(true);
-    setNote(null);
-    const outcome = await taxCertificateUrl("certificate");
-    setBusy(false);
-    if (!outcome.ok) {
-      setNote(partnerRefusalText(outcome.code));
-      return;
-    }
-    if (!(await openExternal(outcome.value.url))) {
-      window.open(outcome.value.url, "_blank", "noopener,noreferrer");
-    }
-  }, []);
+    setFallbackUrl(null);
+    // In the shell there is no popup to block and no second window to put it in: `openExternal`
+    // hands it to the person's own browser, which is where a file picker and a password belong.
+    const claimed = inShell() ? null : window.open("", "_blank");
+    if (claimed) claimed.opener = null;
 
-  const field = (
-    key: keyof typeof draft,
-    label: string,
-    placeholder?: string,
-  ) => (
-    <Field key={key}>
-      <FieldLabel htmlFor={`tax-${key}`}>{label}</FieldLabel>
-      <Input
-        id={`tax-${key}`}
-        onChange={(event) =>
-          setDraft((current) => ({ ...current, [key]: event.target.value }))
-        }
-        {...(placeholder ? { placeholder } : {})}
-        value={draft[key]}
-      />
-    </Field>
-  );
+    const opened = await run(async () => {
+      const outcome = await taxCertificateUrl("certificate");
+      if (!outcome.ok) return outcome;
+      if (claimed) {
+        claimed.location.replace(outcome.value.url);
+        return { ok: true };
+      }
+      if (await openExternal(outcome.value.url)) return { ok: true };
+      // Nothing would take it. The address is drawn as a link rather than lost: a person pressing
+      // it themselves is a gesture no blocker refuses.
+      setFallbackUrl(outcome.value.url);
+      return { ok: true };
+    }, "stay");
+    if (!opened) claimed?.close();
+  }, [run]);
 
   const canJoin =
     draft.businessNumber.trim() &&
@@ -423,185 +408,170 @@ const TaxCard = ({
     draft.contactPhone.trim() &&
     draft.contactEmail.trim();
 
+  const handleToggle = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        if (!status.connected) {
+          setOpening(false);
+          setNote(null);
+          return;
+        }
+        void run(() => disconnectPartner("tax-invoice"));
+        return;
+      }
+      setNote(null);
+      setOpening(true);
+    },
+    [run, setNote, status.connected],
+  );
+
+  const said = (): { text: string; tone: "muted" | "good" | "warn" } => {
+    if (status.connected) {
+      if (!status.certificate.registered) {
+        return {
+          text: t(
+            "Connected · {name} · no certificate registered yet, so nothing can be issued",
+            { name: status.corpName ?? "" },
+          ),
+          tone: "warn",
+        };
+      }
+      return {
+        text: status.certificate.expiresAt
+          ? t("Connected · {name} · certificate valid until {date}", {
+              name: status.corpName ?? "",
+              date: asDate(status.certificate.expiresAt),
+            })
+          : t("Connected · {name}", { name: status.corpName ?? "" }),
+        tone: "good",
+      };
+    }
+    if (isOpening) {
+      return { text: t("Fill in your business details below."), tone: "muted" };
+    }
+    return { text: t("Not connected"), tone: "muted" };
+  };
+
+  const state = said();
+
+  const field = (key: keyof typeof draft, label: string) => (
+    <Field key={key}>
+      <FieldLabel htmlFor={`tax-${key}`}>{label}</FieldLabel>
+      <Input
+        id={`tax-${key}`}
+        onChange={(event) =>
+          setDraft((current) => ({ ...current, [key]: event.target.value }))
+        }
+        value={draft[key]}
+      />
+    </Field>
+  );
+
   return (
-    <Item size="sm">
-      <ItemContent>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ItemTitle>{t("Tax invoices")}</ItemTitle>
-          {status.connected ? (
-            <span className="font-medium text-primary text-xs">
-              {t("Connected · {name}", { name: status.corpName ?? "" })}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">
-              {t("Not connected yet")}
-            </span>
-          )}
-          {/* Said out loud on the card, not only in a log. A person told "발행했습니다" by a Bot on a
-              trial machine would believe an invoice had been filed when it reached nobody. */}
-          {status.isTest ? (
-            <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-muted-foreground text-xs">
-              {t("Practice mode — nothing is really filed")}
-            </span>
+    <ConnectionRow
+      can={t(catalogueCanKey("tax-invoice", "Tax invoices"))}
+      isBusy={isBusy}
+      isOn={status.connected || isOpening}
+      name={t("Tax invoices")}
+      note={note}
+      onToggle={handleToggle}
+      status={state.text}
+      tone={state.tone}
+      {...(status.connected
+        ? {
+            confirmText: t(
+              "Disconnect this? The Bot will not be able to use this account any more.",
+            ),
+          }
+        : {})}
+    >
+      {/* Said out loud on the row, not only in a log. A person told "발행했습니다" by a Bot on a
+          trial machine would believe an invoice had been filed when it reached nobody. */}
+      {status.isTest ? (
+        <p className="mt-1 text-muted-foreground text-xs">
+          {t("Practice mode — nothing is really filed")}
+        </p>
+      ) : null}
+
+      {status.connected ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            disabled={isBusy}
+            onClick={() => void handleCertificate()}
+            size="sm"
+            type="button"
+            variant={status.certificate.registered ? "ghost" : "outline"}
+          >
+            {t("Register the certificate")}
+          </Button>
+          <Button
+            disabled={isBusy}
+            onClick={() => void run(refreshTaxCertificate)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {t("Check it again")}
+          </Button>
+          {fallbackUrl ? (
+            <a
+              className="text-primary text-xs underline"
+              href={fallbackUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {t("Open the certificate page")}
+            </a>
           ) : null}
         </div>
-
-        <p className="mt-1 max-w-prose text-muted-foreground text-sm leading-relaxed">
-          {t(
-            "Look up the tax invoices you have issued, and have a Bot prepare one for you to approve. You sign up through this screen — there is nothing to install and no separate account to buy.",
-          )}
-        </p>
-
-        {status.connected ? (
-          <>
-            <p className="mt-1 text-muted-foreground text-xs">
-              {t("Business number {number} · connected on {date}", {
-                number: status.businessNumber ?? "",
-                date: asDate(status.connectedAt),
-              })}
-            </p>
-            <p className="mt-2 text-xs">
-              {status.certificate.registered ? (
-                <span className="font-medium text-primary">
-                  {t("Certificate registered")}
-                  {status.certificate.expiresAt
-                    ? ` · ${t("valid until {date}", {
-                        date: asDate(status.certificate.expiresAt),
-                      })}`
-                    : ""}
-                </span>
-              ) : (
-                <span className="font-medium text-destructive">
-                  {t(
-                    "No certificate registered yet — nothing can be issued until there is one.",
-                  )}
-                </span>
-              )}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                disabled={busy}
-                onClick={() => void handleCertificate()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {busy ? t("Opening…") : t("Register the certificate")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void run(refreshTaxCertificate).then(
-                    (done) => done && onChanged(),
-                  )
-                }
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {t("Check it again")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void run(() => disconnectPartner(card.id)).then(
-                    (done) => done && onChanged(),
-                  )
-                }
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {t("Disconnect")}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <FieldGroup className="mt-3 max-w-md">
-              {field("businessNumber", t("Business registration number"))}
-              {field("corpName", t("Business name"))}
-              {field("ceoName", t("Owner's name"))}
-              {field("contactName", t("Who to contact"))}
-              {field("contactPhone", t("Contact number"))}
-              {field("contactEmail", t("Contact email"))}
-            </FieldGroup>
-            <div className="mt-2">
-              <Button
-                disabled={busy || !canJoin}
-                onClick={() =>
-                  void run(() => joinTaxMember(draft)).then(
-                    (done) => done && onChanged(),
-                  )
-                }
-                size="sm"
-                type="button"
-              >
-                {busy ? t("Signing up…") : t("Sign up")}
-              </Button>
-            </div>
-          </>
-        )}
-
-        {note ? (
-          <p className="mt-2 text-destructive text-xs" role="alert">
-            {note}
-          </p>
-        ) : null}
-      </ItemContent>
-    </Item>
+      ) : isOpening ? (
+        <div className="mt-2">
+          <FieldGroup className="max-w-md">
+            {field("businessNumber", t("Business registration number"))}
+            {field("corpName", t("Business name"))}
+            {field("ceoName", t("Owner's name"))}
+            {field("contactName", t("Who to contact"))}
+            {field("contactPhone", t("Contact number"))}
+            {field("contactEmail", t("Contact email"))}
+          </FieldGroup>
+          <Button
+            className="mt-2"
+            disabled={isBusy || !canJoin}
+            onClick={() => {
+              void run(() => joinTaxMember(draft)).then(
+                (done) => done && setOpening(false),
+              );
+            }}
+            size="sm"
+            type="button"
+          >
+            {t("Sign up")}
+          </Button>
+        </div>
+      ) : null}
+    </ConnectionRow>
   );
 };
 
-export const PartnerConnections = () => {
-  const queryClient = useQueryClient();
-  const { data, isPending } = useQuery(partnersQueryOptions());
-
-  const handleChanged = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: partnerKeys.all });
-  }, [queryClient]);
-
-  const cards = data ?? [];
-  /*
-   * Nothing at all rather than an empty section. A machine set up without either account has no
-   * partner services, and a heading over "아직 없습니다" is a promise about something that is not
-   * coming — the decision belongs to whoever set the machine up, not to the person reading it.
-   */
-  if (!isPending && cards.length === 0) return null;
-
-  return (
-    <PageSection
-      description={t(
-        "Services you sign up for through this screen. There is no key to obtain and no developer account: your shop's own channel and your own business details, and that is all.",
-      )}
-      title={t("Messaging and tax invoices")}
-    >
-      {isPending ? (
-        <PageEmpty>{t("Loading…")}</PageEmpty>
-      ) : (
-        <PageRows>
-          {cards.map((card) =>
-            card.id === "kakao-alimtalk" ? (
-              <AlimtalkCard
-                card={card}
-                key={card.id}
-                onChanged={handleChanged}
-                status={card.status}
-              />
-            ) : (
-              <TaxCard
-                card={card}
-                key={card.id}
-                onChanged={handleChanged}
-                status={card.status}
-              />
-            ),
-          )}
-        </PageRows>
-      )}
-    </PageSection>
+/** One partner, as a row like any other. Which one is decided by the id and nothing else. */
+export const PartnerRow = ({
+  account,
+  onChanged,
+}: {
+  account: PartnerAccount;
+  onChanged: () => void;
+}) =>
+  account.id === "kakao-alimtalk" ? (
+    <AlimtalkRow
+      onChanged={onChanged}
+      status={account.partner.status as AlimtalkStatus}
+    />
+  ) : (
+    <TaxRow
+      onChanged={onChanged}
+      status={account.partner.status as TaxStatus}
+    />
   );
-};
 
 /** The ids this section knows how to draw, for a test that walks them. */
 export const PARTNER_CARD_IDS: readonly PartnerId[] = Object.freeze([

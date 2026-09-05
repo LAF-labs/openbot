@@ -1229,8 +1229,6 @@ export const ko: Record<string, string> = {
   "Opening…": "여는 중…",
   "Authenticate now and hand back": "지금 인증하고 돌려주기",
   "Sign in again": "다시 로그인",
-  "The boundary would not open that address. Which sites a Bot may open is an administrator's decision.":
-    "허락 규칙이 이 주소를 열지 않았습니다. 봇이 어느 사이트를 열 수 있는지는 관리자가 정합니다.",
   "Somebody has to allow this before the page will open.":
     "허락을 받아야 이 페이지가 열립니다.",
   "The Bot's browser could not be reached.": "봇의 브라우저에 닿지 못했습니다.",
@@ -1415,4 +1413,81 @@ export const ko: Record<string, string> = {
     "서비스가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
   "That did not work. Please try again.":
     "잘 되지 않았습니다. 다시 시도해 주세요.",
+  // 연결 화면 — 계정, 서비스, 사이트를 한 줄씩.
+  Connections: "연결",
+  Accounts: "계정",
+  Sites: "사이트",
+  "Everything your Bot works with, in one place. Turn one on and it walks you through the rest — there is no key to obtain and no developer account anywhere on this screen.":
+    "봇이 함께 쓰는 것들을 한곳에 모았습니다. 스위치만 켜면 나머지는 화면이 안내합니다. 여기서 발급받을 키도, 따로 만들 개발자 계정도 없습니다.",
+  "The connections could not be loaded.": "연결 목록을 불러오지 못했습니다.",
+  "Sign in once at the service and your Bot works with your own account.":
+    "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일합니다.",
+  "You sign in once on a Bot's own browser, hand it back, and it stays signed in.":
+    "봇의 브라우저에서 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
+  "Not connected": "연결 안 됨",
+  "Finish giving permission in the browser that opened.":
+    "열린 브라우저에서 동의를 마치는 중…",
+  "Type your shop's name, then press Connect.":
+    "가게 아이디를 입력하고 연결을 누르세요.",
+  "Connected · {name} · last used {date}":
+    "연결됨 · {name} · 마지막 사용 {date}",
+  "Connected · last used {date}": "연결됨 · 마지막 사용 {date}",
+  "Disconnect this? The Bot will not be able to use this account any more.":
+    "연결을 끊을까요? 봇은 더 이상 이 계정을 쓰지 못합니다.",
+  "Type your shop's name first.": "가게 아이디를 먼저 입력해 주세요.",
+  "This service is not available on this machine yet. Nothing here needs fixing — get in touch and we will turn it on.":
+    "이 서비스는 아직 여기서 쓸 수 없습니다. 여기서 고칠 것은 없습니다 — 문의해 주시면 열어 드립니다.",
+  "Your account signed this out. Turn it off and on again to reconnect.":
+    "계정 쪽에서 연결이 해제되었습니다. 껐다 다시 켜서 연결해 주세요.",
+  "The connection is gone from this machine. Turn it off and on again to reconnect.":
+    "이 컴퓨터에 연결 정보가 남아 있지 않습니다. 껐다 다시 켜서 연결해 주세요.",
+  "This connection is missing something it needs. Turn it off and on again, and say yes to everything the service asks.":
+    "연결에 필요한 권한이 빠져 있습니다. 껐다 다시 켜고, 서비스가 묻는 것에 모두 동의해 주세요.",
+  "This connection has stopped working. Turn it off and on again.":
+    "이 연결이 더는 동작하지 않습니다. 껐다 다시 켜 주세요.",
+  "The Bot has taken the browser back. Nothing you type reaches it.":
+    "봇이 브라우저를 다시 가져갔습니다. 지금 입력하는 내용은 전달되지 않습니다.",
+  "This Bot is not allowed to open that address.":
+    "이 봇은 그 주소를 열 수 없습니다.",
+  "The browser could not be handed over. Please try again.":
+    "브라우저를 넘겨받지 못했습니다. 다시 시도해 주세요.",
+  "The browser's state could not be read.":
+    "브라우저 상태를 읽지 못했습니다 — 다시 확인해 주세요.",
+  "That could not be turned off. Please try again.":
+    "끄지 못했습니다. 다시 시도해 주세요.",
+  "Connected · on {name}'s browser · last seen {date}":
+    "연결됨 · {name}의 브라우저 · 마지막 확인 {date}",
+  "You authenticate each time — the Bot cannot keep this one.":
+    "인증은 매번 직접 하셔야 합니다 — 봇이 대신 보관할 수 없습니다.",
+  "Turn this site off? The Bot will stop using it. It stays signed in on the Bot's browser until you log out on the site itself.":
+    "이 사이트를 끌까요? 봇은 더 이상 쓰지 않습니다. 사이트에서 직접 로그아웃하기 전까지 봇의 브라우저에는 로그인이 남아 있습니다.",
+  "Connected · {name} · KakaoTalk is still reviewing the messages":
+    "연결됨 · {name} · 카카오가 메시지 서식을 심사 중입니다",
+  "Connected · {name} · connected on {date}": "연결됨 · {name} · {date}에 연결",
+  "Fill in the two lines below.": "아래 두 칸을 채워 주세요.",
+  "Connected · {name} · no certificate registered yet, so nothing can be issued":
+    "연결됨 · {name} · 인증서가 없어 아직 발행할 수 없습니다",
+  "Connected · {name} · certificate valid until {date}":
+    "연결됨 · {name} · 인증서 {date}까지 유효",
+  "Fill in your business details below.": "아래에 사업자 정보를 입력해 주세요.",
+  "Open the certificate page": "인증서 등록 창 열기",
+  // 연결하면 봇이 무엇을 하는지 — 한 줄씩. `catalogue-copy.ts`의 `can`.
+  "Reads the pages you have shared, and writes new ones.":
+    "공유한 페이지를 읽고, 새 페이지를 씁니다.",
+  "Finds files in your Drive and reads what is in them.":
+    "드라이브에서 파일을 찾아 내용을 읽습니다.",
+  "Reads your spreadsheets and fills rows in for you.":
+    "스프레드시트를 읽고, 대신 줄을 채워 넣습니다.",
+  "Reads your mail and writes replies for you to send.":
+    "메일을 읽고, 보낼 답장을 대신 씁니다.",
+  "Reads your calendar and books time on it.":
+    "캘린더를 읽고, 일정을 잡습니다.",
+  "Reads the reviews left on your shop and writes replies.":
+    "가게에 달린 리뷰를 읽고, 답글을 씁니다.",
+  "Reads your shop's orders and products, and answers board posts.":
+    "쇼핑몰의 주문과 상품을 읽고, 게시글에 답합니다.",
+  "Sends booking confirmations and review requests from your own channel.":
+    "내 채널에서 예약 확인과 리뷰 요청을 보냅니다.",
+  "Looks up the invoices you have issued, and prepares one for you to approve.":
+    "발행한 세금계산서를 찾아보고, 승인만 하면 되도록 준비합니다.",
 };

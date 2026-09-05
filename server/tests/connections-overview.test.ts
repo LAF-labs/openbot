@@ -26,14 +26,19 @@ import {
  * checked one at a time and the ones nobody thought of going unlooked at.
  */
 
-const OWNER = { id: "owner-user", email: "owner@laf.test", role: "user" } as const;
+const OWNER = {
+  id: "owner-user",
+  email: "owner@laf.test",
+  role: "user",
+} as const;
 
 /** A scope string of the kind `connectionsFor` really returns, so its absence means something. */
 const A_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 
 const sheets = CATALOGUE.find((entry) => entry.key === "google-sheets");
 const cafe24 = CATALOGUE.find((entry) => entry.key === "cafe24");
-if (!sheets || !cafe24) throw new Error("The catalogue lost an entry this test names.");
+if (!sheets || !cafe24)
+  throw new Error("The catalogue lost an entry this test names.");
 
 type Held = {
   serverId: string;
@@ -109,7 +114,9 @@ describe("the 연결 screen's one read", () => {
       }).app,
     );
 
-    expect(body.accounts.map((account) => [account.id, account.status])).toEqual([
+    expect(
+      body.accounts.map((account) => [account.id, account.status]),
+    ).toEqual([
       ["google-sheets", "connected"],
       ["cafe24", "not_connected"],
     ]);
@@ -204,7 +211,9 @@ describe("the 연결 screen's one read", () => {
   test("no partner runtime at all is no partner rows, and not an error", async () => {
     const { response, body } = await read(surface().app);
     expect(response.status).toBe(200);
-    expect(body.accounts.every((account) => account.kind === "oauth")).toBe(true);
+    expect(body.accounts.every((account) => account.kind === "oauth")).toBe(
+      true,
+    );
   });
 
   test("every site in the catalogue gets a row, with its state said once", async () => {
@@ -240,12 +249,12 @@ describe("the 연결 screen's one read", () => {
     expect(body.sites.length).toBeGreaterThan(10);
   });
 
-  test("no computer means no site rows are connected, and still no error", async () => {
+  test("no computer means no site rows at all, and still no error", async () => {
     const { response, body } = await read(surface().app);
     expect(response.status).toBe(200);
-    expect(
-      body.sites.every((site) => site.status === "not_connected"),
-    ).toBe(true);
+    // Not fifteen rows reading "아직 연결 안 됨": on a deployment with no browser those are fifteen
+    // switches whose only possible outcome is a refusal, and the screen hides the section instead.
+    expect(body.sites).toEqual([]);
   });
 
   test("every source is asked about the person in the session and nobody else", async () => {

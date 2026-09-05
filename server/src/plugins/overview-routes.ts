@@ -200,22 +200,31 @@ export function createConnectionsOverviewRoutes(
       });
     }
 
-    const siteRows = sources.sites ? await sources.sites.list(userId) : [];
-    const bySiteId = new Map(siteRows.map((row) => [row.siteId, row]));
-    const sites: OverviewSite[] = BUSINESS_SITES.map((site) => {
-      const row = bySiteId.get(site.id);
-      return {
-        id: site.id,
-        status: !row
-          ? "not_connected"
-          : row.needsLogin
-            ? "needs_login"
-            : "connected",
-        botId: row?.botId ?? null,
-        lastSeenAt: row?.lastSeenAt ?? null,
-        connectedAt: row?.connectedAt ?? null,
-      };
-    });
+    /*
+     * NO COMPUTER, NO SITES — an empty list rather than fifteen rows saying "아직 연결 안 됨".
+     *
+     * The difference is what the screen can do with it: an empty list hides the section, and
+     * fifteen not-connected rows are fifteen switches whose only possible outcome is a refusal from
+     * a browser that does not exist on this deployment.
+     */
+    const siteRows = sources.sites ? await sources.sites.list(userId) : null;
+    const bySiteId = new Map((siteRows ?? []).map((row) => [row.siteId, row]));
+    const sites: OverviewSite[] = (siteRows === null ? [] : BUSINESS_SITES).map(
+      (site) => {
+        const row = bySiteId.get(site.id);
+        return {
+          id: site.id,
+          status: !row
+            ? "not_connected"
+            : row.needsLogin
+              ? "needs_login"
+              : "connected",
+          botId: row?.botId ?? null,
+          lastSeenAt: row?.lastSeenAt ?? null,
+          connectedAt: row?.connectedAt ?? null,
+        };
+      },
+    );
 
     const overview: ConnectionsOverview = {
       generatedAt: new Date().toISOString(),
