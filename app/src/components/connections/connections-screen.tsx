@@ -13,6 +13,7 @@ import {
   connectionsOverviewQueryOptions,
   isStillWaiting,
   PENDING_WINDOW_MS,
+  withWaiting,
 } from "@/lib/connections/queries";
 import type { AlimtalkStatus } from "@/lib/partners/queries";
 import { t } from "@/lib/i18n";
@@ -51,11 +52,13 @@ export const ConnectionsScreen = ({
    * a tab somebody closed, and a screen left open on it would ask an endpoint every three seconds
    * for the rest of the day.
    */
-  const [waitingUntil, setWaitingUntil] = useState<number[]>([]);
+  const [waitingUntil, setWaitingUntil] = useState<Record<string, number>>({});
   const [now, setNow] = useState(() => Date.now());
 
   const overview = useQuery(
-    connectionsOverviewQueryOptions(isStillWaiting(waitingUntil, now)),
+    connectionsOverviewQueryOptions(
+      isStillWaiting(Object.values(waitingUntil), now),
+    ),
   );
   const data = overview.data;
 
@@ -87,7 +90,7 @@ export const ConnectionsScreen = ({
   }, [data]);
 
   const deadlines = useMemo(
-    () => [...waitingUntil, ...reviewDeadlines],
+    () => [...Object.values(waitingUntil), ...reviewDeadlines],
     [waitingUntil, reviewDeadlines],
   );
   const isWaiting = isStillWaiting(deadlines, now);
@@ -102,15 +105,17 @@ export const ConnectionsScreen = ({
     const soonest = Math.min(...deadlines.filter((deadline) => deadline > now));
     const timer = setTimeout(
       () => setNow(Date.now()),
-      Math.max(soonest - now, 250),
+      Math.max(soonest - Date.now(), 250),
     );
     return () => clearTimeout(timer);
   }, [deadlines, isWaiting, now]);
 
-  const handleWaiting = useCallback(() => {
-    setNow(Date.now());
-    setWaitingUntil((current) => [...current, Date.now() + PENDING_WINDOW_MS]);
-  }, []);
+  /** One row saying it has started, or stopped, waiting on another window. */
+  const handleWaiting = useCallback(
+    (accountId: string, until: number | null) =>
+      setWaitingUntil((current) => withWaiting(current, accountId, until)),
+    [],
+  );
 
   const handleChanged = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: connectionKeys.all });

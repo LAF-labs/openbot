@@ -137,6 +137,32 @@ export function isStillWaiting(
   return waitingUntil.some((deadline) => deadline > now);
 }
 
+/** What each row is waiting on, by the account it belongs to. */
+export type Waiting = Readonly<Record<string, number>>;
+
+/**
+ * One row starting, or stopping, its wait.
+ *
+ * BOTH DIRECTIONS AND THE SAME OBJECT BACK WHEN NOTHING CHANGED, and both halves were measured.
+ * Reporting only the start left the screen polling every three seconds for the whole five minutes
+ * after somebody pressed 취소 — forty requests to an endpoint with nothing new to say. And the rows
+ * report from an effect, so returning a fresh object for an unchanged map would be a render loop.
+ */
+export function withWaiting(
+  current: Waiting,
+  accountId: string,
+  until: number | null,
+): Waiting {
+  if (until === null) {
+    if (!(accountId in current)) return current;
+    const { [accountId]: gone, ...rest } = current;
+    return rest;
+  }
+  return current[accountId] === until
+    ? current
+    : { ...current, [accountId]: until };
+}
+
 /**
  * Turn one site off.
  *

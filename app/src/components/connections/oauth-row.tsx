@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ConnectionRow } from "@/components/connections/connection-row";
 import {
   connectionFailureText,
@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { OauthAccount } from "@/lib/connections/queries";
-import { connectionKeys } from "@/lib/connections/queries";
+import { connectionKeys, PENDING_WINDOW_MS } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { catalogueCanKey } from "@/lib/plugins/catalogue-copy";
 import { beginConnect, disconnectServer } from "@/lib/plugins/queries";
@@ -39,13 +39,37 @@ export const OauthRow = ({
   onWaiting,
 }: {
   account: OauthAccount;
-  /** Told when a consent has gone to another window, so the screen starts re-asking. */
-  onWaiting: () => void;
+  /**
+   * Told whenever this row starts or stops waiting on another window, so the screen can re-ask.
+   *
+   * BOTH DIRECTIONS, which is the half that was missing and was measured: reporting only the start
+   * left the screen polling every three seconds for the full five minutes after somebody pressed
+   * 취소 — a row that had stopped waiting, and an endpoint that had nothing new to say, forty times
+   * over.
+   */
+  onWaiting: (accountId: string, until: number | null) => void;
 }) => {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>("settled");
   const [shopId, setShopId] = useState(account.account ?? "");
   const [note, setNote] = useState<string | null>(null);
+
+  /*
+   * The answer arriving is what ends the wait, and nothing else was ending it. A consent finished in
+   * the other window comes back as a poll saying `connected`, and without this the row went on
+   * saying "브라우저에서 동의를 마치는 중…" over an account that was already connected.
+   */
+  useEffect(() => {
+    if (account.status === "not_connected") return;
+    setPhase("settled");
+  }, [account.status]);
+
+  useEffect(() => {
+    onWaiting(
+      account.id,
+      phase === "waiting" ? Date.now() + PENDING_WINDOW_MS : null,
+    );
+  }, [account.id, onWaiting, phase]);
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: connectionKeys.all });
@@ -68,10 +92,7 @@ export const OauthRow = ({
       const where = await openConsent(authorizationUrl, (url) =>
         window.location.assign(url),
       );
-      if (where === "browser") {
-        setPhase("waiting");
-        onWaiting();
-      }
+      if (where === "browser") setPhase("waiting");
     },
     onError: (thrown: Error) => {
       setPhase(account.needsInstanceName ? "naming" : "settled");

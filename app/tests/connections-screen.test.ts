@@ -8,6 +8,7 @@ import {
   isStillWaiting,
   PENDING_POLL_MS,
   PENDING_WINDOW_MS,
+  withWaiting,
 } from "../src/lib/connections/queries";
 import { ko } from "../src/lib/i18n-ko";
 import { CATALOGUE_COPY } from "../src/lib/plugins/catalogue-copy";
@@ -113,6 +114,25 @@ describe("the one read", () => {
     expect(isStillWaiting([now - 1], now)).toBe(false);
     expect(isStillWaiting([], now)).toBe(false);
     expect(PENDING_WINDOW_MS).toBe(5 * 60_000);
+  });
+
+  test("a row that stops waiting takes its deadline back", () => {
+    /*
+     * MEASURED, NOT REASONED. With only the start reported, pressing 취소 on a consent left the
+     * screen polling every three seconds for the rest of the five minutes: forty requests to an
+     * endpoint with nothing new to say, in front of a row that had stopped waiting.
+     */
+    const started = withWaiting({}, "google-drive", 1_000);
+    expect(started).toEqual({ "google-drive": 1_000 });
+    expect(withWaiting(started, "google-drive", null)).toEqual({});
+
+    // The rows report from an effect, so an unchanged map has to come back as the same object or
+    // every report is a fresh state and the screen renders forever.
+    expect(withWaiting(started, "google-drive", 1_000)).toBe(started);
+    expect(withWaiting(started, "gmail", null)).toBe(started);
+    // One row's wait ending leaves another's alone.
+    const two = withWaiting(started, "gmail", 2_000);
+    expect(withWaiting(two, "gmail", null)).toEqual({ "google-drive": 1_000 });
   });
 
   test("a failed read is an error rather than an empty screen", async () => {

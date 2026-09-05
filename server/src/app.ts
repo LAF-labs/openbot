@@ -633,7 +633,17 @@ export function createApp(
             connectableCatalogue(pluginConnect?.sharedClient ?? (() => null)),
           store: pluginStore,
           partners: partners ?? null,
-          sites: siteConnections ?? null,
+          /*
+           * THE SAME CONDITION `/api/sites` IS MOUNTED UNDER, and it has to be, not just the store.
+           * The store is built from the database on every deployment, so reading it alone would
+           * draw fifteen site switches on a machine with no browser behind any of them — and the
+           * check on the way back from a handoff, which is a read of that browser, is not mounted
+           * there at all. A section that cannot work is not drawn.
+           */
+          sites:
+            computerClient && computerGateway && computerPolicy
+              ? (siteConnections ?? null)
+              : null,
           bots: async (userId) => {
             if (!agentProfileStore) return [];
             const roster = await agentProfileStore.list({
