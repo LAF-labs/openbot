@@ -529,6 +529,22 @@ export function createApp(
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
   // its own routing under /api/copilotkit cannot shadow a LAF Agent route declared above.
   if (copilotHandler) {
+    /*
+     * THE GUARD, AS A MIDDLEWARE, BECAUSE THE MOUNT CANNOT CARRY ONE.
+     *
+     * The comment above said "behind the same session guard as every other API route" and there was
+     * no guard: every other route names `requireUser` in its own declaration, and `app.route` takes
+     * no middleware — so the runtime, alone in this file, was mounted with nothing in front of it.
+     * MEASURED on a deployment with authentication configured, no cookie sent:
+     * `GET /api/copilotkit/threads` answered 200 with every thread in the deployment,
+     * `/threads/<id>/messages` answered 200 with the conversation, and `/api/me` beside them
+     * answered 401.
+     *
+     * Registered before the mount, because Hono runs middleware in registration order and one added
+     * after the route it is meant to guard never runs. The trailing wildcard covers the bare
+     * `/api/copilotkit` as well — measured against this Hono, rather than assumed.
+     */
+    app.use("/api/copilotkit/*", requireUser);
     // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
     // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees
     // the path, so every route lands at /api/copilotkit/api/copilotkit/* and /info 404s. The client
