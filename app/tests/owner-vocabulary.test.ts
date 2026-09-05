@@ -8,7 +8,9 @@ import {
   BOT_AVATAR_SHAPES,
 } from "../src/lib/avatar/bot-avatar";
 import { ko } from "../src/lib/i18n-ko";
+import { CATALOGUE_COPY } from "../src/lib/plugins/catalogue-copy";
 import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
+import { BUSINESS_SITES } from "../src/lib/sites/catalogue";
 
 /**
  * The gallery's card names, loaded the way `i18n-coverage.test.ts` loads them and for the same
@@ -184,6 +186,28 @@ function ownerKorean(): [string, string][] {
     const korean = ko[title];
     if (korean) sentences.push([korean, `a gallery card: ${title}`]);
   }
+  /*
+   * THE 연결 SCREEN, which is the largest table of owner-facing prose in the app and was not being
+   * read here at all.
+   *
+   * Twenty-four rows, every one of them a name and a sentence about what a Bot can do once it is on,
+   * every one read through `t(site.name)` or `t(catalogueCanKey(...))` — the exact `t(variable)`
+   * blind spot this file exists for. `site-catalogue.test.ts` proves the Korean is THERE; nothing
+   * proved it was written in the owner's words, on the one screen where somebody decides whether to
+   * hand a service their login and the wrong register reads as a developer console.
+   */
+  for (const site of BUSINESS_SITES) {
+    for (const value of [site.name, site.what, ...site.prompts]) {
+      const korean = ko[value];
+      if (korean) sentences.push([korean, `a site: ${site.id}`]);
+    }
+  }
+  for (const [key, copy] of Object.entries(CATALOGUE_COPY)) {
+    for (const value of [copy.summary, copy.can]) {
+      const korean = ko[value];
+      if (korean) sentences.push([korean, `a connector: ${key}`]);
+    }
+  }
   return sentences;
 }
 
@@ -203,7 +227,7 @@ describe("the owner's vocabulary", () => {
   test("checks enough of the app to be worth having", () => {
     // A walker that silently stopped finding anything would pass the test above for the wrong
     // reason, the same way `i18n-coverage.test.ts` guards its own regex.
-    expect(ownerKorean().length).toBeGreaterThan(250);
+    expect(ownerKorean().length).toBeGreaterThan(320);
     // And the gallery half of it, which is a directory read and so can go quiet on its own.
     expect(GALLERY_TITLES.length).toBeGreaterThanOrEqual(12);
   });

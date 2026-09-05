@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import ts from "typescript";
 import { ko } from "../src/lib/i18n-ko";
 
 /**
@@ -188,5 +189,279 @@ describe("the gallery's card names", () => {
       missing: [],
       enough: true,
     });
+  });
+});
+
+/**
+ * THE HALF THE DICTIONARY CANNOT SEE: ENGLISH THAT NEVER ASKED FOR A TRANSLATION.
+ *
+ * Everything above checks that a string handed to `t()` has Korean. It says nothing whatsoever about
+ * a string that was never handed to `t()` at all, which is the failure that actually shipped — and
+ * it shipped repeatedly, in every shape:
+ *
+ *   - a sentence sitting in JSX with no call around it (`/admin/boundaries`, three of them, one of
+ *     them the line telling somebody their boundary had saved);
+ *   - a ternary between two English strings (`"true, anything not refused above"`);
+ *   - a paragraph assembled from JSX fragments around a `<strong>`, which `t()` structurally could
+ *     not have reached (`/admin/computers`);
+ *   - two words in a `title` attribute nobody reads until they hover.
+ *
+ * None of it is visible from a typecheck, from the coverage walk above, or from a screenshot of a
+ * screen that is otherwise Korean. So this walks the JSX itself.
+ *
+ * WHAT IT LOOKS AT: text between tags, and the four attributes a person actually reads —
+ * `placeholder`, `aria-label`, `title`, `alt`. Everything else on an element is machinery.
+ *
+ * WHAT COUNTS AS ENGLISH: two or more bare Latin words. One is a name, an identifier, a unit or a
+ * `·`; two in a row is a sentence somebody wrote. That threshold is why `OK`, `refund_card`, a CEL
+ * expression and a Tailwind class list do not trip it.
+ *
+ * WHAT IT DELIBERATELY DOES NOT REACH: a model-facing tool description, a JSON-schema `description`,
+ * a `new Error(...)` message. Those are objects rather than JSX, and several of them are English on
+ * purpose — the model reads them. A rule stretched to cover them would need an allowlist longer than
+ * the thing it is checking, which is how a rule stops being read.
+ *
+ * The allowance below can only shrink: an entry for a file that is clean fails, so a fix cannot
+ * leave its excuse behind.
+ */
+const JSX_SOURCE = join(import.meta.dir, "../src");
+
+/** The attributes whose value is read by a person rather than by the browser. */
+const SAID_TO_A_PERSON = new Set([
+  "placeholder",
+  "aria-label",
+  "title",
+  "alt",
+  "aria-description",
+  "aria-placeholder",
+]);
+
+const EQUALITY = new Set([
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+]);
+
+/**
+ * A string being COMPARED is not a string being shown.
+ *
+ * `tool.reviewReason === "appeared after registration"` is the surface reading a code the server
+ * sent, beside the `t()` call that says what it means. Flagging it would teach people that the rule
+ * is noise, which is the only way a rule like this dies.
+ */
+function isComparison(node: ts.Node): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+  if (
+    ts.isBinaryExpression(parent) &&
+    EQUALITY.has(parent.operatorToken.kind)
+  ) {
+    return true;
+  }
+  if (ts.isCaseClause(parent)) return true;
+  if (
+    ts.isCallExpression(parent) &&
+    ts.isPropertyAccessExpression(parent.expression)
+  ) {
+    return ["includes", "startsWith", "endsWith", "has"].includes(
+      parent.expression.name.text,
+    );
+  }
+  return false;
+}
+
+function englishWords(value: string): number {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter((token) => /^[A-Za-z][A-Za-z'’-]*[.,!?:;]?$/.test(token)).length;
+}
+
+const isTranslateCall = (node: ts.Node): boolean =>
+  ts.isCallExpression(node) &&
+  ts.isIdentifier(node.expression) &&
+  node.expression.text === "t";
+
+/** Every bare English string one `.tsx` file puts in front of a person. */
+export function bareEnglishIn(fileName: string, text: string): string[] {
+  const source = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.ESNext,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const found: string[] = [];
+  const say = (node: ts.Node, value: string) => {
+    const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+    found.push(
+      `${line + 1}: ${value.trim().replace(/\s+/g, " ").slice(0, 80)}`,
+    );
+  };
+
+  /** Strings inside one expression, leaving anything a nested element owns to its own visit. */
+  const stringsIn = (node: ts.Node): ts.StringLiteralLike[] => {
+    const strings: ts.StringLiteralLike[] = [];
+    const collect = (inner: ts.Node) => {
+      if (isTranslateCall(inner)) return;
+      if (ts.isJsxAttributes(inner) || ts.isJsxElement(inner)) return;
+      if (
+        (ts.isStringLiteral(inner) ||
+          ts.isNoSubstitutionTemplateLiteral(inner)) &&
+        !isComparison(inner)
+      ) {
+        strings.push(inner);
+      }
+      ts.forEachChild(inner, collect);
+    };
+    ts.forEachChild(node, collect);
+    return strings;
+  };
+
+  const walk = (node: ts.Node) => {
+    if (isTranslateCall(node)) return;
+
+    if (ts.isJsxText(node) && englishWords(node.text) >= 2) {
+      say(node, node.text);
+    }
+
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText();
+      const value = node.initializer;
+      if (SAID_TO_A_PERSON.has(name) && value) {
+        if (ts.isStringLiteral(value) && englishWords(value.text) >= 2) {
+          say(node, `${name}="${value.text}"`);
+        } else if (ts.isJsxExpression(value)) {
+          for (const literal of stringsIn(value)) {
+            if (englishWords(literal.text) >= 2) {
+              say(literal, `${name}={"${literal.text}"}`);
+            }
+          }
+        }
+      }
+      // Every other attribute is machinery: className, data-*, href, viewBox, d…
+      return;
+    }
+
+    if (
+      ts.isJsxExpression(node) &&
+      node.parent &&
+      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))
+    ) {
+      for (const literal of stringsIn(node)) {
+        if (englishWords(literal.text) >= 2) say(literal, literal.text);
+      }
+    }
+
+    ts.forEachChild(node, walk);
+  };
+
+  walk(source);
+  return found;
+}
+
+/**
+ * WHAT WAS STILL BARE ON 2026-09-06, file by file.
+ *
+ * One line, and it is somebody else's: `tool-boundary.tsx` builds its sentence out of JSX fragments
+ * around the component's name, which is the shape `t()` cannot reach — the same failure
+ * `/admin/computers` had at the foot of its page, fixed by writing whole sentences instead. It is
+ * chat's file rather than this workstream's, so it is written down here rather than changed.
+ */
+const ALLOWED_BARE: Record<string, number> = {
+  "components/channels/tool-boundary.tsx": 1,
+};
+
+function jsxFiles(directory: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry);
+    if (statSync(path).isDirectory()) {
+      found.push(...jsxFiles(path));
+      continue;
+    }
+    if (entry.endsWith(".tsx")) found.push(path);
+  }
+  return found;
+}
+
+function measureBare(): Record<string, string[]> {
+  const counted: Record<string, string[]> = {};
+  for (const path of jsxFiles(JSX_SOURCE)) {
+    const file = relative(JSX_SOURCE, path);
+    if (file.startsWith("lib/generated/")) continue;
+    const leaks = bareEnglishIn(path, readFileSync(path, "utf8"));
+    if (leaks.length > 0) counted[file] = leaks;
+  }
+  return counted;
+}
+
+describe("English the dictionary was never asked about", () => {
+  const counted = measureBare();
+
+  test("no screen has more bare English than it did", () => {
+    const grown: string[] = [];
+    for (const [file, leaks] of Object.entries(counted)) {
+      const budget = ALLOWED_BARE[file] ?? 0;
+      if (leaks.length > budget) {
+        grown.push(
+          `  ${file}: ${leaks.length} (allowed ${budget})\n${leaks
+            .map((leak) => `      ${leak}`)
+            .join("\n")}`,
+        );
+      }
+    }
+    expect(grown.join("\n")).toBe("");
+  });
+
+  test("an allowance that has been earned back is gone", () => {
+    const stale = Object.keys(ALLOWED_BARE)
+      .filter((file) => !(file in counted))
+      .map(
+        (file) =>
+          `  ${file} is clean now — delete its line from ALLOWED_BARE so it cannot come back.`,
+      );
+    expect(stale.join("\n")).toBe("");
+  });
+
+  test("it still catches every shape this was written about", () => {
+    /*
+     * The rule is a walk over somebody else's AST, and the quiet way it dies is by silently matching
+     * nothing — a renamed helper, a parser that stops recognising TSX, a `return` in the wrong
+     * branch. So it is run against a file containing one of each leak this was written after, and
+     * against the things that must NOT trip it.
+     */
+    const leaks = bareEnglishIn(
+      "probe.tsx",
+      [
+        "export const Probe = ({ on, kind }: { on: boolean; kind: string }) => (",
+        '  <div className="flex flex-col gap-2 rounded-lg border border-border">',
+        "    <p>Saved. It applies to the next action any Bot takes.</p>",
+        '    <span>{on ? "Changes apply to the next action" : "true, anything not refused"}</span>',
+        '    <input aria-label="Search these rules" placeholder="Type a shop name" />',
+        '    <button title="Remove this rule" type="button">OK</button>',
+        '    <p>{t("Already translated, and left alone.")}</p>',
+        "    <code>{'contains(element.name, \"submit\")'}</code>",
+        '    <span>{kind === "appeared after registration" ? t("New") : t("Old")}</span>',
+        "  </div>",
+        ");",
+      ].join("\n"),
+    );
+    expect(leaks.length).toBe(6);
+    expect(leaks.join("\n")).toContain("Saved. It applies");
+    expect(leaks.join("\n")).toContain("true, anything not refused");
+    expect(leaks.join("\n")).toContain("aria-label=");
+    expect(leaks.join("\n")).toContain("placeholder=");
+    expect(leaks.join("\n")).toContain("title=");
+    // And the four that must not: a `t()` call, a CEL expression, a comparison, and one word.
+    expect(leaks.join("\n")).not.toContain("Already translated");
+    expect(leaks.join("\n")).not.toContain("element.name");
+    expect(leaks.join("\n")).not.toContain("appeared after registration");
+  });
+
+  test("it is reading the whole app, not a corner of it", () => {
+    // A walker that stopped finding files would make the first test pass on nothing at all.
+    expect(jsxFiles(JSX_SOURCE).length).toBeGreaterThan(100);
   });
 });
