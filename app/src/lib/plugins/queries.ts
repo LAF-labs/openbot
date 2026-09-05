@@ -111,6 +111,31 @@ export type PluginConnection = {
    */
   scope: string;
   connectedAt: string;
+  /**
+   * Whether the connection still works, as the last token exchange found it.
+   *
+   * THE ROW EXISTING IS NOT THE SAME AS THE CONNECTION WORKING, and until 2026-09 this list could
+   * only say the first: a grant the vendor had revoked months ago drew 연결됨 until somebody asked
+   * a Bot to use it. `needs_reconnect` is the only status that asks anything of anybody, and it is
+   * raised only for a vendor that refused the grant — a transient outage stays `ok`, because
+   * drawing 다시 연결 in front of one would send somebody through a consent screen to fix
+   * somebody else's afternoon.
+   *
+   * OPTIONAL, and read defensively. A server that predates this field sends none, and a card that
+   * assumed it would draw "undefined" on the one screen a person checks when something is wrong.
+   */
+  health?: {
+    status: "ok" | "needs_reconnect";
+    /** When a call last worked, and when one last failed. Null until each has happened once. */
+    lastOkAt: string | null;
+    lastFailureAt: string | null;
+    /**
+     * Which failure it was, in the server's own words — never a vendor's. Carried even when the
+     * status is `ok`, so a screen can say 잠시 문제가 있었어요 for `vendor_down` without telling
+     * anybody to go and reconnect.
+     */
+    failureCode: "revoked" | "refresh_failed" | "vendor_down" | null;
+  };
 };
 
 /**

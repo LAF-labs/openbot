@@ -37,13 +37,18 @@ const SERVER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
  * Deliberately coarse and deliberately not the vendor's. Each one exists because a person's next
  * move is different: waiting too long is worth trying again immediately, declining at the vendor is
  * not a fault at all, and a refused exchange is worth a second attempt before anybody worries.
+ *
+ * None of them says "다시 시도해 주세요", and that is measured rather than stylistic: the person is
+ * reading this in a browser where there is nothing to retry. The page appends 앱으로 돌아가세요,
+ * which is the only move available from here, and the app's own copy — `connectFailureText` in
+ * `lib/plugins/queries.ts` — says what to do once they are back.
  */
 const REASONS: Record<string, string> = {
-  expired: "시간이 지나 연결이 만료됐습니다. 다시 시도해 주세요.",
-  reused: "이미 처리된 연결 요청입니다. 앱에서 다시 연결해 주세요.",
+  expired: "시간이 지나 연결이 만료됐습니다.",
+  reused: "이미 처리된 연결 요청입니다.",
   denied: "연결이 취소됐습니다.",
-  exchange: "서비스 쪽에서 연결을 마치지 못했습니다. 다시 시도해 주세요.",
-  mismatch: "이 연결 요청을 처리할 수 없습니다. 앱에서 다시 시도해 주세요.",
+  exchange: "서비스 쪽에서 연결을 마치지 못했습니다.",
+  mismatch: "이 연결 요청을 처리할 수 없습니다.",
 };
 
 /** The five words above, for the callback to pick from. One list, so the two cannot drift. */
