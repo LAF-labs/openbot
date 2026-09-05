@@ -141,6 +141,32 @@ export const mcpUserCredentials = pgTable(
     connectedAt: timestamp("connected_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /**
+     * When a token exchange for this connection last succeeded, and when one last failed.
+     *
+     * HERE RATHER THAN ON THE VAULT ROW, which is where "the credential" would suggest. A vault row
+     * is replaced on every reconnect (`credentials.rotate` mints a new row and revokes the old),
+     * so a failure written there is thrown away by the very act that is supposed to clear it — and
+     * the vault is shared with model keys and OAuth clients, none of which have a health to report.
+     * This row is the connection: one per person per server, surviving rotation in place, and the
+     * one thing `connectionsFor` already reads.
+     *
+     * Nullable, and both are: a connection nobody has called through yet has neither, and "never
+     * tried" is not "healthy". The settings page reads absence as `ok` because a connection just
+     * made is what it says it is, but the columns do not pretend a call happened.
+     */
+    lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+    /**
+     * Which failure it was, as one of our own short codes — never the vendor's sentence.
+     *
+     * `revoked`, `refresh_failed`, `vendor_down`. The vendor's body is written for whoever
+     * registered the client, can name the client id, and is in whatever language that vendor
+     * writes; a column somebody's settings page reads must not be a place it can arrive. The three
+     * are told apart because they have different answers: two of them mean connect again, and the
+     * third means wait.
+     */
+    lastFailureCode: text("last_failure_code"),
     updatedAt: updatedAt(),
   },
   (table) => [

@@ -18,13 +18,72 @@ import {
 } from "./catalogue";
 import { type OAuthClients, TOKEN_TIMEOUT_MS } from "./oauth-client";
 import {
+  type ConnectionFailureCode,
+  type ConnectionHealth,
   iso,
   type OAuthClient,
   type PluginContext,
   PluginRefusedError,
   type StoredClient,
+  TokenRefusedError,
   type Transaction,
 } from "./store";
+
+/**
+ * Which of our three failures a vendor's refusal is, or nothing when it is not the vendor's at all.
+ *
+ * READ OFF THE ERROR CLASS AND THE PROTOCOL CODE, never off the sentence — the same rule
+ * {@link secretFor} records for the vault. The vendor's prose is written for whoever registered the
+ * client and is in whatever language that vendor writes; a classifier that read it would be one
+ * rewording away from calling every revoked grant a transient outage.
+ *
+ * `invalid_grant` is the one the protocol reserves for exactly this (RFC 6749 §5.2): the grant is
+ * gone, whether the person withdrew it at the vendor, an administrator did, or a rotation was
+ * replayed and the family was killed. It is the only thing here that says "connect again" on its
+ * own authority.
+ *
+ * Every other refusal the token endpoint issues is `refresh_failed`: something about this exchange
+ * is wrong in a way another call will not fix, and the person needs to be told rather than left
+ * with a connection that quietly never works. `invalid_client` included — the deployment's client
+ * is disowned, and a new consent is the only thing that produces a usable grant.
+ *
+ * Anything that is NOT the vendor refusing — a timeout, DNS, a connection refused, a 200 that was
+ * not a token — is `vendor_down`, and deliberately does not mark the connection as needing
+ * anything. It is the failure that comes back on its own, and drawing 다시 연결 in front of it
+ * would send somebody through a consent screen to fix somebody else's outage.
+ *
+ * A refusal of OURS returns nothing: `PluginRefusedError` here means the connection was withdrawn
+ * or removed while the call queued, and there is either no row left to write to or nothing new to
+ * say about it.
+ */
+function failureCodeFor(error: unknown): ConnectionFailureCode | null {
+  if (error instanceof PluginRefusedError) return null;
+  if (error instanceof TokenRefusedError) {
+    return error.code === "invalid_grant" ? "revoked" : "refresh_failed";
+  }
+  return "vendor_down";
+}
+
+/**
+ * Whether a recorded failure is one a person has to answer, in ONE place.
+ *
+ * Two callers ask it — the refusal before the vendor is contacted, and the status the settings page
+ * draws — and they must never disagree. A screen saying 연결됨 in front of a tool path that refuses
+ * with "connect again" is the exact lie this whole change exists to remove, and two expressions of
+ * the same rule is how it comes back.
+ */
+function needsReconnect(code: string | null): boolean {
+  return code === "revoked" || code === "refresh_failed";
+}
+
+/** The column narrowed to a code this build knows, or null. Text in, closed set out. */
+function knownFailureCode(code: string | null): ConnectionFailureCode | null {
+  return code === "revoked" ||
+    code === "refresh_failed" ||
+    code === "vendor_down"
+    ? code
+    : null;
+}
 
 /**
  * One person's own access to one vendor: the grant they consented to, and the token a call goes out
@@ -118,6 +177,39 @@ export function createConnections(
    * The scope and the row are left alone. Nothing about what the vendor granted has changed — only
    * which token presents it.
    */
+  /**
+   * Write down that an exchange failed, on the connection it failed for.
+   *
+   * Only ever OUR three codes and never the vendor's words — see {@link failureCodeFor}. A refusal
+   * of ours (the row is gone, the grant was withdrawn mid-queue) classifies to nothing and writes
+   * nothing: there is either no row left or nothing new to say about it.
+   *
+   * Swallows its own failure. It runs on the error path of a call that is about to refuse, and a
+   * throw from here would replace the sentence that explains what went wrong with a database error
+   * about the bookkeeping.
+   */
+  async function recordFailure(
+    serverId: string,
+    userId: string,
+    error: unknown,
+  ): Promise<void> {
+    const code = failureCodeFor(error);
+    if (!code) return;
+    try {
+      await database
+        .update(mcpUserCredentials)
+        .set({ lastFailureAt: new Date(), lastFailureCode: code })
+        .where(
+          and(
+            eq(mcpUserCredentials.serverId, serverId),
+            eq(mcpUserCredentials.userId, userId),
+          ),
+        );
+    } catch {
+      // See above: the refusal is what the caller is owed, not this.
+    }
+  }
+
   async function rotateConnectionToken(
     input: {
       credentialId: string;
@@ -192,7 +284,10 @@ export function createConnections(
      * when the row stays put, the secret inside it does not.
      */
     const [held] = await database
-      .select({ credentialId: mcpUserCredentials.credentialId })
+      .select({
+        credentialId: mcpUserCredentials.credentialId,
+        lastFailureCode: mcpUserCredentials.lastFailureCode,
+      })
       .from(mcpUserCredentials)
       .where(
         and(
@@ -207,6 +302,29 @@ export function createConnections(
         `You have not connected your ${entry.title} account. Connect it in Settings and ask again.`,
         null,
         "laf:not_connected",
+      );
+    }
+
+    /*
+     * A connection the last exchange proved dead, refused BEFORE the vendor is contacted.
+     *
+     * Not merely to save a round trip. The token in that row is one the vendor already refused, and
+     * presenting it again is what refresh-token-reuse detection is built to punish: a vendor that
+     * reads a second presentation as a replay revokes the whole family, so a Bot retrying politely
+     * every few minutes is how a recoverable connection becomes an unrecoverable one.
+     *
+     * `vendor_down` is deliberately NOT in here — {@link needsReconnect} — because it is the
+     * failure that comes back on its own, and refusing on it would turn one outage into a
+     * connection that stays refused until somebody consents again.
+     *
+     * Cleared by a reconnect, which is the only thing that produces a token this could be wrong
+     * about (`recordConnection`).
+     */
+    if (needsReconnect(held.lastFailureCode)) {
+      throw new PluginRefusedError(
+        `Your ${entry.title} connection has stopped working. Connect it again in Settings.`,
+        null,
+        "laf:needs_reconnect",
       );
     }
 
@@ -467,9 +585,45 @@ export function createConnections(
             );
           }
 
+          /*
+           * The connection worked, written with the same commit that carries the rotated token.
+           *
+           * In the transaction rather than after it, so the two facts cannot disagree: a `last_ok_at`
+           * committed beside a rotation that rolled back would say a connection is healthy while
+           * pointing at a token the vendor has already killed. It also clears whatever failure was
+           * standing — an exchange that succeeded is the end of the previous one's story.
+           */
+          await transaction
+            .update(mcpUserCredentials)
+            .set({
+              lastOkAt: new Date(),
+              lastFailureAt: null,
+              lastFailureCode: null,
+            })
+            .where(
+              and(
+                eq(mcpUserCredentials.serverId, row.id),
+                eq(mcpUserCredentials.userId, actorId),
+              ),
+            );
+
           return { token: minted.accessToken };
         });
       } catch (error) {
+        /*
+         * What just failed, recorded before the recovery below decides what to say about it.
+         *
+         * OUTSIDE THE TRANSACTION BY NECESSITY, not by preference: the transaction above rolled
+         * back on this very error, so a write placed inside it would be discarded along with
+         * everything else — a failure column that is only ever written when nothing failed. The row
+         * lock is released by now, so this is not a second connection queued behind one that cannot
+         * finish.
+         *
+         * Best effort. The refusal is the caller's answer and must reach them whatever the
+         * bookkeeping does; a write that fails here costs a screen one stale 연결됨, and a throw
+         * would cost the person the sentence that says what actually went wrong.
+         */
+        await recordFailure(row.id, actorId, error);
         /*
          * Outside the transaction, so the row lock is already released and the vault read this does
          * is not a second connection held behind this one's.
@@ -558,6 +712,20 @@ export function createConnections(
             credentialId: stored.id,
             scope: input.scope,
             updatedAt: new Date(),
+            /*
+             * The failure is over, because this row now points at a token nothing has refused.
+             *
+             * Cleared here rather than by a separate call, so consenting again is the ONE act that
+             * lifts `needs_reconnect` — and it lifts it in the same transaction that installs the
+             * grant, which means there is no instant where the new token is in place and the
+             * refusal in front of it is still standing.
+             *
+             * `last_ok_at` is deliberately left alone. A consent is not an exchange: nothing here
+             * proves the vendor will honour this token, and moving the date would be this row
+             * claiming a successful call that has not happened yet.
+             */
+            lastFailureAt: null,
+            lastFailureCode: null,
           },
         });
 
@@ -598,15 +766,32 @@ export function createConnections(
       });
     },
 
-    /** Which `user-oauth` servers this person has connected, for their own settings page. */
-    async connectionsFor(
-      userId: string,
-    ): Promise<{ serverId: string; scope: string; connectedAt: string }[]> {
+    /**
+     * Which `user-oauth` servers this person has connected, for their own settings page.
+     *
+     * WITH WHETHER EACH ONE STILL WORKS, which until 2026-09 it could not say. The row existing was
+     * the whole of what the page knew, so a grant the vendor revoked drew 연결됨 until somebody
+     * asked a Bot to use it and watched it fail — the connection screen was reporting an act
+     * somebody performed once, not a capability they currently have.
+     *
+     * Facts only, as ever: a status, two dates and a short code. The Korean is the surface's.
+     */
+    async connectionsFor(userId: string): Promise<
+      {
+        serverId: string;
+        scope: string;
+        connectedAt: string;
+        health: ConnectionHealth;
+      }[]
+    > {
       const rows = await database
         .select({
           serverId: mcpUserCredentials.serverId,
           scope: mcpUserCredentials.scope,
           connectedAt: mcpUserCredentials.connectedAt,
+          lastOkAt: mcpUserCredentials.lastOkAt,
+          lastFailureAt: mcpUserCredentials.lastFailureAt,
+          lastFailureCode: mcpUserCredentials.lastFailureCode,
         })
         .from(mcpUserCredentials)
         .where(eq(mcpUserCredentials.userId, userId))
@@ -616,6 +801,20 @@ export function createConnections(
         serverId: row.serverId,
         scope: row.scope,
         connectedAt: iso(row.connectedAt) ?? "",
+        health: {
+          status: needsReconnect(row.lastFailureCode)
+            ? "needs_reconnect"
+            : "ok",
+          lastOkAt: iso(row.lastOkAt),
+          lastFailureAt: iso(row.lastFailureAt),
+          /*
+           * Carried even when the status is `ok`, because `vendor_down` is a fact worth having: a
+           * screen can say 잠시 문제가 있었어요 without telling anybody to go and reconnect.
+           * Narrowed rather than cast — the column is text, and a value this build does not know is
+           * no code at all rather than one the surface has no words for.
+           */
+          failureCode: knownFailureCode(row.lastFailureCode),
+        },
       }));
     },
 

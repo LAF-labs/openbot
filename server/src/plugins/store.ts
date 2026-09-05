@@ -281,6 +281,39 @@ export const iso = (value: Date | string | null): string | null =>
   value === null ? null : value instanceof Date ? value.toISOString() : value;
 
 /**
+ * Why a connection last failed, in our own words.
+ *
+ * Three, because they have three different answers. `revoked` is the grant being gone at the
+ * vendor and `refresh_failed` is an exchange that will not start working on its own; both mean the
+ * person has to consent again. `vendor_down` is an outage, a timeout or a reply that was not a
+ * token, and it comes back by itself — putting 다시 연결 in front of it would send somebody through
+ * a consent screen to fix somebody else's afternoon.
+ *
+ * NEVER THE VENDOR'S OWN CODE OR SENTENCE. `invalid_grant` is what the protocol says; `revoked` is
+ * what we say, and the difference is that this one is a closed set the surface can write Korean for
+ * (docs/laf/redesign-2026-09.md §4-2).
+ */
+export type ConnectionFailureCode =
+  | "revoked"
+  | "refresh_failed"
+  | "vendor_down";
+
+/**
+ * Whether a connection still works, as the settings page and the tool path both read it.
+ *
+ * `needs_reconnect` is the only status that asks anything of anybody, and only two of the three
+ * failure codes produce it. A connection nothing has ever called through has no dates at all and is
+ * `ok` — "never measured" is not "broken", and a person who connected a moment ago should not be
+ * told to connect again.
+ */
+export type ConnectionHealth = {
+  status: "ok" | "needs_reconnect";
+  lastOkAt: string | null;
+  lastFailureAt: string | null;
+  failureCode: ConnectionFailureCode | null;
+};
+
+/**
  * The deployment's OAuth client for one vendor, as it is held in the vault.
  *
  * Both halves live in the encrypted value rather than the id sitting in `metadata` and the secret
