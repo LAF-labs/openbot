@@ -1,10 +1,11 @@
 import {
-  IconBolt,
   IconBox,
   IconClock,
   IconCopy,
   IconEye,
   IconEyeOff,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   IconLogout,
   IconMailOpened,
   IconPencil,
@@ -15,14 +16,22 @@ import {
   IconSettings,
   IconShieldLock,
   IconTrash,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -55,34 +64,136 @@ import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 /**
- * THE ROSTER: 280px, one row per colleague, newest first.
+ * THE ROSTER: 280px, one row per colleague, newest first — and a 64px rail when the window is not
+ * wide enough to spend 280 on it.
  *
- * This replaced a 72px column of faces, which was the wrong read of the reference. An icon rail
- * suits a product where the column is a switcher between workspaces; here the column IS the inbox.
- * A row carries the face, the name, when the Bot last spoke and what it said — and it is that
+ * The full column replaced a 72px strip of faces, which was the wrong read of the reference. An icon
+ * rail suits a product where the column is a switcher between workspaces; here the column IS the
+ * inbox. A row carries the face, the name, when the Bot last spoke and what it said — and it is that
  * preview line that lets somebody glance at the window and know which of four Bots needs them,
  * without opening any of them. A face alone cannot say "3 orders are sorted, take a look".
+ *
+ * THE RAIL IS WHAT HAPPENS WHEN THERE IS NO ROOM FOR THAT ARGUMENT. Measured at an 800px window,
+ * the fixed 280 was 35% of everything the person could see, and the conversation — the thing they
+ * came for — got the rest. Below `lg` the column drops to faces with their names in tooltips, and
+ * the toggle in the titlebar puts the full list back for as long as somebody wants it. It is a
+ * width, not a mode: nothing else about the roster changes.
  *
  * A Bot has exactly one conversation, so a row is never a session and the list never grows a second
  * entry for the same colleague.
  */
-const SIDEBAR_WIDTH = "var(--sand-sidebar-width)";
+
+/**
+ * WIDE ENOUGH FOR THE FULL COLUMN — Tailwind's `lg`, read in JavaScript rather than in CSS.
+ *
+ * A media query in the class list can hide the words but it cannot take them out of the document,
+ * and a 64px rail whose names are still in the accessibility tree, still being measured, still being
+ * truncated, is a rail only to the eye. `rem` inside a media query is the INITIAL root font size and
+ * not this app's 14px root, so 64rem here is the same 1024px `lg:` compiles to.
+ */
+const WIDE_QUERY = "(min-width: 64rem)";
+
+const isWideViewport = () =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia(WIDE_QUERY).matches;
+
+const subscribeToViewport = (onChange: () => void) => {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return () => {};
+  }
+  const query = window.matchMedia(WIDE_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+};
+
+const useIsWideViewport = () =>
+  useSyncExternalStore(subscribeToViewport, isWideViewport, () => true);
 
 /** The nav that is not a colleague. Small, at the bottom, so the faces own the column. */
 const FOOTER_LINKS = [
   { to: "/routines", icon: IconClock, label: "Routines" },
   { to: "/skills", icon: IconBox, label: "Skills" },
-  { to: "/agents", icon: IconBolt, label: "Bots" },
+  /*
+   * A LIGHTNING BOLT SAID NOTHING ABOUT BOTS. It was the one glyph in the footer that named no part
+   * of the product — speed, power, an integration, take your pick — sitting under a column of faces
+   * it leads back to. People are what this screen is made of, so people is the icon.
+   */
+  { to: "/agents", icon: IconUsers, label: "Bots" },
 ] as const;
+
+/**
+ * The titlebar's controls, with a real focus ring.
+ *
+ * The eye and the `+` were hand-rolled elements carrying a hover fill and nothing else, so tabbing
+ * to either of them changed nothing on screen. `buttonVariants` is the app's one source for that
+ * ring. The sand ghost fills are put back over it because `--sand-fill-ghost-hover` is a grey alpha
+ * that works in both themes, where `ghost`'s own `hover:bg-muted` needs a dark-mode variant to.
+ */
+const ICON_BUTTON_CLASS = cn(
+  buttonVariants({ size: "icon-sm", variant: "ghost" }),
+  "text-muted-foreground hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground dark:hover:bg-[var(--sand-fill-ghost-hover)]",
+);
+
+/** The footer's links, sharing the roster rows' focus ring for the same reason they now have one. */
+const NAV_LINK_CLASS =
+  "flex h-10 items-center rounded-lg border border-transparent bg-clip-padding text-base outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[status=active]:bg-[var(--sand-fill-ghost-selected)]";
+
+const FooterLink = ({
+  icon: Icon,
+  isCompact,
+  label,
+  to,
+}: (typeof FOOTER_LINKS)[number] & { isCompact: boolean }) => {
+  const badge = (
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--sand-fill-secondary)] text-muted-foreground">
+      <Icon className="size-3.5" />
+    </span>
+  );
+
+  if (isCompact) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              aria-label={t(label)}
+              className={cn(NAV_LINK_CLASS, "justify-center")}
+              to={to}
+            />
+          }
+        >
+          {badge}
+        </TooltipTrigger>
+        <TooltipContent side="right">{t(label)}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Link className={cn(NAV_LINK_CLASS, "gap-2.5 px-2")} to={to}>
+      {badge}
+      {t(label)}
+    </Link>
+  );
+};
 
 /**
  * The time a roster row shows: clock for today, weekday inside a week, date beyond it.
  *
  * The same shape a mail client uses, and for the same reason — "14:32" answers "how long ago" only
  * while today is still today, and a bare date answers it only once it is not.
+ *
+ * `activeLocale` IS PASSED, and it was not. With no locale argument the browser answers with its
+ * own, so a Korean-language app on an en-US machine printed "Sat" and "9/6" down a column of Korean
+ * names — the one place in the roster where the app's language setting reached nothing.
  */
 function rosterTime(iso: string | null): string | undefined {
   if (!iso) return undefined;
@@ -94,14 +205,19 @@ function rosterTime(iso: string | null): string | undefined {
     at.getMonth() === now.getMonth() &&
     at.getDate() === now.getDate();
   if (sameDay) {
-    return at.toLocaleTimeString(undefined, {
+    return at.toLocaleTimeString(activeLocale, {
       hour: "numeric",
       minute: "2-digit",
     });
   }
   const days = (now.getTime() - at.getTime()) / 86_400_000;
-  if (days < 7) return at.toLocaleDateString(undefined, { weekday: "short" });
-  return at.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  if (days < 7) {
+    return at.toLocaleDateString(activeLocale, { weekday: "short" });
+  }
+  return at.toLocaleDateString(activeLocale, {
+    month: "numeric",
+    day: "numeric",
+  });
 }
 
 /**
@@ -269,6 +385,13 @@ export function BotSidebar() {
    * Mode answers this with an eye that only appears once something is hidden; so does this.
    */
   const [showingHidden, setShowingHidden] = useState(false);
+  /*
+   * The person's override at a narrow width, and only there: above `lg` the full column is simply
+   * what the sidebar is, so this state has nothing to say.
+   */
+  const [isRailExpanded, setIsRailExpanded] = useState(false);
+  const isWide = useIsWideViewport();
+  const isRail = !isWide && !isRailExpanded;
   const hidden = useQuery(agentListQueryOptions(true));
   const working = useQuery(workingQueryOptions());
   const searchId = useId();
@@ -280,6 +403,7 @@ export function BotSidebar() {
       string,
       {
         id: string;
+        createdAt: string;
         lastMessage: string | null;
         lastMessageAt: string | null;
         unread: boolean;
@@ -301,6 +425,7 @@ export function BotSidebar() {
       if (!agentId || byAgent.has(agentId)) continue;
       byAgent.set(agentId, {
         id: channel.id,
+        createdAt: channel.createdAt,
         lastMessage: channel.lastMessage,
         lastMessageAt: channel.lastMessageAt,
         unread: channel.unread,
@@ -324,25 +449,31 @@ export function BotSidebar() {
    * out: there was no slot to put one in. The server has created, named and listed them all along.
    */
   const groups = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
+    const needle = query.trim().toLocaleLowerCase(activeLocale);
     return (channels.data ?? [])
       .filter((channel) => channel.agentIds.length > 1)
       .filter((channel) =>
         needle
           ? `${channel.name} ${channel.lastMessage ?? ""}`
-              .toLocaleLowerCase()
+              .toLocaleLowerCase(activeLocale)
               .includes(needle)
           : true,
       )
       .map((channel) => ({
         channel,
-        // A channel is named after its members, and until somebody speaks the last message is the
-        // first one — so the preview would repeat the title back in a smaller size.
+        /*
+         * A channel is named after its members, and until somebody speaks the last message is the
+         * first one — so the preview would repeat the title back in a smaller size. Who is in the
+         * room stands in, because the alternative was an empty second line, and an empty second
+         * line is exactly what made a room row look like a different kind of row from a Bot's.
+         */
         subtitle:
           channel.lastMessage &&
           !channel.name.startsWith(channel.lastMessage.trim())
             ? channel.lastMessage
-            : undefined,
+            : t("{count} Bots in this room", {
+                count: channel.agentIds.length,
+              }),
         at: channel.lastMessageAt ?? channel.createdAt,
         unread: channel.unread,
       }));
@@ -377,7 +508,7 @@ export function BotSidebar() {
   }, [working.data]);
 
   const rows = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
+    const needle = query.trim().toLocaleLowerCase(activeLocale);
     return (agents.data ?? [])
       .map((agent) => {
         const channel = channelFor.get(agent.id);
@@ -385,13 +516,19 @@ export function BotSidebar() {
           agent,
           channel,
           subtitle: channel?.lastMessage ?? agent.title ?? undefined,
-          at: channel?.lastMessageAt ?? null,
+          /*
+           * The same rule a room row uses — `lastMessageAt ?? createdAt`, which is the server's own
+           * `coalesce` — so that a colleague and a room on the same list are never one with a time
+           * and one without. A Bot nobody has opened yet still has no channel and so still has no
+           * time, which is the only honest answer for it.
+           */
+          at: channel ? (channel.lastMessageAt ?? channel.createdAt) : null,
         };
       })
       .filter(({ agent, subtitle }) =>
         needle
           ? `${agent.name} ${agent.title ?? ""} ${subtitle ?? ""}`
-              .toLocaleLowerCase()
+              .toLocaleLowerCase(activeLocale)
               .includes(needle)
           : true,
       )
@@ -427,11 +564,106 @@ export function BotSidebar() {
     await navigate({ to: "/sign" });
   };
 
+  const handleToggleRail = () => {
+    const willExpand = !isRailExpanded;
+    /*
+     * Collapsing takes the search field away with it. A rail quietly holding a filter would read as
+     * colleagues having gone missing, with no field on screen to explain why.
+     */
+    if (!willExpand) setQuery("");
+    setIsRailExpanded(willExpand);
+  };
+
+  const railToggleLabel = isRail
+    ? t("Expand the sidebar")
+    : t("Collapse the sidebar");
+
+  /*
+   * Only below `lg`. Above it the full column is the sidebar, and a control whose only effect would
+   * be to take the roster away on a window that has room for it is a control worth not drawing.
+   */
+  const railToggle = isWide ? null : (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            aria-expanded={!isRail}
+            aria-label={railToggleLabel}
+            className={ICON_BUTTON_CLASS}
+            onClick={handleToggleRail}
+            type="button"
+          />
+        }
+      >
+        {isRail ? (
+          <IconLayoutSidebarLeftExpand className="size-4" />
+        ) : (
+          <IconLayoutSidebarLeftCollapse className="size-4" />
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{railToggleLabel}</TooltipContent>
+    </Tooltip>
+  );
+
+  /* Only once there is something to reveal: an eye over an empty set is a control that teaches
+   * nothing and never does anything. */
+  const hiddenToggle =
+    (hidden.data ?? []).length > 0 ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              aria-label={
+                showingHidden ? t("Hide hidden Bots") : t("Show hidden Bots")
+              }
+              aria-pressed={showingHidden}
+              className={cn(
+                ICON_BUTTON_CLASS,
+                "aria-pressed:bg-[var(--sand-fill-ghost-selected)] aria-pressed:text-foreground",
+              )}
+              onClick={() => setShowingHidden((on) => !on)}
+              type="button"
+            />
+          }
+        >
+          {showingHidden ? (
+            <IconEyeOff className="size-4" />
+          ) : (
+            <IconEye className="size-4" />
+          )}
+        </TooltipTrigger>
+        <TooltipContent side={isRail ? "right" : "bottom"}>
+          {showingHidden ? t("Hide hidden Bots") : t("Show hidden Bots")}
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
+
+  const newChannelButton = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            aria-label={t("Start a new channel")}
+            className={ICON_BUTTON_CLASS}
+            to="/channel/new"
+          />
+        }
+      >
+        <IconPlus className="size-4" />
+      </TooltipTrigger>
+      <TooltipContent side={isRail ? "right" : "bottom"}>
+        {t("Start a new channel")}
+      </TooltipContent>
+    </Tooltip>
+  );
+
   return (
     <nav
       aria-label={t("Your team")}
-      className="flex h-full shrink-0 flex-col border-border border-r bg-sidebar"
-      style={{ width: SIDEBAR_WIDTH }}
+      className={cn(
+        "flex h-full shrink-0 flex-col border-border border-r bg-sidebar transition-[width] duration-200 ease-out",
+        isRail ? "w-16" : "w-[var(--sand-sidebar-width)]",
+      )}
     >
       {/*
        * The title row is the height of the window chrome it sits under, so the desktop build's
@@ -443,80 +675,56 @@ export function BotSidebar() {
        * the window. The attribute is inert in a browser tab.
        */}
       <div
-        className="flex h-[var(--sand-titlebar-block)] shrink-0 items-center justify-end gap-0.5 px-2.5"
+        className={cn(
+          "flex h-[var(--sand-titlebar-block)] shrink-0 items-center gap-0.5 px-2.5",
+          isRail ? "justify-center" : "justify-end",
+        )}
         data-tauri-drag-region
       >
-        {/* Only once there is something to reveal: an eye over an empty set is a control that
-         * teaches nothing and never does anything. */}
-        {(hidden.data ?? []).length > 0 ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  aria-label={
-                    showingHidden
-                      ? t("Hide hidden Bots")
-                      : t("Show hidden Bots")
-                  }
-                  aria-pressed={showingHidden}
-                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground aria-pressed:bg-[var(--sand-fill-ghost-selected)] aria-pressed:text-foreground"
-                  onClick={() => setShowingHidden((on) => !on)}
-                  type="button"
-                />
-              }
-            >
-              {showingHidden ? (
-                <IconEyeOff className="size-4" />
-              ) : (
-                <IconEye className="size-4" />
-              )}
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {showingHidden ? t("Hide hidden Bots") : t("Show hidden Bots")}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Link
-                aria-label={t("Start a new channel")}
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground"
-                to="/channel/new"
-              />
-            }
-          >
-            <IconPlus className="size-4" />
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {t("Start a new channel")}
-          </TooltipContent>
-        </Tooltip>
+        {railToggle}
+        {isRail ? null : hiddenToggle}
+        {isRail ? null : newChannelButton}
       </div>
 
-      <div className="shrink-0 px-2.5 pb-2">
-        {/* A label, not a placeholder: the placeholder disappears the moment somebody types. */}
-        <label className="sr-only" htmlFor={searchId}>
-          {t("Search your team")}
-        </label>
-        <div className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--sand-fill-secondary)] px-2.5 text-muted-foreground focus-within:outline focus-within:outline-2 focus-within:outline-ring">
-          <IconSearch className="size-3.5 shrink-0" />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
-            id={searchId}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Search")}
-            type="search"
-            value={query}
-          />
+      {isRail ? (
+        /* 64px cannot hold a search field, and the two controls the titlebar has no width for stack
+         * under it rather than vanishing along with the words. */
+        <div className="flex shrink-0 flex-col items-center gap-1 px-2 pb-2">
+          {newChannelButton}
+          {hiddenToggle}
         </div>
-      </div>
+      ) : (
+        <div className="shrink-0 px-2.5 pb-2">
+          {/* A label, not a placeholder: the placeholder disappears the moment somebody types. */}
+          <label className="sr-only" htmlFor={searchId}>
+            {t("Search your team")}
+          </label>
+          <div className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--sand-fill-secondary)] px-2.5 text-muted-foreground focus-within:outline focus-within:outline-2 focus-within:outline-ring">
+            <IconSearch className="size-3.5 shrink-0" />
+            <input
+              className="min-w-0 flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
+              id={searchId}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Search")}
+              type="search"
+              value={query}
+            />
+          </div>
+        </div>
+      )}
 
       <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {agents.isPending
           ? [0, 1, 2].map((slot) => (
-              <li className="px-2 py-2" key={slot}>
-                <Skeleton className="h-[38px] w-full rounded-lg" />
+              <li
+                className={cn("py-2", isRail ? "flex justify-center" : "px-2")}
+                key={slot}
+              >
+                <Skeleton
+                  className={
+                    isRail ? "size-9 rounded-lg" : "h-[38px] w-full rounded-lg"
+                  }
+                />
               </li>
             ))
           : rows.map(({ agent, channel, subtitle, at }) => (
@@ -530,6 +738,7 @@ export function BotSidebar() {
                     agentId={agent.id}
                     avatarSeed={agent.avatarSeed}
                     channelId={channel?.id}
+                    isCompact={isRail}
                     lastMessageAt={rosterTime(at)}
                     name={agent.name}
                     pinned={agent.pinnedAt !== null}
@@ -554,6 +763,7 @@ export function BotSidebar() {
                     agentId={agent.id}
                     avatarSeed={agent.avatarSeed}
                     channelId={channelFor.get(agent.id)?.id}
+                    isCompact={isRail}
                     lastMessageAt={t("Hidden")}
                     name={agent.name}
                     subtitle={agent.title}
@@ -567,6 +777,7 @@ export function BotSidebar() {
           <li key={channel.id}>
             <GroupRow
               channelId={channel.id}
+              isCompact={isRail}
               lastMessageAt={rosterTime(at)}
               name={channel.name}
               participantIds={channel.agentIds}
@@ -576,8 +787,12 @@ export function BotSidebar() {
           </li>
         ))}
 
-        {/* A roster that filtered to nothing is not an empty roster, and must not read as one. */}
-        {!agents.isPending && rows.length === 0 && groups.length === 0 ? (
+        {/* A roster that filtered to nothing is not an empty roster, and must not read as one. The
+         * rail has no room for either sentence and no search field to have caused one. */}
+        {!agents.isPending &&
+        !isRail &&
+        rows.length === 0 &&
+        groups.length === 0 ? (
           <li className="px-2 py-6 text-center text-muted-foreground text-sm">
             {query.trim() ? t("Nobody matches that.") : t("No Bots yet.")}
           </li>
@@ -585,17 +800,8 @@ export function BotSidebar() {
       </ul>
 
       <div className="shrink-0 border-border border-t px-2 py-2">
-        {FOOTER_LINKS.map(({ to, icon: Icon, label }) => (
-          <Link
-            className="flex h-10 items-center gap-2.5 rounded-lg px-2 text-base transition-colors hover:bg-[var(--sand-fill-ghost-hover)] data-[status=active]:bg-[var(--sand-fill-ghost-selected)]"
-            key={to}
-            to={to}
-          >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--sand-fill-secondary)] text-muted-foreground">
-              <Icon className="size-3.5" />
-            </span>
-            {t(label)}
-          </Link>
+        {FOOTER_LINKS.map((link) => (
+          <FooterLink {...link} isCompact={isRail} key={link.to} />
         ))}
 
         <DropdownMenu>
@@ -605,7 +811,10 @@ export function BotSidebar() {
                 aria-label={
                   currentUser?.name || currentUser?.email || t("Account")
                 }
-                className="h-10 w-full justify-start gap-2.5 px-2 font-normal text-base hover:bg-[var(--sand-fill-ghost-hover)]"
+                className={cn(
+                  "h-10 w-full font-normal text-base hover:bg-[var(--sand-fill-ghost-hover)]",
+                  isRail ? "justify-center px-0" : "justify-start gap-2.5 px-2",
+                )}
                 variant="ghost"
               />
             }
@@ -619,9 +828,11 @@ export function BotSidebar() {
               name={currentUser?.name}
               size="sm"
             />
-            <span className="min-w-0 truncate">
-              {currentUser?.name || currentUser?.email || t("Account")}
-            </span>
+            {isRail ? null : (
+              <span className="min-w-0 truncate">
+                {currentUser?.name || currentUser?.email || t("Account")}
+              </span>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="p-1.5" side="top">
             {currentUser?.role === "admin" ? (

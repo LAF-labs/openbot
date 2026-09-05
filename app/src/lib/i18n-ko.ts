@@ -1802,4 +1802,7 @@ export const ko: Record<string, string> = {
   "That Bot is not in this conversation.": "그 봇은 이 대화에 없습니다.",
   "A room needs at least two Bots. To talk to one on its own, open its own conversation.":
     "대화방에는 봇이 최소 두 개 있어야 합니다. 한 봇과만 이야기하려면 그 봇의 대화를 열어 주세요.",
+  "Expand the sidebar": "사이드바 펼치기",
+  "Collapse the sidebar": "사이드바 접기",
+  "{count} Bots in this room": "봇 {count}명이 있는 방",
 };
