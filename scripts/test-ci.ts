@@ -81,6 +81,15 @@ const projectRoot = resolve(import.meta.dir, "..");
  * old floor minus exactly what was removed rather than a fresh 3% — a floor lowered further than
  * the deletion would forgive a file that threw on import in the same change.
  *
+ * RAISED AGAIN 2026-09-05, with the Settings polish. Forty-four tests to `app`: the frame Settings
+ * and Admin share (which link is lit, the width, and what the rail becomes below `lg`), the rows
+ * that could not be acted on (a Notifications heading with no control, a Delete button live on one
+ * character, a download that gave no sign of the press), and `PersonAvatar` — the first three
+ * suites in this workspace that render React rather than walking source, because a picture URL
+ * that 404s and a permission the browser will not re-prompt for are events, not markup:
+ *
+ *     app                352 tests across 44 files   →   341
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -89,7 +98,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1350, roots: ["server"] },
-  { name: "app", floor: 298, roots: ["app"] },
+  { name: "app", floor: 341, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;

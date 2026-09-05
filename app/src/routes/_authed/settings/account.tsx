@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ExportButton } from "@/components/settings/export-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,13 +55,10 @@ export const ACCOUNT_REFUSALS: Record<string, string> = {
  * keep the button grey in front of somebody who had typed something the server would have accepted,
  * which is the one failure a client-side check can invent on its own.
  */
-const confirms = (typed: string, address: string | null): boolean =>
+export const confirms = (typed: string, address: string | null): boolean =>
   address !== null &&
   typed.trim().toLowerCase() === address.trim().toLowerCase() &&
   address.trim().length > 0;
-
-/** How long the export button stays held after a press. Long enough for the browser to start it. */
-const PREPARING_MS = 4000;
 
 const AccountPage = () => {
   const [typed, setTyped] = useState("");
@@ -84,30 +82,6 @@ const AccountPage = () => {
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const [expects, setExpects] = useState<string | null>(null);
   const confirmAddress = expects ?? currentUser?.email ?? null;
-
-  /*
-   * The download is an anchor, so nothing about the response comes back here to react to. What can
-   * be said honestly is that the press was received: the button holds for a few seconds and then
-   * comes back. Before this it was a bare link — pressed, nothing visibly happened while the server
-   * walked the account, and the second and third press each started another export.
-   */
-  const [isPreparing, setIsPreparing] = useState(false);
-  const preparingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (preparingTimer.current) clearTimeout(preparingTimer.current);
-    },
-    [],
-  );
-
-  const handleExport = () => {
-    setIsPreparing(true);
-    if (preparingTimer.current) clearTimeout(preparingTimer.current);
-    preparingTimer.current = setTimeout(
-      () => setIsPreparing(false),
-      PREPARING_MS,
-    );
-  };
 
   const handleDelete = async () => {
     setError(null);
@@ -194,24 +168,7 @@ const AccountPage = () => {
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              {/*
-               * An anchor, not a fetch. The response is an attachment the browser streams straight
-               * to disk; pulling a whole account through JavaScript first would hold it in memory
-               * for no reason and lose the progress the browser shows for free.
-               *
-               * `aria-disabled` and not `disabled`: this is an anchor, and `disabled` on an anchor
-               * is an attribute the browser ignores — the link would still navigate.
-               */}
-              <Button
-                aria-disabled={isPreparing}
-                className={isPreparing ? "pointer-events-none opacity-60" : ""}
-                render={(props) => (
-                  <a href="/api/me/export" {...props} onClick={handleExport} />
-                )}
-                variant="outline"
-              >
-                {isPreparing ? t("Preparing…") : t("Download")}
-              </Button>
+              <ExportButton />
             </ItemActions>
           </Item>
         </PageRows>

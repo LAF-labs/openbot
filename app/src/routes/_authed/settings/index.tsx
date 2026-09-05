@@ -64,8 +64,8 @@ function RouteComponent() {
    *
    * `onOpenChange` arrives, but in the same React batch as `onValueChange`, so a handler reading
    * the pending value out of state reads the render's own copy: `null`, every time. Measured on
-   * this screen — English on the trigger, nothing in `localStorage`, no reload, no way to try
-   * again without picking a different language first.
+   * this screen — English on the trigger, nothing written down, no reload, and no way to try again
+   * without picking a different language first.
    *
    * A timer has neither problem: it closes over the value directly, and a background tab clamps it
    * rather than dropping it. 150ms clears the popup's `duration-100` exit.
