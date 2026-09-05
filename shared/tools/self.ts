@@ -120,6 +120,8 @@ export const REMEMBER: SelfTool = {
     "너에게 맡겨진 일은 여기가 아니다 — '앞으로 X를 맡아줘'는 네 직무가 바뀐 것이고 update_profile로 간다. " +
     // 실측: 직무를 update_profile에 쓰고 나서 같은 사실을 여기에 한 번 더 적는 턴이 3분의 1.
     "직무를 update_profile에 적었다면 같은 내용을 여기에 또 적지 마라. 한 번이면 된다. " +
+    // 서버가 지시문 모양을 거절한다(laf:memory_looks_like_instruction). 어떻게 쓰면 통과하는지 한 줄.
+    "지시가 아니라 사실로 적는다: '항상 존댓말을 써라'가 아니라 '사장님은 존댓말을 선호한다'. " +
     "비밀번호, 카드번호, 로그인 칸에 입력된 값은 적지 않는다.",
   parameters: object(
     {

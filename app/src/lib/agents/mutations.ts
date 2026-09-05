@@ -32,6 +32,10 @@ export const AGENT_REFUSALS: Record<string, string> = {
     "That looks like a password, so it was not saved.",
   "laf:memory_too_long": "That is too long to remember.",
   "laf:memory_empty": "There was nothing to remember.",
+  "laf:memory_looks_like_instruction":
+    "That reads like an instruction rather than a fact, so it was not saved.",
+  "laf:memory_full":
+    "This Bot's memory is full. Forget something on its screen to make room.",
   /*
    * What the Bot form itself can be refused for, one code per field.
    *

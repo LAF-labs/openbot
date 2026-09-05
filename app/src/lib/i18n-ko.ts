@@ -1972,4 +1972,9 @@ export const ko: Record<string, string> = {
     "매주 수요일, 잘 팔리는 상품을 네이버 쇼핑 최저가와 비교합니다.",
   "Which filings fall in the next two weeks, so none of them is a surprise.":
     "앞으로 2주 안에 돌아오는 신고를 미리 알려 줍니다.",
+  // 기억 쓰기의 거절 둘. 지시문은 프롬프트가 되므로 받지 않고, 가득 찬 기억은 사람이 비운다.
+  "That reads like an instruction rather than a fact, so it was not saved.":
+    "사실이 아니라 지시문처럼 읽혀서 저장하지 않았습니다.",
+  "This Bot's memory is full. Forget something on its screen to make room.":
+    "이 봇의 기억이 가득 찼습니다. 봇 화면에서 오래된 기억을 잊게 하면 자리가 납니다.",
 };

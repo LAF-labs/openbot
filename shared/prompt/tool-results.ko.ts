@@ -163,6 +163,13 @@ export const TOOL_RESULT_KO: Record<string, string> = {
    */
   "laf:tool_result_trimmed":
     "[앞부분만 남기고 잘렸다. 지금 필요하면 그 페이지를 다시 열어서 읽어라.]",
+  /*
+   * 긴 툴 결과의 전문이 봇의 작업 공간에 파일로 남았을 때 미리보기 끝에 붙는다. `{chars}`와
+   * `{path}`는 서버가 채운다(`server/src/computer/spillover.ts`). 잘린 것과 다르다 — 이쪽은
+   * 다시 열 필요 없이 그 파일을 읽으면 전체가 있다.
+   */
+  "laf:tool_result_spilled":
+    '[앞 {chars}자] … 전체는 computer_read_file("{path}")',
 
   // 자기 자신을 고치는 툴들이 되돌려받는 것. 핸들러 안의 영어 문장을 대신한다.
   "laf:profile_updated":
@@ -202,6 +209,15 @@ export const TOOL_RESULT_KO: Record<string, string> = {
    */
   "laf:memory_looks_like_a_secret":
     "그 문장은 비밀번호나 카드번호나 계좌번호처럼 보여서 적지 않았다. 비밀값은 기억하지 않는다 — 필요하면 그때 사람에게 computer_request_secret으로 부탁해라.",
+  /*
+   * 지시문도 기억에 들어가면 안 된다. 기억은 매 턴 프롬프트로 다시 읽히므로, 거기 들어간
+   * "앞으로 항상 …해라"는 웹페이지가 쓴 시스템 프롬프트가 된다. 사실 문장으로 고쳐 쓰면 된다.
+   */
+  "laf:memory_looks_like_instruction":
+    "그 문장은 사실이 아니라 지시처럼 읽혀서 적지 않았다. 기억에는 이 사람에 대해 참인 것만 평서문으로 적는다 — '항상 존댓말을 써라'가 아니라 '사장님은 존댓말을 선호한다'. 네가 맡은 일이면 update_profile로, 시각이 붙은 일이면 manage_routine으로 간다.",
+  // 봇은 스스로 지우지 못한다. 잊는 것은 사람의 몫이고 봇 화면에 있다 — 그래서 부탁한다.
+  "laf:memory_full":
+    "기억이 가득 차서 적지 못했다. 네가 직접 지울 수는 없다 — 사람에게 봇 화면에서 오래된 기억을 잊게 해 달라고 말하고, 그 전까지는 새로 적으려 하지 마라.",
 
   /*
    * 연결이 낸 거절들. 여기 없는 코드는 `toolResultText`가 코드를 그대로 돌려주고, 봇은

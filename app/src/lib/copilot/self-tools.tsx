@@ -6,6 +6,7 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ToolLine } from "@/components/channels/tool-line";
 import { type AgentEffort, effortLabel } from "@/lib/agents/effort-label";
+import { AGENT_REFUSALS } from "@/lib/agents/mutations";
 import { agentKeys } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
@@ -426,11 +427,17 @@ export function SelfTools() {
          * is that the value stops here; printing it under "could not remember" would put the
          * password on the screen and in the conversation snapshot, which is where it was going in
          * the first place.
+         *
+         * Every other refusal the route can name is said in the surface's own words — "the memory
+         * is full" is something the person can act on, the refused sentence is not.
          */
+        const refusal = AGENT_REFUSALS[code];
         note(
           code === "laf:memory_looks_like_a_secret"
             ? t("A secret was not written down.")
-            : args.fact,
+            : refusal
+              ? t(refusal)
+              : args.fact,
           true,
         );
         return answer(code);

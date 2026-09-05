@@ -6,8 +6,10 @@ import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
 import {
   type AgentMemoryStore,
+  looksLikeAnInstruction,
   looksLikeASecret,
   MAX_MEMORY_LENGTH,
+  MemoryFullError,
 } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
 import {
@@ -594,6 +596,21 @@ export function createAgentRoutes(
         400,
       );
     }
+    /*
+     * NOR AN INSTRUCTION. The memory list is read as prompt on every later turn, so a sentence
+     * that tells the Bot what to do — rather than what is true about the person — is a rule that
+     * survives every session, written by whatever the Bot happened to be reading. Refused by shape
+     * (see `looksLikeAnInstruction`); the Bot is told to write the fact instead.
+     */
+    if (looksLikeAnInstruction(content)) {
+      return context.json(
+        {
+          error: "That reads like an instruction, not a fact.",
+          code: "laf:memory_looks_like_instruction",
+        },
+        400,
+      );
+    }
     try {
       await store.get(context.var.actor, context.req.param("agentId"));
       const memory = await memoryStore.remember(
@@ -614,6 +631,19 @@ export function createAgentRoutes(
             400,
           );
     } catch (error) {
+      if (error instanceof MemoryFullError) {
+        // 409 like a full roster: the request was well-formed, the memory is simply full. The
+        // numbers travel so the surface can say how full; the sentence is the surface's.
+        return context.json(
+          {
+            error: error.message,
+            code: "laf:memory_full",
+            used: error.used,
+            cap: error.cap,
+          },
+          409,
+        );
+      }
       return mapStoreError(context, error);
     }
   });

@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import {
   createAgentMemoryStore,
   MAX_MEMORY_LENGTH,
+  MEMORY_CHARACTER_CAP,
+  MemoryFullError,
 } from "../src/agents/memory-store";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
@@ -194,6 +196,88 @@ describe("what a Bot remembers", () => {
         "x".repeat(MAX_MEMORY_LENGTH),
       ),
     ).not.toBeNull();
+  });
+
+  /**
+   * THE MEMORY HAS A SIZE, NOT JUST A COUNT.
+   *
+   * Forty facts of four hundred characters is sixteen thousand characters in front of every turn;
+   * the count never said how much prompt the memory was allowed to be. The cap is enforced on the
+   * way in, so the Bot is told the moment there is no room — and forgetting one thing makes room
+   * again, which is the only way room is ever made, because the Bot cannot forget on its own.
+   */
+  test("refuses the fact that would not fit, and takes it once something is forgotten", async () => {
+    const owner = await createUser();
+    const bot = await createCoworker(owner);
+
+    const kept: string[] = [];
+    for (let at = 0; at < 5; at += 1) {
+      const memory = await memoryStore.remember(
+        bot.id,
+        owner.id,
+        String(at).repeat(MAX_MEMORY_LENGTH),
+      );
+      kept.push(memory?.id ?? "");
+    }
+    // 2,000 used. Three hundred more would pass the cap; two hundred lands exactly on it.
+    await expect(
+      memoryStore.remember(bot.id, owner.id, "y".repeat(300)),
+    ).rejects.toMatchObject({
+      name: "MemoryFullError",
+      used: 5 * MAX_MEMORY_LENGTH,
+      cap: MEMORY_CHARACTER_CAP,
+    });
+    expect(
+      await memoryStore.remember(bot.id, owner.id, "y".repeat(200)),
+    ).not.toBeNull();
+    await expect(
+      memoryStore.remember(bot.id, owner.id, "z"),
+    ).rejects.toBeInstanceOf(MemoryFullError);
+
+    // Forgetting is how room is made. A forgotten row no longer counts.
+    expect(await memoryStore.forget(kept[0] ?? "", owner.id)).toBe(true);
+    expect(
+      await memoryStore.remember(bot.id, owner.id, "y".repeat(300)),
+    ).not.toBeNull();
+  });
+
+  /**
+   * THE SNAPSHOT IS TAKEN ONCE PER RUN.
+   *
+   * The memories a run is composed with are the ones read when the person's roster was loaded
+   * for that run, and nothing re-reads them between the turns inside it: a fact the Bot writes
+   * mid-run is read by the NEXT run, the same way Hermes injects memory at session start rather
+   * than on every turn. The alternative — a prompt that changes under the model between one
+   * tool call and the next — is a prompt the eval hashes could never pin, and a memory write
+   * that takes effect on the same turn that wrote it.
+   */
+  test("composes every turn of one run from the memories read at its start", async () => {
+    const owner = await createUser();
+    const bot = await createCoworker(owner);
+    await memoryStore.remember(bot.id, owner.id, "Their supplier is Hanil.");
+
+    const loaded = await loadAgents(owner);
+    const agent = loaded.find((candidate) => candidate.id === bot.id);
+    if (!agent || !("profile" in agent))
+      throw new Error("The Bot did not load.");
+    const now = new Date();
+    const compose = () =>
+      botPromptMessage(agent.profile, {
+        mode: "chat",
+        now,
+        timeZone: "Asia/Seoul",
+      }).content;
+
+    const first = compose();
+    await memoryStore.remember(bot.id, owner.id, "They close on Sundays.");
+    const again = compose();
+
+    expect(again).toBe(first);
+    expect(again).not.toContain("Sundays");
+    // The next run reads the roster again, and the new fact is in it.
+    expect(await standingFor(owner, bot.id)).toContain(
+      "They close on Sundays.",
+    );
   });
 
   /** A Bot that has learned nothing says nothing about memory, rather than an empty heading. */
