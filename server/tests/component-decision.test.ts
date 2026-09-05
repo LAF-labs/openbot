@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { FUNCTION_NOT_GRANTED } from "../src/audit";
+import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
 import type { ComponentStore } from "../src/components/store";
@@ -93,5 +94,76 @@ describe("deciding a component", () => {
     expect(
       await decide({ agentId: "risk-analyst", functions: [1, null, {}] }),
     ).toEqual({ allowed: true });
+  });
+});
+
+/**
+ * WHAT A FAILED READ IS ALLOWED TO WRITE DOWN.
+ *
+ * Every data function is a query, and a Drizzle query error puts the SQL it sent AND its bound
+ * parameters into `message`. That string went into the `component.function_failed` row verbatim —
+ * so the one row written when a read fails was the row most likely to hold the read itself, in a
+ * trail that is append-only by design and cannot be edited afterwards.
+ */
+describe("a data function that threw", () => {
+  const failing = (error: Error) =>
+    ({
+      decide: async () => ({ allowed: true as const, description: "ok" }),
+      mayCall: async () => true,
+      callFunction: async () => {
+        throw error;
+      },
+    }) as unknown as ComponentStore;
+
+  async function call(error: Error) {
+    const rows: AuditEventInput[] = [];
+    const auditStore: AuditStore = {
+      insert: async (event) => void rows.push(event),
+    };
+    const response = await new Hono()
+      .route(
+        "/components",
+        createComponentRoutes(failing(error), asSignedIn, auditStore),
+      )
+      .request("http://laf.local/components/showActivityReport/call", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          agentId: "risk-analyst",
+          function: "recentRefusals",
+        }),
+      });
+    return { rows, response };
+  }
+
+  test("is recorded by its database code, never by the statement it sent", async () => {
+    const error = new Error(
+      'select * from "audit_events" where owner = $1 — params: ["010-2222-3333"]',
+    ) as Error & { query: string; params: unknown[]; cause: { code: string } };
+    error.query = 'select * from "audit_events" where owner = $1';
+    error.params = ["010-2222-3333"];
+    error.cause = { code: "42P01" };
+
+    const { rows, response } = await call(error);
+
+    expect(response.status).toBe(502);
+    const row = rows.find(
+      (entry) => entry.eventType === "component.function_failed",
+    );
+    expect(row?.payload).toMatchObject({ failure: "database error (42P01)" });
+    // The whole row, not the one field: a trail this file cannot rewrite is the wrong place to
+    // discover later that the statement went in through another key.
+    const written = JSON.stringify(rows);
+    expect(written).not.toContain("select * from");
+    expect(written).not.toContain("010-2222-3333");
+  });
+
+  test("keeps saying what an ordinary failure was", async () => {
+    const { rows } = await call(new Error("The report is not available."));
+
+    expect(
+      rows.find((entry) => entry.eventType === "component.function_failed")
+        ?.payload,
+    ).toMatchObject({ failure: "The report is not available." });
   });
 });

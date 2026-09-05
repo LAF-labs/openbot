@@ -138,10 +138,18 @@ function fakeClient() {
 function surface(
   actor: typeof ADMIN | typeof STAFF,
   policy: ActionPolicy = PERMISSIVE,
+  /**
+   * A trail that will not accept the row, which is a real condition and the one that decides what a
+   * 500 body is allowed to say. Every acting route writes an audit row before it answers.
+   */
+  auditFailure?: Error,
 ) {
   const rows: AuditEventInput[] = [];
   const auditStore: AuditStore = {
-    insert: async (event) => void rows.push(event),
+    insert: async (event) => {
+      if (auditFailure) throw auditFailure;
+      rows.push(event);
+    },
   };
   const { client, calls, human, sentToComputer } = fakeClient();
   const approvals = createApprovalRegistry();
@@ -258,6 +266,66 @@ describe("the Bot an address names", () => {
     );
 
     expect(response.status).toBe(200);
+  });
+});
+
+/**
+ * WHAT A FAILURE MAY SAY ONCE IT IS AN HTTP BODY.
+ *
+ * Every acting route writes an audit row through the gateway before it answers, so a trail that
+ * will not accept the row is a failure that reaches this file — and Drizzle puts the SQL it sent
+ * AND its bound parameters into `message`. The route answered with `error.message`, so the reply to
+ * a caller was the row the database had just refused, over HTTP, to anybody with a session.
+ */
+describe("a failure on its way out", () => {
+  /** Shaped like the real thing: `query` and `params`, and the code on the cause. */
+  const queryError = () => {
+    const error = new Error(
+      'insert into "audit_events" ("payload") values ($1) — params: [{"secret":"hunter2-Zx9-BANKPASS"}]',
+    ) as Error & { query: string; params: unknown[]; cause: { code: string } };
+    error.query = 'insert into "audit_events" ("payload") values ($1)';
+    error.params = [{ secret: "hunter2-Zx9-BANKPASS" }];
+    error.cause = { code: "23505" };
+    return error;
+  };
+
+  test("carries the database's code, and neither the statement nor what was bound to it", async () => {
+    const { app, seen } = surface(ADMIN, PERMISSIVE, queryError());
+    await seen();
+
+    const response = await app.request("/bot-1/click", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
+    });
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toBe("database error (23505)");
+    const said = JSON.stringify(body);
+    expect(said).not.toContain("insert into");
+    expect(said).not.toContain(SECRET);
+  });
+
+  test("still says what an ordinary failure was", async () => {
+    // The bound is on how much and what kind, not on saying anything: a caller that cannot be told
+    // what went wrong is a caller that reports an outage for a full disk.
+    const { app, seen } = surface(
+      ADMIN,
+      PERMISSIVE,
+      new Error("The trail is full."),
+    );
+    await seen();
+
+    const response = await app.request("/bot-1/click", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
+    });
+
+    expect(((await response.json()) as { error?: string }).error).toBe(
+      "The trail is full.",
+    );
   });
 });
 

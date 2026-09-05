@@ -4,6 +4,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdminRoute } from "../auth/guards";
+import { describeFailure } from "../failure-text";
 import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
 import {
   type ComputerClient,
@@ -862,12 +863,22 @@ function asRef(
   return { ref: body.ref, snapshotId: body.snapshotId };
 }
 
+/**
+ * What a failure is allowed to say once it leaves the place it happened.
+ *
+ * THIS USED TO BE `error.message`, AND NOT EVERY ERROR THAT REACHES IT IS OURS. Every acting route
+ * writes an audit row through the gateway before it answers, and a Drizzle query error carries the
+ * SQL it sent AND its bound parameters in `message` — so a trail that would not accept a row
+ * answered the caller with the row it was refusing, out of a 500 body, over HTTP. See
+ * failure-text.ts, which turns that into the PostgreSQL code an operator can actually act on and
+ * bounds everything else to one line.
+ */
 function describe(error: unknown): string {
   // A fact code rather than a description, and the one failure here that has one. It cannot be
   // reached through a route — the middleware above refuses first — and is here for the caller that
   // arrives some other way.
   if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return describeFailure(error);
 }
 
 /**

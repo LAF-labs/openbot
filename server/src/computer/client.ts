@@ -1,3 +1,4 @@
+import { describeFailure } from "../failure-text";
 import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
   ActionResult,
@@ -271,7 +272,9 @@ export function createComputerClient(options: ComputerClientOptions) {
           return {
             botId,
             state: "unreachable",
-            reason: error instanceof Error ? error.message : "Unknown failure.",
+            // Bounded, and de-queried, on the way out. This reason is rendered on a status card and
+            // the failure behind it did not necessarily start in this file. See failure-text.ts.
+            reason: describeFailure(error),
           };
         }
       },

@@ -10,6 +10,7 @@ import {
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
+import { describeFailure } from "../failure-text";
 import { DATA_FUNCTIONS, dataFunction } from "./functions";
 import { ComponentNotFoundError, type ComponentStore } from "./store";
 
@@ -256,9 +257,15 @@ export function createComponentRoutes(
       await audit(context, "component.function_failed", name, {
         bot: agentId,
         function: functionName,
-        // A real exception keeps its own message: it came from somebody else's software and this
-        // side cannot know what it means. Ours is a code.
-        failure: error instanceof Error ? error.message : READ_FAILED,
+        /*
+         * NOT `error.message`. Every data function is a query, and a Drizzle query error carries
+         * the SQL it sent AND its bound parameters in that string — so the one row written when a
+         * read fails was the row most likely to hold the read itself, in a trail that cannot be
+         * edited afterwards. What an operator needs is the PostgreSQL code; an ordinary exception
+         * from somebody else's software keeps one line of its own message, and a throw that was
+         * not an Error at all keeps the code. See failure-text.ts.
+         */
+        failure: error instanceof Error ? describeFailure(error) : READ_FAILED,
       });
       // The same code the row carries. It was the English sentence the surface ALREADY had Korean
       // for, sent from here anyway, so the card printed the server's copy of it untranslated.
