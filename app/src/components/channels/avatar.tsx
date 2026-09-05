@@ -27,17 +27,28 @@ function useSeeds(): (agentId: string) => string | undefined {
   const hidden = useQuery(agentListQueryOptions(true));
   return (agentId) => {
     /*
-     * UNDEFINED WHILE THE ROSTERS ARE IN FLIGHT, NOT A GUESS. Falling back to hashing the id gave a
+     * UNDEFINED WHILE THE ROSTER IS IN FLIGHT, NOT A GUESS. Falling back to hashing the id gave a
      * real, wrong face — every avatar in the app drew somebody else's character for a moment and
      * then swapped. A Bot's face is how people recognise it here; showing the wrong one, however
-     * briefly, is worse than showing none. The id fallback below is only for an id that both
-     * rosters have ANSWERED about and neither holds.
+     * briefly, is worse than showing none.
      */
-    if (!agents.data || !hidden.data) return undefined;
-    const found =
-      agents.data.find((agent) => agent.id === agentId) ??
-      hidden.data.find((agent) => agent.id === agentId);
-    return found?.avatarSeed ?? agentId;
+    if (!agents.data) return undefined;
+    const visible = agents.data.find((agent) => agent.id === agentId);
+    if (visible) return visible.avatarSeed;
+
+    const wasHidden = hidden.data?.find((agent) => agent.id === agentId);
+    if (wasHidden) return wasHidden.avatarSeed;
+
+    /*
+     * THE HIDDEN ROSTER IS BEST-EFFORT, AND THAT IS THE POINT OF `isPending` RATHER THAN `data`.
+     *
+     * Waiting on `hidden.data` would mean that a hidden-roster request which FAILS — a blip, or a
+     * deployment that answers `?hidden=true` differently — leaves every id it could not resolve as
+     * a grey disc for the life of the page. Pending is the only state worth waiting through; error
+     * is an answer, and the answer is "ask the id".
+     */
+    if (hidden.isPending) return undefined;
+    return agentId;
   };
 }
 
