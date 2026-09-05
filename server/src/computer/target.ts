@@ -1,6 +1,8 @@
 import {
+  isAddressLiteral,
   isCloudMetadataHostname,
   isLoopbackHostname,
+  isNotPubliclyRoutableName,
   isPrivateAddress,
   normalizeHostname,
 } from "../net/host-verdict";
@@ -85,6 +87,28 @@ export function checkNavigationTarget(
       allowed: false,
       reason:
         "That address is inside this deployment's own network, so the assistant is not allowed to open it.",
+    };
+  }
+
+  /*
+   * AND THE NAMES, which this half had never asked about.
+   *
+   * The two callers were merged so they would stop disagreeing, and then this one went on composing
+   * only the ADDRESS predicates: `http://vault.internal/` was refused when an administrator added it
+   * as an MCP server and opened when a Bot browsed to it. Worse, the single-label rule is what covers
+   * every compose service name on this deployment's own network — `server`, `postgres`, `agent-bot`,
+   * `agent-computer` — and the Bot's browser sits on that network. "Check what is on postgres:5432"
+   * is one sentence away.
+   *
+   * Asked only of names. An IPv6 literal arrives from `URL` as `[2606:4700::1111]`, which carries no
+   * dot and would read as a single label — the address predicates above are what judge those, and
+   * `plugins/catalogue.ts` composes the same two in the same order for the same reason.
+   */
+  if (!isAddressLiteral(hostname) && isNotPubliclyRoutableName(hostname)) {
+    return {
+      allowed: false,
+      reason:
+        "That name only means something inside this deployment's own network, so the assistant is not allowed to open it.",
     };
   }
 

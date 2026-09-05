@@ -26,6 +26,61 @@ describe("navigation targets", () => {
     );
   });
 
+  /*
+   * The names, which this check had never asked about.
+   *
+   * `checkNavigationTarget` composed the ADDRESS predicates out of the shared module and left the
+   * NAME one behind, so `http://vault.internal/` was refused when an administrator added it as an
+   * MCP server and opened when a Bot browsed to it. The single-label entries are the sharper half:
+   * every service on this deployment's own compose network answers to one, and the Bot's browser
+   * sits on that network.
+   */
+  test.each([
+    ["http://vault.internal/", ".internal"],
+    ["http://printer.local/", ".local"],
+    ["http://box.localdomain/", ".localdomain"],
+    [
+      "http://api.default.svc/",
+      "a Kubernetes service, from inside the cluster",
+    ],
+    [
+      "http://server:3001/",
+      "this deployment's own API, by compose service name",
+    ],
+    ["http://postgres:5432/", "the database, likewise"],
+    ["http://agent-bot:4200/", "the endpoint every Bot a person makes runs on"],
+    ["http://agent-computer:4100/", "the browser talking to itself"],
+    ["http://vault.internal./", "the root-anchored spelling of the same name"],
+  ])("refuses %s (%s)", (url) => {
+    const verdict = checkNavigationTarget(url);
+
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain(
+      "inside this deployment's own network",
+    );
+  });
+
+  // Behind the same opt-in as the addresses, because a laptop deployment browsing its own compose
+  // services by name is the case that opt-in exists for.
+  test("an internal name is reachable when the deployment opts in", () => {
+    expect(
+      checkNavigationTarget("http://vault.internal/", {
+        allowPrivateHosts: true,
+      }).allowed,
+    ).toBe(true);
+  });
+
+  /*
+   * A public IPv6 literal carries no dot either, and the single-label rule would read it as a
+   * service name. The address predicates are what judge literals; this is the case that says so.
+   */
+  test("a public IPv6 literal is not mistaken for a single-label name", () => {
+    expect(checkNavigationTarget("http://[2606:4700::1111]/").allowed).toBe(
+      true,
+    );
+    expect(checkNavigationTarget("http://[fd00::5]/").allowed).toBe(false);
+  });
+
   // Separated from the list above because these are refused under every configuration; the second
   // argument exercises the private-host opt-in explicitly.
   test.each([
