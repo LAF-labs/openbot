@@ -179,6 +179,15 @@ measured here:
   waiting; an unusable reply wants pressing again. Saying "try again" in front
   of an instant refusal is how a working feature looks broken.
 
+### The footprint ladder
+
+Every tool costs every turn — its name, its description and its schema ride
+in front of every message a Bot answers, whether or not it is used — so a new
+capability takes the lowest rung that does the job: **extend existing code →
+a CLI or a skill → a tool offered only when it applies (`skill_view` exists
+only for a Bot that holds a skill) → a plugin → an MCP server → a new core tool
+last.** A rung is skipped only with a reason written down.
+
 ### The tests have a database of their own
 
 `test:ci` runs them in `<name>_test` on the server `DATABASE_URL` names,
