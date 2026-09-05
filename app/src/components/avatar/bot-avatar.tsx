@@ -45,7 +45,7 @@ const ALERT = "#ff9f2e";
 
 /** A five-point star, about its own centre, so the accessory can just be translated into place. */
 const STAR =
-  "M0 -10L2.7 -3.7L9.5 -3.1L4.4 1.4L5.9 8.1L0 4.6L-5.9 8.1L-4.4 1.4L-9.5 -3.1L-2.7 -3.7Z";
+  "M0 -8.5L2.3 -3.2L8.1 -2.6L3.7 1.2L5 6.9L0 3.9L-5 6.9L-3.7 1.2L-8.1 -2.6L-2.3 -3.2Z";
 
 const Eyes = ({
   shape,
@@ -81,13 +81,19 @@ const Eyes = ({
   }
 
   if (eyes === 2) {
-    // A half-moon: the lower half of a disc, flat side up. Distinct from the happy arc above,
-    // which is a stroke and curves the other way.
+    /*
+     * A half-moon: the UPPER half of a disc, flat side down.
+     *
+     * It was the lower half first, and measured on a page of them that is a Bot looking at the
+     * floor — five colleagues in a roster all sulking. Turned over it reads as an eye creased by a
+     * smile, which is the same two curves and the opposite mood. Still distinct from the happy arc
+     * a finished Bot wears, which is a stroke rather than a filled shape.
+     */
     return (
       <>
         {[left, right].map((cx) => (
           <path
-            d={`M${cx - 5.4} ${y - 1}a5.4 5.4 0 0 0 10.8 0Z`}
+            d={`M${cx - 5.4} ${y + 1.5}a5.4 5.4 0 0 1 10.8 0Z`}
             fill={palette.ink}
             key={cx}
           />
@@ -168,12 +174,14 @@ const accessoryParts = (
           <ellipse cx="48" cy={shape.capY - 60} fill={accent} rx="90" ry="60" />
         ),
         over: (
+          // The brim: from just outside the head's left edge to just past the middle. It reached
+          // 13 units past the head at first, which at 128px is a rectangle floating beside a face.
           <rect
             fill={accent}
             height="9"
             rx="4.5"
-            width={shape.capW + 15}
-            x={48 - shape.capW - 13}
+            width={shape.capW + 9}
+            x={48 - shape.capW - 7}
             y={shape.capY - 5}
           />
         ),
@@ -256,7 +264,7 @@ const accessoryParts = (
             stroke={accent}
             strokeLinejoin="round"
             strokeWidth="2.5"
-            transform="translate(76 17)"
+            transform="translate(79 15)"
           />
         ),
       };
@@ -310,41 +318,44 @@ export const BotAvatar = ({
       width={size}
     >
       <defs>
-        <clipPath id={clip}>
+        <clipPath id={`${clip}c`}>
           <path d={shape.d} />
         </clipPath>
+        {/*
+         * THE DEPTH IS A GRADIENT, AND THE FIRST VERSION WAS NOT.
+         *
+         * It was one soft ellipse of the shade colour cut to the body, on the argument that a
+         * gradient was extravagance. On screen the ellipse's own edge was a horizon: a visible line
+         * across the middle of the pill, the hexagon and the triangle, with the cheeks sitting on
+         * it looking like bumps in the outline. A two-stop linear gradient has no edge, is still
+         * one paint, and needs no filter — which was the constraint that actually mattered.
+         */}
+        <linearGradient id={`${clip}s`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0.4" stopColor={palette.shade} stopOpacity="0" />
+          <stop offset="1" stopColor={palette.shade} stopOpacity="0.62" />
+        </linearGradient>
       </defs>
       <g className="bot-avatar-body">
         <path d={shape.d} fill={palette.fill} />
-        <g clipPath={`url(#${clip})`}>
-          {/*
-           * The whole of the claymorphic depth: one soft ellipse of the darker shade sitting under
-           * the body, cut to it. No filter, no gradient, nothing that costs a compositor layer per
-           * avatar in a list of them.
-           */}
+        <g clipPath={`url(#${clip}c)`}>
+          <rect fill={`url(#${clip}s)`} height="96" width="96" x="0" y="0" />
+          {/* Below the eyes and outside them, where a cheek is. Faint: at 20px this is one pixel
+           * of warmth, and anything stronger reads as a smudge rather than as a face. */}
           <ellipse
-            cx="48"
-            cy="108"
+            cx={left - 7}
+            cy={shape.eyeY + 9}
             fill={palette.shade}
-            opacity="0.45"
-            rx="62"
-            ry="42"
+            opacity="0.4"
+            rx="5.5"
+            ry="3.4"
           />
           <ellipse
-            cx={left - 9}
-            cy={shape.eyeY + 11}
+            cx={right + 7}
+            cy={shape.eyeY + 9}
             fill={palette.shade}
-            opacity="0.5"
-            rx="6"
-            ry="4"
-          />
-          <ellipse
-            cx={right + 9}
-            cy={shape.eyeY + 11}
-            fill={palette.shade}
-            opacity="0.5"
-            rx="6"
-            ry="4"
+            opacity="0.4"
+            rx="5.5"
+            ry="3.4"
           />
           {parts.clipped}
         </g>

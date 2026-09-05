@@ -60,7 +60,18 @@ const Row = ({
 }) => (
   <fieldset className="flex flex-col gap-1.5">
     <legend className="pb-1 text-muted-foreground text-xs">{label}</legend>
-    <div className="flex flex-row flex-wrap gap-1.5">
+    {/*
+     * ONE LINE PER AXIS, WHICH IS WHAT MAKES IT A ROW RATHER THAN A GRID.
+     *
+     * Ten colours at 44px wrapped onto a second line, and a wrapped row stops reading as "the
+     * colours" and starts reading as another wall to scan — the exact thing this picker replaced.
+     *
+     * The width to fit inside is 408, not 472: the dialog's `max-w-lg` is 32rem and this app pins
+     * the root to 14px, so it is 448 rather than 512, less `p-5` on both sides. 36px tiles with a
+     * 4px gap is 396. Measured in the dialog, twice — the first arithmetic assumed a 16px root and
+     * wrapped exactly as before.
+     */}
+    <div className="flex flex-row flex-wrap gap-1">
       {options.map((option, index) => {
         const seed = withAxis(params, axis, index);
         const chosen = params[axis] === index;
@@ -70,7 +81,7 @@ const Row = ({
             aria-pressed={chosen}
             className={
               // ring-primary is the app's one selection colour, the same as the roster's.
-              "flex size-11 items-center justify-center rounded-xl bg-[var(--sand-fill-secondary)] ring-offset-2 ring-offset-background transition hover:scale-105 disabled:opacity-50" +
+              "flex size-9 items-center justify-center rounded-lg bg-[var(--sand-fill-secondary)] transition hover:scale-105 disabled:opacity-50" +
               (chosen
                 ? " ring-2 ring-primary"
                 : " hover:ring-1 hover:ring-border")
@@ -80,9 +91,9 @@ const Row = ({
             onClick={() => onSelect(seed)}
             type="button"
           >
-            {/* 34px: under the animation floor on purpose — a row of eleven blinking tiles is
-             * eleven things moving while somebody is trying to compare them. */}
-            <BotAvatar seed={seed} size={34} />
+            {/* 30px: under the animation floor on purpose — a row of ten blinking tiles is ten
+             * things moving while somebody is trying to compare them. */}
+            <BotAvatar seed={seed} size={30} />
           </button>
         );
       })}
@@ -107,7 +118,7 @@ export const BotAvatarPicker = ({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("Pick a face")}</DialogTitle>
           {/* Says out loud what the missing Save button implies. */}

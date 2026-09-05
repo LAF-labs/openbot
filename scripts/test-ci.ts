@@ -90,6 +90,14 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                352 tests across 44 files   →   341
  *
+ * RAISED AGAIN 2026-09-05, with the generated Bot avatars. The thirty-five drawn mascots became a
+ * seed grammar and a component, and twenty-four tests came with them: the round trip through the
+ * grammar, four pinned hashes that say every existing Bot keeps its face, the markup the component
+ * emits at every state and size, and the geometry that lets a `rounded-full` wrapper clip a face
+ * without taking a bite out of it. `app` had drifted to 10% under; the other three did not grow.
+ *
+ *     app                332 tests across 43 files   →   322
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them

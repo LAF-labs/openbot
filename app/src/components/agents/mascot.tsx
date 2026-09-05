@@ -2,7 +2,6 @@ import { BotAvatar } from "@/components/avatar/bot-avatar";
 import {
   BOT_AVATAR_PALETTES,
   BOT_AVATAR_SHAPES,
-  botAvatarBackground,
   botAvatarIdFor,
   botAvatarSeed,
 } from "@/lib/avatar/bot-avatar";
@@ -17,6 +16,25 @@ import {
  */
 
 export type MascotTile = { id: string; name: string; background: string };
+
+/**
+ * THE GROUND BEHIND A FACE IS NOW NOTHING, AND THAT IS NOT AN OVERSIGHT.
+ *
+ * The drawn mascots were 96x96 tiles with their own background rect, so a caller could ask for the
+ * colour and paint the same square behind them. A generated face is a SHAPE on transparency: paint
+ * its own fill behind it and the silhouette disappears into the square, which is measured — the Bot
+ * cards became coloured tiles with two eyes floating on them, no blob, no pill, no drop.
+ *
+ * `botAvatarBackground` still hands out the fill hex, because a ring, a chip or a selected state
+ * carrying the Bot's colour is a real thing to want. It is just never the thing DIRECTLY BEHIND the
+ * face. These callers all want the latter, so they get nothing, and their `style={{ background }}`
+ * becomes a no-op until the screens are rewritten and drop it.
+ *
+ * Declared here rather than beside `mascotBackground` below, because `MASCOT_TILES` reads it at
+ * module evaluation and a `const` after that point is a temporal-dead-zone throw — measured as a
+ * white screen on every route, with the typecheck perfectly happy.
+ */
+const NO_GROUND = "transparent";
 
 /**
  * One tile per palette, for the two screens that still draw a grid of faces.
@@ -35,7 +53,7 @@ export const MASCOT_TILES: MascotTile[] = BOT_AVATAR_PALETTES.map(
       accessory: index % 7,
     }),
     name: palette.name,
-    background: palette.fill,
+    background: NO_GROUND,
   }),
 );
 
@@ -44,9 +62,9 @@ export function mascotIdFor(seed: string | undefined): string {
   return botAvatarIdFor(seed);
 }
 
-/** The ground a Bot's face sits on, for surfaces that want to carry its colour themselves. */
-export function mascotBackground(seed: string | undefined): string {
-  return botAvatarBackground(seed);
+/** See `NO_GROUND`. */
+export function mascotBackground(_seed: string | undefined): string {
+  return NO_GROUND;
 }
 
 /**
