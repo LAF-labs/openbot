@@ -115,6 +115,18 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                459 tests across 55 files   →   445
  *
+ * MEASURED 2026-09-06, with the production pass on the admin and 연결 screens. Forty-two tests to
+ * `app`: how the audit trail collapses nine identical boot rows into one without ever folding a
+ * refusal into the allows around it, the two label tables walked against the server's own event
+ * list and the tool catalogue, the marks on 연결 walked against both catalogues in both directions,
+ * the admin toggle groups' accessible state, the data functions' words, and the walk over the JSX
+ * itself for English nobody ever asked the dictionary about. The
+ * other three did not grow — the server work here was one prose string becoming a fact code, in a
+ * test that already existed.
+ *
+ * Every wave lands on the same branch, so the floor is 3% under what all of them measure together
+ * rather than under any one of them: the number in `GROUPS` is that combined measurement.
+ *
  * MEASURED 2026-09-06, after the chat, rooms, roster and screen-pane pass: the group avatar's
  * geometry, the codes a failed turn is said in and their Korean, the room's empty state, the one
  * recipient picker, the roster's rail and row layout, the channel-events socket, the screen pane's
