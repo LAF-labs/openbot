@@ -628,12 +628,31 @@ export function createPluginRoutes(
     });
   });
 
-  /** One person disconnecting their own account from one server. */
+  /**
+   * One person disconnecting their own account from one server.
+   *
+   * And the grants their Bots held on it, which the credential's retirement does not take:
+   * `plugin_grants.ref` is `<server>/<tool>` as plain text with no key behind it. Left standing,
+   * every Bot they own would keep being offered a tool whose only possible answer is now
+   * `laf:not_connected` — a capability that exists only to say no. The partner disconnect learned
+   * this the same way (`875662d`), by somebody pressing 연결 해제 and then reading the table.
+   *
+   * The server ROW stays. It is the deployment's, and on a shared one somebody else is connected to
+   * it — which is the one place this and the partner disconnect differ.
+   */
   routes.post("/servers/:id/disconnect", requireUser, async (context) => {
+    const serverId = context.req.param("id");
     const outcome = await store.disconnectAccount({
-      serverId: context.req.param("id"),
+      serverId,
       userId: context.var.actor.id,
     });
+    if (outcome.disconnected) {
+      await store.withdrawToolsFrom(
+        serverId,
+        context.var.actor.id,
+        actorEmail(context),
+      );
+    }
     return context.json(outcome);
   });
 
@@ -738,6 +757,25 @@ export function createPluginRoutes(
       refreshToken: grant.refreshToken,
       scope: grant.scope,
     });
+
+    /*
+     * And the tools, on every Bot this person owns — the half that was missing.
+     *
+     * Until this, consenting stored a credential and reached nothing: the settings page said 연결됨
+     * and every Bot still had no Google Sheets tool, because the only thing that refreshed a
+     * `user-oauth` server's tool list was the admin-only `POST /servers/:id/refresh`. A partner
+     * connect has granted since it shipped (`partner-routes.ts`); this path simply never did.
+     *
+     * AFTER `recordConnection` because it needs the grant: listing a `user-oauth` server's tools
+     * means asking the vendor as somebody, and the person who has just consented is the only
+     * somebody there is. Never fails the callback — see `servers.ts`.
+     */
+    /*
+     * `by` is the person's own id rather than their email, because this request carries no session
+     * — identity here comes from the sealed state, which names the id and nothing else. The trail
+     * says who, which is what it is for; it does not get to invent an address for them.
+     */
+    await store.offerToolsTo(state.serverId, state.userId, state.userId);
 
     return context.redirect(
       connectedAccountsUrlFor(

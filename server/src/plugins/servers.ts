@@ -21,7 +21,7 @@ import {
   type ToolAnnotations,
 } from "./laf-contract";
 import { McpServerError } from "./mcp";
-import type { SkillsAndGrants } from "./skills-and-grants";
+import { botsOwnedBy, type SkillsAndGrants } from "./skills-and-grants";
 import {
   CatalogueEntryUnknownError,
   CustomServerRefusedError,
@@ -574,6 +574,107 @@ export function createServers(
     refreshTools,
     listServers,
     storedServerUrl,
+
+    /**
+     * A connection somebody just made, on every Bot they own.
+     *
+     * WHY A CONNECT GRANTS AT ALL — the same argument the partner connects already make, and it is
+     * the deployment model's: one VM per person, and the person has just come back from a consent
+     * screen that said what it was for. Sending them to find an admin page to switch on the tools
+     * they connected a second ago is ceremony in front of a decision nobody makes. The `grant` rows
+     * still name them and the moment.
+     *
+     * WHAT SHIPPED WITHOUT THIS. A partner connect granted (`partner-routes.ts`); the OAuth
+     * callback did not, and the only thing that could refresh a `user-oauth` server's tool list was
+     * `POST /servers/:id/refresh`, which is admin-only and called from the admin page. So a person
+     * connected Google Sheets from Settings, the page said 연결됨, and every Bot they owned still
+     * had nothing: the connection was real and reached nobody.
+     *
+     * THE REFRESH IS ON THIS PERSON'S GRANT, and has to be. Listing a `user-oauth` server's tools
+     * means asking the vendor as somebody, and the person who just consented is the only somebody
+     * this deployment has for it — which is also why this runs AFTER `recordConnection` rather than
+     * beside it.
+     *
+     * GRANTING IS NOT PERMISSION TO ACT UNASKED. A guard floor is decided on the call
+     * (`call.ts`/`laf-contract.ts`), not on the grant, so a tool the catalogue marks `destructive`,
+     * `external` or `money` still stops and asks the first time a Bot reaches for it. This makes
+     * the tool reachable; it does not make it quiet.
+     *
+     * NEVER FAILS THE CONNECT. By the time this runs the grant at the vendor exists and the vault
+     * holds the refresh token. A vendor that will not list, or a grant row that would not write, is
+     * recoverable by pressing 연결 again — and a throw here would tell somebody their account had
+     * not been connected when it had.
+     */
+    async offerToolsTo(
+      serverId: string,
+      userId: string,
+      by: string,
+    ): Promise<void> {
+      try {
+        await refreshTools(serverId, userId);
+        const advertised = await database
+          .select({ name: mcpTools.name })
+          .from(mcpTools)
+          .where(eq(mcpTools.serverId, serverId));
+        const bots = await botsOwnedBy(database, userId);
+        for (const tool of advertised) {
+          for (const botId of bots) {
+            await grants.grant("mcp", `${serverId}/${tool.name}`, botId, by);
+          }
+        }
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "connection-tools-not-offered",
+            server: serverId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    },
+
+    /**
+     * The other direction: the grants back, from the Bots of the person who disconnected.
+     *
+     * THEIR BOTS ONLY, and never the server row. A `user-oauth` server is the deployment's — a
+     * second person can be connected to it — so removing it here would take somebody else's
+     * connector with it. That is the one difference from the partner disconnect, where the server
+     * belongs to the single person the key was registered for.
+     *
+     * READ FROM THE GRANT TABLE, not from the advertised tool list. A tool the vendor has since
+     * withdrawn still has a grant row, and a withdrawal that walked the live list would leave it
+     * behind — drawn on the admin Plugins page as a discrepancy somebody should look into, which
+     * would be a lie: the person pressed 연결 해제.
+     *
+     * NEVER FAILS THE DISCONNECT, for the mirror of the reason above: the credential is already
+     * retired by the time this runs, and telling somebody their account is still connected when it
+     * is not is the worse lie.
+     */
+    async withdrawToolsFrom(
+      serverId: string,
+      userId: string,
+      by: string,
+    ): Promise<void> {
+      try {
+        const bots = new Set(await botsOwnedBy(database, userId));
+        if (bots.size === 0) return;
+        const held = await grants.mcpGrantsForServers([serverId]);
+        for (const [ref, agentIds] of held) {
+          for (const agentId of agentIds) {
+            if (!bots.has(agentId)) continue;
+            await grants.revoke("mcp", ref, agentId, by);
+          }
+        }
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "connection-tools-not-withdrawn",
+            server: serverId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    },
 
     /**
      * Add a server from the catalogue.

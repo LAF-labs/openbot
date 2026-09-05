@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
+import type { Database } from "../db/client";
 import { agentProfiles, mcpTools, pluginGrants, skills } from "../db/schema";
 import type {
   GrantedPlugins,
@@ -21,6 +22,34 @@ import { toolNameFor } from "./store";
  * store's own header argues for: an operator who granted a Bot a server has not waived every rule
  * about it.
  */
+/**
+ * Every Bot this person owns, deleted ones excluded — the set a connect grants to.
+ *
+ * ONE DEFINITION, called by both connect paths. A partner connect and an OAuth callback have to
+ * mean the same thing by "their Bots", and two expressions of it is how one of them quietly stops
+ * including something. The partner runtime calls this rather than keeping its own copy.
+ *
+ * HIDDEN BOTS ARE INCLUDED, which is why this is not the profile store's `list()`: a Bot somebody
+ * tidied off their home screen is still theirs, and leaving it out means the one Bot they hid is
+ * the one that cannot use the account they just connected.
+ */
+export async function botsOwnedBy(
+  database: Database,
+  userId: string,
+): Promise<string[]> {
+  if (!userId) return [];
+  const rows = await database
+    .select({ agentId: agentProfiles.agentId })
+    .from(agentProfiles)
+    .where(
+      and(
+        eq(agentProfiles.ownerUserId, userId),
+        isNull(agentProfiles.deletedAt),
+      ),
+    );
+  return rows.map((row) => row.agentId);
+}
+
 export function createSkillsAndGrants(context: PluginContext) {
   const { database, auditStore } = context;
 

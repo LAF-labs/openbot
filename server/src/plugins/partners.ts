@@ -13,9 +13,7 @@
  * offered. That is the whole of what "a control that saves and does nothing is worse than no
  * control" means for a connector whose credential belongs to the platform.
  */
-import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { agentProfiles } from "../db/schema";
 import {
   type AlimtalkConnect,
   createAlimtalkConnect,
@@ -29,6 +27,7 @@ import {
   type PartnerContext,
 } from "./partner-connections";
 import type { PartnerToolSpec } from "./partner-tools";
+import { botsOwnedBy } from "./skills-and-grants";
 import { createTaxConnect, type TaxConnect } from "./tax/connect";
 import { popbillSettings } from "./tax/popbill";
 import { createTaxTools, TAX_TOOLS } from "./tax/tools";
@@ -100,18 +99,8 @@ export function createPartnerRuntime(input: {
     ),
     toolsOf: (provider) =>
       provider === "kakao-alimtalk" ? ALIMTALK_TOOLS : TAX_TOOLS,
-    botsOwnedBy: async (userId) => {
-      if (!userId) return [];
-      const rows = await input.database
-        .select({ agentId: agentProfiles.agentId })
-        .from(agentProfiles)
-        .where(
-          and(
-            eq(agentProfiles.ownerUserId, userId),
-            isNull(agentProfiles.deletedAt),
-          ),
-        );
-      return rows.map((row) => row.agentId);
-    },
+    // The one definition, shared with the OAuth callback's own grant path: two expressions of
+    // "their Bots" is how one of them quietly stops including hidden ones.
+    botsOwnedBy: (userId) => botsOwnedBy(input.database, userId),
   };
 }

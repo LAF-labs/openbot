@@ -559,6 +559,9 @@ export function createPluginStore(options: PluginStoreOptions) {
     removeServer: servers.removeServer,
     refreshTools: servers.refreshTools,
     listServers: servers.listServers,
+    /** What a connect and a disconnect do beyond the credential. See `servers.ts`. */
+    offerToolsTo: servers.offerToolsTo,
+    withdrawToolsFrom: servers.withdrawToolsFrom,
 
     listSkills: grants.listSkills,
     skillOwner: grants.skillOwner,
