@@ -6,7 +6,7 @@ import { t } from "@/lib/i18n";
  * Three things to try, held as English source strings and read through `t()` on the way out.
  *
  * Exported because `t()` on a variable is invisible to `i18n-coverage.test.ts`, which only walks
- * literal `t("…")` — so `room-intro.test.ts` walks this table instead, the way
+ * a literal `t()` call — so `room-intro.test.ts` walks this table instead, the way
  * `agent-presets.test.ts` walks its own.
  */
 export const ROOM_SUGGESTIONS = [

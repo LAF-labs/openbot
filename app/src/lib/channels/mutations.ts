@@ -104,7 +104,7 @@ export function setChannelReadMutationOptions(queryClient: QueryClient) {
  * and only one of them is the person's mistake.
  *
  * `t()` on a variable, so `participants.test.ts` walks this table — `i18n-coverage.test.ts` only
- * sees literal `t("…")`.
+ * sees a literal `t()` call.
  */
 export const PARTICIPANT_REFUSALS: Record<string, string> = {
   "laf:already_in_room": "That Bot is already in this conversation.",
