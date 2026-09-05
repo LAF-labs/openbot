@@ -153,7 +153,13 @@ export const ConnectionsScreen = ({
         />
       </PageSection>
 
-      {overview.isError ? (
+      {/*
+       * `!data` as well as the error: a refetch that fails while the screen already has an answer
+       * must not replace twenty-four rows with a red line. In TanStack Query v5 a failed background
+       * refetch turns `status` to error with the data still in hand, so reading the flag alone
+       * would blank a working screen every time a laptop's wifi dropped for a second.
+       */}
+      {overview.isError && !data ? (
         <PageSection title={t("Connections")}>
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("The connections could not be loaded.")}
