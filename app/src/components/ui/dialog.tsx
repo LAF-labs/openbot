@@ -63,7 +63,7 @@ function DialogContent({
            * laptop must not push its own submit button off the bottom of the screen, which is exactly
            * where somebody looks for it.
            */
-          "-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[85svh] w-[calc(100%-2rem)] max-w-lg flex-col gap-4 rounded-xl border border-border bg-popover p-5 text-sm text-popover-foreground shadow-lg transition duration-150 ease-out data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0",
+          "-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[85svh] w-[calc(100%-2rem)] max-w-lg flex-col gap-4 rounded-xl border border-border bg-popover p-5 text-sm text-popover-foreground shadow-popover transition duration-150 ease-out data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0",
           className,
         )}
         {...props}
@@ -130,7 +130,9 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      // 19px/600 — the scale's dialog title. See the @theme block in styles.css.
+      // `text-xl` is 22px/28 on this scale, not the 19px an older comment here claimed. See the
+      // @theme block in styles.css — the scale is stated there rung by rung, so a size written as
+      // a number in a comment is a number that can go stale without anything noticing.
       className={cn(
         "font-heading font-semibold text-xl text-foreground",
         className,

@@ -273,8 +273,35 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  /* Grok's ladder is stated, not derived: 2 / 4 / 8 / 10 / 14 / 16 / 18. A multiplier off a
-   * single --radius produced 22px and 26px corners this design does not have. */
+
+  /*
+   * THE COLOURS THAT HAD NO SHADCN NAME, AND SO WERE WRITTEN AS ESCAPES 35 TIMES.
+   *
+   * Most `bg-[var(--sand-…)]` in this app is a colour that already HAS an alias and was spelled the
+   * long way anyway — `--sand-fill-ghost-hover` is `bg-accent`, `--sand-fill-secondary` is
+   * `bg-muted`, `--sand-fill-ghost-selected` is `bg-sidebar-accent`, `--sand-bg-subtle` is
+   * `bg-sidebar`. Those are drift and `docs/laf/design-tokens.md` says so.
+   *
+   * These six are the ones that genuinely had nowhere to go. A raw variable in a class is invisible
+   * to every tool that reads Tailwind — it cannot be linted, autocompleted or found by the drift
+   * test — so leaving them unnamed guaranteed the escape hatch stayed open for the aliased ones too.
+   */
+  --color-bubble-agent: var(--sand-fill-bubble-agent);
+  --color-bubble-user: var(--sand-fill-bubble-user);
+  /* Deliberately does NOT invert with the theme; see the note on --sand-text-on-color. */
+  --color-on-color: var(--sand-text-on-color);
+  --color-primary-hover: var(--sand-fill-primary-hover);
+  /* The blue spent only on the dot that says a Bot needs you, and on links. */
+  --color-mark: var(--sand-fill-accent);
+  --color-link: var(--sand-text-accent);
+  /* Grok's ladder is stated, not derived: 2 / 4 / 6 / 8 / 10 / 14 / 16 / 18. A multiplier off a
+   * single --radius produced 22px and 26px corners this design does not have.
+   *
+   * `xs` and `bubble-joined` are the two rungs that had no NAME, which is the only reason the app
+   * carried `rounded-[2px]` and four separate `rounded-{tl,tr,bl,br}-[6px]`: both values were on the
+   * ladder, and both were spelled as an escape because there was nothing else to type. A rung with
+   * no name is a rung people write by hand, and a value written by hand is a value that drifts. */
+  --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: var(--radius);
@@ -282,6 +309,21 @@ body {
   --radius-2xl: 16px;
   --radius-3xl: 18px;
   --radius-4xl: 18px;
+  --radius-bubble: var(--sand-bubble-radius);
+  --radius-bubble-joined: var(--sand-bubble-radius-joined);
+
+  /*
+   * THE TWO ELEVATIONS THIS DESIGN HAS, AND WHY THEY ARE NOT `shadow-md`.
+   *
+   * `--sand-shadow-popover` was measured, written down, and then never used by anything: menus and
+   * popovers reached for Tailwind's stock `shadow-md`/`shadow-lg` plus a hand-rolled
+   * `ring-1 ring-foreground/10`, which is three declarations approximating one token. It also broke
+   * the theme rule — in dark, depth here is a hairline ring and NEVER a shadow, because a shadow has
+   * nothing to fall on against #070707, and the token already encodes exactly that switch while
+   * `shadow-md` does not. Naming them makes `shadow-popover` and `shadow-composer` the whole answer.
+   */
+  --shadow-popover: var(--sand-shadow-popover);
+  --shadow-composer: var(--sand-shadow-composer);
 }
 
 @layer base {
@@ -512,9 +554,6 @@ body {
    * Unlayered, so no `!important` is needed: an unlayered rule outranks a layered one whatever the
    * specificity, and Tailwind's utilities are all layered. See the Preflight note further up this
    * file for the mechanism, which bit this project once already.
-   *
-   * Measured with Playwright at `reducedMotion: "reduce"` against the built app: `transition-colors`
-   * 0.15s → 0.001s, `data-open:animate-in` 0.15s → 0.001s, `animate-pulse` → still at 0.65 opacity.
    */
   *,
   *::before,

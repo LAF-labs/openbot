@@ -3,6 +3,7 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 
+import { focusRingNested } from "@/components/ui/focus"
 import { cn } from "@/lib/utils"
 
 const bubbleVariants = cva(
@@ -32,8 +33,8 @@ const bubbleVariants = cva(
          * surface in the product; they get the tokens that were measured for them.
          */
         agent:
-          "*:data-[slot=bubble-content]:bg-[var(--sand-fill-bubble-agent)] *:data-[slot=bubble-content]:text-foreground",
-        user: "*:data-[slot=bubble-content]:bg-[var(--sand-fill-bubble-user)] *:data-[slot=bubble-content]:text-[var(--sand-text-on-color)]",
+          "*:data-[slot=bubble-content]:bg-bubble-agent *:data-[slot=bubble-content]:text-foreground",
+        user: "*:data-[slot=bubble-content]:bg-bubble-user *:data-[slot=bubble-content]:text-on-color",
         tinted:
           "*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.93_calc(c*0.4)_h)] *:data-[slot=bubble-content]:text-foreground dark:*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.3_calc(c*0.4)_h)] [&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.88_calc(c*0.5)_h)] dark:[&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.35_calc(c*0.5)_h)]",
         outline:
@@ -102,7 +103,7 @@ function BubbleContent({
            * corners round and tightens the two where it meets its neighbour to 6px, which is what
            * makes three bubbles read as one turn instead of three separate remarks.
            */
-          "w-fit max-w-full min-w-0 overflow-hidden rounded-3xl border border-transparent px-3 py-2 wrap-break-word group-data-[joined-prev]/bubble:group-data-[align=start]/bubble:rounded-tl-[6px] group-data-[joined-next]/bubble:group-data-[align=start]/bubble:rounded-bl-[6px] group-data-[joined-prev]/bubble:group-data-[align=end]/bubble:rounded-tr-[6px] group-data-[joined-next]/bubble:group-data-[align=end]/bubble:rounded-br-[6px] group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50",
+          `w-fit max-w-full min-w-0 overflow-hidden rounded-3xl border border-transparent px-3 py-2 wrap-break-word group-data-[joined-prev]/bubble:group-data-[align=start]/bubble:rounded-tl-bubble-joined group-data-[joined-next]/bubble:group-data-[align=start]/bubble:rounded-bl-bubble-joined group-data-[joined-prev]/bubble:group-data-[align=end]/bubble:rounded-tr-bubble-joined group-data-[joined-next]/bubble:group-data-[align=end]/bubble:rounded-br-bubble-joined group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors ${focusRingNested}`,
           className
         ),
       },
