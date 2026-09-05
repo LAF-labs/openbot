@@ -521,9 +521,23 @@ describe("a connection the last exchange proved dead", () => {
         ),
       );
 
+    /*
+     * Through their OWN Bot, holding the tool for the length of this test. Since 2026-09 a person
+     * calls a tool only through a Bot that is theirs (or nobody's), so through `firstBot`, which
+     * is the asker's, they would be refused as not the Bot's person (`laf:bot_not_found`) before
+     * their connection was ever looked at. The grant is taken back afterwards because the suite
+     * below counts which Bots hold one.
+     */
+    await database
+      .insert(pluginGrants)
+      .values({ kind: "mcp", ref, agentId: strangersBot })
+      .onConflictDoNothing();
     const thrown = await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: other })
+      .callTool({ ref, args: {}, botId: strangersBot, actorId: other })
       .catch((error: unknown) => error);
+    await database
+      .delete(pluginGrants)
+      .where(eq(pluginGrants.agentId, strangersBot));
 
     expect((thrown as PluginRefusedError).code).toBe("laf:not_connected");
   });

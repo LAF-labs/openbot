@@ -7,7 +7,7 @@ import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import { agentProfiles, agents, skills, users } from "../src/db/schema";
 import { createPluginRoutes } from "../src/plugins/routes";
-import { createPluginStore } from "../src/plugins/store";
+import { BotNotDrivableError, createPluginStore } from "../src/plugins/store";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 
@@ -335,6 +335,128 @@ describe("what a person may do over HTTP", () => {
     expect(
       (await store.listForAgent(aliceBot)).skills.map((skill) => skill.slug),
     ).toContain(aliceSkill);
+  });
+
+  /*
+   * ACTING THROUGH SOMEBODY ELSE'S BOT, WHICH NOTHING WAS WATCHING.
+   *
+   * `POST /call` takes the Bot from the request body and used to ask only whether that BOT held a
+   * grant. A Bot id is not a secret — `GET /` hands out `grantedTo` — so on a deployment an owner
+   * shares with their staff, naming the owner's Bot was enough to spend what it holds: the
+   * deployment's own credential on a custom MCP server, the owner's shop on a partner one.
+   *
+   * The two requests below are the same request with a different person behind it, and the answers
+   * have to differ on the PERSON: 404 for the Bot that is not theirs, and — for the owner — the
+   * ordinary grant refusal, which is the proof that the check is about whose Bot it is rather than
+   * about the tool.
+   */
+  test("cannot call a tool through a Bot that is not theirs", async () => {
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request("/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: `${suite}-server/a_tool`,
+        agentId: aliceBot,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+  });
+
+  test("the owner of the same Bot gets as far as the grant", async () => {
+    const response = await asAlice().request("/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: `${suite}-server/a_tool`,
+        agentId: aliceBot,
+      }),
+    });
+
+    // 403 rather than 404: this Bot IS hers, and what stopped the call is the tool it was never
+    // given. A 404 here would mean the refusal above was about the tool rather than about her.
+    expect(response.status).toBe(403);
+  });
+
+  test("an administrator may drive any Bot, including one somebody made", async () => {
+    const asAdmin = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "admin",
+    });
+
+    const response = await asAdmin.request("/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: `${suite}-server/a_tool`,
+        agentId: aliceBot,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  /*
+   * A Bot the deployment published belongs to nobody, and everybody is shown it. Refusing those
+   * would take the tools off every shared Bot without anybody deciding to — so the rule is "not
+   * somebody ELSE'S", not "only mine".
+   */
+  test("a Bot nobody owns is everybody's to drive", async () => {
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request("/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: `${suite}-server/a_tool`,
+        agentId: sharedBot,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  test("a Bot with no profile row has nobody to refuse on behalf of", async () => {
+    // The fixture Bots of six other suites, and any Bot an upstream path minted without a
+    // profile: not somebody else's, so the grant is what decides — 403 for a tool never given.
+    const response = await asAlice().request("/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: `${suite}-server/a_tool`,
+        agentId: `agent_nobody_${suite}`,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  test("the store refuses the same call, so the route is not the only guard", async () => {
+    // The route is one caller. The unattended runner reaches `callTool` directly with the run's own
+    // owner, so a check that lived only in the route would leave rooms and routines unguarded.
+    await expect(
+      store.callTool({
+        ref: `${suite}-server/a_tool`,
+        args: {},
+        botId: aliceBot,
+        actorId: bob,
+      }),
+    ).rejects.toBeInstanceOf(BotNotDrivableError);
   });
 
   test("sees the deployment's skills and their own, and not somebody else's", async () => {

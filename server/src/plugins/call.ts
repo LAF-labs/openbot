@@ -21,6 +21,7 @@ import { McpRedirectRefusedError } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
 import type { SkillsAndGrants } from "./skills-and-grants";
 import {
+  BotNotDrivableError,
   type PluginContext,
   PluginNeedsApprovalError,
   PluginRefusedError,
@@ -260,6 +261,11 @@ export function createCallPath(
      * reason: a call that was permitted and then failed is exactly what an investigation needs to
      * see, and a trail written only on success cannot show it. The grant is checked first because a
      * tool this Bot was never given should not reach the policy engine, the vault or the network.
+     *
+     * WHOSE BOT IT IS, BEFORE ANY OF THAT. The grant is about the Bot and says nothing about who is
+     * driving it, so until 2026-09 a person could name somebody else's Bot id — handed out by the
+     * Plugins listing — and spend what it holds. Asked here rather than in the route so that every
+     * caller shares it: the unattended runner reaches this same function with the run's own owner.
      */
     async callTool(input: {
       ref: string;
@@ -270,6 +276,13 @@ export function createCallPath(
       threadId?: string | undefined;
       /** One Bot answering another, with nobody watching. See `ActionActor.delegated`. */
       delegated?: { callerId: string } | undefined;
+      /**
+       * Whether this person governs the whole deployment.
+       *
+       * Defaulted to false rather than optional-and-ignored: a caller that does not know the role
+       * is a caller acting as an ordinary person, which is what every unattended run is.
+       */
+      actorIsAdmin?: boolean | undefined;
       /**
        * An answer a person already gave, presented for the call it was given for.
        *
@@ -283,6 +296,29 @@ export function createCallPath(
       const toolName = rest.join("/");
       if (!serverId || !toolName) {
         throw new PluginRefusedError(`${input.ref} is not a tool.`, null);
+      }
+
+      if (
+        !(await grants.actorMayDriveBot(input.botId, {
+          id: input.actorId,
+          isAdmin: input.actorIsAdmin === true,
+        }))
+      ) {
+        await recordAuditEvent(auditStore, {
+          eventType: "mcp.call_rejected",
+          targetType: "mcp_tool",
+          targetId: input.ref,
+          payload: {
+            actor: input.actorId,
+            bot: input.botId,
+            server: serverId,
+            tool: toolName,
+            // Its own word, because it is a different event to investigate: not a Bot reaching past
+            // what it was given, but a person reaching through a Bot that is not theirs.
+            refusal: "not_their_bot",
+          },
+        });
+        throw new BotNotDrivableError();
       }
 
       const decision = await grants.decide("mcp", input.ref, input.botId);

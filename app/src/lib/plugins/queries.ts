@@ -485,6 +485,27 @@ export type PluginCallOutcome =
  * would throw away the turn on work the deployment was willing to permit, which is the whole
  * difference between an ask rule and a deny rule.
  */
+/**
+ * The `laf:` fact a refusal carries, or "".
+ *
+ * `code` FIRST. The route has been sending one beside `error` all along (`plugins/routes.ts`:
+ * `{ error, rule, code }`), and reading only `error` saw just the refusals whose sentence IS the
+ * code. A connection refusal carries the code in `code` and an English sentence in `error` — so
+ * `laf:not_connected` reached this fork's Korean-speaking people as "You have not connected your
+ * Google Sheets account", with the Korean sitting in a table nothing had looked up.
+ */
+function factCarriedBy(
+  body: { code?: unknown; error?: unknown } | null,
+): string {
+  const carried = typeof body?.code === "string" ? body.code : "";
+  const said = typeof body?.error === "string" ? body.error : "";
+  return carried.startsWith("laf:")
+    ? carried
+    : said.startsWith("laf:")
+      ? said
+      : "";
+}
+
 export async function callPluginTool(
   ref: string,
   args: Record<string, unknown>,
@@ -628,19 +649,26 @@ async function sendCall(
      * people as "You have not connected your Google Sheets account", with the Korean sitting in a
      * table nothing had looked up.
      */
-    const carried = typeof body?.code === "string" ? body.code : "";
+    const fact = factCarriedBy(body);
     const said = typeof body?.error === "string" ? body.error : "";
-    const fact = carried.startsWith("laf:")
-      ? carried
-      : said.startsWith("laf:")
-        ? said
-        : "";
     return {
       ok: false,
       refused: true,
       reason: fact
         ? toolResultText(fact)
         : said || t("That tool is not allowed here."),
+      rule: body?.rule ?? null,
+    };
+  }
+  // A fact code on any other status is a refusal too — `laf:bot_not_found` arrives as a 404, so
+  // that a stranger is not told which Bots exist — and it reaches the model as its Korean, never
+  // as an identifier to reason about.
+  const fact = factCarriedBy(body);
+  if (fact) {
+    return {
+      ok: false,
+      refused: true,
+      reason: toolResultText(fact),
       rule: body?.rule ?? null,
     };
   }

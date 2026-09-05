@@ -9,6 +9,7 @@ import { createRepeatDetector } from "../src/computer/repeat";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { createDatabase } from "../src/db/client";
 import {
+  agentProfiles,
   agents,
   auditEvents,
   mcpServers,
@@ -108,6 +109,26 @@ beforeAll(async () => {
         name: id,
         type: "remote_ag_ui",
         configuration: {},
+      })
+      .onConflictDoNothing();
+    /*
+     * And a profile, because a call now asks whose Bot it is before it asks about the tool.
+     *
+     * OWNERLESS ON PURPOSE. What this file is about is the grant and the policy, so its Bots are
+     * the shared kind every signed-in person may talk to — which keeps "who is asking" out of
+     * assertions that are not about it. Whose-Bot-is-this is tested where there are people to own
+     * one (`skill-ownership.integration.test.ts`). The row cascades with the `agents` row above,
+     * so the cleanup below still takes it.
+     */
+    await database
+      .insert(agentProfiles)
+      .values({
+        agentId: id,
+        ownerUserId: null,
+        title: id,
+        roleDescription: "For a test.",
+        avatarSeed: id,
+        visibility: "private",
       })
       .onConflictDoNothing();
   }

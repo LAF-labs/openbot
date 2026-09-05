@@ -32,6 +32,7 @@ import {
   type SharedClientLookup,
 } from "./shared-clients";
 import {
+  BotNotDrivableError,
   CatalogueEntryUnknownError,
   CustomServerRefusedError,
   type OAuthClient,
@@ -1084,6 +1085,13 @@ export function createPluginRoutes(
         ...(context.req.header(THREAD_HEADER)?.trim()
           ? { threadId: context.req.header(THREAD_HEADER)?.trim() }
           : {}),
+        /*
+         * And whether they govern the deployment, because the store asks whose Bot this is.
+         *
+         * The role is the route's to know — it is on the session — and the store's to spend, which
+         * is why it travels rather than being read again. See `callTool`.
+         */
+        actorIsAdmin: context.var.actor.role === "admin",
         // Passed through without being looked at. An approval means something only against the call
         // the store is about to make, and a route that judged it would be a second place deciding.
         ...(typeof body.approvalId === "string" && body.approvalId
@@ -1118,6 +1126,16 @@ export function createPluginRoutes(
           },
           409,
         );
+      }
+      /*
+       * Not this person's Bot, answered as 404 rather than 403.
+       *
+       * A 403 would confirm the id names something. This endpoint takes the Bot from the request
+       * body, so an answer that told a caller which ids exist would be a way to enumerate somebody
+       * else's Bots by asking about them.
+       */
+      if (error instanceof BotNotDrivableError) {
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       if (error instanceof PluginRefusedError) {
         return context.json(

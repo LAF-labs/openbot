@@ -219,6 +219,26 @@ export class PluginNeedsApprovalError extends Error {
   }
 }
 
+/**
+ * The Bot named is not one this person may act through.
+ *
+ * ITS OWN CLASS RATHER THAN A REFUSAL, because the two answer differently. A
+ * {@link PluginRefusedError} is the deployment deciding about a call somebody was entitled to make,
+ * and the surface renders it as a boundary saying no; this is a call that was never theirs to make,
+ * and the honest answer is that there is no such Bot here. Reported as 404 for the same reason it is
+ * worded that way: a Bot id is not a secret, but whether SOMEBODY ELSE has one by that name is not
+ * something this endpoint owes an asker.
+ */
+export class BotNotDrivableError extends Error {
+  /** The fact the surface reads. The sentence in `message` is for a log. */
+  readonly code = "laf:bot_not_found";
+
+  constructor() {
+    super("laf:bot_not_found");
+    this.name = "BotNotDrivableError";
+  }
+}
+
 export class CatalogueEntryUnknownError extends Error {
   constructor(key: string) {
     super(`${key} is not a server this deployment will connect to.`);
@@ -577,6 +597,8 @@ export function createPluginStore(options: PluginStoreOptions) {
     listSkills: grants.listSkills,
     skillOwner: grants.skillOwner,
     agentOwner: grants.agentOwner,
+    /** Whether this person may act through this Bot at all. See `skills-and-grants.ts`. */
+    actorMayDriveBot: grants.actorMayDriveBot,
     installSkill: grants.installSkill,
     uninstallSkill: grants.uninstallSkill,
     grant: grants.grant,

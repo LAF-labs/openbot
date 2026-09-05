@@ -68,6 +68,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:bot_id_invalid":
     "봇 id가 봇의 이름이 아니어서 컴퓨터가 거절했다. 네가 고칠 수 있는 것이 아니니 다른 id를 시도하지 말고 사람에게 그대로 알려라.",
 
+  // 남의 봇을 통해 도구를 부른 것. 그 봇이 있는지조차 답하지 않는다.
+  "laf:bot_not_found":
+    "그 봇은 네가 쓸 수 있는 봇이 아니다. 다른 봇 id를 시도하지 말고, 지금 대화 중인 봇으로만 일해라.",
+
   "laf:tool_budget_spent":
     "이 실행은 툴 예산을 다 썼다. 지금까지 찾아낸 것으로 답해라.",
 

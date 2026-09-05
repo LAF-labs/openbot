@@ -100,9 +100,69 @@ export function createSkillsAndGrants(context: PluginContext) {
     return byRef;
   }
 
+  /**
+   * Whose a Bot is, or `undefined` if there is no such Bot.
+   *
+   * Read here rather than through the coworker store because the only question this file asks is
+   * "may this person put their skill on that Bot", and a whole profile is more than that needs.
+   *
+   * A named function rather than only a method, because {@link actorMayDriveBot} calls it: a method
+   * reached through `this` breaks the moment somebody destructures this object, which is exactly how
+   * the store hands these out.
+   */
+  async function agentOwner(
+    agentId: string,
+  ): Promise<string | null | undefined> {
+    const [row] = await database
+      .select({ ownerUserId: agentProfiles.ownerUserId })
+      .from(agentProfiles)
+      .where(eq(agentProfiles.agentId, agentId))
+      .limit(1);
+    return row ? row.ownerUserId : undefined;
+  }
+
+  /**
+   * May this person act THROUGH this Bot — call its tools, read what it holds?
+   *
+   * WHAT WENT WRONG WITHOUT IT. `POST /call` took the Bot from the request body and asked only
+   * whether that Bot held a grant on the tool. A Bot id is not a secret — `GET /` hands out
+   * `grantedTo` and `GET /for/:agentId` answers about any id at all — so on a deployment an owner
+   * shares with their staff, a staff member could name the owner's Bot and spend the owner's tools:
+   * the deployment's own credential on a custom MCP server, the owner's shop on a partner one.
+   * The grant said yes because the grant is about the BOT, and nothing was asking about the person.
+   *
+   * AN OWNERLESS BOT IS EVERYBODY'S, AND THAT IS DELIBERATE. Null owner means a Bot this deployment
+   * published rather than one somebody made, which is a Bot every signed-in person is shown and
+   * meant to talk to; the only way it holds an MCP tool at all is an administrator granting one to
+   * it, which is that administrator saying "for everybody here". Refusing those would take the
+   * tools off the shared Bots without anybody deciding to.
+   *
+   * VISIBILITY DOES NOT WIDEN THIS. A Bot somebody made and marked `public` is still theirs, and
+   * being able to SEE a Bot is not being able to spend what it holds. The two questions were never
+   * the same one, and this is the one that reaches a credential.
+   *
+   * A BOT WITH NO PROFILE ROW IS TREATED THE SAME WAY AS AN OWNERLESS ONE. Every Bot a person
+   * makes gets its profile in the same transaction as its `agents` row (`profile-store.ts`), so
+   * a row without one was not made by anybody on this deployment — and the rule here is "not
+   * somebody ELSE'S", which such a Bot cannot be. Refusing it instead was measured to take the
+   * tools off six suites' worth of fixture Bots, and would do the same to any Bot an upstream
+   * path minted without a profile; the grant check behind this still refuses a tool the Bot was
+   * never given, exactly as it did before.
+   */
+  async function actorMayDriveBot(
+    agentId: string,
+    actor: SkillActor,
+  ): Promise<boolean> {
+    if (actor.isAdmin) return true;
+    const owner = await agentOwner(agentId);
+    return owner === undefined || owner === null || owner === actor.id;
+  }
+
   return {
     grantsFor,
     mcpGrantsForServers,
+    agentOwner,
+    actorMayDriveBot,
 
     /**
      * The skills this person may see: the deployment's, plus their own.
@@ -143,21 +203,6 @@ export function createSkillsAndGrants(context: PluginContext) {
         .select({ ownerUserId: skills.ownerUserId })
         .from(skills)
         .where(eq(skills.slug, slug))
-        .limit(1);
-      return row ? row.ownerUserId : undefined;
-    },
-
-    /**
-     * Whose a Bot is, or `undefined` if there is no such Bot.
-     *
-     * Read here rather than through the coworker store because the only question this file asks is
-     * "may this person put their skill on that Bot", and a whole profile is more than that needs.
-     */
-    async agentOwner(agentId: string): Promise<string | null | undefined> {
-      const [row] = await database
-        .select({ ownerUserId: agentProfiles.ownerUserId })
-        .from(agentProfiles)
-        .where(eq(agentProfiles.agentId, agentId))
         .limit(1);
       return row ? row.ownerUserId : undefined;
     },
