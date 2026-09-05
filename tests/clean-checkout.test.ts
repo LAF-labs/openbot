@@ -77,4 +77,27 @@ describe("a clone that has only run bun install", () => {
     expect(ignored).toContain(".env.*");
     expect(ignored).toContain("!.env.example");
   });
+
+  /**
+   * The example file is copied, not read, so a live line in it is a setting nobody chose.
+   *
+   * `deploying.md` opens with `cp .env.example .env`. `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`
+   * shipped as an active line, which put every VM one copy away from a Bot's browser that could
+   * open `http://postgres:5432/` — the exact hole `computer/target.ts` exists to hold shut, handed
+   * back by a default. Anything that widens what a Bot may reach belongs here commented.
+   */
+  test("ships no active line that widens what a Bot may reach", () => {
+    const example = readFileSync(join(root, ".env.example"), "utf8");
+    const active = example
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"));
+
+    expect(active.length).toBeGreaterThan(0);
+    for (const name of ["AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS"]) {
+      expect(active.some((line) => line.startsWith(`${name}=`))).toBe(false);
+      // And still documented, so commenting it out did not delete the knob.
+      expect(example).toContain(name);
+    }
+  });
 });
