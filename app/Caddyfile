@@ -19,6 +19,14 @@
 		reverse_proxy server:3001
 	}
 
+	# The one page the API draws for a person rather than for a program, and therefore the one path
+	# outside /api that must not fall through to the SPA. A consent started in the desktop shell
+	# finishes in the person's own browser, which has no session for the app — so this page needs
+	# none either, and index.html here would be the signed-out app it exists to avoid.
+	handle /connected {
+		reverse_proxy server:3001
+	}
+
 	# Hashed filenames, so the bytes at one of these paths never change. A year is what lets a
 	# returning person load the app without asking about a single asset.
 	@immutable path /assets/*

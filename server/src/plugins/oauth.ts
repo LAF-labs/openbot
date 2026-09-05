@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { seal, unseal } from "../auth/signed-value";
 import type { CatalogueAuth } from "./catalogue";
+import type { ConnectFailureReason } from "./connected-page";
 
 /**
  * The connect flow: sending a person to a vendor to consent, and believing what comes back.
@@ -56,8 +57,15 @@ const CALLBACK_PATH = "/api/plugins/oauth/callback";
  *
  * It lives in the SEALED state rather than on the callback URL because the callback is a request
  * somebody else's server sent the browser on. Nothing on it is believable by itself.
+ *
+ * `shell` is the third and it is not a page of this app at all — it is a page of this SERVER, and
+ * that is the point. In the desktop shell the consent goes out to the person's own browser, where
+ * the app has no session, so a redirect into `/settings/connected-accounts` lands on 로그인하세요
+ * with the connection perfectly stored and nothing on screen to say so. `shell` lands on
+ * `/connected` instead, which needs no session and hands the browser back to the app through
+ * `lafagent://`.
  */
-export type ConnectOrigin = "settings" | "admin";
+export type ConnectOrigin = "settings" | "admin" | "shell";
 
 export type ConnectState = {
   /** Who is connecting. Taken from their session when the flow starts, never from the callback. */
@@ -226,7 +234,7 @@ export function isCustomerSlug(slug: string): boolean {
  */
 export function connectedAccountsUrlFor(
   appUrl: string | undefined,
-  where: { serverId: string } | { failed: true },
+  where: { serverId: string } | { failed: true; reason?: ConnectFailureReason },
   /**
    * Which screen to go back to.
    *
@@ -252,7 +260,50 @@ export function connectedAccountsUrlFor(
   if ("serverId" in where) {
     return `${base}?connected=${encodeURIComponent(where.serverId)}`;
   }
-  return `${base}?connected=failed`;
+  /*
+   * `failed` alone was the whole of what a person got, whatever had happened: a consent they
+   * declined, a link they came back to twice, a tab left open over lunch and a vendor refusing the
+   * exchange all drew the same sentence — "연결하지 못했습니다" — with no next step in it.
+   *
+   * ONE OF FIVE WORDS, NEVER THE VENDOR'S TEXT. The reason is chosen from branches this file
+   * already had; nothing a vendor wrote reaches the URL, which is unchanged and deliberate — the
+   * callback URL is held by every log and history it passes through.
+   */
+  return where.reason
+    ? `${base}?connected=failed&reason=${where.reason}`
+    : `${base}?connected=failed`;
+}
+
+/**
+ * Where a consent that started in the desktop shell ends: this SERVER's own page, not the app's.
+ *
+ * On the deployment's own origin (`publicUrl`) rather than `appUrl`, because that is where
+ * `/connected` is served from — and because a browser that has just been handed a consent screen
+ * by the shell has no session for the app anyway. See `connected-page.ts` for the whole argument.
+ *
+ * `id` travels so the shell knows which connection to open; `name` so the page can say the
+ * vendor's name without a second lookup. Both are public facts about a catalogue entry.
+ */
+export function shellConnectedUrlFor(
+  publicUrl: string,
+  outcome:
+    | { serverId: string; title: string }
+    | { failed: true; reason?: ConnectFailureReason },
+): string {
+  const origin = publicUrl.replace(/\/+$/, "");
+  if ("serverId" in outcome) {
+    const query = new URLSearchParams({
+      ok: "1",
+      id: outcome.serverId,
+      name: outcome.title,
+    });
+    return `${origin}/connected?${query}`;
+  }
+  const query = new URLSearchParams({
+    ok: "0",
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
+  });
+  return `${origin}/connected?${query}`;
 }
 
 /** A fresh PKCE verifier: unreserved characters only, comfortably over the 43-character floor. */
@@ -330,8 +381,14 @@ async function openConnectState(
       verifier: payload.verifier,
       jti: payload.jti,
       exp: payload.exp,
-      // Only the one name is recognised; anything else becomes the default rather than being carried.
-      returnTo: payload.returnTo === "admin" ? "admin" : "settings",
+      // Only the three names are recognised; anything else becomes the default rather than being
+      // carried. A name cannot express another origin, which is the whole reason this is a name.
+      returnTo:
+        payload.returnTo === "admin"
+          ? "admin"
+          : payload.returnTo === "shell"
+            ? "shell"
+            : "settings",
     };
   } catch {
     return null;

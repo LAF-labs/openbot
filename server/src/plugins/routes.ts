@@ -8,10 +8,12 @@ import {
   type CatalogueEntry,
   catalogueEntry,
 } from "./catalogue";
+import type { ConnectFailureReason } from "./connected-page";
 import {
   authorizationUrlFor,
   challengeFor,
   connectedAccountsUrlFor,
+  type ConnectOrigin,
   createVerifier,
   redeemAuthorizationCode,
   redeemConnectState,
@@ -20,6 +22,7 @@ import {
   relayStateFor,
   sealedPartOf,
   sealConnectState,
+  shellConnectedUrlFor,
 } from "./oauth";
 import {
   connectableCatalogue,
@@ -600,8 +603,17 @@ export function createPluginRoutes(
      * destination that could name another origin is an open redirect with a consent screen in
      * front of it.
      */
-    const returnTo =
-      context.req.query("returnTo") === "admin" ? "admin" : "settings";
+    const asked = context.req.query("returnTo");
+    /*
+     * Three names now, and `shell` is the one that is not a page of this app: it lands on this
+     * server's own session-free `/connected`, because in the desktop shell the consent goes out to
+     * the person's OWN browser and the app has no session there. Sent by the app when
+     * `window.__TAURI__` is present (`lib/plugins/queries.ts`), and still narrowed here rather
+     * than trusted — an unrecognised value is the default, never something carried into a sealed
+     * state.
+     */
+    const returnTo: ConnectOrigin =
+      asked === "admin" ? "admin" : asked === "shell" ? "shell" : "settings";
 
     const verifier = createVerifier();
     const sealed = await sealConnectState(
@@ -667,17 +679,48 @@ export function createPluginRoutes(
    * Having no session is what makes the access check below necessary. Every other route asks the
    * question by being behind a guard; this one has to ask it out loud.
    *
-   * Every failure ends the same way: back at the app with a word about what happened, and nothing
-   * written. There is no useful distinction here for the person between a forged state and an
-   * expired one, and spelling out which is which tells anybody probing this endpoint how far they
-   * got.
+   * Every failure ends at the same PLACE, with nothing written — and now with one of five words
+   * for which kind it was. `failed` alone was all anybody got: a consent they declined, a link
+   * they came back to twice, a tab left open over lunch and a vendor refusing the exchange all
+   * produced the same sentence, none of which said what to do next.
+   *
+   * THE WORDS ARE OURS AND THERE ARE FIVE, so this is not the old "spelling out which is which
+   * tells a prober how far they got" being reversed. A prober learns nothing they could not
+   * measure by timing: the two states-related words are the only ones reachable without a real
+   * consent behind them, and they say the same thing to anybody — that this URL is spent. Nothing
+   * a vendor wrote reaches the query, which is the property that always mattered.
    */
   routes.get("/oauth/callback", async (context) => {
-    const failed = connectedAccountsUrlFor(connect?.appUrl, { failed: true });
-    if (!connect?.publicUrl) return context.redirect(failed);
+    /*
+     * Where a failure lands, and it depends on where the flow began — which is only known once the
+     * state has been opened. Before that, the app is the honest guess: a shell flow whose state
+     * cannot be read is indistinguishable from a browser one, and `/settings/connected-accounts`
+     * is at least a page the person can reach in the browser they are holding.
+     */
+    const failedAt = (
+      reason: ConnectFailureReason,
+      returnTo: ConnectOrigin = "settings",
+    ) =>
+      returnTo === "shell" && connect?.publicUrl
+        ? shellConnectedUrlFor(connect.publicUrl, { failed: true, reason })
+        : connectedAccountsUrlFor(
+            connect?.appUrl,
+            { failed: true, reason },
+            returnTo,
+          );
 
+    // A deployment with no public URL registered nothing at any vendor, so nothing here can
+    // complete. `mismatch`, in the sense every branch below uses it: the request cannot be honoured
+    // as it stands.
+    if (!connect?.publicUrl) return context.redirect(failedAt("mismatch"));
+
+    /*
+     * No code is the vendor sending somebody back without one, which is what declining looks like —
+     * `?error=access_denied` on Google, an empty return elsewhere. Nobody did anything wrong, and
+     * "취소됐습니다" is the only honest thing to say about it.
+     */
     const code = context.req.query("code");
-    if (!code) return context.redirect(failed);
+    if (!code) return context.redirect(failedAt("denied"));
 
     /*
      * Redeemed, not merely read: a state stands for one attempt and is spent here whatever happens
@@ -702,8 +745,17 @@ export function createPluginRoutes(
       sealedPartOf(context.req.query("state") ?? ""),
       connect.encryptionKey,
     );
-    if (!opened.ok) return context.redirect(failed);
+    if (!opened.ok) {
+      // The one place the two state refusals are told apart for a person, because their next moves
+      // differ: an expired state is worth starting again immediately, and a replayed one means the
+      // connection they are worried about probably already happened.
+      return context.redirect(
+        failedAt(opened.fact === "laf:state_replayed" ? "reused" : "expired"),
+      );
+    }
     const { state } = opened;
+    // Every failure from here on knows where the flow began, so it can land where the person is.
+    const returnTo = state.returnTo ?? "settings";
 
     /*
      * Is the person in the state still somebody here?
@@ -717,15 +769,24 @@ export function createPluginRoutes(
      * this endpoint owes an unauthenticated caller.
      */
     if (!(await connect.personHasAccess(state.userId))) {
-      return context.redirect(failed);
+      return context.redirect(failedAt("mismatch", returnTo));
     }
 
+    /*
+     * `mismatch` for the three below as well: the state is real and this deployment cannot honour
+     * what it names — the entry is not one people connect, the client is gone, the row names a host
+     * this entry would not be pointed at. Deliberately one word for all of them. They are the same
+     * thing to the person (nothing they typed is wrong, and pressing 연결 again is the move) and
+     * telling them apart would be this endpoint narrating its own configuration to anybody.
+     */
     const entry = catalogueEntry(state.serverId);
-    if (entry?.auth.kind !== "user-oauth") return context.redirect(failed);
+    if (entry?.auth.kind !== "user-oauth") {
+      return context.redirect(failedAt("mismatch", returnTo));
+    }
 
     const client =
       sharedClientFor(entry) ?? (await store.oauthClientFor(state.serverId));
-    if (!client) return context.redirect(failed);
+    if (!client) return context.redirect(failedAt("mismatch", returnTo));
 
     /*
      * The token endpoint, resolved against the row the connect handler ensured. A per-instance
@@ -736,7 +797,7 @@ export function createPluginRoutes(
       entry,
       await store.storedServerUrl(state.serverId),
     );
-    if (!endpoints) return context.redirect(failed);
+    if (!endpoints) return context.redirect(failedAt("mismatch", returnTo));
 
     const grant = await redeemAuthorizationCode({
       tokenUrl: endpoints.tokenUrl,
@@ -749,7 +810,13 @@ export function createPluginRoutes(
       verifier: state.verifier,
       ...(entry.auth.tokenAuth ? { tokenAuth: entry.auth.tokenAuth } : {}),
     });
-    if (!grant) return context.redirect(failed);
+    /*
+     * The vendor refused the exchange, which is the failure that happens AFTER the person has
+     * already consented — a mismatched redirect URI, a code that took too long, a token endpoint
+     * having a bad afternoon. Its own word, because "다시 시도해 주세요" is genuinely the right
+     * advice here and is not the right advice for a state that was replayed.
+     */
+    if (!grant) return context.redirect(failedAt("exchange", returnTo));
 
     await store.recordConnection({
       serverId: state.serverId,
@@ -777,13 +844,25 @@ export function createPluginRoutes(
      */
     await store.offerToolsTo(state.serverId, state.userId, state.userId);
 
+    /*
+     * And back — to the app for a browser flow, and to this server's own session-free page for one
+     * the desktop shell started, which is where the shell's whole problem was: the consent goes out
+     * to the person's OWN browser, so the app's redirect lands somewhere with no session and says
+     * 로그인하세요 over a connection that worked perfectly. See `connected-page.ts`.
+     */
     return context.redirect(
-      connectedAccountsUrlFor(
-        connect.appUrl,
-        { serverId: state.serverId },
-        // From the sealed state, so the destination is one this deployment chose, not the browser.
-        state.returnTo,
-      ),
+      returnTo === "shell"
+        ? shellConnectedUrlFor(connect.publicUrl, {
+            serverId: state.serverId,
+            title: entry.title,
+          })
+        : connectedAccountsUrlFor(
+            connect.appUrl,
+            { serverId: state.serverId },
+            // From the sealed state, so the destination is one this deployment chose, not the
+            // browser.
+            returnTo,
+          ),
     );
   });
 

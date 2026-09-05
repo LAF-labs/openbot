@@ -599,6 +599,24 @@ export const ko: Record<string, string> = {
     "연결을 해제하지 못했습니다. 다시 시도해 주세요.",
   "The connection could not be started. Please try again.":
     "연결을 시작하지 못했습니다. 다시 시도해 주세요.",
+  /*
+   * Why a connect ended, one sentence per reason token the callback now sends.
+   *
+   * They exist because the five had one sentence between them until 2026-09 — somebody who
+   * declined at the vendor, somebody whose link had expired and somebody the vendor refused all
+   * read "연결하지 못했습니다", which says nothing about what to do next. See
+   * `connectFailureText` in `lib/plugins/queries.ts`.
+   */
+  "The connection took too long. Please try again.":
+    "시간이 지나 연결이 만료됐습니다. 다시 시도해 주세요.",
+  "That connection link has already been used.":
+    "이미 처리된 연결 요청입니다. 연결 상태를 확인해 주세요.",
+  "The connection was cancelled.": "연결이 취소됐습니다.",
+  "The service could not finish connecting. Please try again.":
+    "서비스 쪽에서 연결을 마치지 못했습니다. 다시 시도해 주세요.",
+  "This connection could not be completed.":
+    "이 연결을 완료할 수 없습니다. 다시 시도해 주세요.",
+  "That account could not be connected.": "계정을 연결하지 못했습니다.",
   "The connection did not finish, and nothing was saved. Please try again.":
     "연결에 실패했습니다. 저장된 것은 없습니다. 다시 시도해 주세요.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":

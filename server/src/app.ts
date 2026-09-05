@@ -40,6 +40,7 @@ import { createHealthRoute, type HealthProbes } from "./health";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
+import { createConnectedPageRoute } from "./plugins/connected-page";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
@@ -597,6 +598,15 @@ export function createApp(
       "/api/plugins",
       createPluginRoutes(pluginStore, requireUser, pluginConnect),
     );
+    /*
+     * The one page this server draws for a person, and the one route outside `/api`.
+     *
+     * A consent started in the desktop shell finishes in the person's OWN browser, which has no
+     * session for the app — so the app cannot be where that flow lands. Public, session-free, and
+     * mounted beside the plugin routes because it is the other half of the callback. See
+     * `connected-page.ts`; the front door forwards `/connected` for the same reason (app/Caddyfile).
+     */
+    app.route("/connected", createConnectedPageRoute());
     // 알림톡 and 세금계산서. Mounted with the plugin store because a partner connect makes a server
     // row and grants its tools through it — the registration alone reaches no Bot.
     if (partners) {

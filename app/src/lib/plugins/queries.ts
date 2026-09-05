@@ -8,6 +8,8 @@ import {
   pauseFrom,
   waitForApproval,
 } from "@/lib/approvals";
+import { t } from "@/lib/i18n";
+import { inShell } from "@/lib/notifications/shell";
 
 /** A tool one server offers, as the Plugins page sees it. */
 export type PluginTool = {
@@ -245,8 +247,23 @@ export async function beginConnect(
    */
   instanceName?: string,
 ): Promise<string> {
+  /*
+   * In the shell, neither of the caller's two names can work, so a third is sent instead.
+   *
+   * The shell hands the consent screen to the person's OWN browser (`openConsent`), which is right
+   * — a webview has no address bar, no password manager and no Google session. But that browser
+   * has no session for this app either, so the vendor sends it back to a callback whose redirect
+   * lands on `/sign`: measured as somebody consenting successfully and being shown 로그인하세요.
+   * `shell` lands on the server's own `/connected` instead, which needs no session and hands the
+   * browser back through `lafagent://`.
+   *
+   * Whichever page started it, because the destination is about the BROWSER the person is holding
+   * rather than the screen they left — the admin page in the shell has exactly the same problem.
+   * A browser tab keeps today's two names and today's redirect.
+   */
+  const destination = inShell() ? "shell" : returnTo;
   const response = await fetch(
-    `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${returnTo}`,
+    `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${destination}`,
     {
       method: "POST",
       credentials: "include",
@@ -265,6 +282,39 @@ export async function beginConnect(
     );
   }
   return body.authorizationUrl;
+}
+
+/**
+ * What `?connected=failed&reason=…` means, as a sentence the screen can draw.
+ *
+ * FIVE WORDS AND ONE FALLBACK. The callback used to answer every failure with `failed` alone, so
+ * the screen said "연결하지 못했습니다" to somebody who had declined at the vendor, to somebody
+ * whose link had expired, and to somebody the vendor had refused — three situations with three
+ * different next moves and one sentence between them.
+ *
+ * The keys are the server's (`connected-page.ts`, and the branches in `plugins/routes.ts`); the
+ * words are the surface's, which is the arrangement everywhere else in this fork. An unrecognised
+ * reason — an older server, a hand-typed URL — falls back to the sentence that is true of all of
+ * them rather than to nothing.
+ *
+ * Exported because the connected-accounts screen is the caller, and it is a pure mapping: a test
+ * can walk the table without a browser.
+ */
+export function connectFailureText(reason: string | null | undefined): string {
+  switch (reason) {
+    case "expired":
+      return t("The connection took too long. Please try again.");
+    case "reused":
+      return t("That connection link has already been used.");
+    case "denied":
+      return t("The connection was cancelled.");
+    case "exchange":
+      return t("The service could not finish connecting. Please try again.");
+    case "mismatch":
+      return t("This connection could not be completed.");
+    default:
+      return t("That account could not be connected.");
+  }
 }
 
 /** One person dropping their own connection to one server. */

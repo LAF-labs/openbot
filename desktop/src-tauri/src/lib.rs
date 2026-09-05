@@ -180,7 +180,7 @@ fn connection_page_url(base: &str, origin: &str) -> String {
 
 /// The address on the origin that a kind and an id name, or nothing when they name none.
 ///
-/// THE WHOLE OF WHAT THIS PROCESS KNOWS ABOUT THE PRODUCT'S PATHS, and deliberately a list of two.
+/// THE WHOLE OF WHAT THIS PROCESS KNOWS ABOUT THE PRODUCT'S PATHS, and deliberately a list of three.
 /// Two callers arrive here — a `lafagent://` link the operating system handed over, and the
 /// destination the page attaches to a notice — and neither may say "navigate to this path". An
 /// allowlist is not politeness: a scheme handler is reachable by anything on the machine that can
@@ -190,11 +190,28 @@ fn connection_page_url(base: &str, origin: &str) -> String {
 /// Built with `path_segments_mut` rather than `format!`, so the id is percent-encoded and the host
 /// is the origin's — a segment containing `/` or `..` cannot climb out, and one containing `//`
 /// cannot become a different site.
+///
+/// `connected` is the third and the odd one, because the product has no `/connected/<id>` page: a
+/// consent that finished in the person's own browser sends them back here, and what they should see
+/// is the connections list with the outcome on it. So the id becomes a QUERY value rather than a
+/// path segment — `query_pairs_mut` encodes it exactly as `path_segments_mut` encodes the others,
+/// and `connected=failed` is the same word the browser-tab redirect has always used, so the screen
+/// needs to know nothing about where the person came back from.
 fn link_target(origin: &str, kind: &str, id: &str) -> Option<String> {
-    if !matches!(kind, "approve" | "channel") || id.is_empty() {
+    if !matches!(kind, "approve" | "channel" | "connected") || id.is_empty() {
         return None;
     }
     let mut url = tauri::Url::parse(origin).ok()?;
+    if kind == "connected" {
+        {
+            let mut segments = url.path_segments_mut().ok()?;
+            segments.clear();
+            segments.push("settings");
+            segments.push("connected-accounts");
+        }
+        url.query_pairs_mut().append_pair("connected", id);
+        return Some(url.to_string());
+    }
     {
         let mut segments = url.path_segments_mut().ok()?;
         segments.clear();
@@ -206,10 +223,11 @@ fn link_target(origin: &str, kind: &str, id: &str) -> Option<String> {
 
 /// The address a `lafagent://` link names, or nothing when it names none.
 ///
-/// `lafagent://approve/<id>` and `lafagent://channel/<id>`: the host is the kind and the single
-/// path segment is the id. A link with no id, more than one segment, another scheme or another host
-/// resolves to nothing and the window stays where it was — the honest answer to a link this shell
-/// does not understand, rather than a guess at what it might have meant.
+/// `lafagent://approve/<id>`, `lafagent://channel/<id>` and `lafagent://connected/<id>`: the host
+/// is the kind and the single path segment is the id. A link with no id, more than one segment,
+/// another scheme or another host resolves to nothing and the window stays where it was — the
+/// honest answer to a link this shell does not understand, rather than a guess at what it might
+/// have meant.
 fn deep_link_url(origin: &str, link: &str) -> Option<String> {
     let url = tauri::Url::parse(link).ok()?;
     if url.scheme() != SCHEME {
@@ -729,11 +747,55 @@ mod tests {
         );
     }
 
+    /// A consent that finished in the person's own browser sends them back here.
+    ///
+    /// The id is a QUERY value rather than a path segment, because the product has no
+    /// `/connected/<id>` page — what they should see is the connections list with the outcome on
+    /// it, which is the same `?connected=` the browser-tab redirect has always used.
+    #[test]
+    fn a_finished_connection_lands_on_the_connections_list() {
+        assert_eq!(
+            deep_link_url(ORIGIN, "lafagent://connected/google-sheets").as_deref(),
+            Some("https://agent.laf-co.com/settings/connected-accounts?connected=google-sheets")
+        );
+        // The failure word is the one the screen already knows, so nothing there has to learn
+        // where the person came back from.
+        assert_eq!(
+            deep_link_url(ORIGIN, "lafagent://connected/failed").as_deref(),
+            Some("https://agent.laf-co.com/settings/connected-accounts?connected=failed")
+        );
+        assert_eq!(
+            deep_link_url("http://localhost:3010", "lafagent://connected/notion").as_deref(),
+            Some("http://localhost:3010/settings/connected-accounts?connected=notion")
+        );
+    }
+
+    /// The query is where an id could stop being an id, so it is encoded exactly as a segment is.
+    ///
+    /// A `#` that survived would truncate the URL to a fragment and land the window on the bare
+    /// connections page; an `&` that survived would let a link somebody else's program opened add
+    /// a second parameter of its own choosing.
+    #[test]
+    fn a_connection_id_cannot_climb_out_of_its_query_value() {
+        for (id, expected) in [
+            ("a&b=c", "a%26b%3Dc"),
+            ("a#b", "a%23b"),
+            ("../../admin/credentials", "..%2F..%2Fadmin%2Fcredentials"),
+        ] {
+            let url = link_target(ORIGIN, "connected", id).expect("an id is still an id");
+            assert_eq!(
+                url,
+                format!("https://agent.laf-co.com/settings/connected-accounts?connected={expected}")
+            );
+        }
+        assert!(link_target(ORIGIN, "connected", "").is_none());
+    }
+
     /// A scheme handler is reachable by anything on the machine that can call `open`. Every line
     /// here is a way somebody else's program could have pointed this window — holding this person's
     /// signed-in session — somewhere they did not ask to go.
     #[test]
-    fn a_link_can_only_name_the_two_pages_it_is_allowed_to() {
+    fn a_link_can_only_name_the_three_pages_it_is_allowed_to() {
         for refused in [
             // Not ours.
             "https://agent.laf-co.com/admin/credentials",
@@ -744,6 +806,10 @@ mod tests {
             "lafagent://approve/",
             "lafagent://approve/a/b",
             "lafagent:///approve/a",
+            // The third kind is an allowlist entry too, not an opening: same shape, same refusals.
+            "lafagent://connected",
+            "lafagent://connected/",
+            "lafagent://connected/a/b",
             "not a url at all",
             "",
         ] {

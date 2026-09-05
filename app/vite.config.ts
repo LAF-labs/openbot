@@ -17,6 +17,15 @@ const apiProxy = {
     target: `http://localhost:${process.env.SERVER_PORT ?? "3001"}`,
     ws: true,
   },
+  /*
+   * The one page the SERVER draws rather than the app: where a consent started in the desktop
+   * shell lands, because that flow finishes in a browser with no session (`connected-page.ts`).
+   * Without this line Vite's SPA fallback answers it with index.html — the app, signed out, which
+   * is the exact screen the page exists to avoid. The front door forwards it for the same reason.
+   */
+  "/connected": {
+    target: `http://localhost:${process.env.SERVER_PORT ?? "3001"}`,
+  },
 };
 
 export default defineConfig({
