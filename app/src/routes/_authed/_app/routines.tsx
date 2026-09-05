@@ -614,7 +614,7 @@ function RoutinesPage() {
           {routines.data?.length === 0 && !creating ? (
             <div className="flex flex-col items-center gap-3 py-10">
               {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
-              <BotAvatar className="opacity-80" seed="f:4.3.2.0" size={56} />
+              <BotAvatar className="opacity-80" seed="s:wedge.cyan" size={56} />
               <p className="text-center text-[13px] text-muted-foreground">
                 {t(
                   "No routines yet. Give a Bot something to do every morning.",

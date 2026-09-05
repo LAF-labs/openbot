@@ -2,6 +2,7 @@ import { IconPin } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { memo, useEffect, useRef, useSyncExternalStore } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { useBotMood } from "@/lib/agents/bot-mood";
 import { openQuestions, watchQuestions } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
 
@@ -79,6 +80,16 @@ export const BotRow = memo(function BotRow({
   const blocked = useSyncExternalStore(watchQuestions, () =>
     openQuestions().some((question) => question.botId === agentId),
   );
+  /*
+   * THE FACE'S MOOD, from the three things this row knows: a question waiting, a turn running,
+   * and when the Bot last said anything. Asleep after half an hour of quiet, glad for a moment when
+   * a turn ends — see `bot-mood.ts` for the order those win in.
+   */
+  const mood = useBotMood({
+    working: Boolean(working),
+    blocked,
+    lastMessageAt,
+  });
 
   /*
    * THE MEASURED ROW: 54px tall, 10px corners, 8px gap, a 36px face.
@@ -135,7 +146,7 @@ export const BotRow = memo(function BotRow({
           className="size-full"
           seed={avatarSeed}
           size={36}
-          state={working ? "working" : blocked ? "blocked" : "idle"}
+          state={mood}
         />
         {/*
          * 8px, at the avatar's bottom-right with a 2px inset — the measured corner marker. The ring

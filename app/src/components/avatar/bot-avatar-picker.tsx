@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  BOT_AVATAR_ACCESSORIES,
   BOT_AVATAR_PALETTES,
   BOT_AVATAR_SHAPES,
   type BotAvatarParams,
@@ -20,27 +19,21 @@ import {
 import { t } from "@/lib/i18n";
 
 /**
- * Choosing a Bot's face, three rows and a shuffle.
+ * Choosing a Bot's face: a body, a colour, and a shuffle.
  *
- * THE GRID OF THIRTY-FIVE IS GONE, AND SO IS THE DECISION IT ASKED FOR. A wall of finished
- * characters is a catalogue: somebody has to look at all of it, compare a cat with a robot, and
- * pick — and whatever they pick, the one thing they cannot do is get the face they had in mind. The
- * axes are separable now, so they are separated: a shape, a colour, a small thing on the head. Each
- * row is short enough to take in at a glance and every tile is the person's OWN face with one thing
- * changed, so the row reads as "what if it were green" rather than as a list of strangers.
+ * Two rows, because those are the two things a person decides (the owner's rule, and Grok Bot's:
+ * its editor is "Character" — shape and colour — and nothing else). Every tile is the person's OWN
+ * face with one thing changed, so the row reads as "what if it were a cloud" rather than as a wall
+ * of strangers. The eyes are not chosen; they are what the Bot is feeling, and the preview above
+ * the rows is the only face in the dialog that is allowed to move.
  *
- * Eyes have no row. Four variants that differ by two pixels of eyelid cost a decision and return
- * nothing a person can see from across a table; the shuffle deals them.
- *
- * One press applies, as it always did — the same contract the mascot picker had, and the reason
- * there is no Save. 완료 closes, and undoing is pressing another tile.
+ * One press applies — the contract every face picker here has had — and 완료 closes.
  */
 
-/** A tile is the current face with exactly one axis moved, so the row reads as a variation. */
 const withAxis = (
   params: BotAvatarParams,
   axis: keyof BotAvatarParams,
-  value: number,
+  value: BotAvatarParams[keyof BotAvatarParams],
 ): string => botAvatarSeed({ ...params, [axis]: value });
 
 const Row = ({
@@ -60,27 +53,19 @@ const Row = ({
 }) => (
   <fieldset className="flex flex-col gap-1.5">
     <legend className="pb-1 text-muted-foreground text-xs">{label}</legend>
-    {/*
-     * ONE LINE PER AXIS, WHICH IS WHAT MAKES IT A ROW RATHER THAN A GRID.
-     *
-     * Ten colours at 44px wrapped onto a second line, and a wrapped row stops reading as "the
-     * colours" and starts reading as another wall to scan — the exact thing this picker replaced.
-     *
-     * The width to fit inside is 408, not 472: the dialog's `max-w-lg` is 32rem and this app pins
-     * the root to 14px, so it is 448 rather than 512, less `p-5` on both sides. 36px tiles with a
-     * 4px gap is 396. Measured in the dialog, twice — the first arithmetic assumed a 16px root and
-     * wrapped exactly as before.
-     */}
     <div className="flex flex-row flex-wrap gap-1">
-      {options.map((option, index) => {
-        const seed = withAxis(params, axis, index);
-        const chosen = params[axis] === index;
+      {options.map((option) => {
+        const seed = withAxis(
+          params,
+          axis,
+          option.id as BotAvatarParams[typeof axis],
+        );
+        const chosen = params[axis] === option.id;
         return (
           <button
             aria-label={t(option.name)}
             aria-pressed={chosen}
             className={
-              // ring-primary is the app's one selection colour, the same as the roster's.
               "flex size-9 items-center justify-center rounded-lg bg-[var(--sand-fill-secondary)] transition hover:scale-105 disabled:opacity-50" +
               (chosen
                 ? " ring-2 ring-primary"
@@ -91,9 +76,7 @@ const Row = ({
             onClick={() => onSelect(seed)}
             type="button"
           >
-            {/* 30px: under the animation floor on purpose — a row of ten blinking tiles is ten
-             * things moving while somebody is trying to compare them. */}
-            <BotAvatar seed={seed} size={30} />
+            <BotAvatar paused seed={seed} size={30} />
           </button>
         );
       })}
@@ -121,7 +104,6 @@ export const BotAvatarPicker = ({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("Pick a face")}</DialogTitle>
-          {/* Says out loud what the missing Save button implies. */}
           <DialogDescription>
             {t("A click applies it right away.")}
           </DialogDescription>
@@ -132,8 +114,7 @@ export const BotAvatarPicker = ({
           className="flex flex-col gap-4"
         >
           <div className="flex flex-col items-center gap-3">
-            {/* Big enough that the face is alive here and nowhere else in this dialog. */}
-            <BotAvatar seed={seed} size={128} />
+            <BotAvatar seed={seed} size={128} state="curious" />
             <Button
               disabled={pending}
               onClick={() => onSelect(randomBotAvatarSeed())}
@@ -158,14 +139,6 @@ export const BotAvatarPicker = ({
             label={t("Colour")}
             onSelect={onSelect}
             options={BOT_AVATAR_PALETTES}
-            params={params}
-            pending={pending}
-          />
-          <Row
-            axis="accessory"
-            label={t("Accessory")}
-            onSelect={onSelect}
-            options={BOT_AVATAR_ACCESSORIES}
             params={params}
             pending={pending}
           />

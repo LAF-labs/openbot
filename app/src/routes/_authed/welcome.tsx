@@ -21,7 +21,11 @@ import { t } from "@/lib/i18n";
  * one press, and every path past it lands somewhere that only makes sense once a Bot exists.
  */
 /** Three fixed faces for the first screen: distinct shapes and palettes, no accessories. */
-const WELCOME_FACES = ["f:0.4.1.0", "f:1.7.0.0", "f:3.9.2.0"] as const;
+const WELCOME_FACES = [
+  "s:pebble.blue",
+  "s:cloud.green",
+  "s:teardrop.orange",
+] as const;
 
 export const Route = createFileRoute("/_authed/welcome")({
   component: Welcome,
@@ -155,7 +159,7 @@ function Welcome() {
           </section>
         ) : (
           <section className="flex flex-col items-center gap-6 text-center">
-            <BotAvatar className="size-20" seed="f:2.5.0.0" size={80} />
+            <BotAvatar className="size-20" seed="s:squircle.violet" size={80} />
             <h1 className="font-semibold text-2xl">
               {t("Make your first Bot")}
             </h1>

@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AGENT_PRESETS,
+  pickSuggestions,
+  WORK_PATTERNS,
+  type WorkPatternId,
+  workPattern,
+} from "../src/lib/agents/presets";
+import {
   BOT_AVATAR_PALETTES,
   botAvatarParams,
   botAvatarSeed,
 } from "../src/lib/avatar/bot-avatar";
-import {
-  AGENT_PRESETS,
-  WORK_PATTERNS,
-  type WorkPatternId,
-  pickSuggestions,
-  workPattern,
-} from "../src/lib/agents/presets";
 import { ko } from "../src/lib/i18n-ko";
 
 /**
@@ -80,9 +80,9 @@ describe("the presets", () => {
    * of any of them. Two patterns sharing a palette quietly undoes that.
    */
   test("a work pattern's four presets share one colour, and no two patterns share it", () => {
-    const byPattern = new Map<string, Set<number>>();
+    const byPattern = new Map<string, Set<string>>();
     for (const preset of AGENT_PRESETS) {
-      const palettes = byPattern.get(preset.pattern) ?? new Set<number>();
+      const palettes = byPattern.get(preset.pattern) ?? new Set<string>();
       palettes.add(botAvatarParams(preset.avatarSeed).palette);
       byPattern.set(preset.pattern, palettes);
     }

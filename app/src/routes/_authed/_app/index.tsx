@@ -115,7 +115,7 @@ function RouteComponent() {
       {!isPending && !isError && roster.length === 0 ? (
         <div className="mt-7 flex flex-col items-center gap-3">
           {/* One face where a roster would be, so the empty screen still has somebody on it. */}
-          <BotAvatar className="opacity-80" seed="f:0.0.1.0" size={48} />
+          <BotAvatar className="opacity-80" seed="s:blob.blue" size={48} />
           <p className="text-center text-[13px] text-muted-foreground">
             {t("No Bots on your team yet.")}
           </p>

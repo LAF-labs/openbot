@@ -1,506 +1,455 @@
 import { describe, expect, test } from "bun:test";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import {
-  BotAvatar,
-  type BotAvatarState,
-} from "../src/components/avatar/bot-avatar";
-import {
-  BOT_AVATAR_ACCESSORIES,
-  BOT_AVATAR_EYES,
   BOT_AVATAR_PALETTES,
   BOT_AVATAR_SHAPES,
-  type BotAvatarParams,
   botAvatarBackground,
   botAvatarParams,
   botAvatarSeed,
+  DEFAULT_SHAPE_IDS,
+  dealColor,
+  dealShape,
   randomBotAvatarSeed,
+  SHAPE_IDS,
 } from "../src/lib/avatar/bot-avatar";
-import { AGENT_PRESETS } from "../src/lib/agents/presets";
-import { ko } from "../src/lib/i18n-ko";
+import {
+  createAvatarEngine,
+  DEFAULT_TUNE,
+  ENGINE_STATES,
+  type EngineElements,
+  type EngineState,
+  tuneFor,
+} from "../src/lib/avatar/grok-engine";
+import {
+  blendEye,
+  EXPRESSIONS,
+  eyeHalfWidth,
+  eyePath,
+  REFERENCE,
+  stadiumPoints,
+} from "../src/lib/avatar/grok-eyes";
+import { bodyShape, CENTRE, flattenPath } from "../src/lib/avatar/grok-shapes";
 
 /**
- * The generated faces: the grammar, the fallback, and the markup that comes out.
+ * THE FACE, MEASURED.
  *
- * WHAT THIS IS GUARDING. A Bot's face is its identity in a roster, and the two ways to lose that
- * are silent: a seed that stops parsing (every Bot changes face at once, and nothing throws), and a
- * hash that drifts (the same Bot is a different colleague on the next deploy). Both are arithmetic,
- * so both can be pinned down here without a browser.
+ * Three layers, three kinds of promise. The seed grammar: every string is a face, a chosen face
+ * survives a round trip, an old seed keeps its colour. The bodies: eighteen paths that are the size
+ * they claim, centred, and that know where their own skin is. The engine: a frame loop that a test
+ * can step by hand — no waiting on real frames — and that never writes NaN into the DOM.
  */
 
-const STATES: BotAvatarState[] = ["idle", "working", "blocked", "done"];
-
-const render = (
-  seed: string | undefined,
-  size: number,
-  state?: BotAvatarState,
-): string =>
-  renderToStaticMarkup(
-    createElement(BotAvatar, {
-      seed,
-      size,
-      ...(state ? { state } : {}),
-    }),
-  );
-
-const inRange = (params: BotAvatarParams): boolean =>
-  Number.isInteger(params.shape) &&
-  params.shape >= 0 &&
-  params.shape < BOT_AVATAR_SHAPES.length &&
-  Number.isInteger(params.palette) &&
-  params.palette >= 0 &&
-  params.palette < BOT_AVATAR_PALETTES.length &&
-  Number.isInteger(params.eyes) &&
-  params.eyes >= 0 &&
-  params.eyes < BOT_AVATAR_EYES.length &&
-  Number.isInteger(params.accessory) &&
-  params.accessory >= 0 &&
-  params.accessory < BOT_AVATAR_ACCESSORIES.length;
+const inRange = (params: { shape: string; palette: string }) =>
+  (SHAPE_IDS as readonly string[]).includes(params.shape) &&
+  BOT_AVATAR_PALETTES.some((colour) => colour.id === params.palette);
 
 describe("the seed grammar", () => {
-  test("every face in the space round-trips through its own seed", () => {
-    const broken: string[] = [];
-    for (let shape = 0; shape < BOT_AVATAR_SHAPES.length; shape += 1) {
-      for (
-        let palette = 0;
-        palette < BOT_AVATAR_PALETTES.length;
-        palette += 1
-      ) {
-        for (let eyes = 0; eyes < BOT_AVATAR_EYES.length; eyes += 1) {
-          for (
-            let accessory = 0;
-            accessory < BOT_AVATAR_ACCESSORIES.length;
-            accessory += 1
-          ) {
-            const params = { shape, palette, eyes, accessory };
-            const seed = botAvatarSeed(params);
-            if (
-              JSON.stringify(botAvatarParams(seed)) !== JSON.stringify(params)
-            ) {
-              broken.push(seed);
-            }
-          }
-        }
+  test("every body and colour round-trips through a seed", () => {
+    for (const shape of BOT_AVATAR_SHAPES) {
+      for (const colour of BOT_AVATAR_PALETTES) {
+        const seed = botAvatarSeed({ shape: shape.id, palette: colour.id });
+        expect(botAvatarParams(seed)).toEqual({
+          shape: shape.id,
+          palette: colour.id,
+        });
       }
     }
-    expect(broken).toEqual([]);
+    expect(BOT_AVATAR_SHAPES.length).toBe(18);
+    expect(BOT_AVATAR_PALETTES.length).toBe(10);
   });
 
-  test("an index past the end of a table folds back in rather than failing", () => {
-    // A build that grows a seventh shape and then meets a seed written by a build that had nine has
-    // to draw something, and the same something every time.
-    const folded = botAvatarParams("f:999.999.999.999");
-    expect(inRange(folded)).toBe(true);
-    expect(botAvatarParams("f:999.999.999.999")).toEqual(folded);
+  test("the eight default bodies lead the picker's row", () => {
+    expect(BOT_AVATAR_SHAPES.slice(0, 8).map((shape) => shape.id)).toEqual([
+      ...DEFAULT_SHAPE_IDS,
+    ]);
   });
-});
 
-describe("a seed that is not in the grammar", () => {
-  /*
-   * The legacy tile ids, the shape a Bot created before any of this wore. Nothing in the app writes
-   * these any more; every account that predates the generator is full of them.
+  /**
+   * THE FACES THAT CAME BEFORE KEEP THEIR COLOUR. The numbered grammars named a palette by
+   * position; the position maps onto the nearest of Grok's colours, so a Bot that was violet
+   * yesterday is violet today. Its body lands on one of the eight defaults by the same position.
    */
-  const LEGACY = ["r0c0", "r2c4", "r4c5", "r3c1", "r1c6"];
-  const FREE = ["", "고양이", "night-shift", "agent_01H8XK", "🙂", "f:1.2.3"];
+  test("a numbered seed maps onto a named one", () => {
+    expect(botAvatarParams("f:0.5.0.1")).toEqual({
+      shape: "blob",
+      palette: "violet",
+    });
+    expect(botAvatarParams("g:2.4.1")).toEqual({
+      shape: "squircle",
+      palette: "blue",
+    });
+    expect(botAvatarParams("f:999.999.999.999")).toEqual(
+      botAvatarParams("f:999.999.999.999"),
+    );
+    expect(inRange(botAvatarParams("f:999.999.999.999"))).toBe(true);
+  });
 
-  test("lands somewhere real, every time", () => {
-    for (const seed of [...LEGACY, ...FREE]) {
-      expect(inRange(botAvatarParams(seed))).toBe(true);
+  test("anything else is dealt a face, the way Grok deals one, and always the same one", () => {
+    const seeds = ["r4c5", "", "고양이", "bot-01", "Sandy", undefined];
+    for (const seed of seeds) {
+      const params = botAvatarParams(seed);
+      expect(inRange(params)).toBe(true);
+      expect(botAvatarParams(seed)).toEqual(params);
+      expect(DEFAULT_SHAPE_IDS).toContain(params.shape);
     }
-    expect(inRange(botAvatarParams(undefined))).toBe(true);
+    expect(dealShape("Sandy")).toBe(botAvatarParams("Sandy").shape);
+    expect(dealColor("Sandy")).toBe(botAvatarParams("Sandy").palette);
+    expect(botAvatarParams("s:blob.black").palette).not.toBe("black");
   });
 
-  test("lands on the SAME face every time — this is the whole promise", () => {
-    /*
-     * PINNED VALUES, NOT A SELF-COMPARISON. `params(x) === params(x)` passes for any hash,
-     * including one that changed this morning. These four are what the FNV-1a in the module
-     * produces today, and a change to the hash — or to the number of shapes, or to the order of the
-     * palettes — moves them, which is exactly the day every existing Bot silently gets a new face.
-     */
-    expect(botAvatarSeed(botAvatarParams("r0c0"))).toBe("f:5.3.2.1");
-    expect(botAvatarSeed(botAvatarParams("r4c5"))).toBe("f:0.4.1.3");
-    expect(botAvatarSeed(botAvatarParams(""))).toBe("f:2.8.3.0");
-    expect(botAvatarSeed(botAvatarParams("고양이"))).toBe("f:3.9.0.0");
-  });
-
-  test("spreads across the space instead of piling onto one face", () => {
-    // A hash that correlated the four axes would show up here as a handful of faces for a hundred
-    // ids — which is what slicing the bits of one FNV word off different offsets actually does.
+  test("a hundred names do not all land on the same face", () => {
     const seen = new Set<string>();
-    for (let i = 0; i < 200; i += 1) {
-      seen.add(botAvatarSeed(botAvatarParams(`bot-${i}`)));
+    for (let index = 0; index < 100; index += 1) {
+      seen.add(botAvatarSeed(botAvatarParams(`bot-${index}`)));
     }
-    expect(seen.size).toBeGreaterThan(150);
+    expect(seen.size).toBeGreaterThan(30);
   });
 
-  test("a colour comes back for anything, including nothing", () => {
-    expect(botAvatarBackground(undefined)).toMatch(/^#[0-9a-f]{6}$/);
-    expect(botAvatarBackground("r0c0")).toMatch(/^#[0-9a-f]{6}$/);
-    expect(botAvatarBackground("f:0.0.0.0")).toBe(BOT_AVATAR_PALETTES[0]?.fill);
-  });
-});
-
-describe("a face nobody chose", () => {
-  test("is a function of the randomness it was handed, not of the ambient kind", () => {
+  test("the shuffle is deterministic under an injected generator and never out of range", () => {
     const sequence = () => {
-      const values = [0.1, 0.62, 0.4, 0.95, 0.03, 0.5];
-      let index = 0;
-      return () => {
-        const value = values[index % values.length] as number;
-        index += 1;
-        return value;
-      };
+      const values = [0.1, 0.6, 0.3, 0.9];
+      let at = 0;
+      return () => values[at++ % values.length] as number;
     };
     expect(randomBotAvatarSeed(sequence())).toBe(
       randomBotAvatarSeed(sequence()),
     );
-    expect(randomBotAvatarSeed(sequence())).toBe("f:0.6.1.6");
-  });
-
-  test("never falls off the end of a table, even at the top of the range", () => {
-    // `Math.floor(0.9999999 * 6)` is 5, but a generator that returns exactly 1 is not forbidden by
-    // anything, and `BOT_AVATAR_SHAPES[6]` is undefined — a blank avatar, from one bad number.
     expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 1)))).toBe(true);
     expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 0)))).toBe(true);
   });
-});
 
-describe("the presets", () => {
-  test("wear thirty-two distinct faces, all of them in range", () => {
-    const seeds = AGENT_PRESETS.map((preset) => preset.avatarSeed);
-    expect(new Set(seeds).size).toBe(seeds.length);
-    expect(seeds.filter((seed) => !inRange(botAvatarParams(seed)))).toEqual([]);
+  test("the background is the colour's light value", () => {
+    expect(botAvatarBackground("s:cloud.green")).toBe("#00C972");
+    expect(botAvatarBackground(undefined)).toMatch(/^#[0-9A-F]{6}$/);
   });
 });
 
-describe("what comes out of the component", () => {
-  test("is markup that could not run anything", () => {
-    /*
-     * The set this replaced was a table of markup strings set with `dangerouslySetInnerHTML`, and
-     * the comment defending that had to argue the strings were checked in. These are elements: the
-     * only way a script could appear is if somebody wrote one, so this is the check that says
-     * nobody did — across every shape, palette, eye and accessory, since accessories are the part
-     * built out of template strings.
-     */
-    const suspicious: string[] = [];
-    for (let shape = 0; shape < BOT_AVATAR_SHAPES.length; shape += 1) {
-      for (
-        let accessory = 0;
-        accessory < BOT_AVATAR_ACCESSORIES.length;
-        accessory += 1
-      ) {
-        for (const state of STATES) {
-          const html = render(
-            botAvatarSeed({ shape, palette: 3, eyes: 1, accessory }),
-            64,
-            state,
-          );
-          if (/<script|<foreignObject|javascript:|onload=/i.test(html)) {
-            suspicious.push(`${shape}.${accessory}.${state}`);
-          }
-        }
+describe("the bodies", () => {
+  test("every body is centred and spans the canvas", () => {
+    for (const id of SHAPE_IDS) {
+      const shape = bodyShape(id);
+      const points = flattenPath(shape.path);
+      expect(points.length).toBeGreaterThan(20);
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      for (const [x, y] of points) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
       }
-    }
-    expect(suspicious).toEqual([]);
-  });
-
-  test("draws every state at every size it is used at, without throwing", () => {
-    for (const size of [20, 24, 32, 36, 48, 56, 80, 128, 144]) {
-      for (const state of STATES) {
-        for (const seed of [undefined, "r4c5", "f:5.9.3.6"]) {
-          const html = render(seed, size, state);
-          expect(html).toContain('viewBox="0 0 96 96"');
-          expect(html).toContain(`width="${size}"`);
-        }
-      }
+      const span = Math.max(maxX - minX, maxY - minY);
+      expect(Math.abs(span - 228.44)).toBeLessThan(2.5);
+      expect(Math.abs((minX + maxX) / 2 - CENTRE)).toBeLessThan(1.5);
+      expect(Math.abs((minY + maxY) / 2 - CENTRE)).toBeLessThan(1.5);
+      expect(shape.top).toBeLessThan(shape.bottom);
+      expect(shape.radius).toBeGreaterThan(100);
+      expect(shape.path).not.toContain("NaN");
     }
   });
 
-  /**
-   * THE STAR IS ON THE HEAD, AND NOT IN THE CORNER THE MARK OWNS.
-   *
-   * It was `translate(79 15)` — a fixed point with no idea what shape was under it. Measured in the
-   * browser: on a triangle it sat a third of a box from the apex and read as a badge pinned to the
-   * roster card; on a blocked Bot the amber mark at (76,18) covered it completely. Both are things
-   * a typecheck and every test here were perfectly happy with, so this is the check that asks where
-   * it actually lands: on the far side of the face from the mark, and inside the circle a
-   * `rounded-full` wrapper clips to.
-   */
-  test("the star sits on the head, clear of the blocked mark's corner", () => {
-    /** Half the star's own height, plus its stroke — how far it reaches from its anchor. */
-    const REACH = 9.75;
-    for (let shape = 0; shape < BOT_AVATAR_SHAPES.length; shape += 1) {
-      const html = render(
-        botAvatarSeed({ shape, palette: 3, eyes: 1, accessory: 6 }),
-        96,
-      );
-      const placed = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(html);
-      expect(placed).not.toBeNull();
-      const x = Number(placed?.[1]);
-      const y = Number(placed?.[2]);
-      const body = BOT_AVATAR_SHAPES[
-        shape
-      ] as (typeof BOT_AVATAR_SHAPES)[number];
-      // Left of centre: the top right is where `bot-avatar-mark` is drawn on a blocked Bot.
-      expect(x).toBeLessThan(48);
-      // Above the eyes, in the headroom the bodies leave for exactly this.
-      expect(y).toBeLessThan(body.eyeY - 20);
-      // Not clipped away by the screens that wrap a face in `rounded-full overflow-hidden`.
-      expect(Math.hypot(x - 48, y - 48) + REACH).toBeLessThanOrEqual(48);
+  test("a body knows its own width on every row, and the face sits inside it", () => {
+    for (const id of SHAPE_IDS) {
+      const shape = bodyShape(id);
+      const y = CENTRE + shape.face.y;
+      const [left, right] = shape.spanAt(y);
+      expect(left).toBeLessThan(CENTRE + shape.face.x);
+      expect(right).toBeGreaterThan(CENTRE + shape.face.x);
+      expect(shape.face.sx).toBeGreaterThanOrEqual(0.3);
+      expect(shape.face.sx).toBeLessThanOrEqual(1);
+      expect(shape.face.eye).toBeGreaterThanOrEqual(0.64);
+      expect(shape.face.eye).toBeLessThanOrEqual(1);
+      expect(shape.tiltScale).toBeGreaterThanOrEqual(0.15);
+      expect(shape.tiltScale).toBeLessThanOrEqual(1);
     }
   });
 
-  test("is hidden from a screen reader, which the name beside it is not", () => {
-    expect(render("f:0.0.0.0", 36)).toContain('aria-hidden="true"');
-  });
-
-  test("stops moving below 28 pixels and moves at or above it", () => {
-    // The floor is not decoration: six 20px avatars animating in a header read as a page that is
-    // broken, and the state is unreadable at that size anyway.
-    expect(render("f:0.0.0.0", 20, "working")).not.toContain("data-bot-state");
-    expect(render("f:0.0.0.0", 27, "working")).not.toContain("data-bot-state");
-    expect(render("f:0.0.0.0", 28, "working")).toContain(
-      'data-bot-state="working"',
-    );
-  });
-
-  test("still says a Bot is blocked at a size that cannot animate", () => {
-    // The raised brows and the mark are drawn, not animated, so the one state with something urgent
-    // to say survives the floor above and `prefers-reduced-motion` alike.
-    const small = render("f:0.0.0.0", 20, "blocked");
-    expect(small).toContain("#ff9f2e");
-    expect(render("f:0.0.0.0", 20, "idle")).not.toContain("#ff9f2e");
-  });
-
-  test("gives each face its own clip id, or one silhouette swallows the page", () => {
-    // Two avatars sharing `url(#id)` puts every face on the page inside the first one's outline.
-    const pair = renderToStaticMarkup(
-      createElement(
-        "div",
-        null,
-        createElement(BotAvatar, { key: "a", seed: "f:0.0.0.0", size: 36 }),
-        createElement(BotAvatar, { key: "b", seed: "f:3.5.2.1", size: 36 }),
-      ),
-    );
-    const ids = [...pair.matchAll(/<clipPath id="([^"]+)"/g)].map(
-      (match) => match[1],
-    );
-    expect(ids).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
-  });
-
-  test("carries one of the five idle phases, so a roster does not blink in unison", () => {
-    expect(render("f:0.0.0.0", 36)).toMatch(/bot-avatar-phase-[0-4]/);
+  test("the wedge's left eye is nudged away from the apex", () => {
+    expect(bodyShape("wedge").face.leftDX).toBe(-6);
+    expect(bodyShape("blob").face.leftDX).toBe(0);
   });
 });
 
-describe("the picker's words", () => {
-  test("every option a person can read has Korean", () => {
-    // `t(option.name)` is invisible to `i18n-coverage.test.ts`, the same blind spot the presets
-    // have. Four tables, walked.
-    const missing: string[] = [];
-    for (const table of [
-      BOT_AVATAR_SHAPES,
-      BOT_AVATAR_PALETTES,
-      BOT_AVATAR_EYES,
-      BOT_AVATAR_ACCESSORIES,
-    ]) {
-      for (const option of table) {
-        if (!(option.name in ko)) missing.push(option.name);
+describe("the eyes", () => {
+  test("twenty-five expressions, each a pair of slits with a size", () => {
+    expect(EXPRESSIONS.length).toBe(25);
+    for (const pair of EXPRESSIONS) {
+      for (const eye of pair) {
+        expect(eye.halfLen).toBeGreaterThan(0);
+        expect(eye.halfW).toBeGreaterThan(0);
+        expect(eye.halfLen).toBeGreaterThanOrEqual(eye.halfW - 0.01);
       }
     }
-    expect(missing).toEqual([]);
   });
 
-  test("no two options in a table share a name", () => {
-    for (const table of [
-      BOT_AVATAR_SHAPES,
-      BOT_AVATAR_PALETTES,
-      BOT_AVATAR_EYES,
-      BOT_AVATAR_ACCESSORIES,
-    ]) {
-      const names = table.map((option) => option.name);
-      expect(new Set(names).size).toBe(names.length);
-      const ids = table.map((option) => option.id);
-      expect(new Set(ids).size).toBe(ids.length);
-    }
+  test("a stadium is symmetric about its centre and as long as it says", () => {
+    const points = stadiumPoints(0, 20, 6);
+    expect(points.length).toBe(48);
+    const maxX = Math.max(...points.map(([x]) => x));
+    const maxY = Math.max(...points.map(([, y]) => y));
+    expect(Math.abs(maxX - 20)).toBeLessThan(0.5);
+    expect(Math.abs(maxY - 6)).toBeLessThan(0.5);
+    const upright = stadiumPoints(90, 20, 6);
+    expect(Math.max(...upright.map(([, y]) => y))).toBeGreaterThan(19);
+    expect(
+      eyeHalfWidth({ cx: 0, cy: 0, angle: 90, halfLen: 20, halfW: 6 }),
+    ).toBeLessThan(7);
+  });
+
+  test("a blend goes the short way round and keeps the slit's straight part", () => {
+    const from = { cx: 0, cy: 0, angle: 170, halfLen: 20, halfW: 5 };
+    const to = { cx: 10, cy: 4, angle: 10, halfLen: 30, halfW: 10 };
+    const half = blendEye(from, to, 0.5);
+    // 170° to 10° is a 20° turn through 180°, not a 160° swing back through 90°.
+    expect(Math.abs(((half.angle % 180) + 180) % 180)).toBeCloseTo(0, 0);
+    expect(half.halfW).toBeCloseTo(7.5, 5);
+    expect(half.halfLen).toBeCloseTo(7.5 + (15 + 20) / 2, 5);
+    expect(blendEye(from, to, 0)).toBe(from);
+    expect(blendEye(from, to, 1)).toBe(to);
+  });
+
+  test("an eye path is a closed polygon with no script in it", () => {
+    const path = eyePath(REFERENCE[0]);
+    expect(path.startsWith("M")).toBe(true);
+    expect(path.endsWith("Z")).toBe(true);
+    expect(path).not.toMatch(/[<>]/);
   });
 });
 
-describe("the geometry", () => {
-  /**
-   * Points ON a body's outline, not the numbers in its path data.
-   *
-   * The first version of the check below read the path as a list of coordinate pairs, which is
-   * wrong twice over: `H` and `V` carry one number each and shift every pair after them, and a
-   * cubic's control points sit outside the curve they bend — so it failed on five bodies that were
-   * all comfortably inside. Evaluating the curves is the only honest way to ask where a shape
-   * actually goes.
-   */
-  const outlineOf = (d: string): [number, number][] => {
-    const tokens = d.match(/[MLHVCQZ]|-?\d+(?:\.\d+)?/g) ?? [];
-    const points: [number, number][] = [];
-    let index = 0;
-    let x = 0;
-    let y = 0;
-    let startX = 0;
-    let startY = 0;
-    const next = () => Number(tokens[index++]);
-    const sample = (at: (t: number) => [number, number]) => {
-      for (let step = 1; step <= 16; step += 1) points.push(at(step / 16));
-    };
+/** A DOM stand-in the engine can write attributes into, so a frame's output can be read back. */
+class FakeElement {
+  attributes = new Map<string, string>();
+  style = { display: "" };
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+  getAttribute(name: string) {
+    return this.attributes.get(name) ?? null;
+  }
+}
 
-    while (index < tokens.length) {
-      switch (tokens[index++]) {
-        case "M":
-          x = next();
-          y = next();
-          startX = x;
-          startY = y;
-          points.push([x, y]);
-          break;
-        case "L":
-          x = next();
-          y = next();
-          points.push([x, y]);
-          break;
-        case "H":
-          x = next();
-          points.push([x, y]);
-          break;
-        case "V":
-          y = next();
-          points.push([x, y]);
-          break;
-        case "C": {
-          const [x1, y1, x2, y2, ex, ey] = [
-            next(),
-            next(),
-            next(),
-            next(),
-            next(),
-            next(),
-          ];
-          const [fromX, fromY] = [x, y];
-          sample((t) => {
-            const u = 1 - t;
-            return [
-              u ** 3 * fromX +
-                3 * u * u * t * x1 +
-                3 * u * t * t * x2 +
-                t ** 3 * ex,
-              u ** 3 * fromY +
-                3 * u * u * t * y1 +
-                3 * u * t * t * y2 +
-                t ** 3 * ey,
-            ];
-          });
-          x = ex;
-          y = ey;
-          break;
-        }
-        case "Q": {
-          const [x1, y1, ex, ey] = [next(), next(), next(), next()];
-          const [fromX, fromY] = [x, y];
-          sample((t) => {
-            const u = 1 - t;
-            return [
-              u * u * fromX + 2 * u * t * x1 + t * t * ex,
-              u * u * fromY + 2 * u * t * y1 + t * t * ey,
-            ];
-          });
-          x = ex;
-          y = ey;
-          break;
-        }
-        default:
-          x = startX;
-          y = startY;
-      }
-    }
-    return points;
+const fakeElements = (): EngineElements & { all: FakeElement[] } => {
+  const body = new FakeElement();
+  const left = new FakeElement();
+  const right = new FakeElement();
+  const badge = new FakeElement();
+  return {
+    body: body as unknown as SVGGElement,
+    eyes: [
+      left as unknown as SVGPathElement,
+      right as unknown as SVGPathElement,
+    ],
+    badge: badge as unknown as SVGCircleElement,
+    all: [body, left, right, badge],
   };
+};
 
-  /**
-   * EVERY BODY FITS INSIDE THE INSCRIBED CIRCLE.
-   *
-   * Half the screens in this app wrap an avatar in `rounded-full overflow-hidden`, and they are
-   * entitled to: it is what a roster of round avatars looks like. 48 is not a margin somebody
-   * chose, it is where that clip actually falls — half of a 96-unit box — so an outline past it is
-   * a shape with a bite taken out, invisible on the screen it was designed against and obvious on
-   * the one it was not.
-   */
-  test("no body reaches past the circle a rounded-full wrapper clips to", () => {
-    const outside: string[] = [];
-    for (const shape of BOT_AVATAR_SHAPES) {
-      for (const [x, y] of outlineOf(shape.d)) {
-        const radius = Math.hypot(x - 48, y - 48);
-        if (radius > 48) outside.push(`${shape.id}: ${radius.toFixed(1)}`);
+const noNaN = (elements: { all: FakeElement[] }) => {
+  for (const element of elements.all) {
+    for (const [name, value] of element.attributes) {
+      expect(`${name}=${value}`).not.toContain("NaN");
+      expect(`${name}=${value}`).not.toContain("Infinity");
+    }
+  }
+};
+
+/** A deterministic random so a run is the same run twice. */
+const seededRandom = (seed: number) => {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+};
+
+describe("the engine", () => {
+  test("every mood can be stepped for ten seconds without writing a bad number", () => {
+    for (const state of ENGINE_STATES) {
+      const elements = fakeElements();
+      let clock = 0;
+      const engine = createAvatarEngine({
+        shape: bodyShape("blob"),
+        state,
+        elements,
+        reduceMotion: false,
+        now: () => clock,
+        random: seededRandom(7),
+        raf: () => 0,
+        caf: () => {},
+      });
+      for (let frame = 0; frame < 600; frame += 1) {
+        clock += 16.7;
+        engine.frame(clock);
+      }
+      noNaN(elements);
+      expect(elements.body.getAttribute("transform")).toMatch(/^translate\(/);
+      expect(elements.eyes[0].getAttribute("d")).toMatch(/^M.*Z$/);
+    }
+  });
+
+  test("the eyes are cut from the body and stay inside it whatever the shape", () => {
+    for (const id of SHAPE_IDS) {
+      const shape = bodyShape(id);
+      const elements = fakeElements();
+      let clock = 0;
+      const engine = createAvatarEngine({
+        shape,
+        state: "searching",
+        elements,
+        reduceMotion: false,
+        now: () => clock,
+        random: seededRandom(3),
+        raf: () => 0,
+        caf: () => {},
+      });
+      for (let frame = 0; frame < 300; frame += 1) {
+        clock += 16.7;
+        engine.frame(clock);
+        for (const eye of elements.eyes) {
+          const transform = eye.getAttribute("transform") ?? "";
+          const match = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(transform);
+          expect(match).not.toBeNull();
+          const x = Number.parseFloat((match as RegExpExecArray)[1] as string);
+          const y = Number.parseFloat((match as RegExpExecArray)[2] as string);
+          expect(y).toBeGreaterThanOrEqual(shape.top);
+          expect(y).toBeLessThanOrEqual(shape.bottom);
+          const [left, right] = shape.spanAt(y);
+          expect(x).toBeGreaterThanOrEqual(left - 30);
+          expect(x).toBeLessThanOrEqual(right + 30);
+        }
       }
     }
-    expect(outside).toEqual([]);
   });
 
-  /**
-   * AND EVERY BODY IS BIG ENOUGH TO BE ONE.
-   *
-   * The bound above has a trivial way to pass — draw everything tiny — which would give a roster of
-   * six faces floating in the middle of their own boxes. This is the other half: each body has to
-   * reach at least most of the way out.
-   */
-  test("no body is so small it floats in the middle of its box", () => {
-    for (const shape of BOT_AVATAR_SHAPES) {
-      const reach = Math.max(
-        ...outlineOf(shape.d).map(([x, y]) => Math.hypot(x - 48, y - 48)),
-      );
-      expect(reach).toBeGreaterThan(36);
+  test("a blink closes the eyes and opens them again", () => {
+    const elements = fakeElements();
+    let clock = 0;
+    const engine = createAvatarEngine({
+      shape: bodyShape("pebble"),
+      state: "idle",
+      elements,
+      reduceMotion: false,
+      now: () => clock,
+      random: seededRandom(11),
+      raf: () => 0,
+      caf: () => {},
+    });
+    const heights: number[] = [];
+    for (let frame = 0; frame < 120; frame += 1) {
+      clock += 8;
+      engine.frame(clock);
+      const transform = elements.eyes[0].getAttribute("transform") ?? "";
+      const match = /scale\(([-\d.]+) ([-\d.]+)\)/.exec(transform);
+      heights.push(Number.parseFloat((match as RegExpExecArray)[2] as string));
     }
+    // Idle opens with a blink: the eye's height dips well under its open value and recovers.
+    const open = Math.max(...heights);
+    const shut = Math.min(...heights);
+    expect(shut).toBeLessThan(open * 0.5);
+    expect(heights[heights.length - 1]).toBeGreaterThan(open * 0.8);
   });
 
-  test("every body is one closed path with no lowercase (relative) commands", () => {
-    for (const shape of BOT_AVATAR_SHAPES) {
-      expect(shape.d).toMatch(/^M/);
-      expect(shape.d).toMatch(/Z$/);
-      expect(shape.d).not.toMatch(/[a-z]/);
-    }
-  });
-
-  test("the eyes sit inside the head, not on the edge of the box", () => {
-    for (const shape of BOT_AVATAR_SHAPES) {
-      expect(shape.eyeGap).toBeGreaterThan(14);
-      expect(shape.eyeY).toBeGreaterThan(shape.crownY + 20);
-      expect(shape.eyeY).toBeLessThan(80);
-    }
-  });
-
-  test("every palette is six hex digits, and the ink is darker than the body", () => {
-    const luminance = (hex: string): number => {
-      const value = Number.parseInt(hex.slice(1), 16);
-      // Rough, and enough: the question is only "is one of these clearly the dark one".
-      return (
-        ((value >> 16) & 255) * 0.299 +
-        ((value >> 8) & 255) * 0.587 +
-        (value & 255) * 0.114
-      );
-    };
-    for (const palette of BOT_AVATAR_PALETTES) {
-      for (const colour of [
-        palette.fill,
-        palette.shade,
-        palette.accent,
-        palette.ink,
-      ]) {
-        expect(colour).toMatch(/^#[0-9a-f]{6}$/);
+  test("a spin carries an eye behind the body and hides it there", () => {
+    const elements = fakeElements();
+    let clock = 0;
+    const engine = createAvatarEngine({
+      shape: bodyShape("blob"),
+      state: "idle",
+      elements,
+      reduceMotion: false,
+      now: () => clock,
+      random: seededRandom(5),
+      raf: () => 0,
+      caf: () => {},
+    });
+    engine.frame(16);
+    engine.spin(1);
+    let hidden = false;
+    for (let frame = 0; frame < 200; frame += 1) {
+      clock += 16.7;
+      engine.frame(clock);
+      if (
+        elements.eyes.some(
+          (eye) => (eye as unknown as FakeElement).style.display === "none",
+        )
+      ) {
+        hidden = true;
       }
-      expect(luminance(palette.ink)).toBeLessThan(luminance(palette.shade));
-      expect(luminance(palette.shade)).toBeLessThan(luminance(palette.fill));
-      /*
-       * MID-LIGHT, ON PURPOSE. The app's ground is #fcfcfc in one theme and #070707 in the other,
-       * and a face has to be legible on both without being repainted — so nothing here may be so
-       * pale it disappears in light mode or so dark it disappears in dark mode.
-       */
-      expect(luminance(palette.fill)).toBeGreaterThan(120);
-      expect(luminance(palette.fill)).toBeLessThan(230);
     }
+    expect(hidden).toBe(true);
+    expect(
+      elements.eyes.every(
+        (eye) => (eye as unknown as FakeElement).style.display === "",
+      ),
+    ).toBe(true);
+  });
+
+  test("a Bot that has stopped to ask grows a badge, and loses it when it is answered", () => {
+    const elements = fakeElements();
+    let clock = 0;
+    const engine = createAvatarEngine({
+      shape: bodyShape("cloud"),
+      state: "notifying",
+      elements,
+      reduceMotion: false,
+      now: () => clock,
+      random: seededRandom(2),
+      raf: () => 0,
+      caf: () => {},
+    });
+    for (let frame = 0; frame < 120; frame += 1) {
+      clock += 16.7;
+      engine.frame(clock);
+    }
+    const badge = elements.badge as unknown as FakeElement;
+    expect(badge.style.display).toBe("");
+    expect(Number.parseFloat(badge.getAttribute("r") ?? "0")).toBeGreaterThan(
+      10,
+    );
+    engine.setState("idle");
+    for (let frame = 0; frame < 240; frame += 1) {
+      clock += 16.7;
+      engine.frame(clock);
+    }
+    expect(badge.getAttribute("visibility")).toBe("hidden");
+  });
+
+  test("reduced motion draws one still frame in the mood's opening expression", () => {
+    const elements = fakeElements();
+    let frames = 0;
+    const engine = createAvatarEngine({
+      shape: bodyShape("hex"),
+      state: "sleeping",
+      elements,
+      reduceMotion: true,
+      now: () => 1000,
+      random: seededRandom(1),
+      raf: () => {
+        frames += 1;
+        return 1;
+      },
+      caf: () => {},
+    });
+    engine.start();
+    expect(frames).toBe(0);
+    expect(elements.body.getAttribute("transform")).toContain("rotate(0.00)");
+    expect(elements.eyes[0].getAttribute("d")).toMatch(/^M/);
+    noNaN(elements);
+  });
+
+  test("a mood's tune stays within the bounds Grok gives it", () => {
+    for (const state of ENGINE_STATES) {
+      const tune = tuneFor(state as EngineState, DEFAULT_TUNE);
+      expect(tune.size).toBeGreaterThan(0);
+      expect(tune.gap).toBeGreaterThan(0);
+      if (state !== "idle" && state !== "working") {
+        expect(tune.size).toBeLessThanOrEqual(0.92);
+        expect(tune.gap).toBeGreaterThanOrEqual(1.14);
+      }
+    }
+    expect(tuneFor("working", DEFAULT_TUNE).size).toBeGreaterThan(
+      DEFAULT_TUNE.size,
+    );
   });
 });

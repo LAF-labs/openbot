@@ -155,9 +155,11 @@ function SignScreen() {
           variants={{ hidden, shown }}
           className="-space-x-2 flex items-center justify-center"
         >
-          {["f:0.4.0.0", "f:3.1.1.0", "f:2.6.3.0"].map((seed) => (
-            <BotAvatar key={seed} seed={seed} size={48} />
-          ))}
+          {["s:pebble.blue", "s:cloud.green", "s:teardrop.orange"].map(
+            (seed) => (
+              <BotAvatar key={seed} seed={seed} size={48} />
+            ),
+          )}
         </motion.div>
         <motion.h1
           className="text-2xl font-medium tracking-tight text-center mt-8"

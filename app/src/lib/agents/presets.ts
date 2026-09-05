@@ -83,10 +83,10 @@ export type AgentPreset = {
   id: string;
   pattern: WorkPatternId;
   /**
-   * The face it arrives wearing, in the seed grammar `f:<shape>.<palette>.<eyes>.<accessory>`.
+   * The face it arrives wearing, in the seed grammar `s:<shape>.<colour>`.
    *
-   * ONE PALETTE PER WORK PATTERN. The four presets under a pattern differ by shape, eyes and
-   * accessory and share a colour, so a hand of suggestions reads as four kinds of work rather than
+   * ONE PALETTE PER WORK PATTERN. The four presets under a pattern differ by body and share a
+   * colour, so a hand of suggestions reads as four kinds of work rather than
    * as thirty-two strangers — and the pattern a card belongs to is legible before its title is.
    */
   avatarSeed: string;
@@ -100,7 +100,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "night-shift",
     pattern: "night-watch",
-    avatarSeed: "f:0.5.0.1",
+    avatarSeed: "s:blob.violet",
     name: "Night Shift",
     title: "Overnight prep",
     roleDescription:
@@ -109,7 +109,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "notice-watch",
     pattern: "night-watch",
-    avatarSeed: "f:1.5.1.2",
+    avatarSeed: "s:tablet.violet",
     name: "Notice Watch",
     title: "Announcements",
     roleDescription:
@@ -118,7 +118,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "competitors",
     pattern: "night-watch",
-    avatarSeed: "f:2.5.2.3",
+    avatarSeed: "s:cloud.violet",
     name: "Competitor Watch",
     title: "Market intelligence",
     roleDescription:
@@ -127,7 +127,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "news-brief",
     pattern: "night-watch",
-    avatarSeed: "f:3.5.3.4",
+    avatarSeed: "s:pebble.violet",
     name: "News Briefing",
     title: "Daily news",
     roleDescription:
@@ -138,7 +138,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "inbox-triage",
     pattern: "approval",
-    avatarSeed: "f:2.4.1.4",
+    avatarSeed: "s:pebble.blue",
     name: "Inbox Triage",
     title: "Email",
     roleDescription:
@@ -147,7 +147,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "outgoing-check",
     pattern: "approval",
-    avatarSeed: "f:3.4.2.5",
+    avatarSeed: "s:wedge.blue",
     name: "Outgoing Check",
     title: "Before it goes out",
     roleDescription:
@@ -156,7 +156,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "receivables",
     pattern: "approval",
-    avatarSeed: "f:4.4.3.6",
+    avatarSeed: "s:teardrop.blue",
     name: "Payments Chaser",
     title: "Accounts receivable",
     roleDescription:
@@ -165,7 +165,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "price-check",
     pattern: "approval",
-    avatarSeed: "f:5.4.0.0",
+    avatarSeed: "s:squircle.blue",
     name: "Price Check",
     title: "Sourcing",
     roleDescription:
@@ -176,7 +176,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "settlement",
     pattern: "settlement",
-    avatarSeed: "f:4.3.2.0",
+    avatarSeed: "s:squircle.green",
     name: "Daily Settlement",
     title: "Sales against deposits",
     roleDescription:
@@ -185,7 +185,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "payouts",
     pattern: "settlement",
-    avatarSeed: "f:5.3.3.1",
+    avatarSeed: "s:hex.green",
     name: "Platform Payouts",
     title: "Marketplace settlements",
     roleDescription:
@@ -194,7 +194,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "receipts",
     pattern: "settlement",
-    avatarSeed: "f:0.3.0.2",
+    avatarSeed: "s:blob.green",
     name: "Expense Manager",
     title: "Finance operations",
     roleDescription:
@@ -203,7 +203,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "weekly-report",
     pattern: "settlement",
-    avatarSeed: "f:1.3.1.3",
+    avatarSeed: "s:tablet.green",
     name: "Weekly Report",
     title: "Reporting",
     roleDescription:
@@ -214,7 +214,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "support-replies",
     pattern: "enquiries",
-    avatarSeed: "f:0.0.3.3",
+    avatarSeed: "s:tablet.cyan",
     name: "Front Desk",
     title: "Customer messages",
     roleDescription:
@@ -223,7 +223,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "faq-answers",
     pattern: "enquiries",
-    avatarSeed: "f:1.0.0.4",
+    avatarSeed: "s:cloud.cyan",
     name: "FAQ Answers",
     title: "Repeat questions",
     roleDescription:
@@ -232,7 +232,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "quotes",
     pattern: "enquiries",
-    avatarSeed: "f:2.0.1.5",
+    avatarSeed: "s:pebble.cyan",
     name: "Quote Desk",
     title: "Quotes and invoices",
     roleDescription:
@@ -241,7 +241,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "customer-list",
     pattern: "enquiries",
-    avatarSeed: "f:3.0.2.6",
+    avatarSeed: "s:wedge.cyan",
     name: "Customer List",
     title: "Records",
     roleDescription:
@@ -252,7 +252,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "bookings",
     pattern: "schedule",
-    avatarSeed: "f:2.6.0.6",
+    avatarSeed: "s:wedge.orange",
     name: "Booking Desk",
     title: "Appointments",
     roleDescription:
@@ -261,7 +261,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "shift-roster",
     pattern: "schedule",
-    avatarSeed: "f:3.6.1.0",
+    avatarSeed: "s:teardrop.orange",
     name: "Shift Roster",
     title: "Who works when",
     roleDescription:
@@ -270,7 +270,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "meeting-prep",
     pattern: "schedule",
-    avatarSeed: "f:4.6.2.1",
+    avatarSeed: "s:squircle.orange",
     name: "Meeting Prep",
     title: "Calendar",
     roleDescription:
@@ -279,7 +279,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "todos",
     pattern: "schedule",
-    avatarSeed: "f:5.6.3.2",
+    avatarSeed: "s:hex.orange",
     name: "To-do Wrangler",
     title: "Personal admin",
     roleDescription:
@@ -290,7 +290,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "stock",
     pattern: "stock",
-    avatarSeed: "f:4.1.1.2",
+    avatarSeed: "s:hex.yellow",
     name: "Stock Check",
     title: "Inventory",
     roleDescription:
@@ -299,7 +299,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "reorder",
     pattern: "stock",
-    avatarSeed: "f:5.1.2.3",
+    avatarSeed: "s:blob.yellow",
     name: "Reorder Sheet",
     title: "Purchase orders",
     roleDescription:
@@ -308,7 +308,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "suppliers",
     pattern: "stock",
-    avatarSeed: "f:0.1.3.4",
+    avatarSeed: "s:tablet.yellow",
     name: "Supplier Chase",
     title: "Purchasing",
     roleDescription:
@@ -317,7 +317,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "supplier-prices",
     pattern: "stock",
-    avatarSeed: "f:1.1.0.5",
+    avatarSeed: "s:cloud.yellow",
     name: "Supplier Prices",
     title: "Buying prices",
     roleDescription:
@@ -328,7 +328,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "reviews",
     pattern: "reputation",
-    avatarSeed: "f:0.7.2.5",
+    avatarSeed: "s:cloud.magenta",
     name: "Review Watch",
     title: "Reputation",
     roleDescription:
@@ -337,7 +337,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "review-replies",
     pattern: "reputation",
-    avatarSeed: "f:1.7.3.6",
+    avatarSeed: "s:pebble.magenta",
     name: "Review Replies",
     title: "Answering reviews",
     roleDescription:
@@ -346,7 +346,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "mentions",
     pattern: "reputation",
-    avatarSeed: "f:2.7.0.0",
+    avatarSeed: "s:wedge.magenta",
     name: "Mention Watch",
     title: "What people say",
     roleDescription:
@@ -355,7 +355,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "social",
     pattern: "reputation",
-    avatarSeed: "f:3.7.1.1",
+    avatarSeed: "s:teardrop.magenta",
     name: "Social Posts",
     title: "Marketing",
     roleDescription:
@@ -366,7 +366,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "tax-prep",
     pattern: "paperwork",
-    avatarSeed: "f:2.8.3.1",
+    avatarSeed: "s:teardrop.brown",
     name: "Tax Season",
     title: "Tax and filings",
     roleDescription:
@@ -375,7 +375,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "contracts",
     pattern: "paperwork",
-    avatarSeed: "f:3.8.0.2",
+    avatarSeed: "s:squircle.brown",
     name: "Contract Review",
     title: "Legal admin",
     roleDescription:
@@ -384,7 +384,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "doc-digest",
     pattern: "paperwork",
-    avatarSeed: "f:4.8.1.3",
+    avatarSeed: "s:hex.brown",
     name: "Document Digest",
     title: "Reading",
     roleDescription:
@@ -393,7 +393,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
     id: "files",
     pattern: "paperwork",
-    avatarSeed: "f:5.8.2.4",
+    avatarSeed: "s:blob.brown",
     name: "File Keeper",
     title: "Filing",
     roleDescription:

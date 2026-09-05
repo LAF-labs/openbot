@@ -219,7 +219,11 @@ function SkillsPage() {
           {!isPending && !mine?.length ? (
             <div className="flex flex-col items-center gap-3 py-10">
               {/* The plainest face the generator makes: a skill is a note, not a character. */}
-              <BotAvatar className="opacity-80" seed="f:1.9.0.0" size={56} />
+              <BotAvatar
+                className="opacity-80"
+                seed="s:pebble.gray"
+                size={56}
+              />
               <p className="text-center text-[13px] text-muted-foreground">
                 {t("No skills yet. Write one and any Bot you own can run it.")}
               </p>
