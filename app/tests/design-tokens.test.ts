@@ -87,7 +87,6 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "components/gallery/cards.tsx": 1,
     "routes/_authed/_app/channel/new.tsx": 4,
     "routes/_authed/_app/index.tsx": 4,
-    "routes/_authed/admin/boundaries.tsx": 1,
   },
   shadow: {
     "components/channels/composer/composer.tsx": 2,

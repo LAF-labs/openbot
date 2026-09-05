@@ -36,6 +36,24 @@ const DEVICE_SCOPED = [
   "components/connections/site-rows.tsx",
 ];
 
+/**
+ * A comment is not a call.
+ *
+ * `/admin/playground` has to explain why a component that reaches for browser storage dies in the
+ * preview — the sandbox has no same-origin access, so reading the property throws rather than
+ * returning null — and naming the two APIs in that explanation made this test report the file as
+ * one that stores per-device state. It stores nothing. The rule then punishes exactly the person
+ * documenting the trap, which is the same argument `design-tokens.test.ts` makes for the same
+ * treatment; both strip comments before they count anything.
+ */
+function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n");
+}
+
 function sourceFiles(directory: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(directory)) {
@@ -53,7 +71,9 @@ describe("state that belongs to the account", () => {
   test("only the theme and the language are kept per device", () => {
     const storing = sourceFiles(SOURCE)
       .filter((path) =>
-        /\b(?:local|session)Storage\b/.test(readFileSync(path, "utf8")),
+        /\b(?:local|session)Storage\b/.test(
+          withoutComments(readFileSync(path, "utf8")),
+        ),
       )
       .map((path) => path.replace(`${SOURCE}/`, ""))
       .sort();

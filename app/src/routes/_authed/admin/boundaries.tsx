@@ -1,8 +1,16 @@
+import { IconDots } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type * as React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AskSubject, describeSubject } from "@/lib/approvals";
@@ -148,14 +156,14 @@ function BoundariesPage() {
         credentials: "include",
       });
       if (!response.ok) {
-        setProblem("The boundary could not be read.");
+        setProblem(t("The boundary could not be read."));
         return;
       }
       const body = (await response.json()) as { policy: ActionPolicy };
       setPolicy(body.policy);
       setProblem(null);
     } catch {
-      setProblem("The boundary could not be reached.");
+      setProblem(t("The boundary could not be reached."));
     }
   }, []);
 
@@ -326,27 +334,23 @@ function BoundariesPage() {
         ) : (
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
             {policy.deny.map((rule) => (
-              <li
-                className="flex items-center justify-between gap-4 px-3 py-2"
+              <RuleRow
+                action={
+                  <RemoveRule
+                    isBusy={saving}
+                    onRemove={() =>
+                      void save({
+                        ...policy,
+                        deny: policy.deny.filter((one) => one !== rule),
+                      })
+                    }
+                    rule={rule}
+                  />
+                }
+                gloss={glossOf(rule)}
                 key={rule}
-              >
-                <code className="min-w-0 break-all font-mono text-xs">
-                  {rule}
-                </code>
-                <Button
-                  disabled={saving}
-                  onClick={() =>
-                    void save({
-                      ...policy,
-                      deny: policy.deny.filter((one) => one !== rule),
-                    })
-                  }
-                  size="sm"
-                  variant="ghost"
-                >
-                  {t("Remove")}
-                </Button>
-              </li>
+                rule={rule}
+              />
             ))}
           </ul>
         )}
@@ -380,24 +384,25 @@ function BoundariesPage() {
           </p>
         ) : null}
 
-        <ul className="mt-3 space-y-2">
+        <p className="mt-4 font-medium text-sm">{t("Common rules")}</p>
+        <ul className="mt-2 divide-y divide-border rounded-md border border-border">
           {PRESETS.map((preset) => (
-            <li className="flex items-start gap-3" key={preset.rule}>
-              <Button
-                className="shrink-0"
-                disabled={saving || policy.deny.includes(preset.rule)}
-                onClick={() => void addRule(preset.rule)}
-                size="sm"
-                variant="outline"
-              >
-                {t(preset.label)}
-              </Button>
-              {preset.cost ? (
-                <span className="pt-1 text-xs text-muted-foreground">
-                  {t(preset.cost)}
-                </span>
-              ) : null}
-            </li>
+            <RuleRow
+              action={
+                <Button
+                  disabled={saving || policy.deny.includes(preset.rule)}
+                  onClick={() => void addRule(preset.rule)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {policy.deny.includes(preset.rule) ? t("Added") : t("Add")}
+                </Button>
+              }
+              cost={preset.cost}
+              gloss={preset.label}
+              key={preset.rule}
+              rule={preset.rule}
+            />
           ))}
         </ul>
       </PageSection>
@@ -410,27 +415,23 @@ function BoundariesPage() {
         ) : (
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
             {policy.ask.map((rule) => (
-              <li
-                className="flex items-center justify-between gap-4 px-3 py-2"
+              <RuleRow
+                action={
+                  <RemoveRule
+                    isBusy={saving}
+                    onRemove={() =>
+                      void save({
+                        ...policy,
+                        ask: policy.ask.filter((one) => one !== rule),
+                      })
+                    }
+                    rule={rule}
+                  />
+                }
+                gloss={glossOf(rule)}
                 key={rule}
-              >
-                <code className="min-w-0 break-all font-mono text-xs">
-                  {rule}
-                </code>
-                <Button
-                  disabled={saving}
-                  onClick={() =>
-                    void save({
-                      ...policy,
-                      ask: policy.ask.filter((one) => one !== rule),
-                    })
-                  }
-                  size="sm"
-                  variant="ghost"
-                >
-                  {t("Remove")}
-                </Button>
-              </li>
+                rule={rule}
+              />
             ))}
           </ul>
         )}
@@ -464,24 +465,25 @@ function BoundariesPage() {
           </p>
         ) : null}
 
-        <ul className="mt-3 space-y-2">
+        <p className="mt-4 font-medium text-sm">{t("Common rules")}</p>
+        <ul className="mt-2 divide-y divide-border rounded-md border border-border">
           {ASK_PRESETS.map((preset) => (
-            <li className="flex items-start gap-3" key={preset.rule}>
-              <Button
-                className="shrink-0"
-                disabled={saving || policy.ask.includes(preset.rule)}
-                onClick={() => void addAskRule(preset.rule)}
-                size="sm"
-                variant="outline"
-              >
-                {t(preset.label)}
-              </Button>
-              {preset.cost ? (
-                <span className="pt-1 text-xs text-muted-foreground">
-                  {t(preset.cost)}
-                </span>
-              ) : null}
-            </li>
+            <RuleRow
+              action={
+                <Button
+                  disabled={saving || policy.ask.includes(preset.rule)}
+                  onClick={() => void addAskRule(preset.rule)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {policy.ask.includes(preset.rule) ? t("Added") : t("Add")}
+                </Button>
+              }
+              cost={preset.cost}
+              gloss={preset.label}
+              key={preset.rule}
+              rule={preset.rule}
+            />
           ))}
         </ul>
 
@@ -627,7 +629,7 @@ function BoundariesPage() {
                     </span>
                   ) : null}
                   {allowance.rule ? (
-                    <code className="break-all font-mono text-[11px] text-muted-foreground">
+                    <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
                       {allowance.rule}
                     </code>
                   ) : null}
@@ -658,11 +660,9 @@ function BoundariesPage() {
       ) : null}
 
       <PageSection title={t("Otherwise it may")}>
-        <ul className="mt-2 space-y-1">
+        <ul className="mt-2 divide-y divide-border rounded-md border border-border">
           {policy.allow.map((rule) => (
-            <li className="font-mono text-xs text-muted-foreground" key={rule}>
-              {rule === "true" ? "true, anything not refused above" : rule}
-            </li>
+            <RuleRow gloss={glossOf(rule)} key={rule} rule={rule} />
           ))}
         </ul>
       </PageSection>
@@ -673,11 +673,116 @@ function BoundariesPage() {
             {problem}
           </span>
         ) : saved ? (
-          "Saved. It applies to the next action any Bot takes."
+          t("Saved. It applies to the next action any Bot takes.")
         ) : (
-          "Changes apply to the next action any Bot takes, and are kept: a restart comes back up enforcing what is here."
+          t(
+            "Changes apply to the next action any Bot takes, and are kept: a restart comes back up enforcing what is here.",
+          )
         )}
       </p>
     </PageShell>
   );
+}
+
+/**
+ * ONE ROW, WHETHER THE RULE IS IN FORCE OR ON OFFER.
+ *
+ * This section used to hold two: a list of rules as bare monospace with a ghost button reading 제거
+ * beside them, and under it a list of preset BUTTONS whose labels were the only readable thing on
+ * the page and whose rules were invisible. So the same object — a CEL expression — appeared twice
+ * in one section in two shapes, once as unreadable text with no name and once as a name with no
+ * text.
+ *
+ * Now both are a name, the expression in a chip under it, and one action on the right. Which means
+ * the presets finally show what they are about to add, and a hand-written rule that happens to
+ * match a preset gets that preset's words — see `glossOf`.
+ */
+const RuleRow = ({
+  rule,
+  gloss,
+  cost,
+  action,
+}: {
+  rule: string;
+  /** The English key for what this rule means, where anything on this page knows. */
+  gloss?: string;
+  /** What it also stops, from the preset that wrote it. */
+  cost?: string;
+  action?: React.ReactNode;
+}) => (
+  <li className="flex items-start justify-between gap-4 px-3 py-2">
+    <div className="flex min-w-0 flex-col gap-1">
+      {gloss ? <span className="text-sm">{t(gloss)}</span> : null}
+      {/*
+       * A chip, not a paragraph. CEL in the same weight as the sentence above it reads as prose
+       * somebody wrote badly; in a chip it reads as machine detail, which is what it is and what a
+       * person who does not write CEL needs to be told about it in one glance.
+       */}
+      <code className="min-w-0 break-all rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
+        {rule}
+      </code>
+      {cost ? (
+        <span className="text-muted-foreground text-xs">{t(cost)}</span>
+      ) : null}
+    </div>
+    {action ? <div className="shrink-0">{action}</div> : null}
+  </li>
+);
+
+/**
+ * Removing a rule, behind a menu.
+ *
+ * It was a ghost button labelled 제거 sitting in a row of monospace, which is the least emphatic
+ * thing this design has in front of the one action on the page that takes a restriction away. In
+ * the menu it is a destructive item, which is what it looks like everywhere else in the app.
+ */
+const RemoveRule = ({
+  rule,
+  isBusy,
+  onRemove,
+}: {
+  rule: string;
+  isBusy: boolean;
+  onRemove: () => void;
+}) => (
+  <DropdownMenu>
+    <DropdownMenuTrigger
+      render={
+        <Button
+          aria-label={t("Actions for this rule")}
+          disabled={isBusy}
+          size="icon"
+          variant="ghost"
+        >
+          <IconDots />
+        </Button>
+      }
+    />
+    <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuItem
+        className="flex-col items-start gap-0"
+        onClick={onRemove}
+        variant="destructive"
+      >
+        <span>{t("Remove")}</span>
+        <span className="text-xs opacity-80">
+          {/* Named, because two rows of chips look alike and a menu hides which one it opened from. */}
+          {t("Stops applying to the next action: {rule}", { rule })}
+        </span>
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
+
+/**
+ * What a rule means in words, when this page knows.
+ *
+ * Both preset tables plus the one rule the server ships that no preset wrote — `true`, the default
+ * allow, which the list used to gloss with the English half-sentence "true, anything not refused
+ * above" glued onto the expression and never passed through `t()`.
+ */
+function glossOf(rule: string): string | undefined {
+  if (rule === "true") return "Anything not refused above";
+  return [...PRESETS, ...ASK_PRESETS].find((preset) => preset.rule === rule)
+    ?.label;
 }

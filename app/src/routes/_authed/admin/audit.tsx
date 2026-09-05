@@ -1,6 +1,7 @@
 import { IconRefresh } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type * as React from "react";
 import { Fragment, useMemo, useState } from "react";
 import {
   PageEmpty,
@@ -208,6 +209,8 @@ function Row({
   nameFor: (botId: string) => string;
 }) {
   const { event, count } = run;
+  const at = new Date(event.createdAt).toLocaleTimeString(activeLocale);
+  const from = new Date(run.firstAt).toLocaleTimeString(activeLocale);
   const payload = event.payload ?? {};
   const decision = (payload.decision ?? {}) as {
     allowed?: boolean;
@@ -251,17 +254,15 @@ function Row({
   return (
     <tr className="border-border border-t align-top">
       <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
-        {new Date(event.createdAt).toLocaleTimeString(activeLocale)}
+        {at}
         {/*
-         * The other end of a collapsed run. Without it the row says one time and stands for nine,
-         * and a reader counting boots cannot tell nine restarts in a minute from nine over a night.
+         * The other end of a collapsed run, and ONLY when the run actually spans one. Without it a
+         * reader counting boots cannot tell nine restarts in a minute from nine over a night; with
+         * it unconditionally, every run written inside one second — which is most of them, since a
+         * boot publishes its whole catalogue at once — printed the same clock time twice.
          */}
-        {count > 1 ? (
-          <div className="text-xs">
-            {t("from {time}", {
-              time: new Date(run.firstAt).toLocaleTimeString(activeLocale),
-            })}
-          </div>
+        {count > 1 && from !== at ? (
+          <div className="text-xs">{t("from {time}", { time: from })}</div>
         ) : null}
       </td>
       <td className="px-4 py-2 font-medium">
@@ -296,21 +297,21 @@ function Row({
       <td className="px-4 py-2">
         {/* Named targets and file paths are the audit subject before page elements. */}
         {NAMED_TARGETS.has(event.targetType) && event.targetId ? (
-          <span className="font-mono text-xs">
-            {event.targetId}
+          <span>
+            <Id>{event.targetId}</Id>
             {typeof payload.function === "string" ? (
               <span className="text-muted-foreground">
                 {" "}
-                · {payload.function}
+                · <Id>{payload.function}</Id>
               </span>
             ) : null}
           </span>
         ) : typeof payload.fingerprint === "string" ? (
           // A repeat row has no element and no file of its own: what it is about is the call, which
           // the fingerprint names in full.
-          <span className="font-mono text-xs">{payload.fingerprint}</span>
+          <Id>{payload.fingerprint}</Id>
         ) : typeof payload.file === "string" ? (
-          <span className="font-mono text-xs">{payload.file}</span>
+          <Id>{payload.file}</Id>
         ) : typeof element === "object" && element?.name ? (
           <span>
             {element.name}
@@ -599,13 +600,20 @@ function dateOf(at: string): string {
  * from the page it was on.
  */
 const Words = ({ id, label }: { id: string; label: string | undefined }) =>
-  label ? (
-    <span>{t(label)}</span>
-  ) : (
-    <code className="rounded bg-muted px-1.5 py-0.5 font-mono font-normal text-xs">
-      {id}
-    </code>
-  );
+  label ? <span>{t(label)}</span> : <Id>{id}</Id>;
+
+/**
+ * A name this deployment did not choose — a component's slug, a vendor's tool, a file path.
+ *
+ * One spelling of it, because the table has four columns that can hold one and they were three
+ * different weights of monospace. In a chip it reads as a handle to copy rather than as something
+ * to try to understand.
+ */
+const Id = ({ children }: { children: React.ReactNode }) => (
+  <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono font-normal text-xs">
+    {children}
+  </code>
+);
 
 /**
  * A fact code the server recorded, as this surface says it.

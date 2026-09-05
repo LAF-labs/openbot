@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { t } from "@/lib/i18n";
 import {
@@ -45,7 +46,14 @@ type Draft = typeof STARTER;
 function PlaygroundPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { data: components } = useQuery(sandboxedListQueryOptions());
+  /*
+   * The whole query, not `data` alone. It was destructured to `{ data: components }`, so a list that
+   * FAILED to load and a deployment with nothing saved in it drew the identical sentence — 아직
+   * 없습니다 — and the only difference between "you have written none" and "this deployment cannot
+   * tell you" was in a variable nobody read.
+   */
+  const components = useQuery(sandboxedListQueryOptions());
+  const saved = components.data ?? [];
   const [draft, setDraft] = useState<Draft>(STARTER);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +82,7 @@ function PlaygroundPage() {
         const detail = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
-        throw new Error(detail?.error ?? "That did not work.");
+        throw new Error(detail?.error ?? t("That did not work."));
       }
       return response.json();
     },
@@ -146,24 +154,30 @@ function PlaygroundPage() {
             )}
           </p>
         </div>
+        {/*
+         * BOTH SAY WHEN THEY ARE WORKING. Publishing is two round trips — the draft is stored first
+         * — and neither button moved while they were in flight, so the honest reading of a slow
+         * save was that the press had missed. Disabled as well as relabelled: a second press
+         * during a publish sends a second save.
+         */}
         <div className="flex gap-2">
           <Button
-            disabled={!(draft.slug && draft.title)}
+            disabled={!(draft.slug && draft.title) || mutate.isPending}
             onClick={save}
             size="sm"
             type="button"
             variant="outline"
           >
-            {t("Save draft")}
+            {mutate.isPending ? t("Saving…") : t("Save draft")}
           </Button>
           <Button
             /* `publish` saves first, since publishing acts on the stored draft, not the editors. */
-            disabled={!(draft.slug && draft.title)}
+            disabled={!(draft.slug && draft.title) || mutate.isPending}
             onClick={publish}
             size="sm"
             type="button"
           >
-            {t("Publish")}
+            {mutate.isPending ? t("Publishing…") : t("Publish")}
           </Button>
         </div>
       </header>
@@ -243,7 +257,7 @@ function PlaygroundPage() {
                   html: [draft.html],
                   htmlComplete: true,
                   // Provide sample args in the same sandbox evaluation as the component code.
-                  jsFunctions: `window.__args = ${JSON.stringify(sample)};\n${draft.jsFunctions}`,
+                  jsFunctions: `${sandboxGuard()}window.__args = ${JSON.stringify(sample)};\n${draft.jsFunctions}`,
                   jsFunctionsComplete: true,
                   generating: false,
                 }}
@@ -257,13 +271,33 @@ function PlaygroundPage() {
             <div className="border-border border-b px-4 py-2 font-medium text-sm">
               {t("Saved here")}
             </div>
-            {(components ?? []).length === 0 ? (
+            {components.isPending ? (
+              <div className="space-y-2 px-4 py-3">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            ) : components.isError ? (
+              <div className="px-4 py-3">
+                <p className="text-destructive text-sm" role="alert">
+                  {t("What is saved here could not be read.")}
+                </p>
+                <Button
+                  className="mt-2"
+                  onClick={() => void components.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {t("Try again")}
+                </Button>
+              </div>
+            ) : saved.length === 0 ? (
               <p className="px-4 py-3 text-muted-foreground text-sm">
                 {t("Nothing yet.")}
               </p>
             ) : (
               <ul className="divide-y divide-border">
-                {(components ?? []).map((component) => (
+                {saved.map((component) => (
                   <li
                     className="flex items-center justify-between px-4 py-2 text-sm"
                     key={component.name}
@@ -272,10 +306,12 @@ function PlaygroundPage() {
                       <div className="font-mono text-xs">{component.name}</div>
                       <div className="text-xs text-muted-foreground">
                         {component.published
-                          ? `published, revision ${component.revision}`
-                          : "draft only, no Bot can draw it"}
+                          ? t("published, revision {revision}", {
+                              revision: component.revision,
+                            })
+                          : t("draft only, no Bot can draw it")}
                         {component.hasUnpublishedChanges
-                          ? " · edited since publishing"
+                          ? ` · ${t("edited since publishing")}`
                           : ""}
                       </div>
                     </div>
@@ -289,6 +325,7 @@ function PlaygroundPage() {
                         {t("Open")}
                       </Button>
                       <Button
+                        disabled={mutate.isPending}
                         onClick={() => setDeleting(component.name)}
                         size="sm"
                         type="button"
@@ -336,6 +373,7 @@ function PlaygroundPage() {
               {t("Cancel")}
             </Button>
             <Button
+              disabled={mutate.isPending}
               onClick={() => {
                 const name = deleting;
                 setDeleting(null);
@@ -351,7 +389,7 @@ function PlaygroundPage() {
               size="sm"
               variant="destructive"
             >
-              {t("Delete it")}
+              {mutate.isPending ? t("Deleting…") : t("Delete it")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -407,7 +445,7 @@ function CodeField({
       <FieldLabel htmlFor={id}>
         {label}
         {invalid ? (
-          <span className="ml-2 text-destructive">not valid JSON</span>
+          <span className="ml-2 text-destructive">{t("not valid JSON")}</span>
         ) : null}
       </FieldLabel>
       <Textarea
@@ -420,4 +458,40 @@ function CodeField({
       />
     </Field>
   );
+}
+
+/**
+ * WHY A COMPONENT THAT TOUCHES STORAGE DIES SILENTLY, AND WHERE THE AUTHOR FINDS OUT.
+ *
+ * The preview runs in `@jetbrains/websandbox`, which sets `sandbox="allow-scripts"` and NOTHING
+ * else (`lib/websandbox.ts`: `frame.sandbox = 'allow-scripts ' + sandboxAdditionalAttributes`, and
+ * the renderer passes the empty default). A document sandboxed without `allow-same-origin` has an
+ * opaque origin, so `window.localStorage` does not return null — reading the property THROWS
+ * `SecurityError: … the document is sandboxed and lacks the 'allow-same-origin' flag`. The same is
+ * true of `sessionStorage`, `document.cookie` and IndexedDB, and CopilotKit tells the model as much
+ * in the tool description it ships.
+ *
+ * The throw lands inside the iframe, which is cross-origin to us, so nothing on this page could see
+ * it: the preview simply stopped drawing halfway and the only evidence was a line in the browser
+ * console. An author watching a live preview is exactly the person who should be told.
+ *
+ * A SHIM WOULD HAVE BEEN WORSE. Defining a working `localStorage` on the sandbox window is a couple
+ * of lines and makes the preview draw — and then the same component fails in a conversation, where
+ * the sandbox is the same and this page is not. The preview has to fail the way production fails.
+ *
+ * An error LISTENER rather than a `try`/`catch` around the author's code: wrapping it in a block
+ * would move every top-level `function` and `const` into that block's scope, so a helper the HTML
+ * calls from an `onclick` would stop existing. The listener changes nothing about how the code runs.
+ */
+function sandboxGuard(): string {
+  const sentence = t(
+    "This ran in a sandbox with no access to this site, so storage, cookies and same-origin requests are not available — here or in a conversation.",
+  );
+  return `window.addEventListener("error", function (event) {
+  var box = document.createElement("pre");
+  box.setAttribute("data-laf-sandbox-error", "");
+  box.textContent = String((event && event.message) || event) + "\\n\\n" + ${JSON.stringify(sentence)};
+  (document.body || document.documentElement).appendChild(box);
+});
+`;
 }

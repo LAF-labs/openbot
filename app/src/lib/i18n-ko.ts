@@ -1806,6 +1806,17 @@ export const ko: Record<string, string> = {
   "{count} Bots in this room": "봇 {count}명이 있는 방",
   // 연결·설정 화면
   // 관리 화면
+  // 경계
+  "Common rules": "자주 쓰는 규칙",
+  "Actions for this rule": "이 규칙에 대한 작업",
+  "Stops applying to the next action: {rule}":
+    "다음 행동부터 적용하지 않습니다: {rule}",
+  "Anything not refused above": "위에서 막지 않은 것은 모두",
+  // 플레이그라운드
+  "Publishing…": "게시하는 중…",
+  "What is saved here could not be read.": "여기 저장된 것을 읽지 못했습니다.",
+  "This ran in a sandbox with no access to this site, so storage, cookies and same-origin requests are not available — here or in a conversation.":
+    "이 코드는 이 사이트에 접근할 수 없는 격리 상자 안에서 돌았습니다. 저장소·쿠키·같은 출처 요청은 여기서도, 대화에서도 쓸 수 없습니다.",
   // 감사 기록
   Target: "대상",
   "from {time}": "{time}부터",
