@@ -7,6 +7,7 @@ import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
+import { RoutineSuggestions } from "@/components/routines/suggestions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -819,6 +820,12 @@ function RoutinesPage() {
         }
       >
         <PageSection>
+          {/*
+           * The cards first, then the list: a suggestion is only worth anything before the person
+           * has written the routine themselves. The section draws nothing when there is nothing
+           * to offer, so the list sits where it always did.
+           */}
+          <RoutineSuggestions />
           <div className="flex flex-col gap-3">
             {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
             {routines.isPending

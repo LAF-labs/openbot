@@ -1930,4 +1930,46 @@ export const ko: Record<string, string> = {
   // 컴포넌트가 그리다 터졌을 때. 대화는 그대로 이어진다는 말이 이 문장의 핵심이다.
   "{name}{josa} could not be drawn. The rest of this conversation is unaffected.":
     "{name}{josa} 그리지 못했습니다. 이 대화의 나머지는 그대로입니다.",
+
+  /*
+   * 루틴 추천 카드. 목록 위에 조용히 놓이는 다섯 장까지의 카드 — 만들기를 누르기 전에는 아무것도
+   * 만들지 않고, 다음에를 누르면 다시 오지 않는다. `lib/routines/suggestions.ts`의 표를
+   * `routine-suggestions.test.ts`가 걷는다.
+   */
+  "Routines you might want": "이런 루틴은 어떠세요",
+  "Made from what you have connected. Nothing is created until you press Make.":
+    "연결해 둔 것을 보고 골랐습니다. 만들기를 누르기 전에는 아무것도 만들지 않습니다.",
+  "Using {connections}": "{connections} 연결로",
+  "Needs no connection": "연결 없이 바로",
+  Make: "만들기",
+  "Making…": "만드는 중…",
+  "Not now": "다음에",
+  "{name}{josa} in the list below now.":
+    "'{name}'{josa} 아래 목록에 들어갔습니다.",
+  "The suggestions could not be loaded.": "추천 루틴을 불러오지 못했습니다.",
+  "That suggestion is no longer on offer.":
+    "지금은 이 루틴을 추천드릴 수 없습니다.",
+  // 카드마다 한 줄 — 왜 이 루틴이 있으면 좋은지. 이름과 지시문은 서버 카탈로그의 것이 그대로 온다.
+  "One look at yesterday's orders, enquiries and reviews before the day starts.":
+    "하루를 시작하기 전에 어제 주문·문의·리뷰를 한 번에 봅니다.",
+  "A low star found the same morning, with a reply drafted and nothing sent.":
+    "낮은 별점을 그날 아침에 찾아 답글 초안까지 써 두고, 보내지는 않습니다.",
+  "Nobody waits two days for an answer you did not know they were waiting for.":
+    "기다리는 줄도 몰랐던 문의가 이틀씩 묵지 않게 합니다.",
+  "Last week's sales by channel and what is landing this week, every Monday.":
+    "매주 월요일, 지난주 매출을 채널별로 정리하고 이번 주 정산까지 알려 줍니다.",
+  "What is about to run out, before a customer finds out first.":
+    "손님이 먼저 알기 전에 곧 떨어질 상품을 알려 줍니다.",
+  "Tomorrow's bookings in order, the evening before.":
+    "내일 예약을 전날 저녁에 시간순으로 정리해 둡니다.",
+  "Orders past their ship-by date, found before the penalty is.":
+    "발송 기한을 넘긴 주문을 페널티가 붙기 전에 찾아냅니다.",
+  "Checks the shop shows as open before the dinner rush, every evening.":
+    "저녁 장사 전에 가게가 영업 중으로 떠 있는지 매일 확인합니다.",
+  "Where last week's ad money went, campaign by campaign.":
+    "지난주 광고비가 어디로 갔는지 캠페인별로 보여 줍니다.",
+  "Your best sellers against the lowest price on Naver Shopping, every Wednesday.":
+    "매주 수요일, 잘 팔리는 상품을 네이버 쇼핑 최저가와 비교합니다.",
+  "Which filings fall in the next two weeks, so none of them is a surprise.":
+    "앞으로 2주 안에 돌아오는 신고를 미리 알려 줍니다.",
 };
