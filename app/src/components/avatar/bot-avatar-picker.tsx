@@ -53,7 +53,7 @@ const Row = ({
 }) => (
   <fieldset className="flex flex-col gap-1.5">
     <legend className="pb-1 text-muted-foreground text-xs">{label}</legend>
-    <div className="flex flex-row flex-wrap gap-1">
+    <div className="grid grid-cols-6 gap-1">
       {options.map((option) => {
         const seed = withAxis(
           params,

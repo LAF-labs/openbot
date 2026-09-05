@@ -33,7 +33,7 @@ import { bodyShape, CENTRE, flattenPath } from "../src/lib/avatar/grok-shapes";
  * THE FACE, MEASURED.
  *
  * Three layers, three kinds of promise. The seed grammar: every string is a face, a chosen face
- * survives a round trip, an old seed keeps its colour. The bodies: eighteen paths that are the size
+ * survives a round trip, an old seed keeps its colour. The bodies: twelve paths that are the size
  * they claim, centred, and that know where their own skin is. The engine: a frame loop that a test
  * can step by hand — no waiting on real frames — and that never writes NaN into the DOM.
  */
@@ -53,7 +53,7 @@ describe("the seed grammar", () => {
         });
       }
     }
-    expect(BOT_AVATAR_SHAPES.length).toBe(18);
+    expect(BOT_AVATAR_SHAPES.length).toBe(12);
     expect(BOT_AVATAR_PALETTES.length).toBe(10);
   });
 

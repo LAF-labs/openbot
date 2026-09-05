@@ -1,5 +1,6 @@
 /**
- * The bodies a Bot can have, generated the way Grok Bot generates them.
+ * The bodies a Bot can have, generated the way Grok Bot generates them — the twelve of its eighteen
+ * that stay soft all the way round (the owner dropped the square-cut ones and the bean).
  *
  * Read out of Grok Bot 0.30.0's renderer bundle on 2026-09-06 at the owner's request ("Grok Bot 파일을
  * 뜯어서 읽고 그걸 최대한 따라가"), and re-derived here rather than pasted: every body is a formula —
@@ -250,67 +251,6 @@ const capsule = (halfWidth: number, halfHeight: number): string =>
     )
     .close();
 
-const cylinder = (halfWidth: number, halfHeight: number, cap: number): string =>
-  new PathBuilder()
-    .move(CENTRE - halfWidth, CENTRE - halfHeight + cap)
-    .arc(CENTRE, CENTRE - halfHeight + cap, halfWidth, cap, Math.PI, TAU)
-    .line(CENTRE + halfWidth, CENTRE + halfHeight - cap)
-    .arc(CENTRE, CENTRE + halfHeight - cap, halfWidth, cap, 0, Math.PI)
-    .close();
-
-const dome = (halfWidth: number, halfHeight: number, foot: number): string => {
-  const bottom = CENTRE + halfHeight;
-  return new PathBuilder()
-    .move(CENTRE - halfWidth, bottom - foot)
-    .arc(CENTRE, bottom - foot, halfWidth, 2 * halfHeight - foot, Math.PI, TAU)
-    .line(CENTRE + halfWidth, bottom - foot)
-    .curve(
-      CENTRE + halfWidth,
-      bottom,
-      CENTRE + halfWidth,
-      bottom,
-      CENTRE + halfWidth - foot,
-      bottom,
-    )
-    .line(CENTRE - halfWidth + foot, bottom)
-    .curve(
-      CENTRE - halfWidth,
-      bottom,
-      CENTRE - halfWidth,
-      bottom,
-      CENTRE - halfWidth,
-      bottom - foot,
-    )
-    .close();
-};
-
-const arch = (halfWidth: number, halfHeight: number, foot: number): string => {
-  const bottom = CENTRE + halfHeight;
-  const shoulder = CENTRE - halfHeight + halfWidth;
-  return new PathBuilder()
-    .move(CENTRE - halfWidth, shoulder)
-    .arc(CENTRE, shoulder, halfWidth, halfWidth, Math.PI, TAU)
-    .line(CENTRE + halfWidth, bottom - foot)
-    .curve(
-      CENTRE + halfWidth,
-      bottom,
-      CENTRE + halfWidth,
-      bottom,
-      CENTRE + halfWidth - foot,
-      bottom,
-    )
-    .line(CENTRE - halfWidth + foot, bottom)
-    .curve(
-      CENTRE - halfWidth,
-      bottom,
-      CENTRE - halfWidth,
-      bottom,
-      CENTRE - halfWidth,
-      bottom - foot,
-    )
-    .close();
-};
-
 const shield = (
   halfWidth: number,
   halfHeight: number,
@@ -383,37 +323,6 @@ const teardrop = (
     .arc(CENTRE, bulbY, radius, radius, Math.PI - angle, angle)
     .close();
 };
-
-const leaf = (halfWidth: number, halfHeight: number, point: number): string =>
-  polar((angle) => {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    return [
-      CENTRE +
-        cos * halfWidth * Math.max(1 - sin * sin, 0) ** (point / 2 - 0.5),
-      CENTRE + sin * halfHeight,
-    ];
-  });
-
-const bean = (
-  halfWidth: number,
-  halfHeight: number,
-  dent: number,
-  where: number,
-): string =>
-  polar((angle) => {
-    const near = (at: number) => {
-      const away = Math.abs(
-        ((((angle - at + Math.PI) % TAU) + TAU) % TAU) - Math.PI,
-      );
-      return Math.exp(-(away * away) / 0.4232);
-    };
-    const scale = 1 - dent * near(where) + dent * 0.34 * near(where + Math.PI);
-    return [
-      CENTRE + Math.cos(angle) * halfWidth * scale,
-      CENTRE + Math.sin(angle) * halfHeight * scale,
-    ];
-  });
 
 const pebble = (radius: number, wobble: number, phase: number): string =>
   polar((angle) => {
@@ -710,22 +619,16 @@ export type BodyShape = {
 export const SHAPE_IDS = [
   "blob",
   "pebble",
-  "bean",
-  "egg",
   "squircle",
   "tablet",
-  "capsule",
-  "cylinder",
-  "hex",
-  "gem",
-  "crystal",
   "wedge",
-  "shield",
-  "dome",
-  "arch",
+  "hex",
   "cloud",
   "teardrop",
-  "leaf",
+  "egg",
+  "capsule",
+  "gem",
+  "shield",
 ] as const;
 
 export type ShapeId = (typeof SHAPE_IDS)[number];
@@ -748,37 +651,18 @@ const RAW: Record<
 > = {
   blob: { label: "Blob", path: () => BLOB_PATH },
   pebble: { label: "Pebble", path: () => pebble(108, 0.075, 1.1) },
-  bean: { label: "Bean", path: () => bean(94, 112, 0.34, Math.PI) },
   egg: { label: "Egg", path: () => egg(98, 113, 0.22) },
   squircle: { label: "Squircle", path: () => superellipse(107, 107, 4.2) },
   tablet: { label: "Tablet", path: () => tablet(114, 74) },
   capsule: { label: "Capsule", path: () => capsule(72, 113) },
-  cylinder: { label: "Cylinder", path: () => cylinder(94, 110, 34) },
   hex: { label: "Hex", path: () => regularPolygon(114, 6, 20, Math.PI / 6) },
   gem: { label: "Gem", path: () => superellipse(112, 113, 1.5) },
-  crystal: {
-    label: "Crystal",
-    path: () =>
-      rounded(
-        [
-          [CENTRE, CENTRE - 113],
-          [CENTRE + 76, CENTRE - 52],
-          [CENTRE + 76, CENTRE + 52],
-          [CENTRE, CENTRE + 113],
-          [CENTRE - 76, CENTRE + 52],
-          [CENTRE - 76, CENTRE - 52],
-        ],
-        [20, 26],
-      ),
-  },
   wedge: {
     label: "Wedge",
     path: () => regularPolygon(130, 3, 60, -Math.PI / 2),
     leftDX: -6,
   },
   shield: { label: "Shield", path: () => shield(98, 108, 30) },
-  dome: { label: "Dome", path: () => dome(114, 82, 26) },
-  arch: { label: "Arch", path: () => arch(76, 113, 20) },
   cloud: {
     label: "Cloud",
     path: () =>
@@ -794,7 +678,6 @@ const RAW: Record<
     label: "Teardrop",
     path: () => teardrop(88, CENTRE - 114, CENTRE + 26, 18),
   },
-  leaf: { label: "Leaf", path: () => leaf(88, 113, 1.5) },
 };
 
 const built = new Map<ShapeId, BodyShape>();

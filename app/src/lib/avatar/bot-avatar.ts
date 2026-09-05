@@ -3,7 +3,7 @@
  *
  * The owner's rule (2026-09-05): shape and colour are the only two choices a person makes. No
  * accessories, no eye styles to pick — the eyes are the expression engine's, and change with what
- * the Bot is doing. This module follows Grok Bot's own tables: its eighteen bodies (eight of which
+ * the Bot is doing. This module follows Grok Bot's own tables: its bodies (twelve kept, eight of which
  * are dealt to a Bot nobody chose a face for), its eleven colours with a light and a dark value each,
  * and the two hashes it uses to deal a face from a name, so a Bot that was never given a face gets
  * the same one Grok would give it.
@@ -79,22 +79,16 @@ export type BotAvatarShape = { id: ShapeId; name: string };
 const SHAPE_NAMES: Record<ShapeId, string> = {
   blob: "Blob",
   pebble: "Pebble",
-  bean: "Bean",
   egg: "Egg",
   squircle: "Squircle",
   tablet: "Tablet",
   capsule: "Capsule",
-  cylinder: "Cylinder",
   hex: "Hex",
   gem: "Gem",
-  crystal: "Crystal",
   wedge: "Wedge",
   shield: "Shield",
-  dome: "Dome",
-  arch: "Arch",
   cloud: "Cloud",
   teardrop: "Teardrop",
-  leaf: "Leaf",
 };
 
 /** Every body, defaults first so the picker's first row is the eight a Bot is usually dealt. */
