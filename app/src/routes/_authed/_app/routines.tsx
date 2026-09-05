@@ -50,15 +50,13 @@ function RunHistory({ routineId }: { routineId: string }) {
   // "Never run" is a claim about the past. It must not be made while the past is still arriving.
   if (runs.isPending) {
     return (
-      <p className="py-2 text-[12px] text-muted-foreground">
-        {t("Loading runs…")}
-      </p>
+      <p className="py-2 text-xs text-muted-foreground">{t("Loading runs…")}</p>
     );
   }
   if (runs.isError) {
     return (
       <div className="flex items-center gap-2 py-2">
-        <p className="text-[12px] text-destructive" role="alert">
+        <p className="text-xs text-destructive" role="alert">
           {t("The run history could not be loaded.")}
         </p>
         <Button onClick={() => void runs.refetch()} size="sm" variant="ghost">
@@ -69,7 +67,7 @@ function RunHistory({ routineId }: { routineId: string }) {
   }
   if (!runs.data?.length) {
     return (
-      <p className="py-2 text-[12px] text-muted-foreground">
+      <p className="py-2 text-xs text-muted-foreground">
         {t("This routine has not run yet.")}
       </p>
     );
@@ -81,14 +79,14 @@ function RunHistory({ routineId }: { routineId: string }) {
           key={run.id}
           className="rounded-lg border border-border bg-card p-3"
         >
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{new Date(run.startedAt).toLocaleString(activeLocale)}</span>
             <span className={run.ok ? "" : "text-destructive"}>
               {run.ok ? t("Ran") : t("Failed")}
               {runShape(run.steps, t) ? ` · ${runShape(run.steps, t)}` : ""}
             </span>
           </div>
-          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed">
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
             {run.ok ? run.answer : run.error}
           </p>
         </li>
@@ -172,15 +170,13 @@ function RoutineRow({ routine }: { routine: Routine }) {
           type="button"
         >
           <div className="flex items-baseline gap-2">
-            <span className="truncate font-medium text-[13px]">
-              {routine.name}
-            </span>
-            <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+            <span className="truncate font-medium text-sm">{routine.name}</span>
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
               {bot?.name ? `${bot.name} · ` : ""}
               {scheduleLabel(routine)}
             </span>
           </div>
-          <p className="truncate text-[12px] text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {routine.instruction}
           </p>
         </button>
@@ -256,14 +252,14 @@ function TriggerReveal({
 }) {
   const command = `curl -X POST ${window.location.origin}/api/routines/${routineId}/trigger -H "x-trigger-token: ${token}"`;
   return (
-    <div className="rounded-lg border border-border bg-muted/60 p-3 text-[12px]">
+    <div className="rounded-lg border border-border bg-muted/60 p-3 text-xs">
       <p className="font-medium">{t("Webhook trigger — shown only once")}</p>
       <p className="mt-1 text-muted-foreground">
         {t(
           "Any system that POSTs this fires the routine (at most once per 30 seconds). The request body, if any, is handed to the Bot.",
         )}
       </p>
-      <code className="mt-2 block select-all break-all rounded bg-background p-2 font-mono text-[11px]">
+      <code className="mt-2 block select-all break-all rounded bg-background p-2 font-mono text-xs">
         {command}
       </code>
     </div>
@@ -518,7 +514,7 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
         </div>
       ) : null}
       {create.error ? (
-        <p className="text-[12px] text-destructive" role="alert">
+        <p className="text-xs text-destructive" role="alert">
           {create.error.message}
         </p>
       ) : null}
@@ -566,7 +562,7 @@ function RoutinesPage() {
             : null}
           {routines.isError ? (
             <div className="flex flex-col items-start gap-2 py-6">
-              <p className="text-[13px] text-destructive" role="alert">
+              <p className="text-sm text-destructive" role="alert">
                 {t("Your routines could not be loaded.")}
               </p>
               <Button
@@ -585,7 +581,7 @@ function RoutinesPage() {
             <div className="flex flex-col items-center gap-3 py-10">
               {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
               <BotAvatar className="opacity-80" seed="s:wedge.cyan" size={56} />
-              <p className="text-center text-[13px] text-muted-foreground">
+              <p className="text-center text-sm text-muted-foreground">
                 {t(
                   "No routines yet. Give a Bot something to do every morning.",
                 )}

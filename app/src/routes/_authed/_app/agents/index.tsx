@@ -84,10 +84,22 @@ function AgentsScreen() {
          * fifth one on purpose.
          */}
         <PageSection
-          title={t("My Bots {used}/{total}", {
-            total: seats.total,
-            used: seats.used,
-          })}
+          /*
+           * THE COUNT IS A FACT, AND IT WAS BEING STATED BEFORE ANYBODY KNEW IT.
+           *
+           * `useSeats` counts the rosters it has, and while they are in flight it has none — so a
+           * cold load read 내 봇 0/5 for a moment, and a 500 left that on screen underneath the
+           * error: a person with four Bots told, in the same glance, that the list failed to load
+           * and that they have none. The heading keeps the noun and waits for the number.
+           */
+          title={
+            isPending || isError
+              ? t("My Bots")
+              : t("My Bots {used}/{total}", {
+                  total: seats.total,
+                  used: seats.used,
+                })
+          }
         >
           <div className="flex flex-row">
             {!!mine?.length && (
@@ -96,8 +108,13 @@ function AgentsScreen() {
                * the moment a profile opens beside it, and a fixed four columns squeezed the cards
                * until they overlapped. auto-fill keeps every card at least 144px and drops to
                * however many fit.
+               *
+               * TWO UP UNTIL `lg`, THOUGH. auto-fill alone kept three columns at an 800px window —
+               * 144px is narrow enough to fit three — and three 144px cards is where the second
+               * line of every description clamps to "예약 확인, 재고 점검, 직원 일…". Below lg the
+               * roster is two columns and the sentences finish.
                */
-              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
+              <div className="grid w-full grid-cols-2 gap-4 lg:grid-cols-[repeat(auto-fill,minmax(144px,1fr))]">
                 {mine.map((agent, index) => {
                   const run = working?.find((it) => it.agentId === agent.id);
                   return (
@@ -126,9 +143,10 @@ function AgentsScreen() {
              * they had never made one.
              */}
             {isPending && (
-              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-4">
+              <div className="grid w-full grid-cols-2 gap-4 lg:grid-cols-[repeat(auto-fill,minmax(144px,1fr))]">
                 {[0, 1, 2].map((slot) => (
-                  <Skeleton className="h-[200px] rounded-xl" key={slot} />
+                  // The card's own height, so the roster does not jump when the answer lands.
+                  <Skeleton className="h-[196px] rounded-xl" key={slot} />
                 ))}
               </div>
             )}

@@ -1,4 +1,4 @@
-import { IconDots } from "@tabler/icons-react";
+import { IconDots, IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
@@ -6,6 +6,7 @@ import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
+import { FOCUS_RING } from "@/components/layout/focus-ring";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,12 +158,25 @@ export function AgentProfile({ agentId }: { agentId: string }) {
          */}
         {profile.canManage ? (
           <button
-            aria-label={t("Pick a face")}
-            className="group w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 focus-visible:ring-2 focus-visible:ring-foreground"
+            aria-label={t("Change the face")}
+            className={`group relative w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 ${FOCUS_RING}`}
             onClick={() => setPickingFace(true)}
             type="button"
           >
             {banner}
+            {/*
+             * THE ONLY THING THAT SAID THIS WAS A BUTTON WAS THE CURSOR.
+             *
+             * A 190px drawing with a hairline round it looks like a picture of the Bot, because that
+             * is what it is everywhere else in the product. The label appears on hover AND on
+             * keyboard focus — `group-focus-visible` — so it is not a mouse-only affordance, and it
+             * sits over the bottom of the tile rather than beside it, where it would push the name
+             * down the pane for everybody who already knows.
+             */}
+            <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-black/45 to-transparent px-2 pt-6 pb-2 text-white text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+              <IconPencil className="size-3.5" />
+              {t("Change the face")}
+            </span>
           </button>
         ) : (
           <span className="group w-full overflow-hidden rounded-2xl border border-border">
@@ -255,6 +269,10 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                 onChoose={async (id) => {
                   if (id === "edit") {
                     setEditingId(agentId);
+                    return;
+                  }
+                  if (id === "face") {
+                    setPickingFace(true);
                     return;
                   }
                   if (id === "delete") {
@@ -451,7 +469,7 @@ function WorkStyleCard({
   const dirty = draft.trim() !== roleDescription.trim();
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       <div className="flex flex-col gap-0.5">
         <h2 className="font-medium text-base" id={labelId}>
           {t("How it works")}
@@ -547,7 +565,7 @@ function EffortCard({
   if (user && !user.deployment.effort) return null;
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       {/*
        * A fieldset, and `aria-pressed` on the buttons — the same grammar the face picker uses. One
        * choice out of three, and a reader arriving on the middle button should hear which one is
@@ -562,33 +580,41 @@ function EffortCard({
             {t("Thinking longer costs time. It is worth it on the hard ones.")}
           </span>
         </legend>
-        <div className="flex gap-1.5">
-          {AGENT_EFFORTS.map((option) => (
-            <Button
-              aria-pressed={option === effort}
-              /*
-               * `ring-2 ring-primary`, the same mark the face picker puts on the tile you chose.
-               * A tint was the first try and it did not read: on this ground `bg-foreground/5` is
-               * about two per cent of contrast, so the three buttons looked identical and only a
-               * screen reader was told which one was set — which is the wrong way round.
-               */
-              className={`flex-1 text-sm!${
-                option === effort
-                  ? " ring-2 ring-primary ring-offset-1 ring-offset-[var(--sand-fill-secondary)]"
-                  : ""
-              }`}
-              disabled={setEffort.isPending}
-              key={option}
-              onClick={() => {
-                if (option === effort) return;
-                setEffort.mutate({ agentId, effort: option });
-              }}
-              size="sm"
-              variant="outline"
-            >
-              {effortLabel(option)}
-            </Button>
-          ))}
+        {/*
+         * ONE TRACK WITH ONE BORDER, AND THE CHOSEN SEGMENT FILLED.
+         *
+         * Three outline buttons was the wrong shape for one choice out of three. Two things were
+         * measured wrong with it: the selected mark was `ring-2 ring-primary` — a heavy black
+         * rectangle indistinguishable from the focus ring, so a screenshot could not tell a set
+         * value from a focused one — and three bordered boxes side by side put two hairlines
+         * between each pair, which reads as a table rather than as a choice.
+         *
+         * A segmented control has one border, round the group, and says which one is chosen by
+         * FILLING it. Focus stays the house ring, and now means only what it means.
+         */}
+        <div className="flex w-full rounded-lg border border-border bg-background p-0.5">
+          {AGENT_EFFORTS.map((option) => {
+            const chosen = option === effort;
+            return (
+              <button
+                aria-pressed={chosen}
+                className={`flex-1 rounded-md px-2 py-1.5 text-sm transition-colors disabled:opacity-50 ${FOCUS_RING} ${
+                  chosen
+                    ? "bg-primary font-medium text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+                disabled={setEffort.isPending}
+                key={option}
+                onClick={() => {
+                  if (chosen) return;
+                  setEffort.mutate({ agentId, effort: option });
+                }}
+                type="button"
+              >
+                {effortLabel(option)}
+              </button>
+            );
+          })}
         </div>
       </fieldset>
       {setEffort.error ? (
@@ -638,12 +664,27 @@ function MemoriesCard({ agentId }: { agentId: string }) {
     }
   };
 
-  // Nothing is claimed before the answer arrives: "it remembers nothing" is as much a claim as a
-  // list, and it was being made while the request was still in flight.
-  if (isPending) return null;
+  /*
+   * Nothing is claimed before the answer arrives: "it remembers nothing" is as much a claim as a
+   * list, and it was being made while the request was still in flight.
+   *
+   * BUT NOT `null`. Returning nothing left a card-shaped hole that filled in a moment later and
+   * pushed the two cards below it down the pane — measured on a cold load, everything under
+   * 기억하는 내용 jumped once the memories landed, and again when the skills did. The placeholder is
+   * the same height as the card it becomes.
+   */
+  if (isPending) {
+    return (
+      <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-9 w-full rounded-lg" />
+      </section>
+    );
+  }
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       <div className="flex flex-col gap-0.5">
         <h2 className="font-medium text-base">{t("What it remembers")}</h2>
         <p className="text-muted-foreground text-sm">
@@ -702,8 +743,23 @@ function SkillsCard({ agentId }: { agentId: string }) {
   const mine = (data?.skills ?? []).filter(
     (skill) => skill.ownerUserId && skill.ownerUserId === me?.id,
   );
-  // Nothing to grant and nothing to say: the Skills page is where a first one gets written.
-  if (isPending || mine.length === 0) return null;
+  /*
+   * A card's worth of height while the answer is in flight, then either the list or nothing at all.
+   *
+   * Nothing to grant and nothing to say is a real state — the Skills page is where a first one gets
+   * written — but it is only knowable once the request lands, and `null` in the meantime made the
+   * pane shift under whoever was reading it.
+   */
+  if (isPending) {
+    return (
+      <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-9 w-full rounded-lg" />
+      </section>
+    );
+  }
+  if (mine.length === 0) return null;
 
   const toggle = async (slug: string, held: boolean) => {
     setBusy(slug);
@@ -732,7 +788,7 @@ function SkillsCard({ agentId }: { agentId: string }) {
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       <div className="flex flex-col gap-0.5">
         <h2 className="font-medium text-base">{t("Skills")}</h2>
         <p className="text-muted-foreground text-sm">
@@ -818,7 +874,7 @@ function AutoReviewCard({
   if (user && !user.deployment.autoReview) {
     if (!instruction.trim()) return null;
     return (
-      <section className="flex flex-col gap-1 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <section className="flex flex-col gap-1 rounded-xl bg-muted p-3">
         <h2 className="font-medium text-base">{t("Do not ask me about")}</h2>
         <p className="text-muted-foreground text-sm">
           {t(
@@ -833,7 +889,7 @@ function AutoReviewCard({
   }
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       <div className="flex flex-col gap-0.5">
         <h2 className="font-medium text-base" id={labelId}>
           {t("Do not ask me about")}
@@ -855,7 +911,7 @@ function AutoReviewCard({
       <div className="flex flex-wrap gap-1.5">
         {AUTO_REVIEW_EXAMPLES.map((example) => (
           <button
-            className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-ring/40 hover:text-foreground"
+            className={`rounded-full border border-border px-2.5 py-1 text-muted-foreground text-xs transition-colors hover:border-ring/40 hover:text-foreground ${FOCUS_RING}`}
             key={example}
             onClick={() => setDraft(t(example))}
             type="button"
@@ -936,7 +992,7 @@ function NotifyCard({
   const labelId = useId();
 
   return (
-    <section className="flex items-start gap-3 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+    <section className="flex items-start gap-3 rounded-xl bg-muted p-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <h2 className="font-medium text-base" id={labelId}>
           {t("Notifications")}

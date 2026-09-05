@@ -133,7 +133,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
           />
           <input
             aria-label={t("What it does")}
-            className="w-full truncate rounded-md bg-transparent text-[13px] text-muted-foreground outline-none focus-visible:bg-muted/60 focus-visible:px-1"
+            className="w-full truncate rounded-md bg-transparent text-sm text-muted-foreground outline-none focus-visible:bg-muted/60 focus-visible:px-1"
             onBlur={() => {
               const next = title.trim();
               if (next === agent.title) return;
@@ -167,7 +167,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
       <div className="flex flex-wrap gap-1.5">
         {suggestions.map((preset) => (
           <button
-            className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-ring/40 hover:text-foreground disabled:opacity-50"
+            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-ring/40 hover:text-foreground disabled:opacity-50"
             disabled={updateAgent.isPending}
             key={preset.id}
             onClick={() => void applyPreset(preset)}
@@ -178,7 +178,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
         ))}
       </div>
 
-      <p className="text-[12px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {saved ? (
           /* It saved as you typed, so the only honest confirmation is a quiet one that goes away. */
           <span className="text-foreground/70">{t("Saved")}</span>

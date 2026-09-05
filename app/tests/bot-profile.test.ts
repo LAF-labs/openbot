@@ -25,9 +25,14 @@ const PROFILE = join(
 describe("the Bot menu", () => {
   const owned = { canManage: true, hidden: false };
 
-  test("a Bot you manage offers all four", () => {
+  test("a Bot you manage offers all five", () => {
+    /*
+     * `face` joined them because the picker had no way in but the drawing itself: the avatar tile
+     * opened it and nothing on the pane said so. A verb belongs in the list of verbs.
+     */
     expect(botMenuItems(owned, seatsFrom(1)).map((item) => item.id)).toEqual([
       "edit",
+      "face",
       "hide",
       "duplicate",
       "delete",
@@ -137,9 +142,14 @@ describe("what it remembers", () => {
     expect(card).toContain(
       "Nothing yet. What it learns about you appears here.",
     );
-    // Pending is still the one case that draws nothing: "it remembers nothing" is as much a claim
-    // as a list, and it must not be made while the request is in flight.
-    expect(card).toContain("if (isPending) return null;");
+    /*
+     * Pending still claims nothing — "it remembers nothing" is as much a claim as a list — but it no
+     * longer claims it by disappearing. `return null` left a card-shaped hole that filled in a
+     * moment later and shoved the cards below it down the pane; the placeholder holds the space.
+     */
+    expect(card).toContain("if (isPending) {");
+    expect(card).toContain("<Skeleton");
+    expect(card).not.toContain("if (isPending) return null;");
     expect(card).not.toContain("memories.length === 0) return null");
   });
 });

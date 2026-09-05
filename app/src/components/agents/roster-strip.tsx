@@ -56,7 +56,7 @@ export function RosterStrip({
             </span>
             <span
               className={
-                "max-w-full truncate text-[11px] leading-tight" +
+                "max-w-full truncate text-xs leading-tight" +
                 (chosen ? " font-medium" : " text-muted-foreground")
               }
             >
@@ -83,7 +83,7 @@ export function RosterStrip({
         <span className="inline-flex size-12 items-center justify-center rounded-full border border-border border-dashed text-[20px] text-muted-foreground transition-transform duration-150 group-hover:scale-105">
           +
         </span>
-        <span className="max-w-full truncate text-[11px] text-muted-foreground leading-tight">
+        <span className="max-w-full truncate text-xs text-muted-foreground leading-tight">
           {newBot.isPending ? t("Creating…") : t("New Bot")}
         </span>
       </button>

@@ -41,26 +41,33 @@ export function AgentCard({
      * filling the cell it was given.
      */
     <div className="group flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
-      <div className="flex aspect-square shrink-0 items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)] p-4">
+      {/*
+       * 120px OF FACE, NOT A SQUARE.
+       *
+       * `aspect-square` meant the drawing grew with the column: measured at 1280 with no profile
+       * open, 190px of face over 80px of words — a portrait gallery in which the name of the Bot was
+       * the smallest thing on its own card. The face is a fixed band now and the card is mostly
+       * about 120 + two lines, so a roster of four reads as four colleagues rather than four
+       * paintings.
+       */}
+      <div className="flex h-[120px] shrink-0 items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)] p-3">
         <BotAvatar
           className="size-full transition-transform duration-200 group-hover:scale-[1.04]"
           seed={agent.avatarSeed}
-          size={144}
+          size={96}
         />
       </div>
       <div className="flex flex-col gap-0.5 p-3">
-        <span className="line-clamp-1 font-medium text-[13px]">
-          {agent.name}
-        </span>
+        <span className="line-clamp-1 font-medium text-sm">{agent.name}</span>
         {status ? (
           /* A dot, because a Bot that is working is the one thing on this card worth a colour. */
-          <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
             <span className="line-clamp-1">{status}</span>
           </span>
         ) : (
           <span
-            className={`line-clamp-2 text-[12px] leading-snug ${line ? "text-muted-foreground" : "text-muted-foreground/70"}`}
+            className={`line-clamp-2 text-xs leading-snug ${line ? "text-muted-foreground" : "text-muted-foreground/70"}`}
           >
             {line || t("Decide what it does by talking to it.")}
           </span>

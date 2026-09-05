@@ -1743,4 +1743,9 @@ export const ko: Record<string, string> = {
    * The particle sits OUTSIDE the quotation marks: what is quoted is the name.
    */
   "Delete {name}{josa}?": "'{name}'{josa} 삭제할까요?",
+
+  /** The roster heading before the count is known — see `routes/_authed/_app/agents/index.tsx`. */
+  "My Bots": "내 봇",
+  "Change the face": "얼굴 바꾸기",
+  "Its shape and its colour.": "몸 모양과 색을 고릅니다.",
 };

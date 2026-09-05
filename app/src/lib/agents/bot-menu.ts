@@ -14,7 +14,7 @@ import { type Seats, seatsFullMessage } from "./seats";
  * about the reader's own list rather than about the Bot.
  */
 export type BotMenuItem = {
-  id: "edit" | "hide" | "duplicate" | "delete";
+  id: "edit" | "face" | "hide" | "duplicate" | "delete";
   label: string;
   /** The consequence, under the name. Nobody knew what Hide did until they had pressed it. */
   description: string;
@@ -32,6 +32,19 @@ export function botMenuItems(
       description: t("Its name and what it does."),
       id: "edit",
       label: t("Edit profile"),
+    });
+    /*
+     * THE FACE IS ALSO A MENU ITEM, NOT ONLY A PICTURE YOU HAVE TO GUESS IS A BUTTON.
+     *
+     * The avatar tile at the top of the pane opens the picker, and nothing said so: no pointer
+     * change worth noticing, no label, no hint — the affordance was "try clicking the drawing". The
+     * tile now says 얼굴 바꾸기 on hover and on focus, and the verb is in the menu with the other
+     * three, which is where somebody looks for a thing to do to a Bot.
+     */
+    items.push({
+      description: t("Its shape and its colour."),
+      id: "face",
+      label: t("Change the face"),
     });
   }
   items.push({

@@ -1,4 +1,4 @@
-import { type AgentEffort, AGENT_EFFORTS } from "@/lib/agents/queries";
+import { AGENT_EFFORTS, type AgentEffort } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 
 /**

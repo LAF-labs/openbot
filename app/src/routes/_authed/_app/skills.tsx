@@ -200,7 +200,7 @@ function SkillsPage() {
                 seed="s:pebble.gray"
                 size={56}
               />
-              <p className="text-center text-[13px] text-muted-foreground">
+              <p className="text-center text-sm text-muted-foreground">
                 {t("No skills yet. Write one and any Bot you own can run it.")}
               </p>
             </div>
