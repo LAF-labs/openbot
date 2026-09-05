@@ -1731,4 +1731,6 @@ export const ko: Record<string, string> = {
   "The assistant's computer could not be reached.":
     "봇의 컴퓨터에 닿지 못했습니다. 다시 시도해 주세요.",
   "Remove queued message: {text}": "대기 중인 메시지 삭제: {text}",
+  "Point a Bot at an agent you host yourself.":
+    "직접 운영하는 서버로 봇을 연결합니다.",
 };

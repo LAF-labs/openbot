@@ -11,6 +11,24 @@ import { ko } from "../src/lib/i18n-ko";
 import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
 
 /**
+ * The gallery's card names, loaded the way `i18n-coverage.test.ts` loads them and for the same
+ * reason: `GALLERY_COMPONENTS` is assembled by `import.meta.glob`, which is a Vite transform and
+ * returns nothing here. A name reaches the owner as the heading of a refusal card, so 어시스턴트 in
+ * one would be the wrong word at the worst moment.
+ */
+const GALLERY_DIRECTORY = join(import.meta.dir, "../src/components/gallery");
+const GALLERY_TITLES: string[] = [];
+for (const entry of readdirSync(GALLERY_DIRECTORY)) {
+  if (!entry.endsWith(".tsx")) continue;
+  const module = (await import(join(GALLERY_DIRECTORY, entry))) as {
+    GALLERY?: { title: string }[];
+  };
+  for (const component of module.GALLERY ?? []) {
+    GALLERY_TITLES.push(component.title);
+  }
+}
+
+/**
  * THE SHOP OWNER'S SCREENS DO NOT SPEAK ENGINEERING, AND THEY CALL ONE THING ONE NAME.
  *
  * The same object was called 에이전트 in the sidebar, 봇 on the welcome screen, 코워커 in a tool
@@ -162,6 +180,10 @@ function ownerKorean(): [string, string][] {
       if (korean) sentences.push([korean, `bot avatar: ${option.id}`]);
     }
   }
+  for (const title of GALLERY_TITLES) {
+    const korean = ko[title];
+    if (korean) sentences.push([korean, `a gallery card: ${title}`]);
+  }
   return sentences;
 }
 
@@ -182,6 +204,8 @@ describe("the owner's vocabulary", () => {
     // A walker that silently stopped finding anything would pass the test above for the wrong
     // reason, the same way `i18n-coverage.test.ts` guards its own regex.
     expect(ownerKorean().length).toBeGreaterThan(250);
+    // And the gallery half of it, which is a directory read and so can go quiet on its own.
+    expect(GALLERY_TITLES.length).toBeGreaterThanOrEqual(12);
   });
 
   test("every gate exception is a key the app still asks for", () => {

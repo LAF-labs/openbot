@@ -102,6 +102,12 @@ const projectRoot = resolve(import.meta.dir, "..");
  * branches were on one branch: server 1395 → 1353, app 402 → 389 (3% under, rounded down);
  * agent-computer and root unchanged.
  *
+ * MEASURED 2026-09-06, with the two i18n walks grown three tests: the tables `/admin` and the
+ * audit trail read through `t(variable)`, and the gallery's card names, which no walk could see
+ * before because `GALLERY_COMPONENTS` is built by `import.meta.glob` and is empty under bun.
+ *
+ *     app                403 tests across 49 files   →   390
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -110,7 +116,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 389, roots: ["app"] },
+  { name: "app", floor: 390, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
