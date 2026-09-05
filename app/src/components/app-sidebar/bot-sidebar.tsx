@@ -21,6 +21,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
+import { PersonAvatar } from "@/components/avatar/person-avatar";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -426,14 +427,6 @@ export function BotSidebar() {
     await navigate({ to: "/sign" });
   };
 
-  const initials =
-    currentUser?.name
-      ?.trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") ?? currentUser?.email.slice(0, 2).toUpperCase();
-
   return (
     <nav
       aria-label={t("Your team")}
@@ -617,9 +610,15 @@ export function BotSidebar() {
               />
             }
           >
-            <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--sand-fill-secondary)] text-muted-foreground text-xs">
-              {initials}
-            </span>
+            {/* The person's own picture when the provider handed one over, which all three do.
+                It was two grey letters built inline here, and for a Korean name they were one
+                syllable by accident rather than by rule. */}
+            <PersonAvatar
+              email={currentUser?.email}
+              image={currentUser?.image}
+              name={currentUser?.name}
+              size="sm"
+            />
             <span className="min-w-0 truncate">
               {currentUser?.name || currentUser?.email || t("Account")}
             </span>
