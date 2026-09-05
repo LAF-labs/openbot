@@ -165,7 +165,7 @@ function AgentsScreen() {
                   </p>
                 </EmptyHeader>
                 <NewBotButton
-                  label={t("Make your first Bot")}
+                  label={t("Make the first Bot")}
                   size="default"
                   variant="default"
                 />

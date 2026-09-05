@@ -193,7 +193,7 @@ function Welcome() {
               >
                 {createAgent.isPending
                   ? t("Creating…")
-                  : t("Make your first Bot")}
+                  : t("Make the first Bot")}
               </Button>
             </div>
           </section>

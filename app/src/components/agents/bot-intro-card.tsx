@@ -92,7 +92,16 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
   if (dismissed) return null;
 
   return (
-    <section className="mx-auto flex w-full max-w-md flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left">
+    /*
+     * `pointer-events-auto`, AND IT IS NOT DECORATION.
+     *
+     * Measured in the browser: every chip and both fields were dead. `ConversationView` lays its
+     * empty state over the transcript as `pointer-events-none` so an overlay can never sit between
+     * somebody and the composer, and it expects a control-bearing empty state to opt back in on its
+     * own element — the roster strip next door does exactly this. Without it the card renders
+     * perfectly, saves nothing, and nothing anywhere reports a problem.
+     */
+    <section className="pointer-events-auto mx-auto flex w-full max-w-md flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left">
       <div className="flex items-start gap-3">
         {/* The face is the control: the only edit anybody wants to make to a picture is another one. */}
         <button

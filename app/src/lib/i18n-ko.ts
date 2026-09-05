@@ -125,6 +125,7 @@ export const ko: Record<string, string> = {
   "Its name and what it does.": "이름과 하는 일.",
   "Looking things up is fine. Sending anything is not.":
     "찾아보는 건 괜찮아요. 보내는 건 안 됩니다.",
+  "Make the first Bot": "첫 봇 만들기",
   "Model usage recorded": "모델 사용량이 기록됨",
   "My Bots {used}/{total}": "내 봇 {used}/{total}",
   "No rule allows it": "허용하는 규칙이 없음",
