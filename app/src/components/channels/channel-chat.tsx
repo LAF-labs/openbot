@@ -287,6 +287,8 @@ export function ChannelChat({
    * screen. `liveTurnFailureCode` reduces it to a fact and the transcript owns the sentence.
    */
   const [runError, setRunError] = useState<string | null>(null);
+  /** Message id to the moment this tab sent it, for separators the server has not stamped yet. */
+  const [sentAt, setSentAt] = useState<Record<string, string>>({});
   const awaitingReply = useRef(false);
 
   /*
@@ -371,9 +373,24 @@ export function ChannelChat({
       });
     }
 
+    /*
+     * STAMPED HERE, BY THE TAB THAT MINTED THE ID.
+     *
+     * The transcript's date separators come from the server's `message-times`, which is read once
+     * when the channel opens and again when a turn FINISHES. So the message a person has just sent
+     * has no time for the whole length of the turn, and a conversation resuming after a gap grew
+     * its "오늘 오전 2:15" line only on reload — measured 2026-09-06.
+     *
+     * This is not a guess about when it was said: this line is the moment it was said, and the id
+     * is one this function just minted, so there is no question of stamping somebody else's
+     * history. The server's own stamp replaces it as soon as `message-times` is read again, which
+     * is why these are merged UNDER the stored times rather than over them.
+     */
+    const messageId = crypto.randomUUID();
+    setSentAt((held) => ({ ...held, [messageId]: new Date().toISOString() }));
     agent.addMessage({
       content: trimmed,
-      id: crypto.randomUUID(),
+      id: messageId,
       role: "user",
     });
     report(trimmed, null);
@@ -521,7 +538,19 @@ export function ChannelChat({
    * The refetch below is what closes the gap: the server writes a message's stamp as its run
    * begins and ends, so asking again when a turn finishes gets the real time within a round trip.
    */
-  const messageTimes = storedTimes.data?.times ?? EMPTY_TIMES;
+  /*
+   * The stored times over this tab's own, never the other way round. A local stamp is a stand-in
+   * for the round trip, and the moment the real one lands it is the one that counts — otherwise two
+   * tabs would draw the same conversation with two different sets of separators.
+   */
+  const stored = storedTimes.data?.times;
+  const messageTimes = useMemo(
+    () =>
+      Object.keys(sentAt).length === 0
+        ? (stored ?? EMPTY_TIMES)
+        : { ...sentAt, ...(stored ?? {}) },
+    [sentAt, stored],
+  );
   /** Message id to failure code, which is the shape the transcript draws from. */
   const failuresById = useMemo(() => {
     const byId: Record<string, string> = {};
