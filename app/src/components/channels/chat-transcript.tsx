@@ -1,6 +1,11 @@
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
-import { IconBox, IconCheck, IconCopy } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconBox,
+  IconCheck,
+  IconCopy,
+} from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
@@ -30,6 +35,7 @@ import {
 } from "@/components/ui/message-scroller";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
+import { turnFailureSentence } from "@/lib/channels/turn-failure";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
@@ -67,17 +73,34 @@ type ChatTranscriptProps = {
   /** Take one back before it runs. Without it a queued line is shown but cannot be undone. */
   onRemoveQueued?: (id: string) => void;
   /**
-   * Why the last turn ended without an answer, if it did.
+   * Why the last turn ended without an answer, if it did — as a CODE, not a sentence.
    *
-   * A sentence rather than a flag, because the reasons are not interchangeable: a Bot that refused,
-   * a Bot whose endpoint is down and a Bot that simply stopped talking are three different things to
-   * be told, and only the thing that ended the turn knows which one happened.
+   * It used to be the sentence, and the sentence was whatever threw: `HTTP 404: {"error":"Not
+   * found."}` in red on a Korean screen, or `Unable to connect. Is the computer able to access the
+   * url?`. A code because the reasons are not interchangeable — a rate limit wants waiting, a Bot
+   * that is not running wants looking at — and because the words belong to this surface. See
+   * `lib/channels/turn-failure.ts`.
    */
-  stopped?: string;
+  stoppedCode?: string;
+  /**
+   * The turns that failed earlier in this conversation: message id to failure code.
+   *
+   * From the server, and therefore still here after a reload — which is what was missing. A failed
+   * turn used to leave nothing behind at all: reload, and the question sat alone with no answer.
+   *
+   * NOT MERGED INTO THE MESSAGES. A failure is not something anybody said, and this transcript is
+   * handed back to the model on the next turn.
+   */
+  failures?: Readonly<Record<string, string>>;
+  /** Ask the same thing again. Absent draws the failure line with nothing to press. */
+  onRetry?: (text: string) => void;
 };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
 const EMPTY_QUEUE: readonly QueuedMessage[] = [];
+
+/** Same reason as `EMPTY_QUEUE`: a conversation with no failed turns hands down one stable object. */
+const EMPTY_FAILURES: Readonly<Record<string, string>> = {};
 
 /**
  * Split a person's message into the skill they invoked and the rest of what they typed.
@@ -140,15 +163,43 @@ function Thinking() {
  * and the conversation is sent back to the model on the next turn, so the Bot would then read its
  * own obituary as something it had written.
  */
-function Stopped({ reason }: { reason: string }) {
+function TurnFailed({
+  code,
+  onRetry,
+}: {
+  code: string;
+  onRetry?: (() => void) | undefined;
+}) {
   return (
-    <p
-      className="text-destructive text-sm"
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1"
       data-testid="transcript-stopped"
       role="alert"
     >
-      {reason}
-    </p>
+      <IconAlertTriangle
+        aria-hidden="true"
+        className="size-4 shrink-0 text-destructive"
+      />
+      <span className="text-destructive text-sm">
+        {turnFailureSentence(code)}
+      </span>
+      {/*
+       * THE PRESS THAT WAS MISSING. The old line said something had gone wrong and offered nothing
+       * to do about it, so the only way to ask again was to retype the question — under a red
+       * sentence in a language the reader does not speak.
+       */}
+      {onRetry ? (
+        <Button
+          className="h-6 px-2 text-xs"
+          onClick={onRetry}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {t("Try again")}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -674,8 +725,10 @@ export function ChatTranscript({
   readWindow,
   speakers = EMPTY_SPEAKERS,
   onRemoveQueued,
+  onRetry,
   queued = EMPTY_QUEUE,
-  stopped,
+  stoppedCode,
+  failures = EMPTY_FAILURES,
 }: ChatTranscriptProps) {
   /*
    * NOT MEMOISED, AND THAT IS DELIBERATE. `useMemo` keyed on `messages` looks obviously right and
@@ -701,6 +754,18 @@ export function ChatTranscript({
   const awaitingAnswer = useSyncExternalStore(watchQuestions, anyQuestionOpen);
 
   const lastItem = items.at(-1);
+  /**
+   * The last thing the person actually typed, which is what "try again" means.
+   *
+   * Read off the transcript rather than remembered by the caller: a retry has to re-send the words
+   * that got no answer, and after a failure those words are still the newest user message there is.
+   */
+  const lastAsked = [...items]
+    .reverse()
+    .find(
+      (item): item is Extract<typeof item, { kind: "text" }> =>
+        item.kind === "text" && item.role === "user",
+    )?.text;
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
 
@@ -877,6 +942,27 @@ export function ChatTranscript({
                       text={item.text}
                     />
                   </MessageScrollerItem>
+                  {
+                    /*
+                     * OUTSIDE THE SCROLLER ITEM, like the separators above it: a failure is not a
+                     * message, must not be measured or anchored as one, and must never join the
+                     * history that goes back to the model.
+                     *
+                     * Suppressed while the live line is up, so a turn that has just failed does not
+                     * say so twice — the server's record and this tab's own view of the same failure.
+                     */
+                    failures[item.id] &&
+                    !(stoppedCode && item.id === lastItem?.id) ? (
+                      <TurnFailed
+                        code={failures[item.id]}
+                        onRetry={
+                          onRetry && item.kind === "text"
+                            ? () => onRetry(item.text)
+                            : undefined
+                        }
+                      />
+                    ) : null
+                  }
                 </Fragment>
               ),
             )}
@@ -897,8 +983,13 @@ export function ChatTranscript({
               <p className="text-muted-foreground text-sm" role="status">
                 {t("Waiting for your answer")}
               </p>
-            ) : stopped ? (
-              <Stopped reason={stopped} />
+            ) : stoppedCode ? (
+              <TurnFailed
+                code={stoppedCode}
+                onRetry={
+                  onRetry && lastAsked ? () => onRetry(lastAsked) : undefined
+                }
+              />
             ) : waitingOnFirstToken ? (
               <Thinking />
             ) : null}

@@ -15,6 +15,7 @@ import { readApprovals } from "@/lib/approvals";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
   type AgentChannel,
+  channelFailuresQueryOptions,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
 import {
@@ -98,6 +99,12 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     [roster],
   );
   const marks = useQuery(messageTimesQueryOptions(channel.id));
+  /*
+   * The room's turns that ended without an answer, from the same run ledger a one-to-one chat
+   * reads. A room member that could not take its turn already says so in the notice under the
+   * composer while the tab is open; this is what is left of it after a reload.
+   */
+  const storedFailures = useQuery(channelFailuresQueryOptions(channel.id));
   const [room, setRoom] = useState<RoomState>(EMPTY_ROOM);
   const [posting, setPosting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -437,6 +444,15 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     return resolved;
   }, [roster, marks.data?.speakers, room.speakers]);
 
+  /** Message id to failure code, the shape the transcript draws from. */
+  const failuresById = useMemo(() => {
+    const byId: Record<string, string> = {};
+    for (const failure of storedFailures.data ?? []) {
+      byId[failure.messageId] = failure.code;
+    }
+    return byId;
+  }, [storedFailures.data]);
+
   const messageTimes = useMemo(
     () => ({ ...(marks.data?.times ?? {}), ...room.times }),
     [marks.data?.times, room.times],
@@ -493,6 +509,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       pending={posting || inTurn}
       queueWhileBusy
       {...(readWindow ? { readWindow } : {})}
+      failures={failuresById}
+      onRetry={(text) => void post(text, [])}
       speakers={speakers}
       stoppable={inTurn && !stopping}
     />

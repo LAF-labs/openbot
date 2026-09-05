@@ -5,7 +5,7 @@ import {
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
@@ -20,9 +20,11 @@ import {
 } from "@/lib/channels/mutations";
 import {
   type AgentChannel,
+  channelFailuresQueryOptions,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
 import { loadThreadHistory } from "@/lib/channels/thread-history";
+import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -31,7 +33,7 @@ import {
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
-import { stoppedReason } from "@/lib/copilot/stopped-turn";
+
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -76,6 +78,13 @@ export function ChannelChat({
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
   // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
   const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
+  /*
+   * The turns in this conversation that got no answer, from the server's own run ledger.
+   *
+   * This is the half that survives a reload. Nothing new is written for it — a failed run has
+   * always been recorded — the app simply never asked. See server/src/channels/turn-failures.ts.
+   */
+  const storedFailures = useQuery(channelFailuresQueryOptions(channel.id));
 
   /*
    * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED.
@@ -269,7 +278,14 @@ export function ChannelChat({
 
   const skillCommands = useSkillCommands(runtimeAgentId);
 
-  // Run failures arrive as events and are reported only for turns started in this mount.
+  /*
+   * Run failures arrive as events and are reported only for turns started in this mount.
+   *
+   * A CODE, not the sentence. This used to hold whatever ended the turn in that thing's own words,
+   * and what that turned out to mean in practice was `HTTP 404: {"error":"Not found."}` and
+   * `Unable to connect. Is the computer able to access the url?` — English, in red, on a Korean
+   * screen. `liveTurnFailureCode` reduces it to a fact and the transcript owns the sentence.
+   */
   const [runError, setRunError] = useState<string | null>(null);
   const awaitingReply = useRef(false);
 
@@ -397,16 +413,23 @@ export function ChannelChat({
   };
 
   useEffect(() => {
-    const fail = (message: string) => {
+    const fail = (code: string) => {
       if (!awaitingReply.current) return;
       awaitingReply.current = false;
-      setRunError(message);
+      setRunError(code);
+      /*
+       * The server has just written the failure into the run ledger, and the person's own message
+       * has just been stamped. Both were only ever asked for on a turn that SUCCEEDED, which is
+       * why a failed turn left no separator and vanished entirely on reload.
+       */
+      void refreshTimesRef.current();
+      void refreshFailuresRef.current();
     };
     const subscription = agent.subscribe?.({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
-      onRunErrorEvent: ({ event }) => fail(stoppedReason(event?.message)),
-      onRunFailed: ({ error }) => fail(stoppedReason(error)),
+      onRunErrorEvent: ({ event }) => fail(liveTurnFailureCode(event?.message)),
+      onRunFailed: ({ error }) => fail(liveTurnFailureCode(error)),
       onRunFinishedEvent: () => {
         const wasOurs = awaitingReply.current;
         awaitingReply.current = false;
@@ -444,6 +467,9 @@ export function ChannelChat({
    */
   const refreshTimesRef = useRef(storedTimes.refetch);
   refreshTimesRef.current = storedTimes.refetch;
+  /** Same reason as `refreshTimesRef`: the run subscriber is wired once, not once per render. */
+  const refreshFailuresRef = useRef(storedFailures.refetch);
+  refreshFailuresRef.current = storedFailures.refetch;
 
   /** Stable reference for effects and component callbacks. */
   const sayRef = useRef(say);
@@ -496,6 +522,14 @@ export function ChannelChat({
    * begins and ends, so asking again when a turn finishes gets the real time within a round trip.
    */
   const messageTimes = storedTimes.data?.times ?? EMPTY_TIMES;
+  /** Message id to failure code, which is the shape the transcript draws from. */
+  const failuresById = useMemo(() => {
+    const byId: Record<string, string> = {};
+    for (const failure of storedFailures.data ?? []) {
+      byId[failure.messageId] = failure.code;
+    }
+    return byId;
+  }, [storedFailures.data]);
 
   /*
    * No names on the bubbles. This is a conversation with ONE Bot, whose name is in the header; a
@@ -588,7 +622,13 @@ export function ChannelChat({
          * streaming says so, because the deployment's stall watchdog writes that sentence into the
          * run before closing it; see server/src/channels/stall-guard.ts.
          */
-        stopped={runError ?? undefined}
+        stoppedCode={runError ?? undefined}
+        failures={failuresById}
+        onRetry={(text) => {
+          // The failure line is this tab's; clear it so the retry is not drawn as still failed.
+          setRunError(null);
+          void sayRef.current(text);
+        }}
       />
     </ConversationProvider>
   );

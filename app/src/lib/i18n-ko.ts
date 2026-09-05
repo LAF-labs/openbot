@@ -1779,4 +1779,11 @@ export const ko: Record<string, string> = {
     "스킬 목록을 불러오지 못했습니다. 다시 시도해 주세요.",
   "Each one is a colleague you hand real work to. A new Bot starts with nothing set.":
     "각자 실제로 일을 맡길 수 있는 동료입니다. 새 봇은 아무것도 정해지지 않은 채로 시작합니다.",
+  "No answer came back.": "답을 받지 못했습니다.",
+  "The Bot's address refused the request. Its connection needs a look.":
+    "봇 주소가 요청을 거절했습니다. 연결 설정을 확인해 주세요.",
+  "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.":
+    "봇이 응답을 멈춰서 이번 차례를 끝냈습니다. 다시 물어보거나, 봇이 켜져 있는지 확인해 주세요.",
+  "The Bot did not answer. It may not be running right now.":
+    "봇이 답하지 않았습니다. 지금 꺼져 있을 수 있습니다.",
 };

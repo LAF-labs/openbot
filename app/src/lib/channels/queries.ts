@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import type { TurnFailure } from "./turn-failure";
 
 /**
  * A channel as the browser sees it.
@@ -34,6 +35,7 @@ export const channelKeys = {
   detail: (channelId: string) => ["channels", "detail", channelId] as const,
   messageTimes: (channelId: string) =>
     ["channels", "message-times", channelId] as const,
+  failures: (channelId: string) => ["channels", "failures", channelId] as const,
 };
 
 export function channelListQueryOptions() {
@@ -86,6 +88,34 @@ export function messageTimesQueryOptions(channelId: string) {
     },
     // What the server records about a message never changes once written, so a refetch buys nothing.
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+const NO_FAILURES: TurnFailure[] = [];
+
+/**
+ * The turns in this channel that ended without an answer.
+ *
+ * NOT STALE-FOREVER, unlike the times beside it: a turn can fail while this page is open, and the
+ * transcript has to be able to pick that up after the run ends. The live path draws its own line
+ * immediately; this is what makes the line survive a reload, and it is invalidated when a turn
+ * finishes badly rather than polled.
+ *
+ * A failed read is not an error worth taking the conversation down for — it means no failure marks,
+ * which is exactly the transcript that was drawn before any of this existed.
+ */
+export function channelFailuresQueryOptions(channelId: string) {
+  return queryOptions({
+    queryKey: channelKeys.failures(channelId),
+    queryFn: async (): Promise<TurnFailure[]> => {
+      const response = await fetch(
+        `/api/channels/${encodeURIComponent(channelId)}/failures`,
+        { credentials: "include" },
+      );
+      if (!response.ok) return NO_FAILURES;
+      const body = (await response.json()) as { failures?: TurnFailure[] };
+      return body.failures ?? NO_FAILURES;
+    },
   });
 }
 

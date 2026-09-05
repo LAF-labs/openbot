@@ -23,6 +23,7 @@ import type {
   ChannelEventHub,
 } from "./events";
 import { upgradeWebSocket } from "./socket";
+import { createTurnFailureReader, type TurnFailure } from "./turn-failures";
 import type { ThreadIdentity } from "./thread-identity";
 
 export type AgentChannel = {
@@ -97,6 +98,14 @@ export type ChannelStore = {
     channelId: string,
     activity: ChannelActivity,
   ): Promise<void>;
+  /**
+   * The turns in this thread that ended without an answer.
+   *
+   * OPTIONAL, so every fake store in the suite keeps compiling and a deployment without it serves
+   * an empty list rather than a 500. A transcript with no failure marks is what the app drew before
+   * this existed, so absence degrades to exactly the old behaviour.
+   */
+  failuresFor?: (threadId: string) => Promise<TurnFailure[]>;
 };
 
 const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
@@ -533,6 +542,8 @@ export function createChannelStore(
       );
       if (announcement) announce?.(announcement);
     },
+    // Nothing is written for this; it joins the run ledger to the transcript. See `turn-failures`.
+    failuresFor: createTurnFailureReader(database),
   };
 }
 
@@ -936,6 +947,28 @@ export function createChannelRoutes(
         ? await readThreadMessages(channel.threadId)
         : [];
       return context.json({ messages });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /**
+   * The questions in this channel that never got an answer.
+   *
+   * Beside the transcript rather than inside it: a failure is not something anybody said, and the
+   * transcript is replayed to the model on the next turn. See `turn-failures.ts`.
+   */
+  routes.get("/:channelId/failures", requireUser, async (context) => {
+    try {
+      const channel = await store.get(
+        context.var.actor,
+        context.req.param("channelId"),
+      );
+      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      const failures = store.failuresFor
+        ? await store.failuresFor(channel.threadId)
+        : [];
+      return context.json({ failures });
     } catch (error) {
       return mapStoreError(context, error);
     }

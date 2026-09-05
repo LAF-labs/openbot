@@ -28,7 +28,9 @@ export function ConversationView({
   commands,
   disabled = false,
   pending = false,
-  stopped,
+  stoppedCode,
+  failures,
+  onRetry,
   stoppable,
   queueWhileBusy = false,
   emptyState,
@@ -61,8 +63,17 @@ export function ConversationView({
    * drains on this falling.
    */
   pending?: boolean;
-  /** Why the last turn ended without an answer. Drawn at the end of the transcript, not here. */
-  stopped?: string;
+  /**
+   * Why the last turn ended without an answer, as a CODE. Drawn at the end of the transcript.
+   *
+   * A code rather than the sentence it used to be: the sentence was whatever threw, in English.
+   * See `lib/channels/turn-failure.ts`.
+   */
+  stoppedCode?: string;
+  /** Turns that failed earlier and are still on the server's record: message id to failure code. */
+  failures?: Readonly<Record<string, string>>;
+  /** Ask one of them again. The transcript hands back the words that got no answer. */
+  onRetry?: (text: string) => void;
   /**
    * There is a run for Stop to abort, which is a narrower fact than `pending` and is the honest one
    * to draw a Stop button from. Defaults to `pending` for a caller with no gap between the two.
@@ -242,7 +253,9 @@ export function ConversationView({
             apply({ id, type: "remove" });
           }}
           queued={queued}
-          {...(stopped ? { stopped } : {})}
+          {...(stoppedCode ? { stoppedCode } : {})}
+          {...(failures ? { failures } : {})}
+          {...(onRetry ? { onRetry } : {})}
         />
       </div>
       {/*
