@@ -386,6 +386,12 @@ describe("a state is good for one redemption", () => {
     expect(await redeemConnectState(sealed, KEY, NOW)).toEqual({
       ok: false,
       fact: "laf:state_replayed",
+      /*
+       * A replay still says where it began, because it OPENED and was then found spent. The
+       * callback needs it: a consent the desktop shell started must not be sent back into the app
+       * on the way out, and pressing 뒤로 on that page is exactly how somebody meets a replay.
+       */
+      returnTo: "settings",
     });
   });
 

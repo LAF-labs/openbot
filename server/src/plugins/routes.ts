@@ -746,11 +746,18 @@ export function createPluginRoutes(
       connect.encryptionKey,
     );
     if (!opened.ok) {
-      // The one place the two state refusals are told apart for a person, because their next moves
-      // differ: an expired state is worth starting again immediately, and a replayed one means the
-      // connection they are worried about probably already happened.
+      /*
+       * The one place the two state refusals are told apart for a person, because their next moves
+       * differ: an expired state is worth starting again immediately, and a replayed one means the
+       * connection they are worried about probably already happened.
+       *
+       * A replay still knows where it began — it opened, and was then found spent — so it lands
+       * where the flow started. An unreadable state names nothing, and the app is the honest guess.
+       */
       return context.redirect(
-        failedAt(opened.fact === "laf:state_replayed" ? "reused" : "expired"),
+        opened.fact === "laf:state_replayed"
+          ? failedAt("reused", opened.returnTo ?? "settings")
+          : failedAt("expired"),
       );
     }
     const { state } = opened;

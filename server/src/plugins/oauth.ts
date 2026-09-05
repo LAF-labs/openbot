@@ -146,7 +146,21 @@ export type ConnectStateRefusal =
 
 export type RedeemedState =
   | { ok: true; state: ConnectState }
-  | { ok: false; fact: ConnectStateRefusal };
+  | {
+      ok: false;
+      fact: ConnectStateRefusal;
+      /**
+       * Where the flow began, when the state was readable enough to say.
+       *
+       * Present for a REPLAY and absent for an unreadable state, which is the honest split: a
+       * replayed state opened perfectly and was then found spent, so it still names its origin,
+       * while one that will not decrypt names nothing at all. It matters because a consent the
+       * desktop shell started must not be sent back into the app on the way out — the browser
+       * holding it has no session there, which is the whole failure `shell` exists to fix, and a
+       * replay is exactly the case somebody meets by pressing 뒤로.
+       */
+      returnTo?: ConnectOrigin;
+    };
 
 /**
  * Where the vendor sends somebody back to.
@@ -416,7 +430,12 @@ export async function redeemConnectState(
   const opened = await openConnectState(sealed, encryptionKey, now);
   if (!opened) return { ok: false, fact: "laf:state_unreadable" };
   if (!claimState(opened.jti, opened.exp, now)) {
-    return { ok: false, fact: "laf:state_replayed" };
+    return {
+      ok: false,
+      fact: "laf:state_replayed",
+      // Readable, and therefore able to say where it began. See {@link RedeemedState}.
+      ...(opened.returnTo ? { returnTo: opened.returnTo } : {}),
+    };
   }
   return {
     ok: true,

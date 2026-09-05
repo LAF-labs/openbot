@@ -88,8 +88,15 @@ export function connectedPageHtml(input: {
   title: string;
   reason: string;
 }): string {
+  /*
+   * The id reaches the link only when it names a connector this build has. Shape alone is not
+   * enough: this is a URL the operating system will act on, assembled from a query on a public
+   * page, and "it looks like a slug" is a weaker claim than "it is one of ours". An id we do not
+   * recognise lands on `failed`, which is a page the person can act on rather than a link that
+   * quietly names nothing.
+   */
   const deepLink =
-    input.ok && SERVER_ID.test(input.id)
+    input.ok && SERVER_ID.test(input.id) && catalogueEntry(input.id)
       ? `lafagent://connected/${input.id}`
       : "lafagent://connected/failed";
   const heading = input.ok ? "연결을 마쳤습니다" : "연결하지 못했습니다";

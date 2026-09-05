@@ -16,7 +16,11 @@ import {
 } from "../src/db/schema";
 import type { AppVariables } from "../src/auth/guards";
 import type { MiddlewareHandler } from "hono";
-import { challengeFor, sealConnectState } from "../src/plugins/oauth";
+import {
+  challengeFor,
+  type ConnectOrigin,
+  sealConnectState,
+} from "../src/plugins/oauth";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL } from "./support/database";
@@ -154,7 +158,13 @@ const callbackUrl = (query: Record<string, string>) =>
   `http://t/api/plugins/oauth/callback?${new URLSearchParams(query)}`;
 
 const stateFor = (
-  state: { userId: string; serverId: string; verifier: string },
+  state: {
+    userId: string;
+    serverId: string;
+    verifier: string;
+    /** Which screen started it. `shell` is the one that does not land in the app at all. */
+    returnTo?: ConnectOrigin;
+  },
   now?: number,
 ) => sealConnectState(state, ENCRYPTION_KEY, now);
 
@@ -687,5 +697,129 @@ describe("a callback that arrives twice", () => {
       connections: 1,
       connectedEvents: 1,
     });
+  });
+});
+
+/**
+ * A consent the desktop shell started, which finishes in a browser that is not the app's.
+ *
+ * THE FAILURE THIS BLOCK IS ABOUT. The shell hands the consent screen to the person's own browser
+ * — right, because a webview has no address bar and no Google session — and that browser has no
+ * session for the app either. So the ordinary ending, a redirect into
+ * `/settings/connected-accounts`, bounced to `/sign`: the grant was stored perfectly and the person
+ * was shown 로그인하세요.
+ *
+ * `returnTo` lives in the SEALED state, so where a callback lands is a destination this deployment
+ * chose when the flow began rather than anything the returning request can say.
+ */
+describe("a consent the shell started", () => {
+  test("lands on a page that needs no session, naming the connector and nothing else", async () => {
+    const state = await stateFor({
+      userId: personId,
+      serverId,
+      verifier: "verifier-for-the-shell-test-1234567890",
+      returnTo: "shell",
+    });
+
+    const response = await withVendor(
+      () =>
+        new Response(
+          JSON.stringify({ refresh_token: "rt-shell", scope: "read" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      async () =>
+        await appWith({ store: holdingAClient() }).request(
+          callbackUrl({ code: "code-shell", state }),
+        ),
+    );
+
+    const landed = new URL(response.headers.get("location") ?? "");
+    // On the SERVER's origin, not the app's: `/connected` is served here, and the app is where the
+    // browser has nothing.
+    expect(landed.origin).toBe(PUBLIC_URL);
+    expect(landed.pathname).toBe("/connected");
+    expect(landed.searchParams.get("ok")).toBe("1");
+    expect(landed.searchParams.get("id")).toBe(serverId);
+
+    /*
+     * NOTHING SECRET IN THE URL. This one lands in a browser history and in whatever the person
+     * pastes to somebody; the code and the state are the two things that must never be in it, and
+     * the refresh token is the one that would matter most.
+     */
+    const said = landed.toString();
+    for (const secret of ["code-shell", state, "rt-shell"]) {
+      expect({ secret, present: said.includes(secret) }).toEqual({
+        secret,
+        present: false,
+      });
+    }
+    // And the connection is real: the shell path is a different ending, not a different flow.
+    expect((await written(personId)).connections).toBeGreaterThan(0);
+  });
+
+  test("a failure lands there too, with the reason and no id", async () => {
+    // A replay, because it is the one failure that can be produced twice over on demand.
+    const state = await stateFor({
+      userId: personId,
+      serverId,
+      verifier: "verifier-for-the-shell-replay-123456",
+      returnTo: "shell",
+    });
+    const url = callbackUrl({ code: "code-shell-2", state });
+
+    const landed = await withVendor(
+      () =>
+        new Response(
+          JSON.stringify({ refresh_token: "rt-shell-2", scope: "read" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      async () => {
+        await appWith({ store: holdingAClient() }).request(url);
+        const second = await appWith({ store: holdingAClient() }).request(url);
+        return new URL(second.headers.get("location") ?? "");
+      },
+    );
+
+    expect(landed.pathname).toBe("/connected");
+    expect(landed.searchParams.get("ok")).toBe("0");
+    expect(landed.searchParams.get("reason")).toBe("reused");
+    // Nothing names the connector on a failure: the page has no connection to send anybody back to.
+    expect(landed.searchParams.get("id")).toBeNull();
+  });
+
+  /*
+   * A state that cannot be OPENED cannot say where it began, so the app is the honest guess — and it
+   * is at least a page the person can reach in the browser they are holding.
+   */
+  test("a state that will not open falls back to the app, since nothing says it was the shell", async () => {
+    const response = await appWith({}).request(
+      callbackUrl({ code: "c-1", state: "nonsense" }),
+    );
+
+    expect(response.headers.get("location")).toBe(failedWith("expired"));
+  });
+
+  test("a browser tab is unaffected: today's redirect, unchanged", async () => {
+    const state = await stateFor({
+      userId: personId,
+      serverId,
+      verifier: "verifier-for-the-browser-tab-12345678",
+    });
+
+    const response = await withVendor(
+      () =>
+        new Response(
+          JSON.stringify({ refresh_token: "rt-tab", scope: "read" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      async () =>
+        await appWith({ store: holdingAClient() }).request(
+          callbackUrl({ code: "code-tab", state }),
+        ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      `${APP_URL}/settings/connected-accounts?connected=${serverId}`,
+    );
   });
 });
