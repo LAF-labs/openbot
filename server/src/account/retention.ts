@@ -28,6 +28,7 @@
 import { lt, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafRoutineRuns, lafThreadRuns } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import { purgeNotificationsBefore } from "../notifications/outbox";
 
 /** A year, in days. The number §7-7 settled on; the variable is what a deployment can move. */
@@ -174,9 +175,9 @@ export function createRetentionJob(input: {
         void runOnce().catch((error) => {
           // Swallowed, because a failed sweep is not a reason to take the deployment down. It is a
           // reason to say so and try again tonight.
-          log(
-            `retention: sweep failed — ${error instanceof Error ? error.message : String(error)}`,
-          );
+          // `describeFailure`: the sweep is three deletes and a function call, so what reaches
+          // here is nearly always a query error, and this line goes to the log file on the VM.
+          log(`retention: sweep failed — ${describeFailure(error)}`);
         });
       }, everyMs);
       // Never hold the process open for a job whose deadline is "some time today".

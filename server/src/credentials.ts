@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "./audit";
 import type { Database } from "./db/client";
 import { type credentialKind, credentials } from "./db/schema";
+import { describeFailure } from "./failure-text";
 
 type CredentialEnvelope = {
   version: 1;
@@ -602,8 +603,15 @@ export async function rotateCredential(
      * and each of them left nothing behind while only successes were recorded.
      *
      * Written outside the transaction that has just rolled back, so the row survives the failure it
-     * describes. The reason is the vault's own message and never the secret, which never left this
-     * function.
+     * describes.
+     *
+     * AND THE REASON IS `describeFailure`, NOT THE MESSAGE. It said "the vault's own message and
+     * never the secret", which was true of the vault's own refusals and false of the other half:
+     * a rotation that fails inside a query arrives as a drizzle wrapper whose `message` holds the
+     * statement AND its bound parameters, so the row about a refused rotation carried the encrypted
+     * envelope of the credential being written — into a table that refuses to be edited afterwards.
+     * What an operator needs from this row is which constraint said no, and that is the PostgreSQL
+     * code.
      */
     await recordAuditEvent(service.auditStore, {
       eventType: "credential.rotation_refused",
@@ -614,7 +622,7 @@ export async function rotateCredential(
         kind: input.kind,
         provider: input.provider,
         keyId: input.keyId,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: describeFailure(error),
       },
     });
     throw error;

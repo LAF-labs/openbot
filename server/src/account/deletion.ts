@@ -87,6 +87,7 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import { countAccounts, type FleetNotifier } from "../fleet/notify";
 import { pseudonymFor } from "./pseudonym";
 
@@ -620,7 +621,7 @@ export function createAccountDeletion(
         } catch (error) {
           console.error(
             "[fleet] a withdrawal could not be reported:",
-            error instanceof Error ? error.message : error,
+            describeFailure(error),
           );
         }
       }

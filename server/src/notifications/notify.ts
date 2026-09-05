@@ -18,6 +18,7 @@
  * the only notification a deployment had.
  */
 import type { ApprovalRegistry, AskSubject } from "../computer/approvals";
+import { describeFailure } from "../failure-text";
 import type {
   NotificationAdapter,
   NotificationKind,
@@ -176,10 +177,7 @@ async function postWebhook(
     });
     return true;
   } catch (error) {
-    console.error(
-      "[notify] approval buzz failed:",
-      error instanceof Error ? error.message : error,
-    );
+    console.error("[notify] approval buzz failed:", describeFailure(error));
     return false;
   }
 }

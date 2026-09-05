@@ -152,6 +152,73 @@ describe("credential encryption", () => {
     ).toEqual(["credential.rotated", "credential.revoked"]);
   });
 
+  /**
+   * The row about a refused rotation used to carry the write it refused.
+   *
+   * `reason` was `error.message`, which is right for the vault's own refusals — "credential is
+   * already revoked" — and wrong for the other half of them. Drizzle wraps a failed statement into
+   * `message` with its bound parameters attached, so a rotation that failed on a constraint wrote
+   * the encrypted envelope of the credential being stored into `audit_events`, a table whose
+   * trigger refuses to let anybody take it out again.
+   */
+  test("a rotation refused inside a query records the code, not the statement", async () => {
+    const audited: unknown[] = [];
+    const envelope = await encryptSecret(key, "the-new-openai-secret");
+    // The shape drizzle-orm 0.45 throws. Built here rather than by provoking a real failure,
+    // because what is being pinned is what this file does with the shape.
+    const queryError = Object.assign(
+      new Error(
+        `Failed query: insert into "credentials" ("encrypted_value") values ($1)\nparams: ${envelope}`,
+      ),
+      {
+        name: "DrizzleQueryError",
+        query: 'insert into "credentials" ("encrypted_value") values ($1)',
+        params: [envelope],
+        cause: Object.assign(new Error("duplicate key"), { code: "23505" }),
+      },
+    );
+
+    const service = {
+      encryptionKey: key,
+      store: credentialStoreStub({
+        rotate: async () => {
+          throw queryError;
+        },
+      }),
+      auditStore: {
+        insert: async (event: unknown) => {
+          audited.push(event);
+        },
+      },
+    };
+
+    await expect(
+      rotateCredential(service, {
+        previousCredentialId: "credential-old",
+        kind: "model",
+        provider: "openai",
+        keyId: "secondary",
+        metadata: { label: "Rotated OpenAI" },
+        plaintext: "the-new-openai-secret",
+        actorUserId: "admin",
+      }),
+      // Still thrown: the row is a record of the refusal, not a replacement for it.
+    ).rejects.toThrow();
+
+    expect(audited).toHaveLength(1);
+    const [event] = audited as [
+      { eventType: string; payload: { reason: string } },
+    ];
+    expect(event.eventType).toBe("credential.rotation_refused");
+    expect(event.payload.reason).toBe("database error (23505)");
+
+    // The whole row, not only the field: a copy of the statement anywhere in it is the same leak.
+    const written = JSON.stringify(audited);
+    expect(written).not.toContain("insert into");
+    expect(written).not.toContain(envelope);
+    expect(written).not.toContain("the-new-openai-secret");
+  });
+
   test("decrypts only an active credential for server-side use", async () => {
     const encryptedValue = await encryptSecret(key, "connector-secret");
 
