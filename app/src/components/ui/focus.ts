@@ -88,3 +88,37 @@ export const focusRingHasControl =
  */
 export const focusRingNested =
   "[button,a]:outline-hidden [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50";
+
+/**
+ * CHOSEN. Not focused, and it lives here so it cannot be confused with focused again.
+ *
+ * The app had four treatments for "this is the one you picked" and three of them were rings:
+ * `ring-2 ring-primary` on the face picker, on the roster strip and on the effort chooser;
+ * `ring-2 ring-primary ring-offset-1` on one of those; `bg-primary text-primary-foreground` in the
+ * computer view; a hand-rolled `aria-pressed:` pill on Routines. A ring already means FOCUSED in
+ * this design — the house ring is a 3px `--ring` halo — so three of the four said "chosen" in the
+ * keyboard's own vocabulary, and a chosen-and-focused tile said it twice in two greys.
+ *
+ * So selection is a BORDER and a FILL, and focus keeps the rings. The two stack legibly: a hairline
+ * in the foreground colour with a tinted ground, wrapped in the focus halo when it is also focused.
+ *
+ * The element must already have a border box for this to land — `border` with any colour, which
+ * every `Button` has (`border border-transparent`). On a bare `div` add `border` first, or the
+ * chosen state moves the layout by a pixel when it turns on.
+ */
+export const selectedClass = "border-foreground bg-accent text-foreground";
+
+/**
+ * The same treatment, keyed to `aria-pressed="true"`, which `Button` carries for free.
+ *
+ * `data-pressed` is deliberately NOT included, and this is the trap it avoids: Base UI overloads
+ * that attribute. On `Toggle` it means "on"; on `Combobox.Trigger`, `Select.Trigger` and the rest it
+ * means "the pointer is down on me right now" — which is why `combobox.tsx` has to write
+ * `data-pressed:bg-transparent` to cancel a press fill. Styling `data-pressed` here would make every
+ * trigger in the app flash the chosen treatment while it is being held.
+ *
+ * Written out rather than composed for the same reason as `focusRingNested`: Tailwind emits a
+ * utility only for a class name it can SEE.
+ */
+export const selectedWhenPressed =
+  "aria-pressed:border-foreground aria-pressed:bg-accent aria-pressed:text-foreground";
