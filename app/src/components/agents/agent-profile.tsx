@@ -173,7 +173,16 @@ export function AgentProfile({ agentId }: { agentId: string }) {
              * sits over the bottom of the tile rather than beside it, where it would push the name
              * down the pane for everybody who already knows.
              */}
-            <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-black/45 to-transparent px-2 pt-6 pb-2 text-white text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+            {/*
+             * Token colours, not a black fade with white glyphs, because this tile is not a
+             * photograph. Its ground is `--sand-bg-subtle` — near-white in light mode — and the
+             * face is a flat shape that leaves most of it showing, so a 45% black scrim put white
+             * `text-xs` on light grey: the verification walk's own screenshot of the hover has the
+             * label barely there. `from-background` under `text-foreground` gives each theme its
+             * own ground and ink, and the `via` stop keeps the band at least 80% solid behind the
+             * text before it fades into the tile.
+             */}
+            <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-background via-background/80 to-transparent px-2 pt-6 pb-2 text-foreground text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
               <IconPencil className="size-3.5" />
               {t("Change the face")}
             </span>

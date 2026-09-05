@@ -363,7 +363,11 @@ function Catalogue({
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="font-medium">{item.title}</div>
+                {/* `t()` on the title for the same reason the 연결 rows call it on theirs: the
+                    server sends the vendor's name as an English key and the dictionary already has
+                    every one of them. Printed raw, the same eight services read "Google Drive" here
+                    and 구글 드라이브 two screens away. */}
+                <div className="font-medium">{t(item.title)}</div>
                 {/* Through the copy table, because the API's summary is English facts: known
                     entries get this surface's Korean, an unknown one falls back visibly. The
                     walking test in plugin-catalogue-copy.test.ts is what keeps the table honest. */}
@@ -390,7 +394,7 @@ function Catalogue({
             </div>
             {item.perInstance ? (
               <Input
-                aria-label={`Instance host for ${item.title}`}
+                aria-label={t("Address for {name}", { name: t(item.title) })}
                 className="mt-2"
                 onChange={(event) =>
                   setInstanceHost((current) => ({
@@ -398,7 +402,16 @@ function Catalogue({
                     [item.key]: event.target.value,
                   }))
                 }
-                placeholder="https://your-instance.service-now.com"
+                /*
+                 * The only per-instance entry this deployment ships is 카페24, and this field
+                 * showed a ServiceNow instance URL — a vendor nothing here has ever connected to,
+                 * as the worked example for the one that everything here does.
+                 *
+                 * `cafe24api.com`, not the storefront's `cafe24.com`: the catalogue's `hostPattern`
+                 * is anchored on the API host, so an example shaped like the shop's own address
+                 * would teach the one form the server refuses.
+                 */
+                placeholder="https://myshop.cafe24api.com"
                 value={instanceHost[item.key] ?? ""}
               />
             ) : null}
@@ -411,7 +424,9 @@ function Catalogue({
             {item.auth === "deployment-bearer" ? (
               /* Mask tokens before they are stored in the credential vault. */
               <Input
-                aria-label={`Access token for ${item.title}`}
+                aria-label={t("Access token for {name}", {
+                  name: t(item.title),
+                })}
                 className="mt-2"
                 onChange={(event) =>
                   setToken((current) => ({
@@ -575,10 +590,13 @@ function Yours({
           <div className="flex items-start justify-between gap-3 border-border border-b px-4 py-3">
             <div>
               <div className="flex items-center gap-2 font-medium">
-                {server.title}
+                {t(server.title)}
                 {server.provenance === "custom" ? (
                   <span className="rounded bg-warning/15 px-1.5 py-0.5 text-xs text-warning">
-                    custom
+                    {/* One word, so the bare-English walk cannot see it: it counts two Latin words
+                        as a sentence, and this badge is the only thing on the row that says nobody
+                        reviewed the server. */}
+                    {t("Custom")}
                   </span>
                 ) : null}
               </div>

@@ -40,7 +40,9 @@ export const ko: Record<string, string> = {
   "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.":
     "스킬은 /로 불러내면 봇이 그대로 따르는, 이름 붙은 지시입니다. 내가 만든 스킬은 나만의 것이고, 내가 소유한 봇에 붙습니다.",
   "Access token for this server": "이 서버의 액세스 토큰",
+  "Access token for {name}": "{name} 액세스 토큰",
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
+  "Address for {name}": "{name} 주소",
   Account: "계정",
   "Acorn cat": "도토리 모자 고양이",
   "Actions for /{slug}": "/{slug} 작업",
@@ -378,6 +380,7 @@ export const ko: Record<string, string> = {
   Credentials: "자격증명",
   "Credentials are write-only. {product} never displays their secret values.":
     "자격증명은 쓰기 전용입니다. {product}는 비밀 값을 절대 다시 보여주지 않습니다.",
+  Custom: "직접 추가",
   "Custom pieces a Bot can draw in a conversation.":
     "봇이 대화 중에 그릴 수 있는 사용자 정의 조각.",
   "Daily at {time}": "매일 {time}",
@@ -979,7 +982,6 @@ export const ko: Record<string, string> = {
   "Turns yesterday's work into a standup update":
     "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
-  Untitled: "제목 없음",
   "Vendor documentation": "공급자 문서",
   Visibility: "공개 범위",
   "Waiting for the Bot's screen…": "봇의 화면을 기다리는 중…",
@@ -1515,7 +1517,6 @@ export const ko: Record<string, string> = {
     "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일합니다.",
   "You sign in once on a Bot's own browser, hand it back, and it stays signed in.":
     "봇의 브라우저에서 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
-  "Not connected": "연결 안 됨",
   "Finish giving permission in the browser that opened.":
     "열린 브라우저에서 동의를 마치는 중…",
   "Type your shop's name, then press Connect.":

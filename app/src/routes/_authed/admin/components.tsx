@@ -327,7 +327,15 @@ function ComponentRow({
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-sm">{component.title}</h3>
+            {/*
+             * `t()`, because the title is a KEY the server sends back, not prose it wrote: every
+             * one of them is a gallery card name and `i18n-coverage.test.ts` already refuses a
+             * gallery card without Korean. Printed raw, this page headed fourteen cards with
+             * "Activity report", "Checklist", "Headline figures" on an otherwise Korean screen —
+             * with the Korean sitting unused in the dictionary the whole time. A title a person
+             * typed in the playground is not in the dictionary and falls through unchanged.
+             */}
+            <h3 className="font-medium text-sm">{t(component.title)}</h3>
             <code className="rounded bg-foreground/5 px-1.5 py-0.5 text-xs text-muted-foreground">
               {component.name}
             </code>
@@ -394,7 +402,7 @@ function ComponentRow({
       <Dialog onOpenChange={setEditing} open={editing}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{component.title}</DialogTitle>
+            <DialogTitle>{t(component.title)}</DialogTitle>
             <DialogDescription>
               {t(
                 "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.",

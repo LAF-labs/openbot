@@ -24,15 +24,26 @@ export const Route = createFileRoute("/_authed/admin/playground")({
   component: PlaygroundPage,
 });
 
+/**
+ * The worked example, and it is CONTENT rather than copy: every string below is inside a code panel
+ * the author edits, and the preview beside it renders them as-is.
+ *
+ * Which is why a translate call around the word Untitled used to sit in the HTML, verbatim,
+ * between the `<h3>` tags — written into a template literal by a sweep that could not tell a code
+ * sample from a sentence. Nothing ever called it: the preview showed whatever the JS wrote over it,
+ * and the only thing it achieved was an entry in the dictionary, sitting there translated, for a
+ * call site that did not exist. The sample says its fallback in Korean now, in both places, because
+ * the person reading this preview is reading a Korean screen.
+ */
 const STARTER = {
   slug: "",
   title: "",
   description: "",
-  html: `<div class="card">\n  <h3 id="title">{t("Untitled")}</h3>\n  <p id="body"></p>\n</div>`,
+  html: `<div class="card">\n  <h3 id="title">제목 없음</h3>\n  <p id="body"></p>\n</div>`,
   css: `.card { font: 14px system-ui; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; }\n.card h3 { margin: 0 0 4px; font-size: 15px; }`,
-  jsFunctions: `// The arguments are on window.__args by the time this runs.\nconst args = window.__args || {};\ndocument.getElementById("title").textContent = args.title || "Untitled";\ndocument.getElementById("body").textContent = args.body || "";`,
+  jsFunctions: `// 이 코드가 실행될 때 인자는 window.__args에 들어 있습니다.\nconst args = window.__args || {};\ndocument.getElementById("title").textContent = args.title || "제목 없음";\ndocument.getElementById("body").textContent = args.body || "";`,
   argumentSchema: `{\n  "type": "object",\n  "properties": {\n    "title": { "type": "string" },\n    "body": { "type": "string" }\n  }\n}`,
-  sampleArguments: `{\n  "title": "A worked example",\n  "body": "Edit the panels on the left and this redraws."\n}`,
+  sampleArguments: `{\n  "title": "예시 카드",\n  "body": "왼쪽 칸을 고치면 여기가 다시 그려집니다."\n}`,
 };
 
 type Draft = typeof STARTER;

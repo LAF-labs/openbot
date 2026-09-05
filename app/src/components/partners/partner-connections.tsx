@@ -172,7 +172,13 @@ const AlimtalkRow = ({
     if (isOpening) {
       return { text: t("Fill in the two lines below."), tone: "muted" };
     }
-    return { text: t("Not connected"), tone: "muted" };
+    /*
+     * Nothing, not 연결 안 됨 — the same rule the OAuth and site rows already follow. This row sits
+     * in the same card as those, and it was the only one of the three still saying its state twice:
+     * a switch that is off, with "연결 안 됨" written under it, on a screen where a row with
+     * something to report has to compete with seven rows repeating what their switch already says.
+     */
+    return { text: "", tone: "muted" };
   };
 
   const state = said();
