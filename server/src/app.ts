@@ -42,7 +42,11 @@ import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
 import { createConnectedPageRoute } from "./plugins/connected-page";
-import { createConnectionsOverviewRoutes } from "./plugins/overview-routes";
+import {
+  type ConnectionsOverviewSources,
+  createConnectionsOverviewRoutes,
+  readConnectionsOverview,
+} from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
@@ -50,6 +54,11 @@ import { connectableCatalogue } from "./plugins/shared-clients";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
+import {
+  createRoutineSuggestionService,
+  type SuggestionDismissalStore,
+} from "./routines/suggestions";
+import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
 import type { PackageStatusReader } from "./tenant-package";
 
 export function createApp(
@@ -273,6 +282,12 @@ export function createApp(
    * a grant as well as a registration: see `plugins/partner-routes.ts`.
    */
   partners?: PartnerRuntime,
+  /**
+   * The 다음에 latch behind the routine suggestions. Absent leaves the cards unmounted, which is
+   * the right degraded behaviour: a suggestion that could be declined and come back tomorrow is
+   * the nag wall the feature exists not to be.
+   */
+  routineSuggestionDismissals?: SuggestionDismissalStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -602,6 +617,40 @@ export function createApp(
     );
   }
 
+  /*
+   * Where the 연결 screen's facts come from — built once, because two readers want the same
+   * answer: the overview route below, and the routine suggestions further down, which offer a
+   * card only for a connection that is actually connected. Null without a plugin store, and then
+   * neither reader is mounted.
+   */
+  const connectionSources: ConnectionsOverviewSources | null = pluginStore
+    ? {
+        catalogue: () =>
+          connectableCatalogue(pluginConnect?.sharedClient ?? (() => null)),
+        store: pluginStore,
+        partners: partners ?? null,
+        /*
+         * THE SAME CONDITION `/api/sites` IS MOUNTED UNDER, and it has to be, not just the store.
+         * The store is built from the database on every deployment, so reading it alone would
+         * draw fifteen site switches on a machine with no browser behind any of them — and the
+         * check on the way back from a handoff, which is a read of that browser, is not mounted
+         * there at all. A section that cannot work is not drawn.
+         */
+        sites:
+          computerClient && computerGateway && computerPolicy
+            ? (siteConnections ?? null)
+            : null,
+        bots: async (userId) => {
+          if (!agentProfileStore) return [];
+          const roster = await agentProfileStore.list({
+            id: userId,
+            role: "user",
+          });
+          return roster.map((bot) => ({ id: bot.id, name: bot.name }));
+        },
+      }
+    : null;
+
   if (pluginStore) {
     app.route(
       "/api/plugins",
@@ -632,37 +681,12 @@ export function createApp(
      * runtime, the site store and the roster are each optional and each simply contribute nothing
      * when absent, which is the same degraded behaviour their own routes have.
      */
-    app.route(
-      "/api/connections",
-      createConnectionsOverviewRoutes(
-        {
-          catalogue: () =>
-            connectableCatalogue(pluginConnect?.sharedClient ?? (() => null)),
-          store: pluginStore,
-          partners: partners ?? null,
-          /*
-           * THE SAME CONDITION `/api/sites` IS MOUNTED UNDER, and it has to be, not just the store.
-           * The store is built from the database on every deployment, so reading it alone would
-           * draw fifteen site switches on a machine with no browser behind any of them — and the
-           * check on the way back from a handoff, which is a read of that browser, is not mounted
-           * there at all. A section that cannot work is not drawn.
-           */
-          sites:
-            computerClient && computerGateway && computerPolicy
-              ? (siteConnections ?? null)
-              : null,
-          bots: async (userId) => {
-            if (!agentProfileStore) return [];
-            const roster = await agentProfileStore.list({
-              id: userId,
-              role: "user",
-            });
-            return roster.map((bot) => ({ id: bot.id, name: bot.name }));
-          },
-        },
-        requireUser,
-      ),
-    );
+    if (connectionSources) {
+      app.route(
+        "/api/connections",
+        createConnectionsOverviewRoutes(connectionSources, requireUser),
+      );
+    }
   }
 
   if (sandboxedStore) {
@@ -681,6 +705,36 @@ export function createApp(
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));
 
     if (routineService) {
+      /*
+       * The suggestion cards, mounted AHEAD of the routines so `suggestions` is never read as a
+       * routine id. They need the connections (a card is offered only for a connection that is
+       * connected), the roster (a card goes on a Bot), the latch, and the routine service itself —
+       * accept IS `create`, on the same path a typed routine takes.
+       */
+      if (
+        routineSuggestionDismissals &&
+        connectionSources &&
+        agentProfileStore
+      ) {
+        const sources = connectionSources;
+        const roster = agentProfileStore;
+        app.route(
+          "/api/routines/suggestions",
+          createRoutineSuggestionRoutes(
+            createRoutineSuggestionService({
+              routines: routineService,
+              dismissals: routineSuggestionDismissals,
+              connections: (userId) => readConnectionsOverview(sources, userId),
+              bots: async (actor) =>
+                (await roster.list(actor)).map((bot) => ({
+                  id: bot.id,
+                  name: bot.name,
+                })),
+            }),
+            requireUser,
+          ),
+        );
+      }
       app.route(
         "/api/routines",
         createRoutineRoutes(routineService, requireUser),

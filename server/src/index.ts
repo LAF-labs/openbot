@@ -84,6 +84,7 @@ import {
   createRoutineDelivery,
 } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
+import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
@@ -1017,6 +1018,8 @@ const app = createApp(
   // 알림톡: the vendor LAF holds the account at. The same runtime the outbox's AlimTalk door and
   // the plugin store's transports were built from, so one connect is one fact.
   partnerRuntime,
+  // The 다음에 latch behind the routine suggestion cards. See routines/suggestions.ts.
+  createSuggestionDismissalStore(database),
 );
 
 /**

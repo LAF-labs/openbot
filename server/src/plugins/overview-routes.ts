@@ -18,8 +18,9 @@
  * typed. The mall id a person typed for Cafe24 does cross, because it is what the row shows them
  * back as their own shop and it is on that shop's address bar anyway.
  */
-import { Hono } from "hono";
+
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { BUSINESS_SITES } from "../../../shared/sites/catalogue";
 import type { AppVariables } from "../auth/guards";
 import type { SiteConnectionStore } from "../computer/site-connections";
@@ -144,95 +145,107 @@ function instanceNameOf(
   }
 }
 
+/**
+ * The composition itself, apart from the route, because a second reader needs the same facts.
+ *
+ * The routine suggestions (`routines/suggestions.ts`) decide what to offer from what a person has
+ * connected, and "connected" has to mean what this screen says it means — a site row that is
+ * `needs_login` is not a connection a routine can run on. Reading the four parts again over there
+ * would be a second opinion about the same rows; this is the one.
+ */
+export async function readConnectionsOverview(
+  sources: ConnectionsOverviewSources,
+  userId: string,
+): Promise<ConnectionsOverview> {
+  const held: HeldConnection[] = await sources.store.connectionsFor(userId);
+  const stored = await sources.store.listServers();
+  const byServerId = new Map(held.map((row) => [row.serverId, row]));
+
+  const accounts: OverviewAccount[] = sources.catalogue().map((entry) => {
+    const connection = byServerId.get(entry.key);
+    const health = healthOf(connection);
+    const row = stored.find((server) => server.id === entry.key);
+    return {
+      kind: "oauth",
+      id: entry.key,
+      serverId: row?.id ?? null,
+      title: entry.title,
+      vendor: entry.vendor,
+      status: connection
+        ? health.status === "needs_reconnect"
+          ? "needs_reconnect"
+          : "connected"
+        : "not_connected",
+      connectedAt: connection ? ISO(connection.connectedAt) : null,
+      account: instanceNameOf(entry, row?.url),
+      needsInstanceName: entry.host === null,
+      health,
+    };
+  });
+
+  /*
+   * Only the partners this machine actually holds a key for. A row for one it does not is a
+   * switch that could only ever 503, which is the same lie as a 연결 button in front of a vendor
+   * with no application behind it.
+   */
+  const partners = sources.partners;
+  for (const provider of partners?.configured ?? []) {
+    const connector = partners?.alimtalk;
+    if (!connector) continue;
+    const status = (await connector.status(userId)) as {
+      connected?: unknown;
+    };
+    accounts.push({
+      kind: "partner",
+      id: provider,
+      status: status?.connected === true ? "connected" : "not_connected",
+      partner: { status },
+    });
+  }
+
+  /*
+   * NO COMPUTER, NO SITES — an empty list rather than fifteen rows saying "아직 연결 안 됨".
+   *
+   * The difference is what the screen can do with it: an empty list hides the section, and
+   * fifteen not-connected rows are fifteen switches whose only possible outcome is a refusal from
+   * a browser that does not exist on this deployment.
+   */
+  const siteRows = sources.sites ? await sources.sites.list(userId) : null;
+  const bySiteId = new Map((siteRows ?? []).map((row) => [row.siteId, row]));
+  const sites: OverviewSite[] = (siteRows === null ? [] : BUSINESS_SITES).map(
+    (site) => {
+      const row = bySiteId.get(site.id);
+      return {
+        id: site.id,
+        status: !row
+          ? "not_connected"
+          : row.needsLogin
+            ? "needs_login"
+            : "connected",
+        botId: row?.botId ?? null,
+        lastSeenAt: row?.lastSeenAt ?? null,
+        connectedAt: row?.connectedAt ?? null,
+      };
+    },
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    accounts,
+    sites,
+    bots: await sources.bots(userId),
+  };
+}
+
 export function createConnectionsOverviewRoutes(
   sources: ConnectionsOverviewSources,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
-  routes.get("/overview", requireUser, async (context) => {
-    const userId = context.var.actor.id;
-
-    const held: HeldConnection[] = await sources.store.connectionsFor(userId);
-    const stored = await sources.store.listServers();
-    const byServerId = new Map(held.map((row) => [row.serverId, row]));
-
-    const accounts: OverviewAccount[] = sources.catalogue().map((entry) => {
-      const connection = byServerId.get(entry.key);
-      const health = healthOf(connection);
-      const row = stored.find((server) => server.id === entry.key);
-      return {
-        kind: "oauth",
-        id: entry.key,
-        serverId: row?.id ?? null,
-        title: entry.title,
-        vendor: entry.vendor,
-        status: connection
-          ? health.status === "needs_reconnect"
-            ? "needs_reconnect"
-            : "connected"
-          : "not_connected",
-        connectedAt: connection ? ISO(connection.connectedAt) : null,
-        account: instanceNameOf(entry, row?.url),
-        needsInstanceName: entry.host === null,
-        health,
-      };
-    });
-
-    /*
-     * Only the partners this machine actually holds a key for. A row for one it does not is a
-     * switch that could only ever 503, which is the same lie as a 연결 button in front of a vendor
-     * with no application behind it.
-     */
-    const partners = sources.partners;
-    for (const provider of partners?.configured ?? []) {
-      const connector = partners?.alimtalk;
-      if (!connector) continue;
-      const status = (await connector.status(userId)) as {
-        connected?: unknown;
-      };
-      accounts.push({
-        kind: "partner",
-        id: provider,
-        status: status?.connected === true ? "connected" : "not_connected",
-        partner: { status },
-      });
-    }
-
-    /*
-     * NO COMPUTER, NO SITES — an empty list rather than fifteen rows saying "아직 연결 안 됨".
-     *
-     * The difference is what the screen can do with it: an empty list hides the section, and
-     * fifteen not-connected rows are fifteen switches whose only possible outcome is a refusal from
-     * a browser that does not exist on this deployment.
-     */
-    const siteRows = sources.sites ? await sources.sites.list(userId) : null;
-    const bySiteId = new Map((siteRows ?? []).map((row) => [row.siteId, row]));
-    const sites: OverviewSite[] = (siteRows === null ? [] : BUSINESS_SITES).map(
-      (site) => {
-        const row = bySiteId.get(site.id);
-        return {
-          id: site.id,
-          status: !row
-            ? "not_connected"
-            : row.needsLogin
-              ? "needs_login"
-              : "connected",
-          botId: row?.botId ?? null,
-          lastSeenAt: row?.lastSeenAt ?? null,
-          connectedAt: row?.connectedAt ?? null,
-        };
-      },
-    );
-
-    const overview: ConnectionsOverview = {
-      generatedAt: new Date().toISOString(),
-      accounts,
-      sites,
-      bots: await sources.bots(userId),
-    };
-    return context.json(overview);
-  });
+  routes.get("/overview", requireUser, async (context) =>
+    context.json(await readConnectionsOverview(sources, context.var.actor.id)),
+  );
 
   return routes;
 }
