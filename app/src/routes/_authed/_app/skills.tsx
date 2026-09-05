@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
   PageRows,
@@ -14,14 +15,6 @@ import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +32,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
@@ -85,6 +79,10 @@ function SkillsPage() {
    * Measured: pressing 삭제 clears the slug, and the dialog spends its closing animation asking
    * "/ 를 지울까요?" — a question about nothing, in front of somebody who has just answered it. The
    * dialog is unmounted by then as far as the state is concerned; it is still on screen.
+   *
+   * IT KEEPS THE NAME NOW, NOT THE SLUG. `/danggeun-reply 삭제` was what the row menu offered and
+   * what the question repeated: a command line in the middle of a Korean sentence, and the one part
+   * of a skill its author did not choose the wording of. The name is what they wrote.
    */
   const askedAbout = useRef("");
 
@@ -146,54 +144,32 @@ function SkillsPage() {
          * ONE DIALOG FOR THE PAGE. A skill is gone the moment it is deleted and any Bot carrying it
          * loses the command; asking is the same courtesy a routine and a Bot already get.
          */}
-        <Dialog
-          onOpenChange={(open) => {
-            if (!open) setConfirmingDelete(null);
+        <ConfirmDialog
+          confirmLabel={t("Delete")}
+          description={t(
+            "The command stops working and any Bot carrying it loses it. This cannot be undone.",
+          )}
+          onConfirm={() => {
+            const slug = confirmingDelete;
+            if (!slug) return;
+            setConfirmingDelete(null);
+            mutate.mutate(() =>
+              fetch(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
+                method: "DELETE",
+                credentials: "include",
+              }),
+            );
+          }}
+          onOpenChange={(next) => {
+            if (!next) setConfirmingDelete(null);
           }}
           open={confirmingDelete !== null}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {t("Delete {command}?", {
-                  command: `/${askedAbout.current}`,
-                })}
-              </DialogTitle>
-              <DialogDescription>
-                {t(
-                  "The command stops working and any Bot carrying it loses it. This cannot be undone.",
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                onClick={() => setConfirmingDelete(null)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                disabled={mutate.isPending}
-                onClick={() => {
-                  const slug = confirmingDelete;
-                  if (!slug) return;
-                  setConfirmingDelete(null);
-                  mutate.mutate(() =>
-                    fetch(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
-                      method: "DELETE",
-                      credentials: "include",
-                    }),
-                  );
-                }}
-                size="sm"
-                variant="destructive"
-              >
-                {mutate.isPending ? t("Deleting…") : t("Delete")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          pending={mutate.isPending}
+          title={t("Delete {name}{josa}?", {
+            josa: josa(askedAbout.current, "을/를"),
+            name: askedAbout.current,
+          })}
+        />
 
         <PageSection
           action={
@@ -260,9 +236,12 @@ function SkillsPage() {
                                * Named for its row. Every skill drew the same unnamed dots button, so
                                * a person reading by name alone was offered N identical menus and
                                * only learned which one they had opened from the item inside it.
+                               *
+                               * By NAME, not by slug: a screen reader saying "actions for slash
+                               * danggeun hyphen reply" is reading a URL out loud.
                                */
-                              aria-label={t("Actions for /{slug}", {
-                                slug: skill.slug,
+                              aria-label={t("Actions for {name}", {
+                                name: skill.title,
                               })}
                               variant="ghost"
                               size="icon-sm"
@@ -289,14 +268,12 @@ function SkillsPage() {
                              */}
                             <DropdownMenuItem
                               onClick={() => {
-                                askedAbout.current = skill.slug;
+                                askedAbout.current = skill.title;
                                 setConfirmingDelete(skill.slug);
                               }}
                               variant="destructive"
                             >
-                              {t("Delete {command}", {
-                                command: `/${skill.slug}`,
-                              })}
+                              {t("Delete")}
                             </DropdownMenuItem>
                           </DropdownMenuGroup>
                         </DropdownMenuContent>

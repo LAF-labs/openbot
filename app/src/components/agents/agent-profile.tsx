@@ -5,16 +5,9 @@ import { useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +18,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { AUTO_REVIEW_EXAMPLES } from "@/lib/agents/auto-review";
+import { type BotMenuItem, botMenuItems } from "@/lib/agents/bot-menu";
 import {
   AGENT_EFFORTS,
   type AgentEffort,
@@ -38,17 +33,16 @@ import {
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
-import { AUTO_REVIEW_EXAMPLES } from "@/lib/agents/auto-review";
-import { type BotMenuItem, botMenuItems } from "@/lib/agents/bot-menu";
 import { useSeats } from "@/lib/agents/new-bot";
 import {
+  type AgentProfile as AgentProfileRecord,
   agentKeys,
   agentMemoriesQueryOptions,
-  type AgentProfile as AgentProfileRecord,
   agentQueryOptions,
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import { useSavedFlash } from "@/lib/saved-flash";
 
@@ -339,46 +333,26 @@ export function AgentProfile({ agentId }: { agentId: string }) {
        * destructive one last and its confirmation replacing it in place — so the press that deletes
        * a Bot landed where the press that asked about it had just been.
        */}
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) setConfirmingDeleteId(null);
+      <ConfirmDialog
+        confirmLabel={t("Delete")}
+        description={t(
+          "Its conversations, its routines and everything it remembers go with it. This cannot be undone.",
+        )}
+        onConfirm={async () => {
+          await deleteAgent.mutateAsync(agentId);
+          setConfirmingDeleteId(null);
+          await navigate({ search: {}, to: "/agents" });
+        }}
+        onOpenChange={(next) => {
+          if (!next) setConfirmingDeleteId(null);
         }}
         open={isConfirmingDelete}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("Delete {name}?", { name: profile.name })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                "Its conversations, its routines and everything it remembers go with it. This cannot be undone.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              onClick={() => setConfirmingDeleteId(null)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={deleteAgent.isPending}
-              onClick={async () => {
-                await deleteAgent.mutateAsync(agentId);
-                setConfirmingDeleteId(null);
-                await navigate({ search: {}, to: "/agents" });
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        pending={deleteAgent.isPending}
+        title={t("Delete {name}{josa}?", {
+          josa: josa(profile.name, "을/를"),
+          name: profile.name,
+        })}
+      />
     </div>
   );
 }
@@ -968,7 +942,11 @@ function NotifyCard({
           {t("Notifications")}
         </h2>
         <p className="text-muted-foreground text-sm">
-          {t("Tell me when {name} finishes or needs me.", { name })}
+          {/* 「김비서이(가)」 was on this card, measured in the browser. See `lib/josa.ts`. */}
+          {t("Tell me when {name} finishes or needs me.", {
+            josa: josa(name, "이/가"),
+            name,
+          })}
         </p>
         {notify ? (
           <NotificationPermission

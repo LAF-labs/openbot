@@ -3,16 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -26,13 +19,14 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import {
   type Routine,
   type RoutineRun,
   routineKeys,
   routineListQueryOptions,
-  runShape,
   routineRequest,
+  runShape,
   scheduleLabel,
   weekdayNames,
 } from "@/lib/routines/queries";
@@ -227,47 +221,23 @@ function RoutineRow({ routine }: { routine: Routine }) {
        * A routine and every run it ever made, gone on one click of a small grey icon next to a
        * switch. It is the only irreversible thing on this page and it asked nothing.
        */}
-      <Dialog
+      <ConfirmDialog
+        confirmLabel={t("Delete")}
+        description={t(
+          "The schedule stops and its run history goes with it. This cannot be undone.",
+        )}
+        error={remove.error?.message}
+        onConfirm={() => remove.mutate()}
         onOpenChange={(open) => {
           if (!open) setConfirmingDelete(false);
         }}
         open={confirmingDelete}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("Delete {name}?", { name: routine.name })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                "The schedule stops and its run history goes with it. This cannot be undone.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {remove.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {remove.error.message}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              onClick={() => setConfirmingDelete(false)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={remove.isPending}
-              onClick={() => remove.mutate()}
-              size="sm"
-              variant="destructive"
-            >
-              {remove.isPending ? t("Deleting…") : t("Delete")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        pending={remove.isPending}
+        title={t("Delete {name}{josa}?", {
+          josa: josa(routine.name, "을/를"),
+          name: routine.name,
+        })}
+      />
       {showRuns ? (
         <div className="border-border border-t px-4">
           <RunHistory routineId={routine.id} />

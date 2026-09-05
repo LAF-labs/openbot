@@ -559,8 +559,9 @@ export const ko: Record<string, string> = {
   Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
+  // `{josa}` is computed by `lib/josa.ts` — 이(가) was on this card, on screen, until 2026-09-06.
   "Tell me when {name} finishes or needs me.":
-    "{name}이(가) 작업을 마치거나 내 입력이 필요할 때 알려주세요.",
+    "{name}{josa} 작업을 마치거나 내 입력이 필요할 때 알려주세요.",
   Test: "연결 확인",
   "Testing…": "확인 중…",
   "That could not be sent to the page. Try again.":
@@ -1733,4 +1734,13 @@ export const ko: Record<string, string> = {
   "Remove queued message: {text}": "대기 중인 메시지 삭제: {text}",
   "Point a Bot at an agent you host yourself.":
     "직접 운영하는 서버로 봇을 연결합니다.",
+
+  /*
+   * THE PARTICLE IS A PARAMETER NOW. `{josa}` is filled by `lib/josa.ts` from the name that goes in
+   * beside it, which is the only way a dictionary entry can agree with a word it has never seen.
+   * The English source strings have no `{josa}` in them and simply ignore the extra parameter.
+   *
+   * The particle sits OUTSIDE the quotation marks: what is quoted is the name.
+   */
+  "Delete {name}{josa}?": "'{name}'{josa} 삭제할까요?",
 };
