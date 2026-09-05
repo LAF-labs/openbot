@@ -254,7 +254,22 @@ const accessoryParts = (
           </g>
         ),
       };
-    case 6:
+    case 6: {
+      /*
+       * ON THE HEAD, AND ON THE SIDE THE MARK DOES NOT OWN.
+       *
+       * It was `translate(79 15)`: a fixed point in the top-right of the box, ignoring the shape
+       * under it. Measured on a roster card at 144px, a triangle wore its star a third of a box
+       * from its apex, so it read as a badge pinned to the CARD rather than as anything on the
+       * face — and at 36px in the sidebar it read as an unread dot. Worse, (79,15) is where the
+       * blocked mark is drawn: a Bot that stopped to ask lost its star under the amber circle
+       * entirely.
+       *
+       * Anchored to the shape now, like every other accessory in this table, and on the left,
+       * because the top-right corner belongs to that mark. `Math.max` is for the triangle, whose
+       * head is a point: proportional to `capW` alone it would sit inside the face.
+       */
+      const x = 48 - Math.max(13, shape.capW * 0.6);
       return {
         clipped: null,
         over: (
@@ -264,10 +279,11 @@ const accessoryParts = (
             stroke={accent}
             strokeLinejoin="round"
             strokeWidth="2.5"
-            transform="translate(79 15)"
+            transform={`translate(${x} ${crownY + 3})`}
           />
         ),
       };
+    }
     default:
       return { clipped: null, over: null };
   }

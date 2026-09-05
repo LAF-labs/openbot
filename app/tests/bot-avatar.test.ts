@@ -216,6 +216,40 @@ describe("what comes out of the component", () => {
     }
   });
 
+  /**
+   * THE STAR IS ON THE HEAD, AND NOT IN THE CORNER THE MARK OWNS.
+   *
+   * It was `translate(79 15)` — a fixed point with no idea what shape was under it. Measured in the
+   * browser: on a triangle it sat a third of a box from the apex and read as a badge pinned to the
+   * roster card; on a blocked Bot the amber mark at (76,18) covered it completely. Both are things
+   * a typecheck and every test here were perfectly happy with, so this is the check that asks where
+   * it actually lands: on the far side of the face from the mark, and inside the circle a
+   * `rounded-full` wrapper clips to.
+   */
+  test("the star sits on the head, clear of the blocked mark's corner", () => {
+    /** Half the star's own height, plus its stroke — how far it reaches from its anchor. */
+    const REACH = 9.75;
+    for (let shape = 0; shape < BOT_AVATAR_SHAPES.length; shape += 1) {
+      const html = render(
+        botAvatarSeed({ shape, palette: 3, eyes: 1, accessory: 6 }),
+        96,
+      );
+      const placed = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(html);
+      expect(placed).not.toBeNull();
+      const x = Number(placed?.[1]);
+      const y = Number(placed?.[2]);
+      const body = BOT_AVATAR_SHAPES[
+        shape
+      ] as (typeof BOT_AVATAR_SHAPES)[number];
+      // Left of centre: the top right is where `bot-avatar-mark` is drawn on a blocked Bot.
+      expect(x).toBeLessThan(48);
+      // Above the eyes, in the headroom the bodies leave for exactly this.
+      expect(y).toBeLessThan(body.eyeY - 20);
+      // Not clipped away by the screens that wrap a face in `rounded-full overflow-hidden`.
+      expect(Math.hypot(x - 48, y - 48) + REACH).toBeLessThanOrEqual(48);
+    }
+  });
+
   test("is hidden from a screen reader, which the name beside it is not", () => {
     expect(render("f:0.0.0.0", 36)).toContain('aria-hidden="true"');
   });
