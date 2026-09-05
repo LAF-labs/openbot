@@ -1,4 +1,5 @@
 import { infiniteQueryOptions, keepPreviousData } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 export const auditKeys = { all: ["audit-events"] as const };
 
@@ -55,7 +56,10 @@ export function auditEventsQueryOptions(search = "") {
         `/api/admin/audit-events?${parameters.toString()}`,
         { credentials: "include" },
       );
-      if (!response.ok) throw new Error("Could not load audit events");
+      if (!response.ok)
+        throw new Error(
+          t("The audit trail could not be loaded. Refresh to try again."),
+        );
       return response.json();
     },
   });

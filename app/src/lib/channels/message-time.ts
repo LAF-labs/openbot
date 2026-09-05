@@ -1,4 +1,4 @@
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 /**
  * When a transcript earns a time separator, and what it says.
@@ -24,12 +24,15 @@ export function startsNewSitting(at: Date, previous: Date | null): boolean {
  * The separator's words: which day, then the clock.
  *
  * The day half is relative for the two days a person thinks of by name and absolute after that,
- * because "Tuesday" stops being an answer once there has been more than one of them. Both halves
- * come from `toLocale*`, so a Korean browser reads 오후 and an English one reads PM without this
- * module knowing which language it is in.
+ * because "Tuesday" stops being an answer once there has been more than one of them.
+ *
+ * Both halves come from `toLocale*` given `activeLocale` — the language the app is drawing in, not
+ * the browser's. They were passed `undefined` and so read the browser's own setting: somebody who
+ * chose 한국어 in Settings on an English-language machine got "오늘 3:45 PM", one separator in two
+ * languages, and nothing in the app could tell them why.
  */
 export function sittingLabel(at: Date, now: Date = new Date()): string {
-  const time = at.toLocaleTimeString(undefined, {
+  const time = at.toLocaleTimeString(activeLocale, {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -38,9 +41,9 @@ export function sittingLabel(at: Date, now: Date = new Date()): string {
   if (days <= 0) return t("Today {time}", { time });
   if (days === 1) return t("Yesterday {time}", { time });
   if (days < 7) {
-    return `${at.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+    return `${at.toLocaleDateString(activeLocale, { weekday: "long" })} ${time}`;
   }
-  return `${at.toLocaleDateString(undefined, {
+  return `${at.toLocaleDateString(activeLocale, {
     month: "long",
     day: "numeric",
     ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),

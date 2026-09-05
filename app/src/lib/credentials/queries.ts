@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 export type CredentialStatus = {
   id: string;
@@ -21,7 +22,7 @@ export function credentialListQueryOptions() {
       const response = await fetch("/api/admin/credentials", {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Could not load credentials");
+      if (!response.ok) throw new Error(t("Could not load credentials."));
       return ((await response.json()) as { credentials: CredentialStatus[] })
         .credentials;
     },

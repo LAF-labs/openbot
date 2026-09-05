@@ -96,7 +96,10 @@ function SandboxedTool({
       if (!isHeld) {
         return (
           <RefusedCard
-            reason={`${component.name} is not available to this Bot at the moment. An administrator grants components per Bot.`}
+            reason={t(
+              "{title} is not switched on for this Bot at the moment. It can be turned back on for this Bot from the admin screen.",
+              { title: component.name },
+            )}
             title={component.name}
           />
         );
@@ -148,7 +151,9 @@ function SandboxedTool({
       if (!decision.allowed) {
         const reason = decision.reason ?? "That component is not allowed here.";
         const id = context?.toolCall?.id;
-        if (id) setRefusals((current) => new Map(current).set(id, reason));
+        // The card is the person's and the return is the model's, so the fallback is written twice.
+        const said = decision.reason ?? t("This cannot be shown here.");
+        if (id) setRefusals((current) => new Map(current).set(id, said));
         return reason;
       }
       return "It is now on screen for the person.";

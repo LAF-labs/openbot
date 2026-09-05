@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 /** A component authored in the browser, as the playground edits it. */
 export type SandboxedRecord = {
@@ -45,7 +46,9 @@ export function sandboxedListQueryOptions() {
         credentials: "include",
       });
       if (!response.ok) {
-        throw new Error("The playground's components could not be loaded.");
+        throw new Error(
+          t("The playground could not be loaded. Refresh to try again."),
+        );
       }
       return (await response.json()).components ?? [];
     },
@@ -72,7 +75,9 @@ export function publishedSandboxedQueryOptions(enabled = true) {
         credentials: "include",
       });
       if (!response.ok) {
-        throw new Error("The published components could not be loaded.");
+        throw new Error(
+          t("The published cards could not be loaded. Refresh to try again."),
+        );
       }
       return (await response.json()).components ?? [];
     },

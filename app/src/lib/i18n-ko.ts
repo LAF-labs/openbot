@@ -1574,4 +1574,159 @@ export const ko: Record<string, string> = {
     "내 채널에서 예약 확인과 리뷰 요청을 보냅니다.",
   "The accounts and sites your Bot works with, so it answers with what you can see.":
     "봇이 함께 쓰는 계정과 사이트입니다. 내가 볼 수 있는 것으로 답합니다.",
+
+  // 봇이 대화 안에 그리는 카드. 이 화면들은 2026-09까지 전부 영어였다 — 승인 버튼까지.
+  "Waiting for the Bot…": "봇을 기다리는 중…",
+  Approved: "승인함",
+  Declined: "거절함",
+  Approve: "승인",
+  Decline: "거절",
+  "That data could not be read.": "그 자료를 읽지 못했습니다.",
+  "Reading from this deployment": "이 서버에서 읽는 중",
+  "Bot activity": "봇이 한 일",
+  "No Bot has done anything in the last {days} days.":
+    "최근 {days}일 동안 아무 봇도 한 일이 없습니다.",
+  "What has {bot} actually been doing? Look at the audit trail and summarise it.":
+    "{bot} 봇이 실제로 무슨 일을 했는지 감사 기록을 보고 정리해 줘.",
+  "Counted from this deployment's audit trail, last {days} days":
+    "이 서버의 감사 기록에서 최근 {days}일을 센 결과",
+  "Recent refusals": "최근 거절된 일",
+  "Explain the most recent refusal in that list, and what would have to change for it to be allowed.":
+    "그 목록에서 가장 최근에 거절된 일을 설명하고, 무엇이 달라져야 허용되는지 알려 줘.",
+  "Read from this deployment's audit trail":
+    "이 서버의 감사 기록에서 읽은 내용",
+  "{done} of {total}": "{total}개 중 {done}개",
+  "Good news": "좋은 소식",
+  "Worth a look": "살펴볼 것",
+  "A problem": "문제",
+  "This cannot be shown here.": "이건 여기서 보여줄 수 없습니다.",
+  "It finished without saying anything.": "아무 말 없이 끝났습니다.",
+  "{title} is not switched on for this Bot at the moment. It can be turned back on for this Bot from the admin screen.":
+    "지금 이 봇에는 ‘{title}’ 카드가 켜져 있지 않습니다. 관리 화면에서 이 봇에 다시 켤 수 있습니다.",
+  "{title} is not switched on for this Bot at the moment, so you were not asked. It can be turned back on for this Bot from the admin screen.":
+    "지금 이 봇에는 ‘{title}’ 카드가 켜져 있지 않아 묻지 않았습니다. 관리 화면에서 이 봇에 다시 켤 수 있습니다.",
+
+  // 카드의 이름. `t(spec.title)`로 읽히므로 `gallery-copy.test.ts`가 이 표를 걷는다.
+  "Activity report": "활동 보고서",
+  Approval: "승인 요청",
+  Choice: "선택 요청",
+  Record: "정보 카드",
+  "Headline figures": "주요 수치",
+  Checklist: "체크리스트",
+  Notice: "안내",
+  "Bar chart": "막대 차트",
+  "Donut chart": "도넛 차트",
+  "Line chart": "선 차트",
+  "Area chart": "영역 차트",
+  "Progress against target": "목표 대비 진행률",
+
+  // 화면이 무엇을 불러오지 못했을 때. 전부 `role="alert"`로 그대로 그려진다.
+  "Could not load your conversations.":
+    "대화 목록을 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not load this conversation.":
+    "이 대화를 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not start a conversation. Try again.":
+    "대화를 시작하지 못했습니다. 다시 시도해 주세요.",
+  "Could not mark that as read. Try again.":
+    "읽음 표시를 저장하지 못했습니다. 다시 시도해 주세요.",
+  "Could not load what this Bot knows. Refresh to try again.":
+    "이 봇이 기억한 내용을 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not load your Bots. Refresh to try again.":
+    "봇 목록을 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not load this Bot. Refresh to try again.":
+    "이 봇을 불러오지 못했습니다. 새로고침해 주세요.",
+  "That credential could not be saved. Try again.":
+    "자격증명을 저장하지 못했습니다. 다시 시도해 주세요.",
+  "The playground could not be loaded. Refresh to try again.":
+    "플레이그라운드를 불러오지 못했습니다. 새로고침해 주세요.",
+  "The published cards could not be loaded. Refresh to try again.":
+    "게시된 카드를 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not load the connected sites. Refresh to try again.":
+    "연결된 사이트를 불러오지 못했습니다. 새로고침해 주세요.",
+  "The connections could not be loaded. Refresh to try again.":
+    "연결을 불러오지 못했습니다. 새로고침해 주세요.",
+  "Connections could not be loaded. Refresh to try again.":
+    "연결을 불러오지 못했습니다. 새로고침해 주세요.",
+  "That site could not be turned off. Please try again.":
+    "그 사이트를 끄지 못했습니다. 다시 시도해 주세요.",
+  "The cards could not be loaded. Refresh to try again.":
+    "카드를 불러오지 못했습니다. 새로고침해 주세요.",
+  "This Bot's cards could not be loaded. Refresh to try again.":
+    "이 봇의 카드를 불러오지 못했습니다. 새로고침해 주세요.",
+  "The data functions could not be loaded. Refresh to try again.":
+    "데이터 함수를 불러오지 못했습니다. 새로고침해 주세요.",
+  "This deployment could not be asked for that data.":
+    "이 서버에 그 자료를 물어보지 못했습니다.",
+  "This deployment could not be reached to read that data.":
+    "자료를 읽으려 했지만 이 서버에 닿지 못했습니다.",
+  "This deployment could not be asked whether that card is allowed, so it was not shown.":
+    "이 카드를 보여줘도 되는지 서버에 물어보지 못해 표시하지 않았습니다.",
+  "This deployment could not be reached to check whether that card is allowed, so it was not shown.":
+    "이 카드를 보여줘도 되는지 확인하려 했지만 서버에 닿지 못해 표시하지 않았습니다.",
+  "The audit trail could not be loaded. Refresh to try again.":
+    "감사 기록을 불러오지 못했습니다. 새로고침해 주세요.",
+  "Could not load the services this deployment offers. Refresh to try again.":
+    "이 서버가 제공하는 서비스를 불러오지 못했습니다. 새로고침해 주세요.",
+  "The connection could not be started.": "연결을 시작하지 못했습니다.",
+  "That connection could not be removed. Please try again.":
+    "그 연결을 해제하지 못했습니다. 다시 시도해 주세요.",
+  "This Bot's connections could not be read. Refresh to try again.":
+    "이 봇의 연결을 읽지 못했습니다. 새로고침해 주세요.",
+  "That tool is not allowed here.": "이 도구는 여기서 쓸 수 없습니다.",
+  "The server did not answer.": "서버가 응답하지 않았습니다.",
+
+  // 입력칸 옆에 그대로 붙는 문장. zod가 던지고 `field.tsx`가 그린다.
+  "A command is required.": "명령을 입력해 주세요.",
+  "Lower-case letters, numbers and hyphens, 2 to 40 characters.":
+    "소문자, 숫자, 하이픈으로 2~40자.",
+  "A title is required.": "제목을 입력해 주세요.",
+  "The one-liner must be 200 characters or fewer.":
+    "한 줄 소개는 200자 이하여야 합니다.",
+  "Instructions are required — this is what the Bot follows.":
+    "지시문을 입력해 주세요. 봇이 그대로 따르는 내용입니다.",
+  "Provider is required.": "제공자를 입력해 주세요.",
+  "Key ID is required.": "키 ID를 입력해 주세요.",
+  "Secret is required.": "비밀값을 입력해 주세요.",
+
+  // 아직 `t()`로 감싸이지 않은 화면들의 문장. 감싸는 순간 한국어가 되도록 미리 둔다.
+  "Browser running since {time}": "{time}부터 브라우저 실행 중",
+  "No browser running. It starts when the Bot next needs it.":
+    "실행 중인 브라우저가 없습니다. 봇이 다음에 필요할 때 시작합니다.",
+  "Leaves through {egress}": "{egress}(으)로 나갑니다",
+  "Leaves directly": "바로 나갑니다",
+  "Stop closes the browser and keeps its logins: the next thing the Bot does starts it again where it left off.":
+    "정지는 브라우저를 닫고 로그인은 그대로 둡니다. 봇이 다음 일을 할 때 있던 자리에서 다시 켜집니다.",
+  "Reset deletes the profile, so the Bot is signed out of everything and starts clean.":
+    "초기화는 프로필을 지웁니다. 봇은 모든 곳에서 로그아웃되고 깨끗한 상태로 시작합니다.",
+  "Both are recorded in Audit.": "둘 다 감사 기록에 남습니다.",
+  "Nothing is published, so no Bot is told about this.":
+    "게시된 것이 없어 어떤 봇도 이것을 알지 못합니다.",
+  "Last changed {when}": "마지막 변경 {when}",
+  "Last changed {when} by {who}": "마지막 변경 {when} · {who}",
+  Unpublish: "게시 취소",
+  "published, revision {revision}": "게시됨 · 리비전 {revision}",
+  "draft only, no Bot can draw it":
+    "초안입니다. 아직 아무 봇도 그릴 수 없습니다.",
+  "edited since publishing": "게시 후 수정됨",
+  "not valid JSON": "올바른 JSON이 아닙니다",
+  "The boundary could not be read.":
+    "경계 설정을 읽지 못했습니다. 새로고침해 주세요.",
+  "Saved. It applies to the next action any Bot takes.":
+    "저장했습니다. 다음에 봇이 하는 행동부터 적용됩니다.",
+  "Changes apply to the next action any Bot takes, and are kept: a restart comes back up enforcing what is here.":
+    "변경은 다음에 봇이 하는 행동부터 적용되고 그대로 유지됩니다. 서버를 다시 켜도 여기 있는 내용대로 적용됩니다.",
+  "Save credential": "자격증명 저장",
+  "The token could not be stored.":
+    "토큰을 저장하지 못했습니다. 다시 시도해 주세요.",
+  "The definition could not be approved.":
+    "정의를 승인하지 못했습니다. 다시 시도해 주세요.",
+  "That Agent could not be changed.":
+    "그 봇을 바꾸지 못했습니다. 다시 시도해 주세요.",
+  "The screen could not be shown.":
+    "화면을 보여주지 못했습니다. 다시 시도해 주세요.",
+  "The live screen could not be reached.":
+    "실시간 화면에 닿지 못했습니다. 다시 시도해 주세요.",
+  "The assistant's computer could not be reached.":
+    "봇의 컴퓨터에 닿지 못했습니다. 다시 시도해 주세요.",
+  "Remove queued message: {text}": "대기 중인 메시지 삭제: {text}",
 };

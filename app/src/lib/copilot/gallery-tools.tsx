@@ -15,6 +15,7 @@ import {
   type GalleryComponent,
   galleryManifest,
 } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 
 /**
  * Register compiled gallery components once per name, scoped to the active Bot with `available`.
@@ -94,14 +95,17 @@ function GrantedTool({
         ? refusals.get(props.toolCallId)
         : undefined;
       if (refusal) {
-        return <RefusedCard reason={refusal} title={spec.title} />;
+        return <RefusedCard reason={refusal} title={t(spec.title)} />;
       }
       // Render from the polled grant snapshot so revocations show before a new call starts.
       if (!isHeld) {
         return (
           <RefusedCard
-            reason={`${spec.title} is not available to this Bot at the moment. An administrator grants components per Bot, and can unpublish one for every Bot at once.`}
-            title={spec.title}
+            reason={t(
+              "{title} is not switched on for this Bot at the moment. It can be turned back on for this Bot from the admin screen.",
+              { title: t(spec.title) },
+            )}
+            title={t(spec.title)}
           />
         );
       }
@@ -130,7 +134,10 @@ function GrantedTool({
         const reason = decision.reason ?? "That component is not allowed here.";
         const id = context?.toolCall?.id;
         if (id) {
-          setRefusals((current) => new Map(current).set(id, reason));
+          // The model is told in English below; the card beside it is the person's, so it is not
+          // the same string twice — a refusal a Korean reader cannot read is a refusal that lies.
+          const said = decision.reason ?? t("This cannot be shown here.");
+          setRefusals((current) => new Map(current).set(id, said));
         }
         // Led with the same words the card shows, so the transcript and the card agree.
         return `Not shown: ${spec.title}. ${reason} Nothing was displayed, so tell the person that.`;
@@ -164,7 +171,7 @@ function GrantedDecision({
             respond={
               props.respond as ((result: unknown) => Promise<void>) | undefined
             }
-            title={spec.title}
+            title={t(spec.title)}
           />
         );
       },
@@ -194,14 +201,20 @@ function RefusedDecision({
   title: string;
   respond?: (result: unknown) => Promise<void>;
 }) {
-  const reason = `${title} is not available to this Bot at the moment, so the person was not asked. An administrator grants components per Bot, and can unpublish one for every Bot at once.`;
+  // Two sentences, because they have two readers: the model has to know nobody was asked, and the
+  // person has to be able to read why the card they were about to answer is not there.
+  const told = `${title} is not available to this Bot at the moment, so the person was not asked. An administrator grants components per Bot, and can unpublish one for every Bot at once.`;
+  const said = t(
+    "{title} is not switched on for this Bot at the moment, so you were not asked. It can be turned back on for this Bot from the admin screen.",
+    { title },
+  );
 
   useEffect(() => {
     if (!respond) return;
-    void respond(reason).catch(() => {
+    void respond(told).catch(() => {
       // The run being gone is not a failure worth reporting: there is nothing left to answer.
     });
-  }, [respond, reason]);
+  }, [respond, told]);
 
-  return <RefusedCard reason={reason} title={title} />;
+  return <RefusedCard reason={said} title={title} />;
 }

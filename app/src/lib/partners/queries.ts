@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 /**
  * What the 알림톡 card asks the server, and nothing else.
@@ -57,7 +58,12 @@ export function partnersQueryOptions() {
       // A deployment with no partner runtime does not mount these routes. Not an error worth a red
       // line across somebody's settings screen — there is simply nothing here to connect.
       if (response.status === 404) return [];
-      if (!response.ok) throw new Error("Could not load partner connections");
+      if (!response.ok)
+        throw new Error(
+          t(
+            "Could not load the services this deployment offers. Refresh to try again.",
+          ),
+        );
       return ((await response.json()) as { partners: PartnerCard[] }).partners;
     },
   });

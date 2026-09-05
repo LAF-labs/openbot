@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 export type AgentVisibility = "public" | "private";
 
@@ -98,7 +99,10 @@ export function agentMemoriesQueryOptions(agentId: string) {
       // A deployment with nowhere to record memories answers 404, and a Bot that simply has not
       // learned anything answers an empty list. Neither is an error worth a red screen.
       if (response.status === 404) return [];
-      if (!response.ok) throw new Error("Could not load what this Bot knows");
+      if (!response.ok)
+        throw new Error(
+          t("Could not load what this Bot knows. Refresh to try again."),
+        );
       return ((await response.json()) as { memories: AgentMemory[] }).memories;
     },
   });
@@ -114,7 +118,8 @@ export function agentListQueryOptions(hidden = false) {
           credentials: "include",
         },
       );
-      if (!response.ok) throw new Error("Could not load coworkers");
+      if (!response.ok)
+        throw new Error(t("Could not load your Bots. Refresh to try again."));
       return ((await response.json()) as { agents: AgentProfile[] }).agents;
     },
   });
@@ -127,7 +132,8 @@ export function agentQueryOptions(agentId: string) {
       const response = await fetch(`/api/agents/${agentId}`, {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Could not load this coworker");
+      if (!response.ok)
+        throw new Error(t("Could not load this Bot. Refresh to try again."));
       return ((await response.json()) as { agent: AgentProfile }).agent;
     },
   });

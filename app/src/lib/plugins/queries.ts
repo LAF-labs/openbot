@@ -232,7 +232,10 @@ export function connectionsQueryOptions() {
       const response = await fetch("/api/plugins/connections", {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Connections could not be loaded.");
+      if (!response.ok)
+        throw new Error(
+          t("Connections could not be loaded. Refresh to try again."),
+        );
       return response.json();
     },
   });
@@ -314,7 +317,7 @@ export async function beginConnect(
   } | null;
   if (!response.ok || !body?.authorizationUrl) {
     throw new ConnectRefusedError(
-      body?.error ?? "The connection could not be started.",
+      body?.error ?? t("The connection could not be started."),
       response.status,
       typeof body?.code === "string" ? body.code : null,
     );
@@ -361,7 +364,10 @@ export async function disconnectServer(serverId: string): Promise<boolean> {
     `/api/plugins/servers/${encodeURIComponent(serverId)}/disconnect`,
     { method: "POST", credentials: "include" },
   );
-  if (!response.ok) throw new Error("That connection could not be removed.");
+  if (!response.ok)
+    throw new Error(
+      t("That connection could not be removed. Please try again."),
+    );
   const body = (await response.json().catch(() => null)) as {
     disconnected?: boolean;
   } | null;
@@ -389,7 +395,8 @@ export async function saveOauthClient(
       body: JSON.stringify({ clientId, clientSecret }),
     },
   );
-  if (!response.ok) throw new Error("That client could not be saved.");
+  if (!response.ok)
+    throw new Error(t("That client could not be saved. Please try again."));
 }
 
 /**
@@ -409,7 +416,9 @@ export function agentPluginsQueryOptions(agentId: string | undefined) {
         { credentials: "include" },
       );
       if (!response.ok)
-        throw new Error("This Bot's plugins could not be read.");
+        throw new Error(
+          t("This Bot's connections could not be read. Refresh to try again."),
+        );
       return response.json();
     },
   });
@@ -581,13 +590,13 @@ async function sendCall(
       refused: true,
       reason: fact
         ? toolResultText(fact)
-        : said || "That tool is not allowed here.",
+        : said || t("That tool is not allowed here."),
       rule: body?.rule ?? null,
     };
   }
   return {
     ok: false,
     refused: false,
-    reason: body?.error ?? "The server did not answer.",
+    reason: body?.error ?? t("The server did not answer."),
   };
 }

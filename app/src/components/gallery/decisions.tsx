@@ -57,7 +57,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
 
   if (status === "inProgress") {
     return (
-      <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
+      <GalleryFrame title={args.title ?? t("Waiting for the Bot…")}>
         <p className="text-sm text-muted-foreground">
           {t("Preparing the request…")}
         </p>
@@ -73,7 +73,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
       action={
         decided ? (
           <Badge tone={decided === "approved" ? "positive" : "negative"}>
-            {decided === "approved" ? "Approved" : "Declined"}
+            {decided === "approved" ? t("Approved") : t("Declined")}
           </Badge>
         ) : (
           <Badge tone="caution">{t("Waiting on you")}</Badge>
@@ -111,8 +111,8 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
               size="sm"
             >
               {sending === "approved"
-                ? "Sending…"
-                : (args.approveLabel ?? "Approve")}
+                ? t("Sending…")
+                : (args.approveLabel ?? t("Approve"))}
             </Button>
             <Button
               disabled={Boolean(sending)}
@@ -121,8 +121,8 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
               variant="outline"
             >
               {sending === "declined"
-                ? "Sending…"
-                : (args.rejectLabel ?? "Decline")}
+                ? t("Sending…")
+                : (args.rejectLabel ?? t("Decline"))}
             </Button>
           </div>
         </div>
@@ -158,7 +158,7 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
 
   if (status === "inProgress") {
     return (
-      <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
+      <GalleryFrame title={args.title ?? t("Waiting for the Bot…")}>
         <p className="text-sm text-muted-foreground">
           {t("Preparing the question…")}
         </p>

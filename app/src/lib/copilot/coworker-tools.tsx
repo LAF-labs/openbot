@@ -123,10 +123,14 @@ export function CoworkerTools() {
           // rather than as a thrown error the runtime would flatten into noise.
           return `The coworker could not answer: ${body?.error ?? response.statusText}`;
         }
-        const answer =
-          body?.answer ?? "The coworker finished without saying anything.";
-        remember(call.toolCall?.id, { coworker: target.name, answer });
-        return answer;
+        const answer = body?.answer;
+        // The transcript line is read by a person and the return is read by the model, so the
+        // "it said nothing" fallback is written once in each language rather than shared.
+        remember(call.toolCall?.id, {
+          coworker: target.name,
+          answer: answer ?? t("It finished without saying anything."),
+        });
+        return answer ?? "The coworker finished without saying anything.";
       },
       /*
        * The transcript line, in words a person reads: who was asked, shimmering while the answer is

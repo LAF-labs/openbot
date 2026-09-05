@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 /**
  * What the 사이트 연결 section asks the server, and nothing else.
@@ -39,7 +40,10 @@ export function siteConnectionsQueryOptions() {
        * empty one.
        */
       if (response.status === 404) return [];
-      if (!response.ok) throw new Error("Could not load site connections");
+      if (!response.ok)
+        throw new Error(
+          t("Could not load the connected sites. Refresh to try again."),
+        );
       return ((await response.json()) as { connections: SiteConnection[] })
         .connections;
     },

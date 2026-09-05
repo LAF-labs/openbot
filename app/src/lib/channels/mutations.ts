@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 import { type AgentChannel, channelKeys } from "./queries";
 
 /**
@@ -20,7 +21,9 @@ export function createChannelMutationOptions(queryClient: QueryClient) {
           .json()
           .then((body: { error?: string }) => body.error)
           .catch(() => undefined);
-        throw new Error(message ?? "Could not start a channel");
+        throw new Error(
+          message ?? t("Could not start a conversation. Try again."),
+        );
       }
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
@@ -81,7 +84,8 @@ export function setChannelReadMutationOptions(queryClient: QueryClient) {
           body: JSON.stringify({ read: variables.read }),
         },
       );
-      if (!response.ok) throw new Error("Could not update the read mark");
+      if (!response.ok)
+        throw new Error(t("Could not mark that as read. Try again."));
       return (await response.json()) as {
         previousReadAt: string | null;
         readAt: string | null;

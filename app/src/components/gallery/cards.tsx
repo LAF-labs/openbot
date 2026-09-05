@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { t } from "@/lib/i18n";
 import { Badge, GalleryFrame, type Tone } from "./frame";
 
 const tone = z
@@ -141,7 +142,7 @@ export function ChecklistCard({
             done === items.length && items.length > 0 ? "positive" : "neutral"
           }
         >
-          {done} of {items.length}
+          {t("{done} of {total}", { done, total: items.length })}
         </Badge>
       }
       caption={caption}
@@ -191,6 +192,19 @@ export const NoticeCardProps = z.object({
     .describe("Supporting points, if there are any"),
 });
 
+/**
+ * The word the notice's badge shows.
+ *
+ * The tone arrived from the model as "caution" and was printed as "caution" — an English enum name
+ * in the middle of a Korean conversation. Literal keys so `i18n-coverage.test.ts` can see them, and
+ * a word rather than the enum, because "negative" is not something a person says about an invoice.
+ */
+const TONE_WORD: Record<Exclude<Tone, "neutral">, string> = {
+  positive: t("Good news"),
+  caution: t("Worth a look"),
+  negative: t("A problem"),
+};
+
 export function NoticeCard({
   title,
   body,
@@ -201,7 +215,7 @@ export function NoticeCard({
     <GalleryFrame
       action={
         noticeTone && noticeTone !== "neutral" ? (
-          <Badge tone={noticeTone}>{noticeTone}</Badge>
+          <Badge tone={noticeTone}>{TONE_WORD[noticeTone]}</Badge>
         ) : undefined
       }
       title={title}

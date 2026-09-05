@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 import { credentialKeys } from "./queries";
 
 export type CredentialInput = {
@@ -16,7 +17,8 @@ async function credentialRequest(path: string, body?: CredentialInput) {
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!response.ok) throw new Error("Credential operation failed");
+  if (!response.ok)
+    throw new Error(t("That credential could not be saved. Try again."));
 }
 
 export function createCredentialMutationOptions(queryClient: QueryClient) {

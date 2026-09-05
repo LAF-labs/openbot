@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 import type { AlimtalkStatus, PartnerId } from "@/lib/partners/queries";
 
 /**
@@ -113,7 +114,10 @@ export function connectionsOverviewQueryOptions(isWaiting = false) {
       const response = await fetch("/api/connections/overview", {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("The connections could not be loaded.");
+      if (!response.ok)
+        throw new Error(
+          t("The connections could not be loaded. Refresh to try again."),
+        );
       return response.json();
     },
   });
@@ -171,7 +175,8 @@ export async function forgetSite(siteId: string): Promise<boolean> {
     `/api/sites/${encodeURIComponent(siteId)}/connection`,
     { method: "DELETE", credentials: "include" },
   );
-  if (!response.ok) throw new Error("That site could not be turned off.");
+  if (!response.ok)
+    throw new Error(t("That site could not be turned off. Please try again."));
   const body = (await response.json().catch(() => null)) as {
     forgotten?: boolean;
   } | null;

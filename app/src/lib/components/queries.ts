@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
 export type ComponentRecord = {
@@ -37,7 +38,10 @@ export function componentListQueryOptions() {
       const response = await fetch("/api/components", {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("The components could not be loaded.");
+      if (!response.ok)
+        throw new Error(
+          t("The cards could not be loaded. Refresh to try again."),
+        );
       return (await response.json()).components ?? [];
     },
   });
@@ -70,7 +74,9 @@ export function agentComponentsQueryOptions(agentId: string | undefined) {
         { credentials: "include" },
       );
       if (!response.ok) {
-        throw new Error("This Bot's components could not be loaded.");
+        throw new Error(
+          t("This Bot's cards could not be loaded. Refresh to try again."),
+        );
       }
       return (await response.json()).components ?? [];
     },
@@ -115,7 +121,9 @@ export function dataFunctionsQueryOptions() {
         credentials: "include",
       });
       if (!response.ok)
-        throw new Error("The data functions could not be loaded.");
+        throw new Error(
+          t("The data functions could not be loaded. Refresh to try again."),
+        );
       return (await response.json()).functions ?? [];
     },
   });
@@ -154,12 +162,12 @@ export async function callComponentFunction(
     }
     return {
       allowed: false,
-      reason: "This deployment could not be asked for that data.",
+      reason: t("This deployment could not be asked for that data."),
     };
   } catch {
     return {
       allowed: false,
-      reason: "This deployment could not be reached to read that data.",
+      reason: t("This deployment could not be reached to read that data."),
     };
   }
 }
@@ -188,16 +196,18 @@ export async function decideComponent(
     if (!response.ok) {
       return {
         allowed: false,
-        reason:
-          "This deployment could not be asked whether that component is allowed, so it was not shown.",
+        reason: t(
+          "This deployment could not be asked whether that card is allowed, so it was not shown.",
+        ),
       };
     }
     return await response.json();
   } catch {
     return {
       allowed: false,
-      reason:
-        "This deployment could not be reached to check whether that component is allowed, so it was not shown.",
+      reason: t(
+        "This deployment could not be reached to check whether that card is allowed, so it was not shown.",
+      ),
     };
   }
 }

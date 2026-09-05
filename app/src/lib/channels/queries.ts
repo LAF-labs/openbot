@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/lib/i18n";
 
 /**
  * A channel as the browser sees it.
@@ -42,7 +43,8 @@ export function channelListQueryOptions() {
       const response = await fetch("/api/channels", {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Could not load channels");
+      if (!response.ok)
+        throw new Error(t("Could not load your conversations."));
       return ((await response.json()) as { channels: ChannelSummary[] })
         .channels;
     },
@@ -94,7 +96,7 @@ export function channelQueryOptions(channelId: string) {
       const response = await fetch(`/api/channels/${channelId}`, {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Could not load this channel");
+      if (!response.ok) throw new Error(t("Could not load this conversation."));
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
   });

@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 /** A standing instruction a Bot runs on a clock. */
 export type Routine = {
@@ -125,9 +125,15 @@ export function routineListQueryOptions() {
   });
 }
 
-/** The weekday names this browser uses, indexed 0 = Sunday to match the stored values. */
+/**
+ * The weekday names, indexed 0 = Sunday to match the stored values.
+ *
+ * `activeLocale` rather than `undefined`: the schedule line said "월, 화" beside "Weekdays at" or
+ * "Mon, Tue" in the middle of a Korean sentence, depending on the browser rather than on the
+ * language the person chose.
+ */
 export function weekdayNames(): string[] {
-  const format = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  const format = new Intl.DateTimeFormat(activeLocale, { weekday: "short" });
   // 2026-08-23 is a Sunday, so seven steps from it name the week in order.
   return Array.from({ length: 7 }, (_, index) =>
     format.format(new Date(Date.UTC(2026, 7, 23 + index))),
