@@ -144,6 +144,52 @@ describe("what it remembers", () => {
   });
 });
 
+describe("the profile card above the first conversation", () => {
+  const CARD = join(
+    import.meta.dir,
+    "../src/components/agents/bot-intro-card.tsx",
+  );
+
+  test("opts back into pointer events, because the overlay it sits in has none", () => {
+    /*
+     * MEASURED IN A BROWSER: every chip and both fields were dead, and nothing said so — no error,
+     * no request, no console line. `ConversationView` lays its empty state over the transcript as
+     * `pointer-events-none` so an overlay can never come between somebody and the composer, and it
+     * expects a control-bearing empty state to opt back in on its own element.
+     */
+    expect(readFileSync(CARD, "utf8")).toContain("pointer-events-auto");
+    // The overlay that makes it necessary. If this stops being click-through, the line above is
+    // harmless; if it stays and the card loses its opt-in, the card is furniture.
+    expect(
+      readFileSync(
+        join(
+          import.meta.dir,
+          "../src/components/channels/conversation-view.tsx",
+        ),
+        "utf8",
+      ),
+    ).toContain("pointer-events-none absolute inset-0");
+  });
+
+  test("a chip writes the Bot's words in the reader's language", () => {
+    // `t(preset.title)`, not `preset.title`: filling the form with the English key would produce a
+    // Korean card that makes an English colleague, and those words are the Bot's for good.
+    const source = readFileSync(CARD, "utf8");
+    expect(source).toContain("t(preset.title)");
+    expect(source).toContain("t(preset.roleDescription)");
+  });
+
+  test("it saves through the replacing PATCH, carrying the fields it is not changing", () => {
+    // A PATCH replaces what it carries: naming a Bot must not clear what it does, and picking a
+    // face must not rename it. `endpoint` stays out — an address already saved and working is
+    // re-validated as if it had just been typed.
+    const source = readFileSync(CARD, "utf8");
+    expect(source).toContain("updateAgent.mutateAsync");
+    // The field, not the word: the comment above the call says why it is absent.
+    expect(source).not.toContain("endpoint:");
+  });
+});
+
 describe("the owner's profile form", () => {
   test("asks for a name and what it does, and nothing else", () => {
     const source = readFileSync(

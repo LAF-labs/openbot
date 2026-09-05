@@ -20,6 +20,11 @@ const ANIMATION_DURATION_SECONDS = 0.3;
  *
  * The pane holds a screen thumbnail and a list of routines, neither of which needs 400px; what
  * needed it was the conversation next door, which is where a person is actually reading.
+ *
+ * A CALLER MAY ASK FOR MORE, and one does: a Bot's profile is a face, an editable name, four cards
+ * of settings and a menu, and at 320 the three effort buttons and the skill switches were being
+ * laid out on a column narrower than the sentence explaining them. `detailWidth` is that override,
+ * not a suggestion — the pane animates its width and hands the content that width outright.
  */
 const DEFAULT_DETAIL_WIDTH = 320;
 
@@ -81,11 +86,11 @@ export function DetailPanel({
         /*
          * AN OVERLAY UNTIL THERE IS ROOM FOR A COLUMN.
          *
-         * The pane is a fixed 400px, and the app shell already spends 340px on the rail — so at a
-         * 900px window a profile or a Bot's screen left about 160px of conversation beside it, which
-         * is not a conversation. Below `lg` it lays over the main column instead; the card inside it
-         * already carries its own background and a left hairline, which is exactly how an overlay
-         * should read.
+         * The pane is 320px, or whatever the caller asked for, and the app shell already spends
+         * 340px on the rail — so at a 900px window a profile or a Bot's screen left about 160px of
+         * conversation beside it, which is not a conversation. Below `lg` it lays over the main
+         * column instead; the card inside it already carries its own background and a left
+         * hairline, which is exactly how an overlay should read.
          */
         className="absolute inset-y-0 right-0 z-20 shrink-0 overflow-hidden lg:static lg:z-auto"
         // No entry animation on first paint: URL-opened panels should appear as initial state.

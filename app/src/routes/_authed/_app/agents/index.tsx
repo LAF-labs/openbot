@@ -155,17 +155,27 @@ function AgentsScreen() {
                       size={48}
                     />
                   </span>
+                  {/*
+                   * "YOU HAVE NOT MADE A BOT YET" IS FALSE FOR SOMEBODY WHO HID THEIRS, and the
+                   * count in the heading above says so in the same glance — measured: one Bot,
+                   * hidden, and the screen read "내 봇 1/5" over "아직 만든 봇이 없습니다".
+                   */}
                   <EmptyTitle className="text-muted-foreground">
-                    {t("You have not made a Bot yet.")}
+                    {seats.used > 0
+                      ? t("Every Bot you have made is hidden.")
+                      : t("You have not made a Bot yet.")}
                   </EmptyTitle>
                   <p className="text-muted-foreground text-sm">
-                    {t(
-                      "It arrives with nothing set. What it does is decided in the conversation.",
-                    )}
+                    {seats.used > 0
+                      ? t("A hidden Bot keeps working, and keeps its seat.")
+                      : t(
+                          "It arrives with nothing set. What it does is decided in the conversation.",
+                        )}
                   </p>
                 </EmptyHeader>
                 <NewBotButton
-                  label={t("Make the first Bot")}
+                  // "첫 봇" only when it would be the first one.
+                  label={seats.used > 0 ? undefined : t("Make the first Bot")}
                   size="default"
                   variant="default"
                 />

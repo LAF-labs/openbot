@@ -11,6 +11,8 @@ export const ko: Record<string, string> = {
     "설정까지 그대로 복사합니다. 자리를 하나 씁니다.",
   "A copy with the same settings. It takes your last seat.":
     "설정까지 그대로 복사합니다. 남은 마지막 자리를 씁니다.",
+  "A hidden Bot keeps working, and keeps its seat.":
+    "숨긴 봇도 계속 일하고, 자리도 그대로 씁니다.",
   "A key is set. Type a new one to replace it.":
     "키가 설정되어 있습니다. 바꾸려면 새로 입력하세요.",
   "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.":
@@ -74,6 +76,7 @@ export const ko: Record<string, string> = {
   "Credential retired": "자격증명이 폐기됨",
   "Decide what it does by talking to it.": "무엇을 맡길지 대화로 정해요.",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
+  "Every Bot you have made is hidden.": "만든 봇이 모두 숨겨져 있습니다.",
   "Give the routine a name.": "루틴 이름을 지어 주세요.",
   "How it works": "일하는 방식",
   "It arrives with a name and a face and nothing else. You say what it is for by talking to it — and you can make up to five.":

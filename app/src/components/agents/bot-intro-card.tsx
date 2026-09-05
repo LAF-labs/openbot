@@ -1,6 +1,6 @@
 import { IconX } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/agents/presets";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
+import { useSavedFlash } from "@/lib/saved-flash";
 
 /**
  * WHAT THE CREATION FORM USED TO ASK, ASKED BESIDE THE BOT INSTEAD OF INSTEAD OF IT.
@@ -35,20 +36,12 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
   const [pickingFace, setPickingFace] = useState(false);
   const [name, setName] = useState(agent.name);
   const [title, setTitle] = useState(agent.title);
-  const [saved, setSaved] = useState(false);
+  const [saved, flashSaved] = useSavedFlash();
   /*
    * Dealt once, in an initialiser. Calling `pickSuggestions` in the render body deals a new hand on
    * every keystroke in the name field — the chips a person is reading would move while they read.
    */
   const [suggestions] = useState(() => pickSuggestions(5));
-  const flash = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (flash.current) clearTimeout(flash.current);
-    },
-    [],
-  );
 
   /*
    * A PATCH REPLACES THE FIELDS IT CARRIES, so the ones the parser requires go back unchanged:
@@ -74,9 +67,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
         ...patch,
       },
     });
-    setSaved(true);
-    if (flash.current) clearTimeout(flash.current);
-    flash.current = setTimeout(() => setSaved(false), 1800);
+    flashSaved();
   };
 
   const applyPreset = async (preset: AgentPreset) => {
