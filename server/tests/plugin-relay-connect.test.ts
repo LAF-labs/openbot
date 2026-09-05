@@ -63,7 +63,11 @@ const RELAY = {
   url: "https://auth.agent.laf-co.com/oauth/relay",
   slug: "sunny",
 };
+/** Any failure, whichever of the five words it carries — for the assertions that only care that
+ * a consent DID succeed. The reasons themselves are pinned per branch in
+ * `plugin-oauth-callback.test.ts`. */
 const FAILED = `${APP_URL}/settings/connected-accounts?connected=failed`;
+const failedWith = (reason: string) => `${FAILED}&reason=${reason}`;
 
 /** The fleet's two applications, as this suite's deployment holds them. */
 const GOOGLE = {
@@ -314,7 +318,9 @@ describe("redeeming the code", () => {
     const asked = await withVendor(aGrant, async (asked) => {
       const response = await callback(appWith(), { code: "abc", state });
       expect(response.status).toBe(302);
-      expect(response.headers.get("location")).not.toBe(FAILED);
+      expect(response.headers.get("location")).not.toContain(
+        "connected=failed",
+      );
       return asked;
     });
 
@@ -353,7 +359,9 @@ describe("redeeming the code", () => {
         code: "abc",
         state: sealed,
       });
-      expect(response.headers.get("location")).not.toBe(FAILED);
+      expect(response.headers.get("location")).not.toContain(
+        "connected=failed",
+      );
       expect(asked).toHaveLength(1);
     });
   });
@@ -370,7 +378,7 @@ describe("redeeming the code", () => {
         code: "abc",
         state: `sunny.${flipped}`,
       });
-      expect(response.headers.get("location")).toBe(FAILED);
+      expect(response.headers.get("location")).toBe(failedWith("expired"));
       // Refused before the vendor was asked anything: a code is never redeemed on a state we
       // could not open.
       expect(asked).toHaveLength(0);
@@ -384,7 +392,7 @@ describe("redeeming the code", () => {
     await withVendor(aGrant, async (asked) => {
       await callback(appWith(), { code: "abc", state });
       const replayed = await callback(appWith(), { code: "abc", state });
-      expect(replayed.headers.get("location")).toBe(FAILED);
+      expect(replayed.headers.get("location")).toBe(failedWith("reused"));
       // The second attempt reached no vendor at all.
       expect(asked).toHaveLength(1);
     });
@@ -401,7 +409,9 @@ describe("redeeming the code", () => {
         code: "abc",
         state: `someone-else.${sealed}`,
       });
-      expect(response.headers.get("location")).not.toBe(FAILED);
+      expect(response.headers.get("location")).not.toContain(
+        "connected=failed",
+      );
     });
 
     const [held] = await database
@@ -598,7 +608,7 @@ describe("a state this deployment did not mint", () => {
         code: "abc",
         state: `sunny.${other}`,
       });
-      expect(response.headers.get("location")).toBe(FAILED);
+      expect(response.headers.get("location")).toBe(failedWith("expired"));
       expect(asked).toHaveLength(0);
     });
   });

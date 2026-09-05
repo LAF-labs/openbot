@@ -68,7 +68,20 @@ const serverId = "notion";
 
 const APP_URL = "https://app.example";
 const PUBLIC_URL = "https://laf.example";
-const FAILED = `${APP_URL}/settings/connected-accounts?connected=failed`;
+/**
+ * Where a failure lands, and WHICH failure it was.
+ *
+ * `?connected=failed` alone was all any of these produced until 2026-09, so the screen said one
+ * sentence — "연결하지 못했습니다" — to somebody who had declined at the vendor, somebody whose link
+ * had expired and somebody the vendor had refused. Every assertion below now names the branch it
+ * went through, which is what makes a branch quietly changing its mind about which word it sends a
+ * failing test rather than a screen that says the wrong thing.
+ *
+ * Five words, all ours. Nothing a vendor wrote reaches the URL, which was always the property that
+ * mattered and is unchanged.
+ */
+const failedWith = (reason: string) =>
+  `${APP_URL}/settings/connected-accounts?connected=failed&reason=${reason}`;
 
 const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
@@ -271,7 +284,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
     const response = await appWith({}).request(callbackUrl({ code: "c-1" }));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("expired"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -283,7 +296,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
       const response = await appWith({}).request(
         callbackUrl({ code: "c-1", state: nonsense }),
       );
-      expect(response.headers.get("location")).toBe(FAILED);
+      expect(response.headers.get("location")).toBe(failedWith("expired"));
     }
     expect(await written(personId)).toEqual({
       connections: 0,
@@ -304,7 +317,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
       callbackUrl({ code: "c-1", state: tampered }),
     );
 
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("expired"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -323,7 +336,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
       callbackUrl({ code: "c-1", state: stale }),
     );
 
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("expired"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -340,7 +353,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
       callbackUrl({ code: "c-1", state: elsewhere }),
     );
 
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("expired"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -356,7 +369,7 @@ describe("a callback carrying nothing this deployment sealed", () => {
 
     const response = await appWith({}).request(callbackUrl({ state }));
 
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("denied"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -415,7 +428,7 @@ describe("a consent that outlived the person's access", () => {
           store: holdingAClient(),
           personHasAccess: async () => false,
         }).request(callbackUrl({ code: "c-1", state }));
-        expect(response.headers.get("location")).toBe(FAILED);
+        expect(response.headers.get("location")).toBe(failedWith("mismatch"));
         return asked;
       },
     );
@@ -446,7 +459,7 @@ describe("a state this deployment sealed for something it will not do", () => {
       callbackUrl({ code: "c-1", state }),
     );
 
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("mismatch"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -469,7 +482,7 @@ describe("a state this deployment sealed for something it will not do", () => {
         const response = await appWith({
           store: { ...store, oauthClientFor: async () => null },
         }).request(callbackUrl({ code: "c-1", state }));
-        expect(response.headers.get("location")).toBe(FAILED);
+        expect(response.headers.get("location")).toBe(failedWith("mismatch"));
         return asked;
       },
     );
@@ -495,7 +508,7 @@ describe("a state this deployment sealed for something it will not do", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "/settings/connected-accounts?connected=failed",
+      "/settings/connected-accounts?connected=failed&reason=mismatch",
     );
     expect(await written(personId)).toEqual({
       connections: 0,
@@ -527,7 +540,7 @@ describe("a vendor that will not trade the code", () => {
         const response = await appWith({ store: holdingAClient() }).request(
           callbackUrl({ code: "code-1", state }),
         );
-        expect(response.headers.get("location")).toBe(FAILED);
+        expect(response.headers.get("location")).toBe(failedWith("exchange"));
         return asked;
       },
     );
@@ -573,7 +586,7 @@ describe("a vendor that will not trade the code", () => {
         const response = await appWith({ store: holdingAClient() }).request(
           callbackUrl({ code: "c-1", state }),
         );
-        expect(response.headers.get("location")).toBe(FAILED);
+        expect(response.headers.get("location")).toBe(failedWith("exchange"));
       },
     );
 
@@ -613,7 +626,7 @@ describe("a vendor that will not trade the code", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(FAILED);
+    expect(response.headers.get("location")).toBe(failedWith("exchange"));
     expect(await written(personId)).toEqual({
       connections: 0,
       connectedEvents: 0,
@@ -664,7 +677,7 @@ describe("a callback that arrives twice", () => {
       // The identical request again, against a vendor that would happily hand out a second grant.
       // Only our own refusal stops it.
       const second = await appWith({ store: holdingAClient() }).request(url);
-      expect(second.headers.get("location")).toBe(FAILED);
+      expect(second.headers.get("location")).toBe(failedWith("reused"));
       return asked;
     });
 
