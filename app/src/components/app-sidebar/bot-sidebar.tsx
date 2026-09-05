@@ -111,7 +111,19 @@ const subscribeToViewport = (onChange: () => void) => {
   }
   const query = window.matchMedia(WIDE_QUERY);
   query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+  /*
+   * AND `resize`, because the media query's own event is not always delivered. Measured: with the
+   * window emulated from 800 to 1280 while the tab was backgrounded, `matchMedia(…).matches` read
+   * true and the column stayed a rail until the next reload — the `change` never arrived. Dragging
+   * a window edge is how this switch is normally reached in the installed app, and a roster that
+   * only notices on reload is a roster that noticed nothing. `resize` fires often and costs nothing
+   * here: the snapshot is a boolean, so React re-renders only when it actually flips.
+   */
+  window.addEventListener("resize", onChange);
+  return () => {
+    query.removeEventListener("change", onChange);
+    window.removeEventListener("resize", onChange);
+  };
 };
 
 const useIsWideViewport = () =>
