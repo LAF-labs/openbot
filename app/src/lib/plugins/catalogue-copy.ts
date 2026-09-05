@@ -49,17 +49,13 @@ export const CATALOGUE_COPY: Readonly<
     can: "Reads your shop's orders and products, and answers board posts.",
   },
   /*
-   * The two partner entries. The gesture on their rows is different — a code to a phone, a form and
-   * a certificate — but the one line saying what the Bot can do afterwards is the same kind of
-   * sentence, and the row draws it from the same table.
+   * The partner entry. The gesture on its row is different — a code to a phone — but the one line
+   * saying what the Bot can do afterwards is the same kind of sentence, and the row draws it from
+   * the same table.
    */
   "kakao-alimtalk": {
     summary: "Template messages from this business's own KakaoTalk channel.",
     can: "Sends booking confirmations and review requests from your own channel.",
-  },
-  "tax-invoice": {
-    summary: "Tax invoices issued and looked up for this business.",
-    can: "Looks up the invoices you have issued, and prepares one for you to approve.",
   },
 };
 

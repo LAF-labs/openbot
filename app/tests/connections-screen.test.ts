@@ -188,7 +188,7 @@ describe("what the switch starts", () => {
     // A partner row registers; there is no consent screen and no browser in it.
     const partners = read("components/partners/partner-connections.tsx");
     expect(partners).toContain("requestAlimtalkCode");
-    expect(partners).toContain("joinTaxMember");
+    expect(partners).toContain("confirmAlimtalkCode");
     expect(partners).not.toContain("beginConnect");
     expect(partners).not.toContain("takeControl");
   });
@@ -245,22 +245,6 @@ describe("what the switch starts", () => {
     expect(sites).toContain("The browser's state could not be read.");
     expect(sites).toContain("handleRetryCheck");
     expect(ko["The browser's state could not be read."]).toContain("다시 확인");
-  });
-
-  test("the certificate window is claimed inside the click, not after the address arrives", () => {
-    /*
-     * `await taxCertificateUrl()` and then `window.open` is refused by every popup blocker outside
-     * the desktop shell — silently, because a blocked `window.open` returns null and nothing throws.
-     * The button reported "열었습니다" and no window ever appeared.
-     */
-    const partners = read("components/partners/partner-connections.tsx");
-    const claim = partners.indexOf('window.open("", "_blank")');
-    const address = partners.indexOf("await taxCertificateUrl");
-    expect(claim).toBeGreaterThan(-1);
-    expect(address).toBeGreaterThan(claim);
-    // And where nothing will take it, the address is drawn as a link rather than lost.
-    expect(partners).toContain("setFallbackUrl");
-    expect(partners).toContain("Open the certificate page");
   });
 });
 

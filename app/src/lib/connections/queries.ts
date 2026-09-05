@@ -1,9 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import type {
-  AlimtalkStatus,
-  PartnerId,
-  TaxStatus,
-} from "@/lib/partners/queries";
+import type { AlimtalkStatus, PartnerId } from "@/lib/partners/queries";
 
 /**
  * The 연결 screen's one read.
@@ -51,7 +47,7 @@ export type PartnerAccount = {
   kind: "partner";
   id: PartnerId;
   status: "not_connected" | "connected";
-  partner: { status: AlimtalkStatus | TaxStatus };
+  partner: { status: AlimtalkStatus };
 };
 
 export type OverviewAccount = OauthAccount | PartnerAccount;

@@ -430,5 +430,4 @@ describe("the partner connectors", () => {
       }),
     ).toThrow("LAF_ALIMTALK_BASE_URL");
   });
-
 });

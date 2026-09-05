@@ -7,19 +7,16 @@ import { ko } from "../src/lib/i18n-ko";
 import {
   confirmAlimtalkCode,
   disconnectPartner,
-  joinTaxMember,
   partnersQueryOptions,
   requestAlimtalkCode,
-  taxCertificateUrl,
 } from "../src/lib/partners/queries";
 import { stubFetch } from "./support/fetch";
 
 /**
- * The 알림톡 and 세금계산서 cards: what a press actually sends, and what a person is told when it
- * comes back no.
+ * The 알림톡 card: what a press actually sends, and what a person is told when it comes back no.
  *
  * WHY THIS IS A WIRE TEST AND NOT A RENDERED ONE, the same reason `connect-card.test.ts` is. The
- * only thing every field on these cards does is put a string in the body of one request, so the
+ * only thing every field on this card does is put a string in the body of one request, so the
  * failure worth catching is a field that is drawn and whose value goes nowhere — which an assertion
  * that an `<input>` exists would not catch.
  *
@@ -91,46 +88,6 @@ describe("what the cards ask for", () => {
     });
   });
 
-  test("the tax sign-up sends what the person typed and never an id or a password", async () => {
-    reply = () => new Response(JSON.stringify({ status: { connected: true } }));
-    await joinTaxMember({
-      businessNumber: "123-45-67890",
-      corpName: "미소상회",
-      ceoName: "김대표",
-      contactName: "박담당",
-      contactPhone: "01055554444",
-      contactEmail: "owner@example.test",
-    });
-
-    const body = asked[0]?.body as Record<string, unknown>;
-    expect(asked[0]?.url).toBe("/api/partners/tax-invoice/connect");
-    expect(body.businessNumber).toBe("123-45-67890");
-    // The member id is derived on the server and the password is minted and forgotten there. A
-    // field for either on this card would be a second set of credentials for a site nobody visits.
-    expect(Object.keys(body).sort()).toEqual([
-      "businessNumber",
-      "ceoName",
-      "contactEmail",
-      "contactName",
-      "contactPhone",
-      "corpName",
-    ]);
-  });
-
-  test("the certificate address is asked for on the press, not held anywhere", async () => {
-    reply = () =>
-      new Response(JSON.stringify({ url: "https://popbill.example.test/x" }));
-    const outcome = await taxCertificateUrl("certificate");
-
-    // Asked at the moment of the press because it carries a live session and lives thirty seconds.
-    expect(asked[0]?.url).toBe("/api/partners/tax-invoice/certificate-url");
-    expect(asked[0]?.body).toEqual({ kind: "certificate" });
-    expect(outcome).toEqual({
-      ok: true,
-      value: { url: "https://popbill.example.test/x" },
-    });
-  });
-
   test("a disconnect names the provider in the path and sends no body of its own", async () => {
     reply = () => new Response(JSON.stringify({ disconnected: true }));
     for (const id of PARTNER_CARD_IDS) {
@@ -138,7 +95,6 @@ describe("what the cards ask for", () => {
     }
     expect(asked.map((call) => call.url)).toEqual([
       "/api/partners/kakao-alimtalk/disconnect",
-      "/api/partners/tax-invoice/disconnect",
     ]);
   });
 });
@@ -166,8 +122,8 @@ describe("what a person is told when it comes back no", () => {
      * have. A code the server sends and this screen has no words for renders as the general line,
      * which is how a typo somebody could fix in five seconds looks like a broken button.
      *
-     * The list is the server's own vocabulary for these two connectors, kept here rather than
-     * imported so that a code REMOVED on the server does not silently stop being covered.
+     * The list is the server's own vocabulary for this connector, kept here rather than imported so
+     * that a code REMOVED on the server does not silently stop being covered.
      */
     const codes = [
       "laf:alimtalk_search_id_invalid",
@@ -175,15 +131,8 @@ describe("what a person is told when it comes back no", () => {
       "laf:alimtalk_code_invalid",
       "laf:alimtalk_code_refused",
       "laf:alimtalk_not_connected",
-      "laf:tax_business_number_invalid",
-      "laf:tax_contact_phone_invalid",
-      "laf:tax_contact_email_invalid",
-      "laf:tax_not_connected",
-      "laf:tax_clock_skew",
       "laf:kakao-alimtalk_not_configured",
-      "laf:tax-invoice_not_configured",
       "laf:alimtalk_vendor_failed",
-      "laf:tax_vendor_failed",
       "laf:partner_unreachable",
       "laf:partner_unknown",
     ];
@@ -202,9 +151,9 @@ describe("what a person is told when it comes back no", () => {
   });
 
   test("the three that are not the person's fault are said differently", () => {
-    const notHere = partnerRefusalText("laf:tax-invoice_not_configured");
-    const vendor = partnerRefusalText("laf:tax_vendor_failed");
-    const theirTypo = partnerRefusalText("laf:tax_business_number_invalid");
+    const notHere = partnerRefusalText("laf:kakao-alimtalk_not_configured");
+    const vendor = partnerRefusalText("laf:alimtalk_vendor_failed");
+    const theirTypo = partnerRefusalText("laf:alimtalk_phone_invalid");
 
     // "이 서비스는 아직 준비되지 않았습니다" in front of a typo, or "다시 확인해 주세요" in front of
     // a machine that was never given the account, is how a working feature looks broken and a

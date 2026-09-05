@@ -1219,7 +1219,6 @@ export const ko: Record<string, string> = {
   "Make a Bot first — a site is connected on a Bot's own browser.":
     "먼저 봇을 만들어 주세요. 사이트 연결은 봇의 브라우저에 로그인하는 일입니다.",
   "Which Bot's browser?": "어느 봇의 브라우저에 로그인할까요?",
-  "Connected · {name}": "연결됨 · {name}",
   "Needs signing in again": "다시 로그인 필요",
   "Not connected yet": "아직 연결 안 됨",
   "A joint certificate or simple authentication is yours to do, and the Bot cannot keep it: you authenticate each time and hand the browser back.":
@@ -1334,18 +1333,12 @@ export const ko: Record<string, string> = {
   "Tell me how many new friends the channel got this week.":
     "이번 주에 새로 늘어난 친구 수를 알려줘",
   "Tell me which products are running low.": "재고가 부족한 상품을 알려줘",
-  // 알림톡·세금계산서 — LAF가 계약을 들고, 가게는 자기 것을 연결한다.
+  // 알림톡 — LAF가 계약을 들고, 가게는 자기 채널을 연결한다.
   // 서버 카탈로그가 보내는 이름과 한 줄 설명. `t(변수)`로 읽히므로
   // plugin-catalogue-copy.test.ts가 표를 직접 훑는다.
   "카카오 알림톡": "카카오 알림톡",
-  전자세금계산서: "전자세금계산서",
   "Template messages from this business's own KakaoTalk channel.":
     "가게의 카카오톡 채널로 보내는 안내 메시지.",
-  "Tax invoices issued and looked up for this business.":
-    "이 사업장이 발행하고 조회하는 세금계산서.",
-  "Messaging and tax invoices": "알림톡·세금계산서",
-  "Services you sign up for through this screen. There is no key to obtain and no developer account: your shop's own channel and your own business details, and that is all.":
-    "이 화면에서 바로 가입하는 서비스입니다. 따로 받아야 할 키도, 개발자 계정도 없습니다. 가게의 카카오톡 채널과 사업자 정보만 있으면 됩니다.",
 
   "KakaoTalk notifications": "카카오 알림톡",
   "Send booking confirmations and review requests from your shop's own KakaoTalk channel. No keys and no sign-up with the messaging company: a code comes to the manager's phone, you type it back, and that is it.":
@@ -1367,28 +1360,6 @@ export const ko: Record<string, string> = {
   "Check the review again": "심사 상태 다시 확인",
   "Checking…": "확인하는 중…",
 
-  "Tax invoices": "전자세금계산서",
-  "Look up the tax invoices you have issued, and have a Bot prepare one for you to approve. You sign up through this screen — there is nothing to install and no separate account to buy.":
-    "발행한 세금계산서를 찾아보고, 봇이 초안을 만들어 두면 확인하고 발행합니다. 이 화면에서 바로 가입하며, 설치할 프로그램도 따로 살 계정도 없습니다.",
-  "Practice mode — nothing is really filed":
-    "연습 모드 — 실제로 신고되지 않습니다",
-  "Business registration number": "사업자등록번호",
-  "Business name": "상호",
-  "Owner's name": "대표자 성명",
-  "Who to contact": "담당자 이름",
-  "Contact number": "담당자 연락처",
-  "Contact email": "담당자 이메일",
-  "Sign up": "가입하기",
-  "Signing up…": "가입하는 중…",
-  "Business number {number} · connected on {date}":
-    "사업자등록번호 {number} · {date}에 연결됨",
-  "Certificate registered": "인증서 등록됨",
-  "valid until {date}": "{date}까지",
-  "No certificate registered yet — nothing can be issued until there is one.":
-    "아직 인증서가 등록되지 않았습니다. 등록해야 발행할 수 있습니다.",
-  "Register the certificate": "인증서 등록",
-  "Check it again": "다시 확인",
-
   // 연결이 안 될 때 — 사람이 고칠 수 있는 것과 아닌 것을 갈라서 말한다.
   "That does not look like a channel search ID. It is the one starting with @ in your KakaoTalk channel settings.":
     "채널 검색용 아이디가 아닌 것 같습니다. 카카오톡 채널 관리자센터에서 @로 시작하는 그 아이디입니다.",
@@ -1399,14 +1370,6 @@ export const ko: Record<string, string> = {
   "That code was not accepted. Ask for a new one and try again.":
     "인증번호가 받아들여지지 않았습니다. 새로 받아서 다시 시도해 주세요.",
   "This is not connected yet.": "아직 연결되지 않았습니다.",
-  "A business registration number is ten digits. Check it and try again.":
-    "사업자등록번호는 열 자리입니다. 다시 확인해 주세요.",
-  "That does not look like a contact number. Check it and try again.":
-    "연락처가 아닌 것 같습니다. 다시 확인해 주세요.",
-  "That does not look like an email address. Check it and try again.":
-    "이메일 주소가 아닌 것 같습니다. 다시 확인해 주세요.",
-  "This machine's clock is out of step with the service, so it would not accept the request. Tell support.":
-    "이 컴퓨터의 시각이 서비스와 어긋나 요청이 거절되었습니다. 고객센터에 알려 주세요.",
   "This service is not set up on this machine yet.":
     "이 서비스는 아직 준비되지 않았습니다.",
   "The service did not answer. Please try again in a moment.":
@@ -1465,12 +1428,6 @@ export const ko: Record<string, string> = {
     "연결됨 · {name} · 카카오가 메시지 서식을 심사 중입니다",
   "Connected · {name} · connected on {date}": "연결됨 · {name} · {date}에 연결",
   "Fill in the two lines below.": "아래 두 칸을 채워 주세요.",
-  "Connected · {name} · no certificate registered yet, so nothing can be issued":
-    "연결됨 · {name} · 인증서가 없어 아직 발행할 수 없습니다",
-  "Connected · {name} · certificate valid until {date}":
-    "연결됨 · {name} · 인증서 {date}까지 유효",
-  "Fill in your business details below.": "아래에 사업자 정보를 입력해 주세요.",
-  "Open the certificate page": "인증서 등록 창 열기",
   // 연결하면 봇이 무엇을 하는지 — 한 줄씩. `catalogue-copy.ts`의 `can`.
   "Reads the pages you have shared, and writes new ones.":
     "공유한 페이지를 읽고, 새 페이지를 씁니다.",
@@ -1488,8 +1445,6 @@ export const ko: Record<string, string> = {
     "쇼핑몰의 주문과 상품을 읽고, 게시글에 답합니다.",
   "Sends booking confirmations and review requests from your own channel.":
     "내 채널에서 예약 확인과 리뷰 요청을 보냅니다.",
-  "Looks up the invoices you have issued, and prepares one for you to approve.":
-    "발행한 세금계산서를 찾아보고, 승인만 하면 되도록 준비합니다.",
   "The accounts and sites your Bot works with, so it answers with what you can see.":
     "봇이 함께 쓰는 계정과 사이트입니다. 내가 볼 수 있는 것으로 답합니다.",
 };

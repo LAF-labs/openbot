@@ -5,33 +5,27 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { PartnerAccount } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
-import { openExternal, inShell } from "@/lib/notifications/shell";
 import {
   type AlimtalkStatus,
   confirmAlimtalkCode,
   disconnectPartner,
-  joinTaxMember,
   type PartnerId,
   refreshAlimtalkTemplates,
-  refreshTaxCertificate,
   requestAlimtalkCode,
-  taxCertificateUrl,
-  type TaxStatus,
 } from "@/lib/partners/queries";
 import { catalogueCanKey } from "@/lib/plugins/catalogue-copy";
 
 /**
- * 알림톡 and 세금계산서 — the two services where LAF holds the account and the shop holds its own thing.
+ * 알림톡 — the service where LAF holds the account and the shop holds its own channel.
  *
- * WHY THEY ARE A ROW LIKE ANY OTHER NOW. They used to be two hand-written cards, six hundred lines,
- * with their own headings, their own buttons and their own idea of what "connected" looks like —
- * beside seven OAuth cards and fifteen site cards that each had a third. The person's question in
- * front of all twenty-four is the same one, so the row is the same row; only what the switch STARTS
- * differs, and that difference belongs inside this file rather than on the screen.
+ * WHY IT IS A ROW LIKE ANY OTHER NOW. It used to be a hand-written card with its own heading, its
+ * own buttons and its own idea of what "connected" looks like — beside seven OAuth cards and
+ * fifteen site cards that each had a third. The person's question in front of all of them is the
+ * same one, so the row is the same row; only what the switch STARTS differs, and that difference
+ * belongs inside this file rather than on the screen.
  *
- * NOTHING HERE ASKS FOR A KEY, AND NOTHING HERE SHOWS ONE. The shop's certificate password is typed
- * in the service's own window and never reaches this app; the code from the phone is spent inside
- * one request; and the handle the service issues for the channel never crosses back to this screen
+ * NOTHING HERE ASKS FOR A KEY, AND NOTHING HERE SHOWS ONE. The code from the phone is spent inside
+ * one request, and the handle the service issues for the channel never crosses back to this screen
  * at all — what the row shows is the 검색용 아이디 the person typed, which is what they recognise.
  *
  * A ROW IS ONLY DRAWN WHERE IT CAN WORK. The overview lists the services this deployment actually
@@ -55,19 +49,6 @@ export const partnerRefusalText = (code: string): string => {
       "That code was not accepted. Ask for a new one and try again.",
     ),
     "laf:alimtalk_not_connected": t("This is not connected yet."),
-    "laf:tax_business_number_invalid": t(
-      "A business registration number is ten digits. Check it and try again.",
-    ),
-    "laf:tax_contact_phone_invalid": t(
-      "That does not look like a contact number. Check it and try again.",
-    ),
-    "laf:tax_contact_email_invalid": t(
-      "That does not look like an email address. Check it and try again.",
-    ),
-    "laf:tax_not_connected": t("This is not connected yet."),
-    "laf:tax_clock_skew": t(
-      "This machine's clock is out of step with the service, so it would not accept the request. Tell support.",
-    ),
   };
   if (said[code]) return said[code];
   /*
@@ -337,244 +318,25 @@ const AlimtalkRow = ({
 };
 
 /**
- * 전자세금계산서: the business's details, then its own certificate.
+ * One partner, as a row like any other.
  *
- * THE CERTIFICATE IS THE HALF NOBODY CAN DO FOR THEM. Registering a joint certificate means picking
- * a file off their own machine and typing its password, and that happens in the invoicing service's
- * own window — this app hands them the address and reads back only whether it worked. So the row
- * has two states after connecting, and the second one is the gate: nothing can be issued until the
- * certificate is registered, and the row says which one it is waiting on.
+ * There is one partner left to be, so this no longer switches on the id — the overview only ever
+ * sends `kakao-alimtalk`, and a branch on a union of one is a branch nothing can take.
  */
-const TaxRow = ({
-  status,
-  onChanged,
-}: {
-  status: TaxStatus;
-  onChanged: () => void;
-}) => {
-  const { isBusy, note, setNote, run } = useStep(onChanged);
-  const [isOpening, setOpening] = useState(false);
-  /** The address, when nothing could be made to open it and the person has to press it. */
-  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
-  const [draft, setDraft] = useState({
-    businessNumber: "",
-    corpName: "",
-    ceoName: "",
-    contactName: "",
-    contactPhone: "",
-    contactEmail: "",
-  });
-
-  /**
-   * The certificate window, opened ON THE CLICK and filled in afterwards.
-   *
-   * THIS IS THE WHOLE FIX. It used to await the address and then call `window.open`, which every
-   * popup blocker outside the desktop shell refuses — silently, because a blocked `window.open`
-   * returns null and nothing threw. The button reported "열었습니다" and no window ever appeared.
-   * So the window is claimed inside the gesture, while the browser still believes a person asked
-   * for it, and the address is put into it when it arrives.
-   *
-   * NOT FETCHED ON PAGE LOAD either: the address carries a live session and the service gives it
-   * thirty seconds, so one asked for when the page opened would be dead by the time anybody pressed.
-   */
-  const handleCertificate = useCallback(async () => {
-    setFallbackUrl(null);
-    // In the shell there is no popup to block and no second window to put it in: `openExternal`
-    // hands it to the person's own browser, which is where a file picker and a password belong.
-    const claimed = inShell() ? null : window.open("", "_blank");
-    if (claimed) claimed.opener = null;
-
-    const opened = await run(async () => {
-      const outcome = await taxCertificateUrl("certificate");
-      if (!outcome.ok) return outcome;
-      if (claimed) {
-        claimed.location.replace(outcome.value.url);
-        return { ok: true };
-      }
-      if (await openExternal(outcome.value.url)) return { ok: true };
-      // Nothing would take it. The address is drawn as a link rather than lost: a person pressing
-      // it themselves is a gesture no blocker refuses.
-      setFallbackUrl(outcome.value.url);
-      return { ok: true };
-    }, "stay");
-    if (!opened) claimed?.close();
-  }, [run]);
-
-  const canJoin =
-    draft.businessNumber.trim() &&
-    draft.corpName.trim() &&
-    draft.ceoName.trim() &&
-    draft.contactName.trim() &&
-    draft.contactPhone.trim() &&
-    draft.contactEmail.trim();
-
-  const handleToggle = useCallback(
-    (next: boolean) => {
-      if (!next) {
-        if (!status.connected) {
-          setOpening(false);
-          setNote(null);
-          return;
-        }
-        void run(() => disconnectPartner("tax-invoice"));
-        return;
-      }
-      setNote(null);
-      setOpening(true);
-    },
-    [run, setNote, status.connected],
-  );
-
-  const said = (): { text: string; tone: "muted" | "good" | "warn" } => {
-    if (status.connected) {
-      if (!status.certificate.registered) {
-        return {
-          text: t(
-            "Connected · {name} · no certificate registered yet, so nothing can be issued",
-            { name: status.corpName ?? "" },
-          ),
-          tone: "warn",
-        };
-      }
-      return {
-        text: status.certificate.expiresAt
-          ? t("Connected · {name} · certificate valid until {date}", {
-              name: status.corpName ?? "",
-              date: asDate(status.certificate.expiresAt),
-            })
-          : t("Connected · {name}", { name: status.corpName ?? "" }),
-        tone: "good",
-      };
-    }
-    if (isOpening) {
-      return { text: t("Fill in your business details below."), tone: "muted" };
-    }
-    return { text: t("Not connected"), tone: "muted" };
-  };
-
-  const state = said();
-
-  const field = (key: keyof typeof draft, label: string) => (
-    <Field key={key}>
-      <FieldLabel htmlFor={`tax-${key}`}>{label}</FieldLabel>
-      <Input
-        id={`tax-${key}`}
-        onChange={(event) =>
-          setDraft((current) => ({ ...current, [key]: event.target.value }))
-        }
-        value={draft[key]}
-      />
-    </Field>
-  );
-
-  return (
-    <ConnectionRow
-      can={t(catalogueCanKey("tax-invoice", "Tax invoices"))}
-      isBusy={isBusy}
-      isOn={status.connected || isOpening}
-      name={t("Tax invoices")}
-      note={note}
-      onToggle={handleToggle}
-      status={state.text}
-      tone={state.tone}
-      {...(status.connected
-        ? {
-            confirmText: t(
-              "Disconnect this? The Bot will not be able to use this account any more.",
-            ),
-          }
-        : {})}
-    >
-      {/* Said out loud on the row, not only in a log. A person told "발행했습니다" by a Bot on a
-          trial machine would believe an invoice had been filed when it reached nobody. */}
-      {status.isTest ? (
-        <p className="mt-1 text-muted-foreground text-xs">
-          {t("Practice mode — nothing is really filed")}
-        </p>
-      ) : null}
-
-      {status.connected ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            disabled={isBusy}
-            onClick={() => void handleCertificate()}
-            size="sm"
-            type="button"
-            variant={status.certificate.registered ? "ghost" : "outline"}
-          >
-            {t("Register the certificate")}
-          </Button>
-          <Button
-            disabled={isBusy}
-            onClick={() => void run(refreshTaxCertificate)}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            {t("Check it again")}
-          </Button>
-          {fallbackUrl ? (
-            <a
-              className="text-primary text-xs underline"
-              href={fallbackUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t("Open the certificate page")}
-            </a>
-          ) : null}
-        </div>
-      ) : isOpening ? (
-        <div className="mt-2">
-          <FieldGroup className="max-w-md">
-            {field("businessNumber", t("Business registration number"))}
-            {field("corpName", t("Business name"))}
-            {field("ceoName", t("Owner's name"))}
-            {field("contactName", t("Who to contact"))}
-            {field("contactPhone", t("Contact number"))}
-            {field("contactEmail", t("Contact email"))}
-          </FieldGroup>
-          <Button
-            className="mt-2"
-            disabled={isBusy || !canJoin}
-            onClick={() => {
-              void run(() => joinTaxMember(draft)).then(
-                (done) => done && setOpening(false),
-              );
-            }}
-            size="sm"
-            type="button"
-          >
-            {t("Sign up")}
-          </Button>
-        </div>
-      ) : null}
-    </ConnectionRow>
-  );
-};
-
-/** One partner, as a row like any other. Which one is decided by the id and nothing else. */
 export const PartnerRow = ({
   account,
   onChanged,
 }: {
   account: PartnerAccount;
   onChanged: () => void;
-}) =>
-  account.id === "kakao-alimtalk" ? (
-    <AlimtalkRow
-      onChanged={onChanged}
-      status={account.partner.status as AlimtalkStatus}
-    />
-  ) : (
-    <TaxRow
-      onChanged={onChanged}
-      status={account.partner.status as TaxStatus}
-    />
-  );
+}) => (
+  <AlimtalkRow
+    onChanged={onChanged}
+    status={account.partner.status as AlimtalkStatus}
+  />
+);
 
 /** The ids this section knows how to draw, for a test that walks them. */
 export const PARTNER_CARD_IDS: readonly PartnerId[] = Object.freeze([
   "kakao-alimtalk",
-  "tax-invoice",
 ]);
