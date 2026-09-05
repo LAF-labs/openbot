@@ -52,6 +52,19 @@ export type BusinessSite = {
   id: string;
   /** English key. Korean in `i18n-ko.ts`; this is never shown as-is on a Korean screen. */
   name: string;
+  /**
+   * Which mark the 연결 row draws for this site.
+   *
+   * A plain string rather than a union, for the same reason `SiteCategory` is repeated rather than
+   * imported: `shared/` cannot reach into `app/`, and the marks are drawn there
+   * (`components/connections/connection-mark.tsx`). `app/tests/connection-marks.test.ts` walks this
+   * table against that one in both directions, so an id with no mark behind it fails the run rather
+   * than quietly falling back to the globe.
+   *
+   * Several sites share one: three 네이버 services are one 네이버 account, and five Google products
+   * are one Google consent. The row's title says which product; the mark says whose login it is.
+   */
+  mark: string;
   category: SiteCategory;
   /** Where the handoff starts. The Bot navigates here through the ordinary governed route. */
   loginUrl: string;
@@ -151,6 +164,7 @@ function signedInWhen(spec: SiteSpec): BusinessSite["signedIn"] {
 const SITE_SPECS: readonly SiteSpec[] = [
   {
     id: "naver-smartstore",
+    mark: "naver",
     name: "Naver Smart Store Seller Centre",
     category: "enquiries",
     loginUrl: "https://sell.smartstore.naver.com",
@@ -166,6 +180,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "naver-smartplace",
+    mark: "naver",
     name: "Naver Smart Place",
     category: "reputation",
     loginUrl: "https://new.smartplace.naver.com",
@@ -180,6 +195,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "naver-booking-talk",
+    mark: "naver",
     name: "Naver Booking and Talk Partner Centre",
     category: "schedule",
     loginUrl: "https://partner.booking.naver.com",
@@ -194,6 +210,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "coupang-wing",
+    mark: "coupang",
     name: "Coupang Wing",
     category: "stock",
     loginUrl: "https://wing.coupang.com",
@@ -208,6 +225,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "baemin-ceo",
+    mark: "baemin",
     name: "Baemin for Owners",
     category: "settlement",
     loginUrl: "https://ceo.baemin.com",
@@ -222,6 +240,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "coupangeats-store",
+    mark: "coupang-eats",
     name: "Coupang Eats Store",
     category: "night-watch",
     loginUrl: "https://store.coupangeats.com",
@@ -236,6 +255,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "yogiyo-ceo",
+    mark: "yogiyo",
     name: "Yogiyo for Owners",
     category: "reputation",
     loginUrl: "https://ceo.yogiyo.co.kr",
@@ -250,6 +270,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "hometax",
+    mark: "hometax",
     name: "Hometax",
     category: "paperwork",
     loginUrl: "https://hometax.go.kr",
@@ -270,6 +291,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "daangn-business",
+    mark: "daangn",
     name: "Daangn Business",
     category: "reputation",
     loginUrl: "https://business.daangn.com",
@@ -284,6 +306,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "catchtable-ceo",
+    mark: "catchtable",
     name: "CatchTable for Owners",
     category: "schedule",
     loginUrl: "https://ceo.catchtable.co.kr",
@@ -298,6 +321,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "tosspayments",
+    mark: "toss",
     name: "Toss Payments Merchant Admin",
     category: "settlement",
     loginUrl: "https://dashboard.tosspayments.com",
@@ -312,6 +336,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "naver-searchad",
+    mark: "naver",
     name: "Naver Search Ads",
     category: "settlement",
     loginUrl: "https://searchad.naver.com",
@@ -326,6 +351,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "instagram",
+    mark: "instagram",
     name: "Instagram on the web",
     category: "reputation",
     loginUrl: "https://www.instagram.com",
@@ -340,6 +366,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "kakao-channel",
+    mark: "kakao",
     name: "KakaoTalk Channel Admin",
     category: "enquiries",
     loginUrl: "https://center-pf.kakao.com",
@@ -354,6 +381,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
   },
   {
     id: "cafe24-admin",
+    mark: "cafe24",
     name: "Cafe24 Shop Admin",
     category: "stock",
     loginUrl: "https://eclogin.cafe24.com/Shop/",

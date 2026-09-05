@@ -1,6 +1,7 @@
 import { IconLoader2 } from "@tabler/icons-react";
 import type * as React from "react";
 import { useCallback, useId, useState } from "react";
+import { ConnectionMark } from "@/components/connections/connection-mark";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -42,6 +43,7 @@ const TONES: Record<RowTone, string> = {
 
 export const ConnectionRow = ({
   name,
+  mark,
   can,
   status,
   tone = "muted",
@@ -54,10 +56,21 @@ export const ConnectionRow = ({
 }: {
   /** The Korean name. Already through `t()`; this component never translates. */
   name: string;
+  /** Which brand mark to draw. See `connection-mark.tsx`; absent draws the generic one. */
+  mark?: string;
   /** One line of what the Bot can do once this is on. */
   can: string;
-  /** Where it got to, in a sentence. */
-  status: React.ReactNode;
+  /**
+   * Where it got to, in a sentence — or nothing.
+   *
+   * NOTHING IS A REAL ANSWER, and it is the common one. Every one of the fifteen site rows carried
+   * the words 연결 안 됨 immediately beside a switch that was off, so the screen said "off" twice on
+   * every row and the two connected rows had to compete with fourteen copies of a sentence that was
+   * only restating the control. A row that has not been turned on yet says nothing; the switch is
+   * the state. Status text is for what the switch CANNOT say — connected and to whom, needs signing
+   * in again, waiting on another window, or a handoff that has to be repeated every time.
+   */
+  status?: React.ReactNode;
   tone?: RowTone;
   /** Where the switch sits. Not the same as connected: a pending consent sits on. */
   isOn: boolean;
@@ -91,15 +104,19 @@ export const ConnectionRow = ({
 
   return (
     <Item size="sm">
-      {/* The vendor's initial rather than a logo: twenty-four remote images on one screen is
-          twenty-four ways for a row to be blank while somebody is deciding whether to trust it. */}
-      <ItemMedia className="size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 font-medium text-sm">
-        {name.trim().slice(0, 1)}
+      {/*
+       * `self-start`, which is the whole of the alignment bug. `ItemMedia` top-aligns itself only
+       * when the item contains an `ItemDescription`, and this row's two lines under the title are
+       * plain paragraphs — so the tile was centred against the whole three-line block and floated
+       * level with the second line, a full line below the name it belongs to.
+       */}
+      <ItemMedia className="size-8 shrink-0 self-start">
+        <ConnectionMark mark={mark} />
       </ItemMedia>
       <ItemContent>
         <ItemTitle id={labelId}>{name}</ItemTitle>
         <p className="text-muted-foreground text-xs leading-relaxed">{can}</p>
-        <p className={`text-xs ${TONES[tone]}`}>{status}</p>
+        {status ? <p className={`text-xs ${TONES[tone]}`}>{status}</p> : null}
 
         {isAsking ? (
           <div className="mt-2 rounded-lg border border-border p-3">
@@ -157,7 +174,7 @@ export const ConnectionRow = ({
 /** What a row looks like before the answer is in. Never a state, and never a sentence. */
 export const ConnectionRowSkeleton = () => (
   <Item size="sm">
-    <ItemMedia className="size-8 shrink-0 animate-pulse rounded-md bg-muted" />
+    <ItemMedia className="size-8 shrink-0 animate-pulse self-start rounded-lg bg-muted" />
     <ItemContent className="gap-2">
       <div className="h-3.5 w-28 animate-pulse rounded bg-muted" />
       <div className="h-3 w-64 max-w-full animate-pulse rounded bg-muted" />

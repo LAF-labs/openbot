@@ -84,11 +84,45 @@ export function NotificationPermission({
     );
   }
 
+  /*
+   * THE ROW USED TO DESCRIBE A CONTROL THAT WAS NOT THERE.
+   *
+   * A denied permission drew one grey sentence — "브라우저가 차단하고 있습니다" — under a heading
+   * and a paragraph about notifications, and nothing else: no button, no switch, and no way to find
+   * out what to do about it. From the other side of the screen that is a feature whose control has
+   * failed to load.
+   *
+   * So the control stays, DISABLED, which is the true shape of this state: there is something to
+   * press and this person cannot press it. No API can re-prompt after a denial and none can open a
+   * browser's own settings, so the way out is words rather than a button that would do nothing — and
+   * the words differ, because in the installed shell the setting is the operating system's and there
+   * is no address bar to point at.
+   */
   if (support === "denied") {
     return (
-      <p className="pt-1 text-muted-foreground text-sm">
-        {t("Your browser is blocking notifications for this site.")}
-      </p>
+      <div className="flex flex-col items-start gap-1 pt-1">
+        <Button
+          className="text-sm!"
+          disabled
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {t("Turn on notifications")}
+        </Button>
+        <p className="text-muted-foreground text-sm">
+          {t("Your browser is blocking notifications for this site.")}
+        </p>
+        <p className="text-muted-foreground text-sm">
+          {inShell()
+            ? t(
+                "Allow notifications for this app in your computer's own settings, then reopen this screen.",
+              )
+            : t(
+                "Press the icon at the left of the address bar, set Notifications to Allow, then reload.",
+              )}
+        </p>
+      </div>
     );
   }
 

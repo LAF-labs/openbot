@@ -1805,6 +1805,10 @@ export const ko: Record<string, string> = {
   "Collapse the sidebar": "사이드바 접기",
   "{count} Bots in this room": "봇 {count}명이 있는 방",
   // 연결·설정 화면
+  "Allow notifications for this app in your computer's own settings, then reopen this screen.":
+    "컴퓨터 설정의 알림에서 이 앱을 허용한 다음, 이 화면을 다시 열어 주세요.",
+  "Press the icon at the left of the address bar, set Notifications to Allow, then reload.":
+    "주소창 왼쪽 아이콘을 눌러 알림을 허용으로 바꾼 다음, 새로고침해 주세요.",
   // 관리 화면
   // 경계
   "Common rules": "자주 쓰는 규칙",

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import type { OauthAccount } from "@/lib/connections/queries";
 import { connectionKeys, PENDING_WINDOW_MS } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
-import { catalogueCanKey } from "@/lib/plugins/catalogue-copy";
+import { catalogueCanKey, catalogueMark } from "@/lib/plugins/catalogue-copy";
 import { beginConnect, disconnectServer } from "@/lib/plugins/queries";
 
 /**
@@ -172,7 +172,9 @@ export const OauthRow = ({
         tone: "good",
       };
     }
-    return { text: t("Not connected"), tone: "muted" };
+    // Nothing, not 연결 안 됨. The switch beside it is off, and saying so twice buried the rows
+    // that had something to report.
+    return { text: "", tone: "muted" };
   };
 
   const said = status();
@@ -182,6 +184,7 @@ export const OauthRow = ({
       can={t(catalogueCanKey(account.id, account.title))}
       isBusy={isBusy}
       isOn={isConnected || phase !== "settled"}
+      mark={catalogueMark(account.id)}
       name={t(account.title)}
       note={note}
       onToggle={handleToggle}

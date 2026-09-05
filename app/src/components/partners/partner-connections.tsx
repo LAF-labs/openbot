@@ -13,7 +13,7 @@ import {
   refreshAlimtalkTemplates,
   requestAlimtalkCode,
 } from "@/lib/partners/queries";
-import { catalogueCanKey } from "@/lib/plugins/catalogue-copy";
+import { catalogueCanKey, catalogueMark } from "@/lib/plugins/catalogue-copy";
 
 /**
  * 알림톡 — the service where LAF holds the account and the shop holds its own channel.
@@ -182,6 +182,7 @@ const AlimtalkRow = ({
       can={t(catalogueCanKey("kakao-alimtalk", "KakaoTalk notifications"))}
       isBusy={isBusy}
       isOn={status.connected || isOpening}
+      mark={catalogueMark("kakao-alimtalk")}
       name={t("KakaoTalk notifications")}
       note={note}
       onToggle={handleToggle}

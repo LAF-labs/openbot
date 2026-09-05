@@ -127,8 +127,17 @@ describe("the Notifications row", () => {
     expect(host.querySelector("button")).not.toBeNull();
   });
 
-  test("stops rather than offering a button that would do nothing", async () => {
-    // A `denied` permission cannot be re-prompted by any API.
+  test("keeps the control, disabled, and says where to change it", async () => {
+    /*
+     * A `denied` permission cannot be re-prompted by any API, and this row used to answer that with
+     * one grey sentence and nothing else — no control at all, under a heading and a paragraph
+     * describing one. From the other side of the screen that is a feature that failed to load.
+     *
+     * So the button stays and is DISABLED, which is what this state actually is: there is something
+     * to press and this person cannot press it. The original promise is kept exactly — nothing
+     * pressable that would do nothing — and the way out is words, because no API can open a
+     * browser's own settings either.
+     */
     browserAnswers("denied");
     const { host, render } = await mounted();
     const { NotificationPermission } = await import(
@@ -140,9 +149,12 @@ describe("the Notifications row", () => {
         unsupportedNote: "not here",
       }),
     );
-    expect(host.querySelector("button")).toBeNull();
+    const button = host.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button?.hasAttribute("disabled")).toBe(true);
     expect(host.textContent).not.toBe("not here");
-    expect(host.textContent?.length).toBeGreaterThan(0);
+    // The reason and the way out are two sentences, so this is longer than either state's one line.
+    expect(host.querySelectorAll("p").length).toBe(2);
   });
 
   test("says it is on once there is nothing left to ask for", async () => {

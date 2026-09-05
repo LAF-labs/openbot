@@ -185,7 +185,14 @@ function RouteComponent() {
         </PageRows>
       </PageSection>
       <PageSection title={t("General")}>
-        <PageRows>
+        {/*
+         * A LINE BETWEEN THE ROWS. Three settings — language, appearance, notifications — ran
+         * together inside one bordered card with nothing between them, so the card read as one
+         * block of text with controls scattered down its right edge rather than as three things
+         * you can change. `PageRows` is the card; the rule between its children belongs to whoever
+         * knows they are rows.
+         */}
+        <PageRows className="divide-y divide-border">
           <Item size="sm">
             <ItemContent>
               <ItemTitle>{t("Language")}</ItemTitle>

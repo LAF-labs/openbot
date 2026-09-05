@@ -1,3 +1,5 @@
+import { GENERIC_MARK } from "@/components/connections/connection-mark";
+
 /**
  * The catalogue entries' words, as this surface's own.
  *
@@ -18,33 +20,40 @@
  * belongs.
  */
 export const CATALOGUE_COPY: Readonly<
-  Record<string, { summary: string; can: string }>
+  Record<string, { summary: string; can: string; mark: string }>
 > = {
   notion: {
+    mark: "notion",
     summary: "Pages and databases of whoever is asking.",
     can: "Reads the pages you have shared, and writes new ones.",
   },
   "google-drive": {
+    mark: "google",
     summary: "Files in the Drive of whoever is asking.",
     can: "Finds files in your Drive and reads what is in them.",
   },
   "google-sheets": {
+    mark: "google",
     summary: "Rows in the spreadsheets of whoever is asking.",
     can: "Reads your spreadsheets and fills rows in for you.",
   },
   gmail: {
+    mark: "google",
     summary: "Mail in the mailbox of whoever is asking.",
     can: "Reads your mail and writes replies for you to send.",
   },
   "google-calendar": {
+    mark: "google",
     summary: "The calendar of whoever is asking.",
     can: "Reads your calendar and books time on it.",
   },
   "google-business-profile": {
+    mark: "google",
     summary: "Locations and reviews of the business asking.",
     can: "Reads the reviews left on your shop and writes replies.",
   },
   cafe24: {
+    mark: "cafe24",
     summary: "Orders, products and board posts of one mall.",
     can: "Reads your shop's orders and products, and answers board posts.",
   },
@@ -54,10 +63,21 @@ export const CATALOGUE_COPY: Readonly<
    * the same table.
    */
   "kakao-alimtalk": {
+    mark: "kakao",
     summary: "Template messages from this business's own KakaoTalk channel.",
     can: "Sends booking confirmations and review requests from your own channel.",
   },
 };
+
+/**
+ * Which mark the 연결 row draws for this entry.
+ *
+ * The globe for a vendor this table has not caught up with, which is the honest answer: a wrong
+ * brand mark on a login row is worse than a plain one.
+ */
+export function catalogueMark(key: string): string {
+  return CATALOGUE_COPY[key]?.mark ?? GENERIC_MARK;
+}
 
 /** The English key `t()` should be handed for this entry's summary, or the server's own line. */
 export function catalogueSummaryKey(key: string, fallback: string): string {

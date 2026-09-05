@@ -145,18 +145,27 @@ export const ConnectionsScreen = ({
       )}
       title={t("Connections")}
     >
-      <PageSection>
-        <ConnectOutcome
-          connected={connected}
-          onClear={onClearConnected}
-          onConnected={handleConnected}
-          titleFor={(serverId) => {
-            // The vendor's own title, so the notice names what was connected rather than its slug.
-            const found = accounts.find((account) => account.id === serverId);
-            return t(found?.kind === "oauth" ? found.title : serverId);
-          }}
-        />
-      </PageSection>
+      {/*
+       * ONLY WHEN THERE IS SOMETHING TO SAY. `ConnectOutcome` draws nothing unless a vendor has just
+       * sent somebody back here, but the section around it drew its own top margin regardless — so
+       * every ordinary visit opened on a hundred pixels of nothing between the description and 계정,
+       * twice the gap every other screen in the app has. Measured: 100px here against 52px on
+       * `/settings` and `/admin`.
+       */}
+      {connected ? (
+        <PageSection>
+          <ConnectOutcome
+            connected={connected}
+            onClear={onClearConnected}
+            onConnected={handleConnected}
+            titleFor={(serverId) => {
+              // The vendor's own title, so the notice names what was connected rather than its slug.
+              const found = accounts.find((account) => account.id === serverId);
+              return t(found?.kind === "oauth" ? found.title : serverId);
+            }}
+          />
+        </PageSection>
+      ) : null}
 
       {/*
        * `!data` as well as the error: a refetch that fails while the screen already has an answer

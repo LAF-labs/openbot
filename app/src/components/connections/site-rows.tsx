@@ -257,7 +257,8 @@ export const SiteRows = ({
         tone: "muted",
       };
     }
-    return { text: t("Not connected"), tone: "muted" };
+    // Nothing: the switch is off and already says so. See `ConnectionRow`'s `status`.
+    return { text: "", tone: "muted" };
   };
 
   return (
@@ -294,6 +295,7 @@ export const SiteRows = ({
               isBusy={opening === site.id}
               isOn={state !== "not_connected"}
               key={site.id}
+              mark={site.mark}
               name={t(site.name)}
               note={notes[site.id] ?? null}
               onToggle={(next) => handleToggle(site, next)}
