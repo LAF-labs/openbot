@@ -1029,6 +1029,29 @@ export function createPluginRoutes(
   );
 
   /**
+   * A Bot reading one of its skills, from the browser's `skill_view` tool.
+   *
+   * The grant is checked and the `skill.viewed` row written inside the store, so this route cannot
+   * satisfy one and skip the other. A refusal is 403 with the code the model reads and the surface
+   * translates — never a sentence.
+   */
+  routes.post(
+    "/for/:agentId/skills/:slug/view",
+    requireUser,
+    async (context) => {
+      const viewed = await store.viewSkill({
+        slug: context.req.param("slug"),
+        agentId: context.req.param("agentId"),
+        actorId: context.var.actor.id,
+      });
+      if (!viewed.allowed) {
+        return context.json({ error: viewed.reason, code: viewed.reason }, 403);
+      }
+      return context.json(viewed.skill);
+    },
+  );
+
+  /**
    * Call a tool, as a Bot.
    *
    * The grant, the policy and the audit row all happen inside the store, so this endpoint cannot

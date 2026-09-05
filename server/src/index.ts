@@ -6,6 +6,7 @@ import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
 import { createRetentionJob, retentionDays } from "./account/retention";
 import { createCoworkerCall } from "./agents/coworker-call";
+import { withGrantedSkills } from "./agents/granted-skills";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -296,7 +297,11 @@ const channelStore = createChannelStore(
  */
 const componentStore = createComponentStore(database);
 const roleRepository = createRoleRepository(database);
-const loadAgentsForActor = createRuntimeAgentLoader(database, agentVault);
+// What each Bot IS, then what skills it holds — by name and one line, for the prompt's index.
+const loadAgentsForActor = withGrantedSkills(
+  createRuntimeAgentLoader(database, agentVault),
+  database,
+);
 await recordTenantPackage(database, tenantPackage);
 const auth = config.auth
   ? createAuth(config, database, fleetNotifier)

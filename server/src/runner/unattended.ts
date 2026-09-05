@@ -34,6 +34,7 @@ import {
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
 import { UNATTENDED_COMPUTER_TOOLS } from "../../../shared/tools/computer";
+import { SKILL_VIEW } from "../../../shared/tools/skills";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -522,7 +523,7 @@ const withNotes = <T extends Record<string, unknown>>(result: T) => {
 export type UnattendedToolsOptions = {
   /** Absent when no computer is configured; the Bot then runs with plugin tools only. */
   gateway?: ComputerGateway;
-  pluginStore?: Pick<PluginStore, "listForAgent" | "callTool">;
+  pluginStore?: Pick<PluginStore, "listForAgent" | "callTool" | "viewSkill">;
 };
 
 /**
@@ -552,6 +553,17 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         description: tool.description,
         parameters: tool.inputSchema,
       })),
+      // Only where there is a skill to read. Every tool costs every turn, and a door with nothing
+      // behind it is one the model will still try (CLAUDE.md, the footprint ladder).
+      ...(granted.skills.length > 0
+        ? [
+            {
+              name: SKILL_VIEW.name,
+              description: SKILL_VIEW.description,
+              parameters: SKILL_VIEW.parameters,
+            },
+          ]
+        : []),
     ];
 
     const execute: ToolExecutor = async (name, args, call) => {
@@ -574,6 +586,23 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             ...(approvalId ? { approvalId } : {}),
           });
           return { ok: !result.isError, text: result.text };
+        }
+        if (name === SKILL_VIEW.name && pluginStore) {
+          // The store rechecks the grant and writes the `skill.viewed` row; this only asks.
+          const viewed = await pluginStore.viewSkill({
+            slug: String(args.name ?? ""),
+            agentId: botId,
+            actorId: actor.id,
+          });
+          if (!viewed.allowed) {
+            return {
+              ok: false,
+              refused: true,
+              code: viewed.reason,
+              reason: toolResultText(viewed.reason),
+            };
+          }
+          return { ok: true, ...viewed.skill };
         }
         if (!gateway) {
           return { ok: false, reason: `There is no tool called ${name}.` };

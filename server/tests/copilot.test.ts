@@ -290,6 +290,36 @@ describe("the composed prompt", () => {
     );
   });
 
+  /**
+   * THE SKILLS A BOT HOLDS, BY NAME. Until now a skill reached a Bot only when a person typed it
+   * with `/`, and the Bot did not know skills existed. The index sits in the context tier — after
+   * what the Bot remembers, before the mode — and a Bot holding nothing reads nothing.
+   */
+  test("lists the skills it holds, by name and one line, before the mode", () => {
+    const message = botPromptMessage(
+      {
+        ...profile,
+        memories: ["거래처는 한일상사다."],
+        skills: [
+          { slug: "재고정리", summary: "창고 재고를 세고 표로 정리한다" },
+          { slug: "daily-standup", summary: "" },
+        ],
+      },
+      { mode: "chat", now: at, timeZone: "Asia/Seoul" },
+    );
+    const content = message.content;
+    expect(content).toContain("- /재고정리 — 창고 재고를 세고 표로 정리한다");
+    expect(content).toContain("- /daily-standup — (설명 없음)");
+    expect(content).toContain("skill_view");
+    const at_ = (text: string) => content.indexOf(text);
+    expect(at_("한일상사")).toBeLessThan(at_("/재고정리"));
+    expect(at_("/재고정리")).toBeLessThan(
+      at_("사람이 화면 앞에서 지켜보는 대화다"),
+    );
+
+    expect(composed().content).not.toContain("skill_view");
+  });
+
   /*
    * A routine has no `computer_request_help` (the toolkit excludes it), and the old prompt told it
    * to call one anyway. Each mode says only what is true where it runs.

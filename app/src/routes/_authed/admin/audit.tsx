@@ -557,6 +557,8 @@ export const DECISIONS: Record<string, string> = {
   // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
   // and a row that reads as an accident hides the decision.
   "routine.skipped": "A routine's window was skipped",
+  // A read, not a permission: the grant was checked and this is the Bot opening the body.
+  "skill.viewed": "The Bot read a skill",
   "model.usage": "Model usage recorded",
 
   "configuration.changed": "Configuration changed",
@@ -780,6 +782,7 @@ export const EVENTS: Record<string, string> = {
   "coworker.asked": "One Bot asking another",
   "routine.ran": "A routine",
   "routine.skipped": "A routine",
+  "skill.viewed": "A skill",
   "component.granted": "A component",
   "component.revoked": "A component",
   "component.published": "A component",

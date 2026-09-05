@@ -7,7 +7,8 @@
  * 받은 것을 그대로 모델에게 넘기는 멍청한 종단으로 남는다. 두 곳이 프롬프트를 가지면 둘 중
  * 어느 쪽이 실제로 읽히는지 아무도 모르게 된다.
  *
- * 조립 순서: 기본 → 이 봇이 누구인지 → 무엇을 기억하는지 → 이번 모드 → 지금 몇 시인지.
+ * 조립 순서: 기본 → 이 봇이 누구인지 → 무엇을 기억하는지 → 어떤 스킬을 받았는지 → 이번 모드
+ * → 지금 몇 시인지.
  * 모드가 신원과 기억 뒤에 오는 이유는 모드가 이번 실행에서만 참이고, 다른 것과 부딪히면 이겨야
  * 하기 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다).
  *
@@ -23,9 +24,16 @@ import { CHAT_KO } from "./mode/chat.ko";
 import { COWORKER_KO } from "./mode/coworker.ko";
 import { roomKo } from "./mode/room.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
+import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO } from "./base.ko";
 export { asRole, copula } from "./particles";
+export {
+  estimateTokens,
+  type PromptSkill,
+  SKILL_INDEX_MAX_TOKENS,
+  skillIndexText,
+} from "./skill-index";
 export { TOOL_RESULT_KO, toolResultText } from "./tool-results.ko";
 
 /** 실행이 벌어지는 자리. `forwardedProps.mode`로 오고, 아무 말이 없으면 대화다. */
@@ -107,6 +115,8 @@ export type ComposePromptInput = {
   standingRole?: string;
   /** 이 봇이 이 사람에 대해 알아낸 것, 오래된 것부터. */
   memories?: readonly string[];
+  /** 이 봇에게 허용된 스킬. 이름과 한 줄만 — 본문은 skill_view가 읽는다. */
+  skills?: readonly PromptSkill[];
 };
 
 /** 이번 실행의 자리에만 해당하는 부분. */
@@ -174,6 +184,8 @@ export function composePrompt(input: ComposePromptInput): string {
           ...memories.map((memory) => `- ${memory}`),
         ].join("\n")
       : "",
+    // Names and one line each, capped. Bots that hold nothing read nothing here.
+    skillIndexText(input.skills ?? []),
     modeText(mode, bot.name),
     // Last, on purpose: the one line that changes every minute. See the module comment.
     nowLine(input.now, input.timeZone),

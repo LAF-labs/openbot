@@ -34,6 +34,10 @@ export const ko: Record<string, string> = {
     "루틴은 이 봇이 일정에 따라 반복하는 작업입니다.",
   "A routine ran": "루틴이 실행됨",
   "A routine's window was skipped": "루틴 실행 시각을 건너뜀",
+  "A skill": "스킬",
+  "The Bot read a skill": "봇이 스킬을 읽음",
+  "Reading a skill": "스킬 읽는 중",
+  "Read a skill": "스킬을 읽음",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",

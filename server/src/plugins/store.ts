@@ -571,6 +571,7 @@ export function createPluginStore(options: PluginStoreOptions) {
     grant: grants.grant,
     revoke: grants.revoke,
     listForAgent: grants.listForAgent,
+    viewSkill: grants.viewSkill,
     decide: grants.decide,
 
     /**

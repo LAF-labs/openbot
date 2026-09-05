@@ -424,6 +424,50 @@ export function agentPluginsQueryOptions(agentId: string | undefined) {
   });
 }
 
+/** The body of one skill this Bot holds, read by its own `skill_view` tool. */
+export type ViewedSkill = {
+  slug: string;
+  title: string;
+  summary: string;
+  instructions: string;
+};
+
+/**
+ * A Bot reading one of its skills, as this Bot, through the server.
+ *
+ * The instructions are in the grants query already; going to the server is what writes the
+ * `skill.viewed` row and rechecks the grant at the moment of reading. A refusal comes back as the
+ * `laf:` code the model's own table translates, never as a sentence.
+ */
+export async function viewSkill(
+  agentId: string,
+  name: string,
+): Promise<{ ok: true; skill: ViewedSkill } | { ok: false; code: string }> {
+  const response = await fetch(
+    `/api/plugins/for/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(name)}/view`,
+    { method: "POST", credentials: "include" },
+  );
+  const body = (await response.json().catch(() => null)) as
+    | (Partial<ViewedSkill> & { code?: unknown })
+    | null;
+  if (response.ok && body && typeof body.instructions === "string") {
+    return {
+      ok: true,
+      skill: {
+        slug: body.slug ?? name,
+        title: body.title ?? name,
+        summary: body.summary ?? "",
+        instructions: body.instructions,
+      },
+    };
+  }
+  const code =
+    typeof body?.code === "string" && body.code.startsWith("laf:")
+      ? body.code
+      : "laf:skill_not_granted";
+  return { ok: false, code };
+}
+
 export type PluginCallOutcome =
   | { ok: true; text: string; isError: boolean }
   /** The deployment decided against it. `rule` names the expression, when one decided. */

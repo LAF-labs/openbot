@@ -7,6 +7,7 @@ import {
   composePrompt,
   type PromptMode,
   promptModeOf,
+  type PromptSkill,
   resolveTimeZone,
 } from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
@@ -98,6 +99,13 @@ export type AgentStandingProfile = {
    * only thing all of them already understand.
    */
   memories?: readonly string[];
+  /**
+   * The skills this Bot holds, by name and one line, so the prompt can list them.
+   *
+   * Attached by `agents/granted-skills.ts` on the way out of the loader, not read here: the
+   * middleware below is synchronous, and a Bot's grants are the plugin store's question.
+   */
+  skills?: readonly PromptSkill[];
 };
 
 /**
@@ -155,6 +163,7 @@ export function botPromptMessage(
       bot: { id: profile.id, name: profile.name, title: profile.title },
       standingRole: profile.roleDescription,
       ...(profile.memories ? { memories: profile.memories } : {}),
+      ...(profile.skills ? { skills: profile.skills } : {}),
     }),
   };
 }

@@ -241,6 +241,14 @@ export const auditEventTypes = [
    * how late the window was, so "the VM was off for nine hours" is readable from the trail.
    */
   "routine.skipped",
+  /**
+   * A Bot read the body of one of its skills through `skill_view`.
+   *
+   * The prompt lists a Bot's skills by name and one line only; the body is fetched on demand, and
+   * this row is the record that it was. Not a permission — the grant was checked and this is the
+   * read that followed — but the one trace of a Bot choosing a skill nobody invoked with `/`.
+   */
+  "skill.viewed",
 
   /*
    * What a Bot may answer with, decided per Bot and recorded like anything else it is trusted with.

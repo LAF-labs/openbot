@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { normalizeSkillName } from "../../../shared/tools/skills";
 import {
   recordAuditEvent,
   SKILL_NOT_GRANTED,
@@ -322,6 +323,79 @@ export function createSkillsAndGrants(context: PluginContext) {
           summary: row.summary,
           instructions: row.instructions,
         })),
+      };
+    },
+
+    /**
+     * A Bot reading the body of a skill it holds, and the row that says it did.
+     *
+     * The prompt shows a Bot its skills by name and one line; this is the on-demand half. The
+     * grant is the only guard — a skill is an instruction, not a capability, and every tool it
+     * goes on to ask for is decided on its own — so a Bot without the grant is refused with the
+     * code the runtime already knows, and a Bot with it gets the text and leaves a `skill.viewed`
+     * row: the one trace of a skill chosen by the Bot rather than typed with `/`.
+     *
+     * A name nothing is installed under is the same refusal. The Bot was told which skills it
+     * holds, so a name outside that list was not given to it, whichever of the two it is.
+     */
+    async viewSkill(input: {
+      slug: string;
+      agentId: string;
+      /** Who the run is for. In the payload, not the actor column: a routine's local actor is no row. */
+      actorId?: string;
+    }): Promise<
+      | {
+          allowed: true;
+          skill: {
+            slug: string;
+            title: string;
+            summary: string;
+            instructions: string;
+          };
+        }
+      | { allowed: false; reason: string }
+    > {
+      const slug = normalizeSkillName(input.slug);
+      const [row] = slug
+        ? await database
+            .select()
+            .from(skills)
+            .where(sql`lower(${skills.slug}) = ${slug}`)
+            .limit(1)
+        : [];
+      if (!row) return { allowed: false, reason: SKILL_NOT_GRANTED };
+      const [held] = await database
+        .select({ ref: pluginGrants.ref })
+        .from(pluginGrants)
+        .where(
+          and(
+            eq(pluginGrants.kind, "skill"),
+            eq(pluginGrants.ref, row.slug),
+            eq(pluginGrants.agentId, input.agentId),
+          ),
+        )
+        .limit(1);
+      if (!held) return { allowed: false, reason: SKILL_NOT_GRANTED };
+
+      await recordAuditEvent(auditStore, {
+        eventType: "skill.viewed",
+        targetType: "skill",
+        targetId: row.slug,
+        // Which skill and which Bot — never the body. The trail says what was read, not what it says.
+        payload: {
+          bot: input.agentId,
+          skill: row.slug,
+          ...(input.actorId ? { actor: input.actorId } : {}),
+        },
+      });
+      return {
+        allowed: true,
+        skill: {
+          slug: row.slug,
+          title: row.title,
+          summary: row.summary,
+          instructions: row.instructions,
+        },
       };
     },
 

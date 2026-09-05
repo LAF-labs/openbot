@@ -7,6 +7,7 @@ import { GalleryTools } from "./gallery-tools";
 import { PluginTools } from "./plugin-tools";
 import { SandboxedTools } from "./sandboxed-tools";
 import { SelfTools } from "./self-tools";
+import { SkillTools } from "./skill-tools";
 
 /**
  * The CopilotKit client, wrapped once for the whole authenticated app.
@@ -35,6 +36,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         <GalleryTools />
         {/* MCP tools share the same active-Bot context and server-side grant checks. */}
         <PluginTools />
+        {/* The Bot reading its own skills; registered only for a Bot that holds one. */}
+        <SkillTools />
         {/* Browser-authored components use the same component grants as the compiled gallery. */}
         <SandboxedTools />
         {children}
