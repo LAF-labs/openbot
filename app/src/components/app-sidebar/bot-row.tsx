@@ -46,7 +46,7 @@ import { t } from "@/lib/i18n";
  * raw `--sand-*` variables and a hand-copied ring, duplicated, which is exactly the drift
  * `app/tests/design-tokens.test.ts` exists to stop. Shared here so there is one of each.
  */
-const ROSTER_ROW_SHARED = `h-[var(--sand-row-height)] w-full flex-row items-center rounded-lg border border-transparent bg-clip-padding transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]`;
+const ROSTER_ROW_SHARED = `h-row w-full flex-row items-center rounded-lg border border-transparent bg-clip-padding transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]`;
 
 export const ROSTER_ROW_CLASS = `flex gap-2 px-2 ${ROSTER_ROW_SHARED}`;
 

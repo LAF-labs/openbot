@@ -94,7 +94,8 @@ const ALLOWED: Record<string, Record<string, number>> = {
   sand: {
     "components/agents/agent-card.tsx": 1,
     "components/agents/agent-profile.tsx": 1,
-    "components/app-sidebar/bot-row.tsx": 5,
+    // Was 5. The height went first, because `--sand-row-height` finally has a name: `h-row`.
+    "components/app-sidebar/bot-row.tsx": 4,
     "components/app-sidebar/bot-sidebar.tsx": 9,
     "components/avatar/bot-avatar-picker.tsx": 1,
     "components/channels/chat-transcript.tsx": 3,

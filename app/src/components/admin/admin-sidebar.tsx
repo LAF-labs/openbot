@@ -146,9 +146,10 @@ export function AdminSidebar({
                * would otherwise light up on all of them.
                */}
               <SidebarMenuButton
-                // One rhythm with the app sidebar: h-10 rows, and an active state that does not
-                // dip back to the hover fill when the row you are on is hovered.
-                className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                // One rhythm with the app sidebar, and it was only ever a claim: the shared row is
+                // 54px (`--sand-row-height`, `h-row`) and this rail drew 40. The active state still
+                // does not dip back to the hover fill when the row you are on is hovered.
+                className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                 render={(props) => (
                   <Link
                     {...adminLinkOptions}
@@ -170,9 +171,10 @@ export function AdminSidebar({
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
-                    // One rhythm with the app sidebar: h-10 rows, and an active state that does not
-                    // dip back to the hover fill when the row you are on is hovered.
-                    className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                    // One rhythm with the app sidebar, and it was only ever a claim: the shared row is
+                    // 54px (`--sand-row-height`, `h-row`) and this rail drew 40. The active state still
+                    // does not dip back to the hover fill when the row you are on is hovered.
+                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
                       <Link {...item.linkOptions} {...props}>
                         <item.icon />

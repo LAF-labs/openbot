@@ -86,7 +86,9 @@ export function SettingsSidebar({
                   {/* The same active grammar as the app sidebar: the stacked active+hover variant
                       outranks plain hover, so the row you are on never dips to the hover fill. */}
                   <SidebarMenuButton
-                    className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                    // `h-row`, not `h-10`. The rhythm this claims to share with the app sidebar is
+                    // 54px (`--sand-row-height`), and this rail drew 40.
+                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
                       <Link
                         activeOptions={

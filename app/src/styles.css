@@ -313,6 +313,21 @@ body {
   --radius-bubble-joined: var(--sand-bubble-radius-joined);
 
   /*
+   * THE ROW. 54px, and until this line there was no way to type it.
+   *
+   * `--sand-row-height` was measured with the rest of the geometry and then had exactly one reader:
+   * the roster row, which spelled it `h-[var(--sand-row-height)]` — the escape hatch the drift test
+   * counts. Everything else guessed. The Settings rail and the Admin rail both said `h-10`, so the
+   * two screens with a rail drew 40px rows against a 54px design while a comment in one of them
+   * claimed "one rhythm with the app sidebar".
+   *
+   * In the `--spacing-*` namespace, so it is `h-row` — and also `min-h-row`, `py-row`, `gap-row` if
+   * a row's worth of space is ever what is wanted. A rung with no name is a rung people write by
+   * hand; this one was worse, because nobody wrote it at all.
+   */
+  --spacing-row: var(--sand-row-height);
+
+  /*
    * THE TWO ELEVATIONS THIS DESIGN HAS, AND WHY THEY ARE NOT `shadow-md`.
    *
    * `--sand-shadow-popover` was measured, written down, and then never used by anything: menus and
