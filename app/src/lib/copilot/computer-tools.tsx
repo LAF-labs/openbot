@@ -81,6 +81,14 @@ const OUTCOME_LABELS: Record<string, string> = {
   "laf:blind_action": "The screen had not been read yet",
   "laf:declined_recently": "You said no to this recently",
   "laf:use_request_secret": "It asked for a secret instead",
+  /*
+   * Two more floors under the boundary (security review, 2026-09): a letter pressed as a key is
+   * typing that no rule could see, and a secret request has to name a field on the screen the
+   * server holds — not whatever box a page told the Bot to point at.
+   */
+  "laf:key_is_text": "A letter was pressed as a key",
+  "laf:secret_target_not_a_field":
+    "The secret was aimed at something that is not a field",
 };
 
 /** The words for a line, from the code where there is one and from the server's text otherwise. */

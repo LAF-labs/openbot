@@ -647,7 +647,10 @@ describe("a secret being asked for and supplied", () => {
   const carrying = (thing: unknown) => JSON.stringify(thing) ?? "";
 
   test("the request names the field and the label, and holds no value", async () => {
-    const { app, calls, rows, sentToComputer } = surface(ADMIN);
+    const { app, calls, rows, sentToComputer, seen } = surface(ADMIN);
+    // The field has to be on a screen the server holds: a request for a ref it never saw is
+    // refused, which is the security review's rule and is pinned in computer-gateway.test.ts.
+    await seen();
 
     const response = await app.request("/bot-1/control/secret", {
       method: "POST",
@@ -665,8 +668,11 @@ describe("a secret being asked for and supplied", () => {
       (row) => row.eventType === "computer.secret_requested",
     );
     // What an investigator needs: a human credential entered this session, called this, into that
-    // field. The request carries no value at all, so there is nothing here to leave out.
-    expect(asked?.payload).toMatchObject({ reason: "은행 비밀번호 (into e4)" });
+    // field. The request carries no value at all, so there is nothing here to leave out. The field
+    // is named as the SERVER resolved it — role, label and host — beside the Bot's own words.
+    expect(asked?.payload).toMatchObject({
+      reason: '은행 비밀번호 (into textbox "Customer name" on example.com)',
+    });
     expect(sentToComputer).toEqual([
       { label: "은행 비밀번호", ref: "e4", snapshotId: 7 },
     ]);
@@ -702,11 +708,14 @@ describe("a secret being asked for and supplied", () => {
     });
     // Every row, not only that one: nothing else along the way may have picked it up either.
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(SECRET);
+    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(
+      SECRET,
+    );
   });
 
   test("the value is in no row, no reply and no recording, on either of its two routes", async () => {
-    const { app, rows, demonstrations, sentToComputer } = surface(ADMIN);
+    const { app, rows, demonstrations, sentToComputer, seen } = surface(ADMIN);
+    await seen();
     await app.request("/bot-1/control/take", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -744,7 +753,9 @@ describe("a secret being asked for and supplied", () => {
     // covered without anybody remembering to cover it.
     expect(carrying(replies)).not.toContain(SECRET);
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(SECRET);
+    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(
+      SECRET,
+    );
     // The demonstration is real and recording, so the absence above is an absence and not an
     // unstarted recorder: handing back closes it, and what it kept is still readable.
     await app.request("/bot-1/control/release", { method: "POST" });
@@ -896,7 +907,11 @@ describe("somebody else's demonstration", () => {
     const { app, demonstrations, sentToComputer } = surface(ADMIN);
     // Started by another person on the same deployment, as the take-control route would have.
     demonstrations.start("bot-1", "the-owner");
-    demonstrations.observe("bot-1", { type: "key", event: "down", key: "Enter" });
+    demonstrations.observe("bot-1", {
+      type: "key",
+      event: "down",
+      key: "Enter",
+    });
 
     const read = await app.request("/bot-1/demonstration");
     expect(read.status).toBe(200);

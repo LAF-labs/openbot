@@ -288,7 +288,19 @@ export type FactCode =
    */
   | "laf:ask_in_delegated_turn"
   /** A Bot answering for another Bot tried to ask a third. One hop is the whole allowance. */
-  | "laf:delegation_too_deep";
+  | "laf:delegation_too_deep"
+  /**
+   * A `computer_key` call naming a character rather than a key.
+   *
+   * Pressing "h", "u", "n", "t", "e", "r" one keypress at a time is typing, and it used to be judged
+   * as six keypresses on nothing in particular: with no ref there was no element, so the one `deny`
+   * this product ships — no typing into a password field — matched an empty label and let every
+   * character through. The tool is for Enter, Tab and Escape; letters go through `computer_type`,
+   * where the rule can see the field.
+   */
+  | "laf:key_is_text"
+  /** `computer_request_secret` named a ref that is not a field a value can go into. */
+  | "laf:secret_target_not_a_field";
 
 /**
  * String helpers, registered as CEL globals.

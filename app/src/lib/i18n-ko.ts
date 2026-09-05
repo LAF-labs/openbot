@@ -23,6 +23,7 @@ export const ko: Record<string, string> = {
   "A person connected their own account": "사람이 자기 계정을 연결함",
   "A person declined it": "사람이 거절함",
   "A person declined that": "사람이 거절함",
+  "A letter was pressed as a key": "글자를 키처럼 눌렀음",
   "A person has the computer": "사람이 컴퓨터를 잡고 있음",
   "A person pressed stop": "사람이 정지를 누름",
   "A person supplied a secret": "사람이 비밀값을 입력함",
@@ -174,6 +175,8 @@ export const ko: Record<string, string> = {
     "모델이 너무 오래 걸려 이번 차례를 끝냈습니다. 다시 물어보거나, 한 번에 조금만 시켜 보세요.",
   "The request was cancelled": "요청이 취소됨",
   "The screen had not been read yet": "화면을 아직 읽지 않음",
+  "The secret was aimed at something that is not a field":
+    "비밀값을 넣을 칸이 아님",
   "The tool is declared as one that can destroy something.":
     "무언가를 지울 수 있는 도구라고 선언돼 있습니다.",
   "The tool is declared as one that sends something outward.":

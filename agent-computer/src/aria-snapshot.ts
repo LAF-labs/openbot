@@ -89,6 +89,54 @@ export type SnapshotElement = {
 /** The roles a password box can arrive as, so the marking below does not go looking at buttons. */
 const TEXT_ENTRY_ROLES = new Set(["textbox", "searchbox", "combobox"]);
 
+/**
+ * Labels that mean a field holds something the Bot must never be shown.
+ *
+ * THE SNAPSHOT USED TO HAND THE MODEL EVERY PASSWORD ON THE PAGE. Playwright's `mode: "ai"` tree
+ * puts an input's current value into the node, password boxes included (measured:
+ * `- textbox "비밀번호" [ref=e2]: hunter2!SuperSecret`), and `toElement` copied it onto the element
+ * it was about to mark `type: "password"`. So `computer_request_secret` — whose whole promise is that
+ * the person types the value and the model never sees it — was undone by the very next
+ * `computer_snapshot`, which the tool results tell the Bot to take. The value went into the tool
+ * result, from there into the thread, and from there into every later turn.
+ *
+ * The DOM's own password inputs are the first signal (`passwordLabels`), and this list is the
+ * second, for the fields the DOM cannot mark: a one-time code is `type="text"`, a card number is
+ * `type="tel"`, and a password box inside a payment iframe is not in the caller's query at all.
+ * The same words the server's boundary refuses typing into (`default-policy.ts`), plus the codes
+ * and numbers a person is asked for at a checkout. Over-matching costs the Bot the sight of a
+ * field's contents; under-matching costs the person their secret.
+ */
+const SECRET_LABEL_WORDS = [
+  "비밀번호",
+  "비밀 번호",
+  "암호",
+  "password",
+  "passcode",
+  "인증번호",
+  "인증 번호",
+  "일회용",
+  "otp",
+  "카드번호",
+  "카드 번호",
+  "cvc",
+  "cvv",
+  "보안코드",
+  "보안 코드",
+];
+
+const SECRET_LABEL = new RegExp(
+  SECRET_LABEL_WORDS.map((word) =>
+    word.replace(/[^\p{L}\p{N} ]/gu, (character) => `\\${character}`),
+  ).join("|"),
+  "iu",
+);
+
+/** Whether a text-entry element's label says its contents are not the Bot's to see. */
+export function isSecretLabel(name: string): boolean {
+  return SECRET_LABEL.test(name);
+}
+
 /** The descriptor half of an entry: everything before the colon. */
 type Descriptor = {
   role: string;
@@ -238,11 +286,19 @@ export function parseAriaSnapshot(
       truncated = true;
       return;
     }
-    if (
-      TEXT_ENTRY_ROLES.has(element.role) &&
-      secret.has(element.name.replace(/\s+/g, " ").trim())
-    ) {
-      element.type = "password";
+    if (TEXT_ENTRY_ROLES.has(element.role)) {
+      const label = element.name.replace(/\s+/g, " ").trim();
+      if (secret.has(label)) element.type = "password";
+      /*
+       * THE VALUE OF A SECRET FIELD IS NOT THE BOT'S TO SEE, whether the page marked the box a
+       * password or only labelled it one. What the Bot needs from a secret field is that it exists
+       * and whether it is empty; the string in it is exactly what `computer_request_secret` exists
+       * to keep out of the model. Dropped here, at the one place a value enters the element, so no
+       * later reader has to remember to.
+       */
+      if (element.type === "password" || isSecretLabel(label)) {
+        if (element.value !== undefined) element.value = "";
+      }
     }
     elements.push(element);
   };

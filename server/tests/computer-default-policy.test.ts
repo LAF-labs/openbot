@@ -4,6 +4,7 @@ import type { ComputerClient } from "../src/computer/client";
 import {
   DEFAULT_ACTION_POLICY,
   hostPattern,
+  isSecretFieldElement,
   isSimpleTerm,
   MONEY_HOSTS,
   MONEY_WORDS,
@@ -330,5 +331,48 @@ describe("the lists the rules are built from", () => {
     expect(words.test("DELETE ACCOUNT")).toBe(true);
     expect(words.test("다음")).toBe(false);
     expect(words.test("장바구니 보기")).toBe(false);
+  });
+});
+
+/**
+ * The same two signals the typing rule refuses on, asked of a snapshot element on the way back.
+ *
+ * A field the Bot may not fill is a field whose contents it may not read either, and the snapshot
+ * is where those contents arrive. The gateway drops the value of any element this says yes to,
+ * so an older `agent-computer` image cannot hand a password to the model through a server that
+ * knows better.
+ */
+describe("which elements hold something the Bot must not be shown", () => {
+  test("by type, whatever the label", () => {
+    expect(
+      isSecretFieldElement({ name: "Customer name:", type: "password" }),
+    ).toBe(true);
+  });
+
+  test("by label, whatever the type", () => {
+    for (const name of [
+      "비밀번호",
+      "인증번호 6자리",
+      "일회용 비밀번호",
+      "카드 번호",
+      "CVC",
+      "보안코드",
+      "Password",
+    ]) {
+      expect([name, isSecretFieldElement({ name, type: "text" })]).toEqual([
+        name,
+        true,
+      ]);
+    }
+  });
+
+  test("and not an ordinary field", () => {
+    for (const name of ["아이디", "주문번호", "검색", "Customer name:"]) {
+      expect([name, isSecretFieldElement({ name, type: "text" })]).toEqual([
+        name,
+        false,
+      ]);
+    }
+    expect(isSecretFieldElement({ name: "" })).toBe(false);
   });
 });

@@ -33,7 +33,10 @@ import {
   type PendingApproval,
 } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
-import type { ComputerClient } from "./client";
+import { describeFailure } from "../failure-text";
+import { normalizeHostname } from "../net/host-verdict";
+import { type ComputerClient, StaleSnapshotError } from "./client";
+import { isSecretFieldElement } from "./default-policy";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
@@ -244,14 +247,108 @@ type CachedSnapshot = {
   snapshotId: number;
   elements: Map<string, SnapshotElement>;
   url: string;
+  /**
+   * The browser has moved since this was taken, and only the address is still believed.
+   *
+   * THE CACHE WAS NEVER INVALIDATED. `snapshots.set` ran in exactly one place — `snapshot()` — and
+   * nothing else touched it: not a navigation, not a click that followed a link, not a tab switch.
+   * So `page.host`, the audit row's `page` and the scope printed on an "always allow" button all
+   * described whatever page was last SNAPSHOTTED, however many pages ago that was. Measured as a
+   * sequence: snapshot on example.com, navigate to a bank, press Enter with no ref — the money-host
+   * rule looked at `example.com` and let it through.
+   *
+   * A stale entry keeps the address the browser reported and no elements, so a rule about the host
+   * sees the right host and an action that needs the screen is refused as blind until the Bot
+   * looks again — which is what the tool results already tell it to do.
+   */
+  stale: boolean;
 };
+
+/** The roles a value can be typed into. What `computer_request_secret` may name. */
+const SECRET_ENTRY_ROLES = new Set([
+  "textbox",
+  "searchbox",
+  "combobox",
+  "spinbutton",
+  "input",
+]);
+
+/**
+ * Whether a `computer_key` call is really typing.
+ *
+ * `hunter2`, sent as six keypresses with no ref, used to arrive as six actions on nothing in
+ * particular: no element resolved, so the password-field `deny` matched an empty label and the
+ * value went into the focused box one character at a time. A key name is a word — Enter, Tab,
+ * ArrowDown, F5 — and a single printable character is a letter. Shift still types (`Shift+a` is
+ * `A`); Control, Alt and Meta make a shortcut, which is the thing this tool is for.
+ */
+export function isTextKey(key: string): boolean {
+  const parts = key.split("+");
+  const last = parts.pop() ?? "";
+  const modifiers = parts.map((part) => part.trim().toLowerCase());
+  if (
+    modifiers.some(
+      (modifier) =>
+        modifier === "control" ||
+        modifier === "alt" ||
+        modifier === "meta" ||
+        modifier === "controlormeta",
+    )
+  ) {
+    return false;
+  }
+  const points = Array.from(last);
+  return points.length === 1 && last !== " " && !/\p{C}/u.test(last);
+}
+
+/**
+ * The element, minus the value of a secret field.
+ *
+ * The computer already drops these; this is the same rule applied where the snapshot enters this
+ * process, so an older `agent-computer` image cannot hand a password to the model through a server
+ * that knows better.
+ */
+function withoutSecretValue(element: SnapshotElement): SnapshotElement {
+  if (element.value === undefined || !isSecretFieldElement(element)) {
+    return element;
+  }
+  return { ...element, value: "" };
+}
 
 export function createComputerGateway(options: ComputerGatewayOptions) {
   const { client, auditStore } = options;
   const snapshots = new Map<string, CachedSnapshot>();
+  /**
+   * Where each open secret request points, as this server resolved it when the request was made.
+   *
+   * Held here rather than read back off the computer, because the computer keeps the Bot's label
+   * and the ref and nothing else — and the host and the control's own name are what a person needs
+   * beside a label a model wrote. Cleared when the value is supplied.
+   */
+  const secretTargets = new Map<
+    string,
+    { host: string; element: { role: string; name: string } }
+  >();
   const approvals = options.approvals ?? createApprovalRegistry();
   const repeat = options.repeat ?? createRepeatDetector();
   const standing = options.standing ?? createStandingApprovalStore();
+
+  /**
+   * The browser is somewhere else now: keep the address, forget the elements.
+   *
+   * Called with every URL an action or a navigation reports back, so the cache follows the browser
+   * rather than the last snapshot. The same address as the cache holds is not a move.
+   */
+  function pageMoved(computerId: string, url: string): void {
+    const cached = snapshots.get(computerId);
+    if (cached && cached.url === url) return;
+    snapshots.set(computerId, {
+      snapshotId: cached?.snapshotId ?? 0,
+      url,
+      elements: new Map(),
+      stale: true,
+    });
+  }
 
   /**
    * The computer, addressed as the Bot that is asking.
@@ -265,18 +362,20 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   /** Read-only, so it passes straight through. Nothing has changed and there is nothing to decide. */
   async function snapshot(computerId: string): Promise<SnapshotResult> {
     const result = await as(computerId).snapshot();
+    const elements = result.elements.map(withoutSecretValue);
     snapshots.set(computerId, {
       snapshotId: result.snapshotId,
       url: result.url,
-      elements: new Map(
-        result.elements.map((element) => [element.ref, element]),
-      ),
+      elements: new Map(elements.map((element) => [element.ref, element])),
+      stale: false,
     });
-    return result;
+    return { ...result, elements };
   }
 
   async function read(botId: string): Promise<ReadResult> {
-    return as(botId).read();
+    const result = await as(botId).read();
+    pageMoved(botId, result.url);
+    return result;
   }
 
   /**
@@ -486,9 +585,22 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       intent !== "read_file" &&
       intent !== "write_file" &&
       intent !== "list_files";
-    const blind = !cached && subject.targetUrl === undefined && aboutThePage;
-    const decision =
-      blind && policyDecidesOnSnapshot(policy)
+    const blind =
+      (!cached || cached.stale) &&
+      subject.targetUrl === undefined &&
+      aboutThePage;
+    // A floor under the policy, like the blind check: no rule an operator writes can make a
+    // character pressed as a key into something other than typing. See `isTextKey`.
+    const textKey = toolName === "computer_key" && isTextKey(subject.key ?? "");
+    const decision = textKey
+      ? ({
+          allowed: false,
+          matched: null,
+          source: "deny",
+          forward: false,
+          code: "laf:key_is_text",
+        } satisfies PolicyDecision)
+      : blind && policyDecidesOnSnapshot(policy)
         ? ({
             allowed: false,
             matched: null,
@@ -515,6 +627,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       submit: subject.submit,
       filePath,
       pageUrl,
+      element: element ? { role: element.role, name: element.name } : undefined,
     });
     /*
      * What a standing allowance for this action would have to cover.
@@ -680,12 +793,23 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
             }
           : {}),
         ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
-        // An exception keeps its own message — it came from somebody else's software and this side
-        // cannot know what it meant. What is OURS is a code.
-        failure: error instanceof Error ? error.message : ACTION_FAILED,
+        /*
+         * Never `error.message`: a failed audit insert would put its SQL, parameters included, into
+         * the trail it failed to write to (failure-text.ts). An exception from somebody else's
+         * software keeps one line of its own; a throw that was not an Error keeps our code.
+         */
+        failure:
+          error instanceof Error ? describeFailure(error) : ACTION_FAILED,
       });
       throw error;
     }
+    // Where the browser is now, from the action's own report. A click that followed a link, a
+    // navigation, a tab switch: each moves the page under the cache, and the cache follows.
+    const movedTo =
+      result && typeof result === "object" && "url" in result
+        ? (result as { url?: unknown }).url
+        : undefined;
+    if (typeof movedTo === "string" && movedTo) pageMoved(computerId, movedTo);
     // The element's label, attached on the way out, so the transcript can say what was acted on
     // instead of quoting a ref. The computer cannot supply this: it knows the ref, and the resolved
     // snapshot lives here. File calls carry their own path already, so there is nothing to add.
@@ -750,8 +874,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       return state;
     },
 
-    control(botId: string) {
-      return as(botId).control();
+    async control(botId: string) {
+      const state = await as(botId).control();
+      // The open request's target, resolved when it was made. Attached only while the request is
+      // open, so a stale entry cannot describe a box that is no longer asking.
+      const into = secretTargets.get(botId);
+      return state.secretWanted && into
+        ? { ...state, secretInto: into }
+        : state;
     },
 
     /**
@@ -817,14 +947,59 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       actor: ActionActor,
       input: SecretRequest,
     ) {
-      const state = await as(botId).requestSecret(input);
+      /*
+       * THE FIELD IS RESOLVED HERE, NEVER TAKEN FROM THE BOT.
+       *
+       * This call used to go straight to the computer with whatever ref and label the model sent,
+       * outside the policy and outside the snapshot: a page that steered the Bot could ask for
+       * "네이버 비밀번호" into a box of its own, and the masked prompt showed the person exactly that.
+       * The ref now has to name a field on the snapshot this server holds, the host and the field's
+       * own label are recorded and returned beside the Bot's words, and a ref that resolves to
+       * nothing — or to a button — is refused with a row, like any other action.
+       */
+      const cached = snapshots.get(computerId);
+      if (!cached || cached.stale || cached.snapshotId !== input.snapshotId) {
+        throw new StaleSnapshotError(
+          "The snapshot this ref came from is no longer current. Take a fresh snapshot and use the refs from it.",
+        );
+      }
+      const element = cached.elements.get(input.ref);
+      if (!element || !SECRET_ENTRY_ROLES.has(element.role)) {
+        const refusal: PolicyDecision = {
+          allowed: false,
+          matched: null,
+          source: "deny",
+          forward: false,
+          code: "laf:secret_target_not_a_field",
+        };
+        await write(auditStore, {
+          toolName: "computer_request_secret",
+          botId,
+          actor,
+          computerId,
+          element,
+          ref: input.ref,
+          filePath: undefined,
+          pageUrl: cached.url,
+          decision: refusal,
+        });
+        throw new ActionRefusedError(null, "laf:secret_target_not_a_field");
+      }
+      const into = {
+        host: hostOf(cached.url),
+        element: { role: element.role, name: element.name },
+      };
+      // One line, bounded: it is rendered on the masked box and written into the trail.
+      const label = input.label.replace(/\s+/g, " ").trim().slice(0, 120);
+      const state = await as(botId).requestSecret({ ...input, label });
+      secretTargets.set(computerId, into);
       await writeControlEvent(auditStore, "computer.secret_requested", {
         botId,
         actor,
         computerId,
-        reason: `${input.label} (into ${input.ref})`,
+        reason: `${label} (into ${element.role} "${element.name}" on ${into.host})`,
       });
-      return state;
+      return { ...state, secretInto: into };
     },
 
     async supplySecret(
@@ -834,6 +1009,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       text: string,
     ) {
       const result = await as(botId).supplySecret(text);
+      secretTargets.delete(computerId);
       await writeControlEvent(auditStore, "computer.secret_supplied", {
         botId,
         actor,
@@ -1256,14 +1432,15 @@ async function write(
       action: entry.toolName,
       bot: entry.botId,
       actor: entry.actor.id,
-      page: entry.pageUrl,
+      page: pageForTrail(entry.pageUrl),
       ref: entry.ref ?? null,
       /*
        * The key, where there is one. A keypress can submit a form from inside a text field, so the
        * element it was aimed at is not always the thing it acted on. Without the key, the trail
-       * cannot distinguish a form-submitting Enter from typing a letter.
+       * cannot distinguish a form-submitting Enter from typing a letter. Bounded, because it is
+       * whatever the model sent.
        */
-      ...(entry.key ? { key: entry.key } : {}),
+      ...(entry.key ? { key: entry.key.slice(0, 64) } : {}),
       // The path, never the contents. A Bot writes down what it was told, so a file body is exactly as
       // sensitive as text typed into a form field, and for the same reason it is not put here.
       ...(entry.filePath ? { file: entry.filePath } : {}),
@@ -1484,11 +1661,35 @@ async function writeApprovalEvent(
   });
 }
 
+/**
+ * The host a rule is matched against, spelled one way.
+ *
+ * `URL.host` keeps a non-default port and a trailing dot, and the shipped money-host pattern is
+ * anchored on `$` — so `kbstar.com.` and `kbstar.com:8443` walked past a rule written for
+ * `kbstar.com` (measured). `normalizeHostname` is the same spelling every other host comparison in
+ * this server uses.
+ */
 function hostOf(url: string): string {
   try {
-    return new URL(url).host;
+    return normalizeHostname(new URL(url).hostname);
   } catch {
     return "";
+  }
+}
+
+/**
+ * The page, as the trail may keep it: the address without its query or fragment.
+ *
+ * A URL is routinely a credential carrier — `?code=…&state=…` on an OAuth return, a password-reset
+ * link, a pre-signed file — and the trail is append-only for a year. The path is what a reader
+ * needs; the query is where the secrets are.
+ */
+function pageForTrail(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url.slice(0, 200);
   }
 }
 

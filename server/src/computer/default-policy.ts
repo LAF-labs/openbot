@@ -111,6 +111,22 @@ export const SECRET_FIELD_WORDS: readonly string[] = [
   "암호",
   "password",
   "passcode",
+  /*
+   * The codes and numbers a checkout or a sign-in asks for beside the password. A one-time code is
+   * `type="text"` and a card number is `type="tel"`, so the type says nothing about either, and
+   * both used to be typed by the Bot and kept verbatim in the thread. They are the person's to
+   * type, through the same door a password goes through.
+   */
+  "인증번호",
+  "인증 번호",
+  "일회용",
+  "otp",
+  "카드번호",
+  "카드 번호",
+  "cvc",
+  "cvv",
+  "보안코드",
+  "보안 코드",
 ];
 
 /**
@@ -205,6 +221,20 @@ export const DEFAULT_ACTION_POLICY: ActionPolicy = {
 };
 
 const SECRET_NAMES = new RegExp(wordPattern(SECRET_FIELD_WORDS), "iu");
+
+/**
+ * Whether a control, by its label or its type, holds something the Bot must never be shown.
+ *
+ * The same two signals `SECRET_FIELD_RULE` refuses typing into, asked of a snapshot element on the
+ * way back rather than of an action on the way in: a field the Bot may not fill is a field whose
+ * contents it may not read either, and the snapshot is where those contents arrive.
+ */
+export function isSecretFieldElement(element: {
+  name: string;
+  type?: string | undefined;
+}): boolean {
+  return element.type === "password" || SECRET_NAMES.test(element.name);
+}
 
 /**
  * Whether the action being refused is a Bot typing into a secret field.

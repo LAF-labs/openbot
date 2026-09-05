@@ -10,6 +10,14 @@ export type ControlState = {
   requested: boolean;
   /** What the Bot is waiting for, by name only. Present means show the masked prompt. */
   secretWanted?: string;
+  /**
+   * Where the value goes, as the SERVER resolved it — never as the Bot described it.
+   *
+   * `secretWanted` is a label the model wrote, and a model steered by a page can write "네이버
+   * 비밀번호" above a box on any site at all. The host and the control's own label come from the
+   * snapshot the server holds, so the masked box can say which page is asking.
+   */
+  secretInto?: { host: string; element: { role: string; name: string } };
 };
 
 async function callControl(

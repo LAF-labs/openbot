@@ -272,6 +272,19 @@ export type ControlState = {
   reason?: string;
   /** The Bot has asked and nobody has taken over yet. */
   requested: boolean;
+  /** What the Bot asked a person to type, in the Bot's own words. Present while a request is open. */
+  secretWanted?: string;
+  /** The field it goes in, as a ref from the snapshot the request named. */
+  secretRef?: string;
+  /**
+   * Where that field is, as THIS SERVER resolved it — never as the Bot described it.
+   *
+   * `secretWanted` is a label the model wrote, and a model steered by a page can write "네이버
+   * 비밀번호" above a box on any site at all. The host and the control's own label are the facts a
+   * person needs beside it, and they come from the snapshot this process took, so the masked box
+   * can say which page is asking.
+   */
+  secretInto?: { host: string; element: { role: string; name: string } };
 };
 
 /**

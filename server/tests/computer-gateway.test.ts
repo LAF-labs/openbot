@@ -8,11 +8,15 @@ import {
   createApprovalRegistry,
   fingerprintOf,
 } from "../src/computer/approvals";
-import type { ComputerClient } from "../src/computer/client";
+import {
+  type ComputerClient,
+  StaleSnapshotError,
+} from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
   createComputerGateway,
+  isTextKey,
 } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
 import {
@@ -698,6 +702,9 @@ describe("the gateway when the boundary asks a person", () => {
         toolName: "computer_click",
         ref: "e9",
         pageUrl: SNAPSHOT.url,
+        // The control the person was shown is part of the binding now (security review): the
+        // registry carries the gateway's own fingerprint, and this is what it holds.
+        element: { role: "button", name: "Submit order" },
       }),
       target: { type: "computer", id: "default" },
     });
@@ -1426,5 +1433,414 @@ describe("when a Bot has an instruction of its own", () => {
     expect(error).toBeInstanceOf(ActionRefusedError);
     expect(calls).toEqual([]);
     expect(asked).toEqual([]);
+  });
+});
+
+/**
+ * THE SECURITY REVIEW'S FLOORS (2026-09): five things measured against the running stack that no
+ * rule an operator writes could have fixed, each pinned here as the sequence that showed it.
+ */
+
+/** A client whose snapshot and page can be set per test, and which records what was asked. */
+function scriptedClient(
+  snapshot: SnapshotResult,
+  landing = "https://example.com/",
+) {
+  const calls: string[] = [];
+  const result = (action: string, url: string) => ({
+    action,
+    url,
+    elapsedMs: 1,
+  });
+  const client = {
+    snapshot: async () => snapshot,
+    read: async () => ({ url: landing, title: "", text: "", truncated: false }),
+    click: async () => {
+      calls.push("click");
+      return result("click", snapshot.url) as never;
+    },
+    type: async () => {
+      calls.push("type");
+      return result("type", snapshot.url) as never;
+    },
+    key: async () => {
+      calls.push("key");
+      return result("key", snapshot.url) as never;
+    },
+    navigate: async () => {
+      calls.push("navigate");
+      return { url: landing, title: "Landed" } as never;
+    },
+    requestSecret: async (input: { label: string; ref: string }) => {
+      calls.push("requestSecret");
+      return {
+        holder: "bot",
+        since: "2026-09-06T00:00:00.000Z",
+        requested: false,
+        secretWanted: input.label,
+        secretRef: input.ref,
+      } as never;
+    },
+    supplySecret: async () => {
+      calls.push("supplySecret");
+      return { characters: 7 } as never;
+    },
+    control: async () => ({
+      holder: "bot",
+      since: "2026-09-06T00:00:00.000Z",
+      requested: false,
+      secretWanted: "PIN",
+      secretRef: "e1",
+    }),
+    forBot() {
+      return client;
+    },
+  } as unknown as ComputerClient;
+  return { client, calls };
+}
+
+function scripted(
+  policy: ActionPolicy,
+  snapshot: SnapshotResult,
+  landing?: string,
+) {
+  const { client, calls } = scriptedClient(snapshot, landing);
+  const { store, rows } = fakeAudit();
+  const approvals = createApprovalRegistry();
+  const gateway = createComputerGateway({
+    client,
+    auditStore: store,
+    policy: () => policy,
+    approvals,
+    standing: createStandingApprovalStore(),
+  });
+  return { gateway, approvals, calls, rows };
+}
+
+describe("a page the browser has left", () => {
+  /*
+   * THE CACHE WAS NEVER INVALIDATED. `snapshots.set` ran in exactly one place — `snapshot()` — and
+   * nothing else touched it, so `page.host` described whatever page was last SNAPSHOTTED, however
+   * many pages ago that was. Measured: snapshot on example.com, navigate to a bank, press Enter
+   * with no ref — the money-host rule looked at `example.com` and let it through.
+   */
+  // About the keypress, not the navigation: for a navigation `page` is the destination, which the
+  // shipped rules judge on their own and which is not what this is about.
+  const MONEY = {
+    ...PERMISSIVE,
+    ask: ['tool.name == "computer_key" && page.host == "obank.kbstar.com"'],
+  };
+
+  test("an action after a navigation is blind until the Bot looks again", async () => {
+    const { gateway, calls, rows } = scripted(
+      MONEY,
+      SNAPSHOT,
+      "https://obank.kbstar.com/transfer",
+    );
+    await gateway.snapshot("default");
+    await gateway.navigate(
+      "default",
+      "bot-1",
+      ACTOR,
+      "https://obank.kbstar.com/transfer",
+    );
+
+    const refusal = (await gateway
+      .key("default", "bot-1", ACTOR, { key: "Enter", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionRefusedError;
+
+    expect(refusal).toBeInstanceOf(ActionRefusedError);
+    expect(refusal.code).toBe("laf:blind_action");
+    expect(calls).toEqual(["navigate"]);
+    // The row about the refusal already says where the browser actually was.
+    const refused = rows.find(
+      (row) => row.eventType === "computer.action_refused",
+    );
+    expect(refused?.payload.page).toBe("https://obank.kbstar.com/transfer");
+  });
+
+  test("and a fresh look makes it decidable again, on the host the browser is really on", async () => {
+    const { gateway, calls } = scripted(
+      MONEY,
+      { ...SNAPSHOT, url: "https://obank.kbstar.com/transfer" },
+      "https://obank.kbstar.com/transfer",
+    );
+    await gateway.snapshot("default");
+
+    // Decided, and decided on the bank: the rule asks rather than the server refusing blind.
+    await expect(
+      gateway.key("default", "bot-1", ACTOR, { key: "Enter", snapshotId: 7 }),
+    ).rejects.toThrow(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
+  });
+
+  test("a read moves the cache too", async () => {
+    // One id for the computer and the Bot, as the routes address them: the cache is keyed by the
+    // computer, and a read names only the Bot.
+    const { gateway, calls } = scripted(
+      MONEY,
+      SNAPSHOT,
+      "https://obank.kbstar.com/",
+    );
+    await gateway.snapshot("bot-1");
+    // The Bot read the page after the browser had followed a link somewhere else.
+    await gateway.read("bot-1");
+
+    await expect(
+      gateway.key("bot-1", "bot-1", ACTOR, { key: "Enter", snapshotId: 7 }),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("a host, spelled the way the rule was written", () => {
+  /*
+   * `URL.host` keeps a non-default port and a trailing dot, and the shipped money-host pattern is
+   * anchored on `$` — so `kbstar.com.` and `kbstar.com:8443` walked past a rule written for
+   * `kbstar.com` (measured).
+   */
+  test.each([
+    ["https://obank.kbstar.com./transfer"],
+    ["https://obank.kbstar.com:8443/transfer"],
+    ["https://OBANK.KBSTAR.COM/transfer"],
+  ])("%s is judged as obank.kbstar.com", async (url) => {
+    const { gateway, calls } = scripted(
+      { ...PERMISSIVE, deny: ['page.host == "obank.kbstar.com"'] },
+      { ...SNAPSHOT, url },
+    );
+    await gateway.snapshot("default");
+
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("a letter pressed as a key", () => {
+  /*
+   * `hunter2`, sent as six keypresses with no ref, used to arrive as six actions on nothing in
+   * particular: no element resolved, so the password-field `deny` matched an empty label and the
+   * value went into the focused box one character at a time.
+   */
+  test("the rule, on its own", () => {
+    for (const key of ["h", "H", "7", "!", "ㅎ", "Shift+a", "Shift+A"]) {
+      expect([key, isTextKey(key)]).toEqual([key, true]);
+    }
+    for (const key of [
+      "Enter",
+      "Tab",
+      "Escape",
+      "ArrowDown",
+      "F5",
+      "Backspace",
+      " ",
+      "Control+a",
+      "Meta+v",
+      "Alt+F4",
+      "ControlOrMeta+c",
+      "",
+    ]) {
+      expect([key, isTextKey(key)]).toEqual([key, false]);
+    }
+  });
+
+  test("is refused as its own fact, under a policy that would have allowed the press", async () => {
+    const { gateway, calls, rows } = scripted(PERMISSIVE, SNAPSHOT);
+    await gateway.snapshot("default");
+
+    const refusal = (await gateway
+      .key("default", "bot-1", ACTOR, { key: "h", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionRefusedError;
+
+    expect(refusal).toBeInstanceOf(ActionRefusedError);
+    expect(refusal.code).toBe("laf:key_is_text");
+    expect(calls).toEqual([]);
+    expect(
+      (rows[0]?.payload.decision as { code?: string } | undefined)?.code,
+    ).toBe("laf:key_is_text");
+
+    // A key by name is still a key.
+    await gateway.key("default", "bot-1", ACTOR, {
+      key: "Enter",
+      snapshotId: 7,
+    });
+    expect(calls).toEqual(["key"]);
+  });
+});
+
+describe("what a snapshot carries into this process", () => {
+  const PASSWORD = "hunter2!SuperSecret";
+  const LOGIN: SnapshotResult = {
+    snapshotId: 3,
+    url: "https://example.com/login?code=FROM-THE-EMAIL&state=abc",
+    title: "Login",
+    truncated: false,
+    elements: [
+      { ref: "e1", role: "textbox", name: "아이디", value: "sajang" },
+      {
+        ref: "e2",
+        role: "textbox",
+        name: "비밀번호",
+        type: "password",
+        value: PASSWORD,
+      },
+      // No type: an older image that never marked it, or a code box that is `type="text"`.
+      { ref: "e3", role: "textbox", name: "인증번호", value: "482913" },
+      { ref: "e4", role: "button", name: "로그인" },
+    ],
+  };
+
+  test("a secret field's value is dropped here too, whatever the computer sent", async () => {
+    const { gateway } = scripted(PERMISSIVE, LOGIN);
+
+    const seen = await gateway.snapshot("default");
+
+    const written = JSON.stringify(seen);
+    expect(written).not.toContain(PASSWORD);
+    expect(written).not.toContain("482913");
+    expect(written).toContain("sajang");
+    expect(seen.elements.find((element) => element.ref === "e2")?.value).toBe(
+      "",
+    );
+  });
+
+  test("the trail keeps the page's path and never its query", async () => {
+    // A URL is routinely a credential carrier — `?code=…` on an OAuth return, a reset link — and the
+    // trail is append-only for a year.
+    const { gateway, rows } = scripted(PERMISSIVE, LOGIN);
+    await gateway.snapshot("default");
+
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e4",
+      snapshotId: 3,
+    });
+
+    expect(rows[0]?.payload.page).toBe("https://example.com/login");
+    expect(JSON.stringify(rows)).not.toContain("FROM-THE-EMAIL");
+  });
+
+  test("a secret request has to name a field on the screen the server holds", async () => {
+    /*
+     * This call used to go straight to the computer with whatever ref and label the model sent,
+     * outside the policy and outside the snapshot: a page that steered the Bot could ask for "네이버
+     * 비밀번호" into a box of its own, and the masked prompt showed the person exactly that.
+     */
+    const { gateway, calls, rows } = scripted(PERMISSIVE, LOGIN);
+    await gateway.snapshot("default");
+
+    const state = await gateway.requestSecret("default", "bot-1", ACTOR, {
+      label: "네이버 비밀번호",
+      ref: "e2",
+      snapshotId: 3,
+    });
+
+    expect(calls).toEqual(["requestSecret"]);
+    // The host and the field are the server's, resolved from its own snapshot.
+    expect(state.secretInto).toEqual({
+      host: "example.com",
+      element: { role: "textbox", name: "비밀번호" },
+    });
+    expect((await gateway.control("default")).secretInto).toEqual(
+      state.secretInto,
+    );
+    // The row says which field on which host, beside the label the model wrote.
+    const requested = rows.find(
+      (row) => row.eventType === "computer.secret_requested",
+    );
+    expect(requested?.payload.reason).toBe(
+      '네이버 비밀번호 (into textbox "비밀번호" on example.com)',
+    );
+
+    // Supplying it clears the target, so a stale one cannot describe a later request.
+    await gateway.supplySecret("default", "bot-1", ACTOR, "hunter2");
+    expect((await gateway.control("default")).secretInto).toBeUndefined();
+  });
+
+  test("a ref that is a button, or nothing, is refused with a row and reaches no computer", async () => {
+    const { gateway, calls, rows } = scripted(PERMISSIVE, LOGIN);
+    await gateway.snapshot("default");
+
+    for (const ref of ["e4", "e99"]) {
+      const refusal = (await gateway
+        .requestSecret("default", "bot-1", ACTOR, {
+          label: "PIN",
+          ref,
+          snapshotId: 3,
+        })
+        .catch((caught: unknown) => caught)) as ActionRefusedError;
+      expect(refusal).toBeInstanceOf(ActionRefusedError);
+      expect(refusal.code).toBe("laf:secret_target_not_a_field");
+    }
+    expect(calls).toEqual([]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_refused",
+      "computer.action_refused",
+    ]);
+  });
+
+  test("a ref from a snapshot the server no longer holds is stale, not resolved", async () => {
+    const { gateway, calls } = scripted(PERMISSIVE, LOGIN);
+    await gateway.snapshot("default");
+
+    await expect(
+      gateway.requestSecret("default", "bot-1", ACTOR, {
+        label: "PIN",
+        ref: "e2",
+        snapshotId: 2,
+      }),
+    ).rejects.toThrow(StaleSnapshotError);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("an answer bound to the control it was given for", () => {
+  /*
+   * A ref is an ordinal Playwright mints per snapshot, and a page that re-renders in place keeps
+   * its URL while handing `e9` to a different control. The fingerprint used to stop at the ref, so
+   * "Place order" and whatever `e9` became were bound only by that ordinal staying put.
+   */
+  test("is not spendable once the ref names something else", async () => {
+    const rerendered: SnapshotResult = {
+      ...SNAPSHOT,
+      elements: [
+        { ref: "e1", role: "input", name: "Customer name:", type: "text" },
+        { ref: "e9", role: "button", name: "Delete account" },
+      ],
+    };
+    let current = SNAPSHOT;
+    const { client, calls } = scriptedClient(SNAPSHOT);
+    (
+      client as unknown as { snapshot: () => Promise<SnapshotResult> }
+    ).snapshot = async () => current;
+    const { store } = fakeAudit();
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => ({ ...PERMISSIVE, ask: ["true"] }),
+      approvals,
+      standing: createStandingApprovalStore(),
+    });
+    await gateway.snapshot("default");
+    const asked = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+
+    current = rerendered;
+    await gateway.snapshot("default");
+
+    await expect(
+      gateway.click(
+        "default",
+        "bot-1",
+        ACTOR,
+        { ref: "e9", snapshotId: 7 },
+        undefined,
+        asked.approvalId,
+      ),
+    ).rejects.toThrow(ActionNeedsApprovalError);
+    expect(calls).toEqual([]);
   });
 });

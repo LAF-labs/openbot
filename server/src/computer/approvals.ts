@@ -73,6 +73,16 @@ export type ApprovalSubject = {
   filePath?: string | undefined;
   pageUrl?: string | undefined;
   /**
+   * The control the ref resolved to, as the server saw it when the question was asked.
+   *
+   * A ref is an ordinal Playwright mints per snapshot — `e13` — and a page that re-renders in place
+   * keeps its URL while handing `e13` to a different control. The fingerprint used to stop at the
+   * ref, so the thing the person was shown ("Place order") and the thing the approval could be spent
+   * on were bound only by that ordinal staying put, which on a page an attacker writes it need not.
+   * The role and the label are what the person actually read; they go into the hash.
+   */
+  element?: { role: string; name: string } | undefined;
+  /**
    * The arguments a tool call carries, for the calls whose whole meaning is in them.
    *
    * A browser action is identified by the thing it touches: a ref, a key, a path. A call to somebody
@@ -290,6 +300,12 @@ export function fingerprintOf(subject: ApprovalSubject): string {
         subject.filePath ?? "",
         subject.pageUrl ?? "",
         subject.arguments ? canonical(subject.arguments) : "",
+        // The control itself, where the server resolved one: a page that re-renders in place keeps
+        // its URL while handing the same ref to a different button, and the ref alone would let an
+        // answer for "Place order" be spent on whatever `e13` became.
+        subject.element
+          ? `${subject.element.role}\u0001${subject.element.name}`
+          : "",
       ].join("\u0000"),
     )
     .digest("hex");

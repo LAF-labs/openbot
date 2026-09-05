@@ -119,6 +119,13 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:use_request_secret":
     "비밀번호 칸이라 네가 값을 넣을 수 없다. 값을 어디서든 알아내려 하지 말고, computer_request_secret으로 사람이 직접 입력하게 해라.",
 
+  // 글자 하나를 키 이름처럼 눌러서 칸을 채우는 것. 그 길로는 비밀번호 칸의 규칙이 보이지 않았다.
+  "laf:key_is_text":
+    "computer_key는 Enter, Tab, Escape 같은 키 이름만 누른다. 글자를 넣으려면 computer_type을 쓰고, 비밀번호나 인증번호라면 computer_request_secret으로 사람이 입력하게 해라.",
+
+  "laf:secret_target_not_a_field":
+    "그 ref는 값을 입력하는 칸이 아니다. computer_snapshot을 새로 찍고, 비밀이 들어갈 입력 칸의 ref로 다시 요청해라.",
+
   "laf:approval_did_not_fit":
     "허용은 받았지만 그 답이 지금 하려는 호출과 맞지 않아서 일어나지 않았다. 같은 호출을 계속 반복하지 말고, 무엇이 막혔는지 말해라.",
 

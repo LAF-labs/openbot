@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseAriaSnapshot, parseDescriptor } from "../src/aria-snapshot";
+import {
+  isSecretLabel,
+  parseAriaSnapshot,
+  parseDescriptor,
+} from "../src/aria-snapshot";
 
 /**
  * The parser, tested against captured Playwright output.
@@ -249,5 +253,94 @@ describe("parseDescriptor", () => {
   test("junk yields nothing rather than a half-built descriptor", () => {
     expect(parseDescriptor("")).toBeNull();
     expect(parseDescriptor("   ")).toBeNull();
+  });
+});
+
+/**
+ * THE SNAPSHOT USED TO HAND THE MODEL EVERY PASSWORD ON THE PAGE.
+ *
+ * Playwright's `mode: "ai"` tree puts an input's current value into the node, password boxes
+ * included (measured: `- textbox "비밀번호" [ref=e2]: hunter2!SuperSecret`), and `toElement` copied
+ * it onto the element it was about to mark `type: "password"`. So `computer_request_secret` — whose
+ * whole promise is that the person types the value and the model never sees it — was undone by the
+ * very next `computer_snapshot`, which the tool results tell the Bot to take.
+ *
+ * Asserted on the whole serialised result, not on one field: a value that leaked into a name or a
+ * sibling would pass a narrower assertion and still be a password in a transcript.
+ */
+describe("what a secret field's value becomes", () => {
+  const PASSWORD = "hunter2!SuperSecret";
+  const OTP = "482913";
+  const CARD = "5312-4400-1234-9876";
+  const LOGIN = `- generic [ref=e1]:
+  - textbox "아이디" [ref=e2]: sajang@example.test
+  - textbox "비밀번호" [ref=e3]: ${PASSWORD}
+  - textbox "인증번호 6자리" [ref=e4]: ${OTP}
+  - textbox "카드 번호" [ref=e5]: ${CARD}
+  - textbox "Password" [ref=e6]: ${PASSWORD}
+  - button "로그인" [ref=e7]`;
+
+  test("a password box the DOM marked loses its value and keeps its place", () => {
+    const { elements } = parseAriaSnapshot(LOGIN, ["비밀번호"]);
+    const marked = elements.find((element) => element.ref === "e3");
+    expect(marked?.type).toBe("password");
+    // Empty rather than absent: "there is a value here and it is not yours" is what the Bot needs to
+    // know to press 로그인 rather than ask for it again.
+    expect(marked?.value).toBe("");
+    expect(JSON.stringify(elements)).not.toContain(PASSWORD);
+  });
+
+  test("a field the DOM could not mark is judged by its label", () => {
+    // A one-time code is `type="text"` and a card number is `type="tel"`, so no password label
+    // arrives for either — and both used to be handed to the model verbatim.
+    const written = JSON.stringify(parseAriaSnapshot(LOGIN, []).elements);
+    expect(written).not.toContain(OTP);
+    expect(written).not.toContain(CARD);
+    expect(written).not.toContain(PASSWORD);
+    // The username is not a secret and stays, which is the proof that the rule is about the label
+    // rather than about every textbox on a login form.
+    expect(written).toContain("sajang@example.test");
+  });
+
+  test("a secret field's value is dropped before the list is cut", () => {
+    // The limit test above cuts the list; this pins that the cut never keeps a value the rule
+    // would have dropped, because the two happen in the same `push`.
+    const many = Array.from(
+      { length: 5 },
+      (_, index) =>
+        `- textbox "비밀번호 ${index}" [ref=e${index}]: ${PASSWORD}${index}`,
+    ).join("\n");
+    expect(JSON.stringify(parseAriaSnapshot(many, []))).not.toContain(PASSWORD);
+  });
+
+  test("the labels that mean a secret, and the ones that do not", () => {
+    for (const label of [
+      "비밀번호",
+      "비밀 번호 확인",
+      "암호",
+      "Password",
+      "PASSCODE",
+      "인증번호 6자리",
+      "인증 번호",
+      "일회용 비밀번호",
+      "OTP",
+      "카드번호",
+      "카드 번호",
+      "CVC",
+      "cvv",
+      "보안코드",
+      "보안 코드",
+    ]) {
+      expect([label, isSecretLabel(label)]).toEqual([label, true]);
+    }
+    for (const label of [
+      "아이디",
+      "Customer name:",
+      "검색",
+      "주문번호",
+      "우편번호",
+    ]) {
+      expect([label, isSecretLabel(label)]).toEqual([label, false]);
+    }
   });
 });

@@ -431,6 +431,18 @@ export function ComputerView({
             <label className="block" htmlFor={secretFieldId}>
               <span className="font-medium">{t("The Bot needs")} </span>
               <span>{control.secretWanted}</span>
+              {control.secretInto ? (
+                // The page and the field the server resolved, beside the Bot's own words for
+                // what it wants: the two facts a person needs to tell a login box from a box a
+                // page told the Bot to point at.
+                <span className="text-muted-foreground">
+                  {" · "}
+                  {control.secretInto.element.name || control.secretInto.host}
+                  {control.secretInto.element.name
+                    ? ` · ${control.secretInto.host}`
+                    : ""}
+                </span>
+              ) : null}
             </label>
             <div className="mt-1.5 flex gap-2">
               <input
