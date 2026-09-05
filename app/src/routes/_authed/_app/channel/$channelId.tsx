@@ -200,9 +200,14 @@ function RouteComponent() {
                 ease: EASE_OUT,
               }}
             >
+              {/*
+               * 24, not 20. A generated face carries a silhouette and an accessory as well as a
+               * colour, and at 20 the accessory is three pixels of noise — measured beside the
+               * 14px title it sits next to, 24 is where the shape starts reading as a shape.
+               */}
               <ChannelAvatar
                 participantIds={channel.data?.agentIds ?? []}
-                size={20}
+                size={24}
               />
             </motion.div>
             <motion.span

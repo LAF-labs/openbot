@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { MASCOT_ART } from "../src/components/agents/mascot-art";
+import {
+  BOT_AVATAR_PALETTES,
+  botAvatarParams,
+  botAvatarSeed,
+} from "../src/lib/avatar/bot-avatar";
 import {
   AGENT_PRESETS,
   WORK_PATTERNS,
@@ -52,11 +56,43 @@ describe("the presets", () => {
     expect(new Set(seeds).size).toBe(seeds.length);
   });
 
-  test("every face is one that exists", () => {
-    const unknown = AGENT_PRESETS.filter(
-      (preset) => !(preset.avatarSeed in MASCOT_ART),
+  /**
+   * WRITTEN IN THE GRAMMAR, NOT MERELY HASHABLE.
+   *
+   * Every string resolves to a face — that is the point of the fallback — so "it renders" says
+   * nothing here. What a preset promises is a face somebody CHOSE, and the only evidence of that is
+   * that the seed survives a round trip through the parser unchanged. A typo would still draw
+   * something, and it would be a face nobody picked.
+   */
+  test("every face is one that was chosen rather than one that was hashed", () => {
+    const drifted = AGENT_PRESETS.filter(
+      (preset) =>
+        botAvatarSeed(botAvatarParams(preset.avatarSeed)) !== preset.avatarSeed,
     ).map((preset) => `${preset.id} → ${preset.avatarSeed}`);
-    expect(unknown).toEqual([]);
+    expect(drifted).toEqual([]);
+  });
+
+  /**
+   * ONE COLOUR PER PATTERN.
+   *
+   * `pickSuggestions` deals one preset per pattern, so a hand is one card of each colour — which is
+   * what lets somebody see that six suggestions are six kinds of work before they have read a word
+   * of any of them. Two patterns sharing a palette quietly undoes that.
+   */
+  test("a work pattern's four presets share one colour, and no two patterns share it", () => {
+    const byPattern = new Map<string, Set<number>>();
+    for (const preset of AGENT_PRESETS) {
+      const palettes = byPattern.get(preset.pattern) ?? new Set<number>();
+      palettes.add(botAvatarParams(preset.avatarSeed).palette);
+      byPattern.set(preset.pattern, palettes);
+    }
+    const spread = [...byPattern].filter(([, set]) => set.size !== 1);
+    expect(spread.map(([pattern]) => pattern)).toEqual([]);
+
+    const used = [...byPattern.values()].map((set) => [...set][0]);
+    expect(new Set(used).size).toBe(used.length);
+    expect(used.every((index) => index !== undefined)).toBe(true);
+    expect(BOT_AVATAR_PALETTES.length).toBeGreaterThanOrEqual(used.length);
   });
 
   /**

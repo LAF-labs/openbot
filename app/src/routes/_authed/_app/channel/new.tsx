@@ -3,8 +3,8 @@ import { IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Mascot } from "@/components/agents/mascot";
 import { RosterStrip } from "@/components/agents/roster-strip";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   addRecipient,
@@ -179,13 +179,7 @@ function RouteComponent() {
         emptyState={
           chosen ? (
             <div className="flex flex-col items-center gap-3 px-6 text-center">
-              <span className="inline-flex size-20 overflow-hidden rounded-full ring-1 ring-border">
-                <Mascot
-                  className="size-full object-cover"
-                  seed={chosen.avatarSeed}
-                  size={80}
-                />
-              </span>
+              <BotAvatar seed={chosen.avatarSeed} size={80} />
               <div className="flex flex-col gap-0.5">
                 <span className="font-semibold text-[15px]">{chosen.name}</span>
                 {chosen.title ? (

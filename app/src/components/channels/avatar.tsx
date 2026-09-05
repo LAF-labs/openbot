@@ -1,44 +1,43 @@
 import { useQuery } from "@tanstack/react-query";
 import { memo } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 
 /**
  * Memoized roster avatar. Row updates usually change preview/timestamp only, and
  * `use-channel-events` preserves participant id arrays for unchanged rows.
- *
- * `size-full` opts the generated SVG out of ancestor icon selectors such as
- * `[&_svg:not([class*='size-'])]:size-4`.
  */
 /**
  * An agent id, resolved to the face that agent actually wears.
  *
- * A channel row knows who is in it and nothing else about them, so hashing the id straight to a tile
- * would give the same Bot one face in the sidebar and another on its profile — the same Bot, twice,
- * and no way for anybody to know which one is the real one. The roster is already loaded and cached
- * for the page this appears on, so the seed comes from there; before it arrives, or for an id that is
- * not a Bot, the id hashes as it always did and the face settles a moment later.
+ * A channel row knows who is in it and nothing else about them, so hashing the id straight to a
+ * face would give the same Bot one face in the sidebar and another on its profile — the same Bot,
+ * twice, and no way for anybody to know which one is the real one. The roster is already loaded and
+ * cached for the page this appears on, so the seed comes from there.
+ *
+ * TWO ROSTERS, THEN THE ID. A member who has been hidden from the sidebar is not in the visible
+ * list, and a member who has been deleted is in neither — and a group row is exactly where those
+ * two turn up. Reading only the visible roster left them as a grey disc that never resolved: not a
+ * face arriving late, a hole in the row for as long as the room existed. So the hidden roster is
+ * asked as well (the sidebar has usually already fetched it), and an id in neither falls back to
+ * hashing the id itself, which is a stable face rather than an absence.
  */
 function useSeeds(): (agentId: string) => string | undefined {
   const agents = useQuery(agentListQueryOptions());
+  const hidden = useQuery(agentListQueryOptions(true));
   return (agentId) => {
     /*
-     * UNDEFINED WHILE THE ROSTER IS IN FLIGHT, NOT A GUESS. Falling back to hashing the id gave a
+     * UNDEFINED WHILE THE ROSTERS ARE IN FLIGHT, NOT A GUESS. Falling back to hashing the id gave a
      * real, wrong face — every avatar in the app drew somebody else's character for a moment and
      * then swapped. A Bot's face is how people recognise it here; showing the wrong one, however
-     * briefly, is worse than showing none.
+     * briefly, is worse than showing none. The id fallback below is only for an id that both
+     * rosters have ANSWERED about and neither holds.
      */
-    if (!agents.data) return undefined;
-    /*
-     * AND UNDEFINED FOR AN ID THE ROSTER DOES NOT HOLD, for the same reason.
-     *
-     * This used to fall back to hashing the raw id, which produces a real, stable, WRONG face — the
-     * seed a Bot actually wears is not its id, so the character drawn belonged to nobody. It never
-     * showed on a single-Bot row, where the id always resolves; it showed on group rows, whose
-     * members can be hidden, private or deleted and therefore missing from this roster. Exactly the
-     * failure the paragraph above says was removed, still living in the multi-agent path.
-     */
-    return agents.data.find((agent) => agent.id === agentId)?.avatarSeed;
+    if (!agents.data || !hidden.data) return undefined;
+    const found =
+      agents.data.find((agent) => agent.id === agentId) ??
+      hidden.data.find((agent) => agent.id === agentId);
+    return found?.avatarSeed ?? agentId;
   };
 }
 
@@ -66,19 +65,14 @@ export const ChannelAvatar = memo(function ChannelAvatar({
 
   if (channelSize === 1) {
     const seed = seedOf(participantIds[0] ?? "");
-    return (
-      <div style={{ height: size, width: size }}>
-        {seed === undefined ? (
-          // A neutral disc holds the space until the roster says whose face belongs here.
-          <div className="size-full rounded-full bg-muted" />
-        ) : (
-          <Mascot
-            className="size-full rounded-full object-cover"
-            seed={seed}
-            size={size}
-          />
-        )}
-      </div>
+    return seed === undefined ? (
+      // A neutral disc holds the space until the roster says whose face belongs here.
+      <div
+        className="rounded-full bg-muted"
+        style={{ height: size, width: size }}
+      />
+    ) : (
+      <BotAvatar seed={seed} size={size} />
     );
   }
 
@@ -95,7 +89,12 @@ export const ChannelAvatar = memo(function ChannelAvatar({
         return (
           <div
             key={c}
-            className="shrink-0 border-2 border-sidebar rounded-full flex items-center justify-center"
+            /*
+             * The stack overlaps by three quarters, so each face needs a ground of its own or the
+             * three read as one smudge. `bg-sidebar` is where the overwhelming majority of these
+             * are drawn, and it is what the border here used to be for.
+             */
+            className="flex shrink-0 items-center justify-center rounded-full bg-sidebar ring-2 ring-sidebar"
             style={{
               height: tile,
               width: tile,
@@ -105,11 +104,7 @@ export const ChannelAvatar = memo(function ChannelAvatar({
             {seed === undefined ? (
               <div className="size-full rounded-full bg-muted" />
             ) : (
-              <Mascot
-                className="size-full rounded-full object-cover"
-                seed={seed}
-                size={tile}
-              />
+              <BotAvatar className="size-full" seed={seed} size={tile} />
             )}
           </div>
         );

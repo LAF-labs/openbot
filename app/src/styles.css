@@ -358,6 +358,171 @@ body {
 }
 
 /*
+ * A BOT'S FACE, AND WHAT IT IS DOING.
+ *
+ * The avatar doubles as the status light: calm and slightly curious when nothing is happening, eyes
+ * moving when a turn is running, wide with a mark when it has stopped to ask, one settling bounce
+ * when it is finished. `bot-avatar.tsx` puts the state on `data-bot-state` and only when the face is
+ * at least 28px, so a 20px header avatar never flickers.
+ *
+ * `transform-box: fill-box` is the whole reason this is four rules rather than four rules per body
+ * shape: it makes `transform-origin: center` mean the centre of the element's OWN bounding box, so
+ * one keyframe scales the eyes of a pill and of a triangle about their own middles without either
+ * of them knowing where the other's eyes are.
+ *
+ * Translations are in user units, not device pixels — the whole drawing is a 96-unit viewBox scaled
+ * to `size`. 2.5 units is roughly one pixel on a 36px roster face and two and a half on a 96px one,
+ * which is the right way round: the bigger the face, the more movement it can carry without
+ * becoming a distraction.
+ */
+.bot-avatar-body,
+.bot-avatar-eyes,
+.bot-avatar-mark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.bot-avatar[data-bot-state="idle"] .bot-avatar-body {
+  animation: bot-avatar-bob 3.4s var(--sand-ease) infinite;
+}
+
+.bot-avatar[data-bot-state="idle"] .bot-avatar-eyes {
+  animation: bot-avatar-blink 4.2s ease-in-out infinite;
+}
+
+.bot-avatar[data-bot-state="working"] .bot-avatar-body {
+  animation: bot-avatar-pulse 2s ease-in-out infinite;
+}
+
+.bot-avatar[data-bot-state="working"] .bot-avatar-eyes {
+  animation: bot-avatar-glance 1.9s ease-in-out infinite;
+}
+
+.bot-avatar[data-bot-state="blocked"] .bot-avatar-body {
+  animation: bot-avatar-tilt 1.8s ease-in-out infinite;
+}
+
+.bot-avatar[data-bot-state="blocked"] .bot-avatar-mark {
+  animation: bot-avatar-mark-pop 0.9s ease-in-out infinite alternate;
+}
+
+/*
+ * ONE BOUNCE, THEN STILL. `forwards` on a single iteration is what makes "done" an event rather
+ * than a state that keeps announcing itself — a roster where the finished Bots bounce forever is a
+ * roster where finishing stops meaning anything.
+ */
+.bot-avatar[data-bot-state="done"] .bot-avatar-body {
+  animation: bot-avatar-settle 0.75s var(--sand-ease) 1 forwards;
+}
+
+/*
+ * Five phases, because every avatar on a page runs the same keyframes from the same page load, and
+ * five Bots blinking in unison reads as a machine rather than as five colleagues. The delay cannot
+ * be an inline style in this app, so it is one of five classes picked from the Bot's own seed —
+ * stable for a given Bot, and different from its neighbour's most of the time.
+ */
+.bot-avatar-phase-1 .bot-avatar-body,
+.bot-avatar-phase-1 .bot-avatar-eyes {
+  animation-delay: 0.7s;
+}
+
+.bot-avatar-phase-2 .bot-avatar-body,
+.bot-avatar-phase-2 .bot-avatar-eyes {
+  animation-delay: 1.4s;
+}
+
+.bot-avatar-phase-3 .bot-avatar-body,
+.bot-avatar-phase-3 .bot-avatar-eyes {
+  animation-delay: 2.1s;
+}
+
+.bot-avatar-phase-4 .bot-avatar-body,
+.bot-avatar-phase-4 .bot-avatar-eyes {
+  animation-delay: 2.8s;
+}
+
+@keyframes bot-avatar-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+@keyframes bot-avatar-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes bot-avatar-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+@keyframes bot-avatar-glance {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2.5px);
+  }
+  75% {
+    transform: translateX(2.5px);
+  }
+}
+
+@keyframes bot-avatar-tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-4deg);
+  }
+  75% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes bot-avatar-mark-pop {
+  from {
+    transform: scale(0.88);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes bot-avatar-settle {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-5px) scale(1.05);
+  }
+  70% {
+    transform: translateY(1px) scale(0.99);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
  * REDUCED MOTION, ACROSS THE WHOLE SHEET AND NOT JUST THE SIX PLACES THAT REMEMBERED.
  *
  * Every motion/react site in the app asks `useReducedMotion` and behaves. Nothing in CSS did: the
@@ -394,6 +559,17 @@ body {
   .animate-pulse {
     animation: none;
     opacity: 0.65;
+  }
+
+  /*
+   * A face that neither blinks nor bobs is still a face, and blocked still carries its raised brows
+   * and its mark — those are drawn by the component and never by an animation, so the one state
+   * that has something urgent to say still says it here.
+   */
+  .bot-avatar-body,
+  .bot-avatar-eyes,
+  .bot-avatar-mark {
+    animation: none;
   }
 }
 

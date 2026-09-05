@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 
@@ -36,14 +36,18 @@ export function RosterStrip({
             onClick={() => onSelect(agent.id)}
             type="button"
           >
+            {/*
+             * The ring is a circle around a face that is no longer a circle, so it is drawn on a
+             * ground rather than on the drawing: the face keeps its own silhouette inside it.
+             */}
             <span
               className={
-                "inline-flex size-12 overflow-hidden rounded-full ring-offset-2 ring-offset-background transition-all duration-150 group-hover:scale-105" +
+                "inline-flex size-12 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition-all duration-150 group-hover:scale-105" +
                 (chosen ? " ring-2 ring-primary" : " ring-1 ring-border")
               }
             >
-              <Mascot
-                className="size-full object-cover"
+              <BotAvatar
+                className="size-full"
                 seed={agent.avatarSeed}
                 size={48}
               />

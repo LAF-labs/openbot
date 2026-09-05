@@ -1,7 +1,8 @@
 import { IconPin } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import { memo, useEffect, useRef } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { memo, useEffect, useRef, useSyncExternalStore } from "react";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { openQuestions, watchQuestions } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
 
 /**
@@ -64,6 +65,22 @@ export const BotRow = memo(function BotRow({
   }, []);
 
   /*
+   * WHETHER THIS BOT HAS STOPPED TO ASK, subscribed per row rather than computed once for the list.
+   *
+   * The mutations above this row deliberately live at the list level; this does not, because the
+   * list is `bot-sidebar.tsx` and the store is a synchronous module-level Map with no network
+   * behind it — a subscription costs a closure, and a roster is five colleagues, not five hundred.
+   *
+   * It is the questions THIS browser is holding open, which is the only per-Bot blocked signal that
+   * exists: `/api/approvals` is keyed on one Bot at a time, so a roster-wide poll would be one
+   * request per Bot per tick to learn something this tab already knows whenever it is the tab that
+   * ran the turn.
+   */
+  const blocked = useSyncExternalStore(watchQuestions, () =>
+    openQuestions().some((question) => question.botId === agentId),
+  );
+
+  /*
    * THE MEASURED ROW: 54px tall, 10px corners, 8px gap, a 36px face.
    *
    * Not a padding that happens to add up — a fixed height, because the row holds two lines of text
@@ -82,8 +99,16 @@ export const BotRow = memo(function BotRow({
 
   const body = (
     <>
-      {/* A dot, a spinner and a weight are not announced. These are. */}
-      {working ? (
+      {/*
+       * A dot, a posture and a weight are not announced. These are — and blocked is announced even
+       * though the face says it loudly, because a widened eye is exactly the kind of signal a
+       * screen reader cannot pass on.
+       */}
+      {blocked ? (
+        <span className="sr-only" role="status">
+          {t("Waiting for your answer")}
+        </span>
+      ) : working ? (
         <span className="sr-only" role="status">
           {working}
         </span>
@@ -92,30 +117,32 @@ export const BotRow = memo(function BotRow({
       ) : null}
       {/*
        * `relative` and NOT `overflow-hidden` on the outer span: the dot overhangs the face by
-       * design, and clipping the wrapper would slice it in half. The face keeps its own rounding.
+       * design, and clipping the wrapper would slice it in half. The face is not clipped at all any
+       * more — its silhouette IS the identity now, and a squircle inside a `rounded-xl` window is a
+       * squircle with its corners taken off.
        */}
       <span className="relative inline-flex size-9 shrink-0">
-        <Mascot
-          className="size-full overflow-hidden rounded-xl object-cover"
+        {/*
+         * THE SPINNING RING IS GONE, AND THE FACE CARRIES WORK INSTEAD.
+         *
+         * The ring existed because the old avatar was a photograph that could not react to
+         * anything, so "busy" had to be welded to its corner. This face looks up and breathes while
+         * a turn runs and widens its eyes when the Bot has stopped to ask, which is the same
+         * information in the place the eye already is — and it leaves the corner free for the one
+         * thing that is about the CONVERSATION rather than about the Bot.
+         */}
+        <BotAvatar
+          className="size-full"
           seed={avatarSeed}
           size={36}
+          state={working ? "working" : blocked ? "blocked" : "idle"}
         />
         {/*
          * 8px, at the avatar's bottom-right with a 2px inset — the measured corner marker. The ring
          * is the row's own background so the dot reads as sitting on top of the face rather than
          * punched into it.
          */}
-        {/*
-         * Working outranks unread on the corner: they are both true of a Bot that is answering
-         * you right now, and "it is doing something" is the more urgent of the two to see. The
-         * unread dot comes back the moment the run ends.
-         */}
-        {working ? (
-          <span
-            aria-hidden="true"
-            className="absolute right-0 bottom-0 size-3.5 animate-spin rounded-full border-2 border-[var(--sand-fill-success)] border-r-transparent bg-sidebar"
-          />
-        ) : unread ? (
+        {unread ? (
           <span
             aria-hidden="true"
             className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-[var(--sand-fill-accent)] ring-2 ring-sidebar"

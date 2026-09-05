@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { z } from "zod";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
   PageRows,
@@ -217,14 +217,8 @@ function SkillsPage() {
            */}
           {!isPending && !mine?.length ? (
             <div className="flex flex-col items-center gap-3 py-10">
-              <span className="inline-flex size-14 overflow-hidden rounded-full opacity-80">
-                {/* The plainest face in the set: a skill is a note, not a character. */}
-                <Mascot
-                  className="size-full object-cover"
-                  seed="r2c0"
-                  size={56}
-                />
-              </span>
+              {/* The plainest face the generator makes: a skill is a note, not a character. */}
+              <BotAvatar className="opacity-80" seed="f:1.9.0.0" size={56} />
               <p className="text-center text-[13px] text-muted-foreground">
                 {t("No skills yet. Write one and any Bot you own can run it.")}
               </p>

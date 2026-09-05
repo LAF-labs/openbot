@@ -2,7 +2,7 @@ import { IconClockPlay, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -162,13 +162,15 @@ function RoutineRow({ routine }: { routine: Routine }) {
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex items-center gap-3 p-4">
-        <span className="inline-flex size-9 shrink-0 overflow-hidden rounded-full">
-          <Mascot
-            className="size-full object-cover"
-            seed={bot?.avatarSeed ?? routine.agentId}
-            size={36}
-          />
-        </span>
+        {/*
+         * The routine's Bot, and the Bot's id when the roster has not answered yet — a face from
+         * the id is stable and merely not the right one, which beats a hole in the row.
+         */}
+        <BotAvatar
+          className="shrink-0"
+          seed={bot?.avatarSeed ?? routine.agentId}
+          size={36}
+        />
         <button
           aria-expanded={showRuns}
           className="min-w-0 flex-1 text-left"
@@ -611,14 +613,8 @@ function RoutinesPage() {
           ))}
           {routines.data?.length === 0 && !creating ? (
             <div className="flex flex-col items-center gap-3 py-10">
-              <span className="inline-flex size-14 overflow-hidden rounded-full opacity-80">
-                {/* The snail. Nothing in the set says "on a schedule, unhurried" better. */}
-                <Mascot
-                  className="size-full object-cover"
-                  seed="r2c4"
-                  size={56}
-                />
-              </span>
+              {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
+              <BotAvatar className="opacity-80" seed="f:4.3.2.0" size={56} />
               <p className="text-center text-[13px] text-muted-foreground">
                 {t(
                   "No routines yet. Give a Bot something to do every morning.",

@@ -325,8 +325,9 @@ in the comments:
   caller's window and one audit row. And the unhide affordance on the roster.
 
 No code was taken from either. What was taken was a decision each of them had already made well,
-measured against what was here before it was adopted. Bot avatars carry their own attribution in
-[NOTICE](./NOTICE).
+measured against what was here before it was adopted. Bot avatars used to be third-party character
+art and carried their own attribution; they are generated here now
+(`app/src/lib/avatar/bot-avatar.ts`), so nothing in this repository is somebody else's work.
 
 ## Contributing
 

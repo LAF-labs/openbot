@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { Button } from "@/components/ui/button";
 import { type SignInProvider, signInWithProvider } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
@@ -141,26 +141,22 @@ function SignScreen() {
          *
          * The only brand mark on the way into this product was a generic pink-violet-magenta mesh
          * gradient — four hues from no palette this app has, on the one screen that sets a first
-         * impression, in a product whose whole identity is a roster of drawn characters. These are
-         * the three Bots a new account is given, at the size they appear on Home, which is the next
-         * thing the person sees once they are through this screen.
+         * impression, in a product whose whole identity is a roster of faces. Three of them, at the
+         * size they appear on Home, which is the next thing the person sees once they are through
+         * this screen.
+         *
+         * Fixed seeds, and no accessories on any of the three: a brand mark that shuffled itself on
+         * every load is not a mark, and a hat on the sign-in screen is a joke told to somebody who
+         * has not been introduced yet. The colours are three from opposite ends of the palette so
+         * the mark carries at favicon size.
          */}
         <motion.div
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
-          className="-space-x-3 flex items-center justify-center"
+          className="-space-x-2 flex items-center justify-center"
         >
-          {["r0c4", "r0c1", "r4c2"].map((seed) => (
-            <span
-              className="inline-flex size-12 overflow-hidden rounded-full ring-2 ring-background"
-              key={seed}
-            >
-              <Mascot
-                className="size-full object-cover"
-                seed={seed}
-                size={48}
-              />
-            </span>
+          {["f:0.4.0.0", "f:3.1.1.0", "f:2.6.3.0"].map((seed) => (
+            <BotAvatar key={seed} seed={seed} size={48} />
           ))}
         </motion.div>
         <motion.h1

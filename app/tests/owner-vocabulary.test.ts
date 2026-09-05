@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { MASCOT_TILES } from "../src/components/agents/mascot";
 import { AGENT_REFUSALS } from "../src/lib/agents/mutations";
+import {
+  BOT_AVATAR_ACCESSORIES,
+  BOT_AVATAR_EYES,
+  BOT_AVATAR_PALETTES,
+  BOT_AVATAR_SHAPES,
+} from "../src/lib/avatar/bot-avatar";
 import { AGENT_PRESETS, WORK_PATTERNS } from "../src/lib/agents/presets";
 import { ko } from "../src/lib/i18n-ko";
 import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
@@ -145,9 +150,21 @@ function ownerKorean(): [string, string][] {
       if (korean) sentences.push([korean, "a refusal table"]);
     }
   }
-  for (const tile of MASCOT_TILES) {
-    const korean = ko[tile.name];
-    if (korean) sentences.push([korean, `mascot: ${tile.id}`]);
+  /*
+   * The face picker's three rows and the eye styles behind the shuffle. Every one of these is read
+   * through `t(option.name)`, which the regex above cannot see — the same blind spot the presets
+   * have, and the same answer.
+   */
+  for (const table of [
+    BOT_AVATAR_SHAPES,
+    BOT_AVATAR_PALETTES,
+    BOT_AVATAR_EYES,
+    BOT_AVATAR_ACCESSORIES,
+  ]) {
+    for (const option of table) {
+      const korean = ko[option.name];
+      if (korean) sentences.push([korean, `bot avatar: ${option.id}`]);
+    }
   }
   return sentences;
 }

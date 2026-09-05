@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Mascot } from "@/components/agents/mascot";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { Button } from "@/components/ui/button";
@@ -113,10 +113,8 @@ function RouteComponent() {
        */}
       {!isPending && !isError && roster.length === 0 ? (
         <div className="mt-7 flex flex-col items-center gap-3">
-          <span className="inline-flex size-12 overflow-hidden rounded-full opacity-80">
-            {/* The axolotl again: the one that has not grown up yet. */}
-            <Mascot className="size-full object-cover" seed="r4c5" size={48} />
-          </span>
+          {/* One face where a roster would be, so the empty screen still has somebody on it. */}
+          <BotAvatar className="opacity-80" seed="f:0.0.1.0" size={48} />
           <p className="text-center text-[13px] text-muted-foreground">
             {t("No Bots on your team yet.")}
           </p>
