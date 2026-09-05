@@ -219,3 +219,63 @@ describe("one Bot asking another", () => {
     expect(answer).toBe("The coworker finished without saying anything.");
   });
 });
+
+/*
+ * ONE HOP, AS A RULE AND NOT ONLY AS A PROPERTY OF TODAY'S CODE.
+ *
+ * A coworker runs with no tools, so it cannot ask a third coworker and cannot reach a boundary —
+ * by construction. These pin the rule the construction was relying on: a question from inside a
+ * delegated turn is refused with a fact, the trail records the attempt, and the run a coworker
+ * gets is told it is delegated so the other half of the rule (`settle.ts`) has something to read.
+ */
+describe("how deep a question may go", () => {
+  test("a coworker answering a question cannot ask a third: refused with a fact, on the trail", async () => {
+    const third = fakeAgent("I would have answered.");
+    const { call, rows } = harness({ third: third.agent });
+
+    const outcome = call.ask(ACTOR, "second", "third", "and you?", {
+      depth: 1,
+    });
+    await expect(outcome).rejects.toMatchObject({
+      status: 403,
+      code: "laf:delegation_too_deep",
+    });
+    // Never reached: a refusal that ran the coworker anyway would be a refusal in name only.
+    expect(third.question()).toBeUndefined();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.payload).toMatchObject({
+      ok: false,
+      refusal: "laf:delegation_too_deep",
+      caller: "second",
+      depth: 1,
+    });
+  });
+
+  test("a Bot a person is driving asks at depth 0, and the coworker runs at depth 1", async () => {
+    let forwarded: unknown;
+    const agent = {
+      setMessages() {},
+      async runAgent(parameters?: { forwardedProps?: unknown }) {
+        forwarded = parameters?.forwardedProps;
+        return {
+          result: undefined,
+          newMessages: [{ id: "m1", role: "assistant", content: "ok" }],
+        };
+      },
+    } as unknown as AbstractAgent;
+    const { call } = harness({ knowledge: agent });
+
+    await call.ask(ACTOR, "general-assistant", "knowledge", "what is Q3?");
+    expect(forwarded).toEqual({
+      mode: "coworker",
+      delegation: { callerId: "general-assistant", depth: 1 },
+    });
+  });
+
+  test("the depth outranks every other check: an empty question from a delegate is still the chain", async () => {
+    const { call } = harness({});
+    await expect(
+      call.ask(ACTOR, "second", "third", "   ", { depth: 2 }),
+    ).rejects.toMatchObject({ code: "laf:delegation_too_deep" });
+  });
+});

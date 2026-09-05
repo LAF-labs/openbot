@@ -2000,4 +2000,14 @@ export const ko: Record<string, string> = {
   // 감사 표: 방에서 봇 하나가 차례를 가진 기록 — 몇 번째 바퀴였고, 왜 말했고, 무엇이 됐는지.
   "A Bot took its turn in a room": "봇이 방에서 차례를 가짐",
   "A room turn": "방의 차례",
+
+  /*
+   * 봇이 봇에게 묻는 길의 거절 두 가지. 대신 답하는 봇은 사람을 부를 수 없고(그 턴은 아무도
+   * 보고 있지 않다), 셋째 봇에게 넘길 수도 없다(한 단계가 전부다). 서버는 코드만 보내고 문장은
+   * 여기서 쓴다.
+   */
+  "A Bot answering for another Bot cannot ask a third.":
+    "다른 봇 대신 답하는 봇은 또 다른 봇에게 물을 수 없습니다.",
+  "That needed your say-so, and a Bot answering for another cannot ask you. Ask the Bot directly.":
+    "그 일은 허락이 필요한데, 다른 봇 대신 답하는 봇은 물어볼 수 없습니다. 그 봇에게 직접 시켜 주세요.",
 };

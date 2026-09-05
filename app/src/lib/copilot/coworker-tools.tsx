@@ -19,6 +19,25 @@ import { useActiveBotHolder } from "./active-bot";
  * The model addresses coworkers by name because names are what it can see in the conversation; the
  * handler resolves the name against the roster it already has cached and sends the id.
  */
+/**
+ * The boundary's refusals of a handoff, in the words a person reads on the transcript line.
+ *
+ * Literal `t()` calls so `i18n-coverage.test.ts` sees them. Two codes: a Bot answering for
+ * another tried to ask a third, and an action inside such a turn wanted a person. Anything else
+ * is not the boundary's and keeps the server's sentence.
+ */
+function refusalSaid(code: string | undefined): string | undefined {
+  if (code === "laf:delegation_too_deep") {
+    return t("A Bot answering for another Bot cannot ask a third.");
+  }
+  if (code === "laf:ask_in_delegated_turn") {
+    return t(
+      "That needed your say-so, and a Bot answering for another cannot ask you. Ask the Bot directly.",
+    );
+  }
+  return undefined;
+}
+
 export function CoworkerTools() {
   const bot = useActiveBotHolder();
   const agents = useQuery(agentListQueryOptions());
@@ -112,12 +131,17 @@ export function CoworkerTools() {
         const body = (await response.json().catch(() => null)) as {
           answer?: string;
           error?: string;
+          /** The boundary's fact, beside the sentence, where the refusal was the boundary's. */
+          code?: string;
         } | null;
         if (!response.ok) {
           remember(call.toolCall?.id, {
             coworker: target.name,
             failed: true,
-            answer: body?.error ?? response.statusText,
+            // The surface's own words where the refusal carries a code it knows; the server's
+            // sentence otherwise, as before.
+            answer:
+              refusalSaid(body?.code) ?? body?.error ?? response.statusText,
           });
           // The reason goes back to the model as text, so it can tell the person or try another way,
           // rather than as a thrown error the runtime would flatten into noise.

@@ -414,23 +414,38 @@ export function createAgentRoutes(
     const body = (await context.req.json().catch(() => null)) as {
       message?: unknown;
       from?: unknown;
+      depth?: unknown;
     } | null;
     const message = typeof body?.message === "string" ? body.message : "";
     const from = typeof body?.from === "string" ? body.from : "";
     if (!from) {
       return context.json({ error: "Say which Bot is asking." }, 400);
     }
+    /*
+     * How deep the asker already is. The browser's tool never says, and is depth 0: a Bot a
+     * person is driving. A caller that is itself a delegated run says so and is refused — a
+     * claim of depth can only ever refuse the claimant, so it is not a thing worth lying about.
+     */
+    const depth =
+      typeof body?.depth === "number" && Number.isFinite(body.depth)
+        ? Math.max(0, Math.floor(body.depth))
+        : 0;
     try {
       const answer = await coworkerCall.ask(
         context.var.actor,
         from,
         context.req.param("agentId"),
         message,
+        { depth },
       );
       return context.json({ answer });
     } catch (error) {
       if (error instanceof CoworkerCallError) {
-        return context.json({ error: error.message }, error.status);
+        // The code beside the sentence, where there is one: the surface owns the Korean for it.
+        return context.json(
+          { error: error.message, ...(error.code ? { code: error.code } : {}) },
+          error.status,
+        );
       }
       throw error;
     }

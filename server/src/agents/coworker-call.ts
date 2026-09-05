@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AuditStore } from "../audit";
+import type { FactCode } from "../computer/policy";
 import type { RunLedger } from "../runner/run-ledger";
 import type { AgentActor } from "./profile-types";
 
@@ -14,6 +15,15 @@ import type { AgentActor } from "./profile-types";
  * recursion guard: a coworker answering a question cannot ask a third coworker, because ask_coworker
  * is a frontend tool and there is no frontend in this room. One hop, by construction.
  *
+ * AND ONE HOP BY RULE, since 2026-09-06. "By construction" is a property of the code as it stands
+ * today; the day a coworker's run is handed a toolkit — a routine's, a room's — the construction
+ * changes and nothing would say so. So the depth is a fact the call carries: a question asked from
+ * inside a delegated turn is refused with `laf:delegation_too_deep`, and the run the coworker gets
+ * is told it is delegated (`forwardedProps.delegation`). The other half of the same rule lives in
+ * `computer/settle.ts`: an action inside a delegated turn that wants a person is refused with
+ * `laf:ask_in_delegated_turn` rather than asked in front of nobody, or quietly waved through by the
+ * Bot's own instruction. Never silently allowed — that is the whole of it.
+ *
  * What stays separate stays separate: the coworker's answer comes from its own role and knowledge,
  * the caller's approvals and policy identity are not lent to it, and the exchange writes one audit
  * row whichever way it ends.
@@ -23,12 +33,39 @@ export class CoworkerCallError extends Error {
   constructor(
     message: string,
     /** Mirrors HTTP so the route does not re-derive it from prose. */
-    readonly status: 400 | 404 | 502 | 504,
+    readonly status: 400 | 403 | 404 | 502 | 504,
+    /**
+     * The fact, where the refusal is one the surfaces phrase for themselves.
+     *
+     * Most of these errors are sentences a model acts on and a route passes through; this one is
+     * the boundary's, and a Korean screen owes its reader its own words for it (`i18n-ko.ts`)
+     * rather than this server's English.
+     */
+    readonly code?: FactCode,
   ) {
     super(message);
     this.name = "CoworkerCallError";
   }
 }
+
+/**
+ * How many Bots deep a question may go. One: the person's Bot asks a coworker, and that is all.
+ *
+ * A coworker asking a third would be a turn nobody is watching asking for a turn nobody is
+ * watching, and every boundary in the second one — approvals, allowances, the instruction — would
+ * be answering to a Bot. The reference (Hermes) caps it the same way and for the same reason.
+ */
+export const MAX_DELEGATION_DEPTH = 1;
+
+/**
+ * Where a question is being asked from.
+ *
+ * `depth` is how many delegated turns deep the ASKER already is: 0 for a Bot driven by a person,
+ * 1 for a coworker answering one. The coworker asked at depth 0 runs at depth 1.
+ */
+export type DelegationOrigin = {
+  depth: number;
+};
 
 /**
  * How long a coworker gets to answer.
@@ -67,6 +104,16 @@ export async function runAgentOnce(
   target: AbstractAgent,
   message: string,
   timeoutMs: number,
+  /**
+   * That this run is one Bot answering another, and which. Absent for a routine's fallback run,
+   * which is nobody's delegate.
+   *
+   * Carried on the run rather than inferred from the mode, because the mode says what prompt to
+   * compose and this says what the run may not do: reach a person. Nothing in agent-bot reads it
+   * today — the run has no tools, so there is nothing for it to gate — and it is on the wire so
+   * that the day something does, the fact is already there.
+   */
+  delegation?: { callerId: string; depth: number },
 ): Promise<string> {
   target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
 
@@ -79,7 +126,12 @@ export async function runAgentOnce(
      * answer honest here ("say what would have to be checked rather than pretending you checked
      * it") are in `shared/prompt/mode/coworker.ko.ts`, and this is what selects them.
      */
-    target.runAgent({ forwardedProps: { mode: "coworker" } }),
+    target.runAgent({
+      forwardedProps: {
+        mode: "coworker",
+        ...(delegation ? { delegation } : {}),
+      },
+    }),
     new Promise<never>((_, reject) => {
       setTimeout(
         () =>
@@ -176,8 +228,27 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
       callerId: string,
       targetId: string,
       message: string,
+      /** Where the question comes from. Absent is a Bot a person is driving: depth 0. */
+      origin: DelegationOrigin = { depth: 0 },
     ): Promise<string> {
       const question = message.trim();
+      /*
+       * ONE HOP. Checked first, before the question is even read: a coworker answering a question
+       * asking a third is refused whatever it asks, and the trail says a refusal happened where a
+       * chain was attempted. See the module comment.
+       */
+      if (origin.depth >= MAX_DELEGATION_DEPTH) {
+        await record(actor.id, callerId, targetId, {
+          ok: false,
+          refusal: "laf:delegation_too_deep",
+          depth: origin.depth,
+        });
+        throw new CoworkerCallError(
+          "A coworker answering a question cannot ask another coworker. Answer with what you know, and say what a colleague would have to be asked.",
+          403,
+          "laf:delegation_too_deep",
+        );
+      }
       if (!question) {
         throw new CoworkerCallError("Ask the coworker something.", 400);
       }
@@ -217,7 +288,10 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
 
       let answer: string;
       try {
-        answer = await runAgentOnce(target, question, timeoutMs);
+        answer = await runAgentOnce(target, question, timeoutMs, {
+          callerId,
+          depth: origin.depth + 1,
+        });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         if (runId) await options.ledger?.finish(runId, reason).catch(() => {});
