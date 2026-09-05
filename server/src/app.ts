@@ -15,6 +15,11 @@ import {
   requireAdmin,
 } from "./auth/guards";
 import type { OnboardingStore } from "./auth/onboarding";
+import {
+  isOriginExempt,
+  originAllowed,
+  originRefusalBody,
+} from "./auth/origin";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -307,6 +312,29 @@ export function createApp(
      * set `BOT_SEATS_PER_ACCOUNT` to anything else.
      */
     seats: MAX_BOTS_PER_COMPUTER,
+  });
+
+  /*
+   * WHERE A REQUEST THAT CHANGES SOMETHING IS ALLOWED TO HAVE COME FROM.
+   *
+   * FIRST, before every other `/api` route, because a check that runs after a handler has already
+   * done the thing is not a check. Reads are not covered: a cross-site page cannot read the answer
+   * to one, and covering them would refuse the ordinary same-site navigation as well.
+   *
+   * The reason this deployment cannot lean on `SameSite=Lax` is in auth/origin.ts: every customer
+   * of this product is a name under one registrable domain, so all of them are same-site with each
+   * other and the cookie's own default is no boundary between two of them.
+   */
+  app.use("/api/*", async (context, next) => {
+    const method = context.req.method;
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+      return next();
+    }
+    if (isOriginExempt(new URL(context.req.url).pathname)) return next();
+    if (!originAllowed(context.req.raw.headers, config.trustedOrigins)) {
+      return context.json(originRefusalBody, 403);
+    }
+    return next();
   });
 
   app.route("/health", createHealthRoute(healthProbes));
@@ -648,6 +676,8 @@ export function createApp(
         messageTimeReader,
         roomService,
         readThreadMessages,
+        // Where the activity socket may be opened from. The same list every other check reads.
+        config.trustedOrigins,
       ),
     );
   }

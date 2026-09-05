@@ -31,6 +31,16 @@ export type DeploymentConfig = {
    * deployment does not acquire it without being asked.
    */
   agentStallTimeoutMs: number;
+  /**
+   * The origins a browser is allowed to say a state-changing request came from.
+   *
+   * TOP LEVEL, not only under `auth`. It was only ever read as better-auth's own list, so a
+   * deployment with authentication switched off had nowhere to say it — and the check that needs it
+   * most is the one on every other `/api` route, which exists whether or not sign-in does. Both
+   * halves read this one field, so a deployment cannot trust one set of origins for its sign-in and
+   * a different set for everything else. See auth/origin.ts.
+   */
+  trustedOrigins: string[];
   auth?: {
     baseUrl: string;
     secret: string;
@@ -270,6 +280,17 @@ function commaSeparated(environment: Environment, name: string): string[] {
 const PROVIDER_NAMES = ["google", "kakao", "naver"] as const;
 type ProviderName = (typeof PROVIDER_NAMES)[number];
 
+/**
+ * The origins this deployment trusts, read once for everybody who needs them.
+ *
+ * The default is the Vite dev server, which is what a laptop is. A deployment names its own with
+ * `TRUSTED_ORIGINS`; the installed shell loads the deployment's origin, so that is the one to list.
+ */
+function trustedOrigins(environment: Environment): string[] {
+  const configured = commaSeparated(environment, "TRUSTED_ORIGINS");
+  return configured.length > 0 ? configured : ["http://localhost:3000"];
+}
+
 function authConfig(
   environment: Environment,
   providers: Partial<Record<ProviderName, OAuthClient>>,
@@ -369,9 +390,7 @@ function authConfig(
     secret,
     providers: signIn,
     ...(lafOidc ? { lafOidc } : {}),
-    trustedOrigins: commaSeparated(environment, "TRUSTED_ORIGINS").length
-      ? commaSeparated(environment, "TRUSTED_ORIGINS")
-      : ["http://localhost:3000"],
+    trustedOrigins: trustedOrigins(environment),
     initialAdminEmails: commaSeparated(environment, "INITIAL_ADMIN_EMAILS"),
     allowedEmails: commaSeparated(environment, "SIGN_IN_ALLOWED_EMAILS"),
   };
@@ -651,6 +670,7 @@ export function loadConfig(
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../tenant/laf",
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
+    trustedOrigins: trustedOrigins(environment),
     auth: authConfig(environment, providers),
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),

@@ -21,6 +21,7 @@ import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
+import { originRefusalBody, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
 import { createChannelEventHub } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
@@ -1154,6 +1155,21 @@ serve<SocketData>({
     ) {
       if (!config.computer) {
         return new Response("No computer is configured.", { status: 503 });
+      }
+      /*
+       * Where the socket was opened from, checked before anything else and before the session.
+       *
+       * This is the socket a person's clicks and keystrokes travel down, into a browser holding
+       * their real logins. It checked nothing but the cookie — and every deployment of this product
+       * is a name under one registrable domain, so `SameSite=Lax` sends that cookie on a socket
+       * opened from another customer's page. An upgrade with no `Origin` at all is refused too: a
+       * browser always sends one on a handshake, and nothing but a browser drives this.
+       */
+      if (!upgradeOriginAllowed(request.headers, config.trustedOrigins)) {
+        return new Response(JSON.stringify(originRefusalBody), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
       }
       // The session guard, applied by hand because middleware does not run on an upgrade. An
       // unauthenticated socket here would be the whole point of the proxy defeated.

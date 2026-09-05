@@ -9,6 +9,7 @@ import {
 } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
+import { originRefusalBody, upgradeOriginAllowed } from "../auth/origin";
 import type { Database } from "../db/client";
 import {
   agentProfiles,
@@ -874,6 +875,16 @@ export function createChannelRoutes(
   },
   /** The room's transcript, straight out of the snapshot. Absent serves an empty room. */
   readThreadMessages?: (threadId: string) => Promise<unknown[]>,
+  /**
+   * Which origins may open the activity socket. LAST, like everything new here.
+   *
+   * EMPTY REFUSES EVERY UPGRADE, which is the honest degraded behaviour and not an oversight: a
+   * deployment that cannot say which origins it trusts cannot tell one customer's page from
+   * another's, and this product puts every customer under one registrable domain — so `SameSite`
+   * decides nothing between them and the session cookie alone was the whole check. Everything else
+   * on these routes keeps working; only the live feed goes quiet.
+   */
+  trustedOrigins: readonly string[] = [],
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -882,6 +893,20 @@ export function createChannelRoutes(
     routes.get(
       "/events",
       requireUser,
+      /*
+       * Where the socket was opened from, before it is upgraded at all.
+       *
+       * `requireUser` proves who is asking and not where from, and a browser sends the session
+       * cookie on a socket opened by any same-site page — which on this product means any other
+       * customer's deployment. A handshake with no `Origin` is refused too: browsers always send
+       * one, and nothing but a browser opens this.
+       */
+      async (context, next) => {
+        if (!upgradeOriginAllowed(context.req.raw.headers, trustedOrigins)) {
+          return context.json(originRefusalBody, 403);
+        }
+        await next();
+      },
       upgradeWebSocket((context) => {
         // Resolved at upgrade, not per message: the connection belongs to whoever authenticated it,
         // and nothing it later sends can change that.
