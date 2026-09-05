@@ -113,7 +113,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  * field order and day chips, the Skills failed-read state, and the page header the three sibling
  * pages now share.
  *
- *     app                430 tests across 53 files   →   417
+ *     app                459 tests across 55 files   →   445
  *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
@@ -123,7 +123,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 417, roots: ["app"] },
+  { name: "app", floor: 445, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
