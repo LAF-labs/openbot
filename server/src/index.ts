@@ -43,10 +43,12 @@ import {
 } from "./computer/policy-store";
 import { createRepeatDetector } from "./computer/repeat";
 import { createSiteConnectionStore } from "./computer/site-connections";
+import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
 import {
+  botTimeZone,
   type IdentifyActor,
   type IdentifyUser,
   mountCopilotRuntime,
@@ -307,6 +309,15 @@ const computerClient = config.computer
       allowPrivateHosts: config.computer.allowPrivateHosts,
       ...(config.computer.token ? { token: config.computer.token } : {}),
     })
+  : undefined;
+/*
+ * Long tool results go on file on the Bot's computer and reach the model as a preview and a
+ * path (computer/spillover.ts). One for the process, because what is already on file is
+ * remembered here; handed to every run path through the same middleware the prompt goes through.
+ * No computer, nothing to file: the transcript goes as it always did.
+ */
+const resultSpill = computerClient
+  ? createResultSpill(computerClient)
   : undefined;
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
 // administrator can change it while running, and a restart returns to the configured one.
@@ -725,6 +736,8 @@ const coworkerCall = createCoworkerCall({
       () => loadAgentsForActor(actor),
       tenantPackage.model,
       stallGuard,
+      botTimeZone(),
+      resultSpill,
     ),
   auditStore: bootAuditStore,
   ledger: runLedger,
@@ -774,6 +787,8 @@ const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
     () => loadAgentsForActor(actor),
     tenantPackage.model,
     stallGuard,
+    botTimeZone(),
+    resultSpill,
   );
 
 // Instructions on a clock, running through the same server-side path a coworker answer does.
@@ -784,6 +799,8 @@ const routineService = createRoutineService({
       () => loadAgentsForActor(actor),
       tenantPackage.model,
       stallGuard,
+      botTimeZone(),
+      resultSpill,
     ),
   auditStore: bootAuditStore,
   ledger: runLedger,
@@ -828,6 +845,8 @@ const copilotEndpoint = new Hono()
       identifyActor,
       stallGuard,
       lafRunner,
+      "/api/copilotkit",
+      resultSpill,
     ),
   );
 

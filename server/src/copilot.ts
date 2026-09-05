@@ -2,6 +2,7 @@ import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import type { AgentRunner } from "@copilotkit/runtime/v2";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
+import { textOf } from "../../shared/message-content";
 import {
   composePrompt,
   type PromptMode,
@@ -10,6 +11,7 @@ import {
 } from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
+import type { ResultSpill } from "./computer/spillover";
 
 /**
  * The CopilotKit runtime, in the one mode this product has.
@@ -255,11 +257,13 @@ export function buildAgents(
   stallGuard?: StallGuard,
   /** The clock a Bot is told about. Read from the environment once, at the top of the app. */
   timeZone: string = botTimeZone(),
+  /** Files long tool results on the Bot's computer. Absent — no computer — forwards them whole. */
+  spill?: ResultSpill,
 ): Record<string, AbstractAgent> {
   return Object.fromEntries(
     agents.map((agent) => [
       agent.id,
-      buildAgent(agent, model, stallGuard, timeZone),
+      buildAgent(agent, model, stallGuard, timeZone, spill),
     ]),
   );
 }
@@ -269,6 +273,7 @@ function buildAgent(
   model: RuntimeModel,
   stallGuard: StallGuard | undefined,
   timeZone: string,
+  spill: ResultSpill | undefined,
 ): AbstractAgent {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -276,7 +281,28 @@ function buildAgent(
   return remoteAgentWithPrompt(agent, model.supportsEffort, {
     timeZone,
     ...(stallGuard ? { stallGuard } : {}),
+    ...(spill ? { spill } : {}),
   });
+}
+
+type ToolResultMessage = Extract<AgentMessage, { role: "tool" }>;
+
+/**
+ * A tool result as the endpoint is shown it: whole, or the head of it and where the whole is.
+ *
+ * Here, in the one middleware every run path goes through, rather than in `agent-bot`: the server
+ * is the process that has the computer, the Bot's id and no credential to mint, and a room turn
+ * or a routine step resends its results through exactly this seam. See computer/spillover.ts for
+ * why the run that received a result still gets all of it.
+ */
+function filedToolResult(
+  message: ToolResultMessage,
+  botId: string,
+  spill: ResultSpill,
+): ToolResultMessage {
+  const text = textOf(message.content);
+  const shown = spill.forModel(botId, message.toolCallId, text);
+  return shown === text ? message : { ...message, content: shown };
 }
 
 /**
@@ -301,9 +327,9 @@ function remoteAgentWithPrompt(
   agent: RegisteredRemoteAgent,
   /** Whether this deployment's model takes an effort setting. See `RuntimeModel.supportsEffort`. */
   supportsEffort: boolean,
-  options: { timeZone: string; stallGuard?: StallGuard },
+  options: { timeZone: string; stallGuard?: StallGuard; spill?: ResultSpill },
 ) {
-  const { timeZone, stallGuard } = options;
+  const { timeZone, stallGuard, spill } = options;
   const remote = new HttpAgent({
     url: agent.endpoint,
     agentId: agent.id,
@@ -329,9 +355,13 @@ function remoteAgentWithPrompt(
       ...input,
       messages: [
         prompt,
-        ...input.messages.filter(
-          (message) => !isSupersededPrompt(message.id, agent.id),
-        ),
+        ...input.messages
+          .filter((message) => !isSupersededPrompt(message.id, agent.id))
+          .map((message) =>
+            spill && message.role === "tool"
+              ? filedToolResult(message, agent.id, spill)
+              : message,
+          ),
       ],
       /*
        * WHAT THE ENDPOINT IS TOLD ABOUT THIS RUN, beside the conversation.
@@ -387,6 +417,7 @@ export async function resolveRuntimeAgents(
   model: RuntimeModel,
   stallGuard?: StallGuard,
   timeZone: string = botTimeZone(),
+  spill?: ResultSpill,
 ): Promise<Record<string, AbstractAgent>> {
   const registered = await loadAgents();
   /*
@@ -398,7 +429,7 @@ export async function resolveRuntimeAgents(
    * A run against a Bot that does not exist still fails where it always did, by name.
    */
   if (registered.length === 0) return {};
-  return buildAgents(registered, model, stallGuard, timeZone);
+  return buildAgents(registered, model, stallGuard, timeZone, spill);
 }
 
 /** Who is asking. Agent visibility is decided per person, so a run has to know this first. */
@@ -427,6 +458,7 @@ export function createRequestAgents(
    */
   stallGuard?: StallGuard,
   timeZone: string = botTimeZone(),
+  spill?: ResultSpill,
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
@@ -435,6 +467,7 @@ export function createRequestAgents(
       model,
       stallGuard,
       timeZone,
+      spill,
     );
   };
 }
@@ -459,12 +492,16 @@ export function mountCopilotRuntime(
   /** The durable runner every turn goes through. */
   localRunner: AgentRunner,
   basePath = "/api/copilotkit",
+  /** Files long tool results on the Bot's computer. See computer/spillover.ts. */
+  spill?: ResultSpill,
 ) {
   const agents = createRequestAgents(
     identifyActor,
     loadAgents,
     model,
     stallGuard,
+    botTimeZone(),
+    spill,
   );
 
   const runtime = new CopilotRuntime({
