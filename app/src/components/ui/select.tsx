@@ -4,7 +4,6 @@ import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { focusRing, focusRingInset } from "@/components/ui/focus"
 import { cn } from "@/lib/utils";
 import {
-  IconSelector,
   IconCheck,
   IconChevronUp,
   IconChevronDown,
@@ -51,9 +50,18 @@ function SelectTrigger({
       {...props}
     >
       {children}
+      {/*
+       * ONE GLYPH FOR "THIS OPENS A LIST", AND IT IS THE SAME ONE THE COMBOBOX USES.
+       *
+       * This was `IconSelector`, the double up/down chevron, while `combobox.tsx` used a single
+       * `IconChevronDown` — two marks for one gesture, sitting on adjacent rows of the same form.
+       * The double chevron also says the wrong thing: it is the mark for a stepper or a sortable
+       * column, something you move up and down through, and a select is neither. It opens a list,
+       * downward, which is what a single chevron says.
+       */}
       <SelectPrimitive.Icon
         render={
-          <IconSelector className="pointer-events-none size-4 text-muted-foreground" />
+          <IconChevronDown className="pointer-events-none size-4 text-muted-foreground" />
         }
       />
     </SelectPrimitive.Trigger>
