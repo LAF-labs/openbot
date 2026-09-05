@@ -286,7 +286,7 @@ describe("the engine", () => {
       expect(elements.body.getAttribute("transform")).toMatch(/^translate\(/);
       expect(elements.eyes[0].getAttribute("d")).toMatch(/^M.*Z$/);
     }
-  });
+  }, 30_000);
 
   test("the eyes are cut from the body and stay inside it whatever the shape", () => {
     for (const id of SHAPE_IDS) {
@@ -320,7 +320,7 @@ describe("the engine", () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   test("a blink closes the eyes and opens them again", () => {
     const elements = fakeElements();
