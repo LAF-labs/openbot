@@ -140,12 +140,14 @@ const identifyUser: IdentifyUser = async (request) => {
 /**
  * The authorization projection of the same person: agent visibility is decided from this.
  *
- * An unauthenticated request resolves to a person who owns nothing rather than an error, so the
- * runtime can still describe itself, `/info` reports the licence and the public roster, which is
- * what a deployment check reads to tell "the licence is invalid" apart from "chat is silently
- * broken". It grants nothing: this actor matches no private profile and is not an administrator,
- * and a run still fails in `identifyUser`, which has no anonymous case because a thread must belong
- * to somebody.
+ * THE FALLBACK IS NOT THE GUARD AND NEVER WAS. It used to be justified by `/info` answering an
+ * anonymous deployment check; `/api/copilotkit/*` is behind `requireUser` now (app.ts), so no
+ * unauthenticated request reaches this at all. What is left is the transient case — a session read
+ * or a role lookup failing under an authenticated request — and it is kept here, and only here,
+ * because this one runs INSIDE the vendored runtime's agent factory: throwing there takes the run
+ * down with a 500, while resolving to somebody who owns nothing takes it down by name. It grants
+ * nothing — no private profile matches, and it is not an administrator — and the two places that
+ * decide whose data is served (`identifyUser` and the thread priming below) refuse instead.
  */
 const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
 
@@ -833,13 +835,40 @@ const routineService = createRoutineService({
  * alternative: one read, for the one thread this request names, taken here where awaiting is
  * allowed. `/threads` itself takes a summary read that touches no message body.
  */
+/**
+ * Who the priming middlewares below are reading for, or a refusal.
+ *
+ * `resolveRequestActor` rather than `identifyActor`: this is the read that decides WHOSE thread is
+ * about to be served, and the anonymous fallback would answer that question with an actor who owns
+ * nothing — which reads as "not yours" for a person whose session simply could not be checked. The
+ * routes are already behind `requireUser` (see app.ts), so an unauthenticated caller never arrives;
+ * this is the transient case, and it is refused rather than guessed at.
+ */
+const primingActor = async (request: Request): Promise<{ id: string } | null> =>
+  resolveRequestActor(request).catch(() => null);
+
 const copilotEndpoint = new Hono()
   .use("/api/copilotkit/threads", async (context, next) => {
-    if (context.req.method === "GET") await lafRunner.primeThreadList();
+    if (context.req.method === "GET") {
+      const actor = await primingActor(context.req.raw);
+      if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
+      await lafRunner.primeThreadList(actor.id);
+    }
     return next();
   })
   .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
-    await lafRunner.prime(context.req.param("threadId"));
+    const actor = await primingActor(context.req.raw);
+    if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
+    /*
+     * REFUSED HERE, not merely left unprimed.
+     *
+     * `getThreadMessages` reads the vendored runner's live copy as well as the primed one, and that
+     * copy is a process-wide singleton — so a thread of somebody else's that has been run on this
+     * VM since boot would be answered out of memory however carefully this middleware declined to
+     * prime it. The request has to stop.
+     */
+    const mine = await lafRunner.prime(context.req.param("threadId"), actor.id);
+    if (!mine) return context.json({ error: "laf:thread_not_found" }, 404);
     return next();
   })
   .route(

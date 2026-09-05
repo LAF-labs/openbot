@@ -35,10 +35,12 @@ import { eq } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadRuns } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
 import { redactSecretTyping } from "./secret-redaction";
 import {
   appendMessages,
+  isThreadOwnedBy,
   messagesFor,
   type StoredMessage,
   threadSummaries,
@@ -269,14 +271,28 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   }
 
   /**
-   * Read one thread out of Postgres, for the request about to ask for it.
+   * Read one thread out of Postgres, for the request about to ask for it — IF IT IS THEIRS.
    *
    * Called by the middleware in front of CopilotKit's thread routes (`index.ts`), because those
-   * routes reach this class through synchronous methods and the read is not synchronous. Never
-   * throws: a thread that cannot be read answers as the live copy rather than as a 500.
+   * routes reach this class through synchronous methods and the read is not synchronous.
+   *
+   * It answers whether the caller may see the thread at all, and the middleware refuses the request
+   * on `false`. Leaving nothing primed is not enough on its own: `getThreadMessages` also reads the
+   * vendored runner's LIVE copy, which is a process-wide singleton, so a thread somebody else ran in
+   * this process since boot would still have been answered from memory with nothing primed at all.
+   *
+   * Never throws. A read that fails refuses rather than falling through to the live copy: this is
+   * the same call that decides whose thread it is, and a database blip must not become an answer.
    */
-  async prime(threadId: string): Promise<void> {
+  async prime(threadId: string, userId: string): Promise<boolean> {
     try {
+      if (!(await isThreadOwnedBy(this.database, threadId, userId))) {
+        // Anything a previous request left here for this thread goes too — the map is shared by
+        // every caller, and a refusal that left the last person's copy in place would be the leak
+        // arriving one request late.
+        this.primed.delete(threadId);
+        return false;
+      }
       const messages = await messagesFor(this.database, threadId);
       const at = new Date().toISOString();
       const existing = this.primed.get(threadId);
@@ -298,26 +314,51 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           updatedAt: at,
         },
       });
+      return true;
     } catch (error) {
-      console.error("[laf-runner] reading a thread failed:", error);
+      this.primed.delete(threadId);
+      /*
+       * `describeFailure`, not the error — here and at the other two sinks in this file.
+       *
+       * Every one of these three catches a Drizzle failure, and Drizzle puts the SQL AND its bound
+       * parameters into `message`. The parameters of this file's statements are conversations: a
+       * failed append carried the whole message array into the operator log. See failure-text.ts.
+       */
+      console.error(
+        "[laf-runner] reading a thread failed:",
+        describeFailure(error),
+      );
+      return false;
     }
   }
 
-  /** The same for the thread list, which is a summary read and touches no message body. */
-  async primeThreadList(): Promise<void> {
+  /**
+   * The same for one person's thread list, which is a summary read and touches no message body.
+   *
+   * Always overwrites, failure included. `listed` is one field on one object shared by every
+   * request, so a read that failed and left the previous caller's list standing would hand it to
+   * this one.
+   */
+  async primeThreadList(userId: string): Promise<void> {
     try {
-      this.listed = (await threadSummaries(this.database)).map((summary) => ({
-        id: summary.threadId,
-        name: null,
-        agentId: summary.agentId ?? "",
-        organizationId: "" as const,
-        createdById: "" as const,
-        archived: false as const,
-        createdAt: summary.createdAt.toISOString(),
-        updatedAt: summary.updatedAt.toISOString(),
-      }));
+      this.listed = (await threadSummaries(this.database, userId)).map(
+        (summary) => ({
+          id: summary.threadId,
+          name: null,
+          agentId: summary.agentId ?? "",
+          organizationId: "" as const,
+          createdById: "" as const,
+          archived: false as const,
+          createdAt: summary.createdAt.toISOString(),
+          updatedAt: summary.updatedAt.toISOString(),
+        }),
+      );
     } catch (error) {
-      console.error("[laf-runner] reading the thread list failed:", error);
+      this.listed = [];
+      console.error(
+        "[laf-runner] reading the thread list failed:",
+        describeFailure(error),
+      );
     }
   }
 
@@ -404,13 +445,26 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     return events;
   }
 
+  /**
+   * The threads the last `primeThreadList` said belong to the person asking, and nothing else.
+   *
+   * `super.listThreads()` is the vendored runner's PROCESS-WIDE store — every thread anybody has run
+   * on this VM since boot — so it was contributing other people's threads to this list on its own,
+   * whatever the stored half was scoped to. It is kept only for the ones the stored half already
+   * admits, because a live record carries a turn that is still in flight and the stored one does not.
+   *
+   * The handoff is per request and this field is not, so two people asking in the same instant can
+   * in principle read each other's prime. One process per VM by decision
+   * (docs/laf/deployment-model.md) and a synchronous vendored method leave no seam to pass an actor
+   * through; the window is the microseconds between the middleware and the handler, and the thread
+   * read below is keyed by thread id and therefore not exposed to it.
+   */
   override listThreads(): InMemoryThread[] {
-    const live = super.listThreads();
+    const mine = this.listed ?? [];
+    const allowed = new Set(mine.map((record) => record.id));
+    const live = super.listThreads().filter((thread) => allowed.has(thread.id));
     const liveIds = new Set(live.map((thread) => thread.id));
-    const rest = (this.listed ?? []).filter(
-      (record) => !liveIds.has(record.id),
-    );
-    return [...live, ...rest];
+    return [...live, ...mine.filter((record) => !liveIds.has(record.id))];
   }
 
   override getThreadMessages(threadId: string): Message[] {
@@ -474,7 +528,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       await appendMessages(this.database, threadId, messages, { runId });
       return runId;
     } catch (error) {
-      console.error("[laf-runner] persisting run start failed:", error);
+      console.error(
+        "[laf-runner] persisting run start failed:",
+        describeFailure(error),
+      );
       return null;
     }
   }
@@ -504,7 +561,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         await this.recordUsage(runId, threadId, agentId, events);
       }
     } catch (error) {
-      console.error("[laf-runner] persisting run end failed:", error);
+      console.error(
+        "[laf-runner] persisting run end failed:",
+        describeFailure(error),
+      );
     }
   }
 

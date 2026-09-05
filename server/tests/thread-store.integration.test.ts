@@ -15,7 +15,14 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, lafThreadMessages, lafThreadRuns } from "../src/db/schema";
+import {
+  agents,
+  channels,
+  channelThreads,
+  lafThreadMessages,
+  lafThreadRuns,
+  users,
+} from "../src/db/schema";
 import { LafPostgresRunner } from "../src/runner/laf-runner";
 import { createRunLedger } from "../src/runner/run-ledger";
 import {
@@ -31,6 +38,8 @@ const databaseUrl =
 const database = createDatabase(databaseUrl, TEST_POOL);
 
 const threads: string[] = [];
+/** The people and channels `ownedThread` made, so the cleanup takes back exactly those. */
+const owners: { userId: string; channelId: string }[] = [];
 const said = (id: string, by?: string) =>
   ({
     id,
@@ -46,6 +55,22 @@ afterEach(async () => {
       .delete(lafThreadMessages)
       .where(inArray(lafThreadMessages.threadId, mine));
   }
+  const made = owners.splice(0);
+  if (made.length > 0) {
+    // `channel_threads` cascades from both sides; the users and channels are what this file made.
+    await database.delete(channels).where(
+      inArray(
+        channels.id,
+        made.map((row) => row.channelId),
+      ),
+    );
+    await database.delete(users).where(
+      inArray(
+        users.id,
+        made.map((row) => row.userId),
+      ),
+    );
+  }
 });
 
 afterAll(async () => {
@@ -56,6 +81,27 @@ function thread() {
   const id = `thread-store-${randomUUID()}`;
   threads.push(id);
   return id;
+}
+
+/**
+ * Give a thread the person it belongs to, and hand back their id.
+ *
+ * A thread read is scoped to its owner (`runner/thread-store.ts`), and the row that records one is
+ * written when the channel is made — so a test thread with no channel behind it is a thread the
+ * reads correctly refuse.
+ */
+async function ownedThread(threadId: string): Promise<string> {
+  const userId = `thread-store-user-${randomUUID()}`;
+  const channelId = `thread-store-channel-${randomUUID()}`;
+  owners.push({ userId, channelId });
+  await database
+    .insert(users)
+    .values({ id: userId, email: `${userId}@laf.test`, name: "Store" });
+  await database
+    .insert(channels)
+    .values({ id: channelId, name: "Store", description: "store" });
+  await database.insert(channelThreads).values({ userId, channelId, threadId });
+  return userId;
 }
 
 describe("appending to a thread", () => {
@@ -200,6 +246,9 @@ describe("appending to a thread", () => {
 describe("what booting reads", () => {
   test("construction does not read a single thread's messages", async () => {
     const threadId = thread();
+    // The thread needs an owner now: `prime` refuses one that belongs to nobody, so a thread with
+    // no `channel_threads` row would never reach the message read this test is measuring.
+    const owner = await ownedThread(threadId);
     await appendMessages(database, threadId, [said("u1")]);
 
     /*
@@ -243,7 +292,7 @@ describe("what booting reads", () => {
     expect(touched).toEqual([]);
 
     // And the read happens when a request asks for it, which is the other half of the same claim.
-    await runner.prime(threadId);
+    await runner.prime(threadId, owner);
     expect(touched).toEqual(["laf_thread_messages"]);
     expect(runner.getThreadMessages(threadId).map((m) => m.id)).toEqual(["u1"]);
   });
