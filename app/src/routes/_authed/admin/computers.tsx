@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import {
   PageEmpty,
   PageRows,
@@ -9,14 +10,6 @@ import {
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Item,
   ItemActions,
@@ -237,47 +230,31 @@ function ComputersPage() {
        * logged into and cannot be undone, and the row it was confirmed on was one of several
        * identical-looking rows. The dialog names the Bot, so the sentence somebody agrees to says
        * which computer it destroys.
+       *
+       * THE SHARED ONE, and it is not a tidy-up: this dialog had its own copy of the two things
+       * `ConfirmDialog` was written after finding broken in all three of its siblings — focus that
+       * never entered the popup, so a keyboard could not reach either answer on the one control here
+       * that destroys something, and a destructive button drawn in a wash so pale it reads as
+       * disabled.
        */}
-      <Dialog
+      <ConfirmDialog
+        confirmLabel={t("Reset it")}
+        description={t(
+          "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.",
+        )}
+        onConfirm={() => {
+          if (confirming) void run(confirming, "reset");
+        }}
         onOpenChange={(open) => {
           if (!open) setConfirming(null);
         }}
         open={confirming !== null}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("Reset {name}'s computer?", {
-                name: confirming ? nameFor(confirming) : "",
-              })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              onClick={() => setConfirming(null)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={busy === confirming}
-              onClick={() => {
-                if (confirming) void run(confirming, "reset");
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              {busy === confirming ? t("Resetting…") : t("Reset it")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        pending={busy === confirming}
+        pendingLabel={t("Resetting…")}
+        title={t("Reset {name}'s computer?", {
+          name: confirming ? nameFor(confirming) : "",
+        })}
+      />
 
       {/*
        * Whole sentences, not a sentence with a <strong> sewn into the middle of it. The English was

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/item";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 
 /**
  * Taking your data with you, and leaving.
@@ -203,7 +204,10 @@ const AccountPage = () => {
             htmlFor="account-delete-confirm"
           >
             {confirmAddress
-              ? t("Type {email} to confirm.", { email: confirmAddress })
+              ? t("Type {email}{josa} to confirm.", {
+                  email: confirmAddress,
+                  josa: josa(confirmAddress, "을/를"),
+                })
               : t("Type your email address to confirm.")}
           </label>
           <Input

@@ -60,7 +60,7 @@ export const ko: Record<string, string> = {
   Bots: "봇",
   Allow: "허용",
   Allowed: "허용됨",
-  "Allowed by {person}": "{person}이(가) 허용함",
+  "Allowed by {person}{josa}": "{person}{josa} 허용함",
   "An account is no longer connected": "계정 연결이 끊김",
   "Answers are coming faster than the model can take right now. Give it a moment and ask again.":
     "지금은 답변 요청이 몰려 모델이 잠시 벅찹니다. 조금 기다렸다가 다시 물어봐 주세요.",
@@ -387,7 +387,6 @@ export const ko: Record<string, string> = {
   "Delete it": "삭제",
   "Delete {command}": "{command} 삭제",
   "Delete {name}": "'{name}' 삭제",
-  "Delete {name}?": "'{name}'을(를) 삭제할까요?",
   "Delete {name}? This cannot be undone.":
     "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
   "Deleting…": "삭제 중…",
@@ -1321,7 +1320,7 @@ export const ko: Record<string, string> = {
     "되돌릴 수 없습니다. 먼저 내려받아 두세요.",
   "Type your email address to confirm.":
     "확인을 위해 내 이메일 주소를 입력하세요.",
-  "Type {email} to confirm.": "확인을 위해 {email}을(를) 입력하세요.",
+  "Type {email}{josa} to confirm.": "확인을 위해 {email}{josa} 입력하세요.",
   "Delete everything": "전부 삭제",
   "That is not the email address on this account.":
     "이 계정의 이메일 주소가 아닙니다.",

@@ -218,7 +218,9 @@ describe("the Delete button", () => {
   test("the address is shown, so the first press is not what teaches it", () => {
     const source = read("routes/_authed/settings/account.tsx");
     expect(source).toContain("expects ?? currentUser?.email");
-    expect(source).toContain("Type {email} to confirm.");
+    // `{josa}` is filled by `lib/josa.ts`: the entry used to read 을(를), the form-letter bracket
+    // this product had everywhere until 2026-09-06, in front of somebody about to delete everything.
+    expect(source).toContain("Type {email}{josa} to confirm.");
     // The server still decides: the POST is unchanged and `expects` outranks the session's copy.
     expect(source).toContain("/api/me/delete");
   });

@@ -2,20 +2,14 @@ import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import {
   type SandboxedRecord,
   sandboxedKeys,
@@ -349,51 +343,38 @@ function PlaygroundPage() {
 
       {/*
        * Deleting was a bare button on a row of one-line entries, and it does not come back. The
-       * dialog names the component, so what is agreed to says which one it removes.
+       * dialog names the component, so what is agreed to says which one it removes — through the
+       * shared `ConfirmDialog`, which is where the focus trap and the legible destructive button
+       * live, and `josa()`, so the Korean agrees with a name it has never seen instead of saying
+       * 을(를) at somebody about to delete something.
        */}
-      <Dialog
+      <ConfirmDialog
+        confirmLabel={t("Delete it")}
+        description={t(
+          "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.",
+        )}
+        onConfirm={() => {
+          const name = deleting;
+          setDeleting(null);
+          if (name) {
+            mutate.mutate(() =>
+              fetch(`/api/sandboxed/${encodeURIComponent(name)}`, {
+                method: "DELETE",
+                credentials: "include",
+              }),
+            );
+          }
+        }}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
         open={deleting !== null}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("Delete {name}?", { name: deleting ?? "" })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setDeleting(null)} size="sm" variant="ghost">
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={mutate.isPending}
-              onClick={() => {
-                const name = deleting;
-                setDeleting(null);
-                if (name) {
-                  mutate.mutate(() =>
-                    fetch(`/api/sandboxed/${encodeURIComponent(name)}`, {
-                      method: "DELETE",
-                      credentials: "include",
-                    }),
-                  );
-                }
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              {mutate.isPending ? t("Deleting…") : t("Delete it")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        pending={mutate.isPending}
+        title={t("Delete {name}{josa}?", {
+          josa: josa(deleting ?? "", "을/를"),
+          name: deleting ?? "",
+        })}
+      />
     </div>
   );
 }

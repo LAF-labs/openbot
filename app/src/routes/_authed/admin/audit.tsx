@@ -14,6 +14,7 @@ import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -434,7 +435,10 @@ function Row({
         {/* Who stood behind an action, when the boundary asked and somebody said yes. */}
         {typeof decision.approvedBy === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {t("Allowed by {person}", { person: decision.approvedBy })}
+            {t("Allowed by {person}{josa}", {
+              josa: josa(decision.approvedBy, "이/가"),
+              person: decision.approvedBy,
+            })}
           </div>
         ) : null}
         {decision.mode === "dry-run" && decision.carriedOut ? (
