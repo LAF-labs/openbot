@@ -316,6 +316,31 @@ export const auditEventTypes = [
 
 export type AuditEventType = (typeof auditEventTypes)[number];
 
+/**
+ * WHERE A ROW WOULD OTHERWISE HAVE HELD AN ENGLISH SENTENCE.
+ *
+ * A payload field a person reads is a place the server can accidentally start writing copy. It did:
+ * an action on an element no snapshot could identify recorded `element: "not in the current
+ * snapshot"`, and `/admin/audit` printed it straight into a Korean table. Nothing was wrong with
+ * the sentence — it was in the wrong half of the product. The server sends facts; the surface owns
+ * the words (CLAUDE.md).
+ *
+ * So the facts have names, and the names are listed here rather than written at the call site,
+ * because the list is what the surface is held to: `app/tests/audit-labels.test.ts` imports it and
+ * fails until every code has Korean. A code added here with nowhere to say what it means is caught
+ * before it is deployed rather than by a reader meeting `laf:` on screen.
+ *
+ * The `laf:` prefix is the same marker the model-facing codes carry (`shared/prompt/tool-results.ko.ts`)
+ * and for the same reason: no English sentence can have it by accident.
+ */
+export const auditFactCodes = ["laf:element_not_in_snapshot"] as const;
+
+export type AuditFactCode = (typeof auditFactCodes)[number];
+
+/** What was acted on could not be found in the snapshot the decision was made against. */
+export const ELEMENT_NOT_IN_SNAPSHOT: AuditFactCode =
+  "laf:element_not_in_snapshot";
+
 export type AuditEventInput = {
   eventType: AuditEventType;
   targetType: string;

@@ -898,7 +898,6 @@ export const ko: Record<string, string> = {
   "Nothing to connect yet. An administrator has to set one up first.":
     "아직 연결할 서비스가 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
   "Nothing yet.": "아직 없습니다.",
-  On: "켬",
   "One line": "한 줄",
   "One-liner": "한 줄 요약",
   Open: "열기",
@@ -1805,4 +1804,57 @@ export const ko: Record<string, string> = {
   "Expand the sidebar": "사이드바 펼치기",
   "Collapse the sidebar": "사이드바 접기",
   "{count} Bots in this room": "봇 {count}명이 있는 방",
+  // 연결·설정 화면
+  // 관리 화면
+  // 감사 기록
+  Target: "대상",
+  "from {time}": "{time}부터",
+  "{count} times": "{count}회",
+  "Not in the screen the server was holding":
+    "서버가 들고 있던 화면에 없던 요소",
+  // 봇의 컴퓨터 도구 — 감사 기록의 '무엇을' 칸
+  "Open a page": "페이지 열기",
+  "Look at the screen": "화면 살피기",
+  Click: "클릭",
+  "Type into a field": "입력",
+  "Press a key": "키 누르기",
+  Scroll: "스크롤",
+  "Switch tab": "탭 전환",
+  "Upload a file": "파일 올리기",
+  "Ask for a secret": "비밀값 요청",
+  "Ask for help": "도움 요청",
+  "List files": "파일 목록",
+  "Read a file": "파일 읽기",
+  "Write a file": "파일 쓰기",
+  "Take a screenshot": "화면 캡처",
+  // 기록의 종류 — 도구 호출이 아닌 줄이 '무엇을' 칸에 쓰는 말
+  "A credential": "자격증명",
+  "The Bot's answer": "봇의 응답",
+  "A connector call": "연결 호출",
+  "A connector's application": "연결 앱 등록",
+  "A connected account": "연결된 계정",
+  "A tool's definition": "도구 정의",
+  "An action": "봇의 행동",
+  "The same action again": "같은 행동 반복",
+  "The wheel": "제어권",
+  "A secret": "비밀값",
+  "A question": "질문",
+  "A standing allowance": "상시 허용",
+  "The computer": "컴퓨터",
+  "The boundary": "경계 설정",
+  Isolation: "격리 방식",
+  "Model usage": "모델 사용량",
+  "One Bot asking another": "봇 사이 요청",
+  "A routine": "루틴",
+  "A component": "컴포넌트",
+  "A component's data": "컴포넌트 데이터",
+  "An account": "계정",
+  "The fleet": "플릿",
+  // 봇이 답을 멈춘 줄
+  "Silent for {seconds}s, having said nothing at all":
+    "{seconds}초 동안 조용했고, 한마디도 하지 않았습니다",
+  "Silent for {seconds}s, after 1 chunk":
+    "{seconds}초 동안 조용했습니다. 그 전에 1조각을 보냈습니다",
+  "Silent for {seconds}s, after {chunks} chunks":
+    "{seconds}초 동안 조용했습니다. 그 전에 {chunks}조각을 보냈습니다",
 };

@@ -17,7 +17,11 @@
  * by the model is theatre: "never click Submit" is evaded by sending `{ref: "e13", name: "Continue"}`.
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
-import { type AuditStore, recordAuditEvent } from "../audit";
+import {
+  type AuditStore,
+  ELEMENT_NOT_IN_SNAPSHOT,
+  recordAuditEvent,
+} from "../audit";
 import {
   type ApprovalRegistry,
   type AskSubject,
@@ -1240,9 +1244,16 @@ async function write(
           ? // A file action has no element and never will. File rows leave the element field absent
             // rather than describing a browser snapshot.
             undefined
-          : // An action on an element the server cannot identify is worth recording plainly, rather
-            // than as an absent field that reads like a logging gap.
-            "not in the current snapshot",
+          : /*
+             * An action on an element the server cannot identify is worth recording plainly, rather
+             * than as an absent field that reads like a logging gap.
+             *
+             * A CODE AND NOT A SENTENCE. This was the English string "not in the current snapshot",
+             * and the audit table printed it verbatim — one English line in the middle of a Korean
+             * trail, written by the server, which owns no words on any surface. The trail carries
+             * the fact; `admin/audit.tsx` owns what a reader is told it means.
+             */
+            ELEMENT_NOT_IN_SNAPSHOT,
       ...(entry.failure ? { failure: entry.failure } : {}),
       decision: {
         allowed: entry.decision.allowed,

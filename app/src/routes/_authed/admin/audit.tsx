@@ -1,7 +1,7 @@
 import { IconRefresh } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   PageEmpty,
   PageSection,
@@ -9,7 +9,8 @@ import {
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { type AuditEvent, auditEventsQueryOptions } from "@/lib/audit/queries";
+import { auditEventsQueryOptions } from "@/lib/audit/queries";
+import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 
@@ -62,6 +63,19 @@ function AuditPage() {
   const events = useInfiniteQuery(auditEventsQueryOptions(search));
   const rows = (events.data?.pages ?? []).flatMap((page) => page.events);
   const nameFor = useBotNames();
+  /*
+   * Days, and inside them runs. The trail is a year long and every row used to carry a bare clock
+   * time, so "09:12:44" was the whole of when — on a page whose first question is always which day.
+   * The heading carries the date once per day rather than the cell carrying it a hundred times.
+   */
+  const days = useMemo(() => groupByDay(rows), [rows]);
+  /*
+   * Recomputed per render on purpose. The alternative is a value captured at mount, and this page is
+   * one somebody leaves open: a trail still labelling last night's rows as today at nine the next
+   * morning is a date that is quietly wrong on the screen that exists for dates.
+   */
+  const today = dayKeyOf(new Date().toISOString());
+  const yesterday = dayKeyOf(new Date(Date.now() - DAY_MS).toISOString());
 
   return (
     /*
@@ -123,14 +137,31 @@ function AuditPage() {
                 <tr className="border-border border-b">
                   <th className="px-4 py-2 font-medium">{t("When")}</th>
                   <th className="px-4 py-2 font-medium">{t("What")}</th>
-                  <th className="px-4 py-2 font-medium">{t("On")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Target")}</th>
                   <th className="px-4 py-2 font-medium">{t("Bot")}</th>
                   <th className="px-4 py-2 font-medium">{t("Decision")}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((event) => (
-                  <Row event={event} key={event.id} nameFor={nameFor} />
+                {days.map((day) => (
+                  <Fragment key={day.key}>
+                    <tr className="border-border border-t bg-muted/40">
+                      <th
+                        className="px-4 py-1.5 text-left font-medium text-muted-foreground text-xs"
+                        colSpan={5}
+                        scope="colgroup"
+                      >
+                        {day.key === today
+                          ? `${t("Today")} · ${dateOf(day.at)}`
+                          : day.key === yesterday
+                            ? `${t("Yesterday")} · ${dateOf(day.at)}`
+                            : dateOf(day.at)}
+                      </th>
+                    </tr>
+                    {day.runs.map((run) => (
+                      <Row key={run.event.id} nameFor={nameFor} run={run} />
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -170,12 +201,13 @@ function AuditPage() {
 }
 
 function Row({
-  event,
+  run,
   nameFor,
 }: {
-  event: AuditEvent;
+  run: AuditRun;
   nameFor: (botId: string) => string;
 }) {
+  const { event, count } = run;
   const payload = event.payload ?? {};
   const decision = (payload.decision ?? {}) as {
     allowed?: boolean;
@@ -220,12 +252,46 @@ function Row({
     <tr className="border-border border-t align-top">
       <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
         {new Date(event.createdAt).toLocaleTimeString(activeLocale)}
+        {/*
+         * The other end of a collapsed run. Without it the row says one time and stands for nine,
+         * and a reader counting boots cannot tell nine restarts in a minute from nine over a night.
+         */}
+        {count > 1 ? (
+          <div className="text-xs">
+            {t("from {time}", {
+              time: new Date(run.firstAt).toLocaleTimeString(activeLocale),
+            })}
+          </div>
+        ) : null}
       </td>
       <td className="px-4 py-2 font-medium">
-        {/* Strip the internal computer tool namespace for display. */}
-        {typeof payload.action === "string"
-          ? payload.action.replace("computer_", "")
-          : event.eventType}
+        {/*
+         * WHAT THE BOT DID, IN WORDS. This column printed `payload.action` with the tool namespace
+         * sliced off, and the raw event type for every row that has no tool — so the trail opened on
+         * `computer.isolation_loaded`, `model.usage`, `routine.ran`. Those are identifiers, and an
+         * identifier on a Korean screen is the surface failing to own its own words.
+         *
+         * A name this build does not know stays an identifier, in a chip that says so. That is the
+         * visible-and-fixable failure: a vendor's own MCP tool name lands here legitimately and has
+         * no translation anywhere, and inventing one for it would be worse than showing it.
+         */}
+        <Words
+          id={
+            typeof payload.action === "string"
+              ? payload.action
+              : event.eventType
+          }
+          label={
+            typeof payload.action === "string"
+              ? TOOLS[payload.action]
+              : EVENTS[event.eventType]
+          }
+        />
+        {count > 1 ? (
+          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-normal text-muted-foreground text-xs">
+            {t("{count} times", { count })}
+          </span>
+        ) : null}
       </td>
       <td className="px-4 py-2">
         {/* Named targets and file paths are the audit subject before page elements. */}
@@ -253,7 +319,8 @@ function Row({
             ) : null}
           </span>
         ) : typeof element === "string" ? (
-          <span className="text-muted-foreground">{element}</span>
+          // A fact the server recorded about the element, not a sentence it wrote. See FACTS.
+          <span className="text-muted-foreground">{fact(element)}</span>
         ) : (
           <span className="text-muted-foreground">-</span>
         )}
@@ -300,7 +367,7 @@ function Row({
           event.eventType === "mcp.call_rejected") &&
         typeof payload.reason === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {payload.reason}
+            {fact(payload.reason)}
           </div>
         ) : null}
         {event.eventType === "bot.declined" &&
@@ -329,12 +396,12 @@ function Row({
         ) : null}
         {failed && typeof payload.failure === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {payload.failure}
+            {fact(payload.failure)}
           </div>
         ) : null}
         {approval && typeof payload.reason === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {payload.reason}
+            {fact(payload.reason)}
           </div>
         ) : null}
         {/*
@@ -509,3 +576,159 @@ function hostOf(url: string): string {
     return url;
   }
 }
+
+/** One day, so the heading can name yesterday without a date library. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A day heading, in the reader's own language and calendar. */
+function dateOf(at: string): string {
+  return new Date(at).toLocaleDateString(activeLocale, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+}
+
+/**
+ * A label if this build has one for it, and otherwise the identifier, dressed as an identifier.
+ *
+ * The chip is the point. An unlabelled value used to be indistinguishable from a labelled one —
+ * `model.usage` sat in the same column, in the same weight, as a sentence somebody wrote — so
+ * nothing on the screen said which of the two a reader was looking at, and the gap was invisible
+ * from the page it was on.
+ */
+const Words = ({ id, label }: { id: string; label: string | undefined }) =>
+  label ? (
+    <span>{t(label)}</span>
+  ) : (
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono font-normal text-xs">
+      {id}
+    </code>
+  );
+
+/**
+ * A fact code the server recorded, as this surface says it.
+ *
+ * `laf:` is the marker no English sentence can carry by accident, so a value that has it is a fact
+ * with a name and a value that does not is prose — from a vendor, from an exception, or from the
+ * server's own refusal sentences, which are still English and still print here. Those are listed in
+ * the report that came with this change; what is fixed here is that the CODES never reach a reader
+ * as `laf:` and that anything new arriving with the prefix is caught by `audit-labels.test.ts`
+ * before a person meets it.
+ */
+function fact(value: string): string {
+  if (!value.startsWith("laf:")) return value;
+  const label = FACTS[value];
+  return label ? t(label) : value;
+}
+
+/**
+ * What the trail records instead of a sentence, in the surface's own words.
+ *
+ * Keyed by `server/src/audit.ts`'s exported codes, which is what `audit-labels.test.ts` walks — a
+ * code added there with nothing said about it here fails the run rather than reaching a screen.
+ */
+export const FACTS: Record<string, string> = {
+  "laf:element_not_in_snapshot": "Not in the screen the server was holding",
+};
+
+/**
+ * WHAT EACH TOOL DOES, IN THE WORDS THIS COLUMN WANTS.
+ *
+ * Short, because it is a column somebody scans rather than reads. Keyed by the catalogue's own tool
+ * names (`shared/tools/computer.ts`), which `audit-labels.test.ts` imports and walks: a tool added
+ * to the catalogue with no words here shows its identifier, and the run says so first.
+ */
+export const TOOLS: Record<string, string> = {
+  computer_navigate: "Open a page",
+  computer_read: "Read the page",
+  computer_snapshot: "Look at the screen",
+  computer_click: "Click",
+  // Not "Type": the dictionary already spends that word on 유형, the noun.
+  computer_type: "Type into a field",
+  computer_key: "Press a key",
+  computer_scroll: "Scroll",
+  computer_switch_tab: "Switch tab",
+  computer_upload_file: "Upload a file",
+  computer_request_secret: "Ask for a secret",
+  computer_request_help: "Ask for help",
+  computer_list_files: "List files",
+  computer_read_file: "Read a file",
+  computer_write_file: "Write a file",
+  // Not in the catalogue and never registered on a Bot, but the contract still names it and an old
+  // row can carry it. Cheaper to say than to find out from a reader.
+  computer_screenshot: "Take a screenshot",
+};
+
+/**
+ * WHAT KIND OF THING EACH ROW IS, for the rows that are not a tool call.
+ *
+ * Deliberately the AREA and not the outcome. The outcome is the last column's job (`DECISIONS`),
+ * and several types share a label here on purpose: `credential.created` and `credential.revoked`
+ * are both "a credential", and what happened to it is the sentence beside them. Repeating the
+ * sentence in two columns would make the table twice as wide and no more informative.
+ *
+ * Every type the server can write has an entry, and `audit-labels.test.ts` walks the server's own
+ * list to say so. Several of these are almost never drawn — the computer's own action rows carry a
+ * tool name and take the table above — and they are here anyway, because "almost never" is exactly
+ * when a fallback gets noticed.
+ */
+export const EVENTS: Record<string, string> = {
+  "configuration.changed": "Settings",
+  "credential.created": "A credential",
+  "credential.rotated": "A credential",
+  "credential.rotation_refused": "A credential",
+  "credential.revoked": "A credential",
+  "agent.stream_stalled": "The Bot's answer",
+  "bot.declined": "The Bot's answer",
+  "mcp.call_succeeded": "A connector call",
+  "mcp.call_rejected": "A connector call",
+  "mcp.call_failed": "A connector call",
+  "mcp.call_repeated": "A connector call",
+  "mcp.oauth_client_registered": "A connector's application",
+  "mcp.account_connected": "A connected account",
+  "mcp.account_disconnected": "A connected account",
+  "mcp.tool_definition_changed": "A tool's definition",
+  "mcp.tool_definition_approved": "A tool's definition",
+  "computer.action_allowed": "An action",
+  "computer.action_refused": "An action",
+  "computer.action_failed": "An action",
+  "computer.action_repeated": "The same action again",
+  // The same words as the tool above it. It is the same act seen from the trail rather than from
+  // the Bot, and giving it a second sentence would be a second name for one thing.
+  "computer.help_requested": "Ask for help",
+  "computer.control_taken": "The wheel",
+  "computer.control_released": "The wheel",
+  "computer.secret_requested": "A secret",
+  "computer.secret_supplied": "A secret",
+  "approval.requested": "A question",
+  "approval.granted": "A question",
+  "approval.denied": "A question",
+  "approval.standing_granted": "A standing allowance",
+  "approval.standing_revoked": "A standing allowance",
+  "computer.stopped": "The computer",
+  "computer.reset": "The computer",
+  "computer.policy_loaded": "The boundary",
+  "computer.policy_changed": "The boundary",
+  "computer.isolation_loaded": "Isolation",
+  "model.usage": "Model usage",
+  "coworker.asked": "One Bot asking another",
+  "routine.ran": "A routine",
+  "routine.skipped": "A routine",
+  "component.granted": "A component",
+  "component.revoked": "A component",
+  "component.published": "A component",
+  "component.unpublished": "A component",
+  "component.draft_saved": "A component",
+  "component.refused": "A component",
+  "component.function_granted": "A component's data",
+  "component.function_revoked": "A component's data",
+  "component.function_called": "A component's data",
+  "component.function_refused": "A component's data",
+  "component.function_failed": "A component's data",
+  "account.exported": "An account",
+  "account.deleted": "An account",
+  "fleet.notified": "The fleet",
+  "fleet.notify_failed": "The fleet",
+};

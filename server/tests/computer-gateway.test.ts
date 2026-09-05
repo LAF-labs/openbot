@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { AuditEventInput, AuditStore } from "../src/audit";
+import {
+  type AuditEventInput,
+  type AuditStore,
+  ELEMENT_NOT_IN_SNAPSHOT,
+} from "../src/audit";
 import {
   createApprovalRegistry,
   fingerprintOf,
@@ -428,9 +432,16 @@ describe("the computer gateway", () => {
       ref: "e404",
       snapshotId: 7,
     });
-    // Permitted here only because the shipped default permits; the row says plainly that the server
-    // could not identify what was touched, rather than omitting the field.
-    expect(rows[0]?.payload.element).toBe("not in the current snapshot");
+    /*
+     * Permitted here only because the shipped default permits; the row says plainly that the server
+     * could not identify what was touched, rather than omitting the field.
+     *
+     * A CODE, not a sentence. It used to be the English string, and `/admin/audit` printed it into a
+     * Korean table — the server writing copy for a surface it does not own. Asserted against the
+     * exported constant so the two cannot drift into agreeing about nothing.
+     */
+    expect(rows[0]?.payload.element).toBe(ELEMENT_NOT_IN_SNAPSHOT);
+    expect(ELEMENT_NOT_IN_SNAPSHOT.startsWith("laf:")).toBe(true);
   });
 });
 

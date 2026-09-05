@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 /**
  * How a stalled turn reads on the audit page.
  *
@@ -23,7 +25,19 @@ export function silenceOf(payload: Record<string, unknown>): string | null {
   }
 
   const seconds = Math.max(1, Math.round(silentForMs / 1000));
-  const quiet = `Silent for ${seconds}s`;
-  if (chunks === 0) return `${quiet}, having said nothing at all`;
-  return `${quiet}, after ${chunks} ${chunks === 1 ? "chunk" : "chunks"}`;
+  if (chunks === 0) {
+    return t("Silent for {seconds}s, having said nothing at all", { seconds });
+  }
+  /*
+   * Three whole sentences rather than a stem and a tail glued together.
+   *
+   * This was built as `${quiet}, after ${n} chunk(s)` and had no `t()` anywhere in it, so a Korean
+   * reader got an English line in the middle of the trail — invisible to `i18n-coverage.test.ts`,
+   * which walks calls with a quoted key and finds nothing to complain about in a template literal.
+   * Korean does not inflect the noun for the count either, so the singular and plural are one
+   * sentence there and two here; composing them from parts would have made both wrong.
+   */
+  return chunks === 1
+    ? t("Silent for {seconds}s, after 1 chunk", { seconds })
+    : t("Silent for {seconds}s, after {chunks} chunks", { seconds, chunks });
 }

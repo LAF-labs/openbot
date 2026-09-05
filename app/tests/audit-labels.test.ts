@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { auditEventTypes } from "../../server/src/audit";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { auditEventTypes, auditFactCodes } from "../../server/src/audit";
 import {
   DECISIONS,
   DISCONNECT_REASONS,
+  EVENTS,
+  FACTS,
+  TOOLS,
   UNLABELLED_OUTCOMES,
 } from "../src/routes/_authed/admin/audit";
 import { ko } from "../src/lib/i18n-ko";
@@ -25,6 +29,9 @@ describe("the audit trail's labels", () => {
     const missing = [
       ...Object.values(DECISIONS),
       ...Object.values(DISCONNECT_REASONS),
+      ...Object.values(EVENTS),
+      ...Object.values(TOOLS),
+      ...Object.values(FACTS),
       ...UNLABELLED_OUTCOMES,
     ].filter((label) => !(label in ko));
     expect(missing).toEqual([]);
@@ -57,6 +64,51 @@ describe("the audit trail's labels", () => {
     ] as const) {
       expect(DECISIONS[type]).toBeDefined();
       expect(ko[DECISIONS[type] as string]).not.toBe(ko.Allowed);
+    }
+  });
+});
+
+/**
+ * THE OTHER TWO COLUMNS THAT USED TO PRINT IDENTIFIERS.
+ *
+ * `DECISIONS` above covers the last column. The middle one — what the Bot did — had no table at
+ * all: it showed `payload.action` with the namespace sliced off, and for every row without a tool
+ * it showed the raw event type, so the audit trail opened on `computer.isolation_loaded`,
+ * `model.usage` and `routine.ran`, in English, on a Korean screen.
+ *
+ * Both tables are walked against the source of truth on the OTHER side of the wire rather than
+ * against themselves: the server's own event list, and the tool catalogue every Bot is registered
+ * from. A tool added to `shared/tools/computer.ts` or an event type added to `server/src/audit.ts`
+ * fails here until somebody decides what it says.
+ */
+describe("what the trail says happened", () => {
+  test("every event type the server writes has words for the What column", () => {
+    const unlabelled = auditEventTypes.filter((type) => !(type in EVENTS));
+    expect(unlabelled).toEqual([]);
+  });
+
+  test("every tool in the catalogue has words for the What column", () => {
+    const unlabelled = COMPUTER_TOOLS.map((tool) => tool.name).filter(
+      (name) => !(name in TOOLS),
+    );
+    expect(unlabelled).toEqual([]);
+    // The catalogue is a Vite-free plain module here, so an empty import would pass the line above
+    // by walking nothing at all.
+    expect(COMPUTER_TOOLS.length).toBeGreaterThanOrEqual(14);
+  });
+
+  test("every fact code the server records has a sentence", () => {
+    const unlabelled = auditFactCodes.filter((code) => !(code in FACTS));
+    expect(unlabelled).toEqual([]);
+    expect(auditFactCodes.length).toBeGreaterThan(0);
+  });
+
+  test("no fact code is answered with the code", () => {
+    // The failure this would otherwise have: a table entry written as `"laf:x": "laf:x"` to make the
+    // walk above go green, which puts the prefix in front of a reader anyway.
+    for (const [code, label] of Object.entries(FACTS)) {
+      expect(label.startsWith("laf:")).toBe(false);
+      expect(code.startsWith("laf:")).toBe(true);
     }
   });
 });
