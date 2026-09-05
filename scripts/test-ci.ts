@@ -98,6 +98,10 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                332 tests across 43 files   →   322
  *
+ * MEASURED TOGETHER 2026-09-05, once 세금계산서 was gone and the Settings, avatar and Bot-creation
+ * branches were on one branch: server 1395 → 1353, app 402 → 389 (3% under, rounded down);
+ * agent-computer and root unchanged.
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -105,8 +109,8 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1350, roots: ["server"] },
-  { name: "app", floor: 341, roots: ["app"] },
+  { name: "server", floor: 1353, roots: ["server"] },
+  { name: "app", floor: 389, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
