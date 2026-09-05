@@ -21,10 +21,11 @@ name: Images
 # into a half-hour job. No build cache, same reason as release.yml: a workflow that publishes must
 # not restore what a pull request could have written.
 #
-# The one value baked into an image that could differ per deployment is AUTH_PROVIDERS (which
-# sign-in buttons the web surface compiles in). The fleet is deliberately uniform: the repository
-# variable IMAGE_AUTH_PROVIDERS names the set, and changing it is a fleet decision followed by a
-# rebuild, not a per-customer knob.
+# The one value baked into an image that could differ per deployment is AUTH_PROVIDERS. Since
+# 2026-09-06 it is only the web surface's FALLBACK: the sign-in screen asks the running server
+# (`GET /api/auth/providers`) which buttons to draw and lands on the baked list only when the
+# server cannot answer. The repository variable IMAGE_AUTH_PROVIDERS names that fallback; a
+# deployment's real set is its own `.env`.
 
 on:
   push:

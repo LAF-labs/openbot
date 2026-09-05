@@ -39,8 +39,10 @@ COPY tsconfig.base.json ./
 ARG TENANT_PACKAGE_DIR=../tenant/laf
 ENV TENANT_PACKAGE_DIR=${TENANT_PACKAGE_DIR}
 # Names only, never credentials — a build arg is readable in the finished image's history. The
-# server decides whether sign-in actually works; this decides whether the button is drawn, and the
-# two are keyed off the same variable in docker-compose.yml so they cannot disagree.
+# server decides whether sign-in actually works AND which buttons are drawn: the surface asks it
+# (`GET /api/auth/providers`) before drawing. What is compiled in here is only the fallback for a
+# server that cannot answer — measured on the fleet before that route existed, an image built for
+# `google` drew a Google button on a VM whose `.env` said `laf`.
 ARG AUTH_PROVIDERS=""
 ENV AUTH_PROVIDERS=${AUTH_PROVIDERS}
 RUN bun scripts/generate-app-config.ts

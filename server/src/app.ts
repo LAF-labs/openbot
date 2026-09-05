@@ -327,6 +327,32 @@ export function createApp(
    * body to one field for exactly that reason.
    */
   app.get("/api/capabilities", (context) => context.json({ status: "ok" }));
+  /*
+   * Which sign-ins this deployment offers, for the surface to draw its buttons from.
+   *
+   * Public on purpose, and one field: the sign-in screen is the one screen an anonymous person
+   * sees, and the set is already declared to the world by every callback route better-auth mounts.
+   * It exists because the web image used to compile the same list in at BUILD time from the same
+   * variable — measured on the fleet: an image baked for `google` drew a Google button on a VM
+   * whose `.env` said `laf`, and the button posted into a callback this deployment had never
+   * registered. The baked list is now only what the surface falls back to when this route cannot
+   * be reached (`app/src/lib/auth/providers.ts`).
+   *
+   * What is DECLARED, not what has credentials: `config.auth.providers` is already narrowed to the
+   * declaration (`GOOGLE_OAUTH_*` carried as the connector application is not a Google button),
+   * and the broker is a provider of its own. Registered before the `/api/auth/*` catch-all so
+   * better-auth never sees the path.
+   */
+  app.get("/api/auth/providers", (context) =>
+    context.json({
+      providers: config.auth
+        ? [
+            ...Object.keys(config.auth.providers),
+            ...(config.auth.lafOidc ? ["laf"] : []),
+          ]
+        : [],
+    }),
+  );
   app.on(["GET", "POST"], "/api/auth/*", (context) => {
     if (!auth) {
       return context.json({ error: "Authentication is not configured." }, 503);

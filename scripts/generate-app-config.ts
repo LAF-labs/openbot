@@ -14,7 +14,12 @@ const tenantPackageDirectory = configuredTenantPackageDirectory
   : resolve(projectRoot, "tenant/laf");
 const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
 /*
- * Which sign-in providers the surface offers, decided here because the answer is compiled in.
+ * Which sign-in providers the surface FALLS BACK to, compiled in.
+ *
+ * The buttons actually drawn come from the running server (`GET /api/auth/providers`,
+ * `app/src/lib/auth/providers.ts`); this list is where the screen lands when the server cannot
+ * answer. It was the whole answer until 2026-09-06, and the fleet measured what that meant: an
+ * image built for `google` on a VM whose `.env` said `laf`.
  *
  * AUTH_PROVIDERS is the explicit form, and it exists for the container build: passing the real
  * credentials as build args writes them into the image's history, and a build only ever needed to

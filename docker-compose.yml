@@ -100,10 +100,10 @@ services:
       BETTER_AUTH_SECRET: ${AUTH_PROVIDERS:+${BETTER_AUTH_SECRET}}
       TRUSTED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
       # Which sign-ins this deployment offers — there is no email-and-password path, so without at
-      # least one nobody can get in at all. AUTH_PROVIDERS declares the set (e.g. "google,kakao"),
-      # the same value the web build compiles the buttons from, and the server refuses to start if
-      # the declaration and the credentials disagree. Redirect URI per provider: the origin plus
-      # /api/auth/callback/<provider>.
+      # least one nobody can get in at all. AUTH_PROVIDERS declares the set (e.g. "google,kakao");
+      # the server publishes it on /api/auth/providers for the surface to draw its buttons from,
+      # and refuses to start if the declaration and the credentials disagree. Redirect URI per
+      # provider: the origin plus /api/auth/callback/<provider>.
       AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
@@ -207,9 +207,10 @@ services:
       context: .
       dockerfile: app/Dockerfile
       args:
-        # Which sign-in buttons exist is compiled into the app, so it is a build input and not a
-        # setting. The same declaration the server validates against its credentials: change the
-        # set and rebuild, or the two halves disagree.
+        # The surface's FALLBACK list of sign-in buttons, compiled in. The buttons actually drawn
+        # come from the server (`GET /api/auth/providers`), which reads the same variable below at
+        # run time — so a deployment that changes its set restarts, and rebuilds only if it wants
+        # the fallback to match too.
         AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}
     ports:
       - "80:80"

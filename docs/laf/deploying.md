@@ -243,14 +243,23 @@ refuses to start when they do not: `AUTH_PROVIDERS` naming a provider with no
 credentials would draw a button that posts into an error, and credentials
 without the declaration would accept a sign-in the surface never offers.
 
-The other half of that agreement is **baked into the web image**, not read from
-`.env`: the sign-in buttons are compiled at build time from the `AUTH_PROVIDERS`
-build arg, which `images.yml` fills from the repository variable
-`IMAGE_AUTH_PROVIDERS` (`google` if it is unset). A deployment whose `.env` says
-`laf` while the image it pulled was built for `google` starts cleanly and shows
-the wrong buttons: nothing at run time compares the baked set with the
-deployment's. Changing which sign-ins the fleet offers is that variable and a
-rebuild, not a per-deployment setting.
+The other half of that agreement is **read from the deployment at run time**:
+the sign-in screen asks `GET /api/auth/providers` before it draws, and the
+server answers with exactly what `AUTH_PROVIDERS` declared. So the buttons
+follow `.env`, and a VM switched from `google` to `laf` changes its buttons on
+the next restart with no image involved.
+
+The web image still carries a list of its own, compiled at build time from the
+`AUTH_PROVIDERS` build arg that `images.yml` fills from the repository variable
+`IMAGE_AUTH_PROVIDERS` (`google` if it is unset) — but since 2026-09-06 that
+list is only the **fallback**, used when the server cannot answer: an API image
+older than the web image (the route does not exist), or a server that cannot be
+reached at all. It used to be the whole answer, and the fleet measured what that
+meant: an image built for `google` drew a Google button on a VM whose `.env`
+said `laf`, and the button posted into a callback the deployment had never
+registered. Images built before this date still behave that way, which is why
+a rehearsal against the fleet's broker runs on `IMAGE_TAG=edge` until a newer
+`:stable` is cut.
 
 Then:
 

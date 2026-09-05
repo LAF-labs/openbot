@@ -1,9 +1,14 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { Button } from "@/components/ui/button";
 import { type SignInProvider, signInWithProvider } from "@/lib/auth/client";
+import {
+  bakedProviders,
+  signInProvidersQueryOptions,
+} from "@/lib/auth/providers";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
@@ -24,6 +29,13 @@ export const Route = createFileRoute("/sign")({
       throw redirect({ to: safeRedirect(search.redirect) });
     }
   },
+  /*
+   * The provider list is loaded before the screen draws, so the buttons never flicker from the
+   * baked set to the server's. The query resolves on every failure (to the baked list), so this
+   * loader cannot reject and blank the page the way a rejected `beforeLoad` does.
+   */
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(signInProvidersQueryOptions()),
   component: SignScreen,
 });
 
@@ -90,14 +102,24 @@ function SignScreen() {
   );
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * The deployment's own answer, not the build's: which sign-ins exist is read from
+   * `/api/auth/providers` (loaded by the route), and the list compiled into this image is only
+   * where the surface lands when the server cannot say — see lib/auth/providers.ts for what the
+   * fleet measured when it was the other way round.
+   */
+  const { data: providers = bakedProviders } = useQuery(
+    signInProvidersQueryOptions(),
+  );
+
   /**
    * With the broker declared, every branded button is on offer and every
    * press routes through it — the button's provider becomes the hint that
    * skips the broker's own picker. Direct declarations keep the old path.
    */
-  const viaBroker = appConfig.auth.providers.includes("laf");
+  const viaBroker = providers.includes("laf");
   const offered = (provider: SignInProvider) =>
-    viaBroker || appConfig.auth.providers.includes(provider);
+    viaBroker || providers.includes(provider);
 
   async function handleSignIn(provider: SignInProvider) {
     setError(null);

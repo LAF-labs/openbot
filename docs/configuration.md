@@ -93,7 +93,7 @@ Three providers can be configured directly, plus the fleet's own broker. Everyth
 
 | Variable                                                | Meaning                                                                                                                    |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_PROVIDERS`                                        | Comma-separated declaration: `google`, `kakao`, `naver`, `laf`. This is what the sign-in buttons are compiled from.        |
+| `AUTH_PROVIDERS`                                        | Comma-separated declaration: `google`, `kakao`, `naver`, `laf`. The server publishes it on `GET /api/auth/providers` and the sign-in screen draws its buttons from that answer; the list compiled into the web image is only the fallback for a server that cannot answer. |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`  | Google OAuth client. Both or neither. **Also the application every Google 연결 consents under** (Drive, Sheets, Gmail, Calendar, Business Profile): one client, one console, with the sign-in callback and the relay's connector callback both registered on it. |
 | `KAKAO_OAUTH_CLIENT_ID`, `KAKAO_OAUTH_CLIENT_SECRET`    | Kakao OAuth client. Both or neither.                                                                                       |
 | `NAVER_OAUTH_CLIENT_ID`, `NAVER_OAUTH_CLIENT_SECRET`    | Naver OAuth client. Both or neither.                                                                                       |

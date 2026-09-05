@@ -257,7 +257,7 @@ GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
 ```
 
-`AUTH_PROVIDERS` is what the sign-in buttons are compiled from, so it must agree with the credentials: a name with no credentials, or credentials nobody declared, stops the server rather than serving a button that posts into an error. Each provider's redirect URI is the origin plus `/api/auth/callback/<provider>`.
+`AUTH_PROVIDERS` is what the sign-in buttons are drawn from — the server publishes it on `GET /api/auth/providers` and the screen asks before it draws — so it must agree with the credentials: a name with no credentials, or credentials nobody declared, stops the server rather than serving a button that posts into an error. Each provider's redirect URI is the origin plus `/api/auth/callback/<provider>`.
 
 A deployment can also sign people in through a shared OIDC broker instead of its own provider apps, as `AUTH_PROVIDERS=laf` plus `LAF_OIDC_ISSUER` and `LAF_OIDC_CLIENT_ID` — a public client with PKCE, so there is no secret to configure. See [docs/laf/deploying.md](docs/laf/deploying.md).
 
@@ -267,7 +267,7 @@ Then set the three that decide who gets in and from where:
 - `INITIAL_ADMIN_EMAILS` — comma separated. An address listed here becomes an administrator the first time it signs in; everybody else becomes a user.
 - `SIGN_IN_ALLOWED_EMAILS` — comma separated, and the actual door: unset, anybody the provider authenticates gets an account. Admin emails are admitted on top of it, so listing staff cannot lock the owner out.
 
-Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in buttons are written into the app's generated config when it is built, from `AUTH_PROVIDERS` — or, with that unset locally, from whichever credentials are present alongside `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
+Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in screen reads the providers from the running server. The app's generated config carries a copy written when it is built, from `AUTH_PROVIDERS` — or, with that unset locally, from whichever credentials are present alongside `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` — and that copy is only what the screen falls back to when the server cannot answer. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
 
 A partial set is refused rather than ignored: the server will not start with `BETTER_AUTH_SECRET` or `BETTER_AUTH_URL` but no client credentials, or with a secret shorter than 32 characters.
 
