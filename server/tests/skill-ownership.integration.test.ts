@@ -298,6 +298,45 @@ describe("what a person may do over HTTP", () => {
     expect((await store.listForAgent(aliceBot)).tools).toEqual([]);
   });
 
+  /*
+   * THE OTHER DIRECTION, WHICH NOTHING WAS WATCHING.
+   *
+   * Granting was tested; taking it back was not — and the owner's Bot profile now draws a switch
+   * for it, so a person turning a skill off is an ordinary act rather than an administrator's.
+   * `enablementRefusal` guards both verbs, and this is what says so.
+   */
+  test("takes their own skill back off their own Bot", async () => {
+    // Self-contained: granted here rather than relying on the test above having run.
+    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
+    const response = await asAlice().request(
+      `/grants?kind=skill&ref=${aliceSkill}&agentId=${aliceBot}`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(200);
+    expect((await store.listForAgent(aliceBot)).skills).toEqual([]);
+  });
+
+  test("cannot take somebody else's grant back", async () => {
+    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request(
+      `/grants?kind=skill&ref=${aliceSkill}&agentId=${aliceBot}`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(403);
+    // Still held: a refusal that leaves the row deleted anyway is the worst of both.
+    expect(
+      (await store.listForAgent(aliceBot)).skills.map((skill) => skill.slug),
+    ).toContain(aliceSkill);
+  });
+
   test("sees the deployment's skills and their own, and not somebody else's", async () => {
     const body = (await (await asAlice().request("/")).json()) as {
       skills: { slug: string }[];

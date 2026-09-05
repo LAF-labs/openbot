@@ -78,7 +78,9 @@ describe("server authorization", () => {
       // app talking to a server that has not been told reads it the same way the package defaults —
       // and each of these decides whether a control is drawn at all, so a wrong answer here is a
       // control that saves and reaches nothing.
-      deployment: { effort: true, autoReview: true },
+      // `seats` is the third: how many Bots this person's computer holds, so the roster can say
+      // "내 봇 3/5" rather than leaving somebody to meet the cap by being refused by it.
+      deployment: { effort: true, autoReview: true, seats: 5 },
     });
   });
 

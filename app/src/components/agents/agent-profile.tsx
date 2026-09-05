@@ -38,6 +38,8 @@ import {
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
+import { AUTO_REVIEW_EXAMPLES } from "@/lib/agents/auto-review";
+import { type BotMenuItem, botMenuItems } from "@/lib/agents/bot-menu";
 import { useSeats } from "@/lib/agents/new-bot";
 import {
   agentKeys,
@@ -45,7 +47,6 @@ import {
   type AgentProfile as AgentProfileRecord,
   agentQueryOptions,
 } from "@/lib/agents/queries";
-import { seatsFullMessage } from "@/lib/agents/seats";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -255,24 +256,34 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                 {t("Start channel")}
               </Button>
               <BotMenu
-                onDelete={() => setConfirmingDeleteId(agentId)}
-                onDuplicate={async () => {
-                  const copy = await duplicateAgent.mutateAsync(agentId);
-                  await navigate({ search: { agent: copy.id }, to: "/agents" });
-                }}
-                onEdit={() => setEditingId(agentId)}
-                onToggleHidden={async () => {
+                items={botMenuItems(profile, seats)}
+                name={profile.name}
+                onChoose={async (id) => {
+                  if (id === "edit") {
+                    setEditingId(agentId);
+                    return;
+                  }
+                  if (id === "delete") {
+                    setConfirmingDeleteId(agentId);
+                    return;
+                  }
+                  if (id === "duplicate") {
+                    const copy = await duplicateAgent.mutateAsync(agentId);
+                    await navigate({
+                      search: { agent: copy.id },
+                      to: "/agents",
+                    });
+                    return;
+                  }
                   await setHidden.mutateAsync({
                     agentId,
                     hidden: !profile.hidden,
                   });
+                  // Hiding the Bot whose profile is open leaves the pane pointed at something the
+                  // roster behind it no longer lists.
                   if (!profile.hidden)
                     await navigate({ search: {}, to: "/agents" });
                 }}
-                profile={profile}
-                seatsFull={seats.isFull}
-                seatsLast={seats.isLastSeat}
-                seatsMessage={seatsFullMessage(seats)}
               />
             </div>
           </>
@@ -383,30 +394,20 @@ export function AgentProfile({ agentId }: { agentId: string }) {
  * name. Duplicate spends a seat, which is the thing nobody knew, so it says which seat.
  */
 function BotMenu({
-  onDelete,
-  onDuplicate,
-  onEdit,
-  onToggleHidden,
-  profile,
-  seatsFull,
-  seatsLast,
-  seatsMessage,
+  items,
+  name,
+  onChoose,
 }: {
-  onDelete: () => void;
-  onDuplicate: () => Promise<void>;
-  onEdit: () => void;
-  onToggleHidden: () => Promise<void>;
-  profile: AgentProfileRecord;
-  seatsFull: boolean;
-  seatsLast: boolean;
-  seatsMessage: string;
+  items: BotMenuItem[];
+  name: string;
+  onChoose: (id: BotMenuItem["id"]) => Promise<void> | void;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button
-            aria-label={t("Actions for {name}", { name: profile.name })}
+            aria-label={t("Actions for {name}", { name })}
             size="icon"
             variant="outline"
           >
@@ -416,63 +417,32 @@ function BotMenu({
       />
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuGroup>
-          {profile.canManage ? (
+          {items.map((item) => (
             <DropdownMenuItem
               className="flex-col items-start gap-0"
-              onClick={onEdit}
+              disabled={item.disabled}
+              key={item.id}
+              onClick={() => void onChoose(item.id)}
+              variant={item.destructive ? "destructive" : "default"}
             >
-              <span>{t("Edit profile")}</span>
-              <span className="text-muted-foreground text-xs">
-                {t("Its name and what it does.")}
+              <span>{item.label}</span>
+              {/*
+               * THE EXPLANATION IS IN THE MENU, NOT AFTER THE PRESS. Hide's sentence used to appear
+               * under the button once the Bot was already hidden, which is the one moment somebody
+               * has stopped needing it; Duplicate never said anything at all about the seat it was
+               * about to spend.
+               */}
+              <span
+                className={
+                  item.destructive
+                    ? "text-xs opacity-80"
+                    : "text-muted-foreground text-xs"
+                }
+              >
+                {item.description}
               </span>
             </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem
-            className="flex-col items-start gap-0"
-            onClick={() => void onToggleHidden()}
-          >
-            <span>{profile.hidden ? t("Unhide") : t("Hide")}</span>
-            {/*
-             * THE EXPLANATION IS IN THE MENU, NOT AFTER THE PRESS. It used to appear as a line
-             * under the button once the Bot was already hidden, which is the one moment somebody
-             * has stopped needing it.
-             */}
-            <span className="text-muted-foreground text-xs">
-              {profile.hidden
-                ? t("Put it back on your Bot list.")
-                : t("Off your Bot list. It keeps working, and keeps its seat.")}
-            </span>
-          </DropdownMenuItem>
-          {profile.canManage ? (
-            <DropdownMenuItem
-              className="flex-col items-start gap-0"
-              disabled={seatsFull}
-              onClick={() => void onDuplicate()}
-            >
-              <span>{t("Duplicate")}</span>
-              <span className="text-muted-foreground text-xs">
-                {seatsFull
-                  ? seatsMessage
-                  : seatsLast
-                    ? t(
-                        "A copy with the same settings. It takes your last seat.",
-                      )
-                    : t("A copy with the same settings. It takes a seat.")}
-              </span>
-            </DropdownMenuItem>
-          ) : null}
-          {profile.canManage ? (
-            <DropdownMenuItem
-              className="flex-col items-start gap-0"
-              onClick={onDelete}
-              variant="destructive"
-            >
-              <span>{t("Delete")}</span>
-              <span className="text-xs opacity-80">
-                {t("It asks first. There is no undo.")}
-              </span>
-            </DropdownMenuItem>
-          ) : null}
+          ))}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -854,11 +824,6 @@ function SkillsCard({ agentId }: { agentId: string }) {
  * instruction saved gets a sentence instead of nothing at all, because removing the card outright
  * would leave somebody believing a rule they wrote is in force.
  */
-const AUTO_REVIEW_EXAMPLES = [
-  "Reading anything on our own site is fine.",
-  "Looking things up is fine. Sending anything is not.",
-  "Saving a draft is fine.",
-];
 
 function AutoReviewCard({
   agentId,
