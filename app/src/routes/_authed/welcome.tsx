@@ -137,6 +137,10 @@ function Welcome() {
              * it says out loud that it can wait, because on the first minute it can.
              */}
             <Button
+              // It renders an <a>, and the primitive warns — on the console of the FIRST screen
+              // anybody sees — that a non-button loses native button semantics. It is a link on
+              // purpose, so it says so, the same way the export button does.
+              nativeButton={false}
               render={(props) => (
                 <Link to="/settings/connected-accounts" {...props} />
               )}
