@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isOpenPath } from "../src/authorisation";
+import { isBotId, isOpenPath } from "../src/authorisation";
 
 /**
  * WHICH BOT A REQUEST IS FOR.
@@ -7,22 +7,22 @@ import { isOpenPath } from "../src/authorisation";
  * This container holds one browser per Bot: a profile with that Bot's logins, a snapshot generation,
  * a control state saying whose wheel it is, and the proxy its traffic leaves through. Every one of
  * those keys off `x-openbot-bot-id`, and nothing in this repository named that header in a test
- * until this file — which is how the thing below stayed true.
+ * until this file — which is how both of the things below stayed true for as long as they did.
  *
- * `botIdOf` FALLS BACK TO A DEFAULT WHEN THE HEADER IS ABSENT (`src/index.ts`, `DEFAULT_BOT_ID`,
- * `COMPUTER_BOT_ID` or "shared"). So a caller that forgets the header is not refused: it is quietly
- * served a different Bot's browser. The failure has no error in it. The Bot reports that the site
- * has logged it out, or acts on a page belonging to somebody else's session, and the audit row on
- * the server says the call was made for the Bot the server thought it named.
+ * The first was the FALLBACK: a request with no header was served a fixed `"shared"` profile rather
+ * than refused, so a caller that forgot it silently drove a different Bot's browser. That is gone;
+ * `index.ts` answers `laf:bot_header_missing` on every path but `/health`.
  *
- * The fallback was written for the health check, which genuinely has no Bot. `/health` is also the
- * one path this container serves without a token (below), so "no Bot" and "no token" already
- * describe the same single request — which is why the fallback can be narrowed to it.
+ * The second is what this file now pins. The id was never LOOKED at, and it becomes a directory
+ * name: `join(PROFILES_DIR, botId)` is the profile Chromium opens, the `control.json` written on
+ * every handover, and the tree `/computers/reset` hands to `rm -rf`. The server did not check it
+ * either, and Hono decodes `%2F` in a path parameter before a handler sees it, so
+ * `POST /api/computers/..%2F..%2Ftmp%2Fx/control/take` arrived here as `../../tmp/x` and
+ * `join("/profiles", that)` is `/tmp/x` — a file written outside the profiles root, as root, by
+ * anyone with a session on the server in front.
  *
- * The two cases below are TODO deliberately. They are the contract this container should keep, and
- * the change that makes them pass belongs to whoever owns this directory: they need `botIdOf` to
- * refuse rather than default, and the fetch handler to answer 400 before it touches a session. See
- * §3.3 and §5.8 of docs/laf/redesign-2026-09.md.
+ * Both ends check now (`server/src/computer/bot-id.ts` is the other), because each of them was once
+ * the only one checking and that is exactly how the pair of silent fallbacks got in.
  */
 describe("the Bot a request names", () => {
   test("only the health check is served without proof of who is calling", () => {
@@ -46,25 +46,46 @@ describe("the Bot a request names", () => {
     }
   });
 
-  test.todo("a Bot-scoped request with no x-openbot-bot-id is refused with 400, not defaulted", () => {
-    /*
-     * The expectation, exactly.
-     *
-     * A request to any path other than `/health` that carries a valid token and no
-     * `x-openbot-bot-id` header must answer 400 with `{ error: … }` and must not create a session,
-     * launch a profile, or touch a browser. `COMPUTER_BOT_ID` stops being a fallback for every
-     * request and becomes, if it stays at all, the id `/health` reports for itself.
-     *
-     * Today it answers 200 for the Bot named by `COMPUTER_BOT_ID ?? "shared"`.
-     */
+  test("a Bot id that could mean somewhere else is not a Bot id", () => {
+    for (const id of [
+      // The measured one, as it arrived on the header.
+      "../../tmp/x",
+      "..",
+      ".",
+      "profiles/../etc",
+      "a/b",
+      "a\\b",
+      // `/profiles/.ssh` is a directory too, and it is not this Bot's profile.
+      ".ssh",
+      "-flag",
+      "%2e%2e",
+      "bot 7",
+      // A dot is a path's punctuation, and no id the server mints has one.
+      "a.b",
+      // The id also goes back out in log lines and, on the server side, in a header value.
+      "bot\r\n7",
+      "봇",
+      "",
+      "x".repeat(129),
+    ]) {
+      expect([id, isBotId(id)]).toEqual([id, false]);
+    }
+    for (const value of [null, undefined, 7, {}]) {
+      expect(isBotId(value)).toBe(false);
+    }
   });
 
-  test.todo("a /stream upgrade with neither the header nor ?bot is refused the same way", () => {
-    /*
-     * The socket is the one caller that cannot send a header, so `?bot=` is accepted there and
-     * only there. That exception must not become a second fallback: an upgrade carrying neither
-     * has to be refused rather than watched against the default Bot's screen, which would show one
-     * person another person's browser.
-     */
+  test("every id this product mints is still one", () => {
+    // A check that also refused `agent_<uuid>` would take the browser away from every Bot anybody
+    // has made — the same failure as the fallback, arriving from the other direction.
+    for (const id of [
+      "agent_2f1c9a3e-7d24-4a6b-9b1e-0c8f5d2a7b41",
+      "bot-1",
+      "health",
+      "a",
+      "x".repeat(128),
+    ]) {
+      expect([id, isBotId(id)]).toEqual([id, true]);
+    }
   });
 });

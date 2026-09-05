@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { siteById } from "../../../shared/sites/catalogue";
 import type { AppVariables } from "../auth/guards";
+import { BOT_ID_INVALID, isBotId } from "./bot-id";
 import { ComputerUnavailableError } from "./client";
 import type { ComputerGateway } from "./gateway";
 import type { SiteConnectionStore } from "./site-connections";
@@ -49,6 +50,15 @@ export function createSiteRoutes(
       return context.json({ error: "A Bot is required." }, 400);
     }
     const botId = body.botId.trim();
+    /*
+     * The other door into the computer's `x-openbot-bot-id`, and the one that carries the Bot in a
+     * body rather than in the address — which is why it needs the check of its own that the routes
+     * next door get from a middleware. The header is a directory name on the far side; see
+     * bot-id.ts for what `../..` reached before anything looked.
+     */
+    if (!isBotId(botId)) {
+      return context.json({ error: BOT_ID_INVALID, code: BOT_ID_INVALID }, 400);
+    }
 
     let page: { url: string; text: string };
     try {

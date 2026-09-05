@@ -39,6 +39,35 @@ export function offeredToken(headers: Headers, url: URL): string {
 }
 
 /**
+ * The Bot a caller named, and whether this process will treat it as a name at all.
+ *
+ * THE ID BECOMES A DIRECTORY. `x-openbot-bot-id` is joined onto `PROFILES_DIR` — the profile Chrome
+ * launches from, the `control.json` written on every handover, and the tree `/computers/reset`
+ * hands to `rm -rf`. Nothing ever looked at the string, and the server's routes did not either:
+ * Hono decodes `%2F` in a path parameter, so `POST /api/computers/..%2F..%2Ftmp%2Fx/control/take`
+ * arrived here as `../../tmp/x` and `join("/profiles", that)` is `/tmp/x`. Measured: taking control
+ * wrote a file there, as root, in the container that holds every login this customer has.
+ *
+ * The server refuses this too, in `server/src/computer/bot-id.ts`, and the two checks are
+ * deliberately duplicated rather than shared: this image copies `agent-computer/src` and nothing
+ * else, and a container that drives a browser full of real logins is not a place to trust that
+ * somebody upstream looked. The two patterns are the same by construction — ASCII, starting with a
+ * letter or a digit, then letters, digits, `_` and `-`, and nothing that can mean "somewhere else":
+ * no separator, no dot, no `%`, no whitespace.
+ *
+ * Here rather than in `index.ts` for the reason at the top of this file: `index.ts` imports
+ * Playwright at module scope, so a decision that lives in it cannot be tested without Chrome.
+ */
+const BOT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+/** A fact code, like every other refusal this container ships. The words are the surface's. */
+export const BOT_ID_INVALID = "laf:bot_id_invalid";
+
+export function isBotId(value: unknown): value is string {
+  return typeof value === "string" && BOT_ID.test(value);
+}
+
+/**
  * Health is the one thing an unauthenticated caller may ask.
  *
  * An orchestrator has to be able to check whether this process is up without holding a secret, and

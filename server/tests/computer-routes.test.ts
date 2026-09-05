@@ -195,6 +195,72 @@ function surface(
   };
 }
 
+/**
+ * THE BOT'S ID IS A DIRECTORY NAME ON THE FAR SIDE.
+ *
+ * `agent-computer` joins `x-openbot-bot-id` onto `/profiles`: the profile Chrome opens, the
+ * `control.json` written on every handover, the tree `/computers/reset` hands to `rm -rf`. Nothing
+ * on this side ever looked at the string — and Hono decodes `%2F` in a path parameter before a
+ * handler sees it, so `POST /..%2F..%2Ftmp%2Fx/control/take` reached the container as
+ * `../../tmp/x`. Measured: `join("/profiles", "../../tmp/x")` is `/tmp/x`, and taking control wrote
+ * a file there, as root, inside the container that holds every login this customer has. Any signed
+ * in member of staff could do it; the reset route, which an owner can reach, deletes such a tree.
+ */
+describe("the Bot an address names", () => {
+  /**
+   * The shapes that mean "somewhere else", each as the address a browser would actually send.
+   *
+   * Encoded, because that is the only way they survive the trip. A segment that is only `..`, in
+   * either spelling, is resolved away by URL normalisation before anything routes it — which is
+   * precisely why `%2F` was the hole: it is the one spelling that reaches a handler still meaning a
+   * separator, and it carries the `..` in front of it through with it.
+   */
+  const ESCAPES = [
+    "..%2F..%2Ftmp%2Fx",
+    "%2e%2e%2f%2e%2e%2fetc",
+    ".ssh",
+    "bot%2F7",
+    "bot%007",
+  ];
+
+  test("a path where a Bot should be is refused before anything runs", async () => {
+    const { app, calls, rows, sentToComputer } = surface(ADMIN);
+
+    for (const id of ESCAPES) {
+      const response = await app.request(`/${id}/control/take`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teaching: true }),
+      });
+      const body = (await response.json()) as { code?: string };
+      expect([id, response.status, body.code]).toEqual([
+        id,
+        400,
+        "laf:bot_id_invalid",
+      ]);
+    }
+
+    // Nothing reached the computer, nothing was recorded, and no recording was started: the refusal
+    // is in front of the handler rather than inside it.
+    expect(calls).toEqual([]);
+    expect(sentToComputer).toEqual([]);
+    expect(rows).toEqual([]);
+  });
+
+  test("an id this product mints is not caught by it", async () => {
+    // A refusal that also refuses `agent_<uuid>` would take the computer away from every Bot
+    // anybody has made, which is the failure worth catching in the same breath.
+    const { app } = surface(ADMIN);
+
+    const response = await app.request(
+      "/agent_2f1c9a3e-7d24-4a6b-9b1e-0c8f5d2a7b41/control",
+      { method: "GET" },
+    );
+
+    expect(response.status).toBe(200);
+  });
+});
+
 describe("wiping a computer", () => {
   /*
    * THE MOST DESTRUCTIVE BUTTON IN THE PRODUCT sat behind the same guard as reading a screenshot.
@@ -710,6 +776,28 @@ describe("the whole surface", () => {
         route,
         true,
         status,
+      ]);
+    }
+  });
+
+  test("refuses every one of them a Bot id that is a path", async () => {
+    /*
+     * The same sweep, with `bot-1` replaced by an escape. One middleware guards these rather than a
+     * check per handler, and this is what says so: a route added later that forgets is not a route
+     * that can forget, and a middleware quietly narrowed to one path shows up here rather than in a
+     * container with a file written outside its profile.
+     */
+    const { app, seen } = surface(ADMIN);
+    await seen();
+    const hit = send(app);
+
+    for (const [method, path, body] of ROUTES) {
+      if (!path.startsWith("/bot-1/")) continue;
+      const escaped = path.replace("/bot-1/", "/..%2F..%2Ftmp%2Fx/");
+      const response = await hit([method, escaped, body]);
+      expect([`${method} ${path}`, response.status]).toEqual([
+        `${method} ${path}`,
+        400,
       ]);
     }
   });

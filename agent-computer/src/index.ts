@@ -3,7 +3,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Frame, Page } from "playwright";
 import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
-import { isOpenPath, matchesToken, offeredToken } from "./authorisation";
+import {
+  BOT_ID_INVALID,
+  isBotId,
+  isOpenPath,
+  matchesToken,
+  offeredToken,
+} from "./authorisation";
 import {
   type Control,
   ControlError,
@@ -803,8 +809,11 @@ serve<StreamData>({
     if (url.pathname === "/health") {
       // The header is optional here and nowhere else: an orchestrator probing this container has no
       // Bot to name. Where one IS named, the answer is about that Bot's browser, as it always was.
+      // Named, and a name. An orchestrator probing this container has no Bot to name, so the header
+      // stays optional here — but a health check is not a way to ask about `../..` either, and an
+      // unnameable Bot is simply not reported on rather than refused.
       const asked = botIdOf(request);
-      const [profile] = asked ? profiles.summary([asked]) : [];
+      const [profile] = isBotId(asked) ? profiles.summary([asked]) : [];
       return json({
         status: "ok",
         // `browser` kept as it was: it is in the published contract and start.sh reads it.
@@ -854,6 +863,17 @@ serve<StreamData>({
         { code: "laf:bot_header_missing", error: "laf:bot_header_missing" },
         400,
       );
+    }
+    /*
+     * AND IT HAS TO BE A NAME, NOT A PATH.
+     *
+     * Refused here, before `sessionFor` — which is the first thing that turns the id into a
+     * directory, because restoring the control state reads `<profiles>/<botId>/control.json` and
+     * writing it back creates the directory. `../../tmp/x` got that far and wrote the file, as
+     * root. Checked again on this side rather than trusted from the server: see `isBotId`.
+     */
+    if (!isBotId(botId)) {
+      return json({ code: BOT_ID_INVALID, error: BOT_ID_INVALID }, 400);
     }
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.

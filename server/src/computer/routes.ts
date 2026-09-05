@@ -4,6 +4,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdminRoute } from "../auth/guards";
+import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -62,6 +63,28 @@ export function createComputerRoutes(
   auditStore?: AuditStore,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+
+  /*
+   * THE BOT'S ID, BEFORE ANY HANDLER GETS IT.
+   *
+   * One middleware rather than a check per route, because the property has to survive the next route
+   * somebody adds: every handler below takes `:botId` straight from the address and hands it to the
+   * gateway, which puts it in a header that the computer turns into a directory name. Hono decodes
+   * `%2F` before a handler sees the parameter, so `..%2F..%2Ftmp%2Fx` arrived as `../../tmp/x` and
+   * escaped `/profiles` — a file written as root, anywhere in the container, by anyone with a
+   * session. See bot-id.ts.
+   *
+   * Registered before every route so it runs first, and refusing rather than sanitising: an id that
+   * has to be rewritten to be safe is not this deployment's id, and quietly repairing it is how a
+   * call ends up on a browser belonging to nobody.
+   */
+  routes.use("/:botId/*", async (context, next) => {
+    const botId = context.req.param("botId");
+    if (botId !== undefined && !isBotId(botId)) {
+      return context.json({ error: BOT_ID_INVALID, code: BOT_ID_INVALID }, 400);
+    }
+    await next();
+  });
 
   routes.get("/:botId/status", requireUser, async (context) =>
     context.json(await client.status(context.req.param("botId"))),
@@ -840,6 +863,10 @@ function asRef(
 }
 
 function describe(error: unknown): string {
+  // A fact code rather than a description, and the one failure here that has one. It cannot be
+  // reached through a route — the middleware above refuses first — and is here for the caller that
+  // arrives some other way.
+  if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
@@ -850,7 +877,10 @@ function describe(error: unknown): string {
  * not running (an operator fixes it), the refs are stale (the model fixes it by snapshotting again),
  * and everything else. Navigation established this; the acting routes follow it.
  */
-function statusFor(error: unknown): 409 | 500 | 503 {
+function statusFor(error: unknown): 400 | 409 | 500 | 503 {
+  // A caller that named something no filesystem should be asked about. The request is wrong, so it
+  // is a 400 — never a 500, which would send an operator looking at a container that is behaving.
+  if (error instanceof BotIdRefusedError) return 400;
   if (error instanceof StaleSnapshotError) return 409;
   // The same answer as a stale snapshot, because it is the same instruction: the refs are wrong, take
   // another snapshot. Not 503, which says the computer is unavailable and sends an operator hunting a

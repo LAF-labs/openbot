@@ -1,3 +1,4 @@
+import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
   ActionResult,
   ClickInput,
@@ -159,6 +160,17 @@ export function createComputerClient(options: ComputerClientOptions) {
       // the answer to "the person pressed Stop first" should never be a race.
       if (caller?.aborted) {
         throw new ComputerUnavailableError("The action was stopped.");
+      }
+
+      /*
+       * THE HEADER IS A DIRECTORY NAME ON THE FAR SIDE, so this is the last place that can stop a
+       * `../..` from becoming one. The routes check the id before they call the gateway; this is
+       * here for the caller that is not a route — the runner's toolkit, an account deletion, the
+       * next thing somebody wires up — because the header is invented in this file and nowhere else,
+       * which makes it the only check that cannot be skipped by forgetting about it. See bot-id.ts.
+       */
+      if (botId !== undefined && !isBotId(botId)) {
+        throw new BotIdRefusedError();
       }
 
       let response: Response;

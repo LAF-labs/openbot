@@ -371,4 +371,61 @@ describe("the header that says which Bot", () => {
 
     expect(sent).toEqual([{ path: "/health", botId: "bot-7" }]);
   });
+
+  /**
+   * AND IT IS A NAME, NOT A PATH.
+   *
+   * The far side joins this header onto `/profiles` — the profile Chrome opens, the `control.json`
+   * written on every handover, the tree `/computers/reset` deletes. Nothing between a route and the
+   * wire looked at it, and Hono decodes `%2F` in a path parameter, so an address of
+   * `..%2F..%2Ftmp%2Fx` reached this file as `../../tmp/x` and went out on the header as-is.
+   *
+   * Refused HERE, in the one file that invents the header, so a caller that is not a route — the
+   * runner's toolkit, an account deletion, whatever is wired up next — cannot send one either.
+   */
+  test("a Bot id that is a path never reaches the wire", async () => {
+    const { client, sent } = recording();
+
+    for (const id of [
+      "../../tmp/x",
+      "..",
+      "a/b",
+      "a\\b",
+      ".ssh",
+      "bot 7",
+      "bot\n7",
+      "%2e%2e",
+      "",
+    ]) {
+      // Every method goes through one `call`, so one of them proves the door: what matters is that
+      // the request was never dispatched at all.
+      await expect(client.forBot(id).snapshot()).rejects.toThrow(
+        "laf:bot_id_invalid",
+      );
+    }
+
+    expect(sent).toEqual([]);
+  });
+
+  test("the ids this product actually mints still go through", async () => {
+    // The refusal is worth nothing if it also refuses `agent_<uuid>`, which is every Bot anybody
+    // creates, or the plain names the tests and the health probe use.
+    const { client, sent } = recording();
+
+    for (const id of [
+      "agent_2f1c9a3e-7d24-4a6b-9b1e-0c8f5d2a7b41",
+      "bot-7",
+      "health",
+      "a",
+    ]) {
+      await client.forBot(id).snapshot();
+    }
+
+    expect(sent.map((call) => call.botId)).toEqual([
+      "agent_2f1c9a3e-7d24-4a6b-9b1e-0c8f5d2a7b41",
+      "bot-7",
+      "health",
+      "a",
+    ]);
+  });
 });
