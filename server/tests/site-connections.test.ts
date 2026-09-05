@@ -161,6 +161,30 @@ describe("the 사이트 연결 store", () => {
       true,
     ]);
   });
+
+  test("turning a site off takes this person's row and nobody else's", async () => {
+    const mine = await createUser();
+    const theirs = await createUser();
+    for (const userId of [mine, theirs]) {
+      await store.record({
+        userId,
+        siteId: "baemin-ceo",
+        botId: "bot-1",
+        signedIn: true,
+      });
+    }
+
+    expect(await store.forget({ userId: mine, siteId: "baemin-ceo" })).toBe(
+      true,
+    );
+    expect(await store.list(mine)).toEqual([]);
+    // The other person's row is the whole point: a delete by site alone would take it too.
+    expect((await store.list(theirs)).map((row) => row.siteId)).toEqual([
+      "baemin-ceo",
+    ]);
+    // A site that was never connected is not an error; there is simply nothing to take.
+    expect(await store.forget({ userId: mine, siteId: "hometax" })).toBe(false);
+  });
 });
 
 describe("the check route", () => {
@@ -269,6 +293,29 @@ describe("the check route", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ connections: [] });
+  });
+
+  test("the switch can be turned off, and only on a site that exists", async () => {
+    const userId = await createUser();
+    await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-1",
+      signedIn: true,
+    });
+
+    const app = routesReading(BAEMIN_SIGNED_IN, userId);
+    const off = await app.request("/api/sites/baemin-ceo/connection", {
+      method: "DELETE",
+    });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toEqual({ forgotten: true });
+    expect(await store.list(userId)).toEqual([]);
+
+    const unknown = await app.request("/api/sites/not-a-site/connection", {
+      method: "DELETE",
+    });
+    expect(unknown.status).toBe(404);
   });
 });
 

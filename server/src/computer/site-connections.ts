@@ -49,6 +49,16 @@ export type SiteConnectionStore = {
     botId: string;
     signedIn: boolean;
   }): Promise<SiteConnection | null>;
+  /**
+   * Drop the row, because the person turned this site off.
+   *
+   * WHAT IT DOES NOT DO, AND WHY THE SURFACE HAS TO SAY SO. The session is a cookie in the Bot's
+   * Chromium profile and nothing here can reach into it: forgetting the row stops the card claiming
+   * a connection and stops a routine being told there is one, and the browser stays signed in until
+   * somebody logs out on the site itself. A row silently removed under the word "연결 끊기" would be
+   * the screen promising something it cannot do, which is why the confirmation says both halves.
+   */
+  forget(input: { userId: string; siteId: string }): Promise<boolean>;
 };
 
 type Row = typeof lafSiteConnections.$inferSelect;
@@ -106,6 +116,21 @@ export function createSiteConnectionStore(
         })
         .returning();
       return saved ? asConnection(saved) : null;
+    },
+
+    async forget({ userId, siteId }) {
+      // Scoped to the person AND the site. A delete by site alone would take everybody's row on a
+      // machine that ever grows a second account, for a gesture that belongs to one of them.
+      const removed = await database
+        .delete(lafSiteConnections)
+        .where(
+          and(
+            eq(lafSiteConnections.userId, userId),
+            eq(lafSiteConnections.siteId, siteId),
+          ),
+        )
+        .returning();
+      return removed.length > 0;
     },
   };
 }

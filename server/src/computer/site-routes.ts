@@ -79,5 +79,23 @@ export function createSiteRoutes(
     return context.json({ signedIn, connection });
   });
 
+  /**
+   * Turn one site off: the row goes, and nothing is claimed about the browser.
+   *
+   * The switch on the 연결 screen needs somewhere to go when it is turned off, and a switch that
+   * could only ever be turned on is not a switch. This is the whole of what the product can
+   * truthfully do — see {@link SiteConnectionStore.forget} — and the screen's confirmation says the
+   * other half out loud rather than letting the gesture imply it.
+   */
+  routes.delete("/:siteId/connection", requireUser, async (context) => {
+    const site = siteById(context.req.param("siteId"));
+    if (!site) return context.json({ error: "No such site." }, 404);
+    const forgotten = await store.forget({
+      userId: context.var.actor.id,
+      siteId: site.id,
+    });
+    return context.json({ forgotten });
+  });
+
   return routes;
 }
