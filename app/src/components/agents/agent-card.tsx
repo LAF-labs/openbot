@@ -34,8 +34,14 @@ export function AgentCard({
      * the profile panel beside it took each column below 144px and the cards grew out of their cells
      * and over each other. The grid now sizes its columns and the card fills the one it is given.
      */
-    <div className="group w-full overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
-      <div className="flex aspect-square items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)] p-4">
+    /*
+     * `h-full`, BECAUSE THE SECOND LINE IS NOT ALWAYS THE SAME HEIGHT. Measured on a roster of four:
+     * a Bot with a two-line description made its card 16px taller than the one-line cards beside it,
+     * so the row's bottom edge stepped. The grid already stretches its items; the card just was not
+     * filling the cell it was given.
+     */
+    <div className="group flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-ring/40">
+      <div className="flex aspect-square shrink-0 items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)] p-4">
         <BotAvatar
           className="size-full transition-transform duration-200 group-hover:scale-[1.04]"
           seed={agent.avatarSeed}

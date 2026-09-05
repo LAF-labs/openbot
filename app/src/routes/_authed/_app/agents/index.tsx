@@ -102,7 +102,14 @@ function AgentsScreen() {
                   const run = working?.find((it) => it.agentId === agent.id);
                   return (
                     <StaggerItem index={index} key={agent.id}>
-                      <Link to="/agents" search={{ agent: agent.id }}>
+                      {/* `block h-full`: an anchor is inline and sizes to its content, so the
+                          card's own h-full had nothing definite to resolve against and the row's
+                          bottom edge stepped wherever one description wrapped to two lines. */}
+                      <Link
+                        className="block h-full"
+                        search={{ agent: agent.id }}
+                        to="/agents"
+                      >
                         <AgentCard
                           agent={agent}
                           status={run ? workingLabel(run) : undefined}
