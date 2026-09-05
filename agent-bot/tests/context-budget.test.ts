@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type OpenAI from "openai";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import { previewOf, spillLine } from "../../shared/spillover";
 
 /**
  * What this service does to a transcript before it hands it to a model, and what it says about a
@@ -87,7 +88,12 @@ async function turnFor(
   return { requests, events };
 }
 
-const PAGE = "가".repeat(6_000);
+/** A page under the turn budget four times over, so the count rule can be seen on its own. */
+const PAGE = "가".repeat(3_000);
+/** A page at the computer's own limit. Four of these are over the turn budget together. */
+const LONG_PAGE = "가".repeat(6_000);
+
+const TURN_BUDGET = 20_000;
 
 describe("the context budget", () => {
   test("keeps the last four tool results whole and cuts the ones before them", async () => {
@@ -106,7 +112,7 @@ describe("the context budget", () => {
     // The last four are what the model is still working from.
     for (const kept of tools.slice(-4)) {
       expect(kept.content).not.toContain(marker);
-      expect(kept.content.length).toBeGreaterThan(6_000);
+      expect(kept.content.length).toBeGreaterThan(3_000);
     }
     // The eight before them are recognisable and no longer expensive.
     for (const cut of tools.slice(0, -4)) {
@@ -144,7 +150,79 @@ describe("the context budget", () => {
     const tools = (requests[0]?.messages ?? []).filter(
       (message) => message.role === "tool",
     );
-    expect(tools.every((tool) => tool.content.length > 6_000)).toBe(true);
+    expect(tools.every((tool) => tool.content.length > 3_000)).toBe(true);
+  });
+
+  /**
+   * THE COUNT WAS NEVER A WEIGHT.
+   *
+   * Four whole pages at the computer's limit are 24,000 characters, and a file read can be
+   * 64,000 on its own. Over the turn budget the oldest of the whole ones go too — never the
+   * newest, which is the result the model just asked for.
+   */
+  test("trims the oldest of the whole ones too, until the turn is under budget", async () => {
+    const messages = [
+      { id: "u1", role: "user", content: "창고 열두 개 확인해줘" },
+      ...Array.from({ length: 12 }, (_, at) => toolResult(`c${at}`, LONG_PAGE)),
+    ];
+    const { requests } = await turnFor(messages, [said("네.")]);
+    const tools = (requests[0]?.messages ?? []).filter(
+      (message) => message.role === "tool",
+    );
+    const marker = toolResultText("laf:tool_result_trimmed");
+
+    const total = tools.reduce((sum, tool) => sum + tool.content.length, 0);
+    expect(total).toBeLessThanOrEqual(TURN_BUDGET);
+    // Two whole pages fit under the budget beside ten trimmed ones; a third does not.
+    for (const kept of tools.slice(-2)) {
+      expect(kept.content.length).toBeGreaterThan(6_000);
+    }
+    for (const cut of tools.slice(0, -2)) {
+      expect(cut.content).toContain(marker);
+    }
+  });
+
+  test("never cuts the newest result, even one over the budget on its own", async () => {
+    const messages = [
+      { id: "u1", role: "user", content: "파일 읽어줘" },
+      toolResult("c1", LONG_PAGE),
+      toolResult("c2", "가".repeat(25_000)),
+    ];
+    const { requests } = await turnFor(messages, [said("네.")]);
+    const tools = (requests[0]?.messages ?? []).filter(
+      (message) => message.role === "tool",
+    );
+    expect(tools[1]?.content.length).toBeGreaterThan(25_000);
+    // The one before it paid for the excess instead.
+    expect(tools[0]?.content).toContain(
+      toolResultText("laf:tool_result_trimmed"),
+    );
+  });
+
+  /**
+   * A result the server has already filed ends in the line naming its file. When it ages past the
+   * cut, that line is what survives — a trim that lost the path would turn a result the model can
+   * still read whole into one it cannot.
+   */
+  test("keeps the line naming a filed result's file when it trims the result", async () => {
+    const filed = previewOf(
+      JSON.stringify({ ok: true, text: LONG_PAGE }),
+      ".results/c0.txt",
+    );
+    const messages = [
+      { id: "u1", role: "user", content: "확인해줘" },
+      { id: "t_c0", role: "tool", toolCallId: "c0", content: filed },
+      ...Array.from({ length: 5 }, (_, at) => toolResult(`c${at + 1}`, PAGE)),
+    ];
+    const { requests } = await turnFor(messages, [said("네.")]);
+    const first = (requests[0]?.messages ?? []).find(
+      (message) => message.role === "tool",
+    );
+    expect(first?.content.endsWith(spillLine(".results/c0.txt"))).toBe(true);
+    expect(first?.content).not.toContain(
+      toolResultText("laf:tool_result_trimmed"),
+    );
+    expect(first?.content.length).toBeLessThan(700);
   });
 
   /** The prompt is the server's. This service adds nothing of its own in front of it. */
@@ -197,6 +275,29 @@ describe("a turn that did not come back whole", () => {
       events.filter((event) => event.name === "laf.empty_answer"),
     ).toHaveLength(0);
     expect(events.map((event) => event.type)).toContain("TEXT_MESSAGE_CONTENT");
+  });
+
+  /**
+   * The transcript is converted once per run. A retry is the same run asked again, so it is sent
+   * the same messages — the memory the server snapshotted for this run, the same results cut the
+   * same way — rather than a second conversion that could disagree with the first.
+   */
+  test("sends the retry the transcript it converted once for the run", async () => {
+    const { requests } = await turnFor(
+      [
+        {
+          id: "s1",
+          role: "system",
+          content: "너는 미소다. 기억: 일요일은 쉰다.",
+        },
+        { id: "u1", role: "user", content: "안녕" },
+        toolResult("c1", LONG_PAGE),
+      ],
+      [[], said("안녕하세요.")],
+      { effort: "thorough" },
+    );
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.messages).toBe(requests[0]?.messages);
   });
 
   test("reports an empty answer when the second try is empty too", async () => {

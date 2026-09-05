@@ -4,6 +4,7 @@ import { serve } from "bun";
 import OpenAI from "openai";
 import { textOf } from "../../shared/message-content";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import { spillLineOf } from "../../shared/spillover";
 
 /**
  * The built-in Bot is an AG-UI HTTP service registered the same way as any customer-provided Bot.
@@ -78,6 +79,19 @@ const TOOL_RESULTS_IN_FULL = 4;
 /** How much of an older tool result survives. Enough to know what page it was. */
 const TRIMMED_TOOL_RESULT_CHARS = 500;
 
+/**
+ * Every tool result together, per request to the model.
+ *
+ * The count above bounds how many results are whole, not how much they weigh: four whole pages
+ * are 24,000 characters, and a file read is up to 64,000 on its own. Over this, the oldest of the
+ * whole ones are trimmed too — never the newest, which is the result the model just asked for.
+ * The server files anything over 1,500 characters on the Bot's computer from the run after it
+ * arrived (`shared/spillover.ts`), so on a deployment with a computer the budget is rarely
+ * reached; without one, this is what keeps a long transcript from pushing the person's question
+ * out of the window.
+ */
+const TOOL_RESULT_TURN_BUDGET = 20_000;
+
 /** Effort, one step down. Lowered once when a completion comes back empty — see `runAgent`. */
 const LOWER_EFFORT: Record<string, "low" | "medium"> = {
   high: "medium",
@@ -106,7 +120,21 @@ const liveProvider: CompletionProvider = (request, options) =>
   openai.chat.completions.create({ ...request, stream: true }, options);
 
 /**
- * Which tool results are old enough to be trimmed.
+ * An older tool result, cut — and SAID TO BE CUT.
+ *
+ * A silent truncation is read by the model as "that page did not say anything about it", which
+ * is a confident wrong answer rather than a missing one. A result the server has already filed
+ * ends in the line naming its file; that line is kept in place of the trim marker, because a cut
+ * that lost the path would turn a result the model could still read whole into one it cannot.
+ */
+function trimmed(content: string): string {
+  const filed = spillLineOf(content);
+  return `${content.slice(0, TRIMMED_TOOL_RESULT_CHARS)}\n${filed ?? toolResultText("laf:tool_result_trimmed")}`;
+}
+
+/**
+ * Which tool results are to be trimmed: the ones older than the last few, and then, while the
+ * whole of them together is still over the budget, the oldest of the rest.
  *
  * By position, not by tool name: the name of the tool a result answers is only knowable by walking
  * back to the assistant message that called it, and the thing that actually costs tokens is length.
@@ -114,20 +142,40 @@ const liveProvider: CompletionProvider = (request, options) =>
  * that reads on length is the same rule as the one that reads on "is this page text", without
  * needing to be right about which tool produced it.
  */
-function trimOldToolResults(
+function toolResultsToTrim(
   messages: readonly RunAgentInput["messages"][number][],
 ): Set<number> {
-  const toolResults: number[] = [];
-  messages.forEach((message, index) => {
-    if (message.role === "tool") toolResults.push(index);
+  const results: Array<{ at: number; text: string }> = [];
+  messages.forEach((message, at) => {
+    if (message.role === "tool") {
+      results.push({ at, text: textOf(message.content) });
+    }
   });
-  return new Set(toolResults.slice(0, -TOOL_RESULTS_IN_FULL));
+
+  const trim = new Set<number>();
+  /** Marks a result for trimming and returns what that saves — nothing, when it is short already. */
+  const cut = (result: { at: number; text: string }) => {
+    if (result.text.length <= TRIMMED_TOOL_RESULT_CHARS) return 0;
+    trim.add(result.at);
+    return result.text.length - trimmed(result.text).length;
+  };
+
+  let total = results.reduce((sum, result) => sum + result.text.length, 0);
+  for (const older of results.slice(0, -TOOL_RESULTS_IN_FULL)) {
+    total -= cut(older);
+  }
+  // Oldest first, and never the last: that one is the result the model just asked for.
+  for (const recent of results.slice(-TOOL_RESULTS_IN_FULL, -1)) {
+    if (total <= TOOL_RESULT_TURN_BUDGET) break;
+    total -= cut(recent);
+  }
+  return trim;
 }
 
 /** Translate the conversation AG-UI carries into the shape the model provider expects. */
 export function toProviderMessages(input: RunAgentInput) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-  const trimmable = trimOldToolResults(input.messages);
+  const trimmable = toolResultsToTrim(input.messages);
   let at = -1;
 
   for (const message of input.messages) {
@@ -143,19 +191,13 @@ export function toProviderMessages(input: RunAgentInput) {
       continue;
     }
     if (message.role === "tool") {
-      /*
-       * Tool results are appended so the model can continue from the completed call — the older
-       * ones cut, and SAID TO BE CUT. A silent truncation is read by the model as "that page did
-       * not say anything about it", which is a confident wrong answer rather than a missing one.
-       */
+      // Tool results are appended so the model can continue from the completed call — the older
+      // ones cut, and said to be cut (see `trimmed`).
       const content = textOf(message.content);
       messages.push({
         role: "tool",
         tool_call_id: message.toolCallId,
-        content:
-          trimmable.has(at) && content.length > TRIMMED_TOOL_RESULT_CHARS
-            ? `${content.slice(0, TRIMMED_TOOL_RESULT_CHARS)}\n${toolResultText("laf:tool_result_trimmed")}`
-            : content,
+        content: trimmable.has(at) ? trimmed(content) : content,
       });
       continue;
     }
@@ -305,6 +347,17 @@ export async function runAgent(
       /** Set by the deadline below, read by the catch: a timeout is not a provider failure. */
       let timedOut = false;
 
+      /*
+       * THE TRANSCRIPT IS CONVERTED ONCE PER RUN, NOT ONCE PER TURN.
+       *
+       * The system message it starts with carries the Bot's memory as the server snapshotted it
+       * for this run, and the tool results in it are trimmed against one budget. A retry at lower
+       * effort is the same run asked again, so it is sent the same transcript — converting it
+       * inside each turn would let the two attempts of one run disagree about what was cut.
+       */
+      const messages = toProviderMessages(input);
+      const tools = toProviderTools(input);
+
       /**
        * One request to the model, streamed out as it arrives.
        *
@@ -330,8 +383,8 @@ export async function runAgent(
           const completion = await provider(
             {
               model: MODEL,
-              messages: toProviderMessages(input),
-              tools: toProviderTools(input),
+              messages,
+              tools,
               stream: true,
               // The final chunk then carries token counts. Part of the OpenAI spec since 2024 and
               // answered by every compatible endpoint measured here; a provider that ignores it
