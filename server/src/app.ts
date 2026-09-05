@@ -41,9 +41,11 @@ import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
 import { createConnectedPageRoute } from "./plugins/connected-page";
+import { createConnectionsOverviewRoutes } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
+import { connectableCatalogue } from "./plugins/shared-clients";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
@@ -615,6 +617,35 @@ export function createApp(
         createPartnerRoutes(pluginStore, partners, requireUser),
       );
     }
+
+    /*
+     * The 연결 screen's one read, over the four doors above and beside it.
+     *
+     * Mounted here because the plugin store is the only part it cannot do without; the partner
+     * runtime, the site store and the roster are each optional and each simply contribute nothing
+     * when absent, which is the same degraded behaviour their own routes have.
+     */
+    app.route(
+      "/api/connections",
+      createConnectionsOverviewRoutes(
+        {
+          catalogue: () =>
+            connectableCatalogue(pluginConnect?.sharedClient ?? (() => null)),
+          store: pluginStore,
+          partners: partners ?? null,
+          sites: siteConnections ?? null,
+          bots: async (userId) => {
+            if (!agentProfileStore) return [];
+            const roster = await agentProfileStore.list({
+              id: userId,
+              role: "user",
+            });
+            return roster.map((bot) => ({ id: bot.id, name: bot.name }));
+          },
+        },
+        requireUser,
+      ),
+    );
   }
 
   if (sandboxedStore) {
