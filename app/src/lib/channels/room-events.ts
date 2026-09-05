@@ -1,8 +1,8 @@
 import type { Message } from "@ag-ui/core";
 import {
   type AllowanceScope,
-  allowanceScopeOf,
   type AskSubject,
+  allowanceScopeOf,
   askSubjectOf,
 } from "@/lib/approvals";
 import type { RoomFrame } from "./room-frames";
@@ -55,6 +55,8 @@ export type RoomApproval = {
   expiresAt: string;
   /** What "always" would cover, or absent when only this once is on offer. See lib/approvals.ts. */
   scope?: AllowanceScope;
+  /** Present when "for this conversation" — this room — is on offer. See lib/approvals.ts. */
+  threadId?: string;
 };
 
 export type RoomState = {
@@ -129,6 +131,9 @@ export function applyRoomFrame(
           subject: askSubjectOf(frame.subject),
           rule,
           ...(scope ? { scope } : {}),
+          ...(typeof frame.threadId === "string" && frame.threadId
+            ? { threadId: frame.threadId }
+            : {}),
           expiresAt: typeof frame.expiresAt === "string" ? frame.expiresAt : "",
         },
       ],

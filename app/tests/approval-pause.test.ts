@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  allowanceScopeOf,
   type AskSubject,
+  allowanceScopeOf,
   askSubjectOf,
   pauseFrom,
 } from "../src/lib/approvals";
@@ -54,6 +54,29 @@ describe("reading a pause reply", () => {
       rule: null,
     });
     expect(pause?.scope).toBeUndefined();
+  });
+
+  test("the conversation the question came from is carried, and only when it said one", () => {
+    // The middle button — "for this conversation" — is drawn off this field and nothing else, so
+    // a reply that names the thread has to reach the card with it, and one that does not must not
+    // arrive with an empty string the card would read as a conversation.
+    expect(
+      pauseFrom({
+        awaitingApproval: true,
+        approvalId: "a-1",
+        subject: OPENING,
+        rule: null,
+        scope: { kind: "host", value: "wttr.in" },
+        threadId: "thread-7",
+        expiresAt: "",
+      })?.threadId,
+    ).toBe("thread-7");
+    expect(
+      pauseFrom({ awaitingApproval: true, approvalId: "a-1", threadId: "" }),
+    ).not.toHaveProperty("threadId");
+    expect(
+      pauseFrom({ awaitingApproval: true, approvalId: "a-1" }),
+    ).not.toHaveProperty("threadId");
   });
 
   test("a subject it cannot read is no subject at all", () => {

@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AskSubject, describeSubject } from "@/lib/approvals";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 /**
  * CEL computer-action boundary editor. Rules are shown as the gateway evaluates them, and denied
@@ -65,6 +65,14 @@ type StandingAllowance = {
    */
   subject?: AskSubject;
   grantedAt: string;
+  /**
+   * For good, or for one conversation. The list says which, because the two are not the same
+   * decision: one stands until it is taken back, the other for a day and only in its thread.
+   */
+  tier: "always" | "thread";
+  threadId?: string;
+  /** When a conversation's allowance runs out on its own. Absent on the standing kind. */
+  expiresAt?: string;
 };
 
 /**
@@ -626,6 +634,23 @@ function BoundariesPage() {
                       {describeSubject(allowance.subject)}
                     </span>
                   ) : null}
+                  {/*
+                   * A conversation's allowance says so, and says when it runs out. Without this
+                   * the afternoon's yes reads in the list exactly like one given for good, which is
+                   * the difference somebody pressed the narrower button for.
+                   */}
+                  {allowance.tier === "thread" ? (
+                    <span className="text-muted-foreground text-xs">
+                      {allowance.expiresAt
+                        ? t("For one conversation only, until {when}", {
+                            when: new Date(allowance.expiresAt).toLocaleString(
+                              activeLocale,
+                              { dateStyle: "short", timeStyle: "short" },
+                            ),
+                          })
+                        : t("For one conversation only")}
+                    </span>
+                  ) : null}
                   {allowance.rule ? (
                     <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
                       {allowance.rule}
@@ -646,7 +671,7 @@ function BoundariesPage() {
           <p className="mt-3 text-xs text-muted-foreground">
             {(policy.settleWithoutAsking ?? "allowed") === "allowed"
               ? t(
-                  "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
+                  "Each of these was a question somebody answered with “always” or “for this conversation”. Until it is taken back or runs out, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.",
                 )
               : // The heading says suspended; this has to as well. A note still promising that these
                 // actions go through unasked is the same lie one line further down.

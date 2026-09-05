@@ -1981,4 +1981,19 @@ export const ko: Record<string, string> = {
     "사실이 아니라 지시문처럼 읽혀서 저장하지 않았습니다.",
   "This Bot's memory is full. Forget something on its screen to make room.":
     "이 봇의 기억이 가득 찼습니다. 봇 화면에서 오래된 기억을 잊게 하면 자리가 납니다.",
+
+  /*
+   * 승인 카드의 세 번째 답 — “이 대화 동안”. “이번만”과 “항상” 사이의 무게 차이가 하루짜리
+   * 일에 누를 버튼을 남기지 않았다. 버튼은 어디까지인지(사이트·파일·도구)와 이 대화라는 것을
+   * 말하고, 하루라는 시계는 버튼 아래 문장이 맡는다.
+   */
+  "Allow {site} for this conversation": "이 대화 동안 {site} 허용",
+  "Allow this file for this conversation": "이 대화 동안 이 파일 허용",
+  "Allow this tool for this conversation": "이 대화 동안 이 도구 허용",
+  "For this conversation means here only, and for a day at most.":
+    "‘이 대화 동안’은 이 대화에서만, 길어야 하루입니다.",
+  "For one conversation only, until {when}": "한 대화에서만 · {when}까지",
+  "For one conversation only": "한 대화에서만",
+  "Each of these was a question somebody answered with “always” or “for this conversation”. Until it is taken back or runs out, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
+    "각 항목은 누군가 “항상” 또는 “이 대화 동안”으로 답한 질문입니다. 취소하거나 기한이 끝나기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
 };

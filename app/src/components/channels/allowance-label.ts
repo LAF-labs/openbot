@@ -25,3 +25,21 @@ export function alwaysLabel(scope: AllowanceScope): string {
   }
   return t("Always allow this tool");
 }
+
+/**
+ * The middle button: the same thing, for this conversation only.
+ *
+ * Names the scope for the same reason `alwaysLabel` does — the width is the decision — and names
+ * the conversation because that is the whole difference between this button and the one beside
+ * it. The day it also runs out after is said in the note under the buttons, not here: a button
+ * that tried to say everything would say nothing legibly.
+ */
+export function duringLabel(scope: AllowanceScope): string {
+  if (scope.kind === "host") {
+    return t("Allow {site} for this conversation", { site: scope.value });
+  }
+  if (scope.kind === "file") {
+    return t("Allow this file for this conversation");
+  }
+  return t("Allow this tool for this conversation");
+}

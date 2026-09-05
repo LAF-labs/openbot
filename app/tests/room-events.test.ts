@@ -249,6 +249,23 @@ describe("a member waiting on an answer", () => {
     expect(state.approvals[0]?.memberName).toBe("리스크 분석가");
   });
 
+  test("carries the room's thread when the server offers the middle answer, and not otherwise", () => {
+    // The room's card draws "for this conversation" off this and nothing else.
+    const offered = after([
+      turn,
+      {
+        ...approval,
+        scope: { kind: "tool", value: "mail/send_message" },
+        threadId: "thread-room",
+      },
+    ]);
+    expect(offered.approvals[0]?.threadId).toBe("thread-room");
+    expect(after([turn, approval]).approvals[0]).not.toHaveProperty("threadId");
+    expect(
+      after([turn, { ...approval, threadId: "" }]).approvals[0],
+    ).not.toHaveProperty("threadId");
+  });
+
   test("outlives the turn, and comes down when answered", () => {
     // The server holds a question for ten minutes; the person answers on their own time.
     const state = after([turn, approval, done]);

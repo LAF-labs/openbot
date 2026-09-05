@@ -18,7 +18,7 @@ import {
   waitForApproval,
 } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
-import { useActiveBotHolder } from "./active-bot";
+import { activeConversationHeaders, useActiveBotHolder } from "./active-bot";
 import { reportComputerActivity } from "./computer-activity";
 
 /**
@@ -228,6 +228,9 @@ async function sendToComputer(
       // Abort cancels the request and prevents later actions, but cannot undo browser work already executing.
       ...(signal ? { signal } : {}),
       ...init,
+      // Which conversation this action belongs to, so a question it raises can be answered "for
+      // this conversation". Merged under the caller's own headers, never over them.
+      headers: { ...activeConversationHeaders(), ...(init?.headers ?? {}) },
     });
   } catch (error) {
     // An abort is a stopped run, not a computer failure.

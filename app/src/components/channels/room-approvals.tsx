@@ -1,7 +1,14 @@
 import { useState } from "react";
+import {
+  alwaysLabel,
+  duringLabel,
+} from "@/components/channels/allowance-label";
 import { Button } from "@/components/ui/button";
-import { alwaysLabel } from "@/components/channels/allowance-label";
-import { answerApproval, describeSubject } from "@/lib/approvals";
+import {
+  type ApprovalTier,
+  answerApproval,
+  describeSubject,
+} from "@/lib/approvals";
 import type { RoomApproval } from "@/lib/channels/room-events";
 import { t } from "@/lib/i18n";
 import { useCountdown } from "@/lib/use-countdown";
@@ -75,13 +82,13 @@ function RoomApprovalCard({
   const [problem, setProblem] = useState(false);
   const timeLeft = useCountdown(approval.expiresAt);
 
-  const answer = async (granted: boolean, always = false) => {
+  const answer = async (granted: boolean, tier: ApprovalTier = "once") => {
     setAnswering(true);
     const result = await answerApproval(
       approval.memberId,
       approval.approvalId,
       granted,
-      always,
+      tier,
     );
     setAnswering(false);
     if (result.ok || result.gone) {
@@ -115,6 +122,10 @@ function RoomApprovalCard({
           : t(
               "Asked because of this rule. Allowing covers this one action.",
             )}{" "}
+        {/* The middle button's clock, for the same reason the line-level card says it. */}
+        {approval.scope && approval.threadId
+          ? `${t("For this conversation means here only, and for a day at most.")} `
+          : null}
         {/* The same fact as on the line-level card: a no stands. See approval-request.tsx. */}
         {t("Saying no stops it being asked again for a while.")}{" "}
         {approval.rule ? <code>{approval.rule}</code> : null}
@@ -137,11 +148,23 @@ function RoomApprovalCard({
          * question as well: without it a screen reader hears the same promise twice with
          * nothing to say which member it belongs to.
          */}
+        {/* The middle answer, in the room: this room's thread, for a day. See approval-request.tsx. */}
+        {approval.scope && approval.threadId ? (
+          <Button
+            aria-label={`${duringLabel(approval.scope)}: ${question}`}
+            disabled={answering}
+            onClick={() => void answer(true, "thread")}
+            size="sm"
+            variant="outline"
+          >
+            {duringLabel(approval.scope)}
+          </Button>
+        ) : null}
         {approval.scope ? (
           <Button
             aria-label={`${alwaysLabel(approval.scope)}: ${question}`}
             disabled={answering}
-            onClick={() => void answer(true, true)}
+            onClick={() => void answer(true, "always")}
             size="sm"
             variant="outline"
           >

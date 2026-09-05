@@ -1,8 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
-import { Button } from "@/components/ui/button";
-import { alwaysLabel } from "@/components/channels/allowance-label";
 import {
+  alwaysLabel,
+  duringLabel,
+} from "@/components/channels/allowance-label";
+import { Button } from "@/components/ui/button";
+import {
+  type ApprovalTier,
   answerApproval,
   closeQuestion,
   describeSubject,
@@ -54,14 +58,14 @@ export function ApprovalRequest({
   const mayEditBoundaries = currentUser?.role === "admin";
 
   const answer = useCallback(
-    async (granted: boolean, always = false) => {
+    async (granted: boolean, tier: ApprovalTier = "once") => {
       if (!asking) return;
       setAnswering(true);
       const result = await answerApproval(
         asking.botId,
         asking.approvalId,
         granted,
-        always,
+        tier,
       );
       setAnswering(false);
       if (!result.ok) {
@@ -141,6 +145,23 @@ export function ApprovalRequest({
           {t("Allow once")}
         </Button>
         {/*
+         * THE MIDDLE BUTTON: the same width, for this conversation and for a day, whichever ends
+         * first. Drawn only when the server said which conversation the question came from — a
+         * question raised from nowhere has nothing for it to bind to, and the answering route would
+         * silently give the once. Between "once" and "always" because that is where it sits.
+         */}
+        {asking.scope && asking.threadId ? (
+          <Button
+            aria-describedby={questionId}
+            disabled={answering}
+            onClick={() => void answer(true, "thread")}
+            size="sm"
+            variant="outline"
+          >
+            {duringLabel(asking.scope)}
+          </Button>
+        ) : null}
+        {/*
          * THE WIDER BUTTON SAYS HOW WIDE. A person cannot consent to something they were not shown,
          * and "Always allow" on its own is a promise about an unnamed set: the same press means one
          * website, one file or one tool depending on what the Bot was doing, and the difference
@@ -151,7 +172,7 @@ export function ApprovalRequest({
           <Button
             aria-describedby={questionId}
             disabled={answering}
-            onClick={() => void answer(true, true)}
+            onClick={() => void answer(true, "always")}
             size="sm"
             variant="outline"
           >
@@ -181,6 +202,13 @@ export function ApprovalRequest({
           : t(
               "Asked because of this rule. Allowing covers this one action.",
             )}{" "}
+        {/*
+         * The middle button's clock, said here because the button has no room for it: somebody
+         * deciding between "this conversation" and "always" is owed the day before they press.
+         */}
+        {asking.scope && asking.threadId
+          ? `${t("For this conversation means here only, and for a day at most.")} `
+          : null}
         {/*
          * SAID ON THE CARD, because it changes what the Deny button means. A no used to last until
          * the Bot tried again, which could be seconds; now it stands, and somebody deciding needs

@@ -97,3 +97,35 @@ export function useActiveBotId(): string {
 export function useDeclaredBotId(): string | undefined {
   return useContext(ActiveBotValueContext)?.declared;
 }
+
+/**
+ * Which conversation the surface in front of you is in, for the acting calls to name.
+ *
+ * A module-level holder rather than a context, because the two readers are `fetch` wrappers —
+ * the computer's and the plugin call's — that run inside tool handlers with no render to read a
+ * context from. The same reason the Bot is a ref: a handler outlives the render that registered
+ * it. What it buys is the middle answer on the approval card: the server binds "for this
+ * conversation" to the thread named here, and offers it only when one was.
+ *
+ * Undefined when no channel is open — the roster, Settings — and then no header is sent and every
+ * question is asked in the standing terms alone, which is what every question was before.
+ */
+const conversation: { current: string | undefined } = { current: undefined };
+
+/** Declare the conversation this surface is in, for as long as it is mounted. */
+export function useActiveConversation(threadId: string | undefined): void {
+  useEffect(() => {
+    const previous = conversation.current;
+    conversation.current = threadId;
+    return () => {
+      conversation.current = previous;
+    };
+  }, [threadId]);
+}
+
+/** The header naming the conversation, or nothing when no surface has declared one. */
+export function activeConversationHeaders(): Record<string, string> {
+  return conversation.current
+    ? { "x-openbot-thread-id": conversation.current }
+    : {};
+}

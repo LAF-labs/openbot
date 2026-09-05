@@ -43,6 +43,24 @@ export type AllowanceScope = {
 };
 
 /**
+ * How long a yes is meant to last, as the three buttons on a card say it.
+ *
+ * `once` is this action. `thread` is this conversation — bound to the thread the question came
+ * from, and to a day. `always` is until somebody takes it back. The middle one exists because the
+ * other two are a day apart in weight, and somebody clearing an obstacle for one afternoon had
+ * nothing honest to press.
+ */
+export type ApprovalTier = "once" | "thread" | "always";
+
+/**
+ * The header the server reads the current conversation from, so an answer can be "for this
+ * conversation". Sent on every acting call the surface makes while a channel is open; absent, the
+ * question is asked in the standing terms alone. Mirrors `THREAD_HEADER` in
+ * `server/src/computer/gateway.ts`.
+ */
+export const THREAD_HEADER = "x-openbot-thread-id";
+
+/**
  * The scope out of a pause reply, or undefined if it was not one.
  *
  * One parser for both callers — the computer's tools and the plugin call — because a scope that
@@ -106,6 +124,8 @@ export type PendingApproval = {
   subject: AskSubject;
   /** Absent when nothing durable could be derived; the card then offers "this once" alone. */
   scope?: AllowanceScope;
+  /** Present when "for this conversation" is on offer. See `OpenQuestion.threadId`. */
+  threadId?: string;
   requestedAt: string;
   expiresAt: string;
   /** Absent while nobody has answered. False is an answer. */
@@ -382,6 +402,12 @@ export function pauseFrom(
     subject: askSubjectOf(body.subject),
     rule: typeof body.rule === "string" ? body.rule : null,
     scope: allowanceScopeOf(body.scope),
+    // The conversation the question came from, when the server said so. The third button is drawn
+    // off this and nothing else: a card that offered "for this conversation" for a question raised
+    // from nowhere would be a button the answering route silently ignores.
+    ...(typeof body.threadId === "string" && body.threadId
+      ? { threadId: body.threadId }
+      : {}),
     expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : "",
   };
 }
@@ -395,6 +421,14 @@ export type OpenQuestion = {
   rule: string | null;
   /** What answering "always" would cover, or undefined when only this once is on offer. */
   scope?: AllowanceScope | undefined;
+  /**
+   * The conversation the question came from, when it came from one.
+   *
+   * Present means "for this conversation" is on offer beside "always". The server decided which
+   * thread from the request that raised the question; it is never sent back when the button is
+   * pressed, for the same reason the scope is not.
+   */
+  threadId?: string | undefined;
   /** When the question stops being answerable, so the card can count down. Empty when unknown. */
   expiresAt: string;
 };
@@ -487,21 +521,22 @@ export async function answerApproval(
   approvalId: string,
   granted: boolean,
   /**
-   * "And stop asking me about this."
+   * "And stop asking me about this" — for this conversation, or for good.
    *
-   * A flag, not a scope. What it covers was decided when the question was raised and is held on the
-   * server's own record; sending the scope from here would let a page grant itself something other
-   * than what it displayed. Only meaningful alongside `granted: true` — there is no "always deny",
-   * because a thing that should never happen belongs in the boundary where everybody can read it.
+   * A tier, not a scope and not a thread. What it covers and which conversation were decided when
+   * the question was raised and are held on the server's own record; sending either from here
+   * would let a page grant itself something other than what it displayed. Only meaningful
+   * alongside `granted: true` — there is no "always deny", because a thing that should never
+   * happen belongs in the boundary where everybody can read it.
    */
-  always = false,
+  tier: ApprovalTier = "once",
 ): Promise<ApprovalAnswerResult> {
   try {
     const response = await fetch(`/api/approvals/${botId}/${approvalId}`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ granted, always }),
+      body: JSON.stringify({ granted, tier }),
     });
     if (response.ok) return { ok: true };
     return { ok: false, gone: response.status === 409 };

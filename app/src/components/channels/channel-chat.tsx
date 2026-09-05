@@ -30,7 +30,7 @@ import {
   type ChannelActivity,
   channelActivity,
 } from "@/lib/channels/use-channel-events";
-import { useActiveBot } from "@/lib/copilot/active-bot";
+import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 
@@ -273,8 +273,10 @@ export function ChannelChat({
       channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
   }, [agent, channel.id]);
 
-  // Tool calls from this conversation act on this coworker's own computer.
+  // Tool calls from this conversation act on this coworker's own computer, and they say which
+  // conversation they came from, so a question one raises can be answered for it.
   useActiveBot(runtimeAgentId);
+  useActiveConversation(channel.threadId);
 
   const skillCommands = useSkillCommands(runtimeAgentId);
 

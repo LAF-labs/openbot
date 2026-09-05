@@ -1,5 +1,5 @@
-import { queryOptions } from "@tanstack/react-query";
 import { toolResultText } from "@shared/prompt/tool-results.ko";
+import { queryOptions } from "@tanstack/react-query";
 import {
   type AllowanceScope,
   type AskSubject,
@@ -8,6 +8,7 @@ import {
   pauseFrom,
   waitForApproval,
 } from "@/lib/approvals";
+import { activeConversationHeaders } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { inShell } from "@/lib/notifications/shell";
 
@@ -569,7 +570,12 @@ async function sendCall(
   const response = await fetch("/api/plugins/call", {
     method: "POST",
     credentials: "include",
-    headers: { "content-type": "application/json" },
+    // The conversation this call belongs to, beside the content type, so a question it raises can
+    // be answered "for this conversation" — the same header the computer's tools send.
+    headers: {
+      "content-type": "application/json",
+      ...activeConversationHeaders(),
+    },
     body: JSON.stringify({
       ref,
       args,
