@@ -465,7 +465,17 @@ export function createOAuthClients(
     if (!fresh) throw error;
 
     await persistOAuthClient({ serverId, client: fresh, by: "deployment" });
-    throw new PluginRefusedError(input.refusal, null);
+    /*
+     * The one code this refusal ever carries, so the Bot reads Korean rather than the English
+     * placeholder the caller wrote. There is exactly one situation here — the vendor disowned our
+     * client and we registered again — so the code belongs beside the throw rather than being a
+     * parameter every caller could spell differently.
+     */
+    throw new PluginRefusedError(
+      input.refusal,
+      null,
+      "laf:oauth_client_replaced",
+    );
   }
 
   return {

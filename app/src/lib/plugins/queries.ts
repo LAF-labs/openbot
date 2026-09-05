@@ -444,6 +444,8 @@ async function sendCall(
     text?: string;
     isError?: boolean;
     error?: string;
+    /** The fact, beside the sentence. Read before `error` — see the 403 branch below. */
+    code?: string;
     rule?: string | null;
     awaitingApproval?: boolean;
     approvalId?: string;
@@ -471,13 +473,26 @@ async function sendCall(
      * about. The Korean is in the one table both tool paths read
      * (`shared/prompt/tool-results.ko.ts`); anything that is not a code passes through unchanged,
      * because an English sentence from somewhere upstream is a regression worth seeing.
+     *
+     * `code` FIRST. The route has been sending one beside `error` all along
+     * (`plugins/routes.ts`: `{ error, rule, code }`), and reading only `error` saw just the
+     * refusals whose sentence IS the code. A connection refusal carries the code in `code` and an
+     * English sentence in `error` — so `laf:not_connected` reached this fork's Korean-speaking
+     * people as "You have not connected your Google Sheets account", with the Korean sitting in a
+     * table nothing had looked up.
      */
+    const carried = typeof body?.code === "string" ? body.code : "";
     const said = typeof body?.error === "string" ? body.error : "";
+    const fact = carried.startsWith("laf:")
+      ? carried
+      : said.startsWith("laf:")
+        ? said
+        : "";
     return {
       ok: false,
       refused: true,
-      reason: said.startsWith("laf:")
-        ? toolResultText(said)
+      reason: fact
+        ? toolResultText(fact)
         : said || "That tool is not allowed here.",
       rule: body?.rule ?? null,
     };

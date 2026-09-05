@@ -456,8 +456,20 @@ export function outcomeOfError(error: unknown): ToolOutcome {
      *
      * Anything without a code passes through unchanged, and visibly: a sentence from somewhere
      * upstream reaching a Bot is a regression, and swallowing it would hide the next one.
+     *
+     * `code` FIRST, THE MESSAGE ONLY AFTER IT. Reading the message alone is what shipped, and it
+     * saw exactly the refusals whose message IS the code — the settle path's and the partner
+     * tools'. Every refusal that carries a code BESIDE a sentence written for a person, which is
+     * the whole connection layer (`laf:not_connected`, `laf:needs_reconnect`), fell through to
+     * `error.message`: an English sentence, reaching a Korean-speaking person's Bot, from a class
+     * that had the code in a field all along.
      */
-    const code = error.message.startsWith("laf:") ? error.message : undefined;
+    const code =
+      error instanceof PluginRefusedError && error.code?.startsWith("laf:")
+        ? error.code
+        : error.message.startsWith("laf:")
+          ? error.message
+          : undefined;
     return {
       ok: false,
       refused: true,

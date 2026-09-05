@@ -146,6 +146,8 @@ export function createConnections(
   async function secretFor(
     credentialId: string,
     onRevoked: string,
+    /** The fact beside the sentence, so the Bot reads Korean rather than an English placeholder. */
+    code: string,
   ): Promise<string> {
     try {
       return await decryptCredentialForUse(
@@ -155,7 +157,7 @@ export function createConnections(
       );
     } catch (error) {
       if (error instanceof CredentialUnavailableError) {
-        throw new PluginRefusedError(onRevoked, null);
+        throw new PluginRefusedError(onRevoked, null, code);
       }
       throw error;
     }
@@ -259,6 +261,7 @@ export function createConnections(
         ? await secretFor(
             row.credentialId,
             `${row.id} needs a credential this deployment no longer holds. An administrator has to add it again.`,
+            "laf:deployment_credential_missing",
           )
         : undefined;
       return { token };
@@ -274,6 +277,7 @@ export function createConnections(
       throw new PluginRefusedError(
         `${row.id} answers as the person asking, and this run is not attributed to anybody.`,
         null,
+        "laf:run_not_attributed",
       );
     }
 
@@ -405,7 +409,7 @@ export function createConnections(
     if (!shared && !row.credentialId) {
       // The person did their part; the deployment has not. Refused before anything queues, because
       // a deployment holding no client has the same answer for everybody asking.
-      throw new PluginRefusedError(noClient, null);
+      throw new PluginRefusedError(noClient, null, "laf:no_oauth_client");
     }
 
     /**
@@ -445,11 +449,15 @@ export function createConnections(
         .where(eq(mcpServers.id, row.id))
         .limit(1);
       if (!server?.credentialId) {
-        throw new PluginRefusedError(noClient, null);
+        throw new PluginRefusedError(noClient, null, "laf:no_oauth_client");
       }
       return {
         client: JSON.parse(
-          await secretFor(server.credentialId, unusableClient),
+          await secretFor(
+            server.credentialId,
+            unusableClient,
+            "laf:oauth_client_unusable",
+          ),
         ) as OAuthClient,
         registeredAt: server.registeredAt,
       };
@@ -547,6 +555,7 @@ export function createConnections(
             throw new PluginRefusedError(
               `Your ${title} access was withdrawn. Connect it again in Settings.`,
               null,
+              "laf:grant_withdrawn",
             );
           }
           const refreshToken = await decryptSecret(
