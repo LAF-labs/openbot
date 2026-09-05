@@ -42,7 +42,7 @@ import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
-import { ToolLine } from "./tool-line";
+import { ToolLine, toolKindOf } from "./tool-line";
 
 type ChatTranscriptProps = {
   busy?: boolean;
@@ -650,7 +650,13 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
          * is the same line the computer and MCP tools draw, so an unrecognised call reads as an
          * ordinary event rather than as damage.
          */}
-        {drawn ?? <ToolLine label={name} running={result === undefined} />}
+        {drawn ?? (
+          <ToolLine
+            kind={toolKindOf(name)}
+            label={name}
+            running={result === undefined}
+          />
+        )}
       </ToolRenderBoundary>
     </Arriving>
   );

@@ -1791,4 +1791,6 @@ export const ko: Record<string, string> = {
   "What should we look at first today?": "오늘 뭐부터 볼까요?",
   "Each of you say what you would take on.": "각자 맡을 일을 말해 주세요.",
   "Sum up where things stand.": "지금 상황을 정리해 주세요.",
+  "Who should be in this conversation?": "이 대화에 누구를 부를까요?",
+  "Pick a Bot below": "아래에서 봇을 고르세요",
 };

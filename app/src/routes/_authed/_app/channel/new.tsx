@@ -5,30 +5,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { BotIntroCard } from "@/components/agents/bot-intro-card";
 import { RosterStrip } from "@/components/agents/roster-strip";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   addRecipient,
   canSend,
-  MAX_RECIPIENTS,
   type Recipient,
   removeRecipient,
 } from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
-import {
-  type AgentProfile,
-  agentListQueryOptions,
-  agentQueryOptions,
-} from "@/lib/agents/queries";
+import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -46,11 +32,8 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
 
 function RouteComponent() {
   const { agent } = Route.useSearch();
-  const navigate = Route.useNavigate();
   const { start, pending } = useStartChannel();
-  const { data: profiles, isPending: rosterPending } = useQuery(
-    agentListQueryOptions(),
-  );
+  const { data: profiles } = useQuery(agentListQueryOptions());
 
   const [error, setError] = useState<string | null>(null);
   // Optimistic seed shown before the first channel record exists.
@@ -95,17 +78,25 @@ function RouteComponent() {
        * screen, attached to nothing. The field is bounded now, it has an edge, and its chevron is
        * inside it where a chevron belongs.
        */}
-      <div className="sticky top-0 flex h-12 shrink-0 flex-row items-center gap-2 border-border border-b px-3">
+      {/*
+       * WHO IS IN THE ROOM, AS CHIPS. ONE PICKER, NOT TWO.
+       *
+       * This row used to hold a combobox, and the middle of the screen held a row of faces, and
+       * both of them answered the same question in different ways — measured 2026-09-06: picking a
+       * face and picking from the list did not visibly agree, because only the combobox drew chips
+       * and only the face row could show who was chosen. The faces won: a roster is a handful of
+       * drawn characters and pointing at one is faster than typing its name. What is left here is
+       * the answer, in the place a messaging app puts it, with an × on each.
+       */}
+      <div className="sticky top-0 flex h-12 shrink-0 flex-row items-center gap-2 overflow-x-auto border-border border-b px-3">
         <span className="shrink-0 text-muted-foreground text-sm">
           {t("To:")}
         </span>
-        {/*
-         * WHO IS IN THE ROOM, AS CHIPS YOU CAN TAKE BACK OUT.
-         *
-         * The field held one value and the combobox replaced it, so building a room of three was
-         * impossible from this screen even after the server and the transcript both supported one.
-         * Each pick is added; each chip removes itself.
-         */}
+        {recipients.length === 0 ? (
+          <span className="text-muted-foreground/70 text-sm">
+            {t("Pick a Bot below")}
+          </span>
+        ) : null}
         {recipients.map((recipient) => (
           <span
             className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--sand-fill-secondary)] py-0.5 ps-1 pe-1 text-sm"
@@ -115,7 +106,7 @@ function RouteComponent() {
             <span className="max-w-32 truncate">{recipient.name}</span>
             <button
               aria-label={t("Remove {name}", { name: recipient.name })}
-              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-selected)] hover:text-foreground"
+              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-selected)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
               onClick={() =>
                 setPicked(removeRecipient(recipients, recipient.id))
               }
@@ -125,77 +116,72 @@ function RouteComponent() {
             </button>
           </span>
         ))}
-        <Combobox
-          // Do not auto-open when the recipient came from the URL; the field is already answered.
-          defaultOpen={false}
-          autoHighlight
-          items={(profiles ?? []).filter(
-            (profile) =>
-              !recipients.some((recipient) => recipient.id === profile.id),
-          )}
-          isItemEqualToValue={(item: AgentProfile, value: AgentProfile) =>
-            item.id === value.id
-          }
-          itemToStringLabel={(item: AgentProfile) => item.name}
-          itemToStringValue={(item: AgentProfile) => item.id}
-          onValueChange={(next) => {
-            if (!next) return;
-            setPicked(
-              addRecipient(recipients, { id: next.id, name: next.name }),
-            );
-          }}
-          // Always empty: this control ADDS to the room, and the room is drawn as chips beside it.
-          value={null}
-        >
-          <ComboboxInput
-            // The control that decides who the conversation goes to announced as "combobox, blank".
-            aria-label={t("Choose a Bot")}
-            className="h-8 w-full max-w-xs text-sm"
-            disabled={recipients.length >= MAX_RECIPIENTS}
-            placeholder={
-              recipients.length === 0 ? t("Choose a Bot…") : t("Add another…")
-            }
-          />
-          <ComboboxContent className="min-w-0 max-w-lg" sideOffset={8}>
-            <ComboboxEmpty>
-              {rosterPending ? t("Loading Bots…") : t("No Bots found.")}
-            </ComboboxEmpty>
-            <ComboboxList>
-              {(item: AgentProfile) => (
-                <ComboboxItem key={item.id} value={item} className="h-10">
-                  <ChannelAvatar participantIds={[item.id]} size={24} />
-                  {item.name}
-                  <span className="truncate text-muted-foreground ml-1">
-                    {item.title}
-                  </span>
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-          </ComboboxContent>
-        </Combobox>
       </div>
       <ConversationView
         // Commands must be loaded before the first channel message is sent.
         commands={skillCommands}
         emptyState={
-          chosen ? (
-            /*
-             * THE PROFILE CARD, WHERE THE FORM USED TO BE.
-             *
-             * A Bot is made in one press and lands here with a name it was given and nothing else
-             * set, so the first screen of its life has to be the place its name, its face and its
-             * job are decided — beside the conversation that will decide the rest, not in a pane
-             * somebody has to go looking for. Anybody who does not want it presses the ×.
-             *
-             * `key` on the Bot's id: the pane stays mounted while `?agent=` changes, and without it
-             * one Bot's name sits in the field belonging to another.
-             */
-            <div className="flex w-full flex-col items-center gap-3 px-6 text-center">
-              {chosen.canManage ? (
-                <BotIntroCard agent={chosen} key={chosen.id} />
-              ) : (
-                <>
-                  <BotAvatar seed={chosen.avatarSeed} size={80} />
+          /*
+           * ONE PICKER, ALWAYS THE SAME ONE.
+           *
+           * This used to be either/or: with nobody chosen, a row of faces; with somebody chosen,
+           * the Bot's profile card and no way back to the roster except the combobox in the header
+           * that is now gone. A room holds up to eight, so the picker has to stay on screen while
+           * the room is being built, and every face in it has to be able to show that it is in.
+           *
+           * The profile card is kept for the one case it was written for — a Bot made a moment ago,
+           * with nothing set, and this is the first screen of its life — which is exactly the case
+           * where exactly one is chosen.
+           */
+          <div className="pointer-events-auto flex w-full flex-col items-center gap-4 px-6">
+            <p className="text-[13px] text-muted-foreground">
+              {/*
+               * PLURAL-NEUTRAL. "누구에게 보낼까요?" asks for one person, and this screen has been
+               * able to build a room of several since before that line was written — it contradicted
+               * the rooms in the sidebar beside it.
+               */}
+              {t("Who should be in this conversation?")}
+            </p>
+            <RosterStrip
+              onSelect={(agentId) => {
+                const profile = (profiles ?? []).find(
+                  (candidate) => candidate.id === agentId,
+                );
+                if (!profile) return;
+                /*
+                 * A press TOGGLES. The faces were add-only and the only way to take one back out
+                 * was the × on its chip, so pressing a chosen face did nothing at all and looked
+                 * broken. `aria-pressed` on the tile already said these were toggles.
+                 */
+                setPicked(
+                  recipients.some((recipient) => recipient.id === agentId)
+                    ? removeRecipient(recipients, agentId)
+                    : addRecipient(recipients, {
+                        id: profile.id,
+                        name: profile.name,
+                      }),
+                );
+              }}
+              roster={profiles ?? []}
+              selectedId={undefined}
+              selectedIds={recipients.map((recipient) => recipient.id)}
+            />
+            {chosen && recipients.length === 1 ? (
+              /*
+               * THE PROFILE CARD, WHERE THE FORM USED TO BE.
+               *
+               * A Bot is made in one press and lands here with a name it was given and nothing else
+               * set, so the first screen of its life has to be the place its name, its face and its
+               * job are decided — beside the conversation that will decide the rest, not in a pane
+               * somebody has to go looking for.
+               *
+               * `key` on the Bot's id: the pane stays mounted while the choice changes, and without
+               * it one Bot's name sits in the field belonging to another.
+               */
+              <div className="flex w-full flex-col items-center gap-3 text-center">
+                {chosen.canManage ? (
+                  <BotIntroCard agent={chosen} key={chosen.id} />
+                ) : (
                   <div className="flex flex-col gap-0.5">
                     <span className="font-semibold text-[15px]">
                       {chosen.name}
@@ -206,35 +192,15 @@ function RouteComponent() {
                       </span>
                     ) : null}
                   </div>
-                </>
-              )}
-              {chosen.roleDescription ? (
-                <p className="max-w-sm text-[13px] text-muted-foreground leading-relaxed">
-                  {chosen.roleDescription}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            /*
-             * NOT A VOID. With nobody chosen this screen was six hundred pixels of white between a
-             * combobox and a composer, and the one question it exists to ask — which colleague is
-             * this for — was answerable only by typing into a field that did not look like one. The
-             * team is a handful of drawn characters; pointing at one is faster than naming it, and
-             * it is the same control Home uses for the same question.
-             */
-            <div className="pointer-events-auto flex flex-col items-center gap-4 px-6">
-              <p className="text-[13px] text-muted-foreground">
-                {t("Who is this for?")}
-              </p>
-              <RosterStrip
-                onSelect={(agentId) =>
-                  void navigate({ replace: true, search: { agent: agentId } })
-                }
-                roster={profiles ?? []}
-                selectedId={undefined}
-              />
-            </div>
-          )
+                )}
+                {chosen.roleDescription ? (
+                  <p className="max-w-sm text-[13px] text-muted-foreground leading-relaxed">
+                    {chosen.roleDescription}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         }
         disabled={recipients.length === 0}
         messages={sent ? [sent] : []}

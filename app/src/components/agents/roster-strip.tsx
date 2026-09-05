@@ -19,10 +19,19 @@ import { t } from "@/lib/i18n";
 export function RosterStrip({
   roster,
   selectedId,
+  selectedIds,
   onSelect,
 }: {
   roster: readonly AgentProfile[];
   selectedId: string | undefined;
+  /**
+   * Several chosen at once, for a screen that is building a room rather than picking one colleague.
+   *
+   * Additive, and it wins over `selectedId` when given: the compose screen can hold up to eight
+   * recipients and had no way to show more than one of them as chosen, which is why it grew a
+   * second picker beside this one. Home still asks the single-answer question and passes neither.
+   */
+  selectedIds?: readonly string[];
   onSelect: (agentId: string) => void;
 }) {
   const newBot = useNewBot();
@@ -30,7 +39,9 @@ export function RosterStrip({
     // Wraps within the composer's measure: a team of a dozen ran off the right of the screen.
     <div className="flex max-w-2xl flex-wrap items-start justify-center gap-1">
       {roster.map((agent) => {
-        const chosen = agent.id === selectedId;
+        const chosen = selectedIds
+          ? selectedIds.includes(agent.id)
+          : agent.id === selectedId;
         return (
           <button
             aria-pressed={chosen}
