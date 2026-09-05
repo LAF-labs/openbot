@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { TeachATask } from "@/components/computer/teach-a-task";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
 import { t } from "@/lib/i18n";
 import { pokeControl, watchControl } from "./control-poll";
+import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { LiveScreen } from "./live-screen";
 import {
   type ControlState,
@@ -36,16 +39,36 @@ const DEFAULT_ASPECT_RATIO = 1280 / 800;
 const DEFAULT_MIN_WIDTH = 320;
 const DEFAULT_MIN_HEIGHT = 200;
 
-/** Preload without failing the poll loop when a frame cannot be decoded early. */
-async function preloadFrame(base64: string): Promise<void> {
-  try {
-    const image = new Image();
-    image.src = `data:image/png;base64,${base64}`;
-    await image.decode();
-  } catch {
-    // Let the visible image element handle decode failures.
-  }
-}
+/**
+ * One horizontal rule for the whole card.
+ *
+ * Every block inside the card starts here: the picture, the sentences, the buttons. Rows that carry
+ * a background bleed back out to the card's edge with `-mx-2` so the band still spans it while its
+ * words stay on the rule. Three left edges used to coexist in a 320px column — 1150 for the row
+ * text, 1162 for the recorded-steps list, and the picture at the card's own 1138 — which is enough
+ * to read as a stack of unrelated things rather than one card.
+ */
+const CARD_PADDING = "p-2";
+
+/**
+ * The focus ring, copied verbatim from `ui/button.tsx` rather than invented here.
+ *
+ * These buttons cannot all be the `Button` primitive — one is the picture itself and one is a
+ * full-screen backdrop — and every one of them used to take focus and show nothing at all, so a
+ * keyboard could reach the Bot's screen, its takeover and its close button while pointing at
+ * nowhere visible.
+ */
+const FOCUS_RING =
+  "border border-transparent bg-clip-padding outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+
+/**
+ * The full-size view's own controls, which sit on a black scrim in both themes.
+ *
+ * White rather than the primary fill, and a white ring: `--ring` is near-black at 40% alpha in the
+ * light theme, so the primitive's own focus ring is invisible on this scrim exactly half the time.
+ */
+const OVERLAY_BUTTON =
+  "bg-white text-black hover:bg-white/90 focus-visible:border-white focus-visible:ring-white/70";
 
 /** Identical frames in a row that mean the page has stopped changing. */
 const SETTLED_FRAMES = 3;
@@ -107,6 +130,14 @@ export function ComputerView({
    * the wrong one of two identical boxes is not a mistake anybody can see themselves make.
    */
   const secretFieldId = useId();
+  /**
+   * Mounted whatever the state is, so the first frame has something to be painted onto.
+   *
+   * The poll decodes and paints before it tells React there is a screenshot. A canvas that only
+   * appears once `shot` is set would therefore be blank for one whole poll interval — a second of
+   * empty white where the picture is about to be.
+   */
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const driving = control?.holder === "human";
   /** Read by the polling loop without restarting it on control changes. */
   const drivingRef = useRef(false);
@@ -201,9 +232,15 @@ export function ComputerView({
           // Exact byte comparison is the settling signal.
           unchanged = next.base64 === lastFrame ? unchanged + 1 : 0;
           lastFrame = next.base64;
-          // Decode before swapping to avoid blanking the visible image during data URL changes.
-          await preloadFrame(next.base64);
-          if (generation.current !== mine) return;
+          // Decode before swapping so the visible frame is never blank between polls.
+          const bitmap = await decodeFrame(next.base64, "image/png");
+          if (generation.current !== mine) {
+            bitmap?.close();
+            return;
+          }
+          const canvas = canvasRef.current;
+          if (bitmap && canvas) paintFrame(canvas, bitmap);
+          bitmap?.close();
           setShot(next);
           setProblem(null);
         }
@@ -269,29 +306,46 @@ export function ComputerView({
   /** Blank browser placeholders should not be opened as readable screens. */
   const showScreen = shot !== null && !blankBrowser;
 
-  const polledScreen = showScreen ? (
-    <img
-      src={`data:image/png;base64,${shot.base64}`}
-      alt={t("What the Bot is looking at")}
-      // Keep unexpected screenshot dimensions inside the reserved frame.
-      className="absolute inset-0 h-full w-full object-contain opacity-100 transition-opacity duration-300 starting:opacity-0"
-    />
-  ) : null;
+  /** Nothing has arrived yet and nothing has gone wrong: the one state that is genuinely loading. */
+  const isLoadingFirstFrame = shot === null && problem === null;
 
   return (
     <>
-      <figure className="overflow-hidden rounded-2xl border">
+      <figure
+        className={`flex flex-col gap-2 rounded-2xl border ${CARD_PADDING}`}
+      >
         {/* Inline preview remains in transcript; click opens a readable full-size view. */}
         <button
           type="button"
           onClick={() => setExpanded(true)}
           // Disabled while blank/waiting but still reserves the frame.
           disabled={!showScreen}
-          className="relative block w-full bg-muted enabled:cursor-zoom-in"
+          /*
+           * ITS OWN ROUNDED RECTANGLE, INSET FROM THE CARD.
+           *
+           * The picture used to run edge to edge inside a rounded, clipped card, so the panel that
+           * followed it cut straight across the bottom of the screen and the box's shape simply
+           * stopped where that panel began. A complete rectangle cannot be crossed: whatever comes
+           * next sits below it, on the same left rule.
+           *
+           * `bg-muted` is the letterbox behind `object-contain`, and it is dropped while loading so
+           * the Skeleton's pulse is not muted-on-muted and therefore invisible.
+           */
+          className={`relative block w-full overflow-hidden rounded-xl enabled:cursor-zoom-in ${FOCUS_RING} ${isLoadingFirstFrame ? "" : "bg-muted"}`}
           style={frameStyle}
           aria-label={t("Open the Bot's screen full size")}
         >
-          {polledScreen}
+          {/*
+           * Mounted in every state, painted by the poll, revealed when there is something to see.
+           * See `canvasRef` above for why it cannot be conditional.
+           */}
+          <canvas
+            ref={canvasRef}
+            aria-hidden={!showScreen}
+            aria-label={t("What the Bot is looking at")}
+            // Keep unexpected screenshot dimensions inside the reserved frame.
+            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${showScreen ? "opacity-100" : "opacity-0"}`}
+          />
 
           {/*
            * NO ARTWORK BEHIND THE WAITING STATE.
@@ -302,8 +356,20 @@ export function ComputerView({
            * ignored the theme in both directions. The frame is a themed surface now, and the
            * sentence sits on it in the ordinary muted colour, which is what the rest of the app does
            * when it has nothing to show.
+           *
+           * Waiting is the exception, and it is not artwork: it is the same `Skeleton` the routines
+           * below this card use while they load, so a screen on its way looks like everything else
+           * on its way instead of like a grey rectangle that might be all there is. The sentence
+           * stays for anyone reading the page rather than looking at it.
            */}
-          {showScreen ? null : (
+          {isLoadingFirstFrame ? (
+            <>
+              <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
+              <span className="sr-only">
+                {t("Waiting for the Bot's screen…")}
+              </span>
+            </>
+          ) : showScreen ? null : (
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
               {problem ? (
                 <>
@@ -317,10 +383,8 @@ export function ComputerView({
                     )}
                   </span>
                 </>
-              ) : blankBrowser ? (
-                <span>{t("The Bot has not opened a page yet.")}</span>
               ) : (
-                <span>{t("Waiting for the Bot's screen…")}</span>
+                <span>{t("The Bot has not opened a page yet.")}</span>
               )}
             </span>
           )}
@@ -332,7 +396,14 @@ export function ComputerView({
         */}
         {control?.secretWanted ? (
           <form
-            className="border-t bg-muted/40 px-3 py-2 text-sm"
+            /*
+             * No horizontal padding of its own, and no tinted band.
+             *
+             * A row that pads itself starts its words further right than the row above it, and this
+             * card had three such starts in one 320px column. The rule is the card's padding; a row
+             * separates itself with the hairline above it, never by moving inwards.
+             */
+            className="border-t pt-2 text-sm"
             onSubmit={async (event) => {
               event.preventDefault();
               if (!secret || sendingSecret) return;
@@ -362,15 +433,15 @@ export function ComputerView({
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder={t("Typed here, never shown to the Bot")}
-                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
-              <button
-                type="submit"
+              <Button
                 disabled={!secret || sendingSecret}
-                className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                size="sm"
+                type="submit"
               >
                 {sendingSecret ? t("Sending…") : t("Send to the page")}
-              </button>
+              </Button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {t(
@@ -384,23 +455,20 @@ export function ComputerView({
         ) : null}
 
         {driving ? (
-          <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm">
             <span>{t("You have control of this browser.")}</span>
             <span className="flex shrink-0 gap-2">
-              <button
-                type="button"
+              <Button
                 onClick={() => setExpanded(true)}
-                className="rounded-md border px-3 py-1 text-xs font-medium"
+                size="sm"
+                type="button"
+                variant="outline"
               >
                 {t("Open full size")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handBack()}
-                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
-              >
+              </Button>
+              <Button onClick={() => void handBack()} size="sm" type="button">
                 {t("Hand back")}
-              </button>
+              </Button>
             </span>
           </div>
         ) : null}
@@ -427,23 +495,32 @@ export function ComputerView({
         ) : null}
 
         {control?.requested && !driving ? (
-          <div className="flex items-start justify-between gap-3 border-t bg-warning/10 px-3 py-2 text-sm">
+          /*
+           * The colour is on the sentence, not on a band behind it.
+           *
+           * A tinted row has to pad itself away from its own edges, which is what put this row's
+           * words 12px right of every other row's. The urgency was never in the tint: it is in
+           * "The Bot needs you", which now carries the warning hue itself and starts on the rule.
+           */
+          <div className="flex flex-wrap items-start justify-between gap-2 border-t pt-2 text-sm">
             <span>
-              <strong className="font-medium">{t("The Bot needs you.")}</strong>{" "}
+              <strong className="font-medium text-warning">
+                {t("The Bot needs you.")}
+              </strong>{" "}
               {control.reason}
             </span>
-            <button
-              type="button"
+            <Button
               onClick={async () => {
                 const state = await takeControl(computerId);
                 if (state) setControl(state);
                 pokeControl(computerId);
                 setExpanded(true);
               }}
-              className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+              size="sm"
+              type="button"
             >
               {t("Take control")}
-            </button>
+            </Button>
           </div>
         ) : null}
       </figure>
@@ -466,7 +543,15 @@ export function ComputerView({
                 aria-label={t("Close the Bot's screen")}
                 aria-hidden={driving}
                 tabIndex={driving ? -1 : 0}
-                className={`absolute inset-0 bg-black/80 ${driving ? "cursor-default" : "cursor-zoom-out"}`}
+                /*
+                 * INSET RING, AND WHITE RATHER THAN THE THEME'S.
+                 *
+                 * This element is the whole viewport, so the ordinary ring is drawn outside it and
+                 * clipped away — a keyboard user tabbing onto the close target saw nothing at all.
+                 * And the scrim is black in both themes while `--ring` in the light theme is
+                 * near-black at 40% alpha, which on black is not a ring either.
+                 */
+                className={`absolute inset-0 bg-black/80 outline-none focus-visible:ring-3 focus-visible:ring-white/70 focus-visible:ring-inset ${driving ? "cursor-default" : "cursor-zoom-out"}`}
               />
               <div className="relative mb-3 flex items-center justify-between gap-4 text-sm text-white">
                 <span className="pointer-events-none">
@@ -486,16 +571,17 @@ export function ComputerView({
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   {driving ? (
-                    <button
-                      type="button"
+                    <Button
+                      className={OVERLAY_BUTTON}
                       onClick={() => {
                         setExpanded(false);
                         void handBack();
                       }}
-                      className="rounded-md bg-white px-3 py-1 text-xs font-medium text-black"
+                      size="sm"
+                      type="button"
                     >
                       {t("Hand back to the Bot")}
-                    </button>
+                    </Button>
                   ) : (
                     /*
                      * Always offered, not only when the Bot asks. This is the person's own
@@ -504,24 +590,24 @@ export function ComputerView({
                      * the wheel, signs in, hands back. The Bot asking merely makes the same
                      * button urgent.
                      */
-                    <button
-                      type="button"
+                    <Button
+                      className={
+                        control?.requested
+                          ? "bg-primary text-primary-foreground focus-visible:border-white focus-visible:ring-white/70"
+                          : OVERLAY_BUTTON
+                      }
                       onClick={async () => {
                         const state = await takeControl(computerId);
                         if (state) setControl(state);
                         pokeControl(computerId);
                       }}
-                      className={
-                        "rounded-md px-3 py-1 text-xs font-medium " +
-                        (control?.requested
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-white text-black")
-                      }
+                      size="sm"
+                      type="button"
                     >
                       {control?.requested
                         ? t("Take control — the Bot asked for you")
                         : t("Take control")}
-                    </button>
+                    </Button>
                   )}
                   <span className="pointer-events-none text-white/70">
                     {/* Escape hands the wheel back on the way out; say so, since it is not obvious. */}

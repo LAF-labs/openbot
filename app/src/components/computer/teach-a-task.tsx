@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   type Draft,
   type Recording,
@@ -8,6 +9,19 @@ import {
   writeUpRecording,
 } from "@/lib/computer/demonstration";
 import { t } from "@/lib/i18n";
+
+/**
+ * One row of the computer card, on the card's own left rule.
+ *
+ * These rows used to pad themselves 12px inwards and draw a tinted band, which put their words to
+ * the right of the picture above them and of each other. The hairline says a new row has started;
+ * the words start where every other row's words start.
+ */
+const ROW = "border-t pt-2 text-sm";
+
+/** Same ring as `ui/button.tsx`, for the fields this panel rolls by hand. */
+const FIELD_FOCUS =
+  "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * Show a Bot how a task is done by doing it once, and keep what you did.
@@ -80,17 +94,20 @@ export function TeachATask({
   // Nothing recorded and not driving: the offer.
   if (!recording && !driving) {
     return (
-      <div className="flex items-center justify-between gap-3 border-t px-3 py-2 text-sm">
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 ${ROW}`}
+      >
         <span className="text-muted-foreground">
           {t("Record yourself doing a task, and this Bot can do it next time.")}
         </span>
-        <button
-          className="shrink-0 rounded-md border px-3 py-1 font-medium text-xs"
+        <Button
           onClick={() => void onStart()}
+          size="sm"
           type="button"
+          variant="outline"
         >
           {t("Teach a task")}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -98,22 +115,26 @@ export function TeachATask({
   // Recording, because they still hold the wheel. See the note above on why there is no Stop.
   if (recording && !recording.finished) {
     return (
-      <div className="flex items-center justify-between gap-3 border-t bg-primary/5 px-3 py-2 text-sm">
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 ${ROW}`}
+      >
         <span>
-          <strong className="font-medium">{t("Recording")}</strong>{" "}
+          {/* The tint that used to say "this is live" moved onto the word itself. */}
+          <strong className="font-medium text-primary">{t("Recording")}</strong>{" "}
           <span className="text-muted-foreground">
             {t("{count} steps so far. Hand back when you are done.", {
               count: String(recording.steps.length),
             })}
           </span>
         </span>
-        <button
-          className="shrink-0 rounded-md border px-3 py-1 font-medium text-xs"
+        <Button
           onClick={() => void forget()}
+          size="sm"
           type="button"
+          variant="outline"
         >
           {t("Discard recording")}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -122,42 +143,51 @@ export function TeachATask({
 
   if (saved) {
     return (
-      <div className="flex items-center justify-between gap-3 border-t px-3 py-2 text-sm">
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 ${ROW}`}
+      >
         <span>{t("Saved. Type /{slug} to ask for it.", { slug })}</span>
-        <button
-          className="shrink-0 rounded-md border px-3 py-1 font-medium text-xs"
+        <Button
           onClick={() => void forget()}
+          size="sm"
           type="button"
+          variant="outline"
         >
           {t("Done")}
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t px-3 py-2 text-sm">
+    <div className={`flex flex-col gap-2 ${ROW}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span>
           {t("Recorded {count} steps.", {
             count: String(recording.steps.length),
           })}
         </span>
-        <button
-          className="shrink-0 text-muted-foreground text-xs underline-offset-4 hover:underline"
+        <Button
+          // Flush right, so it lands on the same right edge as the buttons in the rows around it.
+          className="px-0 text-muted-foreground"
           onClick={() => void forget()}
+          size="xs"
           type="button"
+          variant="link"
         >
           {t("Discard recording")}
-        </button>
+        </Button>
       </div>
 
       {/*
        * The steps as recorded, before anything is made of them. Somebody who is about to save an
        * instruction for a Bot should be able to see what it was drawn from — and a recording that
        * went wrong is obvious here and nowhere else.
+       *
+       * `list-inside` puts the numbers on the card's left rule instead of in a padding well 12px
+       * further right, which is where the third of this card's three left edges came from.
        */}
-      <ol className="max-h-40 list-decimal overflow-y-auto rounded-md bg-muted/40 px-6 py-2 text-muted-foreground text-xs">
+      <ol className="max-h-40 list-inside list-decimal overflow-y-auto text-muted-foreground text-xs">
         {recording.steps.map((step, index) => (
           // Steps have no id and are never reordered: this list is a fixed record of what happened.
           // biome-ignore lint/suspicious/noArrayIndexKey: the order IS the identity here.
@@ -171,7 +201,7 @@ export function TeachATask({
         <>
           <input
             aria-label={t("What to call it")}
-            className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+            className={`w-full rounded-md border bg-background px-2 py-1 text-sm ${FIELD_FOCUS}`}
             onChange={(event) =>
               setDraft({ ...draft, title: event.target.value })
             }
@@ -179,7 +209,7 @@ export function TeachATask({
           />
           <textarea
             aria-label={t("What the Bot should do")}
-            className="w-full rounded-md border bg-background px-2 py-1 font-mono text-xs"
+            className={`w-full rounded-md border bg-background px-2 py-1 font-mono text-xs ${FIELD_FOCUS}`}
             onChange={(event) =>
               setDraft({ ...draft, instructions: event.target.value })
             }
@@ -192,8 +222,7 @@ export function TeachATask({
             )}
           </p>
           <div className="flex items-center gap-2">
-            <button
-              className="rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground text-xs disabled:opacity-60"
+            <Button
               disabled={
                 busy || !draft.title.trim() || !draft.instructions.trim()
               }
@@ -212,15 +241,16 @@ export function TeachATask({
                 setSlug(chosen);
                 setSaved(true);
               }}
+              size="sm"
               type="button"
             >
               {busy ? t("Saving…") : t("Save as a skill")}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
-        <button
-          className="self-start rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground text-xs disabled:opacity-60"
+        <Button
+          className="self-start"
           disabled={busy || recording.steps.length === 0}
           onClick={async () => {
             setBusy(true);
@@ -243,10 +273,11 @@ export function TeachATask({
             }
             setDraft(written.draft);
           }}
+          size="sm"
           type="button"
         >
           {busy ? t("Writing it up…") : t("Turn this into a skill")}
-        </button>
+        </Button>
       )}
 
       {problem ? (

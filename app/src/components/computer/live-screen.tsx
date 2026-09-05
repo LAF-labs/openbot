@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/lib/i18n";
+import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
 
 /**
@@ -108,31 +109,17 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         height: message.height ?? 800,
       };
 
-      /**
-       * Decoded off the main thread and drawn as a bitmap.
-       *
-       * `createImageBitmap` rather than assigning a data URI to an `<img>`: the image path decodes
-       * synchronously on the main thread for every frame, which at screencast rates is the difference
-       * between a smooth page and one that stutters while you are trying to click something on it.
-       */
-      try {
-        const binary = Uint8Array.from(atob(message.data), (c) =>
-          c.charCodeAt(0),
-        );
-        const bitmap = await createImageBitmap(
-          new Blob([binary], { type: "image/jpeg" }),
-        );
-        if (closed) {
-          bitmap.close();
-          return;
-        }
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+      // Drawn as a bitmap because input coordinates are measured against this canvas. The decode
+      // itself moved into `frame-bitmap.ts`, which is also where the timings live.
+      const bitmap = await decodeFrame(message.data, "image/jpeg");
+      // Ignore a single corrupt frame; the next frame replaces it.
+      if (!bitmap) return;
+      if (closed) {
         bitmap.close();
-      } catch {
-        // Ignore a single corrupt frame; the next frame replaces it.
+        return;
       }
+      paintFrame(canvas, bitmap);
+      bitmap.close();
     };
 
     socket.onerror = () => onProblem?.("The live screen could not be reached.");
