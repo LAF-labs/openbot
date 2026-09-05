@@ -389,11 +389,15 @@ export async function resolveRuntimeAgents(
   timeZone: string = botTimeZone(),
 ): Promise<Record<string, AbstractAgent>> {
   const registered = await loadAgents();
-  if (registered.length === 0) {
-    throw new Error(
-      "No agents are registered. Add one to the tenant package or the agents table.",
-    );
-  }
+  /*
+   * AN EMPTY ROSTER IS A CORRECT STATE. This used to throw "No agents are registered", which was
+   * true when every deployment shipped built-in Bots and an empty roster meant a broken package.
+   * Deployments ship none now: every account is legitimately empty for its first minute, and again
+   * the moment somebody deletes their last Bot — and the throw turned the first screen of the
+   * product into a 500 on `/info` plus a 404 on the chat endpoint (measured on a cold first run).
+   * A run against a Bot that does not exist still fails where it always did, by name.
+   */
+  if (registered.length === 0) return {};
   return buildAgents(registered, model, stallGuard, timeZone);
 }
 

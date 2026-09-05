@@ -35,6 +35,7 @@ function NotFoundScreen() {
       </p>
       <Button
         className="mt-1"
+        nativeButton={false}
         render={(props) => <Link to="/" {...props} />}
         variant="outline"
       >

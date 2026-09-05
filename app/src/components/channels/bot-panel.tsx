@@ -75,6 +75,7 @@ export function BotPanel({
               {t("A routine is work this Bot repeats on a schedule.")}
             </p>
             <Button
+              nativeButton={false}
               render={(props) => <Link to="/routines" {...props} />}
               variant="secondary"
             >

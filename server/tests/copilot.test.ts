@@ -156,8 +156,8 @@ describe("registered Copilot agents", () => {
   });
 
   test("refuses a roster that resolves to nothing", async () => {
-    await expect(resolveRuntimeAgents(async () => [], model)).rejects.toThrow(
-      "No agents are registered",
+    await expect(resolveRuntimeAgents(async () => [], model)).resolves.toEqual(
+      {},
     );
   });
 });

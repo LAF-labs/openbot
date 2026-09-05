@@ -198,6 +198,7 @@ function SkillsPage() {
         <PageSection
           action={
             <Button
+              nativeButton={false}
               render={(props) => (
                 <Link search={{ new: true }} to="/skills" {...props} />
               )}
