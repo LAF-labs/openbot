@@ -65,6 +65,22 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   const queryClient = useQueryClient();
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
   /*
+   * TWO ROSTERS, FOR THE REASON `channels/avatar.tsx` ALREADY ASKS FOR BOTH.
+   *
+   * 숨기기 says it takes a Bot out of the list and does nothing else — it keeps working and it
+   * keeps its seat — and it keeps talking in whatever rooms it is already in. Measured: a room of
+   * two, one member hidden, and its three replies drew with no name over them at all, because
+   * `speakers` below drops any id the visible roster cannot resolve. Everything a hidden colleague
+   * said became anonymous, in the one screen where knowing who spoke is the whole point. Its FACE
+   * beside the room resolved perfectly, because that lookup was taught about both lists and this
+   * one was not.
+   */
+  const { data: hiddenProfiles } = useQuery(agentListQueryOptions(true));
+  const roster = useMemo(
+    () => [...(agentProfiles ?? []), ...(hiddenProfiles ?? [])],
+    [agentProfiles, hiddenProfiles],
+  );
+  /*
    * Answering is the owner's alone — `POST /api/approvals/:botId/:approvalId` is admin-only, and
    * deliberately so. Drawn for everybody, the card gave every other member of the room two buttons
    * that could only ever fail, on a question they cannot do anything about.
@@ -78,8 +94,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     [memberIdsKey],
   );
   const memberNames = useMemo(
-    () => new Map((agentProfiles ?? []).map((agent) => [agent.id, agent.name])),
-    [agentProfiles],
+    () => new Map(roster.map((agent) => [agent.id, agent.name])),
+    [roster],
   );
   const marks = useQuery(messageTimesQueryOptions(channel.id));
   const [room, setRoom] = useState<RoomState>(EMPTY_ROOM);
@@ -409,9 +425,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
 
   /** Message id → the NAME of the Bot that said it, which is what the transcript draws. */
   const speakers = useMemo(() => {
-    const names = new Map(
-      (agentProfiles ?? []).map((profile) => [profile.id, profile.name]),
-    );
+    const names = new Map(roster.map((profile) => [profile.id, profile.name]));
     const resolved: Record<string, string> = {};
     for (const [messageId, agentId] of Object.entries({
       ...(marks.data?.speakers ?? {}),
@@ -421,7 +435,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       if (name) resolved[messageId] = name;
     }
     return resolved;
-  }, [agentProfiles, marks.data?.speakers, room.speakers]);
+  }, [roster, marks.data?.speakers, room.speakers]);
 
   const messageTimes = useMemo(
     () => ({ ...(marks.data?.times ?? {}), ...room.times }),
