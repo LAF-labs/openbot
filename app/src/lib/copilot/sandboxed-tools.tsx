@@ -11,6 +11,8 @@ import {
   agentComponentsQueryOptions,
   decideComponent,
   type GrantedComponent,
+  refusalSaid,
+  refusalTold,
 } from "@/lib/components/queries";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
@@ -149,12 +151,15 @@ function SandboxedTool({
     ) => {
       const decision = await decideComponent(component.name, botId);
       if (!decision.allowed) {
-        const reason = decision.reason ?? "That component is not allowed here.";
         const id = context?.toolCall?.id;
-        // The card is the person's and the return is the model's, so the fallback is written twice.
-        const said = decision.reason ?? t("This cannot be shown here.");
-        if (id) setRefusals((current) => new Map(current).set(id, said));
-        return reason;
+        // The card is the person's and the return is the model's. One fact code, two sentences —
+        // see `refusalSaid` / `refusalTold`.
+        if (id) {
+          setRefusals((current) =>
+            new Map(current).set(id, refusalSaid(decision.reason)),
+          );
+        }
+        return refusalTold(decision.reason);
       }
       return "It is now on screen for the person.";
     },

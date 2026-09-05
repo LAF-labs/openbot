@@ -408,6 +408,21 @@ function Row({
             {fact(payload.failure)}
           </div>
         ) : null}
+        {/*
+         * A note the server recorded as a fact, and ONLY when this surface has words for it.
+         *
+         * `note` was drawn nowhere, which is how `computer.isolation_loaded` — a row whose entire
+         * content is its note — came to say "Isolation at start-up" and nothing else, while the
+         * sentence stating that every Bot shares one browser sat in a payload only a database
+         * client would ever see. Drawn unconditionally it would instead spill the English notes
+         * still in the other rows onto this page, so the condition IS the boundary: a note that has
+         * become a code has words here, and a note that is still prose stays where it was.
+         */}
+        {typeof payload.note === "string" && FACTS[payload.note] ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {fact(payload.note)}
+          </div>
+        ) : null}
         {approval && typeof payload.reason === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {fact(payload.reason)}
@@ -650,6 +665,36 @@ function fact(value: string): string {
  */
 export const FACTS: Record<string, string> = {
   "laf:element_not_in_snapshot": "Not in the screen the server was holding",
+
+  /*
+   * The refusals, in the words a COLUMN wants — short, because this is scanned rather than read.
+   *
+   * Deliberately shorter than what the same code says to the model and to the person whose card did
+   * not appear (`shared/prompt/tool-results.ko.ts`, and the app's own sentence beside the refused
+   * card). One fact, three readers, three lengths: the model is told what to do next, the person is
+   * told why the screen is empty, and this reader is scanning a hundred rows for the one that is
+   * not like the others.
+   *
+   * Each of these names WHICH refusal it was, and none of them repeats the component, the function
+   * or the tool — those are already in the Target column of the same row.
+   */
+  "laf:component_unknown": "No component of that name here",
+  "laf:component_not_published": "Not published, so no Bot may use it",
+  "laf:component_withheld": "Withheld from this Bot",
+  "laf:function_unknown": "No data function of that name here",
+  "laf:function_not_granted": "This component was not granted that function",
+  "laf:tool_not_granted": "This Bot was not given that tool",
+  "laf:skill_not_granted": "This Bot was not given that skill",
+
+  // The three last resorts, where what failed left no message of its own. A row saying only "Did
+  // not happen" with a blank beneath it reads as a surface that lost the reason.
+  "laf:action_failed": "It failed, and said nothing about how",
+  "laf:read_failed": "The read failed, and said nothing about how",
+  "laf:tool_reported_error": "The tool said it failed and said no more",
+
+  // The boot row's whole content. Not a refusal — the arrangement this deployment runs under.
+  "laf:one_shared_computer":
+    "Every Bot of this account drives the same browser: sessions, files and logins are shared",
 };
 
 /**

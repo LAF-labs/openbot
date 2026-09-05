@@ -1,4 +1,9 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import {
+  COMPONENT_NOT_PUBLISHED,
+  COMPONENT_UNKNOWN,
+  COMPONENT_WITHHELD,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   componentExclusions,
@@ -255,25 +260,24 @@ export function createComponentStore(database: Database): ComponentStore {
         .where(eq(components.name, name))
         .limit(1);
 
-      // Every refusal says which one it is. "Not allowed" sends a model round the same loop; naming
-      // the cause lets it either pick a different component or tell the person what to change.
+      /*
+       * Every refusal says WHICH one it is. "Not allowed" sends a model round the same loop; naming
+       * the cause lets it either pick a different component or tell the person what to change.
+       *
+       * A code, not the sentence it used to be. The sentence had three readers who are owed three
+       * different things — the model, the person watching the card, and the audit table — and it
+       * was written for none of them: English, assembled here, printed verbatim into a Korean
+       * screen. The Korean lives on each reader's own side now
+       * (`shared/prompt/tool-results.ko.ts`, `t()`, and the audit's FACTS table).
+       */
       if (!row) {
-        return {
-          allowed: false,
-          reason: `There is no component called ${name} in this deployment. Answer in prose instead.`,
-        };
+        return { allowed: false, reason: COMPONENT_UNKNOWN };
       }
       if (!row.published || !row.description) {
-        return {
-          allowed: false,
-          reason: `${row.title} is not published in this deployment, so no Bot may use it. Answer in prose instead.`,
-        };
+        return { allowed: false, reason: COMPONENT_NOT_PUBLISHED };
       }
       if (row.withheldFrom) {
-        return {
-          allowed: false,
-          reason: `${row.title} has been withheld from this Bot in this deployment, though other Bots may use it. Answer in prose instead.`,
-        };
+        return { allowed: false, reason: COMPONENT_WITHHELD };
       }
       return { allowed: true, description: row.description };
     },

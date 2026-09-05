@@ -1,7 +1,12 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditStore } from "../audit";
-import { recordAuditEvent } from "../audit";
+import {
+  FUNCTION_NOT_GRANTED,
+  FUNCTION_UNKNOWN,
+  READ_FAILED,
+  recordAuditEvent,
+} from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
@@ -157,13 +162,16 @@ export function createComponentRoutes(
      */
     for (const functionName of functions) {
       if (await store.mayCall(name, functionName)) continue;
-      const reason = `${name} has not been granted the function ${functionName}. An administrator grants each function to each component.`;
+      const reason = FUNCTION_NOT_GRANTED;
       await audit(context, "component.function_refused", name, {
         bot: agentId,
         function: functionName,
         reason,
       });
-      return context.json({ allowed: false, reason });
+      // WHICH grant is missing, beside the code rather than spelled into it. It used to be written
+      // into the English sentence, which is how the name and the words became one field a Korean
+      // surface could not take apart.
+      return context.json({ allowed: false, reason, function: functionName });
     }
 
     return context.json({ allowed: true });
@@ -224,15 +232,11 @@ export function createComponentRoutes(
     if (!fn) {
       // Named separately from a refusal so an administrator is not sent looking for a grant to give
       // for something this build does not have.
-      return refuse(
-        `There is no data function called ${functionName} in this deployment.`,
-      );
+      return refuse(FUNCTION_UNKNOWN);
     }
 
     if (!(await store.mayCall(name, functionName))) {
-      return refuse(
-        `${name} has not been granted the function ${functionName}. An administrator grants each function to each component.`,
-      );
+      return refuse(FUNCTION_NOT_GRANTED);
     }
 
     try {
@@ -252,12 +256,13 @@ export function createComponentRoutes(
       await audit(context, "component.function_failed", name, {
         bot: agentId,
         function: functionName,
-        failure: error instanceof Error ? error.message : "The read failed.",
+        // A real exception keeps its own message: it came from somebody else's software and this
+        // side cannot know what it means. Ours is a code.
+        failure: error instanceof Error ? error.message : READ_FAILED,
       });
-      return context.json(
-        { allowed: true, error: "That data could not be read." },
-        502,
-      );
+      // The same code the row carries. It was the English sentence the surface ALREADY had Korean
+      // for, sent from here anyway, so the card printed the server's copy of it untranslated.
+      return context.json({ allowed: true, error: READ_FAILED }, 502);
     }
   });
 

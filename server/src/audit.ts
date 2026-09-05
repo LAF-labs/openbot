@@ -333,13 +333,76 @@ export type AuditEventType = (typeof auditEventTypes)[number];
  * The `laf:` prefix is the same marker the model-facing codes carry (`shared/prompt/tool-results.ko.ts`)
  * and for the same reason: no English sentence can have it by accident.
  */
-export const auditFactCodes = ["laf:element_not_in_snapshot"] as const;
+export const auditFactCodes = [
+  "laf:element_not_in_snapshot",
+
+  /*
+   * THE REFUSALS. Each of these was an English sentence assembled here and printed, untranslated,
+   * into the audit table's Korean 결정 column — and into the refusal card a person reads in the
+   * middle of a conversation, which is worse, because that one is not an administrator's screen.
+   *
+   * They carry no name. The sentence they replaced spelled the component, the function or the tool
+   * into the prose, and every one of those is already its own column on the row: the target id and
+   * `payload.function` are printed beside the sentence, so writing them into it a second time was
+   * the server composing a caption for a table it cannot see.
+   */
+  "laf:component_unknown",
+  "laf:component_not_published",
+  "laf:component_withheld",
+  "laf:function_unknown",
+  "laf:function_not_granted",
+  "laf:tool_not_granted",
+  "laf:skill_not_granted",
+
+  /*
+   * THE LAST RESORTS. Three `failure` fallbacks for the case where what was thrown is not an Error
+   * and has no message of its own, plus a vendor that answered `isError` with nothing in it.
+   *
+   * A real exception's message still passes through untouched — it comes from somebody else's
+   * software and inventing Korean for it would be inventing the fact. These three are OURS, which
+   * is exactly why they had to stop being sentences.
+   */
+  "laf:action_failed",
+  "laf:read_failed",
+  "laf:tool_reported_error",
+
+  /*
+   * Not a refusal and not a failure: the arrangement this deployment booted with, said out loud.
+   * It was a 200-character English paragraph in the boot row's payload — the one place the trail
+   * states the sharing that `computer/assignment.ts` decided.
+   */
+  "laf:one_shared_computer",
+] as const;
 
 export type AuditFactCode = (typeof auditFactCodes)[number];
 
 /** What was acted on could not be found in the snapshot the decision was made against. */
 export const ELEMENT_NOT_IN_SNAPSHOT: AuditFactCode =
   "laf:element_not_in_snapshot";
+
+/** No component of that name exists in this deployment. */
+export const COMPONENT_UNKNOWN: AuditFactCode = "laf:component_unknown";
+/** It exists and is not published, so it is offered to no Bot at all. */
+export const COMPONENT_NOT_PUBLISHED: AuditFactCode =
+  "laf:component_not_published";
+/** Published, and withheld from this one Bot. Other Bots still have it. */
+export const COMPONENT_WITHHELD: AuditFactCode = "laf:component_withheld";
+/** No data function of that name is in this build. Not a grant anybody can give. */
+export const FUNCTION_UNKNOWN: AuditFactCode = "laf:function_unknown";
+/** The component exists, the function exists, and this pair was never granted. */
+export const FUNCTION_NOT_GRANTED: AuditFactCode = "laf:function_not_granted";
+/** This Bot holds no grant for that tool. */
+export const TOOL_NOT_GRANTED: AuditFactCode = "laf:tool_not_granted";
+/** This Bot holds no grant for that skill. */
+export const SKILL_NOT_GRANTED: AuditFactCode = "laf:skill_not_granted";
+/** Permitted, attempted, and what came back was not an Error with a message. */
+export const ACTION_FAILED: AuditFactCode = "laf:action_failed";
+/** The same, for a component's read. */
+export const READ_FAILED: AuditFactCode = "laf:read_failed";
+/** The vendor said the call failed and sent no text saying how. */
+export const TOOL_REPORTED_ERROR: AuditFactCode = "laf:tool_reported_error";
+/** Every Bot of this account drives the same browser. */
+export const ONE_SHARED_COMPUTER: AuditFactCode = "laf:one_shared_computer";
 
 export type AuditEventInput = {
   eventType: AuditEventType;

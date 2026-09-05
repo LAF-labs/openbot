@@ -1,5 +1,9 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { recordAuditEvent } from "../audit";
+import {
+  recordAuditEvent,
+  SKILL_NOT_GRANTED,
+  TOOL_NOT_GRANTED,
+} from "../audit";
 import type { Database } from "../db/client";
 import { agentProfiles, mcpTools, pluginGrants, skills } from "../db/schema";
 import type {
@@ -344,13 +348,16 @@ export function createSkillsAndGrants(context: PluginContext) {
         )
         .limit(1);
 
+      /*
+       * A code, not a sentence. This one was English in three places at once: the
+       * `mcp.call_rejected` row's `reason`, the refusal the model reads, and the line a person sees
+       * where a tool's answer would have been. The ref it used to spell out is the row's own target
+       * id and the model's own argument, so nothing is lost by leaving it out of the words.
+       */
       if (!row) {
         return {
           allowed: false,
-          reason:
-            kind === "mcp"
-              ? `This Bot has not been given the tool ${ref}.`
-              : `This Bot has not been given the skill ${ref}.`,
+          reason: kind === "mcp" ? TOOL_NOT_GRANTED : SKILL_NOT_GRANTED,
         };
       }
       return { allowed: true };

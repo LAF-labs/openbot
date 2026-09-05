@@ -8,6 +8,8 @@ import {
   componentKeys,
   decideComponent,
   type GrantedComponent,
+  refusalSaid,
+  refusalTold,
 } from "@/lib/components/queries";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import {
@@ -131,16 +133,20 @@ function GrantedTool({
         spec.reads?.(args ?? {}) ?? [],
       );
       if (!decision.allowed) {
-        const reason = decision.reason ?? "That component is not allowed here.";
         const id = context?.toolCall?.id;
+        /*
+         * Two readers, two sentences, one fact code.
+         *
+         * Both used to be the server's one English sentence — the model was handed it and so was
+         * the card beside it, on a Korean screen, in the middle of a conversation. The server sends
+         * `laf:component_withheld` now and each side says it in its own words.
+         */
         if (id) {
-          // The model is told in English below; the card beside it is the person's, so it is not
-          // the same string twice — a refusal a Korean reader cannot read is a refusal that lies.
-          const said = decision.reason ?? t("This cannot be shown here.");
-          setRefusals((current) => new Map(current).set(id, said));
+          setRefusals((current) =>
+            new Map(current).set(id, refusalSaid(decision.reason)),
+          );
         }
-        // Led with the same words the card shows, so the transcript and the card agree.
-        return `Not shown: ${spec.title}. ${reason} Nothing was displayed, so tell the person that.`;
+        return refusalTold(decision.reason);
       }
       return spec.confirmation ?? "It is now on screen for the person.";
     },

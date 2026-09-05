@@ -18,6 +18,7 @@
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
 import {
+  ACTION_FAILED,
   type AuditStore,
   ELEMENT_NOT_IN_SNAPSHOT,
   recordAuditEvent,
@@ -649,7 +650,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
             }
           : {}),
         ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
-        failure: error instanceof Error ? error.message : "The action failed.",
+        // An exception keeps its own message — it came from somebody else's software and this side
+        // cannot know what it meant. What is OURS is a code.
+        failure: error instanceof Error ? error.message : ACTION_FAILED,
       });
       throw error;
     }

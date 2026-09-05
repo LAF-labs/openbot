@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { t } from "@/lib/i18n";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
@@ -165,6 +166,65 @@ export function dataFunctionsQueryOptions() {
       return (await response.json()).functions ?? [];
     },
   });
+}
+
+/**
+ * WHAT A PERSON IS TOLD WHEN THE DEPLOYMENT SAID NO, in this surface's own words.
+ *
+ * The server used to assemble the sentence itself, and it arrived in English on a Korean screen —
+ * not on an administrator's page, but in the middle of a conversation, where a card should have
+ * been. It sends a fact code now, and the sentence is written here, beside every other sentence
+ * this module owns.
+ *
+ * These are LONGER than the same codes' entries in the audit table's FACTS. That reader is scanning
+ * a hundred rows; this one is looking at an empty space where something was supposed to appear and
+ * needs to know whether to ask an administrator, ask again, or give up. The model gets a third
+ * wording again (`shared/prompt/tool-results.ko.ts`), which tells it what to do next.
+ *
+ * `t()` on a variable, so `i18n-coverage.test.ts` cannot see this table — `tool-result-codes.test.ts`
+ * walks it instead, the way it already walks the computer's own outcome labels.
+ */
+export const REFUSAL_SAID: Record<string, string> = {
+  "laf:component_unknown":
+    "This deployment has no card by that name, so nothing was shown",
+  "laf:component_not_published":
+    "That card is not published in this deployment, so no Bot can show it",
+  "laf:component_withheld":
+    "That card is switched off for this Bot. It can be turned back on from the admin screen",
+  "laf:function_unknown": "This deployment has no data source by that name",
+  "laf:function_not_granted":
+    "That card has not been allowed to read this data. An administrator allows each data source per card",
+  // Already in the dictionary, because this surface has been saying it for as long as the card has
+  // existed. The server sends the code; the sentence does not change.
+  "laf:read_failed": "That data could not be read.",
+};
+
+/**
+ * A refusal the server sent, as a sentence.
+ *
+ * Anything that is not a `laf:` code passes through untouched. That is deliberate and it is the same
+ * rule the MCP path uses: the failures this module raises itself are already `t()` sentences, and an
+ * English sentence arriving from anywhere else is a regression that should be VISIBLE rather than
+ * quietly replaced by a generic line.
+ */
+export function refusalSaid(reason: string | undefined): string {
+  if (!reason) return t("This cannot be shown here.");
+  if (!reason.startsWith("laf:")) return reason;
+  const said = REFUSAL_SAID[reason];
+  return said ? t(said) : t("This cannot be shown here.");
+}
+
+/**
+ * The same refusal, in the words the MODEL reads.
+ *
+ * A separate function and not a second argument, because the two readers are answered in two
+ * different places and one of them has to be able to change without the other. The model is told
+ * what to do next — stop, answer in prose, do not call this again — which is not what belongs on a
+ * card in front of a person.
+ */
+export function refusalTold(reason: string | undefined): string {
+  if (reason?.startsWith("laf:")) return toolResultText(reason);
+  return reason ?? t("This cannot be shown here.");
 }
 
 /**

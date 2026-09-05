@@ -10,7 +10,12 @@ import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
-import { createAuditReader, createAuditStore, recordAuditEvent } from "./audit";
+import {
+  createAuditReader,
+  createAuditStore,
+  ONE_SHARED_COMPUTER,
+  recordAuditEvent,
+} from "./audit";
 import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
@@ -605,7 +610,13 @@ void recordAuditEvent(bootAuditStore, {
   targetType: "computer",
   payload: {
     isolation: "one shared computer",
-    note: "Every Bot of this account uses the same browser. Sessions, files and logins are shared between them — the account's desk, by design.",
+    /*
+     * A code. This was a 200-character English paragraph, on the one row whose entire content is a
+     * sentence — and the audit page drew no `note` at all, so the arrangement this row exists to
+     * state was legible only to somebody reading the database. The surface says it in Korean now,
+     * and draws it.
+     */
+    note: ONE_SHARED_COMPUTER,
   },
 }).catch(() => undefined);
 

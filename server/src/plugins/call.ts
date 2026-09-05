@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { recordAuditEvent } from "../audit";
+import { recordAuditEvent, TOOL_REPORTED_ERROR } from "../audit";
 import type { AskSubject } from "../computer/approvals";
 import { fingerprintOf } from "../computer/approvals";
 import {
@@ -639,8 +639,9 @@ export function createCallPath(
           payload: result.isError
             ? {
                 ...decided,
-                failure:
-                  result.text.slice(0, 400) || "the tool reported an error",
+                // The vendor's own sentence where it wrote one; ours is a code, because a vendor
+                // that says "this failed" and nothing else leaves this side speaking for it.
+                failure: result.text.slice(0, 400) || TOOL_REPORTED_ERROR,
               }
             : decided,
         });

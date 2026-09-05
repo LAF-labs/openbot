@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { callComponentFunction } from "@/lib/components/queries";
+import { callComponentFunction, refusalSaid } from "@/lib/components/queries";
 import { useActiveBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
@@ -81,10 +81,9 @@ export function ActivityReportCard({
           ? { status: "read", data: result.data }
           : {
               status: "refused",
-              reason:
-                result.reason ??
-                result.error ??
-                t("That data could not be read."),
+              // Both are fact codes now, and both are said here rather than by the server. This
+              // card printed the server's English on a Korean screen for as long as it existed.
+              reason: refusalSaid(result.reason ?? result.error),
             },
       );
     });

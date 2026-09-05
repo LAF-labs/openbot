@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
+import {
+  COMPONENT_NOT_PUBLISHED,
+  COMPONENT_UNKNOWN,
+  COMPONENT_WITHHELD,
+} from "../src/audit";
 import { DATA_FUNCTIONS } from "../src/components/functions";
 import {
   ComponentNotFoundError,
@@ -93,7 +98,9 @@ describe("deciding whether a Bot may use a component", () => {
     const decision = await store.decide(componentName, botA);
     expect(decision.allowed).toBeFalse();
     if (!decision.allowed) {
-      expect(decision.reason).toContain("withheld from this Bot");
+      // The code, never the sentence. The words for it live on the surface, in three lengths for
+      // three readers, and pinning any of them here would make rewording one a server failure.
+      expect(decision.reason).toBe(COMPONENT_WITHHELD);
     }
   });
 
@@ -107,7 +114,7 @@ describe("deciding whether a Bot may use a component", () => {
     const decision = await store.decide(otherName, botB);
     expect(decision.allowed).toBeFalse();
     if (!decision.allowed) {
-      expect(decision.reason).toContain("not published");
+      expect(decision.reason).toBe(COMPONENT_NOT_PUBLISHED);
     }
   });
 
@@ -116,7 +123,7 @@ describe("deciding whether a Bot may use a component", () => {
     const decision = await store.decide(`nothing_${suite}`, botA);
     expect(decision.allowed).toBeFalse();
     if (!decision.allowed) {
-      expect(decision.reason).toContain("no component called");
+      expect(decision.reason).toBe(COMPONENT_UNKNOWN);
     }
   });
 

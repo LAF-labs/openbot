@@ -1889,4 +1889,40 @@ export const ko: Record<string, string> = {
     "{seconds}초 동안 조용했습니다. 그 전에 1조각을 보냈습니다",
   "Silent for {seconds}s, after {chunks} chunks":
     "{seconds}초 동안 조용했습니다. 그 전에 {chunks}조각을 보냈습니다",
+
+  /*
+   * 감사 표의 결정 칸이 사실 코드에 붙이는 말. 서버가 조립하던 영어 문장을 대신한다.
+   *
+   * 한 칸에 들어가야 하므로 짧다. 같은 코드를 모델은 다르게 읽고(`tool-results.ko.ts`), 카드가
+   * 뜨지 않은 사람도 다르게 읽는다 — 한 사실에 독자가 셋이고, 셋이 서로 다른 것을 필요로 한다.
+   */
+  "No component of that name here": "이 배포에 없는 컴포넌트",
+  "Not published, so no Bot may use it": "공개되지 않아 어떤 봇도 쓸 수 없음",
+  "Withheld from this Bot": "이 봇에게서 회수됨",
+  "No data function of that name here": "이 배포에 없는 데이터 함수",
+  "This component was not granted that function":
+    "이 컴포넌트에 허용되지 않은 함수",
+  "This Bot was not given that tool": "이 봇에게 주어지지 않은 도구",
+  "This Bot was not given that skill": "이 봇에게 주어지지 않은 스킬",
+  "It failed, and said nothing about how": "실패했고, 이유는 남지 않았습니다",
+  "The read failed, and said nothing about how":
+    "읽지 못했고, 이유는 남지 않았습니다",
+  "The tool said it failed and said no more": "도구가 실패했다고만 답했습니다",
+  "Every Bot of this account drives the same browser: sessions, files and logins are shared":
+    "이 계정의 모든 봇이 같은 브라우저를 씁니다. 세션과 파일과 로그인이 공유됩니다",
+
+  /*
+   * 카드 자리에 뜨는 거절. 같은 코드를 사람이 읽는 문장이고, 위의 감사 칸보다 길다 —
+   * 대화 한복판에서 카드가 안 뜬 이유를 읽는 사람에게는 다음에 무엇을 하면 되는지가 필요하다.
+   */
+  "This deployment has no card by that name, so nothing was shown":
+    "이 배포에는 그런 이름의 카드가 없어서 아무것도 표시하지 못했습니다",
+  "That card is not published in this deployment, so no Bot can show it":
+    "이 카드는 이 배포에서 공개되지 않아 어떤 봇도 띄울 수 없습니다",
+  "That card is switched off for this Bot. It can be turned back on from the admin screen":
+    "이 카드는 지금 이 봇에 꺼져 있습니다. 관리자 화면에서 다시 켤 수 있습니다",
+  "This deployment has no data source by that name":
+    "이 배포에는 그런 이름의 데이터가 없습니다",
+  "That card has not been allowed to read this data. An administrator allows each data source per card":
+    "이 카드는 이 데이터를 읽도록 허용되지 않았습니다. 관리자가 카드마다 데이터를 따로 허용합니다",
 };

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { FUNCTION_NOT_GRANTED } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
 import type { ComponentStore } from "../src/components/store";
@@ -47,7 +48,11 @@ async function decide(body: Record<string, unknown>) {
       body: JSON.stringify(body),
     },
   );
-  return (await response.json()) as { allowed: boolean; reason?: string };
+  return (await response.json()) as {
+    allowed: boolean;
+    reason?: string;
+    function?: string;
+  };
 }
 
 describe("deciding a component", () => {
@@ -69,7 +74,11 @@ describe("deciding a component", () => {
       functions: [WITHHELD],
     });
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain(WITHHELD);
+    // The code says WHICH refusal; the field beside it says which grant. They used to be one
+    // English sentence, which is exactly why the name is a field now — the surface says the words
+    // and cannot say them without the fact.
+    expect(decision.reason).toBe(FUNCTION_NOT_GRANTED);
+    expect(decision.function).toBe(WITHHELD);
   });
 
   test("refuses when any one of the functions is withheld", async () => {
