@@ -27,6 +27,21 @@ export type MemberTurnResult = {
 
 export type MemberTurnInput = {
   room: { channelId: string; name: string; description?: string };
+  /**
+   * The room's thread, so the ledger row this turn opens belongs to the conversation.
+   *
+   * It did not: `begin` was called with no thread, so a member's failed turn was a run in the
+   * ledger that no conversation could claim, and `GET /api/channels/:id/failures` — which joins
+   * the ledger to the thread — had nothing to show for a room. See `channels/turn-failures.ts`.
+   */
+  threadId: string;
+  /**
+   * The id the caller minted for this run, so the messages the member delivers can carry it.
+   *
+   * Minted by the caller rather than here because `deliver` writes rows before this function
+   * returns, and the row has to name the run that wrote it. The ledger accepts a caller's id.
+   */
+  runId: string;
   member: RoomMember;
   peers: readonly RoomMember[];
   lines: readonly RoomLine[];
@@ -67,6 +82,8 @@ export async function runMemberTurn(
   const toolkit = roomToolkit(input.toolkit, input.deliver);
   const runId = await input.ledger
     ?.begin({
+      runId: input.runId,
+      threadId: input.threadId,
       agentId: input.member.id,
       userId: input.userId,
       origin: "room",

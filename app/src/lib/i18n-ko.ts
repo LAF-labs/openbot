@@ -1996,4 +1996,8 @@ export const ko: Record<string, string> = {
   "For one conversation only": "한 대화에서만",
   "Each of these was a question somebody answered with “always” or “for this conversation”. Until it is taken back or runs out, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
     "각 항목은 누군가 “항상” 또는 “이 대화 동안”으로 답한 질문입니다. 취소하거나 기한이 끝나기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
+
+  // 감사 표: 방에서 봇 하나가 차례를 가진 기록 — 몇 번째 바퀴였고, 왜 말했고, 무엇이 됐는지.
+  "A Bot took its turn in a room": "봇이 방에서 차례를 가짐",
+  "A room turn": "방의 차례",
 };

@@ -553,6 +553,7 @@ export const DECISIONS: Record<string, string> = {
   "mcp.account_disconnected": "An account is no longer connected",
 
   "coworker.asked": "One Bot asked another",
+  "room.member_turn": "A Bot took its turn in a room",
   "routine.ran": "A routine ran",
   // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
   // and a row that reads as an accident hides the decision.
@@ -780,6 +781,7 @@ export const EVENTS: Record<string, string> = {
   "computer.isolation_loaded": "Isolation",
   "model.usage": "Model usage",
   "coworker.asked": "One Bot asking another",
+  "room.member_turn": "A room turn",
   "routine.ran": "A routine",
   "routine.skipped": "A routine",
   "skill.viewed": "A skill",

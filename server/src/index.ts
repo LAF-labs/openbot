@@ -918,6 +918,8 @@ const app = createApp(
     },
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
+    // Each member's turn on the trail: which round, why it spoke, what came of it.
+    auditStore: bootAuditStore,
   }),
   createThreadMessageReader(database),
   standingApprovals,

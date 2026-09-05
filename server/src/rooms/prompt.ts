@@ -230,6 +230,14 @@ export function roomTurnPrompt(input: {
     "must call the send_message tool with what you want to say.",
     "If you have nothing worth adding, call nothing and end your turn. That is staying silent, and",
     "it is a perfectly good answer.",
+    /*
+     * The turn-taking rule, said to the one party that can work it: after the first round only a
+     * colleague somebody NAMED speaks again (`turn-taking.ts`). A Bot that wants an answer from a
+     * colleague has to say so by name, and one told this writes "@민수" where it would otherwise
+     * have written "someone should check".
+     */
+    "To bring a colleague in, name them with @ and their name in what you send. Only a colleague",
+    "somebody has named speaks again this turn.",
   );
   if (windingDown) {
     parts.push(

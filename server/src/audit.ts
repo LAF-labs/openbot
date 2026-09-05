@@ -230,6 +230,17 @@ export const auditEventTypes = [
    * "who told the risk Bot that" has to be answerable from the trail, not from memory.
    */
   "coworker.asked",
+  /**
+   * One member's turn in a room: which round, why it was asked to speak, and what came of it.
+   *
+   * Who speaks in a room is decided by a rule rather than by every Bot answering every round
+   * (`rooms/turn-taking.ts`), and a rule that decides who gets to talk is one somebody will want
+   * to argue with afterwards — "why did the risk Bot answer twice and the sales Bot never" is a
+   * question the trail has to answer. The row carries the round, the reason (the person named it,
+   * nobody was named, a colleague named it — and which colleague), how much it said, and whether it
+   * failed to take the turn at all, against the run the ledger holds for it.
+   */
+  "room.member_turn",
   /** A routine fired, and how it went. The run record prunes; this row is the history of record. */
   "routine.ran",
   /**

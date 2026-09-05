@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, sql } from "drizzle-orm";
+import type { AuditStore } from "../audit";
 import type { AnnounceChannelActivity } from "../channels/events";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
@@ -29,6 +30,7 @@ import { runRoomTurn } from "./orchestrator";
 import { readPrivateHistory } from "./private-history";
 import type { RoomMember } from "./prompt";
 import { appendRoomMessage, readRoomLines } from "./transcript";
+import { mentionsIn } from "./turn-taking";
 import type { ApprovalWaiter } from "./wait-for-approval";
 
 /** How long one member may take. Generous: it may open pages and read files before it answers. */
@@ -72,6 +74,15 @@ export type RoomServiceOptions = {
    * waiting, exactly as it did before, and the question stays on screen to be answered late.
    */
   awaitApproval?: ApprovalWaiter;
+  /**
+   * Where each member's turn is written down: which round, why it spoke, what came of it.
+   *
+   * Absent in tests that are not about the trail. A row that cannot be written never fails the
+   * turn — the trail is the record, the turn is the work, and losing the record must not lose the
+   * work — but it is written before the next member is asked, so the rows read in the order the
+   * room actually went.
+   */
+  auditStore?: AuditStore;
   memberTimeoutMs?: number;
 };
 
@@ -155,6 +166,14 @@ export function createRoomService(options: RoomServiceOptions) {
           agentId: null,
           text,
           ...(input.messageId ? { messageId: input.messageId } : {}),
+          /*
+           * THE TURN IS THE RUN THAT ANSWERS THIS MESSAGE. A chat writes the person's message
+           * under the run that answers it, and the failures reader finds "which message got no
+           * reply" by that id. A room's turn is several runs — one per member — and the message
+           * was written under none of them, so a room's failed turn could never be shown. The turn
+           * itself now has a ledger row (see `run`), under this id, and the message names it.
+           */
+          runId: turnId,
         });
         const [bumped] = await transaction
           .update(channels)
@@ -166,7 +185,17 @@ export function createRoomService(options: RoomServiceOptions) {
       if (posted.written.activity) options.announce?.(posted.written.activity);
 
       const memberIds = await watchers(database, input.channelId);
-      const addressed = input.addressedAgentIds ?? [];
+      /*
+       * Who the person named: the composer's chips, which carry ids, and the `@`-mentions in the
+       * text, which carry names — a person typing "@민수 이거 봐 줘" without picking the chip has
+       * named 민수 exactly as clearly. Union, in the order the chips came and then the text.
+       */
+      const addressed = [
+        ...new Set([
+          ...(input.addressedAgentIds ?? []),
+          ...mentionsIn(text, members),
+        ]),
+      ];
 
       options.emit({
         kind: "room.turn",
@@ -240,11 +269,34 @@ export function createRoomService(options: RoomServiceOptions) {
     let ended = "failed";
     // Members that could not take their turn at all, as opposed to members with nothing to add.
     let failures = 0;
+    /** The first reason a member gave for not taking its turn: what the turn's own row says. */
+    let firstFailure: string | null = null;
     let posted = 0;
     const names = namesOf(input.members);
+    /*
+     * THE TURN'S OWN ROW IN THE LEDGER, under the turn's id and with no Bot on it.
+     *
+     * Each member's run has a row of its own, for the roster ("is this Bot busy"). This one is for
+     * the conversation: it is the run the person's message was written under, and a member failing
+     * to take its turn ends it in error, which is what `GET /api/channels/:id/failures` reads to put
+     * a line under the question that got no answer. No Bot, so the roster ignores it.
+     */
+    const turnRun = await options.ledger
+      ?.begin({
+        runId: input.turnId,
+        threadId: input.threadId,
+        agentId: null,
+        userId: input.actor.id,
+        origin: "room",
+        label: input.room.name,
+      })
+      .catch(() => null);
     try {
       await drive();
     } finally {
+      if (turnRun) {
+        await options.ledger?.finish(turnRun, firstFailure).catch(() => {});
+      }
       /*
        * ALWAYS, whatever threw. The browser was told the turn started and holds the composer
        * parked on it; a turn that failed before its first member — agents that would not resolve,
@@ -275,11 +327,71 @@ export function createRoomService(options: RoomServiceOptions) {
         return Number(row?.epoch ?? input.epoch) === input.epoch;
       };
 
+      /**
+       * One member's turn, on the trail. Written after the turn, before the next member is asked.
+       *
+       * `failed` is the member's own reason where it had one, and true where the turn threw before
+       * the member was reached; `spoke` is what actually landed in the room. The round and the
+       * reason are what make the rule in `turn-taking.ts` arguable with afterwards.
+       */
+      const record = async (
+        ask: {
+          member: RoomMember;
+          round: number;
+          reason: string;
+          namedBy?: string;
+        },
+        result: {
+          runId: string;
+          spoke: number;
+          failed: string | boolean | null;
+        },
+      ) => {
+        try {
+          await options.auditStore?.insert({
+            eventType: "room.member_turn",
+            targetType: "channel",
+            targetId: input.channelId,
+            ...(input.actor.id.startsWith("dev-")
+              ? {}
+              : { actorUserId: input.actor.id }),
+            payload: {
+              bot: ask.member.id,
+              actor: input.actor.id,
+              thread: input.threadId,
+              turn: input.turnId,
+              run: result.runId,
+              round: ask.round,
+              reason: ask.reason,
+              ...(ask.namedBy ? { namedBy: ask.namedBy } : {}),
+              spoke: result.spoke,
+              failed: result.failed !== null && result.failed !== false,
+              ...(typeof result.failed === "string"
+                ? { failure: result.failed }
+                : {}),
+            },
+          });
+        } catch {
+          // The trail being down is its own incident; the room's turn is not it.
+        }
+      };
+
       const outcome = await runRoomTurn({
         members: input.members,
         addressedIds: input.addressed,
         isCurrent,
-        runMember: async ({ member, windingDown }) => {
+        runMember: async ({ member, windingDown, round, reason, namedBy }) => {
+          const ask = {
+            member,
+            round,
+            reason,
+            ...(namedBy ? { namedBy } : {}),
+          };
+          // Minted here rather than in the member's turn, because the messages it delivers are
+          // written under it before the turn returns. See `MemberTurnInput.runId`.
+          const runId = randomUUID();
+          /** What this member said, in order, for the next round to read who it named. */
+          const said: string[] = [];
           try {
             const base: UnattendedToolkit = options.tools
               ? await options.tools(member.id, {
@@ -363,6 +475,8 @@ export function createRoomService(options: RoomServiceOptions) {
               ]);
               return runMemberTurn({
                 room: { channelId: input.channelId, name: input.room.name },
+                threadId: input.threadId,
+                runId,
                 member,
                 peers: input.members,
                 lines,
@@ -379,7 +493,9 @@ export function createRoomService(options: RoomServiceOptions) {
                     threadId: input.threadId,
                     agentId: member.id,
                     text,
+                    runId,
                   });
+                  said.push(text);
                   // No transaction here — the append is its own — so the roster row is announced
                   // as soon as it has moved.
                   if (written.activity) options.announce?.(written.activity);
@@ -454,8 +570,16 @@ export function createRoomService(options: RoomServiceOptions) {
               });
             }
             turnOver.abort();
-            if (result.failed) failures += 1;
-            return result.spoke;
+            if (result.failed) {
+              failures += 1;
+              firstFailure ??= result.failed;
+            }
+            await record(ask, {
+              runId,
+              spoke: result.spoke,
+              failed: result.failed,
+            });
+            return { spoke: result.spoke, said };
           } catch (error) {
             /*
              * ONE MEMBER'S BAD DAY IS NOT THE ROOM'S. Everything above can throw before the model
@@ -465,11 +589,15 @@ export function createRoomService(options: RoomServiceOptions) {
              * this member failing, which is what it is, and the turn goes on without it.
              */
             failures += 1;
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            firstFailure ??= reason;
             console.error(
               `[rooms] member ${member.id} could not take its turn:`,
               error,
             );
-            return 0;
+            await record(ask, { runId, spoke: said.length, failed: reason });
+            return { spoke: said.length, said };
           }
         },
       });

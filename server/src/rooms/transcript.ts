@@ -90,6 +90,12 @@ export type RoomAppend = {
   text: string;
   /** Minted by the caller when the id has to be known before the write — a client's own message. */
   messageId?: string;
+  /**
+   * The run this message belongs to: the member's run for what a member says, the turn's run for
+   * what the person said. It was left null for both, which is why the failures reader — keyed on
+   * `run_id` — could never find a room's message. See `channels/turn-failures.ts`.
+   */
+  runId?: string;
 };
 
 /**
@@ -123,7 +129,10 @@ export async function appendRoomMessage(
     ...(append.agentId ? { lafAgentId: append.agentId } : {}),
   } as StoredMessage;
 
-  await appendMessages(executor, append.threadId, [message], { at });
+  await appendMessages(executor, append.threadId, [message], {
+    at,
+    ...(append.runId ? { runId: append.runId } : {}),
+  });
 
   const [row] = await executor
     .update(channels)
