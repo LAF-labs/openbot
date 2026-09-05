@@ -21,8 +21,9 @@
  * Once, never in a loop. If the retry meets a boundary again, that is what the member is told —
  * an approval that does not fit its action is a fact to report, not a thing to keep asking about.
  */
-import type { AllowanceScope } from "../computer/standing-approvals";
+
 import type { AskSubject } from "../computer/approvals";
+import type { AllowanceScope } from "../computer/standing-approvals";
 import type { ToolOutcome, UnattendedToolkit } from "../runner/unattended";
 import type { ApprovalWaiter } from "./wait-for-approval";
 
@@ -34,6 +35,8 @@ export type RoomQuestion = {
   rule: string;
   /** What "always" would cover, so a room's card offers the same three answers a chat's does. */
   scope?: AllowanceScope;
+  /** Present when "for this conversation" is on offer, so the room's card draws that button too. */
+  threadId?: string;
   /** When it stops being answerable, so the room's card can show how long is left. */
   expiresAt: string;
 };
@@ -54,6 +57,9 @@ function questionOf(outcome: ToolOutcome): RoomQuestion | null {
     subject: isSubject(outcome.subject) ? outcome.subject : null,
     rule: typeof outcome.rule === "string" ? outcome.rule : "",
     ...(isScope(outcome.scope) ? { scope: outcome.scope } : {}),
+    ...(typeof outcome.threadId === "string" && outcome.threadId
+      ? { threadId: outcome.threadId }
+      : {}),
     expiresAt: typeof outcome.expiresAt === "string" ? outcome.expiresAt : "",
   };
 }

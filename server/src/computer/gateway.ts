@@ -17,6 +17,8 @@
  * by the model is theatre: "never click Submit" is evaded by sending `{ref: "e13", name: "Continue"}`.
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
+
+import { siteForUrl } from "../../../shared/sites/catalogue";
 import {
   ACTION_FAILED,
   type AuditStore,
@@ -30,7 +32,7 @@ import {
   fingerprintOf,
   type PendingApproval,
 } from "./approvals";
-import { siteForUrl } from "../../../shared/sites/catalogue";
+import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import type { ComputerClient } from "./client";
 import {
   type ActionPolicy,
@@ -41,14 +43,6 @@ import {
   policyDecidesOnSnapshot,
 } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
-import type { ReviewSubject, ReviewVerdict } from "./auto-review";
-import { settle } from "./settle";
-import {
-  type AllowanceScope,
-  allowanceFor,
-  createStandingApprovalStore,
-  type StandingApprovalStore,
-} from "./standing-approvals";
 import type {
   ClickInput,
   KeyInput,
@@ -64,6 +58,14 @@ import type {
   UploadFileInput,
   WriteFileInput,
 } from "./schema";
+import { settle } from "./settle";
+import {
+  type AllowanceScope,
+  type AllowanceTier,
+  allowanceFor,
+  createStandingApprovalStore,
+  type StandingApprovalStore,
+} from "./standing-approvals";
 
 export class ActionRefusedError extends Error {
   /** The rule that refused it, so the surface can show which one and an operator can find it. */
@@ -111,6 +113,8 @@ export class ActionNeedsApprovalError extends Error {
    * show one and grant the other. Absent means the card offers only "this once".
    */
   readonly scope: AllowanceScope | undefined;
+  /** Present when "for this conversation" is on offer: the card draws that button off it. */
+  readonly threadId: string | undefined;
   /**
    * When the question stops being answerable.
    *
@@ -127,9 +131,20 @@ export class ActionNeedsApprovalError extends Error {
     this.subject = approval.subject;
     this.rule = approval.rule;
     this.scope = approval.scope;
+    this.threadId = approval.threadId;
     this.expiresAt = approval.expiresAt;
   }
 }
+
+/**
+ * The header a surface names its conversation in, so an allowance can be "for this conversation".
+ *
+ * A header rather than a body field because the acting routes take many shapes and the one thing
+ * they share is the request. Optional everywhere: an action with no conversation behind it — a
+ * routine, a call from something that is not a chat — is asked and answered in the standing terms
+ * alone, which is what every action was before the middle answer existed.
+ */
+export const THREAD_HEADER = "x-openbot-thread-id";
 
 /** Who is asking. The gateway records this; it does not decide it. */
 export type ActionActor = {
@@ -137,6 +152,17 @@ export type ActionActor = {
   id: string;
   /** Null unless this is a real row in `users`, because the audit table has a foreign key to it. */
   userId?: string;
+  /** The conversation the action was raised from, when it was raised from one. See THREAD_HEADER. */
+  threadId?: string;
+  /**
+   * Set when the turn is one Bot answering another with nobody watching.
+   *
+   * Nothing sets it today: a coworker answering a question runs with no tools at all
+   * (`agents/coworker-call.ts`), so no action of its reaches here. It is the seam for the day
+   * that changes, and `settle` refuses an `ask` under it rather than opening a question nobody
+   * will see.
+   */
+  delegated?: { callerId: string };
 };
 
 export type ComputerGatewayOptions = {
@@ -521,6 +547,8 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
         ...(subject.approvalId
           ? { presentedApprovalId: subject.approvalId }
           : {}),
+        ...(actor.threadId ? { threadId: actor.threadId } : {}),
+        ...(actor.delegated ? { delegated: actor.delegated } : {}),
         policyVerdict: decision,
       },
       {
@@ -610,6 +638,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
             standingAllowance: {
               id: allowedByStanding.id,
               scope: allowedByStanding.scope,
+              tier: allowedByStanding.tier,
             },
           }
         : {}),
@@ -646,6 +675,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
               standingAllowance: {
                 id: allowedByStanding.id,
                 scope: allowedByStanding.scope,
+                tier: allowedByStanding.tier,
               },
             }
           : {}),
@@ -1194,7 +1224,7 @@ async function write(
      * overstate the review on every action an allowance covers — which, being the ones nobody saw,
      * are exactly the ones an investigator is reading the trail to find.
      */
-    standingAllowance?: { id: string; scope: string };
+    standingAllowance?: { id: string; scope: string; tier: AllowanceTier };
     /**
      * The reason the Bot's own instruction gave, when that is what let this through.
      *
@@ -1272,6 +1302,9 @@ async function write(
           ? {
               allowance: entry.standingAllowance.id,
               allowanceScope: entry.standingAllowance.scope,
+              // Which kind: a decision for good, or one for the conversation this action came
+              // from. "Everything a conversation's allowance let through" is its own query.
+              allowanceTier: entry.standingAllowance.tier,
             }
           : {}),
         ...(entry.autoReviewed ? { autoReviewed: entry.autoReviewed } : {}),

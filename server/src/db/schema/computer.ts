@@ -122,6 +122,21 @@ export const computerStandingApprovals = pgTable(
      * subject for those, and the page falls back to what an allowance always says: the scope.
      */
     subject: jsonb("subject").$type<AskSubject>(),
+    /**
+     * The conversation this allowance belongs to, for the middle answer between "once" and "always".
+     *
+     * Null is the standing kind: every conversation, until somebody takes it back. Set, the
+     * allowance answers only for actions raised from that thread — a Bot doing the same thing in a
+     * room, a routine or another chat is asked again, because "for this conversation" was the
+     * sentence on the button and a thread is what a conversation is here.
+     */
+    threadId: text("thread_id"),
+    /**
+     * When it stops standing on its own. Null for the standing kind; a day after the grant for a
+     * conversation-bound one, so that a chat somebody walked away from does not keep an allowance
+     * alive for as long as the tab is open.
+     */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     grantedBy: text("granted_by").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .notNull()
@@ -132,18 +147,26 @@ export const computerStandingApprovals = pgTable(
   },
   (table) => [
     /**
-     * One live allowance per Bot, rule and scope, enforced here rather than hoped for.
+     * One live allowance per Bot, rule, scope and conversation, enforced here rather than hoped for.
      *
      * `grant` looks before it inserts, and two tabs pressing the same button at the same moment both
      * look and both find nothing. Without this the loser's row is a duplicate that revoking the
      * first one does not remove, so an allowance a person believes they have withdrawn keeps
      * standing — and the list they withdrew it from shows one entry, because it looked the same way.
      *
+     * The thread is coalesced into the key rather than left nullable in it: SQL's NULL never equals
+     * NULL, so two standing grants would both pass a unique index that named the column directly.
+     *
      * Partial, so revoked rows accumulate freely: the same allowance can be granted, withdrawn and
      * granted again, and every one of those decisions stays on the record.
      */
     uniqueIndex("computer_standing_approvals_live_idx")
-      .on(table.botId, table.rule, table.scope)
+      .on(
+        table.botId,
+        table.rule,
+        table.scope,
+        sql`coalesce(${table.threadId}, '')`,
+      )
       .where(sql`${table.revokedAt} is null`),
   ],
 );

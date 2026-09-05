@@ -153,6 +153,8 @@ export function createCallPath(
     approvalId: string | undefined;
     botId: string;
     actorId: string;
+    threadId: string | undefined;
+    delegated: { callerId: string } | undefined;
     ref: string;
     serverId: string;
     toolName: string;
@@ -188,6 +190,8 @@ export function createCallPath(
         ...(question.approvalId
           ? { presentedApprovalId: question.approvalId }
           : {}),
+        ...(question.threadId ? { threadId: question.threadId } : {}),
+        ...(question.delegated ? { delegated: question.delegated } : {}),
         policyVerdict: question.verdict,
         forcedAsk: question.forcedAsk,
       },
@@ -262,6 +266,10 @@ export function createCallPath(
       args: Record<string, unknown>;
       botId: string;
       actorId: string;
+      /** The conversation the call was raised from, so an answer can be for it. See gateway.ts. */
+      threadId?: string | undefined;
+      /** One Bot answering another, with nobody watching. See `ActionActor.delegated`. */
+      delegated?: { callerId: string } | undefined;
       /**
        * An answer a person already gave, presented for the call it was given for.
        *
@@ -503,6 +511,8 @@ export function createCallPath(
               approvalId: input.approvalId,
               botId: input.botId,
               actorId: input.actorId,
+              threadId: input.threadId,
+              delegated: input.delegated,
               ref: input.ref,
               serverId,
               toolName,
@@ -567,6 +577,7 @@ export function createCallPath(
             ? {
                 allowance: settled.allowance.id,
                 allowanceScope: settled.allowance.scope,
+                allowanceTier: settled.allowance.tier,
               }
             : {}),
           ...(settled?.autoReviewed

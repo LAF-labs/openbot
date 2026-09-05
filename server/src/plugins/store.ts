@@ -201,6 +201,8 @@ export class PluginNeedsApprovalError extends Error {
    * show one and grant the other. Absent means the card offers only "this once".
    */
   readonly scope: AllowanceScope | undefined;
+  /** Present when "for this conversation" is on offer: the card draws that button off it. */
+  readonly threadId: string | undefined;
   /** When it stops being answerable, so the card can show how long is left. */
   readonly expiresAt: string;
 
@@ -211,6 +213,7 @@ export class PluginNeedsApprovalError extends Error {
     this.subject = approval.subject;
     this.rule = approval.rule;
     this.scope = approval.scope;
+    this.threadId = approval.threadId;
     this.expiresAt = approval.expiresAt;
   }
 }

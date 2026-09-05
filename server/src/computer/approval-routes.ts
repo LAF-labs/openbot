@@ -25,6 +25,7 @@ import {
   presentable,
 } from "./approvals";
 import type {
+  AllowanceTier,
   StandingApproval,
   StandingApprovalStore,
 } from "./standing-approvals";
@@ -202,16 +203,27 @@ export function createApprovalRoutes(
      *
      * Its own row in the trail, because this is an edit to the boundary rather than an answer to a
      * question — see the type's own comment in audit.ts.
+     *
+     * THE MIDDLE ANSWER binds to the thread the question was raised from, which is on the approval
+     * for the same reason the scope is: a body that could name the thread could bind an allowance
+     * to a conversation the person was not looking at. A question with no thread on it — raised
+     * from outside any conversation — cannot be answered that way, and the card did not offer it;
+     * a request that asks anyway gets the once it did give and no allowance, rather than a
+     * standing one it did not ask for.
      */
-    if (body.granted && body.always === true && standing) {
+    const tier = tierOf(body);
+    if (body.granted && tier && standing) {
       const scope = answered.approval.scope;
-      if (scope) {
+      const threadId = answered.approval.threadId;
+      if (scope && (tier === "always" || threadId)) {
         const granted = await standing.grant({
           botId: answered.approval.botId,
           rule: answered.approval.rule,
           scope,
           subject: answered.approval.subject,
           grantedBy: record.id,
+          tier,
+          ...(tier === "thread" ? { threadId } : {}),
         });
         await recordAuditEvent(auditStore, {
           eventType: "approval.standing_granted",
@@ -258,9 +270,27 @@ function standingPayload(standing: StandingApproval, actor: string) {
     scope: standing.scope,
     scopeKind: standing.scopeKind,
     scopeValue: standing.scopeValue,
+    // How long it was meant to last, and for which conversation where it was one. A reader
+    // counting what has been stood down for good must be able to leave the afternoon's out.
+    tier: standing.tier,
+    ...(standing.threadId ? { thread: standing.threadId } : {}),
+    ...(standing.expiresAt ? { expiresAt: standing.expiresAt } : {}),
     ...(standing.subject ? { subject: standing.subject } : {}),
     grantedBy: standing.grantedBy,
   };
+}
+
+/**
+ * Which of the wider answers the body asked for, or undefined for "this once".
+ *
+ * `tier` is the field; `always: true` is what the card sent before the middle answer existed and
+ * still means what it meant. Anything else — a tier this build does not know — is read as "this
+ * once", because a widening nobody can name is not one anybody consented to.
+ */
+function tierOf(body: Record<string, unknown>): AllowanceTier | undefined {
+  if (body.tier === "always" || body.tier === "thread") return body.tier;
+  if (body.always === true) return "always";
+  return undefined;
 }
 
 function payloadFor(approval: PendingApproval, answeredBy: string) {

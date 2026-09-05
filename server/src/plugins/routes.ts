@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
+import { THREAD_HEADER } from "../computer/gateway";
 import {
   authEndpointsFor,
   CATALOGUE,
@@ -11,17 +12,17 @@ import {
 import type { ConnectFailureReason } from "./connected-page";
 import {
   authorizationUrlFor,
+  type ConnectOrigin,
   challengeFor,
   connectedAccountsUrlFor,
-  type ConnectOrigin,
   createVerifier,
   redeemAuthorizationCode,
   redeemConnectState,
   redirectUriFor,
   relayRedirectUriFor,
   relayStateFor,
-  sealedPartOf,
   sealConnectState,
+  sealedPartOf,
   shellConnectedUrlFor,
 } from "./oauth";
 import {
@@ -1079,6 +1080,10 @@ export function createPluginRoutes(
          * grant, keyed on `users.id`; the email stays what configuration acts are signed with.
          */
         actorId: context.var.actor.id,
+        // Which conversation this is happening in, so an answer can be "for this conversation".
+        ...(context.req.header(THREAD_HEADER)?.trim()
+          ? { threadId: context.req.header(THREAD_HEADER)?.trim() }
+          : {}),
         // Passed through without being looked at. An approval means something only against the call
         // the store is about to make, and a route that judged it would be a second place deciding.
         ...(typeof body.approvalId === "string" && body.approvalId
@@ -1108,6 +1113,7 @@ export function createPluginRoutes(
             subject: error.subject,
             rule: error.rule,
             scope: error.scope,
+            threadId: error.threadId,
             expiresAt: error.expiresAt,
           },
           409,

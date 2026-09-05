@@ -197,6 +197,13 @@ export type PendingApproval = {
    * request when the widening is actually granted.
    */
   scope?: AllowanceScope;
+  /**
+   * The conversation the action was raised from, so "for this conversation" has something to bind
+   * to. Absent when the action came from outside any — a routine — and the card then offers the
+   * standing answer alone. Read off this record when the middle answer is granted, never off the
+   * request, for the reason `scope` is.
+   */
+  threadId?: string;
   requestedAt: string;
   expiresAt: string;
   /** Undefined until somebody answers. False is an answer, and a final one. */
@@ -224,6 +231,8 @@ export type PresentedApproval = {
   subject: AskSubject;
   /** What "always" would cover, so the surface can say so on the button rather than beside it. */
   scope?: AllowanceScope;
+  /** Present when "for this conversation" is on offer, so the card knows to draw that button. */
+  threadId?: string;
   requestedAt: string;
   expiresAt: string;
   granted?: boolean;
@@ -237,6 +246,7 @@ export function presentable(approval: PendingApproval): PresentedApproval {
     rule: approval.rule,
     subject: approval.subject,
     ...(approval.scope ? { scope: approval.scope } : {}),
+    ...(approval.threadId ? { threadId: approval.threadId } : {}),
     requestedAt: approval.requestedAt,
     expiresAt: approval.expiresAt,
     ...(approval.granted === undefined ? {} : { granted: approval.granted }),
@@ -317,6 +327,8 @@ export type ApprovalRegistry = {
     fingerprint: string;
     /** What answering "always" would cover. Omitted where nothing about the action is durable. */
     scope?: AllowanceScope;
+    /** The conversation it came from, where it came from one. See PendingApproval.threadId. */
+    threadId?: string;
     target: { type: string; id: string };
   }) => Promise<PendingApproval>;
   /**
@@ -498,6 +510,7 @@ export function createApprovalRegistry(
         subject: input.subject,
         fingerprint: input.fingerprint,
         ...(input.scope ? { scope: input.scope } : {}),
+        ...(input.threadId ? { threadId: input.threadId } : {}),
         target: input.target,
         requestedAt: new Date(at).toISOString(),
         expiresAt: new Date(at + ttlMs).toISOString(),

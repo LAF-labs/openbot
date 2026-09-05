@@ -15,10 +15,10 @@ import {
   ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
-import { createStandingApprovalStore } from "../src/computer/standing-approvals";
-import { createApprovalWaiter } from "../src/rooms/wait-for-approval";
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
+import { createStandingApprovalStore } from "../src/computer/standing-approvals";
+import { createApprovalWaiter } from "../src/rooms/wait-for-approval";
 import { A_CLICK } from "./support/subjects";
 
 /**
@@ -604,5 +604,141 @@ describe("a room turn held on a question, and let go by an answer", () => {
     );
     expect(await held).toBe("denied");
     expect(calls).toEqual([]);
+  });
+});
+
+/*
+ * THE MIDDLE ANSWER ON THE SURFACE. The card's third button sends `tier: "thread"`, and what that
+ * binds to is read off the question the server raised — the thread the click came from — never off
+ * the body. A question raised from outside any conversation cannot be answered that way at all.
+ */
+describe("answering with for this conversation", () => {
+  const THREAD = "thread-42";
+  /** The same driver, in a conversation. */
+  const IN_CHAT = { ...DRIVER, threadId: THREAD };
+
+  const askFrom = async (
+    gateway: Awaited<ReturnType<typeof surface>>["gateway"],
+    actor: typeof DRIVER | typeof IN_CHAT,
+  ) =>
+    (await gateway
+      .click("bot-1", "bot-1", actor, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+
+  test("the question says a conversation is on offer only when it came from one", async () => {
+    const { gateway, approvals } = await surface();
+    const fromChat = await askFrom(gateway, IN_CHAT);
+    expect(fromChat.threadId).toBe(THREAD);
+    // And the list a surface polls says the same, since a card may be drawn from either.
+    const listed = await approvals.pending("bot-1");
+    expect(listed.map((one) => one.threadId)).toEqual([THREAD]);
+
+    const fromNowhere = await askFrom(gateway, DRIVER);
+    expect(fromNowhere.threadId).toBeUndefined();
+  });
+
+  test("grants an allowance bound to that conversation, and the trail says so", async () => {
+    const { app, gateway, standing, rows, calls } = await surface();
+    const asked = await askFrom(gateway, IN_CHAT);
+    expect(
+      (await answer(app)("bot-1", asked.approvalId, true, { tier: "thread" }))
+        .status,
+    ).toBe(200);
+
+    const [granted] = await standing.list("bot-1");
+    expect(granted?.tier).toBe("thread");
+    expect(granted?.threadId).toBe(THREAD);
+    expect(granted?.scopeKind).toBe("host");
+    expect(granted?.scopeValue).toBe("example.com");
+    expect(granted?.expiresAt).toBeDefined();
+
+    const widening = rows.at(-1)?.payload as Record<string, unknown>;
+    expect(rows.at(-1)?.eventType).toBe("approval.standing_granted");
+    expect(widening.tier).toBe("thread");
+    expect(widening.thread).toBe(THREAD);
+    expect(widening.expiresAt).toBe(granted?.expiresAt);
+    expect(widening.approval).toBe(asked.approvalId);
+
+    // The next click in the same conversation goes through on it, and the action's own row names
+    // the kind of allowance that answered.
+    await gateway.click("bot-1", "bot-1", IN_CHAT, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+    expect(calls).toEqual(["click"]);
+    const action = rows.at(-1)?.payload as {
+      decision: Record<string, unknown>;
+    };
+    expect(rows.at(-1)?.eventType).toBe("computer.action_allowed");
+    expect(action.decision.allowance).toBe(granted?.id);
+    expect(action.decision.allowanceTier).toBe("thread");
+
+    // And the same click from a different conversation is asked again.
+    const elsewhere = await askFrom(gateway, {
+      ...DRIVER,
+      threadId: "thread-43",
+    });
+    expect(elsewhere).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).toEqual(["click"]);
+  });
+
+  test("a question raised from nowhere cannot be answered for a conversation", async () => {
+    const { app, gateway, standing } = await surface();
+    const asked = await askFrom(gateway, DRIVER);
+    // The card did not offer the button; a body that asks anyway gets its once and no allowance —
+    // not a standing one it never asked for.
+    expect(
+      (await answer(app)("bot-1", asked.approvalId, true, { tier: "thread" }))
+        .status,
+    ).toBe(200);
+    expect(await standing.list("bot-1")).toEqual([]);
+  });
+
+  test("the body cannot name the conversation", async () => {
+    const { app, gateway, standing } = await surface();
+    const asked = await askFrom(gateway, IN_CHAT);
+    await answer(app)("bot-1", asked.approvalId, true, {
+      tier: "thread",
+      threadId: "somebody-elses-thread",
+    });
+    const [granted] = await standing.list("bot-1");
+    expect(granted?.threadId).toBe(THREAD);
+  });
+
+  test("a denial grants nothing for the conversation either", async () => {
+    const { app, gateway, standing } = await surface();
+    const asked = await askFrom(gateway, IN_CHAT);
+    await answer(app)("bot-1", asked.approvalId, false, { tier: "thread" });
+    expect(await standing.list("bot-1")).toEqual([]);
+  });
+
+  test("is listed with its clock and can be taken back like the standing kind", async () => {
+    const { app, gateway, standing, rows } = await surface();
+    const asked = await askFrom(gateway, IN_CHAT);
+    await answer(app)("bot-1", asked.approvalId, true, { tier: "thread" });
+
+    const listed = await app.request("/standing");
+    const body = (await listed.json()) as {
+      standing: {
+        id: string;
+        tier: string;
+        threadId?: string;
+        expiresAt?: string;
+      }[];
+    };
+    expect(body.standing).toHaveLength(1);
+    expect(body.standing[0]?.tier).toBe("thread");
+    expect(body.standing[0]?.threadId).toBe(THREAD);
+    expect(body.standing[0]?.expiresAt).toBeDefined();
+
+    const withdrawn = await app.request(`/standing/${body.standing[0]?.id}`, {
+      method: "DELETE",
+    });
+    expect(withdrawn.status).toBe(200);
+    expect(await standing.list("bot-1")).toEqual([]);
+    const revoked = rows.at(-1)?.payload as Record<string, unknown>;
+    expect(rows.at(-1)?.eventType).toBe("approval.standing_revoked");
+    expect(revoked.tier).toBe("thread");
+    expect(revoked.thread).toBe(THREAD);
   });
 });

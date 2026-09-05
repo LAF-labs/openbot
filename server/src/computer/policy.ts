@@ -278,7 +278,17 @@ export type FactCode =
   /** Nothing in the policy permits it. Not the same fact as a rule forbidding it. */
   | "laf:no_rule_allows"
   /** The server has not seen the screen, so a rule about the page could not be decided. */
-  | "laf:blind_action";
+  | "laf:blind_action"
+  /**
+   * A boundary wanted a person, inside a turn one Bot is running for another.
+   *
+   * Nobody is watching a delegated turn — the caller is a Bot — so a question opened in it would
+   * sit unseen and an instruction consulted in it would be nobody's eyes twice over. Refused
+   * rather than asked; the caller can do the thing itself, in front of the person, or ask them.
+   */
+  | "laf:ask_in_delegated_turn"
+  /** A Bot answering for another Bot tried to ask a third. One hop is the whole allowance. */
+  | "laf:delegation_too_deep";
 
 /**
  * String helpers, registered as CEL globals.

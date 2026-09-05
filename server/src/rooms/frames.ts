@@ -86,6 +86,8 @@ export type RoomFrame =
       rule: string;
       /** What "always" would cover; absent means the room's card offers "this once" alone. */
       scope?: { kind: "host" | "file" | "tool"; value: string };
+      /** Present when "for this conversation" is on offer — the room's own thread. */
+      threadId?: string;
       /** When the question stops being answerable, for the countdown on the card. */
       expiresAt: string;
       answered?: boolean;

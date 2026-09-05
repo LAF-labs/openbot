@@ -12,6 +12,7 @@
  * same Bot is doing something else with it.
  */
 import { randomUUID } from "node:crypto";
+import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, sql } from "drizzle-orm";
 import type { AnnounceChannelActivity } from "../channels/events";
 import type { ActionActor } from "../computer/gateway";
@@ -20,16 +21,15 @@ import { channelMemberships, channels } from "../db/schema";
 import { type BotLane, createBotLane } from "../runner/bot-lane";
 import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
-import type { AbstractAgent } from "@ag-ui/client";
-import type { RoomFrame } from "./frames";
-import { namesOf, resolveRoomMembers } from "./members";
-import { runMemberTurn } from "./member-turn";
 import { relayApprovals } from "./approval-relay";
-import { readPrivateHistory } from "./private-history";
-import type { ApprovalWaiter } from "./wait-for-approval";
+import type { RoomFrame } from "./frames";
+import { runMemberTurn } from "./member-turn";
+import { namesOf, resolveRoomMembers } from "./members";
 import { runRoomTurn } from "./orchestrator";
+import { readPrivateHistory } from "./private-history";
 import type { RoomMember } from "./prompt";
 import { appendRoomMessage, readRoomLines } from "./transcript";
+import type { ApprovalWaiter } from "./wait-for-approval";
 
 /** How long one member may take. Generous: it may open pages and read files before it answers. */
 export const MEMBER_TURN_TIMEOUT_MS = 300_000;
@@ -287,6 +287,9 @@ export function createRoomService(options: RoomServiceOptions) {
                   ...(input.actor.id.startsWith("dev-")
                     ? {}
                     : { userId: input.actor.id }),
+                  // The room's thread, so "for this conversation" means this room: an allowance
+                  // granted here answers for this member's actions in this room and nowhere else.
+                  threadId: input.threadId,
                 })
               : { tools: [], execute: async () => ({ ok: false }) };
 
@@ -324,6 +327,7 @@ export function createRoomService(options: RoomServiceOptions) {
                   subject: question.subject,
                   rule: question.rule,
                   ...(question.scope ? { scope: question.scope } : {}),
+                  ...(question.threadId ? { threadId: question.threadId } : {}),
                   expiresAt: question.expiresAt,
                   answered,
                 }),

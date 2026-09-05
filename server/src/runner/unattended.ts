@@ -437,6 +437,8 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       // Carried so a room can offer the wider button too. Undefined where the question had no
       // derivable scope, which the room reads the same way the one-to-one card does.
       scope: error.scope,
+      // And the middle one: "for this conversation", where the question came from one.
+      threadId: error.threadId,
       expiresAt: error.expiresAt,
       code: "laf:nobody_answered",
       reason: toolResultText("laf:nobody_answered"),
@@ -583,6 +585,10 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
              * person's id in `actor.id`.
              */
             actorId: actor.id,
+            // The same conversation and the same delegation marker the computer's tools carry,
+            // so a call to somebody else's server is settled in the same terms as a click.
+            ...(actor.threadId ? { threadId: actor.threadId } : {}),
+            ...(actor.delegated ? { delegated: actor.delegated } : {}),
             ...(approvalId ? { approvalId } : {}),
           });
           return { ok: !result.isError, text: result.text };

@@ -11,8 +11,9 @@ import {
   allowanceFor,
   createDatabaseStandingApprovalStore,
   createStandingApprovalStore,
-  scopeKeyOf,
   type StandingApprovalStore,
+  scopeKeyOf,
+  THREAD_ALLOWANCE_TTL_MS,
 } from "../src/computer/standing-approvals";
 import { createDatabase } from "../src/db/client";
 import { agents, computerStandingApprovals } from "../src/db/schema";
@@ -192,3 +193,126 @@ describe("what an allowance covers", () => {
     );
   });
 });
+
+/*
+ * THE MIDDLE ANSWER, in both stores.
+ *
+ * "For this conversation" is the same row with a thread and a clock on it, and the two stores have
+ * to agree on what those mean: which lookups it answers, when it stops, and that a standing grant
+ * and a conversation's grant for the same question can both stand without either swallowing the
+ * other. The database one carries the unique index that decides the last of those, which is the
+ * reason this runs against a real table.
+ */
+const THREAD = "standing-test-thread-a";
+const OTHER_THREAD = "standing-test-thread-b";
+const FOR_THREAD = { ...GRANT, tier: "thread" as const, threadId: THREAD };
+
+const CLOCKED: [string, (now: () => number) => StandingApprovalStore][] = [
+  ["in memory", (now) => createStandingApprovalStore({ now })],
+  [
+    "in the database",
+    (now) => createDatabaseStandingApprovalStore(database, { now }),
+  ],
+];
+
+for (const [name, build] of CLOCKED) {
+  describe(`an allowance for this conversation ${name}`, () => {
+    let at = Date.parse("2026-09-06T09:00:00.000Z");
+    const store = () => build(() => at);
+
+    test("is bound to its thread and carries its clock", async () => {
+      const granted = await store().grant(FOR_THREAD);
+      expect(granted.tier).toBe("thread");
+      expect(granted.threadId).toBe(THREAD);
+      expect(Date.parse(granted.expiresAt ?? "")).toBe(
+        at + THREAD_ALLOWANCE_TTL_MS,
+      );
+    });
+
+    test("answers in its own thread, and nowhere else", async () => {
+      const it = store();
+      await it.grant(FOR_THREAD);
+      expect(
+        (await it.find(BOT, RULE, "host=wttr.in", { threadId: THREAD }))?.tier,
+      ).toBe("thread");
+      expect(
+        await it.find(BOT, RULE, "host=wttr.in", { threadId: OTHER_THREAD }),
+      ).toBeNull();
+      // From nowhere in particular — a routine — the standing kind alone answers.
+      expect(await it.find(BOT, RULE, "host=wttr.in")).toBeNull();
+    });
+
+    test("the standing kind and a conversation's kind stand side by side", async () => {
+      const it = store();
+      const forThread = await it.grant(FOR_THREAD);
+      const forGood = await it.grant(GRANT);
+      expect(forGood.id).not.toBe(forThread.id);
+      expect((await it.list(BOT)).map((one) => one.tier).sort()).toEqual([
+        "always",
+        "thread",
+      ]);
+      // In the thread, the wider decision is the one named; see the Map's own comment.
+      expect(
+        (await it.find(BOT, RULE, "host=wttr.in", { threadId: THREAD }))?.id,
+      ).toBe(forGood.id);
+    });
+
+    test("granting it twice for the same thread leaves one row", async () => {
+      const it = store();
+      const first = await it.grant(FOR_THREAD);
+      const second = await it.grant(FOR_THREAD);
+      expect(second.id).toBe(first.id);
+      // And the narrower press is not answered with the wider row: a person who pressed "for this
+      // conversation" is not told they pressed "always".
+      await it.grant(GRANT);
+      expect((await it.grant(FOR_THREAD)).id).toBe(first.id);
+    });
+
+    test("two conversations get two rows", async () => {
+      const it = store();
+      const first = await it.grant(FOR_THREAD);
+      const second = await it.grant({ ...FOR_THREAD, threadId: OTHER_THREAD });
+      expect(second.id).not.toBe(first.id);
+      expect(await it.list(BOT)).toHaveLength(2);
+    });
+
+    test("runs out on its clock, and can be granted afresh once it has", async () => {
+      const it = store();
+      const first = await it.grant(FOR_THREAD);
+      at += THREAD_ALLOWANCE_TTL_MS + 1;
+      expect(
+        await it.find(BOT, RULE, "host=wttr.in", { threadId: THREAD }),
+      ).toBeNull();
+      expect(await it.list(BOT)).toEqual([]);
+      // The old row held the index's slot; the fresh grant has to get past it.
+      const again = await it.grant(FOR_THREAD);
+      expect(again.id).not.toBe(first.id);
+      expect(
+        (await it.find(BOT, RULE, "host=wttr.in", { threadId: THREAD }))?.id,
+      ).toBe(again.id);
+      at -= THREAD_ALLOWANCE_TTL_MS + 1;
+    });
+
+    test("ending the conversation withdraws what was bound to it and nothing else", async () => {
+      const it = store();
+      const forThread = await it.grant(FOR_THREAD);
+      const elsewhere = await it.grant({
+        ...FOR_THREAD,
+        threadId: OTHER_THREAD,
+      });
+      const forGood = await it.grant(GRANT);
+      const ended = await it.endThread(THREAD, "system");
+      expect(ended.map((one) => one.id)).toEqual([forThread.id]);
+      expect(ended[0]?.revokedBy).toBe("system");
+      expect((await it.list(BOT)).map((one) => one.id).sort()).toEqual(
+        [elsewhere.id, forGood.id].sort(),
+      );
+    });
+
+    test("refuses a conversation's grant that names no conversation", async () => {
+      await expect(store().grant({ ...GRANT, tier: "thread" })).rejects.toThrow(
+        /which conversation/,
+      );
+    });
+  });
+}

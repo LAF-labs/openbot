@@ -14,14 +14,15 @@ import {
   WorkspaceRequestError,
 } from "./client";
 import type { DemonstrationRecorder } from "./demonstration";
-import type { WriteUp } from "./write-up";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
   ActionRefusedError,
   type ComputerGateway,
+  THREAD_HEADER,
 } from "./gateway";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
+import type { WriteUp } from "./write-up";
 
 /**
  * The Bot computer's surface, behind the same session guard as every other API route.
@@ -710,6 +711,9 @@ async function act(
         // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
         // it was is recorded in the payload regardless. See gateway.ts.
         ...(record.email === DEV_ACTOR.email ? {} : { userId: record.id }),
+        // Which conversation this is happening in, so an answer can be "for this conversation".
+        // Absent is fine: the question is then asked in the standing terms alone.
+        ...(threadOf(context) ? { threadId: threadOf(context) } : {}),
       },
       body,
       context.req.raw.signal,
@@ -789,12 +793,21 @@ function awaitingApproval(
       // Undefined drops out of the JSON, so a question with no derivable scope simply arrives
       // without one and the card offers "this once" alone.
       scope: error.scope,
+      // Present when "for this conversation" is on offer. The card draws its third button off this
+      // and nothing else, so a question raised from outside a conversation offers two.
+      threadId: error.threadId,
       // So the card can show how long is left. Without it the question simply disappeared after ten
       // minutes with nothing having said it would.
       expiresAt: error.expiresAt,
     },
     409,
   );
+}
+
+/** The conversation the surface says it is in, off the request. Undefined when it said nothing. */
+function threadOf(context: ComputerContext): string | undefined {
+  const named = context.req.header(THREAD_HEADER)?.trim();
+  return named ? named : undefined;
 }
 
 /** An answer being presented, if the caller carried one. Its meaning is decided at the gateway. */

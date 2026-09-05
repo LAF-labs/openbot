@@ -6,11 +6,12 @@ import {
 } from "../src/computer/approvals";
 import type { ReviewSubject, ReviewVerdict } from "../src/computer/auto-review";
 import type { ActionPolicy, PolicyDecision } from "../src/computer/policy";
-import { settle, type SettleDeps } from "../src/computer/settle";
+import { type SettleDeps, settle } from "../src/computer/settle";
 import {
   allowanceFor,
   createStandingApprovalStore,
   type StandingApprovalStore,
+  THREAD_ALLOWANCE_TTL_MS,
 } from "../src/computer/standing-approvals";
 import { A_CLICK, A_TOOL_CALL } from "./support/subjects";
 
@@ -507,5 +508,268 @@ describe("a floor that asks whatever the policy allowed", () => {
     await approvals.answer(first.approvalId, BOT, MANAGER, false);
 
     expect((await settle(forced(), shared)).outcome).toBe("refused");
+  });
+});
+
+/*
+ * THE MIDDLE ANSWER: "for this conversation".
+ *
+ * Between "this once" and "always" there was nothing, and the two are a day apart in weight. An
+ * allowance can now be bound to the thread the question came from and to a clock. What these pin
+ * is the narrowness: it answers in its own conversation, and nowhere else, and not forever.
+ */
+describe("an allowance for this conversation", () => {
+  const THREAD = "thread-aaa";
+  const OTHER = "thread-bbb";
+
+  async function grantForThread(standing: StandingApprovalStore) {
+    return standing.grant({
+      botId: BOT,
+      rule: RULE,
+      scope: { kind: "host", value: "example.com" },
+      subject: A_CLICK,
+      grantedBy: MANAGER,
+      tier: "thread",
+      threadId: THREAD,
+    });
+  }
+
+  test("answers in its own conversation, and says whose and which", async () => {
+    const standing = createStandingApprovalStore();
+    const granted = await grantForThread(standing);
+    const shared = deps({ standing });
+
+    const settled = await settle(asking({ threadId: THREAD }), shared);
+
+    expect(settled.outcome).toBe("allowed");
+    if (settled.outcome !== "allowed") return;
+    expect(settled.approvedBy).toBe(MANAGER);
+    expect(settled.allowance?.id).toBe(granted.id);
+    // The row will say which kind, so "everything a conversation's allowance let through" can be
+    // told apart from what was stood down for good.
+    expect(settled.allowance?.tier).toBe("thread");
+    expect(settled.allowance?.threadId).toBe(THREAD);
+    expect(await shared.approvals.pending(BOT)).toEqual([]);
+  });
+
+  test("answers for nothing in another conversation, or outside any", async () => {
+    const standing = createStandingApprovalStore();
+    await grantForThread(standing);
+    const shared = deps({ standing });
+
+    // The same Bot, the same rule, the same site — in a different room, and from a routine that
+    // belongs to no conversation. Both are asked: the sentence on the button was this conversation.
+    expect((await settle(asking({ threadId: OTHER }), shared)).outcome).toBe(
+      "asked",
+    );
+    expect((await settle(asking(), shared)).outcome).toBe("asked");
+  });
+
+  test("runs out a day later, whichever conversation is still open", async () => {
+    let at = Date.parse("2026-09-06T09:00:00.000Z");
+    const standing = createStandingApprovalStore({ now: () => at });
+    await grantForThread(standing);
+    const shared = deps({ standing });
+
+    at += THREAD_ALLOWANCE_TTL_MS - 60_000;
+    expect((await settle(asking({ threadId: THREAD }), shared)).outcome).toBe(
+      "allowed",
+    );
+
+    at += 2 * 60_000;
+    expect((await settle(asking({ threadId: THREAD }), shared)).outcome).toBe(
+      "asked",
+    );
+    // And it is no longer listed as standing: a list that showed an allowance that answers for
+    // nothing would be the button lying after the fact.
+    expect(await standing.list(BOT)).toEqual([]);
+  });
+
+  test("can be taken back like any other, and the conversation ending takes it back too", async () => {
+    const standing = createStandingApprovalStore();
+    const first = await grantForThread(standing);
+    expect(await standing.revoke(first.id, MANAGER)).toMatchObject({
+      revokedBy: MANAGER,
+    });
+    expect(
+      (await settle(asking({ threadId: THREAD }), deps({ standing }))).outcome,
+    ).toBe("asked");
+
+    const second = await grantForThread(standing);
+    const ended = await standing.endThread(THREAD, "system");
+    expect(ended.map((row) => row.id)).toEqual([second.id]);
+    expect(
+      (await settle(asking({ threadId: THREAD }), deps({ standing }))).outcome,
+    ).toBe("asked");
+  });
+
+  test("a standing allowance still answers everywhere, including in a conversation", async () => {
+    const standing = createStandingApprovalStore();
+    const forGood = await standing.grant({
+      botId: BOT,
+      rule: RULE,
+      scope: { kind: "host", value: "example.com" },
+      subject: A_CLICK,
+      grantedBy: MANAGER,
+    });
+    await grantForThread(standing);
+    const settled = await settle(
+      asking({ threadId: THREAD }),
+      deps({ standing }),
+    );
+    expect(settled.outcome).toBe("allowed");
+    if (settled.outcome !== "allowed") return;
+    // The wider decision is the one named: a reader following the standing allowance's id should
+    // find it on every row it covers, not on all but the ones a conversation happened to cover.
+    expect(settled.allowance?.id).toBe(forGood.id);
+    expect(settled.allowance?.tier).toBe("always");
+  });
+
+  test("a question raised from a conversation carries it, so the card can offer the answer", async () => {
+    const shared = deps();
+    const fromChat = await settle(asking({ threadId: THREAD }), shared);
+    expect(fromChat.outcome).toBe("asked");
+    if (fromChat.outcome !== "asked") return;
+    expect(fromChat.approval.threadId).toBe(THREAD);
+
+    const fromNowhere = await settle(asking(), shared);
+    expect(fromNowhere.outcome).toBe("asked");
+    if (fromNowhere.outcome !== "asked") return;
+    expect(fromNowhere.approval.threadId).toBeUndefined();
+  });
+
+  test("the switch turns it off with the rest: no thread on the question, no allowance honoured", async () => {
+    const standing = createStandingApprovalStore();
+    await grantForThread(standing);
+    const shared = deps({
+      standing,
+      policy: { ...PERMISSIVE, settleWithoutAsking: "off" },
+    });
+    const settled = await settle(asking({ threadId: THREAD }), shared);
+    expect(settled.outcome).toBe("asked");
+    if (settled.outcome !== "asked") return;
+    expect(settled.approval.threadId).toBeUndefined();
+    expect(settled.approval.scope).toBeUndefined();
+  });
+
+  test("a deny is not softened by it either", async () => {
+    const standing = createStandingApprovalStore();
+    await standing.grant({
+      botId: BOT,
+      rule: DENIED.matched ?? "",
+      scope: { kind: "host", value: "example.com" },
+      subject: A_CLICK,
+      grantedBy: MANAGER,
+      tier: "thread",
+      threadId: THREAD,
+    });
+    expect(
+      await settle(
+        asking({
+          policyVerdict: DENIED,
+          rule: DENIED.matched ?? "",
+          threadId: THREAD,
+        }),
+        deps({ standing }),
+      ),
+    ).toEqual({ outcome: "refused", code: "laf:policy_denied" });
+  });
+});
+
+/*
+ * A DELEGATED TURN HAS NO EYES. One Bot answering another runs with nobody watching, so a boundary
+ * that wants a person cannot be satisfied there — and must not be quietly satisfied by the Bot's
+ * own instruction either. Refused with a fact the caller can act on, never asked, never waved.
+ */
+describe("an ask inside a turn one Bot runs for another", () => {
+  const DELEGATED = { callerId: "bot-caller" };
+
+  test("is refused with its own code, and opens no question", async () => {
+    const asked: ReviewSubject[] = [];
+    const shared = deps({
+      autoReview: async (_bot, subject) => {
+        asked.push(subject);
+        return { allowed: true, reason: "read-only" };
+      },
+    });
+    const settled = await settle(asking({ delegated: DELEGATED }), shared);
+    expect(settled).toEqual({
+      outcome: "refused",
+      code: "laf:ask_in_delegated_turn",
+    });
+    // Not asked — nobody would see the card — and the instruction was not consulted: a model
+    // answering for a model with nobody having seen either is not the owner's eyes.
+    expect(await shared.approvals.pending(BOT)).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
+  test("a floor's question is refused the same way", async () => {
+    const settled = await settle(
+      asking({
+        policyVerdict: ALLOWED,
+        forcedAsk: true,
+        subject: A_TOOL_CALL,
+        delegated: DELEGATED,
+      }),
+      deps(),
+    );
+    expect(settled).toEqual({
+      outcome: "refused",
+      code: "laf:ask_in_delegated_turn",
+    });
+  });
+
+  test("what a person already decided still stands: a standing allowance answers", async () => {
+    const standing = createStandingApprovalStore();
+    const granted = await standing.grant({
+      botId: BOT,
+      rule: RULE,
+      scope: { kind: "host", value: "example.com" },
+      subject: A_CLICK,
+      grantedBy: MANAGER,
+    });
+    const settled = await settle(
+      asking({ delegated: DELEGATED }),
+      deps({ standing }),
+    );
+    expect(settled.outcome).toBe("allowed");
+    if (settled.outcome !== "allowed") return;
+    expect(settled.allowance?.id).toBe(granted.id);
+  });
+
+  test("a deny stays a deny, with its own code", async () => {
+    expect(
+      await settle(
+        asking({
+          policyVerdict: DENIED,
+          rule: DENIED.matched ?? "",
+          delegated: DELEGATED,
+        }),
+        deps(),
+      ),
+    ).toEqual({ outcome: "refused", code: "laf:policy_denied" });
+  });
+
+  test("a No that stands is reported as the No, not as the delegation", async () => {
+    const approvals = createApprovalRegistry();
+    const shared = deps({ approvals });
+    const first = await settle(asking(), shared);
+    if (first.outcome !== "asked") throw new Error("expected a question");
+    await approvals.answer(first.approvalId, BOT, MANAGER, false);
+
+    expect(await settle(asking({ delegated: DELEGATED }), shared)).toEqual({
+      outcome: "refused",
+      code: "laf:declined_recently",
+      declinedRecently: true,
+    });
+  });
+
+  test("an allowed verdict needs nobody and is allowed", async () => {
+    expect(
+      await settle(
+        asking({ policyVerdict: ALLOWED, delegated: DELEGATED }),
+        deps(),
+      ),
+    ).toEqual({ outcome: "allowed" });
   });
 });
