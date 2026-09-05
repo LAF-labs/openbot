@@ -134,6 +134,11 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                539 tests across 65 files   →   522
  *
+ * MEASURED 2026-09-06, with all of the above on one branch and the admin/연결 pass rebased on top
+ * of the chat one:
+ *
+ *     app                575 tests across 68 files   →   557
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -142,7 +147,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 522, roots: ["app"] },
+  { name: "app", floor: 557, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
