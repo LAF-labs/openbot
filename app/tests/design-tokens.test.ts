@@ -80,17 +80,13 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "components/gallery/charts.tsx": 2,
   },
   type: {
-    "components/agents/agent-card.tsx": 3,
-    "components/agents/agent-profile.tsx": 1,
-    "components/agents/bot-intro-card.tsx": 4,
-    "components/agents/roster-strip.tsx": 3,
+    "components/agents/bot-intro-card.tsx": 1,
+    "components/agents/roster-strip.tsx": 1,
     "components/channels/bot-panel.tsx": 2,
     "components/channels/chat-transcript.tsx": 1,
     "components/gallery/cards.tsx": 1,
     "routes/_authed/_app/channel/new.tsx": 4,
     "routes/_authed/_app/index.tsx": 4,
-    "routes/_authed/_app/routines.tsx": 13,
-    "routes/_authed/_app/skills.tsx": 1,
     "routes/_authed/admin/boundaries.tsx": 1,
   },
   shadow: {
@@ -98,7 +94,7 @@ const ALLOWED: Record<string, Record<string, number>> = {
   },
   sand: {
     "components/agents/agent-card.tsx": 1,
-    "components/agents/agent-profile.tsx": 9,
+    "components/agents/agent-profile.tsx": 1,
     "components/app-sidebar/bot-row.tsx": 5,
     "components/app-sidebar/bot-sidebar.tsx": 9,
     "components/app-sidebar/group-row.tsx": 5,
@@ -110,7 +106,6 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "routes/_authed/_app/channel/new.tsx": 2,
   },
   ring: {
-    "components/agents/agent-profile.tsx": 2,
     "components/channels/chat-transcript.tsx": 2,
   },
 };

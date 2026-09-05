@@ -6,7 +6,6 @@ import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
-import { FOCUS_RING } from "@/components/layout/focus-ring";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { focusRing } from "@/components/ui/focus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -159,7 +159,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         {profile.canManage ? (
           <button
             aria-label={t("Change the face")}
-            className={`group relative w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 ${FOCUS_RING}`}
+            className={`group relative w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 ${focusRing}`}
             onClick={() => setPickingFace(true)}
             type="button"
           >
@@ -581,7 +581,7 @@ function EffortCard({
           </span>
         </legend>
         {/*
-         * ONE TRACK WITH ONE BORDER, AND THE CHOSEN SEGMENT FILLED.
+         * ONE TRACK WITH ONE BORDER, AND THE CHOSEN SEGMENT MARKED THE WAY THE APP MARKS CHOSEN.
          *
          * Three outline buttons was the wrong shape for one choice out of three. Two things were
          * measured wrong with it: the selected mark was `ring-2 ring-primary` — a heavy black
@@ -589,30 +589,30 @@ function EffortCard({
          * value from a focused one — and three bordered boxes side by side put two hairlines
          * between each pair, which reads as a table rather than as a choice.
          *
-         * A segmented control has one border, round the group, and says which one is chosen by
-         * FILLING it. Focus stays the house ring, and now means only what it means.
+         * A segmented control has ONE border, round the group. The chosen segment says so through
+         * `aria-pressed`, which `Button` now styles for the whole app (`selectedWhenPressed` in
+         * `ui/focus.ts`): a border in the foreground colour over a tinted ground. Inventing a fill
+         * here would be a fifth dialect for "this is the one you picked" in a codebase that has
+         * just finished collapsing four into one.
          */}
-        <div className="flex w-full rounded-lg border border-border bg-background p-0.5">
+        <div className="flex w-full gap-0.5 rounded-lg border border-border bg-background p-0.5">
           {AGENT_EFFORTS.map((option) => {
             const chosen = option === effort;
             return (
-              <button
+              <Button
                 aria-pressed={chosen}
-                className={`flex-1 rounded-md px-2 py-1.5 text-sm transition-colors disabled:opacity-50 ${FOCUS_RING} ${
-                  chosen
-                    ? "bg-primary font-medium text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
+                className="flex-1"
                 disabled={setEffort.isPending}
                 key={option}
                 onClick={() => {
                   if (chosen) return;
                   setEffort.mutate({ agentId, effort: option });
                 }}
-                type="button"
+                size="sm"
+                variant="ghost"
               >
                 {effortLabel(option)}
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -911,7 +911,7 @@ function AutoReviewCard({
       <div className="flex flex-wrap gap-1.5">
         {AUTO_REVIEW_EXAMPLES.map((example) => (
           <button
-            className={`rounded-full border border-border px-2.5 py-1 text-muted-foreground text-xs transition-colors hover:border-ring/40 hover:text-foreground ${FOCUS_RING}`}
+            className={`rounded-full border border-border px-2.5 py-1 text-muted-foreground text-xs transition-colors hover:border-ring/40 hover:text-foreground ${focusRing}`}
             key={example}
             onClick={() => setDraft(t(example))}
             type="button"
