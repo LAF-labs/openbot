@@ -113,6 +113,20 @@ export function isNotPubliclyRoutableName(hostname: string): boolean {
   );
 }
 
+/**
+ * The IPv4 half.
+ *
+ * THE THREE RANGES THAT WERE MISSING ARE NOT CURIOSITIES. `0.0.0.0/8` is the one that costs least to
+ * reach: Linux routes the whole block to the loopback interface, so a name whose A record says
+ * `0.0.0.0` — or `0.1.2.3` — opens this deployment's own ports while reading as a public answer.
+ * `100.64.0.0/10` is what GKE, EKS and Tailscale hand out, so on a managed cluster it IS the private
+ * network and 10/8 is the empty one. `192.0.0.0/24` and `198.18.0.0/15` are the IETF's own
+ * assignment and benchmarking blocks, which sit on real equipment.
+ *
+ * The documentation ranges and multicast are here for a different reason: nothing publicly routable
+ * lives in them, so an answer pointing there is a resolver or a zone doing something unexplained,
+ * and the honest verdict on an address that cannot be a website is no.
+ */
 function isPrivateIpv4(address: string): boolean {
   const parts = address.split(".");
   if (parts.length !== 4) return false;
@@ -120,52 +134,116 @@ function isPrivateIpv4(address: string): boolean {
   if (octets.some((value) => Number.isNaN(value) || value < 0 || value > 255)) {
     return false;
   }
-  const [a, b] = octets as [number, number, number, number];
+  const [a, b, c] = octets as [number, number, number, number];
+  if (a === 0) return true; // "this network" (RFC 1122) — the whole /8 is loopback on Linux
   if (a === 10) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (RFC 6598): GKE, EKS, Tailscale
   if (a === 127) return true;
   if (a === 169 && b === 254) return true; // link-local, includes metadata
   if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 0 && c === 0) return true; // IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true; // TEST-NET-1
   if (a === 192 && b === 168) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a === 198 && b === 51 && c === 100) return true; // TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // TEST-NET-3
+  if (a >= 224) return true; // multicast, reserved, and the broadcast address at the top
   return false;
+}
+
+/**
+ * The eight hextets of an IPv6 address, or null for a string that is not one.
+ *
+ * WRITTEN OUT RATHER THAN MATCHED PREFIX BY PREFIX, because the spellings are the whole bug.
+ * `::ffff:127.0.0.1`, `::ffff:7f00:1` and `0:0:0:0:0:ffff:7f00:1` are one address, and the version
+ * before this recognised the middle one — a resolver answering with the expanded form, which is a
+ * choice the resolver makes and not the caller, walked past every test below.
+ */
+function expandIpv6(address: string): number[] | null {
+  const host =
+    address
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "")
+      // A zone index (`fe80::1%eth0`) names an interface, not a different address.
+      .split("%")[0] ?? "";
+  if (!host.includes(":")) return null;
+
+  /*
+   * A trailing dotted quad is two hextets written in IPv4 (`::ffff:10.0.0.5`). Folded into the
+   * hextets here so that everything below counts groups and nothing below has to know this spelling
+   * exists.
+   */
+  const tail: number[] = [];
+  let text = host;
+  const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(host);
+  if (dotted) {
+    const octets = (dotted[2] as string)
+      .split(".")
+      .map((part) => Number.parseInt(part, 10));
+    if (octets.some((value) => value < 0 || value > 255)) return null;
+    const [a = 0, b = 0, c = 0, d = 0] = octets;
+    tail.push((a << 8) | b, (c << 8) | d);
+    text = (dotted[1] as string).slice(0, -1);
+  }
+
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const groupsOf = (part: string): number[] | null => {
+    if (!part) return [];
+    const values: number[] = [];
+    for (const group of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      values.push(Number.parseInt(group, 16));
+    }
+    return values;
+  };
+  const head = groupsOf(halves[0] ?? "");
+  const rest = halves.length === 2 ? groupsOf(halves[1] ?? "") : [];
+  if (!head || !rest) return null;
+
+  const known = head.length + rest.length + tail.length;
+  if (halves.length === 2) {
+    if (known > 7) return null;
+    return [...head, ...Array(8 - known).fill(0), ...rest, ...tail];
+  }
+  return known === 8 ? [...head, ...tail] : null;
 }
 
 /**
  * The IPv6 half, which only the resolved path needs.
  *
  * A resolver answers with whatever the name has, and a name with an AAAA record pointing at `::1` or
- * into `fc00::/7` reaches this deployment's own network exactly as an A record would. The
- * IPv4-mapped form (`::ffff:10.0.0.5`) is the one that would otherwise slip past both halves, so it
- * is unwrapped and asked again.
+ * into `fc00::/7` reaches this deployment's own network exactly as an A record would.
+ *
+ * TWO PREFIXES BEYOND THE OBVIOUS ONES. `64:ff9b::/96` is NAT64: the low 32 bits are an IPv4 address
+ * a translator on this network will go and fetch, so the address family test cannot see where the
+ * request lands and the prefix has to answer for it. `fec0::/10` was deprecated in 2004 and is still
+ * configured on plenty of equipment; deprecated is not unreachable.
  */
 function isPrivateIpv6(address: string): boolean {
-  const host =
-    address
-      .toLowerCase()
-      .replace(/^\[|\]$/g, "")
-      .split("%")[0] ?? "";
-  if (host === "::1" || host === "::") return true;
-  const mapped = /^::ffff:(.+)$/.exec(host)?.[1];
-  if (mapped) {
-    return mapped.includes(".")
-      ? isPrivateIpv4(mapped)
-      : // `::ffff:a00:5` is the same address written in hextets. Two groups, high half first.
-        isPrivateIpv4(hextetsToIpv4(mapped));
-  }
-  // Unique local (fc00::/7) and link-local (fe80::/10), by their first hextet.
-  const [first = ""] = host.split(":");
-  const leading = Number.parseInt(first.padStart(4, "0"), 16);
-  if (Number.isNaN(leading)) return false;
-  if ((leading & 0xfe00) === 0xfc00) return true;
-  if ((leading & 0xffc0) === 0xfe80) return true;
-  return false;
-}
+  const hextets = expandIpv6(address);
+  if (!hextets) return false;
+  const [h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0, h5 = 0, h6 = 0, h7 = 0] =
+    hextets;
 
-/** `a00:5` → `10.0.0.5`, so an IPv4-mapped address in hextet form is asked the same question. */
-function hextetsToIpv4(hextets: string): string {
-  const [high = "0", low = "0"] = hextets.split(":");
-  const value =
-    ((Number.parseInt(high, 16) || 0) << 16) + (Number.parseInt(low, 16) || 0);
-  return [24, 16, 8, 0].map((shift) => (value >> shift) & 0xff).join(".");
+  /*
+   * Everything whose top eighty bits are zero is an IPv4 address in an IPv6 coat — the mapped form
+   * and the deprecated IPv4-compatible one — so it is asked the IPv4 question and there is one
+   * answer about 10/8 rather than two. `::` and `::1` fall out of the same question: they read as
+   * 0.0.0.0 and 0.0.0.1, both inside the 0/8 the IPv4 half now knows about.
+   */
+  if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0) {
+    if (h5 === 0 || h5 === 0xffff) {
+      return isPrivateIpv4([h6 >> 8, h6 & 0xff, h7 >> 8, h7 & 0xff].join("."));
+    }
+  }
+
+  if ((h0 & 0xff00) === 0x0000) return true; // 0000::/8, reserved whole — NAT64 lives here
+  if ((h0 & 0xfe00) === 0xfc00) return true; // unique local, fc00::/7
+  if ((h0 & 0xffc0) === 0xfe80) return true; // link-local, fe80::/10
+  if ((h0 & 0xffc0) === 0xfec0) return true; // site-local, fec0::/10
+  if ((h0 & 0xff00) === 0xff00) return true; // multicast, ff00::/8
+  return false;
 }
 
 /** Is this literal address one inside this deployment's own network? */

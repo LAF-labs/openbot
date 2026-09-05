@@ -55,6 +55,36 @@ describe("the ranges, shared by both callers", () => {
       "::ffff:a00:5",
       "the same address in hextets, which is the spelling that hides",
     ],
+    /*
+     * The ranges the first version of this list did not have, each one reachable from a Bot's
+     * browser and each one arriving as an ordinary-looking DNS answer.
+     */
+    ["0.0.0.0", "the whole of 0/8 is loopback on Linux"],
+    ["0.1.2.3", "which is why the range matters and not just the one address"],
+    ["100.64.1.1", "CGNAT — on GKE, EKS and Tailscale this IS the network"],
+    ["100.127.255.255", "the top of 100.64/10"],
+    ["192.0.0.1", "IETF protocol assignments"],
+    ["192.0.2.5", "TEST-NET-1, which is documentation and never a website"],
+    ["198.18.0.1", "benchmarking, on real equipment"],
+    ["198.19.255.255", "the top of 198.18/15"],
+    ["198.51.100.7", "TEST-NET-2"],
+    ["203.0.113.9", "TEST-NET-3"],
+    ["224.0.0.1", "multicast"],
+    ["239.1.1.1", "the top of multicast"],
+    ["255.255.255.255", "broadcast"],
+    ["::", "the unspecified address, which is 0.0.0.0"],
+    ["64:ff9b::7f00:1", "NAT64 — a translator on this network fetches it"],
+    ["64:ff9b::808:808", "and the whole /96, not only the private half"],
+    ["fec0::1", "site-local: deprecated in 2004, still configured"],
+    ["ff02::1", "IPv6 multicast"],
+    ["::ffff:127.0.0.1", "the mapped form written with dots"],
+    ["::ffff:7f00:1", "and the hextet spelling URL hands us for it"],
+    [
+      "0:0:0:0:0:ffff:7f00:1",
+      "and the fully expanded one, which a resolver may choose",
+    ],
+    ["::7f00:1", "the deprecated IPv4-compatible form"],
+    ["fe80::1%eth0", "a zone index names an interface, not another address"],
   ])("%s is private (%s)", (address) => {
     expect(isPrivateAddress(address)).toBe(true);
   });
@@ -67,8 +97,42 @@ describe("the ranges, shared by both callers", () => {
     ["172.32.0.1", "just above 172.16/12"],
     ["2606:4700::1111", "an ordinary public IPv6 address"],
     ["::ffff:8.8.8.8", "a public IPv4 address wearing an IPv6 hat"],
+    ["100.63.255.255", "just below the CGNAT block"],
+    ["100.128.0.1", "just above the CGNAT block"],
+    ["192.0.1.1", "between the two 192.0.x/24 blocks"],
+    ["192.0.3.1", "just above TEST-NET-1"],
+    ["198.17.255.255", "just below the benchmarking block"],
+    ["198.20.0.1", "just above the benchmarking block"],
+    ["198.51.101.1", "just above TEST-NET-2"],
+    ["203.0.114.1", "just above TEST-NET-3"],
+    ["223.255.255.255", "the last address before multicast"],
+    ["2001:4860:4860::8888", "a public resolver, by AAAA"],
+    ["::ffff:808:808", "the hextet spelling of a PUBLIC mapped address"],
   ])("%s is not private (%s)", (address) => {
     expect(isPrivateAddress(address)).toBe(false);
+  });
+});
+
+/**
+ * The spellings the browser path actually receives, rather than the ones a test would type.
+ *
+ * `URL` normalises an address literal before anything here sees it, and that normalisation is doing
+ * real work: the decimal, octal and hex spellings of 127.0.0.1 all arrive as `127.0.0.1`, and the
+ * IPv4-mapped form arrives compressed into hextets. Pinned because the safety of the check rests on
+ * a parser nobody in this repository wrote.
+ */
+describe("what the URL parser hands the check", () => {
+  test.each([
+    ["http://2130706433/", "decimal"],
+    ["http://0177.0.0.1/", "octal"],
+    ["http://0x7f.0.0.1/", "hex, one octet at a time"],
+    ["http://0x7f000001/", "hex, the whole address"],
+    ["http://[::ffff:127.0.0.1]/", "IPv4-mapped, written with dots"],
+    ["http://[0:0:0:0:0:ffff:7f00:1]/", "IPv4-mapped, fully expanded"],
+    ["http://localhost./", "the root-anchored spelling of localhost"],
+    ["http://0.0.0.0/", "the address 0/8 is named by"],
+  ])("refuses %s (%s)", (url) => {
+    expect(checkNavigationTarget(url).allowed).toBe(false);
   });
 });
 
