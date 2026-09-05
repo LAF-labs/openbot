@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
+import { pageTitleClass } from "@/components/ui/page-header";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import type { SkillFormValues } from "@/lib/skills/form";
@@ -67,7 +68,8 @@ export function EditSkill({ slug }: { slug: string }) {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold">{t("Edit skill")}</h1>
+        {/* h2: the page behind this panel already has the page's one h1. */}
+        <h2 className={pageTitleClass}>{t("Edit skill")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t(
             "Changes apply the next time {command} is used. Bots already carrying it keep it.",

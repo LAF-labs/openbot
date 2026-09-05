@@ -218,7 +218,18 @@ export function SkillFields({
         </p>
       ) : null}
 
-      <div className="mt-4 flex gap-2">
+      {/*
+       * THE SAVE STAYS ON SCREEN.
+       *
+       * 지시문 is a `min-h-40` textarea at the bottom of a 400px panel, so on any laptop the button
+       * that saves the skill was below the fold of the panel's own scroller — measured: writing four
+       * lines of instruction pushed 스킬 저장 out of sight, and the way to reach it was to scroll a
+       * column that looks like it has already ended.
+       *
+       * `sticky bottom-0` with the panel's own background under it, and a hairline so the buttons
+       * read as sitting on top of the form rather than inside it.
+       */}
+      <div className="sticky bottom-0 -mx-8 mt-4 flex gap-2 border-border/60 border-t bg-sidebar px-8 py-3">
         <form.Subscribe
           selector={(state) => [state.canSubmit, state.isSubmitting]}
         >

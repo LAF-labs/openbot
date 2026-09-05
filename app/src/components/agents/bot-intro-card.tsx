@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { Button } from "@/components/ui/button";
+import { focusRing } from "@/components/ui/focus";
+import { Input } from "@/components/ui/input";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import {
   type AgentPreset,
@@ -96,8 +98,8 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
       <div className="flex items-start gap-3">
         {/* The face is the control: the only edit anybody wants to make to a picture is another one. */}
         <button
-          aria-label={t("Pick a face")}
-          className="inline-flex size-14 shrink-0 overflow-hidden rounded-xl ring-1 ring-border transition hover:ring-ring/50"
+          aria-label={t("Change the face")}
+          className={`inline-flex size-14 shrink-0 overflow-hidden rounded-xl ring-1 ring-border transition hover:ring-ring/50 ${focusRing}`}
           onClick={() => setPickingFace(true)}
           type="button"
         >
@@ -113,9 +115,15 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
            * overwrite where they are reading it, not after finding a settings pane — so this is the
            * heading and the field at once, saved when it loses focus.
            */}
-          <input
+          {/*
+           * `Input`, not a bare `<input>`. The two fields here were hand-rolled to look like the
+           * heading they overwrite, and in the process lost the house focus ring, the invalid
+           * treatment and the disabled one. `border-transparent bg-transparent` keeps the look;
+           * `h-auto` and the padding keep it sitting on the heading's own baseline.
+           */}
+          <Input
             aria-label={t("Name")}
-            className="w-full truncate rounded-md bg-transparent font-semibold text-[15px] outline-none focus-visible:bg-muted/60 focus-visible:px-1"
+            className={`h-auto truncate border-transparent bg-transparent px-1 py-0 font-semibold text-[15px] shadow-none focus-visible:bg-muted/60 ${focusRing}`}
             onBlur={() => {
               const next = name.trim();
               if (!next || next === agent.name) {
@@ -131,9 +139,9 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
             }}
             value={name}
           />
-          <input
+          <Input
             aria-label={t("What it does")}
-            className="w-full truncate rounded-md bg-transparent text-sm text-muted-foreground outline-none focus-visible:bg-muted/60 focus-visible:px-1"
+            className={`h-auto truncate border-transparent bg-transparent px-1 py-0 text-muted-foreground text-sm shadow-none focus-visible:bg-muted/60 ${focusRing}`}
             onBlur={() => {
               const next = title.trim();
               if (next === agent.title) return;
@@ -167,7 +175,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
       <div className="flex flex-wrap gap-1.5">
         {suggestions.map((preset) => (
           <button
-            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-ring/40 hover:text-foreground disabled:opacity-50"
+            className={`rounded-full border border-border px-2.5 py-1 text-muted-foreground text-xs transition-colors hover:border-ring/40 hover:text-foreground disabled:opacity-50 ${focusRing}`}
             disabled={updateAgent.isPending}
             key={preset.id}
             onClick={() => void applyPreset(preset)}

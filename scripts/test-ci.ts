@@ -108,6 +108,13 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                403 tests across 49 files   →   390
  *
+ * MEASURED 2026-09-06, after the Bots pane, Routines and Skills production pass: a josa helper with
+ * its own walk of 받침/vowel/Latin/digit endings, the confirm dialog's contract, the routine form's
+ * field order and day chips, the Skills failed-read state, and the page header the three sibling
+ * pages now share.
+ *
+ *     app                430 tests across 53 files   →   417
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -116,7 +123,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 390, roots: ["app"] },
+  { name: "app", floor: 417, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;

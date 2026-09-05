@@ -1773,4 +1773,10 @@ export const ko: Record<string, string> = {
   Weekdays: "평일",
   "An instruction, a Bot, and a clock. You can change all of it later.":
     "무엇을, 어느 봇이, 언제. 나중에 다 바꿀 수 있습니다.",
+
+  /** The failed read on Skills, which used to say 아직 스킬이 없습니다 instead. */
+  "Your skills could not be loaded.":
+    "스킬 목록을 불러오지 못했습니다. 다시 시도해 주세요.",
+  "Each one is a colleague you hand real work to. A new Bot starts with nothing set.":
+    "각자 실제로 일을 맡길 수 있는 동료입니다. 새 봇은 아무것도 정해지지 않은 채로 시작합니다.",
 };

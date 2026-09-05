@@ -94,17 +94,32 @@ function Welcome() {
   };
 
   return (
-    <main className="flex h-svh w-full items-center justify-center bg-background p-8">
-      <div className="flex w-full max-w-md flex-col gap-8">
+    /*
+     * CENTRED, AND THE FACES CARRY THE SCREEN.
+     *
+     * Measured at 1280×860 and at 800×700: the block sat in the upper third with roughly 60% of the
+     * window empty below it, and the three faces were 56px — a row of small icons above a wall of
+     * text, on the one screen in the product whose whole job is to introduce the characters.
+     *
+     * `justify-center` on a `h-svh` main with `my-auto` on the column is the pair that actually
+     * centres it: the column is the flex item, and it was being stretched by `items-center` on the
+     * cross axis while the main axis had nothing to centre.
+     */
+    <main className="flex h-svh w-full items-center justify-center overflow-y-auto bg-background p-8">
+      <div className="my-auto flex w-full max-w-md flex-col gap-8">
         {step === "hello" ? (
           <section className="flex flex-col items-center gap-6 text-center">
-            <div className="flex -space-x-3">
+            {/*
+             * A SOFT GROUND UNDER THEM. Three drawings floating on the page read as clip art; the
+             * same three on a tinted disc read as a group photograph, which is what they are.
+             */}
+            <div className="flex items-center justify-center gap-1 rounded-full bg-muted/60 px-8 py-6">
               {WELCOME_FACES.map((seed) => (
                 <BotAvatar
-                  className="size-14"
+                  className="size-20 shrink-0"
                   key={seed}
                   seed={seed}
-                  size={56}
+                  size={80}
                 />
               ))}
             </div>
@@ -135,31 +150,46 @@ function Welcome() {
               )}
             </p>
             {/*
-             * A LINK THAT GOES SOMEWHERE. The invitation to sign the Bot's browser into your daily
-             * sites was here as a sentence with nothing to press — the one setup act that turns an
-             * empty Bot into a useful one, described and then abandoned. It goes to 연결 now, and
-             * it says out loud that it can wait, because on the first minute it can.
+             * THE PRIMARY VERB FIRST, AND THE TWO BUTTONS ARE THE SAME WIDTH.
+             *
+             * 다음 is what everybody presses; 연결하기 is the optional errand. They were stacked the
+             * other way round and at two different widths — an outline pill of whatever width its
+             * sentence happened to be, sitting ABOVE a full-width black button — so the screen read
+             * as two unrelated controls and offered the side quest first.
+             *
+             * A LINK THAT GOES SOMEWHERE, still. The invitation to sign the Bot's browser into your
+             * daily sites used to be a sentence with nothing to press: the one setup act that turns
+             * an empty Bot into a useful one, described and then abandoned.
              */}
-            <Button
-              // It renders an <a>, and the primitive warns — on the console of the FIRST screen
-              // anybody sees — that a non-button loses native button semantics. It is a link on
-              // purpose, so it says so, the same way the export button does.
-              nativeButton={false}
-              render={(props) => (
-                <Link to="/settings/connected-accounts" {...props} />
-              )}
-              size="sm"
-              variant="outline"
-            >
-              {t("Connect the sites you use — you can do this later")}
-            </Button>
-            <Button className="w-full" onClick={() => setStep("create")}>
-              {t("Next")}
-            </Button>
+            <div className="flex w-full flex-col gap-2">
+              <Button className="w-full" onClick={() => setStep("create")}>
+                {t("Next")}
+              </Button>
+              <Button
+                className="w-full"
+                // It renders an <a>, and the primitive warns — on the console of the FIRST screen
+                // anybody sees — that a non-button loses native button semantics. It is a link on
+                // purpose, so it says so, the same way the export button does.
+                nativeButton={false}
+                render={(props) => (
+                  <Link to="/settings/connected-accounts" {...props} />
+                )}
+                variant="outline"
+              >
+                {t("Connect the sites you use — you can do this later")}
+              </Button>
+            </div>
           </section>
         ) : (
           <section className="flex flex-col items-center gap-6 text-center">
-            <BotAvatar className="size-20" seed="s:squircle.violet" size={80} />
+            {/* The same disc as step one, holding one face: this is the Bot about to be made. */}
+            <div className="rounded-full bg-muted/60 p-6">
+              <BotAvatar
+                className="size-28"
+                seed="s:squircle.violet"
+                size={112}
+              />
+            </div>
             <h1 className="font-semibold text-2xl">
               {t("Make your first Bot")}
             </h1>
@@ -187,17 +217,10 @@ function Welcome() {
               </p>
             ) : null}
 
-            <div className="flex w-full gap-2">
+            {/* Primary first here too, and both full width, so the two steps agree with each other. */}
+            <div className="flex w-full flex-col gap-2">
               <Button
-                className="flex-1"
-                onClick={() => setStep("hello")}
-                type="button"
-                variant="outline"
-              >
-                {t("Back")}
-              </Button>
-              <Button
-                className="flex-1"
+                className="w-full"
                 disabled={createAgent.isPending}
                 onClick={() => void finish()}
                 type="button"
@@ -205,6 +228,14 @@ function Welcome() {
                 {createAgent.isPending
                   ? t("Creating…")
                   : t("Make the first Bot")}
+              </Button>
+              <Button
+                className="w-full"
+                onClick={() => setStep("hello")}
+                type="button"
+                variant="outline"
+              >
+                {t("Back")}
               </Button>
             </div>
           </section>

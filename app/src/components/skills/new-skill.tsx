@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { SkillFields } from "@/components/skills/skill-fields";
+import { pageTitleClass } from "@/components/ui/page-header";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -57,7 +58,8 @@ export function NewSkill() {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold">{t("New skill")}</h1>
+        {/* h2: the page behind this panel already has the page's one h1. */}
+        <h2 className={pageTitleClass}>{t("New skill")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t(
             "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.",

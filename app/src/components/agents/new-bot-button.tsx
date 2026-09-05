@@ -20,25 +20,46 @@ export function NewBotButton({
   label,
   size = "sm",
   variant = "ghost",
+  withReason = true,
 }: {
   className?: string;
   label?: string;
   size?: "sm" | "default";
   variant?: "default" | "outline" | "ghost";
+  /**
+   * Whether the sentence under the button is this component's to draw.
+   *
+   * IN A PAGE HEADER IT IS NOT. The three sibling pages put one primary verb on the title's
+   * baseline, and this was the only one of the three that put a `<div>` there instead of a
+   * `<Button>` — a column with a paragraph in it, which made the Bots title row taller than
+   * Routines' and Skills'. The header passes `false` and the roster says the same thing in its
+   * section description, where there is room for a sentence.
+   */
+  withReason?: boolean;
 }) {
   const { create, isPending, problem, seats } = useNewBot();
+  const reason = problem ?? (seats.isFull ? seatsFullMessage(seats) : null);
+
+  const button = (
+    <Button
+      disabled={isPending || seats.isFull}
+      onClick={() => void create()}
+      size={size}
+      // A disabled button explains nothing and a title attribute explains nothing to anybody
+      // without a mouse — which is why the sentence still exists. This is the belt.
+      title={withReason ? undefined : (reason ?? undefined)}
+      variant={variant}
+    >
+      <IconPlus />
+      {isPending ? t("Creating…") : (label ?? t("New Bot"))}
+    </Button>
+  );
+
+  if (!withReason) return button;
 
   return (
     <div className={`flex flex-col items-center gap-1 ${className ?? ""}`}>
-      <Button
-        disabled={isPending || seats.isFull}
-        onClick={() => void create()}
-        size={size}
-        variant={variant}
-      >
-        <IconPlus />
-        {isPending ? t("Creating…") : (label ?? t("New Bot"))}
-      </Button>
+      {button}
       {problem ? (
         <p className="text-destructive text-xs" role="alert">
           {problem}

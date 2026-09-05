@@ -1,5 +1,12 @@
 import type * as React from "react";
 
+import { PageHeader } from "@/components/layout/page-header";
+import {
+  pageMeasure,
+  sectionDescriptionClass,
+  sectionTitleClass,
+  sectionTitleRowClass,
+} from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,11 +34,6 @@ import { cn } from "@/lib/utils";
  * would wrap every row. It is not a licence for anything else to be wide.
  */
 type ShellWidth = "prose" | "wide";
-
-const WIDTHS: Record<ShellWidth, string> = {
-  prose: "max-w-2xl",
-  wide: "max-w-5xl",
-};
 
 export function PageShell({
   action,
@@ -67,21 +69,15 @@ export function PageShell({
       <div
         className={cn(
           "mx-auto flex w-full flex-col px-4 py-12",
-          WIDTHS[width],
+          pageMeasure[width],
           className,
         )}
       >
-        <header className="flex flex-col gap-2">
-          <div className="flex flex-row items-center justify-between gap-4">
-            <h1 className="font-semibold text-2xl">{title}</h1>
-            {action}
-          </div>
-          {description ? (
-            <p className="max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
-              {description}
-            </p>
-          ) : null}
-        </header>
+        {/*
+         * The header is its own component now, so the three sibling pages cannot drift apart: they
+         * all reach it through this shell, and it reaches the tokens in `ui/page-header.ts`.
+         */}
+        <PageHeader action={action} description={description} title={title} />
         {children}
       </div>
     </div>
@@ -111,16 +107,14 @@ export function PageSection({
   return (
     <section className={cn("mt-12", className)}>
       {title ? (
-        <div className="flex min-h-8 flex-row items-center justify-between gap-4">
-          {/* 15px/600 — the scale's section title. See the @theme block in styles.css. */}
-          <h2 className="font-semibold text-lg">{title}</h2>
+        <div className={sectionTitleRowClass}>
+          {/* 17px/600 — the scale's section title. See `ui/page-header.ts`. */}
+          <h2 className={sectionTitleClass}>{title}</h2>
           {action}
         </div>
       ) : null}
       {description ? (
-        <p className="mt-1 max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
-          {description}
-        </p>
+        <p className={sectionDescriptionClass}>{description}</p>
       ) : null}
       {children}
     </section>

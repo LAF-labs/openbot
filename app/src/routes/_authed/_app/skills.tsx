@@ -30,6 +30,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
@@ -68,7 +69,9 @@ function SkillsPage() {
   // roster uses when `new` and `agent` arrive together.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingSlug !== undefined;
-  const { data, isPending } = useQuery(pluginsPageQueryOptions());
+  const { data, isError, isPending, refetch } = useQuery(
+    pluginsPageQueryOptions(),
+  );
   const { data: me } = useQuery(currentUserQueryOptions());
   const [error, setError] = useState<string | null>(null);
   /** The slug being confirmed, or null. One dialog for the page, not one per row. */
@@ -129,6 +132,23 @@ function SkillsPage() {
       open={showCreate || showEdit}
     >
       <PageShell
+        /*
+         * THE VERB ON THE TITLE'S BASELINE, like Bots and Routines. It used to sit inside the
+         * section heading as a ghost button, so of the three sibling pages this was the one whose
+         * primary action was somewhere else and drawn more quietly than its peers.
+         */
+        action={
+          <Button
+            nativeButton={false}
+            render={(props) => (
+              <Link search={{ new: true }} to="/skills" {...props} />
+            )}
+            size="sm"
+          >
+            <IconPlus />
+            {t("New skill")}
+          </Button>
+        }
         description={t(
           "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.",
         )}
@@ -171,28 +191,46 @@ function SkillsPage() {
           })}
         />
 
-        <PageSection
-          action={
-            <Button
-              nativeButton={false}
-              render={(props) => (
-                <Link search={{ new: true }} to="/skills" {...props} />
-              )}
-              size="sm"
-              variant="ghost"
-            >
-              <IconPlus />
-              {t("New skill")}
-            </Button>
-          }
-          title={t("Your skills")}
-        >
+        <PageSection title={t("Your skills")}>
+          {/*
+           * NOTHING WAS DRAWN WHILE THE READ WAS IN FLIGHT, AND A FAILED READ SAID THERE WERE NONE.
+           *
+           * `pluginsPageQueryOptions` was destructured for `data` and `isPending` only, so
+           * `isError` — a 500, a dropped connection, a signed-out session — fell into the same
+           * branch as an empty list: 아직 스킬이 없습니다, in front of somebody whose skills are all
+           * still there. Routines and the roster both learned this already; these are their two
+           * answers, in their two shapes.
+           */}
+          {isPending ? (
+            <PageRows>
+              {[0, 1].map((slot) => (
+                <div className="flex flex-col gap-2 p-4" key={slot}>
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-64" />
+                </div>
+              ))}
+            </PageRows>
+          ) : null}
+          {isError ? (
+            <div className="flex flex-col items-start gap-2 py-6">
+              <p className="text-destructive text-sm" role="alert">
+                {t("Your skills could not be loaded.")}
+              </p>
+              <Button
+                onClick={() => void refetch()}
+                size="sm"
+                variant="outline"
+              >
+                {t("Try again")}
+              </Button>
+            </div>
+          ) : null}
           {/*
            * A section title over nothing at all reads as a screen that failed to load. Routines and
            * the agents roster both answer this with a face and a sentence; this is that, so the
            * three of them say "none yet" the same way.
            */}
-          {!isPending && !mine?.length ? (
+          {!isPending && !isError && !mine?.length ? (
             <div className="flex flex-col items-center gap-3 py-10">
               {/* The plainest face the generator makes: a skill is a note, not a character. */}
               <BotAvatar
@@ -221,7 +259,12 @@ function SkillsPage() {
                        * a trailing "· " on a skill written without one reads as something missing.
                        */}
                       <ItemDescription>
-                        <code className="font-mono text-foreground/80 text-xs">
+                        {/*
+                         * A CHIP, NOT BARE MONOSPACE. `/danggeun-reply` set in a mono face inside
+                         * an Inter sentence reads as a typo — a different width, a different
+                         * colour, no edge — and it is the one string on the row a person types.
+                         */}
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/80 text-xs">
                           /{skill.slug}
                         </code>
                         {skill.summary ? ` · ${skill.summary}` : null}
@@ -319,7 +362,7 @@ function SkillsPage() {
                        * a trailing "· " on a skill written without one reads as something missing.
                        */}
                       <ItemDescription>
-                        <code className="font-mono text-foreground/80">
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/80 text-xs">
                           /{skill.slug}
                         </code>
                         {skill.summary ? ` · ${skill.summary}` : null}

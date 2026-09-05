@@ -562,7 +562,8 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
       }}
     >
       <header>
-        <h1 className={pageTitleClass}>{t("New routine")}</h1>
+        {/* h2: the page behind this panel already has the page's one h1. */}
+        <h2 className={pageTitleClass}>{t("New routine")}</h2>
         <p className={`mt-1 ${pageDescriptionClass}`}>
           {t(
             "An instruction, a Bot, and a clock. You can change all of it later.",

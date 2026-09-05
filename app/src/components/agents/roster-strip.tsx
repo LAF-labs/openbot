@@ -1,4 +1,5 @@
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { focusRing } from "@/components/ui/focus";
 import { useNewBot } from "@/lib/agents/new-bot";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { seatsFullMessage } from "@/lib/agents/seats";
@@ -33,7 +34,7 @@ export function RosterStrip({
         return (
           <button
             aria-pressed={chosen}
-            className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent"
+            className={`group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent ${focusRing}`}
             key={agent.id}
             onClick={() => onSelect(agent.id)}
             type="button"
@@ -74,7 +75,7 @@ export function RosterStrip({
        * The roster says it in full, which is where somebody goes to do something about it.
        */}
       <button
-        className="group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent disabled:opacity-50"
+        className={`group flex w-[76px] flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-accent disabled:opacity-50 ${focusRing}`}
         disabled={newBot.isPending || newBot.seats.isFull}
         onClick={() => void newBot.create()}
         title={newBot.seats.isFull ? seatsFullMessage(newBot.seats) : undefined}

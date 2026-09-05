@@ -13,6 +13,7 @@ import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSeats } from "@/lib/agents/new-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { seatsFullMessage } from "@/lib/agents/seats";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { t } from "@/lib/i18n";
 
@@ -75,7 +76,13 @@ function AgentsScreen() {
        * had no page title at all, section gaps that did not match its peers, and — because the shell
        * is where the scroller lives — no way to reach anything below the fold.
        */}
-      <PageShell action={<NewBotButton />} title={t("Bots")}>
+      <PageShell
+        action={<NewBotButton variant="default" withReason={false} />}
+        description={t(
+          "Each one is a colleague you hand real work to. A new Bot starts with nothing set.",
+        )}
+        title={t("Bots")}
+      >
         {/*
          * THE COUNT IS IN THE HEADING, NOT IN A REFUSAL.
          *
@@ -92,6 +99,11 @@ function AgentsScreen() {
            * error: a person with four Bots told, in the same glance, that the list failed to load
            * and that they have none. The heading keeps the noun and waits for the number.
            */
+          /*
+           * The cap, said where there is room for a sentence. It used to live under the header's
+           * button, in a column that made the Bots title row taller than its two siblings'.
+           */
+          description={seats.isFull ? seatsFullMessage(seats) : undefined}
           title={
             isPending || isError
               ? t("My Bots")
