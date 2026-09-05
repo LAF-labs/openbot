@@ -10,6 +10,7 @@ import {
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
+import type { RailNavItem } from "@/components/layout/rail-nav";
 import {
   Sidebar,
   SidebarContent,
@@ -91,6 +92,23 @@ const GROUPS: {
       },
     ],
   },
+];
+
+/**
+ * The same nine links, flat, for the row that replaces the rail below `lg`.
+ *
+ * Flat rather than grouped because a horizontal strip has nowhere to put a group label, and the
+ * order is the rail's order, so the two never disagree about where 감사 is.
+ */
+export const ADMIN_NAV: RailNavItem[] = [
+  // Exact, because /admin is a prefix of every other route here.
+  { title: t("Overview"), linkOptions: adminLinkOptions, isExact: true },
+  ...GROUPS.flatMap((group) =>
+    group.items.map((item) => ({
+      title: item.title,
+      linkOptions: item.linkOptions,
+    })),
+  ),
 ];
 
 export function AdminSidebar({

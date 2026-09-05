@@ -1,6 +1,7 @@
 import { IconArrowLeft } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
+import type { RailNavItem } from "@/components/layout/rail-nav";
 import {
   Sidebar,
   SidebarContent,
@@ -15,10 +16,23 @@ import { t } from "@/lib/i18n";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
-const ITEMS = [
+/**
+ * The three screens Settings is, and the only list of them.
+ *
+ * Exported because the rail is not the only thing that draws it: below `lg` there is no rail, and
+ * `RailNav` reads this same table. Two copies would be two orders and, sooner, two answers about
+ * which row is lit.
+ */
+export const SETTINGS_NAV: RailNavItem[] = [
   {
     title: t("General"),
     linkOptions: { to: "/settings" },
+    /*
+     * `/settings` is a prefix of every other route here, so without this it lights up on all of
+     * them — General stayed active while somebody was reading 연결. The admin rail had already
+     * made this argument for `/admin`; this rail had never had it made.
+     */
+    isExact: true,
   },
   /*
    * The same argument as 내 정보 below, and it had never been made for this one: 연결 was reachable
@@ -66,7 +80,7 @@ export function SettingsSidebar({
       <SidebarContent>
         <SidebarMenu>
           <SidebarGroup>
-            {ITEMS.map((option) => {
+            {SETTINGS_NAV.map((option) => {
               return (
                 <SidebarMenuItem key={option.title}>
                   {/* The same active grammar as the app sidebar: the stacked active+hover variant
@@ -74,7 +88,13 @@ export function SettingsSidebar({
                   <SidebarMenuButton
                     className="h-10 hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
                     render={(props) => (
-                      <Link {...option.linkOptions} {...props}>
+                      <Link
+                        activeOptions={
+                          option.isExact ? { exact: true } : undefined
+                        }
+                        {...option.linkOptions}
+                        {...props}
+                      >
                         {option.title}
                       </Link>
                     )}
