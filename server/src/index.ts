@@ -21,8 +21,9 @@ import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
-import { originRefusalBody, upgradeOriginAllowed } from "./auth/origin";
+import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
+import { streamBotAccess } from "./auth/stream-access";
 import { createChannelEventHub } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
@@ -52,7 +53,6 @@ import { loadConfig } from "./config";
 import {
   botTimeZone,
   type IdentifyActor,
-  type IdentifyUser,
   mountCopilotRuntime,
   resolveRuntimeAgents,
 } from "./copilot";
@@ -132,11 +132,12 @@ async function resolveRequestActor(request: Request): Promise<{
   };
 }
 
-/** The thread projection of {@link resolveRequestActor}: threads are scoped to this person. */
-const identifyUser: IdentifyUser = async (request) => {
-  const { id, name } = await resolveRequestActor(request);
-  return { id, name };
-};
+/*
+ * `identifyUser` — the name-and-id projection of the resolver above — is gone. Its one caller was
+ * the live-screen upgrade, which needed the ROLE it dropped in order to ask whose Bot was being
+ * watched. `resolveRequestActor` is called there directly now, and there was nothing else a
+ * name-without-a-role was for.
+ */
 
 /**
  * The authorization projection of the same person: agent visibility is decided from this.
@@ -148,7 +149,7 @@ const identifyUser: IdentifyUser = async (request) => {
  * because this one runs INSIDE the vendored runtime's agent factory: throwing there takes the run
  * down with a 500, while resolving to somebody who owns nothing takes it down by name. It grants
  * nothing — no private profile matches, and it is not an administrator — and the two places that
- * decide whose data is served (`identifyUser` and the thread priming below) refuse instead.
+ * decide whose data is served (the live-screen upgrade and the thread priming below) refuse instead.
  */
 const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
 
@@ -1097,6 +1098,19 @@ const toStreamUrl = (baseUrl: string, botId: string) =>
   `${baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/stream?bot=${encodeURIComponent(botId)}&token=${encodeURIComponent(config.computer?.token ?? "")}`;
 
 /**
+ * A refusal from the upgrade path, as a fact code and nothing else.
+ *
+ * Written by hand because an upgrade is handled in `fetch`, ahead of Hono, so `context.json` is not
+ * available here. Same shape as every other refusal in this server: a code the surface owns the
+ * words for, never a sentence meant for a screen.
+ */
+const fact = (code: string, status: number) =>
+  new Response(JSON.stringify({ error: code, code }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+/**
  * Which Bot's screen. The Bot is named in the path and its computer is located the same way every
  * other call locates it, so the live stream cannot point at a different Bot's browser.
  */
@@ -1104,6 +1118,15 @@ const streamPathBotId = (pathname: string): string | null => {
   const match = pathname.match(/^\/api\/computers\/([^/]+)\/stream$/);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 };
+
+/** The rule, with this deployment's roster behind it. See auth/stream-access.ts. */
+const streamAccessFor = (
+  botId: string,
+  actor: { id: string; role: UserRole } | null,
+) =>
+  streamBotAccess(botId, actor, (person, id) =>
+    agentProfileStore.get(person, id),
+  );
 
 /** What each proxied socket carries: where to connect inward, and the socket once opened. */
 type StreamData = {
@@ -1166,16 +1189,23 @@ serve<SocketData>({
        * browser always sends one on a handshake, and nothing but a browser drives this.
        */
       if (!upgradeOriginAllowed(request.headers, config.trustedOrigins)) {
-        return new Response(JSON.stringify(originRefusalBody), {
-          status: 403,
-          headers: { "content-type": "application/json" },
-        });
+        return fact(ORIGIN_REFUSED, 403);
       }
-      // The session guard, applied by hand because middleware does not run on an upgrade. An
-      // unauthenticated socket here would be the whole point of the proxy defeated.
-      const actor = await identifyUser(request).catch(() => null);
-      if (!actor) {
-        return new Response("Sign in first.", { status: 401 });
+      /*
+       * The session guard AND the Bot, applied by hand because middleware does not run on an
+       * upgrade. The person was already resolved here and the answer was thrown away — see
+       * `streamBotAllowed`, which is the whole check now.
+       */
+      const actor = await resolveRequestActor(request).catch(() => null);
+      const access = await streamAccessFor(streamBotId, actor);
+      if (access === "bad_id") {
+        return fact("laf:bot_id_invalid", 400);
+      }
+      if (access === "unauthenticated") {
+        return fact("laf:unauthenticated", 401);
+      }
+      if (access === "not_found") {
+        return fact("laf:bot_not_found", 404);
       }
       let upstream: string;
       try {
