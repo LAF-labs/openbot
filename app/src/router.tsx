@@ -1,5 +1,6 @@
 import { createRouter, Link } from "@tanstack/react-router";
 import { Button } from "./components/ui/button";
+import { PageSkeleton } from "./components/ui/skeleton";
 import { t } from "./lib/i18n";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
@@ -50,6 +51,24 @@ export const router = createRouter({
   context: {} as RouterContext,
   defaultErrorComponent: ({ reset }) => <AppErrorScreen reset={reset} />,
   defaultNotFoundComponent: NotFoundScreen,
+  /*
+   * THE FOURTH SCREEN, AND UNTIL NOW IT WAS A WHITE PAGE.
+   *
+   * There was no pending component at all, so a route waiting on its loader rendered NOTHING. With
+   * the API answering in four seconds — a slow connection, not an outage — six screens were blank
+   * white for the whole four: `/`, `/agents`, `/routines`, `/skills`,
+   * `/settings/connected-accounts`, `/admin/audit`. And it was the whole application that went
+   * blank rather than one pane, because the route that waits is almost always `_authed`, whose
+   * `beforeLoad` holds on `/api/me` above the sidebar and everything else.
+   *
+   * 300ms before it shows, 300ms minimum once it has. Both numbers exist to stop the cure being
+   * worse: below the first, a fast local response would flash a skeleton for two frames on every
+   * navigation; without the second, a response landing at 310ms would flash it for ten
+   * milliseconds. The defaults are 1000/500, and a full second of blank white is the bug.
+   */
+  defaultPendingComponent: PageSkeleton,
+  defaultPendingMs: 300,
+  defaultPendingMinMs: 300,
 });
 
 declare module "@tanstack/react-router" {
