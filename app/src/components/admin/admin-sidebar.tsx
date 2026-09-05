@@ -1,6 +1,7 @@
 import {
   IconArrowLeft,
   IconCode,
+  IconPlugConnected,
   IconDeviceDesktop,
   IconKey,
   IconLayoutGrid,
@@ -69,6 +70,11 @@ const GROUPS: {
         title: t("Plugins"),
         icon: IconPuzzle,
         linkOptions: { to: "/admin/plugins" },
+      },
+      {
+        title: t("Bot endpoints"),
+        icon: IconPlugConnected,
+        linkOptions: { to: "/admin/bots" },
       },
       {
         title: t("Components"),

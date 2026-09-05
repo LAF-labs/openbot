@@ -5,6 +5,7 @@ import {
   IconKey,
   IconLayoutGrid,
   IconListDetails,
+  IconPlugConnected,
   IconPuzzle,
   IconShieldCheck,
 } from "@tabler/icons-react";
@@ -83,6 +84,12 @@ const SECTIONS: {
         description: "Skills and tools installed for the whole workspace.",
         icon: IconPuzzle,
         linkOptions: { to: "/admin/plugins" },
+      },
+      {
+        title: "Bot endpoints",
+        description: "Point a Bot at an agent you host yourself.",
+        icon: IconPlugConnected,
+        linkOptions: { to: "/admin/bots" },
       },
       {
         title: "Components",

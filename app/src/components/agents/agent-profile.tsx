@@ -1,12 +1,27 @@
+import { IconDots } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useId, useState } from "react";
+import { useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,7 +30,6 @@ import {
   type AgentEffort,
   effortLabel,
 } from "@/lib/agents/effort-label";
-import { agentInputFrom } from "@/lib/agents/form";
 import {
   deleteAgentMutationOptions,
   duplicateAgentMutationOptions,
@@ -24,21 +38,18 @@ import {
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
+import { useSeats } from "@/lib/agents/new-bot";
 import {
   agentKeys,
   agentMemoriesQueryOptions,
+  type AgentProfile as AgentProfileRecord,
   agentQueryOptions,
 } from "@/lib/agents/queries";
+import { seatsFullMessage } from "@/lib/agents/seats";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
-
-function Tag({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
-      {children}
-    </span>
-  );
-}
+import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { useSavedFlash } from "@/lib/saved-flash";
 
 /**
  * The shape of the profile, not a generic one.
@@ -80,9 +91,11 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const navigate = useNavigate();
   // State is keyed by coworker id because this panel can remain open while its target changes.
   const [pickingFace, setPickingFace] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
+  const isEditing = editingId === agentId;
   const isConfirmingDelete = confirmingDeleteId === agentId;
 
   const agent = useQuery(agentQueryOptions(agentId));
@@ -92,13 +105,14 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   );
   const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
   const deleteAgent = useMutation(deleteAgentMutationOptions(queryClient));
+  const seats = useSeats();
 
   if (agent.isPending) {
     return <ProfileSkeleton />;
   }
   if (agent.error || !agent.data) {
     return (
-      <p className="p-8 text-sm text-destructive" role="alert">
+      <p className="p-8 text-destructive text-sm" role="alert">
         {t("Could not load this Bot.")}
       </p>
     );
@@ -148,10 +162,10 @@ export function AgentProfile({ agentId }: { agentId: string }) {
          */}
         {profile.canManage ? (
           <button
-            type="button"
             aria-label={t("Pick a face")}
             className="group w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 focus-visible:ring-2 focus-visible:ring-foreground"
             onClick={() => setPickingFace(true)}
+            type="button"
           >
             {banner}
           </button>
@@ -161,10 +175,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           </span>
         )}
         <MascotPicker
-          open={pickingFace}
           onOpenChange={setPickingFace}
-          seed={profile.avatarSeed}
-          pending={updateAgent.isPending}
           onSelect={async (avatarSeed) => {
             /*
              * A PATCH replaces the fields it carries, so the ones the parser requires go back
@@ -178,81 +189,117 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             await updateAgent.mutateAsync({
               agentId,
               input: {
-                name: profile.name,
-                title: profile.title,
-                roleDescription: profile.roleDescription,
-                visibility: profile.visibility,
                 avatarSeed,
+                name: profile.name,
+                roleDescription: profile.roleDescription,
+                title: profile.title,
+                visibility: profile.visibility,
               },
             });
             setPickingFace(false);
           }}
+          open={pickingFace}
+          pending={updateAgent.isPending}
+          seed={profile.avatarSeed}
         />
-        <div className="flex w-full flex-col items-center gap-0.5">
-          <h1 className="w-full text-balance text-2xl font-semibold leading-tight tracking-tight">
-            {profile.name}
-          </h1>
-          <p className="w-full text-balance text-sm text-muted-foreground">
-            {profile.title}
-          </p>
-        </div>
 
-        <div className="flex flex-wrap justify-center gap-1.5">
-          <Tag>
-            {profile.visibility === "private" ? t("Private") : t("Public")}
-          </Tag>
-          {profile.systemOwned ? <Tag>{t("System owned")}</Tag> : null}
-        </div>
+        {/*
+         * THE NAME AND THE JOB, AND EDITING THEM IS A MENU ITEM.
+         *
+         * The whole pane used to be the form: a name field, a title field, a role field, a
+         * visibility select and — for anybody the deployment counts as an administrator, which on a
+         * one-person deployment is the shop owner — an AG-UI endpoint and a bearer token. Six
+         * controls in a 320px column, above the settings that are actually looked at.
+         */}
+        {isEditing ? (
+          <AgentFields
+            defaultValues={{ name: profile.name, title: profile.title }}
+            error={updateAgent.error}
+            onCancel={() => setEditingId(null)}
+            onSubmit={async (values) => {
+              await updateAgent.mutateAsync({
+                agentId,
+                input: {
+                  name: values.name,
+                  roleDescription: profile.roleDescription,
+                  title: values.title,
+                  visibility: profile.visibility,
+                },
+              });
+              setEditingId(null);
+            }}
+          />
+        ) : (
+          <>
+            <div className="flex w-full flex-col items-center gap-0.5">
+              <h1 className="w-full text-balance font-semibold text-2xl leading-tight tracking-tight">
+                {profile.name}
+              </h1>
+              {profile.title ? (
+                <p className="w-full text-balance text-muted-foreground text-sm">
+                  {profile.title}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex w-full items-center gap-2">
+              <Button
+                className="flex-1 text-sm!"
+                onClick={async () => {
+                  await navigate({
+                    search: { agent: agentId },
+                    to: "/channel/new",
+                  });
+                }}
+              >
+                {t("Start channel")}
+              </Button>
+              <BotMenu
+                onDelete={() => setConfirmingDeleteId(agentId)}
+                onDuplicate={async () => {
+                  const copy = await duplicateAgent.mutateAsync(agentId);
+                  await navigate({ search: { agent: copy.id }, to: "/agents" });
+                }}
+                onEdit={() => setEditingId(agentId)}
+                onToggleHidden={async () => {
+                  await setHidden.mutateAsync({
+                    agentId,
+                    hidden: !profile.hidden,
+                  });
+                  if (!profile.hidden)
+                    await navigate({ search: {}, to: "/agents" });
+                }}
+                profile={profile}
+                seatsFull={seats.isFull}
+                seatsLast={seats.isLastSeat}
+                seatsMessage={seatsFullMessage(seats)}
+              />
+            </div>
+          </>
+        )}
       </header>
 
-      {/*
-       * THE PANE IS THE FORM, not a card with an Edit button in front of it.
-       *
-       * Editing a colleague was a mode: read the role, press Edit, watch the whole pane swap for a
-       * form, save, watch it swap back. Grok's settings pane is just the fields — the name you can
-       * see is the name you can type in — and for a panel whose entire job is "what is this Bot
-       * for", a mode between looking and changing is a step that exists only to be dismissed.
-       *
-       * A Bot the deployment shipped keeps the read-only view: the server refuses those edits, and
-       * a form that cannot save is worse than a sentence that never offered.
-       */}
+      {actionError ? (
+        <p className="text-destructive text-sm" role="alert">
+          {actionError.message}
+        </p>
+      ) : null}
+
       {profile.canManage ? (
-        <AgentFields
-          defaultValues={{
-            name: profile.name,
-            roleDescription: profile.roleDescription,
-            title: profile.title,
-            visibility: profile.visibility,
-            endpoint: profile.endpoint ?? "",
-            // The server never sends credentials back to the client.
-            authValue: "",
-          }}
-          hasAuth={profile.hasAuth}
-          error={updateAgent.error}
-          // No Cancel: there is nothing to cancel back to when the form is the pane.
-          onSubmit={async (values) => {
-            await updateAgent.mutateAsync({
-              agentId,
-              input: agentInputFrom(values),
-            });
-          }}
-          submitLabel={t("Save changes")}
+        <WorkStyleCard
+          agentId={agentId}
+          profile={profile}
+          roleDescription={profile.roleDescription}
         />
-      ) : (
+      ) : profile.roleDescription ? (
         <section className="grid gap-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t("Role")}
+          <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {t("How it works")}
           </h2>
-          <p className="text-sm whitespace-pre-wrap text-pretty">
+          <p className="whitespace-pre-wrap text-pretty text-sm">
             {profile.roleDescription}
           </p>
         </section>
-      )}
-
-      {actionError ? (
-        <p className="text-sm text-destructive" role="alert">
-          {actionError.message}
-        </p>
       ) : null}
 
       {/* Above notifications: how the Bot works comes before how it reaches you. */}
@@ -266,110 +313,261 @@ export function AgentProfile({ agentId }: { agentId: string }) {
 
       <MemoriesCard agentId={agentId} />
 
+      {profile.canManage ? <SkillsCard agentId={agentId} /> : null}
+
       <NotifyCard
         agentId={agentId}
         name={profile.name}
         notify={profile.notify}
       />
 
-      <div className="flex flex-col gap-2 w-full mt-6">
-        <Button
-          className="w-full text-sm!"
-          onClick={async () => {
-            await navigate({
-              search: { agent: agentId },
-              to: "/channel/new",
-            });
-          }}
-        >
-          {t("Start channel")}
-        </Button>
-
-        <Button
-          className="w-full text-sm!"
-          disabled={duplicateAgent.isPending}
-          onClick={async () => {
-            const copy = await duplicateAgent.mutateAsync(agentId);
-            await navigate({ search: { agent: copy.id }, to: "/agents" });
-          }}
-          variant="outline"
-        >
-          {duplicateAgent.isPending ? t("Duplicating…") : t("Duplicate")}
-        </Button>
-
-        <Button
-          className="w-full text-sm!"
-          disabled={setHidden.isPending}
-          onClick={async () => {
-            await setHidden.mutateAsync({
-              agentId,
-              hidden: !profile.hidden,
-            });
-            if (!profile.hidden) await navigate({ search: {}, to: "/agents" });
-          }}
-          variant="outline"
-        >
-          {setHidden.isPending
-            ? profile.hidden
-              ? t("Unhiding…")
-              : t("Hiding…")
-            : profile.hidden
-              ? t("Unhide")
-              : t("Hide")}
-        </Button>
-
-        {profile.hidden ? (
-          <p className="-mt-1 text-xs text-muted-foreground">
-            {t(
-              "Hidden from your Bot list. This changes nothing for anyone else.",
-            )}
-          </p>
-        ) : null}
-
-        {profile.canManage ? (
-          <>
-            <Separator className="my-1" />
-
-            {isConfirmingDelete ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-sm">
-                  {t("Delete {name}? This cannot be undone.", {
-                    name: profile.name,
-                  })}
-                </p>
-                {/* Cancel remains closest to the original Delete button position. */}
-                <Button
-                  className="w-full text-sm!"
-                  onClick={() => setConfirmingDeleteId(null)}
-                  variant="outline"
-                >
-                  {t("Cancel")}
-                </Button>
-                <Button
-                  className="w-full text-sm!"
-                  disabled={deleteAgent.isPending}
-                  onClick={async () => {
-                    await deleteAgent.mutateAsync(agentId);
-                    await navigate({ search: {}, to: "/agents" });
-                  }}
-                  variant="destructive"
-                >
-                  {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                className="w-full text-sm!"
-                onClick={() => setConfirmingDeleteId(agentId)}
-                variant="destructive"
-              >
-                {t("Delete")}
-              </Button>
-            )}
-          </>
-        ) : null}
-      </div>
+      {/*
+       * ASKED IN A DIALOG, NOT IN A SECOND BUTTON AT THE BOTTOM OF THE PANE.
+       *
+       * Delete used to sit under Duplicate and Hide in a stack of four full-width buttons, with the
+       * destructive one last and its confirmation replacing it in place — so the press that deletes
+       * a Bot landed where the press that asked about it had just been.
+       */}
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) setConfirmingDeleteId(null);
+        }}
+        open={isConfirmingDelete}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("Delete {name}?", { name: profile.name })}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                "Its conversations, its routines and everything it remembers go with it. This cannot be undone.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={() => setConfirmingDeleteId(null)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              disabled={deleteAgent.isPending}
+              onClick={async () => {
+                await deleteAgent.mutateAsync(agentId);
+                setConfirmingDeleteId(null);
+                await navigate({ search: {}, to: "/agents" });
+              }}
+              size="sm"
+              variant="destructive"
+            >
+              {deleteAgent.isPending ? t("Deleting…") : t("Delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+/**
+ * EVERYTHING YOU CAN DO TO A BOT, IN ONE PLACE, WITH ITS CONSEQUENCES WRITTEN DOWN.
+ *
+ * The four verbs used to be four full-width buttons stacked down the pane, in this order: start a
+ * conversation, duplicate, hide, delete. Three of the four are rare and one of them is permanent,
+ * and the sentence explaining what Hide does only appeared AFTER it had been pressed.
+ *
+ * So: one primary verb outside, the rest behind ⋯, and each one says what it does under its own
+ * name. Duplicate spends a seat, which is the thing nobody knew, so it says which seat.
+ */
+function BotMenu({
+  onDelete,
+  onDuplicate,
+  onEdit,
+  onToggleHidden,
+  profile,
+  seatsFull,
+  seatsLast,
+  seatsMessage,
+}: {
+  onDelete: () => void;
+  onDuplicate: () => Promise<void>;
+  onEdit: () => void;
+  onToggleHidden: () => Promise<void>;
+  profile: AgentProfileRecord;
+  seatsFull: boolean;
+  seatsLast: boolean;
+  seatsMessage: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            aria-label={t("Actions for {name}", { name: profile.name })}
+            size="icon"
+            variant="outline"
+          >
+            <IconDots />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuGroup>
+          {profile.canManage ? (
+            <DropdownMenuItem
+              className="flex-col items-start gap-0"
+              onClick={onEdit}
+            >
+              <span>{t("Edit profile")}</span>
+              <span className="text-muted-foreground text-xs">
+                {t("Its name and what it does.")}
+              </span>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem
+            className="flex-col items-start gap-0"
+            onClick={() => void onToggleHidden()}
+          >
+            <span>{profile.hidden ? t("Unhide") : t("Hide")}</span>
+            {/*
+             * THE EXPLANATION IS IN THE MENU, NOT AFTER THE PRESS. It used to appear as a line
+             * under the button once the Bot was already hidden, which is the one moment somebody
+             * has stopped needing it.
+             */}
+            <span className="text-muted-foreground text-xs">
+              {profile.hidden
+                ? t("Put it back on your Bot list.")
+                : t("Off your Bot list. It keeps working, and keeps its seat.")}
+            </span>
+          </DropdownMenuItem>
+          {profile.canManage ? (
+            <DropdownMenuItem
+              className="flex-col items-start gap-0"
+              disabled={seatsFull}
+              onClick={() => void onDuplicate()}
+            >
+              <span>{t("Duplicate")}</span>
+              <span className="text-muted-foreground text-xs">
+                {seatsFull
+                  ? seatsMessage
+                  : seatsLast
+                    ? t(
+                        "A copy with the same settings. It takes your last seat.",
+                      )
+                    : t("A copy with the same settings. It takes a seat.")}
+              </span>
+            </DropdownMenuItem>
+          ) : null}
+          {profile.canManage ? (
+            <DropdownMenuItem
+              className="flex-col items-start gap-0"
+              onClick={onDelete}
+              variant="destructive"
+            >
+              <span>{t("Delete")}</span>
+              <span className="text-xs opacity-80">
+                {t("It asks first. There is no undo.")}
+              </span>
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * WHAT THIS BOT IS FOR, IN THE OWNER'S OWN WORDS.
+ *
+ * The standing instruction the model is given on every run. It is the one field on this pane worth
+ * a paragraph, and it used to be the third input of a five-field form — saved by a button that
+ * said "Save changes" and then said nothing at all, so the only way to know it had worked was to
+ * close the pane and open it again.
+ *
+ * A PATCH, with the fields the parser requires sent back unchanged, and `endpoint` deliberately
+ * absent — the same rule the face picker follows.
+ */
+function WorkStyleCard({
+  agentId,
+  profile,
+  roleDescription,
+}: {
+  agentId: string;
+  profile: AgentProfileRecord;
+  roleDescription: string;
+}) {
+  const queryClient = useQueryClient();
+  const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
+  const [draft, setDraft] = useState(roleDescription);
+  const [saved, flashSaved] = useSavedFlash();
+  const labelId = useId();
+  const dirty = draft.trim() !== roleDescription.trim();
+
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-medium text-base" id={labelId}>
+          {t("How it works")}
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "What you want it to do, and how. It reads this before every job. Leaving it empty is fine — it will ask.",
+          )}
+        </p>
+      </div>
+      <Textarea
+        aria-labelledby={labelId}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder={t(
+          "Review receipts, categorize expenses, and prepare reimbursement reports.",
+        )}
+        rows={4}
+        value={draft}
+      />
+      {dirty ? (
+        <div className="flex gap-2">
+          <Button
+            disabled={updateAgent.isPending}
+            onClick={async () => {
+              await updateAgent.mutateAsync({
+                agentId,
+                input: {
+                  name: profile.name,
+                  roleDescription: draft.trim(),
+                  title: profile.title,
+                  visibility: profile.visibility,
+                },
+              });
+              flashSaved();
+            }}
+            size="sm"
+          >
+            {updateAgent.isPending ? t("Saving…") : t("Save")}
+          </Button>
+          <Button
+            disabled={updateAgent.isPending}
+            onClick={() => setDraft(roleDescription)}
+            size="sm"
+            variant="outline"
+          >
+            {t("Cancel")}
+          </Button>
+        </div>
+      ) : null}
+      {saved ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          {t("Saved")}
+        </p>
+      ) : null}
+      {updateAgent.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {updateAgent.error.message}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -459,23 +657,6 @@ function EffortCard({
 }
 
 /**
- * What you have already decided not to be asked about.
- *
- * The Boundaries page says which actions stop; this says which of those stops the person who owns
- * this Bot has answered in advance. It is the same widening as pressing "always allow" on a card,
- * written ahead of time and in words instead — and it is a model that reads it, against an action
- * partly described by a page somebody else controls. So the card says both of those out loud rather
- * than presenting itself as a rule.
- *
- * SAVED ON A BUTTON, not on every keystroke. Everything else on this screen applies as you press
- * it, and this one must not: half a sentence is a different instruction from the whole one, and an
- * instruction that took effect while it was being typed would be judged in states nobody meant to
- * write.
- *
- * PATCH, not `/profile`. The merging endpoint is what a Bot's own tool posts to, and this is the
- * one field a Bot must never write.
- */
-/**
  * WHAT THIS BOT HAS LEARNED, AND THE BUTTON THAT UNDOES IT.
  *
  * The competing product keeps the same thing and its own documentation says you cannot inspect,
@@ -486,6 +667,10 @@ function EffortCard({
  * Shown to everybody who can see the Bot rather than only to whoever manages it, because these are
  * the reader's own — a shared coworker keeps what it learned from each person separately, and
  * nobody else's is on this list.
+ *
+ * DRAWN EMPTY, TOO. It used to return null with nothing learned yet, so the one question this card
+ * answers — what does it know about me — had no answer at all until it had a worrying one. An empty
+ * list is the reassuring case and it should be readable.
  */
 function MemoriesCard({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
@@ -499,7 +684,7 @@ function MemoriesCard({ agentId }: { agentId: string }) {
     try {
       await fetch(
         `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
-        { method: "DELETE", credentials: "include" },
+        { credentials: "include", method: "DELETE" },
       );
       await queryClient.invalidateQueries({
         queryKey: agentKeys.memories(agentId),
@@ -509,8 +694,9 @@ function MemoriesCard({ agentId }: { agentId: string }) {
     }
   };
 
-  // Nothing learned yet is not a card worth drawing: an empty heading reads as a broken feature.
-  if (isPending || !memories || memories.length === 0) return null;
+  // Nothing is claimed before the answer arrives: "it remembers nothing" is as much a claim as a
+  // list, and it was being made while the request was still in flight.
+  if (isPending) return null;
 
   return (
     <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
@@ -522,41 +708,158 @@ function MemoriesCard({ agentId }: { agentId: string }) {
           )}
         </p>
       </div>
-      <ul className="flex flex-col gap-1">
-        {memories.map((memory) => (
-          <li
-            className="flex items-start gap-2 rounded-lg bg-background px-3 py-2"
-            key={memory.id}
-          >
-            <p className="flex-1 text-pretty text-sm">{memory.content}</p>
-            <Button
-              disabled={forgetting === memory.id}
-              onClick={() => void forget(memory.id)}
-              size="sm"
-              variant="ghost"
+      {memories && memories.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {memories.map((memory) => (
+            <li
+              className="flex items-start gap-2 rounded-lg bg-background px-3 py-2"
+              key={memory.id}
             >
-              {t("Forget")}
-            </Button>
-          </li>
-        ))}
-      </ul>
+              <p className="flex-1 text-pretty text-sm">{memory.content}</p>
+              <Button
+                disabled={forgetting === memory.id}
+                onClick={() => void forget(memory.id)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("Forget")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-lg bg-background px-3 py-2 text-muted-foreground text-sm">
+          {t("Nothing yet. What it learns about you appears here.")}
+        </p>
+      )}
     </section>
   );
 }
 
 /**
- * NOT DRAWN WHERE THIS DEPLOYMENT'S MODEL CANNOT DO IT, for the same reason the effort card is not.
+ * WHICH OF YOUR SKILLS THIS BOT CARRIES.
  *
- * This card is a promise that a sentence somebody writes will be read against each stopped action.
- * On a model that cannot answer a yes/no inside the boundary's timeout the promise is silently
- * false — they keep being asked, exactly as if the box were empty — and the server measures that
- * once at boot rather than guessing (see `createAutoReviewProbe`).
+ * A skill is a named instruction invoked with `/`, and putting one on a Bot is the owner's decision
+ * about their own Bot — the endpoint has said so all along (`enablementRefusal` lets a non-admin
+ * grant their OWN skill to a Bot they OWN, and refuses everything else). The control for it was
+ * only ever drawn on the admin screen, so on the surface the shop owner actually uses, a skill they
+ * had written could not be given to a Bot they had made.
  *
- * A Bot that already has an instruction saved gets a sentence instead of nothing at all. Removing
- * the card outright would leave somebody believing a rule they wrote is in force, which is the same
- * lie in a quieter voice; the instruction is still there and comes back the moment the deployment
- * can honour it.
+ * Only their own skills are listed. The deployment's are an administrator's to hand out, and the
+ * server refuses this person either way; an affordance that always fails is worse than none.
  */
+function SkillsCard({ agentId }: { agentId: string }) {
+  const queryClient = useQueryClient();
+  const { data: me } = useQuery(currentUserQueryOptions());
+  const { data, isPending } = useQuery(pluginsPageQueryOptions());
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const mine = (data?.skills ?? []).filter(
+    (skill) => skill.ownerUserId && skill.ownerUserId === me?.id,
+  );
+  // Nothing to grant and nothing to say: the Skills page is where a first one gets written.
+  if (isPending || mine.length === 0) return null;
+
+  const toggle = async (slug: string, held: boolean) => {
+    setBusy(slug);
+    setProblem(null);
+    try {
+      const response = held
+        ? await fetch(
+            `/api/plugins/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(agentId)}`,
+            { credentials: "include", method: "DELETE" },
+          )
+        : await fetch("/api/plugins/grants", {
+            body: JSON.stringify({ agentId, kind: "skill", ref: slug }),
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            method: "POST",
+          });
+      if (!response.ok) {
+        // The server's own sentence is the operator's; the surface owns the words a person reads.
+        setProblem(t("That did not go through. Try again."));
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: pluginKeys.all });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-[var(--sand-fill-secondary)] p-3">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-medium text-base">{t("Skills")}</h2>
+        <p className="text-muted-foreground text-sm">
+          {t("A Bot carrying one offers it in the composer as /name.")}
+        </p>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {mine.map((skill) => {
+          const held = skill.grantedTo.includes(agentId);
+          return (
+            <li
+              className="flex items-center gap-2 rounded-lg bg-background px-3 py-2"
+              key={skill.id}
+            >
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm">{skill.title}</span>
+                <code className="truncate font-mono text-muted-foreground text-xs">
+                  /{skill.slug}
+                </code>
+              </span>
+              <Switch
+                aria-label={skill.title}
+                checked={held}
+                disabled={busy === skill.slug}
+                onCheckedChange={() => void toggle(skill.slug, held)}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {problem ? (
+        <p className="text-destructive text-sm" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * What you have already decided not to be asked about.
+ *
+ * The Boundaries page says which actions stop; this says which of those stops the person who owns
+ * this Bot has answered in advance. It is the same widening as pressing "always allow" on a card,
+ * written ahead of time and in words instead.
+ *
+ * ONE SENTENCE, AND THREE EXAMPLES. It used to be three paragraphs of caveat — a warning that a
+ * model reads it, a warning about what the deployment forbids, and a promise that anything let
+ * through is "recorded that way in the audit trail", which is a trail an owner has no screen for.
+ * A control nobody dares touch is a control nobody has. The examples fill the box, because the hard
+ * part is not being warned, it is knowing what a sentence like this looks like.
+ *
+ * SAVED ON A BUTTON, not on every keystroke: half a sentence is a different instruction from the
+ * whole one, and an instruction that took effect while it was being typed would be judged in states
+ * nobody meant to write.
+ *
+ * PATCH, not `/profile`. The merging endpoint is what a Bot's own tool posts to, and this is the
+ * one field a Bot must never write.
+ *
+ * NOT DRAWN WHERE THIS DEPLOYMENT'S MODEL CANNOT DO IT, for the same reason the effort card is not:
+ * on a model that cannot answer a yes/no inside the boundary's timeout the promise is silently
+ * false — they keep being asked, exactly as if the box were empty. A Bot that already has an
+ * instruction saved gets a sentence instead of nothing at all, because removing the card outright
+ * would leave somebody believing a rule they wrote is in force.
+ */
+const AUTO_REVIEW_EXAMPLES = [
+  "Reading anything on our own site is fine.",
+  "Looking things up is fine. Sending anything is not.",
+  "Saving a draft is fine.",
+];
+
 function AutoReviewCard({
   agentId,
   instruction,
@@ -569,6 +872,7 @@ function AutoReviewCard({
   const { data: profile } = useQuery(agentQueryOptions(agentId));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
   const [draft, setDraft] = useState(instruction);
+  const [saved, flashSaved] = useSavedFlash();
   const labelId = useId();
   const dirty = draft.trim() !== instruction.trim();
 
@@ -597,7 +901,7 @@ function AutoReviewCard({
         </h2>
         <p className="text-muted-foreground text-sm">
           {t(
-            "When this Bot is stopped for your permission, this is read first. Write what you are happy for it to get on with; it is asked about everything else.",
+            "Write what this Bot may get on with. It is asked about everything else.",
           )}
         </p>
       </div>
@@ -608,29 +912,38 @@ function AutoReviewCard({
         rows={3}
         value={draft}
       />
-      <p className="text-muted-foreground text-xs">
-        {t(
-          "A model reads this against each stopped action, so keep it to things you would recognise. Anything it lets through was seen by nobody, and is recorded that way in the audit trail. What the deployment forbids outright is never affected.",
-        )}
-      </p>
+      {/* One tap writes a sentence of the right shape into the box, where it can be edited. */}
+      <div className="flex flex-wrap gap-1.5">
+        {AUTO_REVIEW_EXAMPLES.map((example) => (
+          <button
+            className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-ring/40 hover:text-foreground"
+            key={example}
+            onClick={() => setDraft(t(example))}
+            type="button"
+          >
+            {t(example)}
+          </button>
+        ))}
+      </div>
       {dirty ? (
         <div className="flex gap-2">
           <Button
             disabled={updateAgent.isPending}
-            onClick={() => {
+            onClick={async () => {
               if (!profile) return;
-              updateAgent.mutate({
+              await updateAgent.mutateAsync({
                 agentId,
                 // A PATCH replaces what it carries, so the fields the parser requires go back
                 // unchanged — the same reason the face picker sends them.
                 input: {
-                  name: profile.name,
-                  title: profile.title,
-                  roleDescription: profile.roleDescription,
-                  visibility: profile.visibility,
                   autoReview: draft.trim(),
+                  name: profile.name,
+                  roleDescription: profile.roleDescription,
+                  title: profile.title,
+                  visibility: profile.visibility,
                 },
               });
+              flashSaved();
             }}
             size="sm"
           >
@@ -645,6 +958,11 @@ function AutoReviewCard({
             {t("Cancel")}
           </Button>
         </div>
+      ) : null}
+      {saved ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          {t("Saved")}
+        </p>
       ) : null}
       {updateAgent.error ? (
         <p className="text-destructive text-sm" role="alert">

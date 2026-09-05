@@ -50,6 +50,19 @@ export const agentFormSchema = z.object({
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
 
+/**
+ * The two fields an owner is ever asked for.
+ *
+ * A subset rather than a second schema, so the bounds cannot drift apart: the name limit that the
+ * profile form checks is the same object the server parser was written against.
+ */
+export const agentProfileFormSchema = agentFormSchema.pick({
+  name: true,
+  title: true,
+});
+
+export type AgentProfileFormValues = z.infer<typeof agentProfileFormSchema>;
+
 export const emptyAgentForm: AgentFormValues = {
   name: "",
   title: "",

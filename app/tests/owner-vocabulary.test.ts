@@ -63,12 +63,15 @@ const FORBIDDEN: Record<string, string> = {
  * Every exception here has to name the gate that hides it, and goes the moment the gate does.
  */
 const BEHIND_AN_ADMIN_GATE = new Set([
-  // `agent-fields.tsx` puts these three inside the 고급 disclosure, which is not rendered at all
-  // unless the reader is an administrator: every Bot a person makes is `remote_ag_ui` on this
-  // deployment's own endpoint, so an owner has nothing to type there.
-  "Agent endpoint (optional)",
-  "Key for that agent (optional)",
-  "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.",
+  /*
+   * THREE EXCEPTIONS LEFT HERE, and their absence is the point.
+   *
+   * The endpoint, its key and the sentence under them used to be exempted because `agent-fields.tsx`
+   * hid them behind a 고급 disclosure that only rendered for `role === "admin"` — which on one VM
+   * per person is the shop owner. A gate that opens for the reader it was written to exclude is not
+   * a gate, and the exception was doing the work of pretending otherwise. They live on
+   * `/admin/bots` now, which this walk does not read at all, so nothing needs excusing.
+   */
   /*
    * The approval card's footnote names the admin screen where a standing allowance is taken back,
    * and the manual names it the same way ("관리 화면의 경계 설정"). Memo item 6 — that a non-admin

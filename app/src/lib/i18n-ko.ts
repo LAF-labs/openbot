@@ -2,9 +2,15 @@
 export const ko: Record<string, string> = {
   ", reported by the Bot itself": " — 봇이 스스로 알린 내용",
   "1 item in the workspace": "작업 공간에 항목 1개",
+  "A Bot carrying one offers it in the composer as /name.":
+    "기술을 가진 봇은 입력창에서 /이름으로 불러낼 수 있습니다.",
   "A Bot carrying this offers /{slug} in its composer.":
     "이 스킬을 가진 봇은 입력창에서 /{slug}를 제공합니다.",
   "A click applies it right away.": "클릭하면 바로 적용됩니다.",
+  "A copy with the same settings. It takes a seat.":
+    "설정까지 그대로 복사합니다. 자리를 하나 씁니다.",
+  "A copy with the same settings. It takes your last seat.":
+    "설정까지 그대로 복사합니다. 남은 마지막 자리를 씁니다.",
   "A key is set. Type a new one to replace it.":
     "키가 설정되어 있습니다. 바꾸려면 새로 입력하세요.",
   "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.":
@@ -37,6 +43,7 @@ export const ko: Record<string, string> = {
   "Acorn cat": "도토리 모자 고양이",
   "Actions for /{slug}": "/{slug} 작업",
   Add: "추가",
+  "Actions for {name}": "{name} 관리",
   "Add a server by URL": "URL로 서버 추가",
   "Add another…": "다른 봇 추가…",
   "Add credential": "자격증명 추가",
@@ -59,15 +66,18 @@ export const ko: Record<string, string> = {
   "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.":
     "이 규칙 때문에 물었습니다. 한 번 허용은 이 행동에만, 다른 하나는 누군가 취소할 때까지 같은 행동 전부에 적용됩니다.",
   Blocked: "차단됨",
+  "Bot endpoints": "봇 주소",
   "Could not be replaced": "교체하지 못함",
   "Credential replaced": "자격증명이 교체됨",
   "Credential retired": "자격증명이 폐기됨",
   "Decide what it does by talking to it.": "무엇을 맡길지 대화로 정해요.",
   "Dry run: recorded, not enforced": "드라이런: 기록만 하고 적용하지 않음",
   "Give the routine a name.": "루틴 이름을 지어 주세요.",
+  "How it works": "일하는 방식",
   "It arrives with nothing set. What it does is decided in the conversation.":
     "아무것도 정해지지 않은 채로 옵니다. 무엇을 할지는 대화하면서 정해요.",
   "It asked for a secret instead": "대신 비밀값을 요청함",
+  "It asks first. There is no undo.": "먼저 확인합니다. 되돌릴 수 없습니다.",
   "It is waiting on your answer.": "답을 기다리고 있습니다.",
   "It is waiting on an answer about something this screen cannot name.":
     "이 화면이 이름을 알 수 없는 일에 대해 답을 기다리고 있습니다.",
@@ -106,17 +116,31 @@ export const ko: Record<string, string> = {
   "It wants to press “{name}”.": "‘{name}’{particle} 누르려 합니다.",
   "It wants to press “{name}” on {host}.":
     "{host}에서 ‘{name}’{particle} 누르려 합니다.",
+  "Its conversations, its routines and everything it remembers go with it. This cannot be undone.":
+    "대화와 루틴, 기억한 내용까지 함께 사라집니다. 되돌릴 수 없습니다.",
+  "Its name and what it does.": "이름과 하는 일.",
+  "Looking things up is fine. Sending anything is not.":
+    "찾아보는 건 괜찮아요. 보내는 건 안 됩니다.",
   "Model usage recorded": "모델 사용량이 기록됨",
   "My Bots {used}/{total}": "내 봇 {used}/{total}",
   "No rule allows it": "허용하는 규칙이 없음",
   "Nobody answered in time": "아무도 답하지 않음",
   "Nothing here is required. You can change all of it later.":
     "여기는 아무것도 필수가 아닙니다. 나중에 다 바꿀 수 있어요.",
+  "Nothing yet. What it learns about you appears here.":
+    "아직 없습니다. 봇이 알게 된 내용이 여기에 쌓입니다.",
+  "Off your Bot list. It keeps working, and keeps its seat.":
+    "봇 목록에서만 감춥니다. 계속 일하고, 자리도 그대로 씁니다.",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
   Refused: "거부됨",
   "Pick a Bot first.": "봇을 먼저 고르세요.",
   Saved: "저장됨",
+  "Point a Bot at an agent you host yourself. Left alone, every Bot runs on this deployment.":
+    "직접 운영하는 곳으로 봇을 연결합니다. 비워 두면 모든 봇이 이 서버에서 실행됩니다.",
+  "Put it back on your Bot list.": "봇 목록에 다시 보이게 합니다.",
+  "Runs here": "이 서버에서 실행",
+  "Saving a draft is fine.": "초안으로 저장하는 건 괜찮아요.",
   "Say what the routine should do each time.":
     "루틴이 매번 무엇을 할지 적어 주세요.",
   "Say when it should run.": "언제 돌릴지 정해 주세요.",
@@ -168,6 +192,10 @@ export const ko: Record<string, string> = {
   "Updated its own profile": "자기 프로필을 바꿨습니다",
   "What it does": "하는 일",
   "What it does (optional)": "하는 일 (선택)",
+  "What you want it to do, and how. It reads this before every job. Leaving it empty is fine — it will ask.":
+    "무엇을 어떻게 해 주면 좋을지 적어 주세요. 일할 때마다 먼저 읽습니다. 비워 두면 봇이 직접 물어봅니다.",
+  "Write what this Bot may get on with. It is asked about everything else.":
+    "그냥 진행해도 되는 일을 적어 주세요. 나머지는 모두 물어봅니다.",
   "You said no to this recently": "최근에 아니라고 답함",
   name: "이름",
   title: "직함",
