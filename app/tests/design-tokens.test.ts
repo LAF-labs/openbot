@@ -97,7 +97,6 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "components/agents/agent-profile.tsx": 1,
     "components/app-sidebar/bot-row.tsx": 5,
     "components/app-sidebar/bot-sidebar.tsx": 9,
-    "components/app-sidebar/group-row.tsx": 5,
     "components/avatar/bot-avatar-picker.tsx": 1,
     "components/channels/chat-transcript.tsx": 3,
     "components/channels/composer/composer.tsx": 6,
@@ -105,9 +104,7 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "routes/_authed/_app/channel/$channelId.tsx": 1,
     "routes/_authed/_app/channel/new.tsx": 2,
   },
-  ring: {
-    "components/channels/chat-transcript.tsx": 2,
-  },
+  ring: {},
 };
 
 /**

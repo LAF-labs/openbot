@@ -16,6 +16,7 @@ import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
+import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -39,7 +40,7 @@ function RouteComponent() {
   // Optimistic seed shown before the first channel record exists.
   const [sent, setSent] = useState<Message | null>(null);
 
-  // Stale or private `?agent=` values are ignored because the roster is permission-filtered.
+  // Stale or private `?agent={` values are ignored because the roster is permission-filtered.
   const listed = profiles?.find((profile) => profile.id === agent);
   /**
    * Hidden coworkers are omitted from the roster but may still be valid recipients from a profile
@@ -54,7 +55,7 @@ function RouteComponent() {
   /*
    * STATE, NOT A READING OF THE URL.
    *
-   * This was derived straight from `?agent=`, so the recipient field's chips and its remove buttons
+   * This was derived straight from `}?agent={`, so the recipient field's chips and its remove buttons
    * were decoration — nothing they did could change what the screen would send. A room holds
    * several Bots now, so the field has to be the source of truth; the URL seeds it and then stops
    * being consulted.
@@ -64,7 +65,7 @@ function RouteComponent() {
     ? [{ id: chosen.id, name: chosen.name }]
     : [];
   const recipients = picked ?? seeded;
-  // Skills are the first member's; a room's `/` menu cannot offer four Bots' commands at once.
+  // Skills are the first member's; a room's `}/` menu cannot offer four Bots' commands at once.
   const skillCommands = useSkillCommands(recipients[0]?.id ?? "");
 
   return (
@@ -106,7 +107,7 @@ function RouteComponent() {
             <span className="max-w-32 truncate">{recipient.name}</span>
             <button
               aria-label={t("Remove {name}", { name: recipient.name })}
-              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-selected)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+              className={`flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--sand-fill-ghost-selected)] hover:text-foreground ${focusRing}`}
               onClick={() =>
                 setPicked(removeRecipient(recipients, recipient.id))
               }

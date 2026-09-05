@@ -86,9 +86,18 @@ describe("what a keyboard sees", () => {
     }
   });
 
-  test("the ring is the one ui/button.tsx draws, not a second invention", () => {
-    const primitive = readFileSync(
-      join(import.meta.dir, "../src/components/ui/button.tsx"),
+  test("the ring is the house one, not a second invention", () => {
+    /*
+     * Named rather than spelled out. This card wrote the three classes by hand when it was fixed,
+     * and `ui/focus.ts` landed the same afternoon to stop exactly that from happening in twelve
+     * places; a copy left behind here is a copy that drifts when the house ring changes.
+     */
+    expect(view).toContain('from "@/components/ui/focus"');
+    expect(view).toMatch(/const FOCUS_RING = `[^`]*\$\{focusRing\}`/);
+    expect(view).not.toContain("focus-visible:ring-ring/50");
+
+    const house = readFileSync(
+      join(import.meta.dir, "../src/components/ui/focus.ts"),
       "utf8",
     );
     for (const cls of [
@@ -96,15 +105,28 @@ describe("what a keyboard sees", () => {
       "focus-visible:ring-3",
       "focus-visible:ring-ring/50",
     ]) {
-      expect(primitive).toContain(cls);
-      expect(view).toContain(cls);
+      expect(house).toContain(cls);
     }
   });
 
+  test("the ring has a border box to recolour, which is half of the house ring", () => {
+    // `focus-visible:border-ring` recolours a border; on the picture there was none to recolour.
+    expect(view).toContain("border border-transparent bg-clip-padding");
+  });
+
   test("the full-size view's backdrop rings inside itself, in white", () => {
-    // It is the whole viewport: an ordinary ring is drawn outside it and clipped away.
+    /*
+     * It is the whole viewport: an outward ring is drawn past its edges and clipped away. And the
+     * scrim is black in both themes, while `--ring` in the light theme is 40%-alpha black.
+     *
+     * Spelled out rather than composed from `focusRingInset`, and measured: composing left the
+     * computed ring at the house colour, because a plain template string cannot resolve two ring
+     * colours and Tailwind orders its output by utility rather than by class order.
+     */
     expect(view).toContain("focus-visible:ring-inset");
     expect(view).toContain("focus-visible:ring-white/70");
+    const backdrop = view.slice(view.indexOf("bg-black/80"));
+    expect(backdrop.slice(0, 160)).not.toContain("focusRingInset");
   });
 
   test("the pill controls are the shared primitive rather than more bespoke buttons", () => {

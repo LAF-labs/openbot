@@ -36,6 +36,7 @@ import {
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { turnFailureSentence } from "@/lib/channels/turn-failure";
+import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
@@ -247,7 +248,7 @@ function Queued({
                * because the bubble it sits under is the answer for everybody who can see it.
                */
               aria-label={t("Remove queued message: {text}", { text })}
-              className="ml-2 underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className={`ml-2 underline underline-offset-2 hover:text-foreground ${focusRing}`}
               onClick={onRemove}
               type="button"
             >

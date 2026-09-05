@@ -4,6 +4,7 @@ import { TeachATask } from "@/components/computer/teach-a-task";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
+import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { pokeControl, watchControl } from "./control-poll";
 import { decodeFrame, paintFrame } from "./frame-bitmap";
@@ -51,15 +52,15 @@ const DEFAULT_MIN_HEIGHT = 200;
 const CARD_PADDING = "p-2";
 
 /**
- * The focus ring, copied verbatim from `ui/button.tsx` rather than invented here.
+ * The house ring, from `ui/focus.ts`, plus the border box it needs to recolour.
  *
  * These buttons cannot all be the `Button` primitive — one is the picture itself and one is a
- * full-screen backdrop — and every one of them used to take focus and show nothing at all, so a
- * keyboard could reach the Bot's screen, its takeover and its close button while pointing at
- * nowhere visible.
+ * full-screen backdrop — and what they showed a keyboard before was the browser's own
+ * `outline: auto 1px`, in the colour the base layer sets to 20%-alpha black. Measured: on the
+ * full-size view's black scrim that is nothing at all, and everywhere else it is a ring from a
+ * different design than the one every other control in the app draws.
  */
-const FOCUS_RING =
-  "border border-transparent bg-clip-padding outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const FOCUS_RING = `border border-transparent bg-clip-padding ${focusRing}`;
 
 /**
  * The full-size view's own controls, which sit on a black scrim in both themes.
@@ -343,6 +344,9 @@ export function ComputerView({
             ref={canvasRef}
             aria-hidden={!showScreen}
             aria-label={t("What the Bot is looking at")}
+            // A canvas has no implicit role, so without this the label it carries is announced by
+            // nothing. The `<img>` it replaced got that for free from its `alt`.
+            role="img"
             // Keep unexpected screenshot dimensions inside the reserved frame.
             className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${showScreen ? "opacity-100" : "opacity-0"}`}
           />
@@ -433,7 +437,7 @@ export function ComputerView({
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder={t("Typed here, never shown to the Bot")}
-                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className={`min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm ${focusRing}`}
               />
               <Button
                 disabled={!secret || sendingSecret}
@@ -544,14 +548,20 @@ export function ComputerView({
                 aria-hidden={driving}
                 tabIndex={driving ? -1 : 0}
                 /*
-                 * INSET RING, AND WHITE RATHER THAN THE THEME'S.
+                 * INSET RING, AND WHITE RATHER THAN THE THEME'S — SPELLED OUT, NOT COMPOSED.
                  *
-                 * This element is the whole viewport, so the ordinary ring is drawn outside it and
-                 * clipped away — a keyboard user tabbing onto the close target saw nothing at all.
-                 * And the scrim is black in both themes while `--ring` in the light theme is
-                 * near-black at 40% alpha, which on black is not a ring either.
+                 * This element is the whole viewport, so an outward ring is drawn past its edges
+                 * and clipped away. And the scrim is black in BOTH themes while `--ring` is
+                 * near-black at 40% alpha in the light one, so the house colour is not a ring here
+                 * either.
+                 *
+                 * `${focusRingInset} focus-visible:ring-white/70` was tried and measured: the
+                 * computed ring came back `oklab(0.19 … / 0.2) 2px inset`, the house colour, because
+                 * this is a plain template string rather than a `cn()` call and Tailwind orders its
+                 * output by utility, not by the order classes appear in the attribute. Two ring
+                 * colours in one class list is a coin toss, and it landed on invisible.
                  */
-                className={`absolute inset-0 bg-black/80 outline-none focus-visible:ring-3 focus-visible:ring-white/70 focus-visible:ring-inset ${driving ? "cursor-default" : "cursor-zoom-out"}`}
+                className={`absolute inset-0 bg-black/80 outline-hidden focus-visible:ring-3 focus-visible:ring-white/70 focus-visible:ring-inset ${driving ? "cursor-default" : "cursor-zoom-out"}`}
               />
               <div className="relative mb-3 flex items-center justify-between gap-4 text-sm text-white">
                 <span className="pointer-events-none">

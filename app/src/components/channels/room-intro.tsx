@@ -37,10 +37,10 @@ export const RoomIntro = ({
         ))}
       </div>
       <div className="flex flex-col gap-1">
-        <span className="font-semibold text-[15px]">
+        <span className="font-semibold text-base">
           {members.map((member) => member.name).join(", ")}
         </span>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">
+        <p className="text-muted-foreground text-sm leading-relaxed">
           {t(
             "Everyone here answers the same message in turn. Address one with @, or ask them all at once.",
           )}

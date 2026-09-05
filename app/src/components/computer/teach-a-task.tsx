@@ -8,6 +8,7 @@ import {
   slugFrom,
   writeUpRecording,
 } from "@/lib/computer/demonstration";
+import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 
 /**
@@ -19,9 +20,8 @@ import { t } from "@/lib/i18n";
  */
 const ROW = "border-t pt-2 text-sm";
 
-/** Same ring as `ui/button.tsx`, for the fields this panel rolls by hand. */
-const FIELD_FOCUS =
-  "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+/** The house ring from `ui/focus.ts`, for the two fields this panel rolls by hand. */
+const FIELD_FOCUS = focusRing;
 
 /**
  * Show a Bot how a task is done by doing it once, and keep what you did.
@@ -119,8 +119,14 @@ export function TeachATask({
         className={`flex flex-wrap items-center justify-between gap-2 ${ROW}`}
       >
         <span>
-          {/* The tint that used to say "this is live" moved onto the word itself. */}
-          <strong className="font-medium text-primary">{t("Recording")}</strong>{" "}
+          {/*
+           * The `bg-primary/5` band that used to say "this is live" is gone with the other tinted
+           * rows, and nothing coloured replaces it: `--primary` and `--foreground` are the same
+           * near-black in the light theme and the same near-white in the dark one, so `text-primary`
+           * here would be a class that looks like it does something and does nothing. The word is
+           * bold and the number beside it climbs once a second, which is the signal.
+           */}
+          <strong className="font-medium">{t("Recording")}</strong>{" "}
           <span className="text-muted-foreground">
             {t("{count} steps so far. Hand back when you are done.", {
               count: String(recording.steps.length),

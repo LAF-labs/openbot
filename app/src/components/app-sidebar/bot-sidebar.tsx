@@ -32,6 +32,7 @@ import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { focusRing } from "@/components/ui/focus";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -95,6 +96,17 @@ import { cn } from "@/lib/utils";
  * truncated, is a rail only to the eye. `rem` inside a media query is the INITIAL root font size and
  * not this app's 14px root, so 64rem here is the same 1024px `lg:` compiles to.
  */
+/**
+ * The two widths this column has, as values rather than as classes.
+ *
+ * `--sand-sidebar-width` is the token that decides how wide the open column is, and written into a
+ * class it becomes `w-[var(--sand-…)]` — a raw variable in a class string, which is what
+ * `app/tests/design-tokens.test.ts` counts as drift. The rail's 64px sits beside it so the two are
+ * read from one place.
+ */
+const SIDEBAR_WIDTH = "var(--sand-sidebar-width)";
+const RAIL_WIDTH = "4rem";
+
 const WIDE_QUERY = "(min-width: 64rem)";
 
 const isWideViewport = () =>
@@ -155,8 +167,7 @@ const ICON_BUTTON_CLASS = cn(
 );
 
 /** The footer's links, sharing the roster rows' focus ring for the same reason they now have one. */
-const NAV_LINK_CLASS =
-  "flex h-10 items-center rounded-lg border border-transparent bg-clip-padding text-base outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[status=active]:bg-[var(--sand-fill-ghost-selected)]";
+const NAV_LINK_CLASS = `flex h-10 items-center rounded-lg border border-transparent bg-clip-padding text-base outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)]`;
 
 const FooterLink = ({
   icon: Icon,
@@ -672,10 +683,8 @@ export function BotSidebar() {
   return (
     <nav
       aria-label={t("Your team")}
-      className={cn(
-        "flex h-full shrink-0 flex-col border-border border-r bg-sidebar transition-[width] duration-200 ease-out",
-        isRail ? "w-16" : "w-[var(--sand-sidebar-width)]",
-      )}
+      className="flex h-full shrink-0 flex-col border-border border-r bg-sidebar transition-[width] duration-200 ease-out"
+      style={{ width: isRail ? RAIL_WIDTH : SIDEBAR_WIDTH }}
     >
       {/*
        * The title row is the height of the window chrome it sits under, so the desktop build's

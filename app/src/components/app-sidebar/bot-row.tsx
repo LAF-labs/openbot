@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useBotMood } from "@/lib/agents/bot-mood";
 import { openQuestions, watchQuestions } from "@/lib/approvals";
+import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 
 /**
@@ -33,16 +34,24 @@ import { t } from "@/lib/i18n";
  * name + role + time while a room row drew name + time and nothing else, so two rows in the same
  * list answered different questions. Both rows are now this frame plus `RosterRowLines`.
  *
- * `focus-visible:*` and the transparent border it paints are lifted verbatim from
- * `components/ui/button.tsx`, because neither row had a focus ring at all: a keyboard walking the
- * roster moved through five colleagues with nothing on screen saying which one it was on.
+ * The focus ring is `focusRing`, the house one, because neither row had a ring at all: a keyboard
+ * walking the roster moved through five colleagues with nothing on screen saying which one it
+ * was on.
  */
-export const ROSTER_ROW_CLASS =
-  "flex h-[var(--sand-row-height)] w-full flex-row items-center gap-2 rounded-lg border border-transparent bg-clip-padding px-2 outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]";
+/**
+ * WHAT A ROSTER ROW IS MADE OF, WRITTEN ONCE.
+ *
+ * The full row and the rail row differ only in whether the words are there, and both of them used
+ * to spell out the whole thing — the height, both ghost fills twice over, and the focus ring. Six
+ * raw `--sand-*` variables and a hand-copied ring, duplicated, which is exactly the drift
+ * `app/tests/design-tokens.test.ts` exists to stop. Shared here so there is one of each.
+ */
+const ROSTER_ROW_SHARED = `h-[var(--sand-row-height)] w-full flex-row items-center rounded-lg border border-transparent bg-clip-padding transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]`;
+
+export const ROSTER_ROW_CLASS = `flex gap-2 px-2 ${ROSTER_ROW_SHARED}`;
 
 /** The same row with the words taken out: a face centred in the 64px rail. */
-export const ROSTER_RAIL_ROW_CLASS =
-  "flex h-[var(--sand-row-height)] w-full flex-row items-center justify-center rounded-lg border border-transparent bg-clip-padding outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[status=active]:bg-[var(--sand-fill-ghost-selected)] data-[status=active]:hover:bg-[var(--sand-fill-ghost-selected)]";
+export const ROSTER_RAIL_ROW_CLASS = `flex justify-center ${ROSTER_ROW_SHARED}`;
 
 /**
  * 8px, at the face's bottom-right with a 2px inset — the measured corner marker. The ring is the
