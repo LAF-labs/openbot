@@ -12,11 +12,13 @@ import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
   agentProfiles,
+  agents,
   channelAgents,
   channelMemberships,
   channels,
   channelThreads,
 } from "../db/schema";
+import type { Executor } from "../runner/thread-store";
 import type {
   AnnounceChannelActivity,
   ChannelActivityEvent,
@@ -99,6 +101,26 @@ export type ChannelStore = {
     activity: ChannelActivity,
   ): Promise<void>;
   /**
+   * Put another Bot into an existing conversation, or take one out.
+   *
+   * OPTIONAL, like `failuresFor` above and for the same reason: every fake store in the suite keeps
+   * compiling, and a deployment without them serves 404 on the routes rather than a 500.
+   *
+   * There was no way to do either. A room's membership was decided once, when it was created, and
+   * a person who wanted a fourth colleague in the conversation had to start a new room and lose
+   * everything said in the old one.
+   */
+  addParticipant?: (
+    actor: AgentActor,
+    channelId: string,
+    agentId: string,
+  ) => Promise<AgentChannel>;
+  removeParticipant?: (
+    actor: AgentActor,
+    channelId: string,
+    agentId: string,
+  ) => Promise<AgentChannel>;
+  /**
    * The turns in this thread that ended without an answer.
    *
    * OPTIONAL, so every fake store in the suite keeps compiling and a deployment without it serves
@@ -123,6 +145,72 @@ function channelName(names: string[]) {
   const codePoints = Array.from(joined);
   if (codePoints.length <= MAX_CHANNEL_NAME_CODE_POINTS) return joined;
   return `${codePoints.slice(0, MAX_CHANNEL_NAME_CODE_POINTS - 1).join("")}…`;
+}
+
+/**
+ * Who is in a channel this person can actually see, read inside the caller's transaction.
+ *
+ * Through `channelMemberships` rather than by id alone: a channel id somebody else's conversation
+ * owns must read as absent, not as a channel with a permission error attached.
+ */
+async function membershipOf(
+  transaction: Executor,
+  actor: AgentActor,
+  channelId: string,
+): Promise<{ agentIds: string[]; threadId: string }> {
+  const rows: { agentId: string; threadId: string }[] = await transaction
+    .select({
+      agentId: channelAgents.agentId,
+      threadId: channelThreads.threadId,
+    })
+    .from(channels)
+    .innerJoin(
+      channelMemberships,
+      and(
+        eq(channelMemberships.channelId, channels.id),
+        eq(channelMemberships.userId, actor.id),
+      ),
+    )
+    .innerJoin(
+      channelThreads,
+      and(
+        eq(channelThreads.channelId, channels.id),
+        eq(channelThreads.userId, actor.id),
+      ),
+    )
+    .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+    .where(eq(channels.id, channelId))
+    .orderBy(asc(channelAgents.agentId));
+
+  const first = rows[0];
+  if (!first) throw new ChannelNotFoundError(channelId);
+  return {
+    agentIds: rows.map((row) => row.agentId),
+    threadId: first.threadId,
+  };
+}
+
+/** Rebuild a channel's name from who is in it now, the way `create` first built it. */
+async function renameFrom(
+  transaction: Executor,
+  channelId: string,
+  agentIds: readonly string[],
+): Promise<string> {
+  const names: string[] = [];
+  for (const id of agentIds) {
+    const [row] = await transaction
+      .select({ name: agents.name })
+      .from(agents)
+      .where(eq(agents.id, id))
+      .limit(1);
+    if (row) names.push(row.name);
+  }
+  const name = channelName(names);
+  await transaction
+    .update(channels)
+    .set({ name })
+    .where(eq(channels.id, channelId));
+  return name;
 }
 
 export function createChannelStore(
@@ -256,6 +344,90 @@ export function createChannelStore(
           });
 
           return { id, name, agentIds, threadId, active: true };
+        },
+        { isolationLevel: "read committed" },
+      );
+    },
+
+    /**
+     * Another colleague joins the conversation that is already going on.
+     *
+     * The profile is locked inside the transaction exactly the way `create` locks it, so a Bot
+     * cannot be deleted between passing the check and being linked. The channel's NAME is rebuilt
+     * from the new membership in the same breath: the roster row is the only place a room is
+     * named, and a room whose name still lists two people after a third joined is a row that lies.
+     */
+    async addParticipant(actor, channelId, agentId) {
+      return database.transaction(
+        async (transaction) => {
+          const held = await membershipOf(transaction, actor, channelId);
+          if (held.agentIds.includes(agentId)) {
+            throw new ChannelMembershipError("laf:already_in_room");
+          }
+          const profile = await profileStore.getWithin(
+            transaction,
+            actor,
+            agentId,
+          );
+          if (!profile) throw new AgentNotFoundError(agentId);
+
+          await transaction
+            .insert(channelAgents)
+            .values({ channelId, agentId });
+
+          const agentIds = [...held.agentIds, agentId];
+          const name = await renameFrom(transaction, channelId, agentIds);
+          return {
+            id: channelId,
+            name,
+            agentIds,
+            threadId: held.threadId,
+            active: true,
+          };
+        },
+        { isolationLevel: "read committed" },
+      );
+    },
+
+    /**
+     * A colleague leaves. What was said stays: this is a membership change, not a deletion.
+     *
+     * IT REFUSES TO LEAVE A ROOM WITH ONE MEMBER, and that is not fussiness. `create` resolves a
+     * request for a single Bot to that Bot's EXISTING one-to-one conversation, on purpose — it is
+     * what stopped three Bots accumulating thirteen channels between them. A room emptied down to
+     * one member would be a second single-Bot channel that `create` would never return, so the
+     * next message from Home would open the other one and the history here would be orphaned.
+     * Somebody who wants to talk to one Bot already has that Bot's own conversation.
+     */
+    async removeParticipant(actor, channelId, agentId) {
+      return database.transaction(
+        async (transaction) => {
+          const held = await membershipOf(transaction, actor, channelId);
+          if (!held.agentIds.includes(agentId)) {
+            throw new ChannelMembershipError("laf:not_in_room");
+          }
+          if (held.agentIds.length <= 2) {
+            throw new ChannelMembershipError("laf:room_too_small");
+          }
+
+          await transaction
+            .delete(channelAgents)
+            .where(
+              and(
+                eq(channelAgents.channelId, channelId),
+                eq(channelAgents.agentId, agentId),
+              ),
+            );
+
+          const agentIds = held.agentIds.filter((held) => held !== agentId);
+          const name = await renameFrom(transaction, channelId, agentIds);
+          return {
+            id: channelId,
+            name,
+            agentIds,
+            threadId: held.threadId,
+            active: true,
+          };
         },
         { isolationLevel: "read committed" },
       );
@@ -546,6 +718,24 @@ export function createChannelStore(
     failuresFor: createTurnFailureReader(database),
   };
 }
+
+/**
+ * A membership change this conversation will not accept, named so the surface can say it in Korean.
+ *
+ * `code` and never prose: the server sends facts and the app owns the words. The three of them are
+ * different refusals with different things to do about them, which is why they are not one.
+ */
+export class ChannelMembershipError extends Error {
+  constructor(readonly code: ChannelMembershipRefusal) {
+    super(code);
+    this.name = "ChannelMembershipError";
+  }
+}
+
+export type ChannelMembershipRefusal =
+  | "laf:already_in_room"
+  | "laf:not_in_room"
+  | "laf:room_too_small";
 
 export class ChannelNotFoundError extends Error {
   constructor(id: string) {
@@ -953,6 +1143,59 @@ export function createChannelRoutes(
   });
 
   /**
+   * Who is in this conversation, changed while it is going on.
+   *
+   * Mounted only where the store can do it, so a deployment without those methods answers 404
+   * rather than pretending the press worked. The refusals travel as codes; see
+   * `ChannelMembershipError`.
+   */
+  routes.post("/:channelId/participants", requireUser, async (context) => {
+    if (!store.addParticipant)
+      return context.json({ error: "Not supported." }, 404);
+    const body = (await context.req.json().catch(() => null)) as {
+      agentId?: unknown;
+    } | null;
+    const agentId =
+      typeof body?.agentId === "string" ? body.agentId.trim() : "";
+    if (!agentId) {
+      return context.json(
+        { error: "An agent id is required.", code: "laf:not_in_room" },
+        400,
+      );
+    }
+    try {
+      const channel = await store.addParticipant(
+        context.var.actor,
+        context.req.param("channelId"),
+        agentId,
+      );
+      return context.json({ channel });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.delete(
+    "/:channelId/participants/:agentId",
+    requireUser,
+    async (context) => {
+      if (!store.removeParticipant) {
+        return context.json({ error: "Not supported." }, 404);
+      }
+      try {
+        const channel = await store.removeParticipant(
+          context.var.actor,
+          context.req.param("channelId"),
+          context.req.param("agentId"),
+        );
+        return context.json({ channel });
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    },
+  );
+
+  /**
    * The questions in this channel that never got an answer.
    *
    * Beside the transcript rather than inside it: a failure is not something anybody said, and the
@@ -1046,6 +1289,10 @@ function mapStoreError(context: Context, error: unknown): Response {
   }
   if (error instanceof ChannelNotFoundError) {
     return context.json({ error: "Channel not found." }, 404);
+  }
+  if (error instanceof ChannelMembershipError) {
+    // A code and no sentence. The surface owns the words; see the class.
+    return context.json({ error: error.code, code: error.code }, 409);
   }
   throw error;
 }

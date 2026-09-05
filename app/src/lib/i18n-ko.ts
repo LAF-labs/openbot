@@ -1793,4 +1793,13 @@ export const ko: Record<string, string> = {
   "Sum up where things stand.": "지금 상황을 정리해 주세요.",
   "Who should be in this conversation?": "이 대화에 누구를 부를까요?",
   "Pick a Bot below": "아래에서 봇을 고르세요",
+  "Who is in this conversation": "이 대화에 있는 봇",
+  "In this conversation ({count})": "이 대화에 있는 봇 ({count})",
+  "Add someone": "봇 추가하기",
+  "That change could not be made.": "바꾸지 못했습니다. 다시 시도해 주세요.",
+  "That Bot is already in this conversation.":
+    "그 봇은 이미 이 대화에 있습니다.",
+  "That Bot is not in this conversation.": "그 봇은 이 대화에 없습니다.",
+  "A room needs at least two Bots. To talk to one on its own, open its own conversation.":
+    "대화방에는 봇이 최소 두 개 있어야 합니다. 한 봇과만 이야기하려면 그 봇의 대화를 열어 주세요.",
 };

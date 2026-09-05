@@ -8,6 +8,7 @@ import { AgentProfile } from "@/components/agents/agent-profile";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { BotPanel } from "@/components/channels/bot-panel";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { ParticipantsMenu } from "@/components/channels/participants-menu";
 import { GroupChat } from "@/components/channels/group-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -250,6 +251,14 @@ function RouteComponent() {
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
+            {/*
+             * ONLY IN A ROOM. A one-to-one conversation has one member and the header already
+             * says who it is; a menu offering to take them out of it would offer a room of one,
+             * which the server refuses and which nothing in the product wants.
+             */}
+            {isGroup && channel.data ? (
+              <ParticipantsMenu channel={channel.data} />
+            ) : null}
             <Button
               aria-label={
                 needsYou
