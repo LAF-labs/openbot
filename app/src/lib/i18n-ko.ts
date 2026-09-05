@@ -110,10 +110,13 @@ export const ko: Record<string, string> = {
   "My Bots {used}/{total}": "내 봇 {used}/{total}",
   "No rule allows it": "허용하는 규칙이 없음",
   "Nobody answered in time": "아무도 답하지 않음",
+  "Nothing here is required. You can change all of it later.":
+    "여기는 아무것도 필수가 아닙니다. 나중에 다 바꿀 수 있어요.",
   "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
   Refused: "거부됨",
   "Pick a Bot first.": "봇을 먼저 고르세요.",
+  Saved: "저장됨",
   "Say what the routine should do each time.":
     "루틴이 매번 무엇을 할지 적어 주세요.",
   "Say when it should run.": "언제 돌릴지 정해 주세요.",
@@ -163,6 +166,8 @@ export const ko: Record<string, string> = {
   "Resuming a routine": "루틴을 다시 켜는 중",
   "Resumed a routine": "루틴을 다시 켰습니다",
   "Updated its own profile": "자기 프로필을 바꿨습니다",
+  "What it does": "하는 일",
+  "What it does (optional)": "하는 일 (선택)",
   "You said no to this recently": "최근에 아니라고 답함",
   name: "이름",
   title: "직함",

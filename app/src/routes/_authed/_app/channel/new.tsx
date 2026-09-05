@@ -3,6 +3,7 @@ import { IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { BotIntroCard } from "@/components/agents/bot-intro-card";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ChannelAvatar } from "@/components/channels/avatar";
@@ -178,16 +179,36 @@ function RouteComponent() {
         commands={skillCommands}
         emptyState={
           chosen ? (
-            <div className="flex flex-col items-center gap-3 px-6 text-center">
-              <BotAvatar seed={chosen.avatarSeed} size={80} />
-              <div className="flex flex-col gap-0.5">
-                <span className="font-semibold text-[15px]">{chosen.name}</span>
-                {chosen.title ? (
-                  <span className="text-[12px] text-muted-foreground">
-                    {chosen.title}
+            /*
+             * THE PROFILE CARD, WHERE THE FORM USED TO BE.
+             *
+             * A Bot is made in one press and lands here with a name it was given and nothing else
+             * set, so the first screen of its life has to be the place its name, its face and its
+             * job are decided — beside the conversation that will decide the rest, not in a pane
+             * somebody has to go looking for. Anybody who does not want it presses the ×.
+             *
+             * `key` on the Bot's id: the pane stays mounted while `?agent=` changes, and without it
+             * one Bot's name sits in the field belonging to another.
+             */
+            <div className="flex w-full flex-col items-center gap-3 px-6 text-center">
+              {chosen.canManage ? (
+                <BotIntroCard agent={chosen} key={chosen.id} />
+              ) : (
+                <>
+                  <BotAvatar seed={chosen.avatarSeed} size={80} />
                   </span>
-                ) : null}
-              </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-[15px]">
+                      {chosen.name}
+                    </span>
+                    {chosen.title ? (
+                      <span className="text-[12px] text-muted-foreground">
+                        {chosen.title}
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              )}
               {chosen.roleDescription ? (
                 <p className="max-w-sm text-[13px] text-muted-foreground leading-relaxed">
                   {chosen.roleDescription}
