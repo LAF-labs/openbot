@@ -20,6 +20,7 @@ import { type OAuthClients, TOKEN_TIMEOUT_MS } from "./oauth-client";
 import {
   type ConnectionFailureCode,
   type ConnectionHealth,
+  INVALID_CLIENT,
   iso,
   type OAuthClient,
   type PluginContext,
@@ -42,10 +43,17 @@ import {
  * replayed and the family was killed. It is the only thing here that says "connect again" on its
  * own authority.
  *
+ * `invalid_client` is the one refusal that is recorded NOWHERE, and it is the most important line
+ * here. It is the vendor disowning the DEPLOYMENT's client rather than saying anything about this
+ * person's grant — every connection in the deployment gets it at once — and it is also, as
+ * `oauth-client.ts` measured, what a vendor that is simply down answers every exchange with. Marked
+ * on the row it would put every person on this VM behind 다시 연결 for one outage, and leave them
+ * there after the vendor came back. It already has an owner: `refuseAndReplaceEvictedClient`
+ * registers this deployment again and refuses the call with the sentence that fits.
+ *
  * Every other refusal the token endpoint issues is `refresh_failed`: something about this exchange
  * is wrong in a way another call will not fix, and the person needs to be told rather than left
- * with a connection that quietly never works. `invalid_client` included — the deployment's client
- * is disowned, and a new consent is the only thing that produces a usable grant.
+ * with a connection that quietly never works.
  *
  * Anything that is NOT the vendor refusing — a timeout, DNS, a connection refused, a 200 that was
  * not a token — is `vendor_down`, and deliberately does not mark the connection as needing
@@ -59,6 +67,7 @@ import {
 function failureCodeFor(error: unknown): ConnectionFailureCode | null {
   if (error instanceof PluginRefusedError) return null;
   if (error instanceof TokenRefusedError) {
+    if (error.code === INVALID_CLIENT) return null;
     return error.code === "invalid_grant" ? "revoked" : "refresh_failed";
   }
   return "vendor_down";

@@ -44,14 +44,19 @@ const projectRoot = resolve(import.meta.dir, "..");
  * ephemeral ports, plus the partner half of `config` — and the two floors they landed on had drifted
  * to 14% under. `agent-computer` and `root` are untouched: neither grew.
  *
+ * RE-RAISED AGAIN 2026-09-05, with the connection layer. Whether a connection still works, the
+ * shell's own return page and the reason a connect failed brought thirty-four tests to `server`
+ * (two new files and four on the callback), nine to `app` and three to `root`. `agent-computer` is
+ * untouched: it did not grow.
+ *
  * Measured on this tree, consecutive green runs of the whole gate agreeing exactly:
  *
- *     server           1,373 tests across 96 files   → 1,331
- *     app                280 tests across 38 files   →   271
+ *     server           1,407 tests across 98 files   → 1,364
+ *     app                289 tests across 39 files   →   280
  *     agent-computer     132 tests across  8 files   →   128
- *     root                75 tests across 12 files   →    72
+ *     root                78 tests across 12 files   →    75
  *                      ─────                            ─────
- *                      1,860                            1,802
+ *                      1,906                            1,847
  *
  * Each floor is 3% under, rounded down, which is the same margin they were introduced with: enough
  * that consolidating a handful of cases does not fail the run, small enough that a file which threw
@@ -66,10 +71,10 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1331, roots: ["server"] },
-  { name: "app", floor: 271, roots: ["app"] },
+  { name: "server", floor: 1364, roots: ["server"] },
+  { name: "app", floor: 280, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
-  { name: "root", floor: 72, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

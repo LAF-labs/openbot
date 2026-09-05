@@ -354,6 +354,27 @@ describe("what one exchange writes down about a connection", () => {
   });
 
   /*
+   * THE ONE REFUSAL THAT IS RECORDED NOWHERE, and the reason is amplification. `invalid_client` is
+   * the vendor disowning the DEPLOYMENT's client — every connection on this VM gets it at once —
+   * and `oauth-client.ts` measured that it is also what a vendor that is simply down answers every
+   * exchange with. Written to the row it would put every person behind 다시 연결 for one outage and
+   * leave them there after the vendor came back.
+   */
+  test("the vendor disowning our client is not this person's connection failing", async () => {
+    await connect(asker, "rt-client-1");
+    const before = await healthRow(asker);
+    exchange = async () => {
+      throw new TokenRefusedError("the vendor said no (401)", "invalid_client");
+    };
+
+    await store
+      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .catch(() => undefined);
+
+    expect(await healthRow(asker)).toEqual(before);
+  });
+
+  /*
    * The refusals this deployment issues about ITS OWN state — the row is gone, the grant was
    * withdrawn while the call queued — are not the vendor's verdict on the connection, and writing
    * them as one would mark a connection dead on the strength of a race.

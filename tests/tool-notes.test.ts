@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   noteTexts,
@@ -99,5 +99,79 @@ describe("putting a fact into words", () => {
 
   test("something that is not a fact is dropped rather than passed on", () => {
     expect(noteTexts([{ message: "no code here" }, null, 7])).toBe(undefined);
+  });
+});
+
+/**
+ * The codes the CONNECTORS raise, and the Korean they turn into.
+ *
+ * Same argument as the browser's, and it had gone unmade for the whole plugin layer: of the eighty
+ * `laf:` codes under `server/src/plugins`, three had an entry. `toolResultText` returns the code
+ * itself when it has no words, so a Bot that could not send an 알림톡 answered its person with
+ * `laf:alimtalk_template_pending`, and one whose Google Sheets grant had lapsed answered with an
+ * English sentence written for a developer.
+ *
+ * WALKED RATHER THAN LISTED, because a list is a thing somebody has to remember to add to and this
+ * is a table nothing fails without. Every literal in the tree, including the ones that only ever
+ * answer an HTTP route — the partner layer raises the same code down both paths (a connect refusal
+ * from `alimtalk/connect.ts` reaches the surface through the route and the model through
+ * `tools.ts`), so a rule that split them by file would be wrong about exactly those.
+ */
+function codesRaisedByTheConnectors(): string[] {
+  const found = new Set<string>();
+  const walk = (directory: string) => {
+    for (const name of readdirSync(directory)) {
+      const path = join(directory, name);
+      if (statSync(path).isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (!path.endsWith(".ts")) continue;
+      for (const match of readFileSync(path, "utf8").matchAll(
+        /"(laf:[a-z0-9_-]+)"/g,
+      )) {
+        found.add(match[1] as string);
+      }
+    }
+  };
+  walk(join(root, "server/src/plugins"));
+  return [...found].sort();
+}
+
+describe("the codes the connectors raise", () => {
+  test("every one of them has Korean here", () => {
+    const missing = codesRaisedByTheConnectors().filter(
+      (code) => !TOOL_RESULT_KO[code],
+    );
+    expect(missing).toEqual([]);
+  });
+
+  test("the connection codes a person actually meets are among them", () => {
+    // Named rather than counted: a regex that stopped matching would make the test above pass by
+    // finding nothing at all.
+    const codes = codesRaisedByTheConnectors();
+    expect(codes).toContain("laf:not_connected");
+    expect(codes).toContain("laf:needs_reconnect");
+    expect(codes).toContain("laf:grant_withdrawn");
+    expect(codes).toContain("laf:alimtalk_not_connected");
+    expect(codes).toContain("laf:tax_not_connected");
+  });
+
+  /*
+   * The two refusals a person meets most, and the one instruction that helps: 설정 › 연결. A Bot
+   * that reads either of these and offers to sign in on their behalf, or retries, is the failure
+   * these sentences exist to prevent.
+   */
+  test("a lapsed connection tells the Bot to say where to fix it, and to stop", () => {
+    for (const code of ["laf:needs_reconnect", "laf:grant_withdrawn"]) {
+      const said = TOOL_RESULT_KO[code] ?? "";
+      expect({ code, says: said.includes("설정 › 연결") }).toEqual({
+        code,
+        says: true,
+      });
+    }
+    expect(TOOL_RESULT_KO["laf:needs_reconnect"]).toContain(
+      "다시 시도하지 마라",
+    );
   });
 });
