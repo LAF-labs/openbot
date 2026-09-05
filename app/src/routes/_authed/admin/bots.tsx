@@ -1,8 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import { Mascot } from "@/components/agents/mascot";
-import { PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -34,7 +39,8 @@ type ConnectionVerdict =
   | { ok: false; reason: string };
 
 function RouteComponent() {
-  const { data: agents, isPending } = useQuery(agentListQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
+  const bots = agents.data ?? [];
 
   return (
     <PageShell
@@ -44,11 +50,29 @@ function RouteComponent() {
       title={t("Bot endpoints")}
     >
       <PageSection title={t("Bots")}>
-        {isPending ? (
-          <p className="text-muted-foreground text-sm">{t("Loading Bots…")}</p>
+        {/*
+         * THREE ANSWERS, WHERE THERE WAS ONE AND A BLANK. The list drew "Loading Bots…" and then
+         * whatever `data` held — so a read that FAILED and a deployment with no Bots on it both
+         * rendered a heading over an empty div, with `isError` sitting in the query unread. An
+         * operator arriving on this page to fix a Bot's endpoint was shown nothing, twice, for two
+         * unrelated reasons.
+         */}
+        {agents.isPending ? (
+          <RowsSkeleton height="h-11" />
+        ) : agents.isError ? (
+          <LoadFailed
+            message={t("The Bots could not be loaded.")}
+            onRetry={() => void agents.refetch()}
+          />
+        ) : bots.length === 0 ? (
+          <PageEmpty>
+            {t(
+              "No Bots yet. Make one in the app, and it will be listed here with the endpoint it answers on.",
+            )}
+          </PageEmpty>
         ) : (
           <div className="flex flex-col gap-2">
-            {(agents ?? []).map((agent) => (
+            {bots.map((agent) => (
               <BotEndpoint agent={agent} key={agent.id} />
             ))}
           </div>

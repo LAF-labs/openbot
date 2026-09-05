@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { useCallback, useEffect, useState } from "react";
+import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -249,9 +250,7 @@ function BoundariesPage() {
   if (problem && !policy) {
     return (
       <PageShell title={t("Boundaries")}>
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {problem}
-        </p>
+        <LoadFailed message={problem} onRetry={() => void load()} />
       </PageShell>
     );
   }
@@ -259,9 +258,8 @@ function BoundariesPage() {
   if (!policy) {
     return (
       <PageShell title={t("Boundaries")}>
-        <p className="mt-4 text-muted-foreground text-sm">
-          {t("Loading the boundary…")}
-        </p>
+        {/* Three lists are coming: what it may never do, what it asks about, and what is left. */}
+        <RowsSkeleton height="h-24" rows={3} />
       </PageShell>
     );
   }

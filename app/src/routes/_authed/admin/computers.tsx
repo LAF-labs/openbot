@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
+import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import {
   PageEmpty,
   PageRows,
@@ -25,7 +26,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 
 type ComputerProfile = {
   botId: string;
@@ -152,9 +153,14 @@ function ComputersPage() {
 
       <PageSection title={t("Computers in this deployment")}>
         {computers === null && problem ? (
-          <PageEmpty>{t("The list could not be loaded.")}</PageEmpty>
+          <LoadFailed
+            message={t("The list could not be loaded.")}
+            onRetry={() => void load()}
+          />
         ) : computers === null ? (
-          <PageEmpty>{t("Loading…")}</PageEmpty>
+          // Two rows, not ten: this deployment has one computer, and a longer placeholder would be
+          // a claim about how much is coming.
+          <RowsSkeleton rows={2} />
         ) : computers.length === 0 ? (
           <PageEmpty>
             {t(
@@ -167,17 +173,35 @@ function ComputersPage() {
               <StaggerItem index={index} key={computer.botId}>
                 <Item size="sm">
                   <ItemContent>
-                    <ItemTitle title={computer.botId}>
+                    {/*
+                     * The Bot's name in the tooltip too. It carried the raw `botId` — a uuid — so
+                     * hovering a name to find out more was answered with less.
+                     */}
+                    <ItemTitle title={nameFor(computer.botId)}>
                       {nameFor(computer.botId)}
                     </ItemTitle>
                     <ItemDescription>
+                      {/*
+                       * `toLocaleTimeString()` with no locale follows the machine rather than the
+                       * person, so a Korean screen showed an English clock. The three sentences
+                       * around it had no `t()` at all — a template literal is invisible to the
+                       * coverage walk, which is exactly how they survived.
+                       */}
                       {computer.running
-                        ? `Browser running since ${new Date(computer.startedAt ?? "").toLocaleTimeString()}`
-                        : "No browser running. It starts when the Bot next needs it."}
+                        ? t("Browser running since {time}", {
+                            time: new Date(
+                              computer.startedAt ?? "",
+                            ).toLocaleTimeString(activeLocale),
+                          })
+                        : t(
+                            "No browser running. It starts when the Bot next needs it.",
+                          )}
                       {" · "}
                       {computer.egress
-                        ? `Leaves through ${computer.egress}`
-                        : "Leaves directly"}
+                        ? t("Leaves through {egress}", {
+                            egress: computer.egress,
+                          })
+                        : t("Leaves directly")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -255,15 +279,23 @@ function ComputersPage() {
         </DialogContent>
       </Dialog>
 
+      {/*
+       * Whole sentences, not a sentence with a <strong> sewn into the middle of it. The English was
+       * written as five JSX fragments around two bold words and a link, so `t()` could not reach
+       * any of it — the paragraph was English on every Korean screen — and no translator could have
+       * moved the clauses anyway, which Korean needs to.
+       */}
       <p className="mt-4 text-muted-foreground text-sm">
-        <strong>{t("Stop")}</strong> closes the browser and keeps its logins:
-        the next thing the Bot does starts it again where it left off.{" "}
-        <strong>{t("Reset")}</strong> deletes the profile, so the Bot is signed
-        out of everything and starts clean. Both are recorded in{" "}
+        {t(
+          "Stop closes the browser and keeps its logins: the next thing the Bot does starts it again where it left off.",
+        )}{" "}
+        {t(
+          "Reset deletes the profile, so the Bot is signed out of everything and starts clean.",
+        )}{" "}
+        {t("Both are recorded in Audit.")}{" "}
         <Link className="underline" to="/admin/audit">
-          {t("Audit")}
+          {t("Open the audit trail")}
         </Link>
-        .
       </p>
     </PageShell>
   );

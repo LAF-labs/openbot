@@ -105,15 +105,22 @@ function AuditPage() {
       width="wide"
     >
       <PageSection>
+        {/*
+         * `aria-pressed`, not `role="tab"`. These do choose which panel is shown, which is what a
+         * tablist is for — but that role promises arrow-key navigation and a roving tabindex, and
+         * a screen reader announcing "tab 2 of 3" in front of controls that only answer to Tab
+         * and Enter is a worse lie than no role at all. As toggle buttons they are exactly what
+         * they are, and the chosen fill and the announced state finally come from one attribute.
+         */}
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((filter) => (
             <Button
+              aria-pressed={search === filter.search}
               key={filter.label}
               onClick={() => setSearch(filter.search)}
               size="sm"
               type="button"
-              /* The fill is the state, as on every other set of switches in the app. */
-              variant={search === filter.search ? "default" : "outline"}
+              variant="outline"
             >
               {t(filter.label)}
             </Button>

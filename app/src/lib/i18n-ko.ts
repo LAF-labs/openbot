@@ -1812,6 +1812,24 @@ export const ko: Record<string, string> = {
   "Stops applying to the next action: {rule}":
     "다음 행동부터 적용하지 않습니다: {rule}",
   "Anything not refused above": "위에서 막지 않은 것은 모두",
+  // 컴포넌트
+  "How many actions each Bot has taken, counted from the audit trail.":
+    "감사 기록에서 센, 봇마다의 행동 횟수.",
+  "The most recent things this deployment refused, and the reason each was refused.":
+    "이 배포가 가장 최근에 거부한 것들과, 각각의 거부 사유.",
+  "the audit trail": "감사 기록",
+  "That change could not be saved.":
+    "변경을 저장하지 못했습니다. 다시 시도해 주세요.",
+  "That draft could not be saved.":
+    "초안을 저장하지 못했습니다. 다시 시도해 주세요.",
+  "this build": "이 빌드",
+  // 봇 주소
+  "The Bots could not be loaded.": "봇 목록을 읽지 못했습니다.",
+  "No Bots yet. Make one in the app, and it will be listed here with the endpoint it answers on.":
+    "아직 봇이 없습니다. 앱에서 봇을 만들면 어떤 주소로 응답하는지 여기에 나옵니다.",
+  // 자격증명
+  retired: "폐기됨",
+  "in use": "사용 중",
   // 플레이그라운드
   "Publishing…": "게시하는 중…",
   "What is saved here could not be read.": "여기 저장된 것을 읽지 못했습니다.",

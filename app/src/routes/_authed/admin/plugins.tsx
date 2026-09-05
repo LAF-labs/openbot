@@ -4,11 +4,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
 import { useCallback, useState } from "react";
 import { z } from "zod";
-import {
-  PageEmpty,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
 import {
   ConnectionStrip,
   ConnectOutcome,
@@ -61,7 +58,9 @@ export const Route = createFileRoute("/_authed/admin/plugins")({
 
 function PluginsPage() {
   const queryClient = useQueryClient();
-  const { data, isPending, isError } = useQuery(pluginsPageQueryOptions());
+  const { data, isPending, isError, refetch } = useQuery(
+    pluginsPageQueryOptions(),
+  );
   const { data: agents } = useQuery(agentListQueryOptions());
   const nameFor = useBotNames();
   const { connected } = Route.useSearch();
@@ -155,7 +154,7 @@ function PluginsPage() {
       }),
     });
     if (!response.ok) {
-      throw new Error("The token could not be stored.");
+      throw new Error(t("The token could not be stored."));
     }
     return (await response.json())?.credential?.id;
   };
@@ -190,6 +189,13 @@ function PluginsPage() {
       title={t("Plugins")}
     >
       <PageSection>
+        {/*
+         * `aria-pressed`, not `role="tab"`. These do choose which panel is shown, which is what a
+         * tablist is for — but that role promises arrow-key navigation and a roving tabindex, and
+         * a screen reader announcing "tab 2 of 3" in front of controls that only answer to Tab
+         * and Enter is a worse lie than no role at all. As toggle buttons they are exactly what
+         * they are, and the chosen fill and the announced state finally come from one attribute.
+         */}
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -199,11 +205,12 @@ function PluginsPage() {
             ] as const
           ).map(([key, label]) => (
             <Button
+              aria-pressed={tab === key}
               key={key}
               onClick={() => setTab(key)}
               size="sm"
               type="button"
-              variant={tab === key ? "default" : "outline"}
+              variant="outline"
             >
               {label}
             </Button>
@@ -233,11 +240,12 @@ function PluginsPage() {
 
         <div className="mt-6">
           {isPending ? (
-            <PageEmpty>{t("Loading plugins…")}</PageEmpty>
+            <RowsSkeleton height="h-16" />
           ) : isError || !data ? (
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              {t("Plugins could not be loaded.")}
-            </p>
+            <LoadFailed
+              message={t("Plugins could not be loaded.")}
+              onRetry={() => void refetch()}
+            />
           ) : tab === "catalogue" ? (
             <Catalogue
               added={new Set(data.servers.map((server) => server.id))}
@@ -265,7 +273,7 @@ function PluginsPage() {
                     { method: "POST", credentials: "include" },
                   );
                   if (!response.ok) {
-                    throw new Error("The definition could not be approved.");
+                    throw new Error(t("The definition could not be approved."));
                   }
                 })
               }
@@ -732,7 +740,7 @@ function Yours({
                           type="button"
                           // The grant is conveyed by fill alone otherwise; the role needs the state.
                           aria-pressed={held}
-                          variant={held ? "default" : "outline"}
+                          variant="outline"
                         >
                           {bot.name}
                         </Button>
@@ -931,7 +939,7 @@ function Skills({
                         type="button"
                         // The grant is conveyed by fill alone otherwise; the role needs the state.
                         aria-pressed={held}
-                        variant={held ? "default" : "outline"}
+                        variant="outline"
                       >
                         {bot.name}
                       </Button>

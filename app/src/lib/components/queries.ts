@@ -113,6 +113,44 @@ export type DataFunctionSummary = {
   reads: string;
 };
 
+/**
+ * WHAT EACH DATA FUNCTION DOES, IN THIS SURFACE'S OWN WORDS.
+ *
+ * The server sends `description` and `reads` as English — deliberately, since `functions.ts` says
+ * they are for an administrator and never for a model — and `/admin/components` printed both
+ * straight onto a Korean screen, under every component, twice per function. The server sends facts;
+ * the surface owns the words (CLAUDE.md), and a fact here is the function's NAME.
+ *
+ * Keyed by that name and walked against the server's own catalogue by
+ * `component-functions.test.ts`, so a function added there shows its English until somebody writes
+ * the Korean, and the run says so first. The English key is what the server already says, so an
+ * unlisted one is not a blank.
+ */
+export const DATA_FUNCTION_COPY: Readonly<
+  Record<string, { description: string; reads: string }>
+> = {
+  botActivity: {
+    description:
+      "How many actions each Bot has taken, counted from the audit trail.",
+    reads: "the audit trail",
+  },
+  recentRefusals: {
+    description:
+      "The most recent things this deployment refused, and the reason each was refused.",
+    reads: "the audit trail",
+  },
+};
+
+/** The English key to hand `t()` for what this function does, or the server's own line. */
+export function dataFunctionDescriptionKey(fn: DataFunctionSummary): string {
+  return DATA_FUNCTION_COPY[fn.name]?.description ?? fn.description;
+}
+
+/** The English key for what it reads. */
+export function dataFunctionReadsKey(fn: DataFunctionSummary): string {
+  return DATA_FUNCTION_COPY[fn.name]?.reads ?? fn.reads;
+}
+
 export function dataFunctionsQueryOptions() {
   return queryOptions({
     queryKey: ["components", "functions"] as const,

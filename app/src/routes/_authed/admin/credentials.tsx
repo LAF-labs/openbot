@@ -3,6 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import {
   PageEmpty,
   PageRows,
@@ -289,8 +290,8 @@ function CredentialsPage() {
                     type="submit"
                   >
                     {isSubmitting || createCredential.isPending
-                      ? "Saving…"
-                      : "Save credential"}
+                      ? t("Saving…")
+                      : t("Save credential")}
                   </Button>
                 )}
               </form.Subscribe>
@@ -301,11 +302,12 @@ function CredentialsPage() {
 
       <PageSection title={t("Configured credentials")}>
         {credentials.isPending ? (
-          <PageEmpty>{t("Loading credentials…")}</PageEmpty>
+          <RowsSkeleton />
         ) : credentials.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {t("Could not load credentials.")}
-          </p>
+          <LoadFailed
+            message={t("Could not load credentials.")}
+            onRetry={() => void credentials.refetch()}
+          />
         ) : credentials.data?.length === 0 ? (
           <PageEmpty>{t("No credentials are configured.")}</PageEmpty>
         ) : (
@@ -315,9 +317,13 @@ function CredentialsPage() {
                 <Item size="sm">
                   <ItemContent>
                     <ItemTitle>{credential.provider}</ItemTitle>
+                    {/*
+                     * The last third of this line was two bare English words on a Korean screen —
+                     * the one part of the row that says whether the key still works.
+                     */}
                     <ItemDescription>
                       {credential.kind} · {credential.keyId} ·{" "}
-                      {credential.revokedAt ? "revoked" : "active"}
+                      {credential.revokedAt ? t("retired") : t("in use")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
