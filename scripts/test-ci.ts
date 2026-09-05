@@ -72,6 +72,10 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                298 tests across 42 files   →   289
  *
+ * MEASURED TOGETHER 2026-09-05, once the 연결 screen and the connection-health work were on the
+ * same branch: server 1419 → 1376, app 308 → 298 (3% under, rounded down); agent-computer and
+ * root unchanged.
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -79,8 +83,8 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1364, roots: ["server"] },
-  { name: "app", floor: 289, roots: ["app"] },
+  { name: "server", floor: 1376, roots: ["server"] },
+  { name: "app", floor: 298, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;
