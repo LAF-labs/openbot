@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from "react";
+import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 
 /**
  * A component that throws must not take the conversation with it.
@@ -30,8 +32,22 @@ export class ToolRenderBoundary extends Component<
     if (this.state.failed) {
       return (
         <p className="my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <span className="font-medium">{this.props.name}</span> could not be
-          drawn. The rest of this conversation is unaffected.
+          {/*
+           * ONE SENTENCE THROUGH `t()`, not three JSX fragments around a name.
+           *
+           * Written as `<span>{name}</span> could not be drawn.` it was the one shape the coverage
+           * rule cannot reach: no string literal is ever passed to anything, so nothing was there
+           * to translate and nothing complained. It was the last bare English line in the app, and
+           * the bold on the name is what it cost — a substitution buys a sentence a Korean reader
+           * can actually parse, and word order is not ours to decide from here.
+           */}
+          {t(
+            "{name}{josa} could not be drawn. The rest of this conversation is unaffected.",
+            {
+              josa: josa(this.props.name, "을/를"),
+              name: this.props.name,
+            },
+          )}
         </p>
       );
     }

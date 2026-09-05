@@ -362,16 +362,17 @@ export function bareEnglishIn(fileName: string, text: string): string[] {
 }
 
 /**
- * WHAT WAS STILL BARE ON 2026-09-06, file by file.
+ * NOTHING IS ALLOWED TO BE BARE, and this is where that stopped being aspirational.
  *
- * One line, and it is somebody else's: `tool-boundary.tsx` builds its sentence out of JSX fragments
- * around the component's name, which is the shape `t()` cannot reach — the same failure
- * `/admin/computers` had at the foot of its page, fixed by writing whole sentences instead. It is
- * chat's file rather than this workstream's, so it is written down here rather than changed.
+ * There was one line, `tool-boundary.tsx`, and it was here because its sentence was built out of
+ * JSX fragments around the component's name — the shape `t()` cannot reach, since no literal is
+ * ever passed to anything. It is one `t("…{name}…", { name })` call now, and the table is empty.
+ *
+ * Empty and kept, not deleted. The two tests below are a ratchet: the budget for an unlisted file
+ * is zero, so an empty table is the strictest this can be, and a line added back has to be argued
+ * for in a diff rather than appearing as a default.
  */
-const ALLOWED_BARE: Record<string, number> = {
-  "components/channels/tool-boundary.tsx": 1,
-};
+const ALLOWED_BARE: Record<string, number> = {};
 
 function jsxFiles(directory: string): string[] {
   const found: string[] = [];

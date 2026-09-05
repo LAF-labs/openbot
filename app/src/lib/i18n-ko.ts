@@ -1925,4 +1925,8 @@ export const ko: Record<string, string> = {
     "이 배포에는 그런 이름의 데이터가 없습니다",
   "That card has not been allowed to read this data. An administrator allows each data source per card":
     "이 카드는 이 데이터를 읽도록 허용되지 않았습니다. 관리자가 카드마다 데이터를 따로 허용합니다",
+
+  // 컴포넌트가 그리다 터졌을 때. 대화는 그대로 이어진다는 말이 이 문장의 핵심이다.
+  "{name}{josa} could not be drawn. The rest of this conversation is unaffected.":
+    "{name}{josa} 그리지 못했습니다. 이 대화의 나머지는 그대로입니다.",
 };
