@@ -197,7 +197,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                 visibility: profile.visibility,
               },
             });
-            setPickingFace(false);
+            // Left open on purpose — see `bot-intro-card.tsx`. One press applies; 완료 closes.
           }}
           open={pickingFace}
           pending={updateAgent.isPending}

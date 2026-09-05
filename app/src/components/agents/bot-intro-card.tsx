@@ -193,9 +193,15 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
 
       <MascotPicker
         onOpenChange={setPickingFace}
+        /*
+         * IT STAYS OPEN, AND THAT IS THE PICKER'S OWN CONTRACT. Closing here made every tile a
+         * one-shot: measured, picking a colour dismissed the dialog, so a shape AND a colour AND an
+         * accessory cost three round trips through 얼굴 고르기, 다른 얼굴 could be pressed exactly
+         * once, and 완료 — the button whose only job is to close — was unreachable after any choice.
+         * A press applies; leaving is 완료 or the ×.
+         */
         onSelect={async (avatarSeed) => {
           await save({ avatarSeed });
-          setPickingFace(false);
         }}
         open={pickingFace}
         pending={updateAgent.isPending}
