@@ -141,6 +141,68 @@ export function weekdayNames(): string[] {
 }
 
 /**
+ * A wall-clock "HH:MM" as the reader's own language writes a time.
+ *
+ * ONE FORMAT, AND THERE WERE THREE. Measured on the routines screen: the form's own summary said
+ * 매일 07:30, the saved row said 평일 09:00, and the panel beside a conversation said 오전 1:15 —
+ * two of them a 24-hour clock a Korean sentence does not use, and all three in one product. The
+ * hour is a number the app writes down, so the app writes it one way: `Intl` with `activeLocale`,
+ * which gives 오전 7:30 in Korean and 7:30 AM in English.
+ *
+ * The stored value never changes. This is presentation only, and it is deliberately tolerant — a
+ * row with a malformed time is still listed, still switchable, still deletable, for the reason
+ * `scheduleLabel` records below.
+ */
+export function clockLabel(hhmm: string): string {
+  const [hours, minutes] = hhmm.split(":").map(Number);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return hhmm;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return hhmm;
+  return new Intl.DateTimeFormat(activeLocale, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(2026, 0, 1, hours, minutes));
+}
+
+/** Just the hour, for the hour picker: 오전 7시 in Korean, 7 AM in English. */
+export function hourLabel(hour: number): string {
+  return new Intl.DateTimeFormat(activeLocale, { hour: "numeric" }).format(
+    new Date(2026, 0, 1, hour),
+  );
+}
+
+/**
+ * An instant, said the way somebody talks about a schedule: 오늘 오전 9:00, 내일 오전 9:00, 9월 8일 …
+ *
+ * A bare `toLocaleString` is right and unreadable — "2026. 9. 7. 오전 9:00" beside four other rows
+ * of it is a wall of digits, and the question a person is asking of this line ("has it run? when is
+ * it next?") is answered by the day, not by the year. Anything beyond tomorrow keeps its date,
+ * because "in 8 days" is not a thing anybody can act on either.
+ */
+export function whenLabel(iso: string | null): string {
+  if (!iso) return "";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+
+  const midnight = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round(
+    (midnight(when) - midnight(new Date())) / 86_400_000, // ms in a day
+  );
+  const time = clockLabel(
+    `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`,
+  );
+
+  if (days === 0) return `${t("Today")} ${time}`;
+  if (days === 1) return `${t("Tomorrow")} ${time}`;
+  if (days === -1) return `${t("Yesterday")} ${time}`;
+  const day = new Intl.DateTimeFormat(activeLocale, {
+    day: "numeric",
+    month: "short",
+  }).format(when);
+  return `${day} ${time}`;
+}
+
+/**
  * How a routine's schedule reads to a person.
  *
  * It used to read "Daily at 22:30 UTC", which asks a shop owner in Seoul to do arithmetic to find
@@ -154,7 +216,7 @@ export function scheduleLabel(routine: Routine): string {
     });
   }
 
-  const time = routine.dailyLocal ?? "";
+  const time = clockLabel(routine.dailyLocal ?? "");
   const zone = routine.dailyTimeZone ?? "UTC";
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const suffix = zone === here ? "" : ` ${zone}`;

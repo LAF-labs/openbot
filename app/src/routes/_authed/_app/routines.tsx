@@ -1,12 +1,31 @@
-import { IconClockPlay, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconClockPlay, IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useId, useState } from "react";
+import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
+import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { focusRing } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
+import {
+  pageDescriptionClass,
+  pageTitleClass,
+} from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -17,10 +36,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import {
+  hourLabel,
   type Routine,
   type RoutineRun,
   routineKeys,
@@ -29,6 +54,7 @@ import {
   runShape,
   scheduleLabel,
   weekdayNames,
+  whenLabel,
 } from "@/lib/routines/queries";
 
 /**
@@ -165,7 +191,8 @@ function RoutineRow({ routine }: { routine: Routine }) {
         />
         <button
           aria-expanded={showRuns}
-          className="min-w-0 flex-1 text-left"
+          // The house ring. It had none at all, so tabbing across a list of routines went dark.
+          className={`min-w-0 flex-1 rounded-md text-left ${focusRing}`}
           onClick={() => setShowRuns((open) => !open)}
           type="button"
         >
@@ -179,40 +206,114 @@ function RoutineRow({ routine }: { routine: Routine }) {
           <p className="truncate text-xs text-muted-foreground">
             {routine.instruction}
           </p>
+          {/*
+           * WHEN IT LAST WENT AND WHEN IT GOES NEXT.
+           *
+           * The server has sent `nextRunAt` and `lastRunAt` on every row since routines existed and
+           * the screen threw both away, so the one question anybody has about a schedule — is it
+           * actually running — could only be answered by opening the run history. 다음 실행 is the
+           * promise the switch is making; 마지막 실행 is the evidence it kept it.
+           */}
+          <p className="truncate text-muted-foreground/80 text-xs">
+            {t("Next {when}", { when: whenLabel(routine.nextRunAt) })}
+            {routine.lastRunAt
+              ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt) })}`
+              : ` · ${t("Not run yet")}`}
+          </p>
         </button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={runNow.isPending}
-          // Opened here rather than in onSuccess: the panel the answer lands in should already be
-          // open while the Bot is working, or the click looks like it did nothing for a minute.
-          onClick={() => {
-            setShowRuns(true);
-            runNow.mutate();
-          }}
-          // Named for its routine: N routines gave N identical triplets of actions.
-          aria-label={
-            runNow.isPending
-              ? t("Running {name}…", { name: routine.name })
-              : t("Run {name} now", { name: routine.name })
-          }
-        >
-          <IconClockPlay className="size-4" />
-        </Button>
-        <Switch
-          aria-label={t("{name} is on", { name: routine.name })}
-          checked={routine.enabled}
-          onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setConfirmingDelete(true)}
-          aria-label={t("Delete {name}", { name: routine.name })}
-        >
-          <IconTrash className="size-4 text-muted-foreground" />
-        </Button>
+        {/*
+         * THREE UNLABELLED ICONS, ONE OF THEM PERMANENT, ALL THE SAME SIZE AND COLOUR.
+         *
+         * 지금 실행 and 삭제 were two grey glyphs either side of a switch, and the destructive one
+         * was the easier of the two to hit by accident. 삭제 moves into the ⋯ menu — the same place
+         * a Bot's does — and the two that are left say what they are, in a tooltip for the mouse and
+         * in `aria-label` for everybody else.
+         */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label={
+                  runNow.isPending
+                    ? t("Running {name}…", { name: routine.name })
+                    : t("Run {name} now", { name: routine.name })
+                }
+                disabled={runNow.isPending}
+                // Opened here rather than in onSuccess: the panel the answer lands in should
+                // already be open while the Bot is working, or the click looks like it did nothing
+                // for a minute.
+                onClick={() => {
+                  setShowRuns(true);
+                  runNow.mutate();
+                }}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <IconClockPlay />
+              </Button>
+            }
+          />
+          <TooltipContent>{t("Run now")}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Switch
+                /*
+                 * NAMED FOR THE ROUTINE, NOT FOR ITS STATE. It read "'재고 확인' 켜짐" whether it was
+                 * on or off — a label that lies in one of the two states it has. `role="switch"`
+                 * already carries `aria-checked`; the name only has to say which switch this is.
+                 */
+                aria-label={t("Scheduled runs for {name}", {
+                  name: routine.name,
+                })}
+                checked={routine.enabled}
+                onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
+              />
+            }
+          />
+          <TooltipContent>
+            {routine.enabled ? t("On schedule") : t("Paused")}
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={t("Actions for {name}", { name: routine.name })}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <IconDots />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => setConfirmingDelete(true)}
+              variant="destructive"
+            >
+              {t("Delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+      {/*
+       * 지금 실행 SAID NOTHING. It opened the history panel and the row sat there — the request can
+       * take a minute, and for that minute the press looked like it had missed.
+       */}
+      {runNow.isPending || runNow.isSuccess || runNow.isError ? (
+        <p
+          className={`px-4 pb-3 text-xs ${runNow.isError ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
+          {runNow.isPending
+            ? t("Running now…")
+            : runNow.isError
+              ? runNow.error.message
+              : t("Started. The answer lands below.")}
+        </p>
+      ) : null}
       {/*
        * A routine and every run it ever made, gone on one click of a small grey icon next to a
        * switch. It is the only irreversible thing on this page and it asked nothing.
@@ -266,12 +367,66 @@ function TriggerReveal({
   );
 }
 
+/**
+ * WRITING A ROUTINE, IN THE PANEL BESIDE THE LIST.
+ *
+ * ONE CREATION PATTERN FOR THE THREE SIBLING PAGES, AND THE CHOICE IS THE RIGHT-HAND PANEL.
+ * Routines opened a card inline above the list, Skills slid a panel in from the right, and a Bot is
+ * made with no form at all — three answers on three pages a person walks between in one session.
+ *
+ * The panel wins over a dialog for the reason `DetailPanel` already gives: it is a search parameter,
+ * so writing a routine is a real navigation. It survives a reload, it can be linked to, Back closes
+ * it, and the routines you already have stay on screen beside the one you are writing — which is
+ * how anybody writes the second one. A dialog would take the list away and put the form somewhere
+ * a URL cannot reach. Skills already made this bet and it is the same bet.
+ *
+ * THE FIELDS GO IN THE ORDER THE QUESTION IS ASKED: what is it called, what does it do, when does it
+ * go. They used to run 이름 → 무엇을 → 언제 → **만들기** → 요일, with the day chips BELOW the button
+ * that submits the form — so the last decision was offered after the press that ends the form.
+ */
+/** 매일, 특정 요일, N분마다. The first two are both `daily` rows; the middle one carries days. */
+type Repeat = "daily" | "weekly" | "interval";
+
+function repeatLabel(repeat: Repeat): string {
+  if (repeat === "weekly") return t("On certain days");
+  if (repeat === "interval") return t("Every N minutes");
+  return t("Every day");
+}
+
+/** What the form has to say back after a press, field by field. */
+type Problems = {
+  agent?: string;
+  days?: string;
+  instruction?: string;
+  minutes?: string;
+  name?: string;
+};
+
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+/** Five-minute steps: a routine wants a time of day, not a stopwatch. */
+const MINUTES = Array.from({ length: 12 }, (_, step) => step * 5);
+/** Monday to Friday, the one preset worth a button. `weekdayNames()` is indexed 0 = Sunday. */
+const WEEKDAYS = [1, 2, 3, 4, 5];
+
 function NewRoutine({ onDone }: { onDone: () => void }) {
   const agents = useQuery(agentListQueryOptions());
+  const agentFieldId = useId();
+  const instructionId = useId();
+  const nameId = useId();
+  const repeatId = useId();
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [instruction, setInstruction] = useState("");
-  const [kind, setKind] = useState<"interval" | "daily">("daily");
+  /*
+   * THREE REPEATS, NOT TWO, BECAUSE THE THIRD ONE WAS ALREADY THERE AND UNNAMED.
+   *
+   * The stored shapes are `daily` and `interval`; a daily routine with a `days` restriction is what
+   * makes a weekly one, and the form never said so. It showed 매일 and then, underneath, seven day
+   * chips with none of them lit — which is a choice nobody was asked to make, offered in a state
+   * that reads as "none of these", on a schedule that runs every day. 특정 요일 is that third shape
+   * with a name, and the chips only exist inside it.
+   */
+  const [repeat, setRepeat] = useState<Repeat>("daily");
   const [minutes, setMinutes] = useState("60");
   /*
    * The time is a wall clock in the reader's own zone, defaulted from their browser.
@@ -279,52 +434,47 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
    * This field was labelled "Time (UTC)" and defaulted to 22:30, which is 07:30 in Seoul — the
    * value was right and the person had no way to know it. Nobody setting a morning routine should
    * have to convert anything.
+   *
+   * TWO SELECTS RATHER THAN `<input type="time">`. The native control is formatted by the BROWSER's
+   * locale, not by the app's: measured in a Chrome running in English, the field said 07:30 AM
+   * directly above this form's own 매일 07:30 and a saved row's 평일 09:00. Three formats, one
+   * screen. An hour and a minute the app renders itself are the app's own words in both languages,
+   * and on a phone they are two taps rather than a spinner.
    */
-  const [time, setTime] = useState("07:30");
+  const [hour, setHour] = useState(7);
+  const [minute, setMinute] = useState(30);
   const [timeZone] = useState(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   );
   /** Empty means every day, which is what the server stores for an unrestricted routine. */
   const [days, setDays] = useState<number[]>([]);
+  /** Shown only after a press. Nothing is red before somebody has tried. */
+  const [problems, setProblems] = useState<Problems>({});
 
   const [trigger, setTrigger] = useState<{
     routineId: string;
     token: string;
   } | null>(null);
 
-  /*
-   * The schedule is checked here rather than by the server.
-   *
-   * A daily routine is a wall-clock time in UTC and an interval one is a number of minutes with a
-   * floor of five. Both were accepted as typed and refused after the round trip, which puts the
-   * explanation under a form that has already lost the person's attention.
-   */
-  const scheduleReady =
-    kind === "daily"
-      ? /^([01]\d|2[0-3]):[0-5]\d$/.test(time.trim())
-      : Number(minutes) >= 5;
+  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
   /*
    * The schedule, said back. Built from the same label the saved rows use, so what the form
    * promises and what the list reports can never describe the same schedule differently.
    */
   const summarySentence = scheduleLabel({
-    id: "",
     agentId: "",
-    name: "",
-    instruction: "",
-    enabled: true,
-    scheduleKind: "daily",
-    intervalMinutes: null,
+    dailyDays: repeat === "weekly" ? days : [],
     dailyLocal: time,
     dailyTimeZone: timeZone,
-    dailyDays: days,
+    enabled: true,
+    id: "",
+    instruction: "",
+    intervalMinutes: Number(minutes),
+    name: "",
+    scheduleKind: repeat === "interval" ? "interval" : "daily",
   } as Routine);
 
-  const canCreate =
-    Boolean(agentId) &&
-    name.trim().length > 0 &&
-    instruction.trim().length > 0 &&
-    scheduleReady;
   const create = useMutation({
     mutationFn: async () =>
       routineRequest("/api/routines", {
@@ -334,16 +484,16 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
           name,
           instruction,
           schedule:
-            kind === "daily"
-              ? {
-                  kind,
+            repeat === "interval"
+              ? { kind: "interval", minutes: Number(minutes) }
+              : {
+                  kind: "daily",
                   time,
                   timeZone,
                   // Omitted rather than empty: the server refuses an empty selection on purpose,
                   // so "every day" has to be the absence of a restriction, not an empty one.
-                  ...(days.length > 0 ? { days } : {}),
-                }
-              : { kind, minutes: Number(minutes) },
+                  ...(repeat === "weekly" && days.length > 0 ? { days } : {}),
+                },
         }),
       }),
     onSuccess: (body) => {
@@ -362,10 +512,10 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
 
   if (trigger) {
     return (
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-3 p-8">
         <TriggerReveal routineId={trigger.routineId} token={trigger.token} />
         <div className="flex justify-end">
-          <Button size="sm" onClick={onDone}>
+          <Button onClick={onDone} size="sm">
             {t("Done")}
           </Button>
         </div>
@@ -373,227 +523,358 @@ function NewRoutine({ onDone }: { onDone: () => void }) {
     );
   }
 
+  /*
+   * VALIDATED ON THE PRESS, WITH THE BUTTON LIVE THE WHOLE TIME.
+   *
+   * 루틴 만들기 opened disabled — a mid-grey filled pill, skipped by the tab order, with nothing
+   * anywhere on the form saying what was missing. A disabled primary action is a question with the
+   * answer hidden: the person can see the button and cannot find out what it wants. So the button
+   * is always pressable, and pressing it with an empty form says which field is empty, beside that
+   * field.
+   */
+  const check = (): boolean => {
+    const found: Problems = {};
+    if (!agentId) found.agent = t("Pick a Bot first.");
+    if (!name.trim()) found.name = t("Give the routine a name.");
+    if (!instruction.trim())
+      found.instruction = t("Say what the routine should do each time.");
+    if (repeat === "weekly" && days.length === 0)
+      found.days = t("Pick at least one day.");
+    if (repeat === "interval" && !(Number(minutes) >= 5))
+      found.minutes = t("Five minutes is the shortest gap.");
+    setProblems(found);
+    return Object.keys(found).length === 0;
+  };
+
   return (
     /*
      * A FORM, NOT A CARD OF CONTROLS. Enter did nothing anywhere in it, and the only way out was the
      * button that had opened it — a person who changed their mind had to scroll up and find it.
      */
     <form
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
+      className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        if (!canCreate || create.isPending) return;
+        if (create.isPending) return;
+        if (!check()) return;
         create.mutate();
       }}
     >
-      <div className="flex gap-3">
-        <Select
-          value={agentId}
-          onValueChange={(value) => setAgentId(value ?? "")}
-        >
-          <SelectTrigger className="w-44">
-            {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
-            <SelectValue placeholder={t("Which Bot")}>
-              {agents.data?.find((agent) => agent.id === agentId)?.name ??
-                t("Which Bot")}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {(agents.data ?? []).map((agent) => (
-              <SelectItem key={agent.id} value={agent.id}>
-                {agent.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          aria-label={t("Routine name")}
-          autoFocus
-          className="flex-1"
-          placeholder={t("Name, e.g. Morning review digest")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </div>
-      <Textarea
-        aria-label={t("What should it do?")}
-        placeholder={t(
-          "What should it do? e.g. Check the store reviews and summarize the new ones.",
-        )}
-        rows={3}
-        value={instruction}
-        onChange={(event) => setInstruction(event.target.value)}
-      />
-      <div className="flex items-center gap-3">
-        <Select
-          value={kind}
-          onValueChange={(value) =>
-            setKind(value === "interval" ? "interval" : "daily")
-          }
-        >
-          <SelectTrigger className="w-40">
-            {/* The value is a code; the person reads the label. */}
-            <SelectValue>
-              {kind === "daily" ? t("Daily") : t("Every N minutes")}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="daily">{t("Daily")}</SelectItem>
-            <SelectItem value="interval">{t("Every N minutes")}</SelectItem>
-          </SelectContent>
-        </Select>
-        {kind === "daily" ? (
-          <Input
-            className="w-28"
-            value={time}
-            onChange={(event) => setTime(event.target.value)}
-            aria-label={t("Time")}
-            type="time"
-          />
-        ) : (
-          <Input
-            className="w-28"
-            type="number"
-            min={5}
-            value={minutes}
-            onChange={(event) => setMinutes(event.target.value)}
-            aria-label={t("Minutes")}
-          />
-        )}
-        <div className="flex-1" />
-        <Button onClick={onDone} size="sm" type="button" variant="ghost">
-          {t("Cancel")}
-        </Button>
-        <Button disabled={!canCreate || create.isPending} type="submit">
-          {create.isPending ? t("Creating…") : t("Create routine")}
-        </Button>
-      </div>
+      <header>
+        <h1 className={pageTitleClass}>{t("New routine")}</h1>
+        <p className={`mt-1 ${pageDescriptionClass}`}>
+          {t(
+            "An instruction, a Bot, and a clock. You can change all of it later.",
+          )}
+        </p>
+      </header>
 
-      {kind === "daily" ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/*
-           * Which days, as toggles rather than a select. Seven options that are all visible at once
-           * do not need a menu, and "weekdays" is the shape most routines want — the point is that
-           * a Monday-morning routine does not also go off on Sunday.
-           */}
-          {weekdayNames().map((label, index) => {
-            const on = days.includes(index);
-            return (
-              <button
-                aria-pressed={on}
-                className="h-7 rounded-full border border-border px-2.5 text-sm transition-colors aria-pressed:border-transparent aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-                key={label}
-                onClick={() =>
-                  setDays((current) =>
-                    current.includes(index)
-                      ? current.filter((day) => day !== index)
-                      : [...current, index].sort((a, b) => a - b),
-                  )
-                }
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
-          {days.length > 0 ? (
-            <Button
-              className="h-7"
-              onClick={() => setDays([])}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {t("Every day")}
-            </Button>
+      <FieldGroup>
+        <Field data-invalid={Boolean(problems.name)}>
+          <FieldLabel htmlFor={nameId}>{t("Name")}</FieldLabel>
+          <Input
+            aria-invalid={Boolean(problems.name)}
+            autoFocus
+            id={nameId}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("Name, e.g. Morning review digest")}
+            value={name}
+          />
+          {problems.name ? (
+            <FieldError errors={[{ message: problems.name }]} />
           ) : null}
+        </Field>
+
+        <Field data-invalid={Boolean(problems.instruction)}>
+          <FieldLabel htmlFor={instructionId}>
+            {t("What should it do?")}
+          </FieldLabel>
+          <Textarea
+            aria-invalid={Boolean(problems.instruction)}
+            id={instructionId}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder={t(
+              "What should it do? e.g. Check the store reviews and summarize the new ones.",
+            )}
+            rows={3}
+            value={instruction}
+          />
+          {problems.instruction ? (
+            <FieldError errors={[{ message: problems.instruction }]} />
+          ) : null}
+        </Field>
+
+        <Field data-invalid={Boolean(problems.agent)}>
+          <FieldLabel htmlFor={agentFieldId}>{t("Which Bot")}</FieldLabel>
+          <Select
+            onValueChange={(value) => setAgentId(value ?? "")}
+            value={agentId}
+          >
+            <SelectTrigger
+              aria-invalid={Boolean(problems.agent)}
+              id={agentFieldId}
+            >
+              {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
+              <SelectValue placeholder={t("Which Bot")}>
+                {agents.data?.find((agent) => agent.id === agentId)?.name ??
+                  t("Which Bot")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {(agents.data ?? []).map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {problems.agent ? (
+            <FieldError errors={[{ message: problems.agent }]} />
+          ) : null}
+        </Field>
+
+        <Field>
+          <FieldLabel htmlFor={repeatId}>{t("When")}</FieldLabel>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              onValueChange={(value) => setRepeat((value ?? "daily") as Repeat)}
+              value={repeat}
+            >
+              <SelectTrigger className="w-36" id={repeatId}>
+                {/* The value is a code; the person reads the label. */}
+                <SelectValue>{repeatLabel(repeat)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">{t("Every day")}</SelectItem>
+                <SelectItem value="weekly">{t("On certain days")}</SelectItem>
+                <SelectItem value="interval">{t("Every N minutes")}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {repeat === "interval" ? (
+              <>
+                <Input
+                  aria-label={t("Minutes")}
+                  aria-invalid={Boolean(problems.minutes)}
+                  className="w-24"
+                  min={5}
+                  onChange={(event) => setMinutes(event.target.value)}
+                  type="number"
+                  value={minutes}
+                />
+                <span className="text-muted-foreground text-sm">
+                  {t("minutes")}
+                </span>
+              </>
+            ) : (
+              <>
+                <Select
+                  onValueChange={(value) => setHour(Number(value ?? "7"))}
+                  value={String(hour)}
+                >
+                  <SelectTrigger aria-label={t("Hour")} className="w-28">
+                    <SelectValue>{hourLabel(hour)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HOURS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {hourLabel(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  onValueChange={(value) => setMinute(Number(value ?? "0"))}
+                  value={String(minute)}
+                >
+                  <SelectTrigger aria-label={t("Minutes")} className="w-24">
+                    <SelectValue>
+                      {t("{minutes} min", { minutes: minute })}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MINUTES.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {t("{minutes} min", { minutes: option })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+          </div>
+          {problems.minutes ? (
+            <FieldError errors={[{ message: problems.minutes }]} />
+          ) : null}
+
+          {/*
+           * The chips belong to 특정 요일 and appear with it. Seven options that are all visible at
+           * once do not need a menu, and the point of the whole control is that a Monday-morning
+           * routine does not also go off on Sunday.
+           */}
+          {repeat === "weekly" ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {weekdayNames().map((label, index) => (
+                <Button
+                  aria-pressed={days.includes(index)}
+                  className="w-10"
+                  key={label}
+                  onClick={() =>
+                    setDays((current) =>
+                      current.includes(index)
+                        ? current.filter((day) => day !== index)
+                        : [...current, index].sort((a, b) => a - b),
+                    )
+                  }
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {label}
+                </Button>
+              ))}
+              <Button
+                className="ms-1"
+                onClick={() => setDays(WEEKDAYS)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {t("Weekdays")}
+              </Button>
+            </div>
+          ) : null}
+          {problems.days ? (
+            <FieldError errors={[{ message: problems.days }]} />
+          ) : null}
+
           {/* Said back in words, because a row of chips and a clock is not a sentence. */}
-          <p className="ms-auto text-muted-foreground text-sm">
+          <p className="mt-1 text-muted-foreground text-sm">
             {summarySentence}
           </p>
-        </div>
-      ) : null}
+        </Field>
+      </FieldGroup>
+
       {create.error ? (
-        <p className="text-xs text-destructive" role="alert">
+        <p className="text-destructive text-sm" role="alert">
           {create.error.message}
         </p>
       ) : null}
+
+      <div className="flex gap-2">
+        <Button disabled={create.isPending} type="submit">
+          {create.isPending ? t("Creating…") : t("Create routine")}
+        </Button>
+        <Button onClick={onDone} type="button" variant="outline">
+          {t("Cancel")}
+        </Button>
+      </div>
     </form>
   );
 }
 
 function RoutinesPage() {
   const queryClient = useQueryClient();
-  const [creating, setCreating] = useState(false);
+  const { new: isCreating } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const routines = useQuery(routineListQueryOptions());
+  const creating = isCreating === true;
 
   return (
-    <PageShell
-      title={t("Routines")}
-      description={t(
-        "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.",
-      )}
-      action={
-        <Button size="sm" onClick={() => setCreating((open) => !open)}>
-          <IconPlus className="size-4" />
-          {t("New routine")}
-        </Button>
-      }
-    >
-      {creating ? (
-        <div className="mt-6">
+    <DetailPanel
+      detail={
+        creating ? (
           <NewRoutine
             onDone={() => {
-              setCreating(false);
-              void queryClient.invalidateQueries({
-                queryKey: routineKeys.all,
-              });
+              void navigate({ search: {} });
+              void queryClient.invalidateQueries({ queryKey: routineKeys.all });
             }}
           />
-        </div>
-      ) : null}
-      <PageSection>
-        <div className="flex flex-col gap-3">
-          {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
-          {routines.isPending
-            ? [0, 1, 2].map((slot) => (
-                <Skeleton className="h-[74px] rounded-xl" key={slot} />
-              ))
-            : null}
-          {routines.isError ? (
-            <div className="flex flex-col items-start gap-2 py-6">
-              <p className="text-sm text-destructive" role="alert">
-                {t("Your routines could not be loaded.")}
-              </p>
-              <Button
-                onClick={() => void routines.refetch()}
-                size="sm"
-                variant="outline"
-              >
-                {t("Try again")}
-              </Button>
-            </div>
-          ) : null}
-          {(routines.data ?? []).map((routine) => (
-            <RoutineRow key={routine.id} routine={routine} />
-          ))}
-          {routines.data?.length === 0 && !creating ? (
-            <div className="flex flex-col items-center gap-3 py-10">
-              {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
-              <BotAvatar className="opacity-80" seed="s:wedge.cyan" size={56} />
-              <p className="text-center text-sm text-muted-foreground">
-                {t(
-                  "No routines yet. Give a Bot something to do every morning.",
-                )}
-              </p>
-            </div>
-          ) : null}
-        </div>
-      </PageSection>
-    </PageShell>
+        ) : null
+      }
+      // 400px like a Bot's profile, not 320: this is a form with a select, two more selects and
+      // seven day chips on one line, and at 320 the chips wrapped to three rows.
+      detailWidth={400}
+      onClose={() => navigate({ search: {} })}
+      open={creating}
+    >
+      <PageShell
+        title={t("Routines")}
+        description={t(
+          "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.",
+        )}
+        action={
+          <Button
+            nativeButton={false}
+            render={(props) => (
+              <Link search={{ new: true }} to="/routines" {...props} />
+            )}
+            size="sm"
+          >
+            <IconPlus />
+            {t("New routine")}
+          </Button>
+        }
+      >
+        <PageSection>
+          <div className="flex flex-col gap-3">
+            {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
+            {routines.isPending
+              ? [0, 1, 2].map((slot) => (
+                  <Skeleton className="h-[92px] rounded-xl" key={slot} />
+                ))
+              : null}
+            {routines.isError ? (
+              <div className="flex flex-col items-start gap-2 py-6">
+                <p className="text-destructive text-sm" role="alert">
+                  {t("Your routines could not be loaded.")}
+                </p>
+                <Button
+                  onClick={() => void routines.refetch()}
+                  size="sm"
+                  variant="outline"
+                >
+                  {t("Try again")}
+                </Button>
+              </div>
+            ) : null}
+            {(routines.data ?? []).map((routine) => (
+              <RoutineRow key={routine.id} routine={routine} />
+            ))}
+            {routines.data?.length === 0 && !creating ? (
+              <div className="flex flex-col items-center gap-3 py-10">
+                {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
+                <BotAvatar
+                  className="opacity-80"
+                  seed="s:wedge.cyan"
+                  size={56}
+                />
+                <p className="text-center text-muted-foreground text-sm">
+                  {t(
+                    "No routines yet. Give a Bot something to do every morning.",
+                  )}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </PageSection>
+      </PageShell>
+    </DetailPanel>
   );
 }
 
+/**
+ * Writing a routine is a search parameter, not a local boolean — the same contract Skills and the
+ * Bots roster make. It survives a reload, it can be linked to, and Back closes it.
+ */
+const routinesSearchSchema = z
+  .object({ new: z.boolean().optional() })
+  /* `.catch({})` so an unknown parameter is ignored rather than throwing out of validateSearch and
+   * taking the whole route down with it. */
+  .catch({});
+
 export const Route = createFileRoute("/_authed/_app/routines")({
   component: RoutinesPage,
+  validateSearch: routinesSearchSchema,
 });

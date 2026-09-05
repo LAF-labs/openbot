@@ -1748,4 +1748,29 @@ export const ko: Record<string, string> = {
   "My Bots": "내 봇",
   "Change the face": "얼굴 바꾸기",
   "Its shape and its colour.": "몸 모양과 색을 고릅니다.",
+
+  /*
+   * ROUTINES: the row's two timings, the run-now answer, and the third repeat that always existed
+   * without a name (a daily routine carrying a day list is a weekly one).
+   */
+  "Next {when}": "다음 실행 {when}",
+  "Last {when}": "마지막 실행 {when}",
+  "Not run yet": "아직 실행한 적 없음",
+  "Run now": "지금 실행",
+  "On schedule": "예약대로 실행 중",
+  "Running now…": "실행 중…",
+  "Started. The answer lands below.": "실행했습니다. 결과는 아래에 나옵니다.",
+  "Scheduled runs for {name}": "'{name}' 예약 실행",
+  Today: "오늘",
+  Tomorrow: "내일",
+  Yesterday: "어제",
+  "On certain days": "특정 요일",
+  Hour: "시",
+  minutes: "분마다",
+  "{minutes} min": "{minutes}분",
+  "Pick at least one day.": "요일을 하나 이상 골라 주세요.",
+  "Five minutes is the shortest gap.": "5분보다 짧게는 안 됩니다.",
+  Weekdays: "평일",
+  "An instruction, a Bot, and a clock. You can change all of it later.":
+    "무엇을, 어느 봇이, 언제. 나중에 다 바꿀 수 있습니다.",
 };
