@@ -101,7 +101,8 @@ export const BotAvatarPicker = ({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent>
+      {/* One way out: a click applies, and 완료 closes. A second × beside it asked what it did. */}
+      <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{t("Pick a face")}</DialogTitle>
           <DialogDescription>
