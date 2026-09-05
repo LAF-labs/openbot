@@ -1,19 +1,7 @@
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
-
-/**
- * Three things to try, held as English source strings and read through `t()` on the way out.
- *
- * Exported because `t()` on a variable is invisible to `i18n-coverage.test.ts`, which only walks
- * a literal `t()` call — so `room-intro.test.ts` walks this table instead, the way
- * `agent-presets.test.ts` walks its own.
- */
-export const ROOM_SUGGESTIONS = [
-  "What should we look at first today?",
-  "Each of you say what you would take on.",
-  "Sum up where things stand.",
-] as const;
+import { ROOM_SUGGESTIONS } from "./room-suggestions";
 
 /**
  * What a room says before anybody has said anything in it.

@@ -6,7 +6,7 @@
  * sees in the first room they ever make.
  */
 import { describe, expect, it } from "bun:test";
-import { ROOM_SUGGESTIONS } from "@/components/channels/room-intro";
+import { ROOM_SUGGESTIONS } from "@/components/channels/room-suggestions";
 import { ko } from "@/lib/i18n-ko";
 
 describe("the room's empty state", () => {
