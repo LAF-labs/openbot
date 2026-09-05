@@ -4,8 +4,9 @@ import { TeachATask } from "@/components/computer/teach-a-task";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, focusRingInset } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { pokeControl, watchControl } from "./control-poll";
 import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { LiveScreen } from "./live-screen";
@@ -43,11 +44,15 @@ const DEFAULT_MIN_HEIGHT = 200;
 /**
  * One horizontal rule for the whole card.
  *
- * Every block inside the card starts here: the picture, the sentences, the buttons. Rows that carry
- * a background bleed back out to the card's edge with `-mx-2` so the band still spans it while its
- * words stay on the rule. Three left edges used to coexist in a 320px column — 1150 for the row
- * text, 1162 for the recorded-steps list, and the picture at the card's own 1138 — which is enough
- * to read as a stack of unrelated things rather than one card.
+ * Every block inside the card starts here: the picture, the sentences, the buttons. Measured at
+ * 1440x900, three left edges used to coexist in the 287px column this pane leaves — 1150 for the
+ * row text, 1162 for the recorded-steps list, and the picture at the card's own 1138 — which is
+ * enough to read as a stack of unrelated things rather than one card. They are all 1146 now.
+ *
+ * WHICH IS WHY NO ROW HAS A TINTED BAND ANY MORE. A band has to pad itself away from its own edges,
+ * and that padding is the second left edge; bleeding it back out with `-mx-2` was tried and puts an
+ * 8px-radius rectangle across the card's own 16px corner, which is the thing directly above this
+ * that was being fixed. A hairline says a new row has started, and the words stay on the rule.
  */
 const CARD_PADDING = "p-2";
 
@@ -548,20 +553,25 @@ export function ComputerView({
                 aria-hidden={driving}
                 tabIndex={driving ? -1 : 0}
                 /*
-                 * INSET RING, AND WHITE RATHER THAN THE THEME'S — SPELLED OUT, NOT COMPOSED.
+                 * INSET RING, AND WHITE RATHER THAN THE THEME'S — COMPOSED THROUGH `cn`.
                  *
                  * This element is the whole viewport, so an outward ring is drawn past its edges
-                 * and clipped away. And the scrim is black in BOTH themes while `--ring` is
-                 * near-black at 40% alpha in the light one, so the house colour is not a ring here
-                 * either.
+                 * and clipped away; and the scrim is black in BOTH themes while `--ring` is
+                 * near-black at 40% alpha in the light one. So the SHAPE is the house inset ring
+                 * and only the colour is overridden.
                  *
-                 * `${focusRingInset} focus-visible:ring-white/70` was tried and measured: the
-                 * computed ring came back `oklab(0.19 … / 0.2) 2px inset`, the house colour, because
-                 * this is a plain template string rather than a `cn()` call and Tailwind orders its
-                 * output by utility, not by the order classes appear in the attribute. Two ring
-                 * colours in one class list is a coin toss, and it landed on invisible.
+                 * It has to go through `cn`. Written as a plain template string the measured ring
+                 * came back `oklab(0.19 … / 0.2) 2px inset` — the house colour, not white — because
+                 * Tailwind orders its output by utility rather than by the order classes appear in
+                 * the attribute, so two ring colours in one class list is a coin toss and it landed
+                 * on invisible. `cn` is `tailwind-merge`, which drops the loser instead of guessing.
                  */
-                className={`absolute inset-0 bg-black/80 outline-hidden focus-visible:ring-3 focus-visible:ring-white/70 focus-visible:ring-inset ${driving ? "cursor-default" : "cursor-zoom-out"}`}
+                className={cn(
+                  "absolute inset-0 bg-black/80",
+                  focusRingInset,
+                  "focus-visible:ring-white/70",
+                  driving ? "cursor-default" : "cursor-zoom-out",
+                )}
               />
               <div className="relative mb-3 flex items-center justify-between gap-4 text-sm text-white">
                 <span className="pointer-events-none">

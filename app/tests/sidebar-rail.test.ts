@@ -24,12 +24,15 @@ const readComponent = (...parts: string[]) =>
 const sidebar = readComponent("app-sidebar", "bot-sidebar.tsx");
 const botRow = readComponent("app-sidebar", "bot-row.tsx");
 const groupRow = readComponent("app-sidebar", "group-row.tsx");
-const button = readComponent("ui", "button.tsx");
+const focus = readComponent("ui", "focus.ts");
 
 describe("the roster collapses to a rail", () => {
   test("64px below lg, the full column above it", () => {
-    expect(sidebar).toContain('"w-16"');
-    expect(sidebar).toContain('"w-[var(--sand-sidebar-width)]"');
+    expect(sidebar).toContain('const RAIL_WIDTH = "4rem"');
+    expect(sidebar).toContain(
+      'const SIDEBAR_WIDTH = "var(--sand-sidebar-width)"',
+    );
+    expect(sidebar).toContain("isRail ? RAIL_WIDTH : SIDEBAR_WIDTH");
   });
 
   /*
@@ -50,9 +53,19 @@ describe("the roster collapses to a rail", () => {
     expect(ko["Collapse the sidebar"]).toBeTruthy();
   });
 
-  /* Tailwind classes only — and the width was the one inline style left in the column. */
-  test("the width is a class, not an inline style", () => {
-    expect(sidebar).not.toContain("style={{");
+  /*
+   * TAILWIND CLASSES ONLY, WITH ONE EXPLAINED EXCEPTION: the width.
+   *
+   * `--sand-sidebar-width` is the token that decides how wide the open column is, and written into
+   * a class it is `w-[var(--sand-…)]` — a raw palette variable in a class string, which is what
+   * `design-tokens.test.ts` counts as drift. So the width stays a value, exactly as this file
+   * expressed it before the rail existed, and it is the ONLY style in the column.
+   */
+  test("the width is the one value in the column, and the rows carry none", () => {
+    expect(sidebar.match(/style=\{\{/g) ?? []).toHaveLength(1);
+    expect(sidebar).toContain(
+      "style={{ width: isRail ? RAIL_WIDTH : SIDEBAR_WIDTH }}",
+    );
     expect(botRow).not.toContain("style={{");
     expect(groupRow).not.toContain("style={{");
   });
@@ -115,22 +128,25 @@ describe("one row layout", () => {
 
 describe("the roster's controls", () => {
   /*
-   * Read out of `components/ui/button.tsx` rather than typed in, so a change to the app's focus ring
-   * fails here instead of leaving the sidebar behind with the old one.
+   * THE RING IS IMPORTED, NOT COPIED — which is the whole point of `ui/focus.ts`.
+   *
+   * These rows first borrowed the utilities out of `ui/button.tsx` by hand, and that file has since
+   * stopped spelling them out: it imports `focusRing` like everything else. A test that went on
+   * matching class strings would have passed on a stale copy forever, which is the failure the
+   * shared constant exists to prevent.
    */
-  const focusRing = (button.match(/focus-visible:[\w./[\]-]+/g) ?? []).filter(
-    (utility, at, all) =>
-      all.indexOf(utility) === at && !utility.includes("destructive"),
-  );
-
-  test("the app's focus ring exists to be borrowed", () => {
-    expect(focusRing.length).toBeGreaterThanOrEqual(3);
+  test("the app has one spelling of the focus ring", () => {
+    expect(focus).toContain("export const focusRing");
+    expect(focus).toContain("focus-visible:ring-3");
   });
 
-  test("every roster row and footer link carries it", () => {
-    for (const utility of focusRing) {
-      expect(botRow).toContain(utility);
-      expect(sidebar).toContain(utility);
+  test("every roster row and footer link borrows it rather than copying it", () => {
+    for (const source of [botRow, sidebar]) {
+      expect(source).toContain('from "@/components/ui/focus"');
+      expect(source).toContain("focusRing");
+      // A hand-written ring beside the imported one is how the two drift apart again.
+      expect(source).not.toContain("focus-visible:ring-3");
+      expect(source).not.toContain("focus-visible:border-ring");
     }
   });
 

@@ -115,6 +115,13 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                459 tests across 55 files   →   445
  *
+ * MEASURED 2026-09-06, after the chat, rooms, roster and screen-pane pass: the group avatar's
+ * geometry, the codes a failed turn is said in and their Korean, the room's empty state, the one
+ * recipient picker, the roster's rail and row layout, the channel-events socket, the screen pane's
+ * alignment and its frame decoding, and the approval and Home centring.
+ *
+ *     app                539 tests across 65 files   →   522
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -123,7 +130,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 445, roots: ["app"] },
+  { name: "app", floor: 522, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
 ] as const;

@@ -114,19 +114,22 @@ describe("what a keyboard sees", () => {
     expect(view).toContain("border border-transparent bg-clip-padding");
   });
 
-  test("the full-size view's backdrop rings inside itself, in white", () => {
+  test("the full-size view's backdrop rings inside itself, in white, through cn", () => {
     /*
      * It is the whole viewport: an outward ring is drawn past its edges and clipped away. And the
      * scrim is black in both themes, while `--ring` in the light theme is 40%-alpha black.
      *
-     * Spelled out rather than composed from `focusRingInset`, and measured: composing left the
-     * computed ring at the house colour, because a plain template string cannot resolve two ring
-     * colours and Tailwind orders its output by utility rather than by class order.
+     * THE OVERRIDE HAS TO GO THROUGH `cn`. Measured with the two put in one template string: the
+     * computed ring came back `oklab(0.19 … / 0.2) 2px inset`, the house colour, because Tailwind
+     * orders its output by utility rather than by the order classes appear in the attribute. With
+     * `cn` — which is `tailwind-merge` — it measures white at 70%.
      */
-    expect(view).toContain("focus-visible:ring-inset");
-    expect(view).toContain("focus-visible:ring-white/70");
-    const backdrop = view.slice(view.indexOf("bg-black/80"));
-    expect(backdrop.slice(0, 160)).not.toContain("focusRingInset");
+    const at = view.indexOf("bg-black/80");
+    expect(at).toBeGreaterThan(-1);
+    // The `cn(` that opens this very class list, not one somewhere else in the file.
+    expect(view.slice(at - 80, at)).toContain("className={cn(");
+    expect(view.slice(at, at + 220)).toContain("focusRingInset");
+    expect(view.slice(at, at + 220)).toContain("focus-visible:ring-white/70");
   });
 
   test("the pill controls are the shared primitive rather than more bespoke buttons", () => {
