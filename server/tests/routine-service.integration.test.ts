@@ -130,6 +130,8 @@ function fakeAgents(reply: string, delayMs = 0) {
 
 function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
   const rows: AuditEventInput[] = [];
+  /** What reached the person's conversation. A test that expects silence reads this. */
+  const delivered: string[] = [];
   const service = createRoutineService({
     database,
     resolveAgents: async () => agents,
@@ -138,9 +140,12 @@ function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
         rows.push(event);
       },
     },
+    deliver: async (delivery) => {
+      delivered.push(delivery.answer);
+    },
     now: clock,
   });
-  return { service, rows };
+  return { service, rows, delivered };
 }
 
 describe("the schedule arithmetic", () => {
@@ -262,6 +267,83 @@ describe("a routine on the clock", () => {
 
     // Re-armed: the same moment is no longer due.
     expect(await service.tick()).toBe(0);
+  });
+
+  /**
+   * A run with nothing to say, answered the way the routine prompt asks for it.
+   *
+   * Borrowed from Hermes cron: `[SILENT]` is a report of nothing, and a report of nothing is not
+   * delivered — no message, no bell — while the run is still recorded and the trail says it was
+   * quiet on purpose. The next run is then told the last thing the person actually READ, not the
+   * marker.
+   */
+  test("a run with nothing to report is recorded and delivered nowhere", async () => {
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { agents } = fakeAgents("[SILENT]");
+    const { service, rows, delivered } = serviceWith(agents, () => clock);
+
+    const routine = await service.create(ACTOR, {
+      agentId: BOT_ID,
+      name: "아침 리뷰 요약",
+      instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    if (!routine) throw new Error("not created");
+
+    clock = new Date("2026-08-20T07:31:00Z");
+    expect(await service.tick()).toBe(1);
+
+    expect(delivered).toEqual([]);
+    const runs = await service.runs(ACTOR, routine.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ ok: true, answer: "[SILENT]" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "routine.ran",
+      targetId: routine.id,
+      payload: { ok: true, silent: true },
+    });
+  });
+
+  test("a silent run does not become what the next run is told it said", async () => {
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const replies = ["Two reviews came in overnight.", "[SILENT]", "again"];
+    const asked: string[] = [];
+    const agent = {
+      setMessages(messages: { content?: string }[]) {
+        asked.push(messages[0]?.content ?? "");
+      },
+      async runAgent() {
+        return {
+          result: undefined,
+          newMessages: [
+            { id: "m", role: "assistant", content: replies[asked.length - 1] },
+          ],
+        };
+      },
+    } as unknown as AbstractAgent;
+    const { service, delivered } = serviceWith(
+      { [BOT_ID]: agent },
+      () => clock,
+    );
+
+    await service.create(ACTOR, {
+      agentId: BOT_ID,
+      name: "아침 리뷰 요약",
+      instruction: "스토어 리뷰 확인하고 새 것만 요약해줘",
+      schedule: { kind: "interval", minutes: 30 },
+    });
+    const start = new Date("2026-08-20T07:00:00Z").getTime();
+    for (const minute of [31, 62, 93]) {
+      clock = new Date(start + minute * 60_000);
+      await service.tick();
+    }
+
+    expect(asked).toHaveLength(3);
+    // The third run is told about the first: the silent second one is not a report.
+    expect(asked[2]).toContain("Two reviews came in overnight.");
+    expect(asked[2]).not.toContain("[SILENT]");
+    expect(delivered).toEqual(["Two reviews came in overnight.", "again"]);
   });
 
   test("the second run is told what the first one reported", async () => {

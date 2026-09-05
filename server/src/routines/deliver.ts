@@ -32,6 +32,58 @@ export type RoutineDelivery = {
   at: Date;
 };
 
+/**
+ * What a routine answers when it has nothing to say.
+ *
+ * Borrowed from Hermes' cron prompt: the routine prompt (`shared/prompt/mode/routine.ko.ts`) asks
+ * for exactly `[SILENT]` when there is truly nothing to report, and this is the half that honours
+ * it — a silent answer is not written to the conversation and rings no bell. Without it the 07:30
+ * "새 주문 확인" delivers "새 주문이 없습니다" every morning, and a person who reads the same
+ * nothing for a week stops opening the ones that are not nothing.
+ *
+ * Three spellings, because models paraphrase markers: the bracketed one the prompt asks for, the
+ * bare word, and the Korean the prompt is written in.
+ */
+export const SILENT_MARKERS: readonly string[] = [
+  "[SILENT]",
+  "SILENT",
+  "조용히",
+  "[조용히]",
+];
+
+/** One line, with the decoration a model wraps a marker in taken off: `**[SILENT]**`, `` `SILENT` ``. */
+function bareLine(line: string): string {
+  return line
+    .trim()
+    .replace(/^[`*_"'「『]+|[`*_"'」』.。!]+$/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function isMarkerLine(line: string): boolean {
+  const bare = bareLine(line);
+  return SILENT_MARKERS.some((marker) => marker.toUpperCase() === bare);
+}
+
+/**
+ * Whether an answer is the marker and not a report.
+ *
+ * The whole answer, its first line or its last line: a model that writes the marker and then
+ * explains itself, or explains itself and then writes the marker, meant silence either way. A
+ * marker INSIDE a sentence is content — "오늘은 [SILENT] 규칙을 쓰지 않았다" is a report — and an
+ * empty answer is not silence, it is nothing, which the service already declines to deliver.
+ */
+export function isSilentAnswer(answer: string): boolean {
+  const lines = answer
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  if (first === undefined || last === undefined) return false;
+  return isMarkerLine(first) || isMarkerLine(last);
+}
+
 /** One thing a Bot said, appended to the one conversation it has with this person. */
 export type SoloAppend = {
   agentId: string;
@@ -100,6 +152,9 @@ export function createRoutineDelivery(
   announce?: AnnounceChannelActivity,
 ) {
   return async (delivery: RoutineDelivery): Promise<void> => {
+    // Nothing to report is nothing to deliver: no message, no preview, no bell. The run itself is
+    // still recorded, and the audit row says it was silent — see `routines/service.ts`.
+    if (isSilentAnswer(delivery.answer)) return;
     const target = await appendToSoloConversation(database, {
       agentId: delivery.agentId,
       userId: delivery.userId,

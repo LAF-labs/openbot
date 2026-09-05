@@ -27,7 +27,7 @@ import {
   type UnattendedRunResult,
   type UnattendedToolkit,
 } from "../runner/unattended";
-import type { DeliverRoutineAnswer } from "./deliver";
+import { type DeliverRoutineAnswer, isSilentAnswer } from "./deliver";
 import {
   dayAfter,
   instantOf,
@@ -464,6 +464,8 @@ export function createRoutineService(options: RoutineServiceOptions) {
     let answer = "";
     let failure = "";
     let steps: UnattendedRunResult["steps"] | null = null;
+    /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
+    let awaiting = false;
     /*
      * OPEN THE LEDGER FIRST, so the Bot reads as busy for the whole time it is busy.
      *
@@ -499,9 +501,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
        *
        * Only a run that SUCCEEDED and said something: a failure is not what the person was told,
        * and carrying it forward would have the next run answer a question about an error message.
+       * A silent run is skipped too — "[SILENT]" is not a report to compare against, and the
+       * question "what has changed" is asked of the last thing the person was actually told.
        * Read here rather than held in memory because a routine outlives any process that runs it.
        */
-      const [last] = await database
+      const recent = await database
         .select({ answer: lafRoutineRuns.answer })
         .from(lafRoutineRuns)
         .where(
@@ -511,8 +515,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
           ),
         )
         .orderBy(desc(lafRoutineRuns.startedAt))
-        .limit(1);
-      const previous = (last?.answer ?? "").trim();
+        .limit(KEPT_RUNS);
+      const previous =
+        recent
+          .map((run) => (run.answer ?? "").trim())
+          .find((said) => said.length > 0 && !isSilentAnswer(said)) ?? "";
       const instruction = previous
         ? carriedInstruction(
             row.instruction,
@@ -544,6 +551,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
          * place they will read it.
          */
         if (run.awaiting) {
+          awaiting = true;
           answer = `${answer}\n\n⏸ ${run.awaiting}`.trim();
         }
       } else {
@@ -556,7 +564,17 @@ export function createRoutineService(options: RoutineServiceOptions) {
       if (error instanceof UnattendedRunError) steps = error.steps;
     }
 
-    if (ok && author && answer.trim().length > 0) {
+    /*
+     * Nothing to report, said the way the routine prompt asks for it.
+     *
+     * Decided here, once, so the conversation, the receipt and the audit row cannot disagree about
+     * whether this run had anything to say: the answer is not delivered, the run is still recorded
+     * with what the model wrote, and the audit row carries `silent: true`. A run that stopped for
+     * a person is never silent — the marker would swallow the one line the person has to read.
+     */
+    const silent = ok && !awaiting && isSilentAnswer(answer);
+
+    if (ok && author && !silent && answer.trim().length > 0) {
       try {
         await options.deliver?.({
           agentId: row.agentId,
@@ -608,7 +626,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
         eventType: "routine.ran",
         targetType: "routine",
         targetId: row.id,
-        payload: { agentId: row.agentId, name: row.name, ok },
+        payload: {
+          agentId: row.agentId,
+          name: row.name,
+          ok,
+          // Only when true: a row that ran and reported reads exactly as it always did.
+          ...(silent ? { silent: true } : {}),
+        },
       });
     } catch {
       // Losing the audit row must not fail the run that already happened.

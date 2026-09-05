@@ -178,6 +178,39 @@ describe("writing into a Bot's own conversation", () => {
     expect(row?.lastMessageAgentId).toBe(botId);
   });
 
+  test("a routine with nothing to report writes nothing and rings nothing", async () => {
+    // The `[SILENT]` the routine prompt asks for. Delivering it would put a marker in the
+    // transcript and light the unread dot for a morning on which nothing happened.
+    const owner = await createUser();
+    const botId = await createBot(owner, "Quiet");
+    const channel = await createSolo(owner, botId);
+    const announced: unknown[] = [];
+
+    await createRoutineDelivery(database, (event) => {
+      announced.push(event);
+    })({
+      agentId: botId,
+      userId: owner.id,
+      routineName: "아침 리뷰 요약",
+      answer: "[SILENT]",
+      at: new Date(),
+    });
+
+    const threadId = threadIds.at(-1);
+    if (!threadId) throw new Error("no solo thread");
+    expect(await messagesIn(threadId)).toHaveLength(0);
+    const [row] = await database
+      .select({
+        lastMessage: channels.lastMessage,
+        lastMessageAt: channels.lastMessageAt,
+      })
+      .from(channels)
+      .where(eq(channels.id, channel.id));
+    expect(row?.lastMessage ?? null).toBeNull();
+    expect(row?.lastMessageAt ?? null).toBeNull();
+    expect(announced).toEqual([]);
+  });
+
   test("a Bot with no conversation yet is left without one", async () => {
     // Creating a conversation as a side effect of a schedule or a handoff is a surprise, not a
     // feature: the person never opened this Bot, and a room appearing on its own says they did.
