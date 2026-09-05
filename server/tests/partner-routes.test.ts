@@ -191,7 +191,7 @@ describe("what a deployment offers", () => {
     expect(partners.transports).toEqual({});
   });
 
-  test("one key configured lists one card, not two", async () => {
+  test("the key configured lists the one card there is", async () => {
     const userId = await createUser();
     const { app } = appFor(userId, { LAF_ALIMTALK_API_KEY: "key:secret" });
 
@@ -201,23 +201,6 @@ describe("what a deployment offers", () => {
     expect(listed.partners.map((card) => card.id)).toEqual(["kakao-alimtalk"]);
     expect(listed.partners[0]?.title).toBe("카카오 알림톡");
     expect(listed.partners[0]?.status.connected).toBe(false);
-  });
-
-  test("both keys configured lists both, in catalogue order", async () => {
-    const userId = await createUser();
-    const { app } = appFor(userId, {
-      LAF_ALIMTALK_API_KEY: "key:secret",
-      POPBILL_LINK_ID: "LAFTESTER",
-      POPBILL_SECRET_KEY: btoa("secret"),
-    });
-
-    const listed = (await (await app.request("/api/partners")).json()) as {
-      partners: { id: string }[];
-    };
-    expect(listed.partners.map((card) => card.id)).toEqual([
-      "kakao-alimtalk",
-      "tax-invoice",
-    ]);
   });
 
   test("pressing a connector this VM has no key for is a 503, not a 500", async () => {
@@ -392,11 +375,6 @@ describe("the AlimTalk door", () => {
 describe("a connect reaches the Bots", () => {
   test("disconnecting takes the server row, and with it every grant on its tools", async () => {
     const userId = await createUser();
-    const environment = {
-      POPBILL_LINK_ID: "LAFTESTER",
-      POPBILL_SECRET_KEY: btoa("secret"),
-      POPBILL_TEST: "true",
-    };
     const calls: StoreCalls = {
       ensured: [],
       refreshed: [],
@@ -405,34 +383,39 @@ describe("a connect reaches the Bots", () => {
       removed: [],
     };
     const botId = await createBot(userId);
-    const { app, partners } = appFor(userId, environment, calls);
-    await partners.connections.save({
-      provider: "tax-invoice",
+    const { app, partners } = appFor(
       userId,
-      account: "1234567890",
-      details: { corpName: "미소상회" },
-      label: "member:joined",
+      { LAF_ALIMTALK_API_KEY: "key:secret" },
+      calls,
+    );
+    await partners.connections.save({
+      provider: "kakao-alimtalk",
+      userId,
+      account: "KA01PF-fake",
+      details: { searchId: "@미소상회" },
+      label: "channel:registered",
     });
 
-    const answered = await app.request("/api/partners/tax-invoice/disconnect", {
-      method: "POST",
-    });
+    const answered = await app.request(
+      "/api/partners/kakao-alimtalk/disconnect",
+      { method: "POST" },
+    );
     expect(await answered.json()).toEqual({ disconnected: true });
     /*
-     * A Bot that kept a tool it can no longer use would offer 세금계산서 발행 in its own tool list
-     * and refuse every call — a capability that exists to say no. Removing the server row takes the
+     * A Bot that kept a tool it can no longer use would offer 알림톡 보내기 in its own tool list and
+     * refuse every call — a capability that exists to say no. Removing the server row takes the
      * tool rows with it.
      */
-    expect(calls.removed).toEqual(["tax-invoice"]);
+    expect(calls.removed).toEqual(["kakao-alimtalk"]);
     /*
      * AND THE GRANTS, WHICH THE SERVER ROW DOES NOT TAKE. `plugin_grants.ref` is plain text with no
      * key behind it — measured by pressing 연결 해제 against a live deployment and reading the
      * table, which still held both rows. Left there they draw on the admin page as a discrepancy
      * somebody should look into, and nothing is discrepant: the person pressed the button.
      */
-    for (const tool of partners.toolsOf("tax-invoice")) {
+    for (const tool of partners.toolsOf("kakao-alimtalk")) {
       expect(calls.revoked).toContainEqual({
-        ref: `tax-invoice/${tool.name}`,
+        ref: `kakao-alimtalk/${tool.name}`,
         botId,
       });
     }

@@ -264,13 +264,12 @@ export function createApp(
    */
   siteConnections?: SiteConnectionStore,
   /**
-   * The two partner vendors LAF holds the account at. Last, like everything new.
+   * The partner vendor LAF holds the account at. Last, like everything new.
    *
    * Absent leaves `/api/partners` unmounted and the 연결 screen draws no partner cards — which is
-   * what a deployment with neither key configured should show, and what the runtime itself reports
-   * when only one is configured. It is passed BESIDE the plugin store rather than through it,
-   * because a connect writes a server row and a grant as well as a registration: see
-   * `plugins/partner-routes.ts`.
+   * what a deployment with no key configured should show, and what the runtime itself reports. It is
+   * passed BESIDE the plugin store rather than through it, because a connect writes a server row and
+   * a grant as well as a registration: see `plugins/partner-routes.ts`.
    */
   partners?: PartnerRuntime,
 ) {
@@ -609,8 +608,8 @@ export function createApp(
      * `connected-page.ts`; the front door forwards `/connected` for the same reason (app/Caddyfile).
      */
     app.route("/connected", createConnectedPageRoute());
-    // 알림톡 and 세금계산서. Mounted with the plugin store because a partner connect makes a server
-    // row and grants its tools through it — the registration alone reaches no Bot.
+    // 알림톡. Mounted with the plugin store because a partner connect makes a server row and grants
+    // its tools through it — the registration alone reaches no Bot.
     if (partners) {
       app.route(
         "/api/partners",

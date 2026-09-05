@@ -1,12 +1,17 @@
 /**
- * The partner runtime: which of the two partner vendors this deployment holds a key for, and the
- * modules that answer for them.
+ * The partner runtime: whether this deployment holds the key for a partner vendor, and the modules
+ * that answer for it.
+ *
+ * ONE VENDOR, AND THE SHAPE IS STILL PLURAL. 전자세금계산서 (팝빌) was the second one and was dropped
+ * on 2026-09-05; 알림톡 is what is left. The runtime keeps its per-family shape — a transport table,
+ * a configured list — because that is what `createPluginStore` and the routes read, and because
+ * collapsing it to one vendor's name is the change that has to be undone the day a second lands.
  *
  * WHY IT IS ASSEMBLED HERE AND NOT INSIDE THE STORE. A partner's tools are this repository's own
  * code and reach the database through `partner-connections.ts`, which imports `store.ts` for its
  * refusal class. Building the runtime inside the store would close that loop. So the process builds
  * this, hands `transports` to `createPluginStore` and the whole object to the partner routes, and
- * the store learns nothing about 솔라피 or 팝빌 beyond "this entry's transport came from outside".
+ * the store learns nothing about 솔라피 beyond "this entry's transport came from outside".
  *
  * ABSENT IS THE DEFAULT AND IT IS NOT AN ERROR. A fleet VM with no `LAF_ALIMTALK_API_KEY` has no
  * 알림톡: the card is not drawn, the connect route refuses 503, no server row is made and no tool is
@@ -28,19 +33,14 @@ import {
 } from "./partner-connections";
 import type { PartnerToolSpec } from "./partner-tools";
 import { botsOwnedBy } from "./skills-and-grants";
-import { createTaxConnect, type TaxConnect } from "./tax/connect";
-import { popbillSettings } from "./tax/popbill";
-import { createTaxTools, TAX_TOOLS } from "./tax/tools";
 import type { VendorTransport } from "./transport";
 
 /** What every partner connector offers a screen, in the shape the routes hand back. */
 export type PartnerRuntime = {
-  /** The rows, shared by both connectors and by the notification door. */
+  /** The rows, shared by the connector and by the notification door. */
   connections: PartnerConnections;
   /** Null when this deployment holds no 솔라피 key. */
   alimtalk: AlimtalkConnect | null;
-  /** Null when this deployment holds no 팝빌 LinkID. */
-  tax: TaxConnect | null;
   /** For `createPluginStore`. Only the partners this deployment can actually reach. */
   transports: Partial<Record<PartnerFamily, VendorTransport>>;
   /** Which partners are configured, in catalogue order. What the 연결 screen may draw. */
@@ -66,39 +66,27 @@ export function createPartnerRuntime(input: {
   const connections = createPartnerConnections(input.context);
 
   const hasAlimtalk = solapiSettings(environment) !== null;
-  const hasTax = popbillSettings(environment) !== null;
 
   const alimtalk = hasAlimtalk
     ? createAlimtalkConnect(input.context, connections, environment)
-    : null;
-  const tax = hasTax
-    ? createTaxConnect(input.context, connections, environment)
     : null;
 
   const transports: Partial<Record<PartnerFamily, VendorTransport>> = {
     ...(hasAlimtalk
       ? { "kakao-alimtalk": createAlimtalkTools(connections, environment) }
       : {}),
-    ...(hasTax
-      ? { "tax-invoice": createTaxTools(connections, environment) }
-      : {}),
   };
 
   return {
     connections,
     alimtalk,
-    tax,
     transports,
     configured: Object.freeze(
-      (
-        [
-          "kakao-alimtalk",
-          "tax-invoice",
-        ] as const satisfies readonly PartnerFamily[]
-      ).filter((family) => transports[family] !== undefined),
+      (["kakao-alimtalk"] as const satisfies readonly PartnerFamily[]).filter(
+        (family) => transports[family] !== undefined,
+      ),
     ),
-    toolsOf: (provider) =>
-      provider === "kakao-alimtalk" ? ALIMTALK_TOOLS : TAX_TOOLS,
+    toolsOf: () => ALIMTALK_TOOLS,
     // The one definition, shared with the OAuth callback's own grant path: two expressions of
     // "their Bots" is how one of them quietly stops including hidden ones.
     botsOwnedBy: (userId) => botsOwnedBy(input.database, userId),

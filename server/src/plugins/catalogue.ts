@@ -54,17 +54,21 @@ export type SharedClientFamily = "google" | "cafe24";
  *
  * The same platform-holds-it arrangement as {@link SharedClientFamily} and a different mechanism,
  * which is why it is a second union rather than a third auth kind. An OAuth vendor issues a grant
- * to the person and this deployment spends it; these two issue LAF one agency account — a 솔라피
- * 대행사 key, a 팝빌 파트너 LinkID — and the business is REGISTERED under it by a step taken inside
- * this product. So there is no grant, nothing rotates, and what belongs to the person is the handle
- * the vendor issued them: a 발신프로필 senderKey, a 사업자등록번호.
+ * to the person and this deployment spends it; this one issues LAF one agency account — a 솔라피
+ * 대행사 key — and the business is REGISTERED under it by a step taken inside this product. So there
+ * is no grant, nothing rotates, and what belongs to the person is the handle the vendor issued
+ * them: a 발신프로필 senderKey.
+ *
+ * A UNION OF ONE, DELIBERATELY. 전자세금계산서 (팝빌) was the second member until 2026-09-05. The
+ * union stays because it is what makes `partner` on an entry mean something other than "any
+ * string", and because the arrangement it describes is the one a second vendor would arrive into.
  *
  * Closed, for the same reason the other one is: an entry naming a partner with no module and no
  * environment variables behind it should not typecheck. `server/src/plugins/partner-connections.ts`
  * takes its provider list from here, so a row, a tool ref, a catalogue key and a policy rule all
  * name the connection with one word.
  */
-export type PartnerFamily = "kakao-alimtalk" | "tax-invoice";
+export type PartnerFamily = "kakao-alimtalk";
 
 /**
  * How a server is authenticated, and whose credential does it.
@@ -572,13 +576,13 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
   },
   /*
-   * THE TWO PARTNER ENTRIES, and what makes them a different shape from everything above.
+   * THE PARTNER ENTRY, and what makes it a different shape from everything above.
    *
    * Every entry before this one is a vendor the PERSON has an account with, which this deployment
-   * borrows through an OAuth grant. These two are vendors LAF has the account with: a 솔라피 대행사
-   * key and a 팝빌 파트너 LinkID, one of each for the whole fleet. The business registers underneath
-   * — its own 카카오톡 채널, its own 연동회원 — through a screen in this product, and never obtains a
-   * key, never visits a console and never sees LAF's credentials.
+   * borrows through an OAuth grant. This one is a vendor LAF has the account with: a 솔라피 대행사
+   * key, one for the whole fleet. The business registers underneath — its own 카카오톡 채널 —
+   * through a screen in this product, and never obtains a key, never visits a console and never
+   * sees LAF's credentials.
    *
    * `auth: { kind: "none" }` IS ABOUT THE CALL PATH, NOT ABOUT THE VENDOR. `deployment-bearer` is
    * the nearest description of the truth and is the wrong field to set: it makes
@@ -608,28 +612,6 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
      */
     guardedTools: Object.freeze({ alimtalk_send: "external" as const }),
     docsUrl: "https://developers.solapi.com/references/kakao",
-  },
-  {
-    key: "tax-invoice",
-    title: "전자세금계산서",
-    vendor: "Popbill",
-    summary: "Tax invoices issued and looked up for this business.",
-    /*
-     * The production host. A deployment with `POPBILL_TEST=true` calls the test host instead, which
-     * is the module's business and not the catalogue's: the entry names where a real invoice goes.
-     */
-    host: "https://popbill.linkhub.co.kr",
-    path: "/Taxinvoice",
-    auth: { kind: "none" },
-    partner: "tax-invoice",
-    writeTools: Object.freeze(["taxinvoice_issue"]),
-    /*
-     * `money`, which is the harshest floor there is, and the only entry in this file that earns it.
-     * An issued 세금계산서 is reported to the 국세청 and is somebody's tax position; undoing one is a
-     * 수정세금계산서, not a delete. Registering a draft is a write and is left to the written policy.
-     */
-    guardedTools: Object.freeze({ taxinvoice_issue: "money" as const }),
-    docsUrl: "https://docs.popbill.com/taxinvoice/api",
   },
 ]);
 

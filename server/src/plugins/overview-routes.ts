@@ -87,7 +87,7 @@ export type ConnectionsOverviewSources = {
   catalogue: () => CatalogueEntry[];
   store: Pick<PluginStore, "connectionsFor" | "listServers">;
   /** Null on a deployment holding no partner key at all, and then no partner row is drawn. */
-  partners: Pick<PartnerRuntime, "configured" | "alimtalk" | "tax"> | null;
+  partners: Pick<PartnerRuntime, "configured" | "alimtalk"> | null;
   /** Null where no computer is configured, so no site could be holding a session. */
   sites: Pick<SiteConnectionStore, "list"> | null;
   /** This person's Bots, name and id and nothing else. */
@@ -186,8 +186,7 @@ export function createConnectionsOverviewRoutes(
      */
     const partners = sources.partners;
     for (const provider of partners?.configured ?? []) {
-      const connector =
-        provider === "kakao-alimtalk" ? partners?.alimtalk : partners?.tax;
+      const connector = partners?.alimtalk;
       if (!connector) continue;
       const status = (await connector.status(userId)) as {
         connected?: unknown;

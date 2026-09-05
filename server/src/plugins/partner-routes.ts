@@ -1,11 +1,11 @@
 /**
- * The 알림톡 and 세금계산서 cards' own surface: connect, look, disconnect.
+ * The 알림톡 card's own surface: connect, look, disconnect.
  *
  * SEPARATE FROM `/api/plugins/connections` BECAUSE THE GESTURE IS DIFFERENT. That one lists OAuth
  * entries and every card on it does the same thing — leave for the vendor, come back consented. A
- * partner is registered rather than consented to: two steps and a 인증번호 for 알림톡, a form and a
- * popup the person opens themselves for 세금계산서. One list with two gestures on it would be a
- * screen where half the buttons mean something else.
+ * partner is registered rather than consented to: two steps and a 인증번호 to prove the channel is
+ * this person's. One list with two gestures on it would be a screen where half the buttons mean
+ * something else.
  *
  * ONLY WHAT THIS DEPLOYMENT HOLDS A KEY FOR. `GET /` answers with the configured partners and no
  * others, so a fleet VM without `LAF_ALIMTALK_API_KEY` draws no 알림톡 card at all — not a card with
@@ -43,15 +43,6 @@ function required(
   return value.trim();
 }
 
-/** An optional string field, trimmed. Absent and empty are one thing here. */
-function optional(
-  body: Record<string, unknown> | null,
-  name: string,
-): string | undefined {
-  const value = body?.[name];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 export function createPartnerRoutes(
   store: PluginStore,
   partners: PartnerRuntime,
@@ -70,8 +61,7 @@ export function createPartnerRoutes(
    * thing", the other is "not here".
    */
   function connectorFor(provider: PartnerProvider) {
-    const connector =
-      provider === "kakao-alimtalk" ? partners.alimtalk : partners.tax;
+    const connector = partners.alimtalk;
     if (!connector) {
       throw new PartnerRefusedError(`laf:${provider}_not_configured`, 503);
     }
@@ -168,8 +158,7 @@ export function createPartnerRoutes(
     const listed = [];
     for (const provider of partners.configured) {
       const entry = catalogueEntry(provider);
-      const connector =
-        provider === "kakao-alimtalk" ? partners.alimtalk : partners.tax;
+      const connector = partners.alimtalk;
       if (!entry || !connector) continue;
       listed.push({
         id: provider,
@@ -247,84 +236,6 @@ export function createPartnerRoutes(
   );
 
   /**
-   * The 팝빌 연동회원 join: this business becomes a member under LAF's LinkID.
-   *
-   * NO ID AND NO PASSWORD IS ASKED FOR OR SENT BACK. The member id is derived from the business
-   * number and the password is minted inside the module and forgotten — see `tax/connect.ts`. What
-   * the person types is what they would type on any 세금계산서 form.
-   */
-  routes.post("/tax-invoice/connect", requireUser, async (context) =>
-    answerWith(context, async (userId) => {
-      const connector = partners.tax;
-      if (!connector) {
-        throw new PartnerRefusedError("laf:tax-invoice_not_configured", 503);
-      }
-      const body = await jsonBody(context);
-      const status = await connector.join({
-        userId,
-        businessNumber: required(
-          body,
-          "businessNumber",
-          "laf:tax_business_number_missing",
-        ),
-        corpName: required(body, "corpName", "laf:tax_corp_name_missing"),
-        ceoName: required(body, "ceoName", "laf:tax_ceo_name_missing"),
-        contactName: required(
-          body,
-          "contactName",
-          "laf:tax_contact_name_missing",
-        ),
-        contactPhone: required(
-          body,
-          "contactPhone",
-          "laf:tax_contact_phone_missing",
-        ),
-        contactEmail: required(
-          body,
-          "contactEmail",
-          "laf:tax_contact_email_missing",
-        ),
-        ...(optional(body, "address")
-          ? { address: optional(body, "address") as string }
-          : {}),
-      });
-      await offerToolsTo("tax-invoice", userId, actorEmail(context));
-      return { status };
-    }),
-  );
-
-  /**
-   * The URL of 팝빌's own certificate popup, for the person to open in their own browser.
-   *
-   * A URL AND NOTHING MORE, DELIBERATELY. Registering a 공동인증서 means choosing a file on the
-   * person's own machine and typing its password, and the only place that may happen is a window
-   * they opened themselves at the vendor's address. Nothing here automates it, nothing here reads
-   * it, and a password never crosses this process.
-   */
-  routes.post("/tax-invoice/certificate-url", requireUser, async (context) =>
-    answerWith(context, async (userId) => {
-      const connector = partners.tax;
-      if (!connector) {
-        throw new PartnerRefusedError("laf:tax-invoice_not_configured", 503);
-      }
-      const body = await jsonBody(context);
-      const kind = optional(body, "kind") === "seal" ? "seal" : "certificate";
-      return await connector.certificateUrl({ userId, kind });
-    }),
-  );
-
-  /** Ask 팝빌 whether the certificate is registered now, and until when. */
-  routes.post("/tax-invoice/refresh", requireUser, async (context) =>
-    answerWith(context, async (userId) => {
-      const connector = partners.tax;
-      if (!connector) {
-        throw new PartnerRefusedError("laf:tax-invoice_not_configured", 503);
-      }
-      return { status: await connector.refreshCertificate(userId) };
-    }),
-  );
-
-  /**
    * One person dropping their own registration.
    *
    * The server row goes with it, which takes the tool rows — so a Bot stops being offered 알림톡
@@ -337,8 +248,8 @@ export function createPartnerRoutes(
    * the admin Plugins page as a discrepancy somebody should look into, which would be a lie here.
    * Nothing is discrepant: the person pressed the button.
    *
-   * NOTHING IS WITHDRAWN AT THE VENDOR. The 카카오톡 채널 and the 팝빌 회원 are the person's own and
-   * outlive this; what stops is LAF acting as them. The audit row says so out loud.
+   * NOTHING IS WITHDRAWN AT THE VENDOR. The 카카오톡 채널 is the person's own and outlives this;
+   * what stops is LAF acting as them. The audit row says so out loud.
    */
   routes.post("/:provider/disconnect", requireUser, async (context) =>
     answer(context, async (provider, userId) => {

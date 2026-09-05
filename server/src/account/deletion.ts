@@ -231,8 +231,8 @@ export function createAccountDeletion(
        * And the partner registrations, before the row they hang off is deleted.
        *
        * Ahead of the cascade rather than instead of it: what this adds is the audit row saying the
-       * 카카오톡 채널 and the 팝빌 회원 stopped being reachable from here, and — for a withdrawal
-       * that does not finish — that they stopped at all. See the field's own note.
+       * 카카오톡 채널 stopped being reachable from here, and — for a withdrawal that does not finish
+       * — that it stopped at all. See the field's own note.
        */
       const partnersRetired = retirePartnersFor
         ? await retirePartnersFor(userId, pseudonym)

@@ -128,9 +128,9 @@ export type DeploymentConfig = {
    * The partner vendors LAF holds the ACCOUNT at, and whether this VM was given the keys.
    *
    * The third shape a connector can have, after "the person's own grant" and "a token an
-   * administrator pasted": LAF is 솔라피's and 팝빌's customer, and each business is registered
-   * underneath through a screen in this product. So the credential is fleet configuration, the same
-   * on every VM that offers the connector and absent on every VM that does not.
+   * administrator pasted": LAF is 솔라피's customer, and each business is registered underneath
+   * through a screen in this product. So the credential is fleet configuration, the same on every VM
+   * that offers the connector and absent on every VM that does not.
    *
    * Booleans rather than the values. The modules read their own settings out of the environment —
    * one place that knows what a 솔라피 key looks like — and what belongs HERE is the boot-time
@@ -140,8 +140,6 @@ export type DeploymentConfig = {
   partners: {
     /** 카카오 알림톡, through 솔라피's agency API. */
     alimtalk: boolean;
-    /** 전자세금계산서, through 팝빌 under LAF's LinkID. */
-    tax: boolean;
   };
 };
 
@@ -520,12 +518,11 @@ function connectorsConfig(
  *
  * THE RULE IS THE SAME ONE `sharedClientsFrom` KEEPS, and it is here for the same reason: a
  * connector half configured fails at the moment somebody is trying to use it, which is the worst
- * moment to find out. A 솔라피 key with no secret in it cannot sign a request; a 팝빌 LinkID with no
- * secret cannot get a session token. Neither can be discovered from anything but a live call, so
- * both are refused at boot with the name of what is wrong.
+ * moment to find out. A 솔라피 key with no secret in it cannot sign a request, and that cannot be
+ * discovered from anything but a live call, so it is refused at boot with the name of what is wrong.
  *
- * ABSENT IS NOT A FAILURE. A VM with neither variable set offers neither connector, draws neither
- * card, and is a correct deployment — which is what the two booleans say.
+ * ABSENT IS NOT A FAILURE. A VM with the variable unset offers no connector, draws no card, and is
+ * a correct deployment — which is what the boolean says.
  */
 function partnersConfig(
   environment: Environment,
@@ -550,26 +547,7 @@ function partnersConfig(
     );
   }
 
-  const linkId = optional(environment, "POPBILL_LINK_ID");
-  const secretKey = optional(environment, "POPBILL_SECRET_KEY");
-  if (Boolean(linkId) !== Boolean(secretKey)) {
-    throw new Error(
-      "POPBILL_LINK_ID and POPBILL_SECRET_KEY must be set together: the LinkID names the partner and the secret is what signs for it, and neither works alone",
-    );
-  }
-  /*
-   * Refused rather than read as false, which is the direction that costs money. `POPBILL_TEST=ture`
-   * silently meaning production is a business issuing real 세금계산서 to the 국세청 from a deployment
-   * somebody set up to try it out.
-   */
-  const isTest = optional(environment, "POPBILL_TEST");
-  if (isTest !== undefined && isTest !== "true" && isTest !== "false") {
-    throw new Error(
-      `POPBILL_TEST must be exactly "true" or "false" (it was "${isTest}"): anything else would be read as production, where an issued 세금계산서 reaches the 국세청`,
-    );
-  }
-
-  return { alimtalk: Boolean(alimtalkKey), tax: Boolean(linkId && secretKey) };
+  return { alimtalk: Boolean(alimtalkKey) };
 }
 
 /**

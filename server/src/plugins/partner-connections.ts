@@ -8,10 +8,10 @@ import type { PluginContext } from "./store";
  * One person's registration with a partner vendor, and the rows that record it.
  *
  * THE PARTNER MODEL, IN ONE PARAGRAPH. Nobody using this product will ever obtain an API key. Where
- * a vendor sells through an agency — 솔라피's message-agency account, 팝빌's 연동회원 — LAF holds the
- * one account for the whole fleet and each person is REGISTERED under it by a step they take inside
- * the product. So the credential is fleet configuration, and what belongs to a person is the handle
- * the vendor issued them: a 발신프로필 senderKey, a 사업자등록번호. That is what these rows hold.
+ * a vendor sells through an agency — 솔라피's message-agency account — LAF holds the one account for
+ * the whole fleet and each person is REGISTERED under it by a step they take inside the product. So
+ * the credential is fleet configuration, and what belongs to a person is the handle the vendor
+ * issued them: a 발신프로필 senderKey. That is what these rows hold.
  *
  * It is deliberately not the OAuth machinery in `connections.ts`. Nothing here rotates, nothing here
  * is spent at a token endpoint, and there is no grant to revoke at the vendor — a person
@@ -19,7 +19,7 @@ import type { PluginContext } from "./store";
  */
 
 /**
- * The two vendors this reaches, named by their catalogue key so one word serves everywhere.
+ * The vendors this reaches, named by their catalogue key so one word serves everywhere.
  *
  * The TYPE is the catalogue's ({@link PartnerFamily}) and this is the runtime list, annotated
  * against it: a vendor added to one and forgotten in the other stops compiling here rather than
@@ -27,7 +27,6 @@ import type { PluginContext } from "./store";
  */
 export const PARTNER_PROVIDERS: readonly PartnerFamily[] = Object.freeze([
   "kakao-alimtalk",
-  "tax-invoice",
 ]);
 
 export type PartnerProvider = PartnerFamily;
@@ -118,9 +117,9 @@ export function createPartnerConnections(context: PartnerContext) {
   /**
    * One person dropping their own registration.
    *
-   * Local only, and it says so. There is nothing to revoke at the vendor: the 카카오톡 채널 and the
-   * 팝빌 회원 are the person's own and outlive this row. What stops is LAF sending as them, which is
-   * the whole of what this deployment was doing on their behalf.
+   * Local only, and it says so. There is nothing to revoke at the vendor: the 카카오톡 채널 is the
+   * person's own and outlives this row. What stops is LAF sending as them, which is the whole of
+   * what this deployment was doing on their behalf.
    *
    * A named function rather than a method, because `retireFor` below calls it: a method reached
    * through `this` breaks the moment somebody destructures this object, which is exactly how the

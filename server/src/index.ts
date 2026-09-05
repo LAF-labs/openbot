@@ -224,15 +224,15 @@ const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
  */
 const channelEvents = createChannelEventHub();
 /**
- * The two partner vendors LAF holds the account at, assembled once.
+ * The partner vendor LAF holds the account at, assembled once.
  *
  * BEFORE THE OUTBOX AND BEFORE THE PLUGIN STORE, because both take something from it: the AlimTalk
- * door needs to know whose channel to send as, and the store needs the transports for the two
- * catalogue entries whose tools are this repository's own code. Built here rather than inside the
- * store because the partner modules import the store's refusal class — see `plugins/partners.ts`.
+ * door needs to know whose channel to send as, and the store needs the transport for the catalogue
+ * entry whose tools are this repository's own code. Built here rather than inside the store because
+ * the partner modules import the store's refusal class — see `plugins/partners.ts`.
  *
- * A VM with neither key configured gets an object with nothing in it, no cards and no tools, which
- * is a correct deployment. `config.partners` refused to start on half of either.
+ * A VM with no key configured gets an object with nothing in it, no cards and no tools, which is a
+ * correct deployment. `config.partners` refused to start on half of one.
  */
 const partnerRuntime = createPartnerRuntime({
   context: { database, auditStore: bootAuditStore },
@@ -242,7 +242,6 @@ console.info(
   JSON.stringify({
     type: "partner-connectors",
     alimtalk: config.partners.alimtalk,
-    tax: config.partners.tax,
   }),
 );
 /**
@@ -978,7 +977,7 @@ const app = createApp(
     deletion: createAccountDeletion({
       database,
       retireConnectionsFor: pluginStore.retireConnectionsFor,
-      // The 발신프로필 and the 팝빌 회원, before the row they hang off goes. See the field's note.
+      // The 발신프로필, before the row it hangs off goes. See the field's note.
       retirePartnersFor: partnerRuntime.connections.retireFor,
       ...(computerClient ? { computerClient } : {}),
       ...(fleetNotifier ? { fleet: fleetNotifier } : {}),
@@ -1004,8 +1003,8 @@ const app = createApp(
   // Which business sites this person has signed into on a Bot's browser. The same store the
   // gateway writes through above, so the card and the morning routine agree about one row.
   siteConnections,
-  // 알림톡 and 세금계산서: the two vendors LAF holds the account at. The same runtime the outbox's
-  // AlimTalk door and the plugin store's transports were built from, so one connect is one fact.
+  // 알림톡: the vendor LAF holds the account at. The same runtime the outbox's AlimTalk door and
+  // the plugin store's transports were built from, so one connect is one fact.
   partnerRuntime,
 );
 

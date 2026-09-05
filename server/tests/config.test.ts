@@ -395,16 +395,16 @@ describe("telling the fleet about a withdrawal", () => {
 });
 
 /**
- * The two partner vendors LAF holds the ACCOUNT at, and the boot-time refusal over half of one.
+ * The partner vendor LAF holds the ACCOUNT at, and the boot-time refusal over half of it.
  *
  * The same rule the shared OAuth clients keep, for the same reason: a connector configured halfway
  * fails at the moment somebody is trying to use it, which is the worst moment to find out. Neither
- * half of either pair can be told apart from a working one by anything but a live call.
+ * half of the pair can be told apart from a working one by anything but a live call.
  */
 describe("the partner connectors", () => {
-  test("neither configured is a correct deployment, not a failure", () => {
+  test("not configured is a correct deployment, not a failure", () => {
     const config = loadConfig(baseEnvironment);
-    expect(config.partners).toEqual({ alimtalk: false, tax: false });
+    expect(config.partners).toEqual({ alimtalk: false });
   });
 
   test("a 솔라피 key that is not a pair refuses to boot", () => {
@@ -431,35 +431,4 @@ describe("the partner connectors", () => {
     ).toThrow("LAF_ALIMTALK_BASE_URL");
   });
 
-  test("a 팝빌 LinkID with no secret refuses to boot, and the reverse too", () => {
-    expect(() =>
-      loadConfig({ ...baseEnvironment, POPBILL_LINK_ID: "LAFTESTER" }),
-    ).toThrow("POPBILL_SECRET_KEY");
-    expect(() =>
-      loadConfig({ ...baseEnvironment, POPBILL_SECRET_KEY: "c2VjcmV0" }),
-    ).toThrow("POPBILL_LINK_ID");
-    expect(
-      loadConfig({
-        ...baseEnvironment,
-        POPBILL_LINK_ID: "LAFTESTER",
-        POPBILL_SECRET_KEY: "c2VjcmV0",
-      }).partners.tax,
-    ).toBe(true);
-  });
-
-  test("a POPBILL_TEST that is neither word refuses to boot rather than meaning production", () => {
-    /*
-     * The direction that costs money. `POPBILL_TEST=ture` read as false is a business issuing real
-     * 세금계산서 to the 국세청 from a deployment somebody stood up to try things out — so anything
-     * that is not exactly one of the two words stops the process.
-     */
-    expect(() =>
-      loadConfig({
-        ...baseEnvironment,
-        POPBILL_LINK_ID: "LAFTESTER",
-        POPBILL_SECRET_KEY: "c2VjcmV0",
-        POPBILL_TEST: "ture",
-      }),
-    ).toThrow("POPBILL_TEST");
-  });
 });

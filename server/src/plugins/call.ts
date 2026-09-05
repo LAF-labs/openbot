@@ -46,9 +46,8 @@ import {
  *
  * A PARTNER ENTRY IS THE SECOND KIND, and reading it off `auth.kind` alone said the opposite. The
  * key spent is LAF's, so `auth` is not `user-oauth` and this returned "deployment" — but the message
- * leaves the person's OWN 카카오톡 채널 and the invoice is issued under their OWN 사업자등록번호. A
- * row saying "deployment" about a message that went out as somebody's shop is the one lie a
- * per-person connector's trail cannot afford.
+ * leaves the person's OWN 카카오톡 채널. A row saying "deployment" about a message that went out as
+ * somebody's shop is the one lie a per-person connector's trail cannot afford.
  */
 const reachedAsFor = (entry: CatalogueEntry | null, actorId: string): string =>
   entry?.auth.kind === "user-oauth" || entry?.partner ? actorId : "deployment";

@@ -11,14 +11,14 @@ import { users } from "./core";
 import { jsonb } from "./json";
 
 /**
- * Schema owned by the partner connectors: 카카오 알림톡 and 전자세금계산서.
+ * Schema owned by the partner connectors: 카카오 알림톡.
  *
  * WHY THIS IS NOT `mcp_user_credentials`. That table holds one person's OAuth grant — a secret in
  * the vault with a pointer to it — and the whole of its machinery is about refresh tokens rotating,
  * being spent and being revoked. What a partner connection holds is not a grant at all: LAF is the
- * vendor's customer (a 솔라피 message-agency account, a 팝빌 파트너 LinkID) and each person is
- * REGISTERED under it. What is per-person is the handle the vendor issued for them — a 발신프로필
- * senderKey, a 사업자등록번호 — and the facts they typed to get it.
+ * vendor's customer (a 솔라피 message-agency account) and each person is REGISTERED under it. What
+ * is per-person is the handle the vendor issued for them — a 발신프로필 senderKey — and the facts
+ * they typed to get it.
  *
  * So it is a different row with a different lifetime, and conflating the two would have meant a
  * senderKey being carried through code that revokes it at a token endpoint.
@@ -36,8 +36,8 @@ const updatedAt = () =>
  * has to have exactly one answer, and a surrogate id with no unique constraint makes the answer
  * whichever row sorted first.
  *
- * `provider` is the catalogue key (`kakao-alimtalk`, `tax-invoice`), so a row, a tool ref and a
- * policy rule all name the connection with the same word.
+ * `provider` is the catalogue key (`kakao-alimtalk`), so a row, a tool ref and a policy rule all
+ * name the connection with the same word.
  *
  * NOT A FOREIGN KEY TO `mcp_servers`. The registration is the person's and outlives an
  * administrator removing the connector from this deployment; a cascade there would delete somebody's
@@ -52,7 +52,7 @@ export const lafPartnerConnections = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     /**
-     * The vendor's handle for this person: a 솔라피 발신프로필 `senderKey`, a 팝빌 사업자등록번호.
+     * The vendor's handle for this person: a 솔라피 발신프로필 `senderKey`.
      *
      * NOT A SECRET, AND HANDLED AS ONE. A senderKey identifies a channel rather than authorising
      * anything on its own — the authorisation is LAF's fleet-wide API key — but it is the one value
@@ -64,8 +64,7 @@ export const lafPartnerConnections = pgTable(
     /**
      * What the person typed, plus what the vendor said back that a screen has to draw.
      *
-     * Facts only, and never a password: the 팝빌 연동회원 flow mints one and forgets it (see
-     * `plugins/tax/popbill.ts`), and nothing in either flow asks a person for one.
+     * Facts only, and never a password: nothing in the flow asks a person for one.
      */
     details: jsonb("details").notNull().default({}),
     /** `linked` once the vendor has confirmed. There is no half-registered row: the flow writes on success. */

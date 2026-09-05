@@ -8,9 +8,9 @@
  *
  * THE ANNOTATIONS ARE THE POINT. Every tool here declares what it does in the same vocabulary a
  * custom server declares it in (docs/laf/mcp-contract.md): `x-laf/effect: external` for a message
- * that leaves the business, `money` for a tax invoice being issued, `readOnlyHint` for a listing. The
- * declaration is what {@link ./laf-contract#classifyDeclaredTool} turns into a guard floor, and the
- * floor is what makes a person answer for the exact call however permissive the written policy is.
+ * that leaves the business, `readOnlyHint` for a listing. The declaration is what
+ * {@link ./laf-contract#classifyDeclaredTool} turns into a guard floor, and the floor is what makes
+ * a person answer for the exact call however permissive the written policy is.
  *
  * A CATALOGUE ENTRY USUALLY HAS NO FLOOR, AND THESE DO. `call.ts` reads a first-party entry's tools
  * as the reviewed catalogue's word and sets no guard, which is right for a vendor whose tool list
@@ -52,9 +52,9 @@ export function guardOfSpec(spec: PartnerToolSpec): LafGuard | null {
 /**
  * A transport for a connector whose tools are this repository's own code.
  *
- * `truncated` is reported honestly rather than always false: a listing of a year of tax invoices can
- * run past what a model should be handed, and a result silently cut in half is worse than one that
- * says it was cut.
+ * `truncated` is reported honestly rather than always false: a listing that runs long can go past
+ * what a model should be handed, and a result silently cut in half is worse than one that says it
+ * was cut.
  */
 export function partnerTransport(input: {
   tools: readonly PartnerToolSpec[];
