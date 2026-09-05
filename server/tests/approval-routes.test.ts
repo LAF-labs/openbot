@@ -742,3 +742,32 @@ describe("answering with for this conversation", () => {
     expect(revoked.thread).toBe(THREAD);
   });
 });
+
+/**
+ * The Bot in these two addresses is the id an audit row is written against and the key a question
+ * is looked up under. Nothing here joins it to a path, unlike the computer's own routes — but an id
+ * this deployment could never have minted has no business doing either. One shape, both hops.
+ */
+describe("the Bot an approval address names", () => {
+  test("a path where a Bot should be is refused on both routes", async () => {
+    const { app, rows } = await surface();
+    const before = rows.length;
+
+    const listed = await app.request("/..%2F..%2Fetc");
+    expect(listed.status).toBe(400);
+    expect(await listed.json()).toEqual({
+      error: "laf:bot_id_invalid",
+      code: "laf:bot_id_invalid",
+    });
+
+    const answered = await answer(app)("..%2F..%2Fetc", "approval-1", true);
+    expect(answered.status).toBe(400);
+    expect(await answered.json()).toEqual({
+      error: "laf:bot_id_invalid",
+      code: "laf:bot_id_invalid",
+    });
+
+    // Refused before anything was looked up or written about it.
+    expect(rows).toHaveLength(before);
+  });
+});

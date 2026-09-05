@@ -13,12 +13,13 @@
  * The row is written here, next to the answer, because these two handlers are the only place in the
  * product where consent is recorded and a second place would eventually record it differently.
  */
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin, requireAdminRoute } from "../auth/guards";
+import { BOT_ID_INVALID, isBotId } from "./bot-id";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -122,13 +123,13 @@ export function createApprovalRoutes(
    * A read, so no audit row, exactly like asking who holds the wheel. The interesting rows are the
    * one written when the question was raised and the one written when somebody answered it.
    */
-  routes.get("/:botId", requireUser, async (context) =>
-    context.json({
-      approvals: (
-        await approvals.pending(context.req.param("botId") ?? "")
-      ).map(presentable),
-    }),
-  );
+  routes.get("/:botId", requireUser, async (context) => {
+    const botId = context.req.param("botId") ?? "";
+    if (!isBotId(botId)) return refuseBotId(context);
+    return context.json({
+      approvals: (await approvals.pending(botId)).map(presentable),
+    });
+  });
 
   /**
    * Answering is deciding for the deployment, so it is the owner's alone: in
@@ -156,6 +157,7 @@ export function createApprovalRoutes(
     }
 
     const botId = context.req.param("botId") ?? "";
+    if (!isBotId(botId)) return refuseBotId(context);
     const record = context.var.actor;
     const answered = await approvals.answer(
       context.req.param("approvalId") ?? "",
@@ -246,6 +248,18 @@ export function createApprovalRoutes(
   });
 
   return routes;
+}
+
+/**
+ * A Bot id that is not one, refused before it is used as a key.
+ *
+ * Nothing here joins it to a path, unlike the computer's own routes — but the id in these two
+ * handlers is the one an audit row is written against and the one a question is looked up under, and
+ * an id that this deployment could never have minted has no business doing either. One shape, both
+ * hops, everywhere: see `bot-id.ts`.
+ */
+function refuseBotId(context: Context<{ Variables: AppVariables }>) {
+  return context.json({ error: BOT_ID_INVALID, code: BOT_ID_INVALID }, 400);
 }
 
 /**
