@@ -154,7 +154,6 @@ describe("the codes the connectors raise", () => {
     expect(codes).toContain("laf:needs_reconnect");
     expect(codes).toContain("laf:grant_withdrawn");
     expect(codes).toContain("laf:alimtalk_not_connected");
-    expect(codes).toContain("laf:tax_not_connected");
   });
 
   /*

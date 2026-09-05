@@ -232,6 +232,13 @@
       "when": 1788520000000,
       "tag": "0032_connection_health",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788530000000,
+      "tag": "0033_drop_tax_invoice",
+      "breakpoints": true
     }
   ]
 }

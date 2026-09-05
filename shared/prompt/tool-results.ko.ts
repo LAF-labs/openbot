@@ -293,59 +293,6 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:no_template_id":
     "템플릿은 접수됐는데 아이디가 돌아오지 않았다. 설정 › 연결에서 상태를 다시 확인해야 한다고 말해라.",
 
-  /* ── 세금계산서 ─────────────────────────────────────────────────────────────────────────── */
-
-  "laf:tax_not_configured":
-    "이 배포에 세금계산서 설정이 없어서 처리할 수 없다. 관리자가 설정해야 한다고 말해라.",
-  "laf:tax-invoice_not_configured":
-    "이 배포에 세금계산서 설정이 없어서 그 요청을 처리할 수 없다. 관리자가 설정해야 한다고 말해라.",
-  "laf:tax_not_connected":
-    '세금계산서를 쓸 수 있게 등록된 사업자 정보가 없다. "설정 › 연결에서 세금계산서를 연결해 주세요"라고 말해라.',
-  "laf:tax_no_actor":
-    "누구의 사업자로 발행할지 지정되지 않은 실행이라 거절했다. 네가 고칠 수 있는 것이 아니니 사람에게 그대로 알려라.",
-  "laf:tax_unknown_tool": "세금계산서에는 그런 툴이 없다.",
-  "laf:tax_certificate_missing":
-    "공동인증서가 아직 등록되지 않아 발행할 수 없다. 사람이 설정 › 연결에서 직접 등록해야 한다 — 인증서와 비밀번호는 네가 다루지 않는다.",
-  "laf:tax_business_number_missing": "사업자등록번호가 필요하다.",
-  "laf:tax_business_number_invalid":
-    "그 사업자등록번호는 형식이 맞지 않다. 사람에게 다시 확인해 달라고 말해라 — 네가 지어내지 마라.",
-  "laf:tax_corp_name_missing": "상호가 필요하다.",
-  "laf:tax_ceo_name_missing": "대표자 이름이 필요하다.",
-  "laf:tax_contact_name_missing": "담당자 이름이 필요하다.",
-  "laf:tax_contact_phone_missing": "담당자 연락처가 필요하다.",
-  "laf:tax_contact_phone_invalid":
-    "그 연락처는 형식이 맞지 않다. 사람에게 다시 확인해 달라고 말해라.",
-  "laf:tax_contact_email_missing": "담당자 이메일이 필요하다.",
-  "laf:tax_contact_email_invalid":
-    "그 이메일은 형식이 맞지 않다. 사람에게 다시 확인해 달라고 말해라.",
-  "laf:tax_buyer_number_missing": "공급받는 쪽의 사업자등록번호가 필요하다.",
-  "laf:tax_buyer_number_invalid":
-    "공급받는 쪽의 사업자등록번호가 형식에 맞지 않다. 사람에게 확인해 달라고 말해라.",
-  "laf:tax_buyer_name_missing": "공급받는 쪽의 상호가 필요하다.",
-  "laf:tax_buyer_ceo_missing": "공급받는 쪽의 대표자 이름이 필요하다.",
-  "laf:tax_date_missing": "작성일자가 필요하다. YYYYMMDD로 적어라.",
-  "laf:tax_date_invalid":
-    "그 날짜는 읽을 수 없다. YYYYMMDD로 적고, 조회는 시작일이 종료일보다 앞서야 한다.",
-  "laf:tax_window_too_wide":
-    "조회 기간이 너무 넓다. 기간을 좁혀서 다시 조회해라.",
-  "laf:tax_items_missing": "품목이 하나도 없다. 최소 한 줄은 있어야 한다.",
-  "laf:tax_too_many_items":
-    "품목이 너무 많다. 한 건에 99줄까지만 담을 수 있다.",
-  "laf:tax_amount_invalid":
-    "공급가액이나 세액이 숫자가 아니다. 사람에게 금액을 확인해 달라고 말해라 — 네가 지어내지 마라.",
-  "laf:tax_mgt_key_missing": "문서관리번호(mgtKey)가 필요하다.",
-  "laf:tax_mgt_key_invalid":
-    "문서관리번호는 영문·숫자·하이픈·밑줄로 24자까지다. 형식에 맞게 다시 적어라.",
-  "laf:tax_invoice_not_found": "그 번호로 등록된 세금계산서가 없다.",
-  "laf:tax_vendor_failed":
-    "세금계산서 쪽이 그 요청을 처리하지 못했다. 같은 것을 계속 반복하지 말고, 무엇이 안 됐는지 말해라.",
-  /*
-   * 사람이 고칠 수 있는 것이 아니라 이 서버의 시계가 틀어진 것이다. 봇이 다시 시도해도 같은
-   * 거절이 돌아오므로, 재시도 대신 그대로 전하게 한다.
-   */
-  "laf:tax_clock_skew":
-    "이 서버의 시각이 어긋나서 세금계산서 쪽이 요청을 거절했다. 다시 시도하지 말고, 관리자가 서버 시각을 맞춰야 한다고 그대로 알려라.",
-
   /* ── 파트너 공통 ────────────────────────────────────────────────────────────────────────── */
 
   "laf:partner_unknown": "그런 연결은 이 배포에 없다.",

@@ -141,21 +141,16 @@ services:
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
       LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
-      # The two partner vendors LAF holds the ACCOUNT at, for the whole fleet: 솔라피 for 카카오
-      # 알림톡 and 팝빌 for 전자세금계산서. The business never obtains a key — it connects its own
-      # 카카오톡 채널 and joins as a 팝빌 연동회원 under LAF's, on the 연결 screen.
+      # The partner vendor LAF holds the ACCOUNT at, for the whole fleet: 솔라피 for 카카오 알림톡.
+      # The business never obtains a key — it connects its own 카카오톡 채널 under LAF's account, on
+      # the 연결 screen.
       #
-      # Unset, neither card is drawn and neither Bot tool exists, which is a correct deployment. The
-      # server refuses to start on HALF of either: a 솔라피 key that is not `apiKey:apiSecret`, a
-      # LinkID with no secret, or a POPBILL_TEST that is not exactly "true" or "false" — the last
-      # because anything else read as production issues real 세금계산서 to the 국세청.
-      # See docs/laf/connections.md.
+      # Unset, no card is drawn and no Bot tool exists, which is a correct deployment. The server
+      # refuses to start on HALF of it: a 솔라피 key that is not `apiKey:apiSecret`, or a base URL
+      # with no key behind it. See docs/laf/connections.md.
       LAF_ALIMTALK_API_KEY: ${LAF_ALIMTALK_API_KEY:-}
       LAF_ALIMTALK_BASE_URL: ${LAF_ALIMTALK_BASE_URL:-}
       LAF_ALIMTALK_FROM: ${LAF_ALIMTALK_FROM:-}
-      POPBILL_LINK_ID: ${POPBILL_LINK_ID:-}
-      POPBILL_SECRET_KEY: ${POPBILL_SECRET_KEY:-}
-      POPBILL_TEST: ${POPBILL_TEST:-}
       # The deployment's own name, and the one thing the fleet identifies a customer by. The web
       # service has always had it; the API server needs it too now that it signs notices with it.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}

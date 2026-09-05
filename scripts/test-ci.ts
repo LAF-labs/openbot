@@ -76,6 +76,11 @@ const projectRoot = resolve(import.meta.dir, "..");
  * same branch: server 1419 → 1376, app 308 → 298 (3% under, rounded down); agent-computer and
  * root unchanged.
  *
+ * LOWERED 2026-09-05, by the twenty-six tests 세금계산서(팝빌) took with it when the connector was
+ * deleted (`partner-tax` 23, one listing case, two config cases): server 1376 → 1350, which is the
+ * old floor minus exactly what was removed rather than a fresh 3% — a floor lowered further than
+ * the deletion would forgive a file that threw on import in the same change.
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -83,7 +88,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1376, roots: ["server"] },
+  { name: "server", floor: 1350, roots: ["server"] },
   { name: "app", floor: 298, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 75, roots: ["tests", "agent-bot"] },
