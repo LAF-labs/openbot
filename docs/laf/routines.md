@@ -94,6 +94,32 @@ own English is a fallback for a code the app does not know.
 a routine paused for a week must not fire a backlog), run now, delete, and the
 recent runs inline. API under `/api/routines`.
 
+## Suggestions
+
+`/routines` offers up to five routines from a curated catalogue
+(`server/src/routines/suggestion-catalog.ts`) — 아침 브리핑, 리뷰 감시, 미답
+문의 알림, 주간 정산 요약 and so on — the shape of Hermes Agent's routine
+suggestions, for a Korean shop. The rules:
+
+- **Consent first.** Nothing is created until 만들기 is pressed. Accepting
+  goes through the same `create` a typed routine takes, on the Bot the card
+  names, and the routine carries the card's key (`laf_routines.suggestion_key`).
+- **Offered only when it can run.** Each entry names the sites and accounts it
+  can run on; one of them must be *connected* — as `/api/connections/overview`
+  decides it, so a site that needs a login again does not count. A person with
+  no Bot is offered nothing. The one entry that needs nothing (세금 일정) goes
+  last, so it is what somebody with nothing connected sees alone.
+- **One per key.** A routine carrying the key, or one with the same name,
+  hides the card; deleting that routine brings it back.
+- **다음에 is forever.** A dismissal is a row in
+  `laf_routine_suggestion_dismissals`, per person and key, and never re-offered.
+- **At most five**, in catalogue order. The next moves up as the person decides.
+
+API under `/api/routines/suggestions`: `GET /`, `POST /:key/accept`
+(`{ agentId? }`, 201 with the routine), `POST /:key/dismiss`. The card's own
+sentence — why it is worth having — is the app's (`lib/routines/suggestions.ts`);
+the name and the instruction are the catalogue's, stored verbatim.
+
 ## Triggers
 
 Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the
