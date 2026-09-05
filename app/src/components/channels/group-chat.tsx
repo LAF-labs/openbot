@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { RoomIntro } from "@/components/channels/room-intro";
 import { RoomApprovals } from "@/components/channels/room-approvals";
 import {
   seedMessage,
@@ -444,6 +445,18 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     return resolved;
   }, [roster, marks.data?.speakers, room.speakers]);
 
+  /** Who is in this room, in the order the room lists them, for the empty state's faces. */
+  const roomMembers = useMemo(
+    () =>
+      memberIds.flatMap((id) => {
+        const profile = roster.find((agent) => agent.id === id);
+        return profile
+          ? [{ avatarSeed: profile.avatarSeed, id, name: profile.name }]
+          : [];
+      }),
+    [memberIds, roster],
+  );
+
   /** Message id to failure code, the shape the transcript draws from. */
   const failuresById = useMemo(() => {
     const byId: Record<string, string> = {};
@@ -509,6 +522,20 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       pending={posting || inTurn}
       queueWhileBusy
       {...(readWindow ? { readWindow } : {})}
+      emptyState={
+        /*
+         * A NEW ROOM WAS A BLANK PANE between the header and the composer. See `RoomIntro`.
+         *
+         * Drawn from the roster rather than from the room's own record, so a member the roster has
+         * not answered for yet is simply absent rather than a hole with a name under it.
+         */
+        roomMembers.length > 0 ? (
+          <RoomIntro
+            members={roomMembers}
+            onSuggest={(text) => void post(text, [])}
+          />
+        ) : null
+      }
       failures={failuresById}
       onRetry={(text) => void post(text, [])}
       speakers={speakers}

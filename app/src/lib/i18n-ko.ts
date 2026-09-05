@@ -1786,4 +1786,9 @@ export const ko: Record<string, string> = {
     "봇이 응답을 멈춰서 이번 차례를 끝냈습니다. 다시 물어보거나, 봇이 켜져 있는지 확인해 주세요.",
   "The Bot did not answer. It may not be running right now.":
     "봇이 답하지 않았습니다. 지금 꺼져 있을 수 있습니다.",
+  "Everyone here answers the same message in turn. Address one with @, or ask them all at once.":
+    "여기 있는 봇들이 같은 메시지에 차례로 답합니다. @로 한 명을 부르거나, 다 같이 물어보세요.",
+  "What should we look at first today?": "오늘 뭐부터 볼까요?",
+  "Each of you say what you would take on.": "각자 맡을 일을 말해 주세요.",
+  "Sum up where things stand.": "지금 상황을 정리해 주세요.",
 };
