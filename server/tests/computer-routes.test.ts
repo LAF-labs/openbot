@@ -702,7 +702,7 @@ describe("a secret being asked for and supplied", () => {
     });
     // Every row, not only that one: nothing else along the way may have picked it up either.
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1"))).not.toContain(SECRET);
+    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(SECRET);
   });
 
   test("the value is in no row, no reply and no recording, on either of its two routes", async () => {
@@ -744,11 +744,11 @@ describe("a secret being asked for and supplied", () => {
     // covered without anybody remembering to cover it.
     expect(carrying(replies)).not.toContain(SECRET);
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1"))).not.toContain(SECRET);
+    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(SECRET);
     // The demonstration is real and recording, so the absence above is an absence and not an
     // unstarted recorder: handing back closes it, and what it kept is still readable.
     await app.request("/bot-1/control/release", { method: "POST" });
-    expect(demonstrations.read("bot-1")).not.toBeNull();
+    expect(demonstrations.read("bot-1", ADMIN.id)).not.toBeNull();
 
     // And the one place it is allowed to be: on its way through to the browser.
     expect(carrying(sentToComputer)).toContain(SECRET);
@@ -884,5 +884,35 @@ describe("the whole surface", () => {
         200,
       ]);
     }
+  });
+});
+
+/**
+ * The routes pass the asker through: a recording somebody else started is not read, not written up
+ * and not thrown away through them. See the note at the top of `demonstration.ts`.
+ */
+describe("somebody else's demonstration", () => {
+  test("is not readable, not writable-up, and survives a stranger's delete", async () => {
+    const { app, demonstrations, sentToComputer } = surface(ADMIN);
+    // Started by another person on the same deployment, as the take-control route would have.
+    demonstrations.start("bot-1", "the-owner");
+    demonstrations.observe("bot-1", { type: "key", event: "down", key: "Enter" });
+
+    const read = await app.request("/bot-1/demonstration");
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({ demonstration: null });
+
+    const writeUp = await app.request("/bot-1/demonstration/write-up", {
+      method: "POST",
+    });
+    expect(writeUp.status).toBe(409);
+    // No model call was spent on a recording the caller may not look at.
+    expect(sentToComputer).toEqual([]);
+
+    const gone = await app.request("/bot-1/demonstration", {
+      method: "DELETE",
+    });
+    expect(gone.status).toBe(204);
+    expect(demonstrations.read("bot-1", "the-owner")?.steps).toHaveLength(1);
   });
 });

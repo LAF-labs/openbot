@@ -25,6 +25,15 @@
  * socket, in one process, and it ends when the person hands back. A restart in the middle loses it,
  * which is honest — the browser it described has moved on too. Nothing here outlives the session it
  * describes, which is why it is not a table.
+ *
+ * AND IT BELONGS TO THE PERSON WHO STARTED IT. `startedBy` was recorded from the first version and
+ * read by nothing: `read` and `discard` took a Bot's id alone, so every recording was legible to
+ * anybody with a session on the deployment — a shop owner showing their Bot how the bank's transfer
+ * page works, listed step by step for a member of staff who could also throw it away before it was
+ * written up. Taking the wheel to fix something is somebody's private business in their own browser
+ * (routes.ts says so where the two doors are), and taking it to teach is the same browser and the
+ * same afternoon. The asker is a parameter rather than a check in the route because that is the
+ * version a later caller cannot forget to make.
  */
 
 /**
@@ -108,12 +117,24 @@ export type DemonstrationRecorder = {
    * in order of when it was pressed, and one whose lookup fails is kept unnamed.
    */
   observe: (botId: string, message: unknown) => void;
-  /** Hand back. The demonstration is closed and returned, or null if nothing was being recorded. */
+  /**
+   * Hand back. The demonstration is closed and returned, or null if nothing was being recorded.
+   *
+   * Not scoped to the person who started it, unlike the two below, because closing is not reading:
+   * one wheel means one driver, handing it back ends the showing, and a recording left open by
+   * somebody who has walked away is a recording that goes on collecting whatever happens next.
+   */
   finish: (botId: string) => Demonstration | null;
-  /** What was recorded, finished or not. Null when this Bot is not being taught. */
-  read: (botId: string) => Demonstration | null;
-  /** Throw it away. What somebody decides not to keep should stop existing. */
-  discard: (botId: string) => void;
+  /**
+   * What was recorded, finished or not, for the person who recorded it.
+   *
+   * Null for anybody else, and for a Bot that is not being taught — the same answer, deliberately.
+   * "There is nothing" and "there is something and it is not yours" are both a no, and telling the
+   * two apart would say who is teaching which Bot to somebody who may not read the recording.
+   */
+  read: (botId: string, by: string) => Demonstration | null;
+  /** Throw it away. What somebody decides not to keep should stop existing — theirs, not anyone's. */
+  discard: (botId: string, by: string) => void;
 };
 
 export function createDemonstrationRecorder(
@@ -225,12 +246,15 @@ export function createDemonstrationRecorder(
       return session;
     },
 
-    read(botId) {
-      return open.get(botId) ?? null;
+    read(botId, by) {
+      const session = open.get(botId);
+      return session && session.startedBy === by ? session : null;
     },
 
-    discard(botId) {
-      open.delete(botId);
+    discard(botId, by) {
+      // Checked before deleting, so a stranger's DELETE is not a way to end somebody's recording
+      // either. Nothing is reported back: there was nothing of theirs to throw away.
+      if (open.get(botId)?.startedBy === by) open.delete(botId);
     },
   };
 }

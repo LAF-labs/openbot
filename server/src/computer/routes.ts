@@ -387,6 +387,12 @@ export function createComputerRoutes(
   /**
    * What was recorded, for the person who recorded it to read.
    *
+   * FOR THE PERSON WHO RECORDED IT, and that used to be a sentence in this comment rather than
+   * something the code did: the recorder was asked for a Bot's recording and answered anybody. A
+   * demonstration is somebody's own browser for the length of an afternoon — the bank page, the
+   * payroll page, every control they pressed by name — so the asker goes in and a stranger is told
+   * there is nothing, which for them is true.
+   *
    * A read, so no audit row. What is in here never leaves this process and never becomes a Bot's
    * instruction until somebody says so — see the note at the top of `demonstration.ts` about what
    * it does and does not keep.
@@ -394,7 +400,10 @@ export function createComputerRoutes(
   routes.get("/:botId/demonstration", requireUser, (context) =>
     context.json({
       demonstration:
-        demonstrations?.read(context.req.param("botId") ?? "") ?? null,
+        demonstrations?.read(
+          context.req.param("botId") ?? "",
+          context.var.actor.id,
+        ) ?? null,
     }),
   );
 
@@ -411,7 +420,12 @@ export function createComputerRoutes(
     "/:botId/demonstration/write-up",
     requireUser,
     async (context) => {
-      const recording = demonstrations?.read(context.req.param("botId") ?? "");
+      // Theirs, like the read above: a recording nobody may look at is not one anybody may spend a
+      // model call turning into a procedure either.
+      const recording = demonstrations?.read(
+        context.req.param("botId") ?? "",
+        context.var.actor.id,
+      );
       if (!recording || recording.steps.length === 0) {
         return context.json(
           { error: "There is nothing recorded to write up." },
@@ -447,9 +461,18 @@ export function createComputerRoutes(
     },
   );
 
-  /** Thrown away. What somebody decides not to keep should stop existing. */
+  /**
+   * Thrown away. What somebody decides not to keep should stop existing.
+   *
+   * Their own, and 204 either way. The answer says what is true for the caller — there is nothing
+   * of theirs recorded on this Bot any more — and a 404 for somebody else's would answer the
+   * question the read above declines to.
+   */
   routes.delete("/:botId/demonstration", requireUser, (context) => {
-    demonstrations?.discard(context.req.param("botId") ?? "");
+    demonstrations?.discard(
+      context.req.param("botId") ?? "",
+      context.var.actor.id,
+    );
     return context.body(null, 204);
   });
 

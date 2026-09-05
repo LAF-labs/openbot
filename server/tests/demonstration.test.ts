@@ -42,7 +42,7 @@ describe("what a demonstration keeps", () => {
     // The whole thing, serialised, must not contain the password or any character of the username.
     // Not "the field is absent" — the WHOLE RECORD, because a value that leaked into a label or a
     // key name would pass a narrower assertion and still be a password in a log.
-    const written = JSON.stringify(recorder.read("bot-1"));
+    const written = JSON.stringify(recorder.read("bot-1", "boss"));
     expect(written).not.toContain("s3cret");
     expect(written).not.toContain("passw0rd");
     expect(written).toContain("아이디");
@@ -75,11 +75,11 @@ describe("what a demonstration keeps", () => {
     });
     await Promise.resolve();
 
-    const written = JSON.stringify(recorder.read("bot-1"));
+    const written = JSON.stringify(recorder.read("bot-1", "boss"));
     expect(written).not.toContain(otp);
     // And the press is still in there. A procedure that skipped it would describe a task with a
     // hole in the middle.
-    expect(recorder.read("bot-1")?.steps).toHaveLength(1);
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
   });
 
   test("the author's label, where the page has one, and never the value beside it", async () => {
@@ -89,7 +89,7 @@ describe("what a demonstration keeps", () => {
     recorder.observe("bot-1", { type: "text", text: "482913" });
     await Promise.resolve();
 
-    const written = JSON.stringify(recorder.read("bot-1"));
+    const written = JSON.stringify(recorder.read("bot-1", "boss"));
     expect(written).toContain("인증번호");
     expect(written).not.toContain("482913");
   });
@@ -99,7 +99,9 @@ describe("what a demonstration keeps", () => {
     recorder.start("bot-1", "boss");
     for (const message of LOGIN) recorder.observe("bot-1", message);
 
-    const kinds = recorder.read("bot-1")?.steps.map((step) => step.kind);
+    const kinds = recorder
+      .read("bot-1", "boss")
+      ?.steps.map((step) => step.kind);
     // One press, one run of typing, Tab, one more run (the paste), Enter. Forty keystrokes are one
     // fact about a form being filled in, not forty steps nobody will read.
     expect(kinds).toEqual(["pressed", "typed", "key", "typed", "key"]);
@@ -111,7 +113,7 @@ describe("what a demonstration keeps", () => {
     for (const key of ["Shift", "Control", "Alt", "Meta", "Enter", "Escape"]) {
       recorder.observe("bot-1", { type: "key", event: "down", key });
     }
-    const keys = (recorder.read("bot-1")?.steps ?? [])
+    const keys = (recorder.read("bot-1", "boss")?.steps ?? [])
       .filter(
         (step): step is Extract<DemonstrationStep, { kind: "key" }> =>
           step.kind === "key",
@@ -128,7 +130,7 @@ describe("what a demonstration keeps", () => {
     recorder.start("bot-1", "boss");
     recorder.observe("bot-1", { type: "mouse", event: "pressed", x: 5, y: 5 });
     await Promise.resolve();
-    expect(recorder.read("bot-1")?.steps).toEqual([
+    expect(recorder.read("bot-1", "boss")?.steps).toEqual([
       { kind: "pressed", element: null, at: 1 },
     ]);
   });
@@ -152,7 +154,7 @@ describe("what a demonstration keeps", () => {
       }),
     ).not.toThrow();
     await Promise.resolve();
-    expect(recorder.read("bot-1")?.steps).toHaveLength(1);
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
   });
 
   test("only the press, not the release", () => {
@@ -161,7 +163,7 @@ describe("what a demonstration keeps", () => {
     recorder.observe("bot-1", { type: "mouse", event: "pressed", x: 1, y: 1 });
     recorder.observe("bot-1", { type: "mouse", event: "released", x: 1, y: 1 });
     recorder.observe("bot-1", { type: "mouse", event: "moved", x: 2, y: 2 });
-    expect(recorder.read("bot-1")?.steps).toHaveLength(1);
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
   });
 });
 
@@ -171,7 +173,7 @@ describe("what a demonstration refuses", () => {
     // Taking the wheel to fix something is not teaching, and the input that follows is nobody's
     // business. Recording is entered by its own door.
     recorder.observe("bot-1", { type: "key", event: "down", key: "Enter" });
-    expect(recorder.read("bot-1")).toBeNull();
+    expect(recorder.read("bot-1", "boss")).toBeNull();
     expect(recorder.recording("bot-1")).toBe(false);
   });
 
@@ -183,7 +185,7 @@ describe("what a demonstration refuses", () => {
     }
     // Somebody who left the tab open and did their afternoon's work in it should not produce a
     // summary nobody can read. The start is the part that explains what the task was.
-    expect(recorder.read("bot-1")?.steps).toHaveLength(3);
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(3);
   });
 
   test("more input after the wheel goes back", () => {
@@ -193,7 +195,7 @@ describe("what a demonstration refuses", () => {
     const finished = recorder.finish("bot-1");
     recorder.observe("bot-1", { type: "key", event: "down", key: "Escape" });
     expect(finished?.finished).toBe(true);
-    expect(recorder.read("bot-1")?.steps).toHaveLength(1);
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
     expect(recorder.recording("bot-1")).toBe(false);
   });
 
@@ -201,16 +203,60 @@ describe("what a demonstration refuses", () => {
     const recorder = recorderWith(null);
     recorder.start("bot-1", "boss");
     recorder.observe("bot-1", { type: "key", event: "down", key: "Enter" });
-    recorder.discard("bot-1");
+    recorder.discard("bot-1", "boss");
     // What somebody decides not to keep stops existing. There is no bin.
-    expect(recorder.read("bot-1")).toBeNull();
+    expect(recorder.read("bot-1", "boss")).toBeNull();
   });
 
   test("one Bot's demonstration into another's", () => {
     const recorder = recorderWith(null);
     recorder.start("bot-1", "boss");
     recorder.observe("bot-2", { type: "key", event: "down", key: "Enter" });
-    expect(recorder.read("bot-1")?.steps).toEqual([]);
-    expect(recorder.read("bot-2")).toBeNull();
+    expect(recorder.read("bot-1", "boss")?.steps).toEqual([]);
+    expect(recorder.read("bot-2", "boss")).toBeNull();
+  });
+});
+
+/**
+ * WHOSE IT IS.
+ *
+ * `startedBy` was recorded from the first version and read by nothing: `read` and `discard` took a
+ * Bot's id alone, so every recording was legible to anybody with a session on the deployment — a
+ * shop owner showing their Bot how the bank's transfer page works, listed step by step for a member
+ * of staff who could also throw it away before it was written up. The asker is a parameter rather
+ * than a check in the route because that is the version a later caller cannot forget to make.
+ */
+describe("whose a demonstration is", () => {
+  test("the person who started it reads it, and nobody else does", async () => {
+    const recorder = recorderWith({ role: "button", name: "이체" });
+    recorder.start("bot-1", "boss");
+    recorder.observe("bot-1", { type: "mouse", event: "pressed", x: 1, y: 1 });
+    await Promise.resolve();
+
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
+    // The same answer as "nothing is being recorded", deliberately: telling the two apart would
+    // say who is teaching which Bot to somebody who may not read the recording.
+    expect(recorder.read("bot-1", "staff")).toBeNull();
+  });
+
+  test("a stranger's discard throws nothing away", () => {
+    const recorder = recorderWith(null);
+    recorder.start("bot-1", "boss");
+    recorder.observe("bot-1", { type: "key", event: "down", key: "Enter" });
+
+    recorder.discard("bot-1", "staff");
+
+    expect(recorder.read("bot-1", "boss")?.steps).toHaveLength(1);
+    recorder.discard("bot-1", "boss");
+    expect(recorder.read("bot-1", "boss")).toBeNull();
+  });
+
+  test("handing back is not scoped, because one wheel means one driver", () => {
+    // A recording left open by somebody who has walked away goes on collecting whatever happens
+    // next, so whoever ends the takeover ends the showing.
+    const recorder = recorderWith(null);
+    recorder.start("bot-1", "boss");
+    expect(recorder.finish("bot-1")?.startedBy).toBe("boss");
+    expect(recorder.recording("bot-1")).toBe(false);
   });
 });
