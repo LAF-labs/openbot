@@ -5,6 +5,14 @@ import OpenAI from "openai";
 import { textOf } from "../../shared/message-content";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { spillLineOf } from "../../shared/spillover";
+import {
+  answerBridgeCall,
+  exposeTools,
+  isBridgeCall,
+  MAX_BRIDGE_ROUNDS,
+  toolDeferralOf,
+  toProviderTools,
+} from "./deferral";
 
 /**
  * The built-in Bot is an AG-UI HTTP service registered the same way as any customer-provided Bot.
@@ -88,7 +96,7 @@ const TRIMMED_TOOL_RESULT_CHARS = 500;
  * The server files anything over 1,500 characters on the Bot's computer from the run after it
  * arrived (`shared/spillover.ts`), so on a deployment with a computer the budget is rarely
  * reached; without one, this is what keeps a long transcript from pushing the person's question
- * out of the window.
+ * out of the window. A bridge lookup's answer (`./deferral`) is a tool result too, and counts.
  */
 const TOOL_RESULT_TURN_BUDGET = 20_000;
 
@@ -172,13 +180,22 @@ function toolResultsToTrim(
   return trim;
 }
 
-/** Translate the conversation AG-UI carries into the shape the model provider expects. */
-export function toProviderMessages(input: RunAgentInput) {
+/**
+ * Translate the conversation AG-UI carries into the shape the model provider expects.
+ *
+ * Takes the transcript rather than the run, because a run's transcript grows inside the run: a
+ * bridge lookup answered here (`./deferral`) is appended after the conversation as it arrived,
+ * and the next round converts the whole of it again — so the lookup's answer is weighed against
+ * the turn budget and cut like every other tool result.
+ */
+export function toProviderMessages(
+  transcript: readonly RunAgentInput["messages"][number][],
+) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-  const trimmable = toolResultsToTrim(input.messages);
+  const trimmable = toolResultsToTrim(transcript);
   let at = -1;
 
-  for (const message of input.messages) {
+  for (const message of transcript) {
     at += 1;
     if (message.role === "user") {
       // Not `String(content)`: a user message's content can be an array of parts, and stringifying
@@ -221,18 +238,13 @@ export function toProviderMessages(input: RunAgentInput) {
   return messages;
 }
 
-/** Every tool comes from the caller. This service publishes none of its own, on purpose. */
-function toProviderTools(input: RunAgentInput) {
-  if (!input.tools?.length) return undefined;
-  return input.tools.map((tool) => ({
-    type: "function" as const,
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters as Record<string, unknown>,
-    },
-  }));
-}
+/*
+ * `toProviderTools` WAS HERE, and every tool went through it as it came.
+ *
+ * Every tool still comes from the caller — this service publishes none of its own, on purpose. What
+ * changed is that the connected-service tools among them are no longer put in front of the model
+ * whole: they sit behind three bridge tools, and `./deferral` decides the list a round is offered.
+ */
 
 /**
  * How hard to think, as the caller asked and this API spells it.
@@ -348,15 +360,22 @@ export async function runAgent(
       let timedOut = false;
 
       /*
-       * THE TRANSCRIPT IS CONVERTED ONCE PER RUN, NOT ONCE PER TURN.
+       * WHAT THE MODEL IS OFFERED, which is no longer everything this service was handed.
        *
-       * The system message it starts with carries the Bot's memory as the server snapshotted it
-       * for this run, and the tool results in it are trimmed against one budget. A retry at lower
-       * effort is the same run asked again, so it is sent the same transcript — converting it
-       * inside each turn would let the two attempts of one run disagree about what was cut.
+       * The connected-service tools sit behind the bridge (`./deferral`): the schema carries the
+       * core tools and three more, instead of every tool of every service the person connected.
+       * The whole list is kept, because a lookup is answered from it.
        */
-      const messages = toProviderMessages(input);
-      const tools = toProviderTools(input);
+      const exposed = exposeTools(input.tools, toolDeferralOf(input));
+      /**
+       * What this run added on its own — bridge lookups and their answers — after the
+       * conversation as it arrived. In the transcript's own shape rather than the provider's, so
+       * each round converts them WITH the rest (see `toProviderMessages`): a lookup's answer is a
+       * tool result like any other, weighed against the same turn budget and cut by the same rule
+       * once it ages. Kept in the provider's shape and appended after the conversion, it would
+       * have ridden past the budget uncounted.
+       */
+      const inRun: RunAgentInput["messages"] = [];
 
       /**
        * One request to the model, streamed out as it arrives.
@@ -365,8 +384,20 @@ export async function runAgent(
        * emitted for an empty turn by construction — text opens on the first content delta and a
        * tool call opens on its first id-and-name — so a retry cannot leave half an answer on the
        * wire in front of the second attempt.
+       *
+       * `round` is which request of this run this is. A run that goes back to the model after
+       * answering a bridge lookup is on round one, two, three; the last round is offered no bridge
+       * at all, so a model that would search forever is made to act instead.
+       *
+       * `messages` and `tools` are the round's, converted once by the loop below and handed in, so
+       * a retry is sent exactly what the first attempt was — see there.
        */
-      const runTurn = async (effort: "low" | "medium" | "high" | undefined) => {
+      const runTurn = async (
+        effort: "low" | "medium" | "high" | undefined,
+        round: number,
+        messages: OpenAI.Chat.ChatCompletionMessageParam[],
+        tools: ReturnType<typeof toProviderTools>,
+      ) => {
         /*
          * The bound that was missing. A provider that accepted the request and then went quiet held
          * the turn open for as long as it liked. Aborted AND raced against nothing else: the signal
@@ -398,8 +429,12 @@ export async function runAgent(
             { signal: abort.signal },
           );
 
-          const messageId = `msg_${input.runId}`;
+          // A later round is a second assistant message in the same run, so it needs its own id.
+          const messageId =
+            round === 0 ? `msg_${input.runId}` : `msg_${input.runId}_${round}`;
           let textOpen = false;
+          /** The prose of this round, for the transcript the next round is given. */
+          let text = "";
           /*
            * Providers stream a tool call's arguments in fragments across many chunks, keyed only by
            * index. Each fragment is FORWARDED AS IT ARRIVES and also kept, because the two halves
@@ -419,6 +454,11 @@ export async function runAgent(
               /** Fragments that arrived before the call could legally open. */
               pending: string;
               started: boolean;
+              /**
+               * One of the three bridge tools. Nothing of it goes on the wire as it streams: its
+               * arguments name the REAL tool, and that is only known once they are complete.
+               */
+              bridge: boolean;
             }
           >();
 
@@ -442,6 +482,7 @@ export async function runAgent(
                 } as BaseEvent);
                 textOpen = true;
               }
+              text += delta.content;
               send({
                 type: "TEXT_MESSAGE_CONTENT",
                 messageId,
@@ -455,6 +496,7 @@ export async function runAgent(
                 name: null as string | null,
                 pending: "",
                 started: false,
+                bridge: false,
               };
               if (call.id) existing.id = call.id;
               if (call.function?.name) existing.name = call.function.name;
@@ -474,14 +516,22 @@ export async function runAgent(
               }
               if (!existing.started && existing.id && existing.name) {
                 existing.started = true;
-                send({
-                  type: "TOOL_CALL_START",
-                  toolCallId: existing.id,
-                  toolCallName: existing.name,
-                  parentMessageId: messageId,
-                } as BaseEvent);
+                /*
+                 * A bridge call is held back whole. Its fragments are the arguments of a call
+                 * whose real name is inside those arguments, so nothing can be forwarded until
+                 * the turn ends and `answerBridgeCall` has read them.
+                 */
+                existing.bridge = isBridgeCall(existing.name, exposed);
+                if (!existing.bridge) {
+                  send({
+                    type: "TOOL_CALL_START",
+                    toolCallId: existing.id,
+                    toolCallName: existing.name,
+                    parentMessageId: messageId,
+                  } as BaseEvent);
+                }
               }
-              if (existing.started && existing.pending) {
+              if (existing.started && !existing.bridge && existing.pending) {
                 send({
                   type: "TOOL_CALL_ARGS",
                   toolCallId: existing.id,
@@ -492,7 +542,7 @@ export async function runAgent(
             }
           }
 
-          return { messageId, textOpen, toolCalls, usage, finishReason };
+          return { messageId, text, textOpen, toolCalls, usage, finishReason };
         } finally {
           clearTimeout(expiry);
         }
@@ -500,124 +550,265 @@ export async function runAgent(
 
       try {
         const effort = reasoningEffortOf(input);
-        let turn = await runTurn(effort);
-
         /*
-         * AN EMPTY COMPLETION IS A REASONING BUDGET SPENT ON THINKING.
-         *
-         * No text, no tool calls, RUN_FINISHED — which every reader downstream takes for a Bot that
-         * chose to say nothing. In a room that is a legitimate silence; in a chat it is a Bot that
-         * ignored the person. Same trap `model-call.ts` records for `askModel`, same answer: ask
-         * again with less of the budget going to deliberation. Once only — a model that comes back
-         * empty twice is not going to come back full on the third.
+         * ONE RUN, POSSIBLY SEVERAL REQUESTS. A turn that only asked the bridge where a tool is
+         * gets its answer here and goes straight back to the model, inside the same run — a lookup
+         * is not something the surface has to execute, and a round trip through it would cost a
+         * whole run per question. The moment the model asks for a REAL tool, the run ends as it
+         * always did, and the surface executes it.
          */
-        if (isEmptyTurn(turn)) {
-          const lowered = effort ? LOWER_EFFORT[effort] : undefined;
-          if (lowered) {
-            console.warn(
-              `[agent-bot] ${botId} answered empty at effort ${effort}; retrying at ${lowered}`,
-            );
-            turn = await runTurn(lowered);
-          }
-          if (isEmptyTurn(turn)) {
-            console.warn(`[agent-bot] ${botId} answered empty; giving up`);
-            send({
-              type: "CUSTOM",
-              name: "laf.empty_answer",
-              value: { botId },
-            } as BaseEvent);
-          }
-        }
-
-        const { messageId, textOpen, toolCalls, usage, finishReason } = turn;
-
-        if (textOpen) {
-          send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
-        }
-
-        /*
-         * Only the ends, after the stream. A call whose name never arrived was never opened and is
-         * not closed either: closing one the surface never saw would be reporting a call nobody
-         * made.
-         */
-        for (const call of toolCalls.values()) {
+        for (let round = 0; ; round += 1) {
           /*
-           * A call that never got both an id and a name never opened, so it is not closed either;
-           * a call the provider named but never gave an id gets a minted one now, so its
-           * fragments are not lost — the open and the args go out together, then the end.
+           * THE TRANSCRIPT IS CONVERTED ONCE PER ROUND, NOT ONCE PER TURN.
+           *
+           * The system message it starts with carries the Bot's memory as the server snapshotted
+           * it for this run, and the tool results in it are trimmed against one budget. A retry
+           * at lower effort is the same round asked again, so it is sent the same transcript —
+           * converting it inside each turn would let the two attempts of one round disagree
+           * about what was cut. A new round IS a different transcript: the lookups the last one
+           * answered are in it now, counted against the budget and cut like every other result.
            */
-          if (!call.started) {
+          const messages = toProviderMessages([...input.messages, ...inRun]);
+          const tools = toProviderTools(
+            round < MAX_BRIDGE_ROUNDS
+              ? exposed.provider
+              : exposed.withoutBridge,
+          );
+          let turn = await runTurn(effort, round, messages, tools);
+
+          /*
+           * AN EMPTY COMPLETION IS A REASONING BUDGET SPENT ON THINKING.
+           *
+           * No text, no tool calls, RUN_FINISHED — which every reader downstream takes for a Bot that
+           * chose to say nothing. In a room that is a legitimate silence; in a chat it is a Bot that
+           * ignored the person. Same trap `model-call.ts` records for `askModel`, same answer: ask
+           * again with less of the budget going to deliberation. Once only — a model that comes back
+           * empty twice is not going to come back full on the third.
+           */
+          if (isEmptyTurn(turn)) {
+            const lowered = effort ? LOWER_EFFORT[effort] : undefined;
+            if (lowered) {
+              console.warn(
+                `[agent-bot] ${botId} answered empty at effort ${effort}; retrying at ${lowered}`,
+              );
+              turn = await runTurn(lowered, round, messages, tools);
+            }
+            if (isEmptyTurn(turn)) {
+              console.warn(`[agent-bot] ${botId} answered empty; giving up`);
+              send({
+                type: "CUSTOM",
+                name: "laf.empty_answer",
+                value: { botId },
+              } as BaseEvent);
+            }
+          }
+
+          const { messageId, text, textOpen, toolCalls, usage, finishReason } =
+            turn;
+
+          if (textOpen) {
+            send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+          }
+
+          /** Calls the surface has to execute this run — real ones, and bridged ones in real names. */
+          let forwarded = 0;
+          /** Bridge lookups answered here, to be put in front of the model on the next round. */
+          const answered: Array<{
+            id: string;
+            name: string;
+            arguments: string;
+            text: string;
+          }> = [];
+
+          /*
+           * Only the ends, after the stream. A call whose name never arrived was never opened and is
+           * not closed either: closing one the surface never saw would be reporting a call nobody
+           * made.
+           */
+          for (const call of toolCalls.values()) {
             if (!call.name) continue;
+            /*
+             * A call the provider named but never gave an id gets a minted one now, so its
+             * fragments are not lost — the open and the args go out together, then the end.
+             */
             call.id ??= `call_${input.runId}_${[...toolCalls.values()].indexOf(call)}`;
+
+            if (!call.bridge) {
+              if (!call.started) {
+                send({
+                  type: "TOOL_CALL_START",
+                  toolCallId: call.id,
+                  toolCallName: call.name,
+                  parentMessageId: messageId,
+                } as BaseEvent);
+                if (call.pending) {
+                  send({
+                    type: "TOOL_CALL_ARGS",
+                    toolCallId: call.id,
+                    delta: call.pending,
+                  } as BaseEvent);
+                }
+              }
+              send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+              forwarded += 1;
+              continue;
+            }
+
+            /*
+             * A BRIDGE CALL, held back whole until now. `isBridgeCall` only said yes to a name a
+             * bridge was offered under, so the narrowing here is the same fact read twice.
+             */
+            const answer = answerBridgeCall(
+              call.name as Parameters<typeof answerBridgeCall>[0],
+              call.pending,
+              exposed.deferred,
+            );
+
+            if (answer.kind === "forward") {
+              /*
+               * `tool_call` BECOMES THE REAL CALL, in the real tool's name, under the same id. The
+               * surface cannot tell it from a direct call: same handler, same boundary, same audit
+               * row with the real name on it. The bridge hides nothing on the way through.
+               */
+              send({
+                type: "TOOL_CALL_START",
+                toolCallId: call.id,
+                toolCallName: answer.name,
+                parentMessageId: messageId,
+              } as BaseEvent);
+              send({
+                type: "TOOL_CALL_ARGS",
+                toolCallId: call.id,
+                delta: JSON.stringify(answer.args),
+              } as BaseEvent);
+              send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+              forwarded += 1;
+              continue;
+            }
+
+            /*
+             * A lookup, answered from the list this service was handed. On the wire in full — the
+             * call and its result — so the transcript says the Bot looked, rather than the Bot
+             * appearing to know a tool it was never shown. AG-UI's TOOL_CALL_RESULT is what an agent
+             * that executed its own tool sends; the client files it as an ordinary tool message.
+             */
+            const rawArguments = call.pending || "{}";
             send({
               type: "TOOL_CALL_START",
               toolCallId: call.id,
               toolCallName: call.name,
               parentMessageId: messageId,
             } as BaseEvent);
-            if (call.pending) {
-              send({
-                type: "TOOL_CALL_ARGS",
-                toolCallId: call.id,
-                delta: call.pending,
-              } as BaseEvent);
-            }
+            send({
+              type: "TOOL_CALL_ARGS",
+              toolCallId: call.id,
+              delta: rawArguments,
+            } as BaseEvent);
+            send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+            send({
+              type: "TOOL_CALL_RESULT",
+              messageId: `tool_${call.id}`,
+              toolCallId: call.id,
+              content: answer.text,
+              role: "tool",
+            } as BaseEvent);
+            answered.push({
+              id: call.id,
+              name: call.name,
+              arguments: rawArguments,
+              text: answer.text,
+            });
           }
-          send({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
-        }
 
-        /*
-         * THE ANSWER STOPPED MID-SENTENCE AND NOTHING SAID SO.
-         *
-         * `finish_reason: "length"` was never read, so a cut-off answer was delivered as a finished
-         * one and the person read half a paragraph with no way to know there had been more. A
-         * CUSTOM event rather than a RUN_ERROR: the half that arrived is real and worth keeping,
-         * and the surface says so in Korean beside it.
-         */
-        if (finishReason === "length") {
-          console.warn(`[agent-bot] ${botId} hit the length limit mid-answer`);
-          send({
-            type: "CUSTOM",
-            name: "laf.answer_truncated",
-            value: { botId },
-          } as BaseEvent);
-        }
-
-        /*
-         * What this turn cost, said inside the stream because that is the only channel this
-         * service has: it holds no server URL and no database, on purpose. The runner tees every
-         * run's events and writes this one to the audit trail — the number the per-Bot monthly
-         * cost KPI is computed from. Counts only, never content.
-         */
-        if (usage) {
           /*
-           * How much of the prompt the provider served from its cache, where it says so.
-           * OpenAI-style endpoints put it in `prompt_tokens_details.cached_tokens` and OpenRouter
-           * normalises to the same field; Anthropic-shaped ones say `cache_read_input_tokens`.
-           * Left OUT rather than written as zero when neither is there — a zero would read as
-           * "measured, nothing hit", which is a different fact from "this endpoint does not say".
+           * THE ANSWER STOPPED MID-SENTENCE AND NOTHING SAID SO.
+           *
+           * `finish_reason: "length"` was never read, so a cut-off answer was delivered as a finished
+           * one and the person read half a paragraph with no way to know there had been more. A
+           * CUSTOM event rather than a RUN_ERROR: the half that arrived is real and worth keeping,
+           * and the surface says so in Korean beside it.
            */
-          const said = usage as {
-            prompt_tokens_details?: { cached_tokens?: unknown };
-            cache_read_input_tokens?: unknown;
-          };
-          const cached =
-            typeof said.prompt_tokens_details?.cached_tokens === "number"
-              ? said.prompt_tokens_details.cached_tokens
-              : typeof said.cache_read_input_tokens === "number"
-                ? said.cache_read_input_tokens
-                : undefined;
-          send({
-            type: "CUSTOM",
-            name: "laf.model.usage",
-            value: {
-              model: MODEL,
-              promptTokens: usage.prompt_tokens,
-              completionTokens: usage.completion_tokens,
-              totalTokens: usage.total_tokens,
-              ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
-            },
-          } as BaseEvent);
+          if (finishReason === "length") {
+            console.warn(
+              `[agent-bot] ${botId} hit the length limit mid-answer`,
+            );
+            send({
+              type: "CUSTOM",
+              name: "laf.answer_truncated",
+              value: { botId },
+            } as BaseEvent);
+          }
+
+          /*
+           * What this turn cost, said inside the stream because that is the only channel this
+           * service has: it holds no server URL and no database, on purpose. The runner tees every
+           * run's events and writes this one to the audit trail — the number the per-Bot monthly
+           * cost KPI is computed from. Counts only, never content. One per round: a run that
+           * looked twice paid three times, and the audit row says so.
+           */
+          if (usage) {
+            /*
+             * How much of the prompt the provider served from its cache, where it says so.
+             * OpenAI-style endpoints put it in `prompt_tokens_details.cached_tokens` and OpenRouter
+             * normalises to the same field; Anthropic-shaped ones say `cache_read_input_tokens`.
+             * Left OUT rather than written as zero when neither is there — a zero would read as
+             * "measured, nothing hit", which is a different fact from "this endpoint does not say".
+             */
+            const said = usage as {
+              prompt_tokens_details?: { cached_tokens?: unknown };
+              cache_read_input_tokens?: unknown;
+            };
+            const cached =
+              typeof said.prompt_tokens_details?.cached_tokens === "number"
+                ? said.prompt_tokens_details.cached_tokens
+                : typeof said.cache_read_input_tokens === "number"
+                  ? said.cache_read_input_tokens
+                  : undefined;
+            send({
+              type: "CUSTOM",
+              name: "laf.model.usage",
+              value: {
+                model: MODEL,
+                promptTokens: usage.prompt_tokens,
+                completionTokens: usage.completion_tokens,
+                totalTokens: usage.total_tokens,
+                ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
+              },
+            } as BaseEvent);
+          }
+
+          /*
+           * The run is over when the model spoke without looking anything up, when it asked for a
+           * real tool (the surface must run it), or when the lookup budget is spent. Otherwise the
+           * lookups and their answers join the transcript — in its own shape, with the ids the
+           * wire carried, so the next round's conversion counts and cuts them like any result —
+           * and the model is asked again, here.
+           */
+          if (
+            answered.length === 0 ||
+            forwarded > 0 ||
+            round >= MAX_BRIDGE_ROUNDS
+          ) {
+            break;
+          }
+          inRun.push({
+            id: messageId,
+            role: "assistant",
+            ...(text ? { content: text } : {}),
+            toolCalls: answered.map((lookup) => ({
+              id: lookup.id,
+              type: "function" as const,
+              function: { name: lookup.name, arguments: lookup.arguments },
+            })),
+          });
+          for (const lookup of answered) {
+            inRun.push({
+              id: `tool_${lookup.id}`,
+              role: "tool",
+              toolCallId: lookup.id,
+              content: lookup.text,
+            });
+          }
         }
 
         send({

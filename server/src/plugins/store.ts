@@ -1,3 +1,4 @@
+import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
 import type { AuditStore } from "../audit";
 import type {
   ApprovalRegistry,
@@ -276,8 +277,15 @@ export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
  * `<server>/<tool>` is how a grant is stored, because a slash reads correctly to a person and cannot
  * appear in either half. Model tool names may not contain one, so the offered name uses `__`.
  * Converting in one place, both ways, keeps the two spellings from drifting.
+ *
+ * THE PREFIX IS THE DEFERRAL FLAG. It is the one thing about a connected-service tool that survives
+ * the AG-UI wire, and `agent-bot` reads it to keep these tools out of the schema and behind the
+ * bridge (`shared/tools/bridge.ts`). Minted from the shared constant so the two cannot drift: a
+ * prefix spelled here on its own would, the day it changed, quietly put every connected service
+ * back into every turn.
  */
-export const toolNameFor = (ref: string) => `mcp__${ref.replace("/", "__")}`;
+export const toolNameFor = (ref: string) =>
+  `${DEFERRED_TOOL_PREFIX}${ref.replace("/", "__")}`;
 
 /** A timestamp as every surface reads one, or null where the column allows none. */
 export const iso = (value: Date | string | null): string | null =>

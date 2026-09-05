@@ -225,6 +225,8 @@ export async function runUnattended(
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const steps: UnattendedStep[] = [];
   let awaiting: string | null = null;
+  /** How many of the last step's calls the Bot service answered itself. See `turn`. */
+  let settledAhead = 0;
 
   target.setMessages([
     ...(options.history ?? []),
@@ -294,6 +296,25 @@ export async function runUnattended(
       failure = "its stream ended before the run finished";
     }
     const added = target.messages.slice(before);
+    /*
+     * A CALL THE BOT SERVICE ANSWERED ITSELF. The bridge's lookups (`tool_search`,
+     * `tool_describe` — `shared/tools/bridge.ts`) come back inside the same run with their result,
+     * as a tool message the client files beside the call. They are through by definition, and
+     * `unanswered` below will not hand them back — so they go FIRST in the record, and the open
+     * calls after them sit at exactly the indexes `pending` will use. Without that split, the
+     * send a Bot found through a lookup was marked against the lookup's slot.
+     */
+    const answeredInRun = new Set(
+      added
+        .filter((message) => message.role === "tool")
+        .map((message) => (message as { toolCallId: string }).toolCallId),
+    );
+    const asked = added.flatMap((message) =>
+      message.role === "assistant" ? (message.toolCalls ?? []) : [],
+    );
+    const settled = asked.filter((call) => answeredInRun.has(call.id));
+    const open = asked.filter((call) => !answeredInRun.has(call.id));
+    settledAhead = settled.length;
     steps.push({
       ms: Date.now() - startedAt,
       text: added
@@ -304,14 +325,16 @@ export async function runUnattended(
             (typeof message.content === "string" ? message.content.length : 0),
           0,
         ),
-      calls: added.flatMap((message) =>
-        message.role === "assistant"
-          ? (message.toolCalls ?? []).map((call) => ({
-              name: call.function?.name ?? "",
-              ok: false,
-            }))
-          : [],
-      ),
+      calls: [
+        ...settled.map((call) => ({
+          name: call.function?.name ?? "",
+          ok: true,
+        })),
+        ...open.map((call) => ({
+          name: call.function?.name ?? "",
+          ok: false,
+        })),
+      ],
     });
     if (failure !== null) throw new RunFailed(failure, steps);
   };
@@ -326,7 +349,7 @@ export async function runUnattended(
    * order from the same messages, so the index is exact.
    */
   const record = (index: number, ok: boolean) => {
-    const call = steps.at(-1)?.calls[index];
+    const call = steps.at(-1)?.calls[settledAhead + index];
     if (call) call.ok = ok;
   };
 
