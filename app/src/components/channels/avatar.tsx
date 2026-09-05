@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { memo } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { drawnFaceCount, stackedFaces } from "./avatar-stack";
 
 /**
  * Memoized roster avatar. Row updates usually change preview/timestamp only, and
@@ -55,9 +56,20 @@ function useSeeds(): (agentId: string) => string | undefined {
 export const ChannelAvatar = memo(function ChannelAvatar({
   participantIds,
   size = 32,
+  ringClassName = "ring-sidebar",
 }: {
   participantIds: string[];
   size?: number;
+  /**
+   * The ground the gap between two overlapping faces is painted in.
+   *
+   * A ring rather than a border, and a PROP rather than a constant, because the ground this is
+   * drawn on is not one colour: `--sidebar` is `#f7f7f7` and `--background` is `#fcfcfc`, so the
+   * hard-coded `ring-sidebar` that used to be here drew a faintly darker halo around every face in
+   * the room header. The sidebar is where the overwhelming majority of stacks appear, so it keeps
+   * the default and the one screen that is not the sidebar says so.
+   */
+  ringClassName?: string;
 }) {
   const seedOf = useSeeds();
   const channelSize = participantIds?.length;
@@ -75,35 +87,47 @@ export const ChannelAvatar = memo(function ChannelAvatar({
     );
   }
 
-  const firstThree = participantIds.slice(0, 3);
+  const drawn = participantIds.slice(0, drawnFaceCount(channelSize ?? 0));
+  const places = stackedFaces(drawn.length, size);
 
+  /*
+   * ABSOLUTE PLACEMENT, NOT A FLEX ROW PULLED BACK BY TRANSFORMS.
+   *
+   * The row laid the faces out end to end and then dragged each one left over the last, so the
+   * box's width was never what the faces occupied and the last face's overhang escaped it. Every
+   * face is now positioned from the box's own corner by `stackedFaces`, which cannot place one
+   * outside — see `avatar-stack.ts` for the arithmetic that went wrong and `avatar-stack.test.ts`
+   * for the invariant that now holds it.
+   */
   return (
-    <div
-      className="flex flex-row items-center"
-      style={{ height: size, width: size }}
-    >
-      {firstThree.map((c, i) => {
-        const seed = seedOf(c);
-        const tile = size / (firstThree.length / 2);
+    <div className="relative shrink-0" style={{ height: size, width: size }}>
+      {drawn.map((participantId, index) => {
+        const seed = seedOf(participantId);
+        const place = places[index];
+        if (!place) return null;
         return (
           <div
-            key={c}
+            key={participantId}
             /*
-             * The stack overlaps by three quarters, so each face needs a ground of its own or the
-             * three read as one smudge. `bg-sidebar` is where the overwhelming majority of these
-             * are drawn, and it is what the border here used to be for.
+             * A ring of the page's own ground between the discs. They overlap on purpose, and
+             * without a gap of the ground colour two drawn characters read as one smudged blob.
              */
-            className="flex shrink-0 items-center justify-center rounded-full bg-sidebar ring-2 ring-sidebar"
+            className={`absolute flex items-center justify-center rounded-full ring-2 ${ringClassName}`}
             style={{
-              height: tile,
-              width: tile,
-              transform: `translateX(${i * -75}%)`,
+              height: place.diameter,
+              left: place.left,
+              top: place.top,
+              width: place.diameter,
             }}
           >
             {seed === undefined ? (
               <div className="size-full rounded-full bg-muted" />
             ) : (
-              <BotAvatar className="size-full" seed={seed} size={tile} />
+              <BotAvatar
+                className="size-full"
+                seed={seed}
+                size={place.diameter}
+              />
             )}
           </div>
         );

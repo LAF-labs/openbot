@@ -207,6 +207,8 @@ function RouteComponent() {
                */}
               <ChannelAvatar
                 participantIds={channel.data?.agentIds ?? []}
+                // The header is on the page's own ground, not the sidebar's. See ChannelAvatar.
+                ringClassName="ring-background"
                 size={24}
               />
             </motion.div>
