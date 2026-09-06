@@ -26,6 +26,9 @@ COPY agent-computer/package.json agent-computer/package.json
 COPY desktop/package.json desktop/package.json
 RUN bun install --frozen-lockfile --filter=agent-computer
 
+# The log's shape lives beside the workspaces (`shared/log.ts`), imported as `../../shared/log`;
+# the layout is preserved so the import resolves the same in the image and locally.
+COPY shared ./shared
 COPY agent-computer/src ./agent-computer/src
 
 # Durable working directory. Bot-produced files that must survive replacement live here.

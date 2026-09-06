@@ -36,6 +36,7 @@ import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
 import { egressFor, egressLabel } from "./egress";
+import { log } from "./log";
 
 /** The viewport, which is what a person's click coordinates are relative to. */
 export const VIEWPORT = { width: 1280, height: 800 };
@@ -63,13 +64,7 @@ export function botTimeZone(
     new Intl.DateTimeFormat("en-US", { timeZone: wanted });
     return wanted;
   } catch {
-    console.warn(
-      JSON.stringify({
-        type: "bot-time-zone-unusable",
-        value: wanted,
-        using: "Asia/Seoul",
-      }),
-    );
+    log.warn("bot_time_zone_unusable", { value: wanted, using: "Asia/Seoul" });
     return "Asia/Seoul";
   }
 }
@@ -370,14 +365,11 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         });
         const reported = context.browser()?.version();
         if (reported && reported !== chromiumVersion) {
-          console.warn(
-            JSON.stringify({
-              type: "chromium-version-drifted",
-              pinned: chromiumVersion,
-              actual: reported,
-              note: "the user agent this container claims is now the browser's own version",
-            }),
-          );
+          log.warn("chromium_version_drifted", {
+            pinned: chromiumVersion,
+            actual: reported,
+            note: "the user agent this container claims is now the browser's own version",
+          });
           chromiumVersion = reported;
         }
         // Persistent contexts open with a page already; reuse it rather than leaving an extra blank tab.
@@ -480,13 +472,10 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         stale.map(([botId, entry]) => closeContext(botId, entry.context)),
       );
       if (stale.length) {
-        console.info(
-          JSON.stringify({
-            type: "computer-idle-closed",
-            bots: stale.map(([botId]) => botId),
-            idleCloseMs,
-          }),
-        );
+        log.info("computer_idle_closed", {
+          bots: stale.map(([botId]) => botId),
+          idleCloseMs,
+        });
       }
       return stale.map(([botId]) => botId);
     },
@@ -574,12 +563,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
   if (idleCloseMs > 0) {
     const sweep = setInterval(() => {
       void profiles.closeIdle().catch((error: unknown) => {
-        console.error(
-          JSON.stringify({
-            type: "computer-idle-sweep-failed",
-            error: String(error),
-          }),
-        );
+        log.error("computer_idle_sweep_failed", { reason: error });
       });
     }, IDLE_SWEEP_MS);
     sweep.unref?.();

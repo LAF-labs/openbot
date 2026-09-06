@@ -2,6 +2,8 @@ import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { serve } from "bun";
 import OpenAI from "openai";
+import { describeFailure, providerStatusFact } from "../../shared/failure-text";
+import { buildOf, createLogger, reportCrashes } from "../../shared/log";
 import { textOf } from "../../shared/message-content";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { spillLineOf } from "../../shared/spillover";
@@ -33,6 +35,17 @@ import {
  */
 
 const PORT = Number.parseInt(process.env.PORT ?? "4200", 10);
+
+/**
+ * This service's log. Facts only — see `shared/log.ts` for the shape and what is scrubbed.
+ *
+ * What it replaced: `console.error("… run failed:", error)` with the OpenAI client's error object,
+ * which Bun prints whole — the provider's body (vendor, catalogue name, URLs), the response headers
+ * and the stack. The line says which KIND of failure it was now (`describeFailure`), and nothing
+ * the provider wrote.
+ */
+const log = createLogger("agent-bot");
+
 /**
  * Which model drives the Bot. No default, on purpose.
  *
@@ -292,13 +305,34 @@ export function botIdOf(input: RunAgentInput): string {
  * provider throws.
  */
 export function runErrorCodeOf(error: unknown): string {
+  const status = statusOf(error);
+  if (status === 429) return "laf:model_rate_limited";
+  if (typeof status === "number") return "laf:model_unavailable";
+  return "laf:model_failed";
+}
+
+/** The HTTP status a provider's error carries, whatever client shape it arrived in. */
+function statusOf(error: unknown): number | undefined {
   const status =
     typeof error === "object" && error !== null && "status" in error
       ? (error as { status?: unknown }).status
       : undefined;
-  if (status === 429) return "laf:model_rate_limited";
-  if (typeof status === "number") return "laf:model_unavailable";
-  return "laf:model_failed";
+  return typeof status === "number" ? status : undefined;
+}
+
+/**
+ * What the log says a failed run failed of.
+ *
+ * Everything caught around the provider call is the provider's, so a status alone is enough to
+ * name the kind — `describeFailure` asks for the OpenAI client's full shape before it will, and a
+ * status-bearing error from any other client would otherwise keep its message, which for a
+ * provider is `429 ` followed by the provider's own sentence.
+ */
+function runFailureOf(error: unknown): string {
+  const status = statusOf(error);
+  return status === undefined
+    ? describeFailure(error)
+    : providerStatusFact(status);
 }
 
 /** Nothing said and nothing asked for. Distinct from a Bot with nothing to add, which is a choice. */
@@ -356,6 +390,8 @@ export async function runAgent(
 
       /** Whose turn this is, for this service's own log. See `botIdOf`. */
       const botId = botIdOf(input);
+      /** When the run began, so the log can say how long a turn took without saying what it said. */
+      const startedAt = Date.now();
       /** Set by the deadline below, read by the catch: a timeout is not a provider failure. */
       let timedOut = false;
 
@@ -588,13 +624,16 @@ export async function runAgent(
           if (isEmptyTurn(turn)) {
             const lowered = effort ? LOWER_EFFORT[effort] : undefined;
             if (lowered) {
-              console.warn(
-                `[agent-bot] ${botId} answered empty at effort ${effort}; retrying at ${lowered}`,
-              );
+              log.warn("reply_empty_retrying", {
+                bot: botId,
+                run: input.runId,
+                effort,
+                retryingAt: lowered,
+              });
               turn = await runTurn(lowered, round, messages, tools);
             }
             if (isEmptyTurn(turn)) {
-              console.warn(`[agent-bot] ${botId} answered empty; giving up`);
+              log.warn("reply_empty", { bot: botId, run: input.runId });
               send({
                 type: "CUSTOM",
                 name: "laf.empty_answer",
@@ -729,9 +768,7 @@ export async function runAgent(
            * and the surface says so in Korean beside it.
            */
           if (finishReason === "length") {
-            console.warn(
-              `[agent-bot] ${botId} hit the length limit mid-answer`,
-            );
+            log.warn("reply_truncated", { bot: botId, run: input.runId });
             send({
               type: "CUSTOM",
               name: "laf.answer_truncated",
@@ -811,6 +848,19 @@ export async function runAgent(
           }
         }
 
+        /*
+         * Counts only. The tools a run was handed and the tools the model was shown are the two
+         * numbers an operator asks for when a turn was slow or a Bot could not find a tool; the
+         * names, the transcript and the answer are the person's and never go here.
+         */
+        log.info("run_finished", {
+          bot: botId,
+          run: input.runId,
+          tools: input.tools?.length ?? 0,
+          exposed: exposed.provider.length,
+          deferred: exposed.deferred.length,
+          ms: Date.now() - startedAt,
+        });
         send({
           type: "RUN_FINISHED",
           threadId: input.threadId,
@@ -827,15 +877,28 @@ export async function runAgent(
          *
          * Three codes because there are three different next steps, and collapsing them is the trap
          * model-call.ts documents: a rate limit wants WAITING, and telling somebody "try again" in
-         * front of an instant refusal is how a working feature looks broken. The full error still
-         * goes to this service's own log, where an operator reads it and no customer does.
+         * front of an instant refusal is how a working feature looks broken.
+         *
+         * THE LOG GETS THE SAME DISCIPLINE. It used to get the whole error object, on the argument
+         * that an operator reads it and no customer does — and the object carried the provider's
+         * body, the response headers and the stack, into a file that is rotated, shipped and
+         * pasted into tickets. `describeFailure` turns the client's error into the kind it was
+         * (`provider_rate_limited`, `provider_refused`, `reply_unusable`), which is also the only
+         * part an operator acts on.
          */
-        console.error(`[agent-bot] ${botId} run failed:`, error);
+        const code = timedOut ? "laf:model_timed_out" : runErrorCodeOf(error);
+        log.error("run_failed", {
+          bot: botId,
+          run: input.runId,
+          code,
+          reason: runFailureOf(error),
+          ms: Date.now() - startedAt,
+        });
         send({
           type: "RUN_ERROR",
           // A timeout is its own next step — the request was accepted and never came back — so it
           // is its own code rather than being flattened into "the model failed".
-          message: timedOut ? "laf:model_timed_out" : runErrorCodeOf(error),
+          message: code,
         } as BaseEvent);
       } finally {
         clearInterval(heartbeat);
@@ -859,19 +922,21 @@ export async function runAgent(
  * the first.
  */
 if (import.meta.main) {
+  reportCrashes(log);
   /*
    * Loudly, and here rather than at module scope: a throw while this file is being imported would
    * take the test suite's own import of `runAgent` with it, and a suite that never runs reports
    * nothing rather than failing. Nothing that serves a person gets past this line without a model.
    */
   if (!MODEL) {
-    console.error(
-      "BOT_MODEL is not set. This service sends the model name verbatim to OPENAI_BASE_URL and has no default of its own — the deployment's model is declared once, in the tenant package's model.yaml, and docker-compose passes BOT_MODEL through from .env. Set it there (.env.example ships it set) and start again.",
-    );
+    log.error("boot_refused", {
+      reason: "bot_model_unset",
+      hint: "This service sends the model name verbatim to OPENAI_BASE_URL and has no default of its own — the deployment's model is declared once, in the tenant package's model.yaml, and docker-compose passes BOT_MODEL through from .env. Set it there (.env.example ships it set) and start again.",
+    });
     process.exit(1);
   }
 
-  serve({
+  const server = serve({
     port: PORT,
     idleTimeout: 120,
     async fetch(request) {
@@ -890,5 +955,29 @@ if (import.meta.main) {
     },
   });
 
-  console.info(`agent-bot listening on http://localhost:${PORT}/ag-ui`);
+  /*
+   * `server.port` rather than `PORT`: a test starts this service on port 0 and reads the port it
+   * was actually given from this line, which is also what an operator wants to know.
+   */
+  log.info("boot", {
+    ...buildOf(),
+    model: MODEL,
+    baseUrl: BASE_URL ?? "https://api.openai.com/v1",
+    port: server.port,
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+  });
+
+  /*
+   * Said before leaving, with the reason. `docker stop` sends SIGTERM; a log that ends mid-run
+   * with no last line cannot be told from a process that was killed by the kernel, and the two
+   * want different next steps. Registering the handler means Bun no longer exits on its own, so
+   * the exit is explicit.
+   */
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => {
+      log.info("shutdown", { reason: signal });
+      server.stop(true);
+      process.exit(0);
+    });
+  }
 }

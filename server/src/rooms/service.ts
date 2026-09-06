@@ -25,6 +25,7 @@ import type { UnattendedToolkit } from "../runner/unattended";
 import { relayApprovals } from "./approval-relay";
 import type { RoomFrame } from "./frames";
 import { runMemberTurn } from "./member-turn";
+import { log } from "../log";
 import { namesOf, resolveRoomMembers } from "./members";
 import { runRoomTurn } from "./orchestrator";
 import { readPrivateHistory } from "./private-history";
@@ -226,7 +227,13 @@ export function createRoomService(options: RoomServiceOptions) {
           }),
         )
         .catch((error: unknown) => {
-          console.error("[rooms] a turn failed:", error);
+          // The error as a bounded line, never the object: a failed transcript append is a
+          // Drizzle error, and its message is the room's whole message array.
+          log.error("room_turn_failed", {
+            channel: input.channelId,
+            turn: turnId,
+            reason: error,
+          });
         });
 
       return {
@@ -592,10 +599,11 @@ export function createRoomService(options: RoomServiceOptions) {
             const reason =
               error instanceof Error ? error.message : String(error);
             firstFailure ??= reason;
-            console.error(
-              `[rooms] member ${member.id} could not take its turn:`,
-              error,
-            );
+            log.error("room_member_turn_failed", {
+              channel: input.channelId,
+              member: member.id,
+              reason: error,
+            });
             await record(ask, { runId, spoke: said.length, failed: reason });
             return { spoke: said.length, said };
           }

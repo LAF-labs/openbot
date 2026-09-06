@@ -81,6 +81,10 @@ services:
       # LAF_DEV_NO_AUTH. Both are survivable mistakes locally and neither is survivable here,
       # so a deployment says which one it is rather than hoping nobody copied a development .env.
       NODE_ENV: production
+      # Which channel this image was pulled by, so the `boot` log line can say which build is
+      # running. The same variable names the image above; passing it in is what lets the log
+      # agree with the pull (docs/laf/operating.md).
+      IMAGE_TAG: ${IMAGE_TAG:-stable}
       DATABASE_URL: postgres://openbot:${POSTGRES_PASSWORD:-openbot}@postgres:5432/openbot
       KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY:-}
       TENANT_PACKAGE_DIR: ${TENANT_PACKAGE_DIR:-../tenant/laf}
@@ -266,6 +270,7 @@ services:
       # request control, and loopback keeps the surface off routed networks.
       - "127.0.0.1:${COMPUTER_PORT:-4100}:4100"
     environment:
+      IMAGE_TAG: ${IMAGE_TAG:-stable}
       # The secret every caller must present. The container refuses to start without it.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-}
       # The same variable the API server reads, because the browser has a clock too: without it
@@ -313,6 +318,7 @@ services:
       # `scripts/start.sh` health-checking `localhost` on the host itself.
       - "127.0.0.1:${BOT_PORT:-4200}:4200"
     environment:
+      IMAGE_TAG: ${IMAGE_TAG:-stable}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       # Unset means OpenAI. Set, it is any endpoint speaking the same API, and BOT_MODEL is sent
       # to it verbatim.

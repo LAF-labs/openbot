@@ -2,6 +2,10 @@ import "./telemetry-off";
 import { serve } from "bun";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { buildOf } from "../../shared/log";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { SELF_TOOLS } from "../../shared/tools/self";
+import { SKILL_TOOLS } from "../../shared/tools/skills";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
 import { createRetentionJob, retentionDays } from "./account/retention";
@@ -69,7 +73,9 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
+import { describeFailure } from "./failure-text";
 import { createFleetNotifier } from "./fleet/notify";
+import { log } from "./log";
 import { createAlimtalkAdapter } from "./notifications/alimtalk";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
 import { withOutboxWatch } from "./notifications/from-audit";
@@ -197,13 +203,9 @@ const fleetNotifier = config.fleet
   ? createFleetNotifier({ ...config.fleet, auditStore: bootAuditStore })
   : undefined;
 if (!fleetNotifier) {
-  console.info(
-    JSON.stringify({
-      type: "fleet-webhook",
-      configured: false,
-      note: "LAF_FLEET_WEBHOOK_URL is unset. Sign-ups and withdrawals on this deployment reach nothing: a person who leaves is gone from here and the machine outlives them.",
-    }),
-  );
+  log.warn("fleet_webhook_unconfigured", {
+    note: "LAF_FLEET_WEBHOOK_URL is unset. Sign-ups and withdrawals on this deployment reach nothing: a person who leaves is gone from here and the machine outlives them.",
+  });
 }
 // One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
 // one module writes it. Built before the runner because the runner opens its rows through it.
@@ -260,12 +262,7 @@ const partnerRuntime = createPartnerRuntime({
   context: { database, auditStore: bootAuditStore },
   database,
 });
-console.info(
-  JSON.stringify({
-    type: "partner-connectors",
-    alimtalk: config.partners.alimtalk,
-  }),
-);
+log.info("partner_connectors", { alimtalk: config.partners.alimtalk });
 /**
  * The public data the fleet holds one key for, assembled once, from the key `config` already read.
  *
@@ -277,12 +274,7 @@ const publicDataRuntime = createPublicDataRuntime({
   keys: config.connectors.keys,
   listBots: () => allLiveBots(database),
 });
-console.info(
-  JSON.stringify({
-    type: "public-data",
-    dataGoKr: publicDataRuntime.configured,
-  }),
-);
+log.info("public_data", { dataGoKr: publicDataRuntime.configured });
 /**
  * One outbox for "somebody has to be told", and every door it goes out through.
  *
@@ -306,8 +298,15 @@ const notificationOutbox = createNotificationOutbox({
     ...(process.env.LAF_NOTIFY_WEBHOOK_URL
       ? [createWebhookAdapter(process.env.LAF_NOTIFY_WEBHOOK_URL)]
       : []),
-    createAlimtalkAdapter({ partners: partnerRuntime.connections }),
+    createAlimtalkAdapter({
+      partners: partnerRuntime.connections,
+      log: (message) => log.info("alimtalk", { message }),
+    }),
   ],
+  // The outbox and the adapter each take a line-writer so their tests can read them; here the
+  // writer is the process log, so their one-line reports come out in the same shape as everything
+  // else instead of as bare sentences between JSON objects.
+  log: (message) => log.error("notification_outbox", { message }),
 });
 /** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
 const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
@@ -669,12 +668,6 @@ void recordAuditEvent(bootAuditStore, {
   },
 }).catch(() => undefined);
 
-console.info(
-  JSON.stringify({
-    type: "computer-isolation",
-    isolation: "one shared computer",
-  }),
-);
 /**
  * One Bot's endpoint must not take down the platform.
  *
@@ -690,17 +683,16 @@ console.info(
  * that dies, so this prints the full reason and keeps serving; what it must never do is stay quiet.
  */
 process.on("unhandledRejection", (reason) => {
-  console.error(
-    JSON.stringify({
-      type: "unhandled-rejection",
-      message: reason instanceof Error ? reason.message : String(reason),
-      code:
-        reason && typeof reason === "object" && "code" in reason
-          ? String((reason as { code: unknown }).code)
-          : undefined,
-      note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
-    }),
-  );
+  // `describeFailure` rather than `reason.message`: a rejected Drizzle promise lands here too, and
+  // its message is the statement and its parameters.
+  log.error("unhandled_rejection", {
+    reason: describeFailure(reason),
+    code:
+      reason && typeof reason === "object" && "code" in reason
+        ? String((reason as { code: unknown }).code)
+        : undefined,
+    note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
+  });
 });
 
 /**
@@ -1234,7 +1226,7 @@ const isProxiedStream = (data: SocketData): data is StreamData =>
 const asChannelSocket = (ws: { data: SocketData }) =>
   ws as unknown as ChannelSocket;
 
-serve<SocketData>({
+const server = serve<SocketData>({
   port,
   /*
    * Bun's default cuts a connection that has been quiet for ten seconds, which is shorter than a
@@ -1372,13 +1364,47 @@ serve<SocketData>({
 
 if (config.devNoAuth) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
-  console.warn(
-    "LAF_DEV_NO_AUTH is on: every request is treated as " +
-      `${DEV_ACTOR.email} (administrator). Local development only.`,
-  );
+  log.warn("dev_no_auth", {
+    actor: DEV_ACTOR.email,
+    role: "administrator",
+    note: "LAF_DEV_NO_AUTH is on: every request is treated as this person. Local development only.",
+  });
 }
 
-console.info(`LAF Agent server listening on http://localhost:${port}`);
+/*
+ * The one line an operator reads first after a restart: which build, which model, how many core
+ * tools a Bot is offered, and where the browser is. `tools` counts the catalogue in `shared/tools`
+ * — the computer, self and skill tools every Bot can be handed — not the connected-service tools,
+ * which are per person and per run. `server.port` rather than `port`, because a test starts this
+ * process on port 0 and reads the port it was given from here.
+ */
+log.info("boot", {
+  ...buildOf(),
+  model: tenantPackage.model.defaultModel,
+  reviewModel: tenantPackage.model.reviewModel,
+  supportsEffort: tenantPackage.model.supportsEffort,
+  tools: COMPUTER_TOOLS.length + SELF_TOOLS.length + SKILL_TOOLS.length,
+  port: server.port,
+  computer: config.computer ? "one shared computer" : "none",
+  fleetWebhook: Boolean(fleetNotifier),
+  stallTimeoutMs: config.agentStallTimeoutMs,
+  retentionDays: retentionDays(),
+});
+
+/*
+ * Said before leaving, with the reason. `docker stop` sends SIGTERM and then waits; a log that
+ * ends mid-turn with no last line cannot be told from a process the kernel killed, and the two
+ * want different next steps (see docs/laf/operating.md). Registering the handler means Bun no
+ * longer exits on its own, so the exit is explicit. The routine clock and the retention timer die
+ * with the process; a run in flight is reconciled to `unknown` by the next boot (laf-runner.ts).
+ */
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    log.info("shutdown", { reason: signal });
+    server.stop(true);
+    process.exit(0);
+  });
+}
 /*
  * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
  * wall-clock times, not intervals — so a shorter tick would only mean more queries finding
@@ -1400,11 +1426,10 @@ routineService.start(60_000);
 const retention = createRetentionJob({
   database,
   days: retentionDays(),
+  log: (message) => log.info("retention", { message }),
 });
 void retention.runOnce().catch((error) => {
-  console.warn(
-    `retention: first sweep failed — ${error instanceof Error ? error.message : String(error)}`,
-  );
+  log.warn("retention_first_sweep_failed", { reason: describeFailure(error) });
 });
 retention.start(6 * 60 * 60_000);
 

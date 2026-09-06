@@ -37,6 +37,7 @@
  * schedule, so a test can move time by a minute without waiting one, and so the decision about when
  * to look is made in one place rather than hidden in here.
  */
+import { log } from "../log";
 
 /** Milliseconds, from whatever source the caller trusts. Injected so tests need not sleep. */
 export type Clock = () => number;
@@ -219,14 +220,11 @@ export class TurnWatchdog {
         // argument the process-level rejection handler in index.ts makes: a wedged Bot is somebody
         // else's infrastructure, and the sweep it happens to be in is holding every other person's
         // stuck turn. Logged loudly, because a watchdog that fails silently is worse than none.
-        console.error(
-          JSON.stringify({
-            type: "turn-watchdog-callback-error",
-            stream: id,
-            bot: stream.botId,
-            error: String(error),
-          }),
-        );
+        log.error("turn_watchdog_callback_failed", {
+          stream: id,
+          bot: stream.botId,
+          reason: error,
+        });
       }
     }
 

@@ -22,6 +22,7 @@ import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { agentProfiles, lafRoutineRuns, lafRoutines } from "../db/schema";
 import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { RunLedger } from "../runner/run-ledger";
 import {
@@ -670,10 +671,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
             at: now(),
           })) ?? null;
       } catch (error) {
-        console.error(
-          "[routines] marking the failure failed:",
-          describeFailure(error),
-        );
+        log.error("routine_failure_not_marked", {
+          routine: row.id,
+          run: ledgerRunId,
+          reason: describeFailure(error),
+        });
       }
     }
 

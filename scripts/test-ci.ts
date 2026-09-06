@@ -154,6 +154,18 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     root               113 tests across 14 files   →   109
  *
+ * MEASURED 2026-09-06, with the log discipline (3-D) on top of the 1-B merge. The four had drifted
+ * to between 6% and 26% under what the tree measures — `root` most, because the tool bridge and
+ * the logger both landed there — so all four are re-raised to 3% under this run:
+ *
+ *     server           1,687 tests across 100 files  → 1,636
+ *     app                601 tests across 70 files   →   582
+ *     agent-computer     136 tests across  8 files   →   131
+ *     root               147 tests across 18 files   →   142
+ *
+ * REBASED 2026-09-06 onto the first-task chips and 3-B: each floor is the higher of what the two
+ * branches had measured, so `app` keeps the chips' 617 above rather than this run's 582.
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -161,10 +173,10 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1353, roots: ["server"] },
+  { name: "server", floor: 1636, roots: ["server"] },
   { name: "app", floor: 617, roots: ["app"] },
-  { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
-  { name: "root", floor: 109, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 131, roots: ["agent-computer"] },
+  { name: "root", floor: 142, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

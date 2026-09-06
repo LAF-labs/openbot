@@ -34,6 +34,7 @@ import { sql } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
+import { log } from "../log";
 
 /** What the fleet is told about. Both carry the same envelope. */
 export type FleetEvent = "account.created" | "account.deleted";
@@ -185,9 +186,11 @@ export function createFleetNotifier(
       }).catch(() => undefined);
 
       if (!delivered) {
-        console.error(
-          `[fleet] ${notice.event} was not delivered after ${attempts} attempt(s): ${status}`,
-        );
+        log.error("fleet_notice_not_delivered", {
+          event: notice.event,
+          attempts,
+          status,
+        });
       }
     },
   };

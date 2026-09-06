@@ -17,6 +17,7 @@ import {
   type LafGuard,
   type ToolAnnotations,
 } from "./laf-contract";
+import { log } from "../log";
 import { McpRedirectRefusedError } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
 import type { SkillsAndGrants } from "./skills-and-grants";
@@ -487,15 +488,12 @@ export function createCallPath(
             },
           });
         } catch (error) {
-          console.error(
-            JSON.stringify({
-              type: "mcp-repeat-row-lost",
-              bot: input.botId,
-              fingerprint: repetition.fingerprint,
-              count: repetition.count,
-              error: String(error),
-            }),
-          );
+          log.error("mcp_repeat_row_lost", {
+            bot: input.botId,
+            fingerprint: repetition.fingerprint,
+            count: repetition.count,
+            reason: error,
+          });
         }
       }
 

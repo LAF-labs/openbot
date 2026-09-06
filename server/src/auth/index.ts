@@ -13,6 +13,7 @@ import {
   verifications,
 } from "../db/schema";
 import { countAccounts, type FleetNotifier } from "../fleet/notify";
+import { log } from "../log";
 import { createSignInAllowlist } from "./allowlist";
 import { roleForEmail } from "./roles";
 
@@ -43,10 +44,7 @@ export async function announceArrival(
   } catch (error) {
     // Swallowed, like the withdrawal's. Somebody is mid-sign-in and this is a reconciliation
     // signal; failing their first visit over it would be the worse of the two outcomes.
-    console.error(
-      "[fleet] an arrival could not be reported:",
-      error instanceof Error ? error.message : error,
-    );
+    log.error("fleet_arrival_not_reported", { reason: error });
   }
 }
 

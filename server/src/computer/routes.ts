@@ -5,6 +5,7 @@ import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
 import { requireAdminRoute } from "../auth/guards";
 import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
 import {
   type ComputerClient,
@@ -697,12 +698,7 @@ export function createComputerRoutes(
           allow: parsed.policy.allow.length,
         },
       }).catch((error) => {
-        console.error(
-          JSON.stringify({
-            type: "computer-policy-row-lost",
-            error: String(error),
-          }),
-        );
+        log.error("computer_policy_row_lost", { reason: error });
       });
     }
     // Echoed back so a caller can see exactly what is now in force rather than assuming its request

@@ -9,10 +9,11 @@
  *
  * MEASURED FIRST BY HAND, 2026-09-06: a routine driven against an endpoint that held its run open,
  * the API killed with SIGKILL mid-run and started again. Boot said "1 run(s) had no ending;
- * reconciled to unknown" and "1 interrupted run(s) reported as run.failed", the outbox held one
- * `run.failed` row with `laf:turn_interrupted` delivered through socket and webhook only, and
- * `GET /api/channels/:id/failures` keyed that code to the routine's heading in the transcript. These
- * tests pin the same chain so it cannot quietly come apart.
+ * reconciled to unknown" and "1 interrupted run(s) reported as run.failed" (since the log
+ * discipline, 3-D, the same two facts are the `runs_reconciled` and `interrupted_runs_reported`
+ * lines), the outbox held one `run.failed` row with `laf:turn_interrupted` delivered through
+ * socket and webhook only, and `GET /api/channels/:id/failures` keyed that code to the routine's
+ * heading in the transcript. These tests pin the same chain so it cannot quietly come apart.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";

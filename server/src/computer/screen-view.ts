@@ -24,6 +24,8 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { UserRole } from "../auth/roles";
 import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 
 export type ScreenViewer = { id: string; role: UserRole };
 
@@ -119,9 +121,9 @@ export function createScreenViewAudit(dependencies: {
         },
       });
     } catch (error) {
-      // The screen is open either way; a trail that is away is said on the console, not to the
+      // The screen is open either way; a trail that is away is said in the log, not to the
       // person watching, who could do nothing about it.
-      console.error("screen view could not be recorded", error);
+      log.error("screen_view_not_recorded", { reason: describeFailure(error) });
     }
   };
 

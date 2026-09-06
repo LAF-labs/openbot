@@ -3,6 +3,7 @@ import {
   spillPath,
   TOOL_RESULT_PREVIEW,
 } from "../../../shared/spillover";
+import { log } from "../log";
 import type { WriteFileInput, WriteFileResult } from "./schema";
 
 /**
@@ -61,7 +62,9 @@ export function createResultSpill(
   client: ResultFiler,
   options: { log?: (line: string) => void } = {},
 ): ResultSpill {
-  const log = options.log ?? ((line: string) => console.warn(line));
+  const say =
+    options.log ??
+    ((line: string) => log.warn("spillover_not_filed", { message: line }));
   /** Insertion-ordered, so trimming it forgets the oldest. */
   const onFile = new Set<string>();
   const inFlight = new Map<string, Promise<void>>();
@@ -81,7 +84,7 @@ export function createResultSpill(
       })
       .catch((error: unknown) => {
         failedAt.set(key, Date.now());
-        log(
+        say(
           `[spillover] ${botId} could not file ${path}: ${error instanceof Error ? error.message : String(error)}`,
         );
       })

@@ -20,6 +20,7 @@ import {
   definitionHashOf,
   type ToolAnnotations,
 } from "./laf-contract";
+import { log } from "../log";
 import { McpServerError } from "./mcp";
 import { botsOwnedBy, type SkillsAndGrants } from "./skills-and-grants";
 import {
@@ -623,13 +624,10 @@ export function createServers(
           }
         }
       } catch (error) {
-        console.error(
-          JSON.stringify({
-            type: "connection-tools-not-offered",
-            server: serverId,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        log.error("connection_tools_not_offered", {
+          server: serverId,
+          reason: error,
+        });
       }
     },
 
@@ -666,13 +664,10 @@ export function createServers(
           }
         }
       } catch (error) {
-        console.error(
-          JSON.stringify({
-            type: "connection-tools-not-withdrawn",
-            server: serverId,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        log.error("connection_tools_not_withdrawn", {
+          server: serverId,
+          reason: error,
+        });
       }
     },
 

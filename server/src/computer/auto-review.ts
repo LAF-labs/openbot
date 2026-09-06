@@ -27,6 +27,8 @@
  * text, no arguments, no model-written prose.
  */
 
+import { noAnswerFact } from "../failure-text";
+import { log } from "../log";
 import type { AskSubject } from "./approvals";
 import { askModel, type ModelCall } from "./model-call";
 
@@ -202,13 +204,10 @@ export function createAutoReviewProbe(
       ...(options.supportsEffort ? { reasoningEffort: "low" as const } : {}),
     });
     if (!answer.ok) {
-      console.error(
-        JSON.stringify({
-          type: "auto-review-probe-failed",
-          model: options.model,
-          because: answer.because,
-        }),
-      );
+      log.error("auto_review_probe_failed", {
+        model: options.model,
+        reason: noAnswerFact(answer.because),
+      });
       return false;
     }
     // Readable, not correct. What is being measured is whether a verdict can be got out of this

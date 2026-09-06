@@ -34,6 +34,7 @@ import {
 } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import { normalizeHostname } from "../net/host-verdict";
 import { type ComputerClient, StaleSnapshotError } from "./client";
 import { isSecretFieldElement } from "./default-policy";
@@ -548,15 +549,12 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           count: repetition.count,
         });
       } catch (error) {
-        console.error(
-          JSON.stringify({
-            type: "computer-repeat-row-lost",
-            bot: botId,
-            fingerprint: repetition.fingerprint,
-            count: repetition.count,
-            error: String(error),
-          }),
-        );
+        log.error("computer_repeat_row_lost", {
+          bot: botId,
+          fingerprint: repetition.fingerprint,
+          count: repetition.count,
+          reason: error,
+        });
       }
     }
 

@@ -26,6 +26,8 @@
  * `nkoneps.com.response.ResponseError` shape `vendorHeaderOf` reads. `type=json` is 나라장터's word
  * for the format and `dataType=json` is 기업마당's — the other spelling answers XML.
  */
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import type { PluginStore } from "./store";
 import { PluginRefusedError } from "./store";
 import type { DeploymentKeyFamily } from "./catalogue";
@@ -503,13 +505,10 @@ export function createPublicDataRuntime(input: {
   }
 
   const failed = (what: string, error: unknown) =>
-    console.error(
-      JSON.stringify({
-        type: "public-data-not-reconciled",
-        what,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error("public_data_not_reconciled", {
+      what,
+      reason: describeFailure(error),
+    });
 
   return {
     configured,

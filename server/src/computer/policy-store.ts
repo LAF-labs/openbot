@@ -17,6 +17,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { actionPolicy } from "../db/schema";
+import { log } from "../log";
 import type { ActionPolicy } from "./policy";
 
 /** There is one boundary per deployment, so there is one row. */
@@ -180,13 +181,10 @@ export function parseActionPolicy(
    * parses, it is said out loud, and the boundary it describes is enforced.
    */
   if (candidate.mode !== undefined && candidate.mode !== "enforce") {
-    console.warn(
-      JSON.stringify({
-        type: "computer-policy-mode-ignored",
-        was: candidate.mode,
-        now: "enforce",
-      }),
-    );
+    log.warn("computer_policy_mode_ignored", {
+      was: candidate.mode,
+      now: "enforce",
+    });
   }
 
   const lists: Record<"deny" | "ask" | "allow", string[]> = {

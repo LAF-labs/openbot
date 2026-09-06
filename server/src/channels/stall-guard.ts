@@ -40,6 +40,7 @@
  * never spoke produces.
  */
 import { type AuditStore, recordAuditEvent } from "../audit";
+import { log } from "../log";
 import { type StalledStream, TurnWatchdog } from "./turn-watchdog";
 
 /** The fetch an `HttpAgent` uses, as @ag-ui/client 0.0.57 declares it. */
@@ -196,16 +197,13 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
     if (!stream) return;
 
     const turn = turnOf(stream.requestBody);
-    console.error(
-      JSON.stringify({
-        type: "agent-stream-stalled",
-        bot: stream.bot.id,
-        silentForMs: stalled.silentForMs,
-        chunks: stalled.chunks,
-        ...(turn ? { thread: turn.threadId, run: turn.runId } : {}),
-        note: "The Bot's stream produced nothing for the configured timeout, so the turn was ended.",
-      }),
-    );
+    log.error("agent_stream_stalled", {
+      bot: stream.bot.id,
+      silentForMs: stalled.silentForMs,
+      chunks: stalled.chunks,
+      ...(turn ? { thread: turn.threadId, run: turn.runId } : {}),
+      note: "The Bot's stream produced nothing for the configured timeout, so the turn was ended.",
+    });
 
     // The Bot's side goes first, so a socket into an endpoint that will never answer is released
     // whatever the browser's side of the stream is doing.

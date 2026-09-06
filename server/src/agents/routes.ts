@@ -1,6 +1,8 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
@@ -382,13 +384,10 @@ export function createAgentRoutes(
       if (onCreated) {
         // The Bot exists whatever happens here; a grant that did not land is repaired at boot.
         await onCreated(agent.id).catch((error: unknown) => {
-          console.error(
-            JSON.stringify({
-              type: "agent-created-hook-failed",
-              agent: agent.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
+          log.error("agent_created_hook_failed", {
+            agent: agent.id,
+            reason: describeFailure(error),
+          });
         });
       }
       return context.json({ agent: agentDto(context.var.actor, agent) }, 201);

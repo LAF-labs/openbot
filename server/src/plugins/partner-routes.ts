@@ -21,6 +21,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import { log } from "../log";
 import { catalogueEntry, type PartnerFamily } from "./catalogue";
 import {
   isPartnerProvider,
@@ -99,13 +100,7 @@ export function createPartnerRoutes(
         }
       }
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          type: "partner-tools-not-offered",
-          provider,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("partner_tools_not_offered", { provider, reason: error });
     }
   }
 
@@ -136,13 +131,7 @@ export function createPartnerRoutes(
     } catch (error) {
       // A row that was never made, most likely: the tools were never offered. Nothing to undo.
       if (error instanceof CatalogueEntryUnknownError) return;
-      console.error(
-        JSON.stringify({
-          type: "partner-tools-not-withdrawn",
-          provider,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("partner_tools_not_withdrawn", { provider, reason: error });
     }
   }
 

@@ -10,6 +10,7 @@
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
+import { log } from "./log";
 import type {
   DeploymentKeyFamily,
   SharedClientFamily,
@@ -207,9 +208,9 @@ function keyEncryptionKey(environment: Environment): string {
         "KEY_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -base64 32",
       );
     }
-    console.warn(
-      "KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32",
-    );
+    log.warn("encryption_key_is_example", {
+      note: "KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32",
+    });
   }
 
   return value;

@@ -16,6 +16,9 @@
  * be read is nothing to show.
  */
 
+import { providerStatusFact } from "../failure-text";
+import { log } from "../log";
+
 export type ModelCall = {
   /** Where chat completions are answered. The same endpoint everything else in this deployment uses. */
   baseUrl: string;
@@ -134,14 +137,13 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
     );
     if (!response.ok) {
       // Said out loud, because a refusal that arrives in under a second is the one failure a person
-      // will otherwise read as the feature being broken.
-      console.error(
-        JSON.stringify({
-          type: "model-call-refused",
-          model: call.model,
-          status: response.status,
-        }),
-      );
+      // will otherwise read as the feature being broken. The status as a fact word, never the
+      // body: the body names the vendor and the model's real catalogue entry.
+      log.error("model_call_refused", {
+        model: call.model,
+        status: response.status,
+        reason: providerStatusFact(response.status),
+      });
       return { ok: false, because: "refused" };
     }
     const body = (await response.json()) as {

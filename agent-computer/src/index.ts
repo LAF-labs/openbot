@@ -2,6 +2,7 @@ import { serve } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Frame, Page } from "playwright";
+import { buildOf } from "../../shared/log";
 import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
 import {
   BOT_ID_INVALID,
@@ -20,6 +21,7 @@ import {
   restoredControl,
   TAKE_CONTROL_FIRST,
 } from "./control";
+import { log } from "./log";
 import {
   createProfiles,
   TabError,
@@ -76,9 +78,10 @@ import {
  */
 const COMPUTER_TOKEN = process.env.COMPUTER_TOKEN?.trim();
 if (!COMPUTER_TOKEN) {
-  console.error(
-    "COMPUTER_TOKEN is not set. This process drives a browser holding real logins and will not start without the secret its caller must present.",
-  );
+  log.error("boot_refused", {
+    reason: "computer_token_unset",
+    hint: "This process drives a browser holding real logins and will not start without the secret its caller must present.",
+  });
   process.exit(1);
 }
 
@@ -230,13 +233,7 @@ function writeControlFile(botId: string, state: ControlState): void {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify(state), "utf8");
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        type: "control-state-not-saved",
-        bot: botId,
-        error: String(error),
-      }),
-    );
+    log.error("control_state_not_saved", { bot: botId, reason: error });
   }
 }
 
@@ -344,13 +341,7 @@ function watchPage(botId: string, page: Page): void {
               ? "laf:download_too_large"
               : "laf:download_failed",
         });
-        console.error(
-          JSON.stringify({
-            type: "download-not-saved",
-            bot: botId,
-            error: String(error),
-          }),
-        );
+        log.error("download_not_saved", { bot: botId, reason: error });
       }
     })();
   });
@@ -683,7 +674,7 @@ const FOLLOW_INTERVAL_MS = 1_000;
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
 type StreamData = { botId: string };
 
-serve<StreamData>({
+const listener = serve<StreamData>({
   port: PORT,
   idleTimeout: 120,
   /**
@@ -763,13 +754,12 @@ serve<StreamData>({
       } catch (error) {
         // Reported rather than swallowed. A dispatch that fails means the person's input did nothing,
         // and they must not be left believing it landed.
-        console.error(
-          JSON.stringify({
-            type: "screencast-input-error",
-            message: message.type,
-            error: String(error),
-          }),
-        );
+        // The input's TYPE (a click, a key) and never its content: a keystroke on the live screen
+        // is what somebody typed into a browser holding their logins.
+        log.error("screencast_input_failed", {
+          input: message.type,
+          reason: error,
+        });
         ws.send(
           JSON.stringify({
             type: "error",
@@ -1480,14 +1470,11 @@ serve<StreamData>({
          * "stopped in time" from "ran to completion after cancellation".
          */
         if (request.signal.aborted) {
-          console.info(
-            JSON.stringify({
-              type: "action-stopped",
-              action: url.pathname,
-              ref: typeof body.ref === "string" ? body.ref : undefined,
-              elapsedMs: Date.now() - startedAt,
-            }),
-          );
+          log.info("action_stopped", {
+            action: url.pathname,
+            ref: typeof body.ref === "string" ? body.ref : undefined,
+            elapsedMs: Date.now() - startedAt,
+          });
           // 499, the convention for a client that closed the request: this is not the computer
           // failing, and a 502 here would be counted as one.
           return json({ error: "Stopped.", stopped: true }, 499);
@@ -1704,7 +1691,14 @@ function fileStatus(error: unknown): 400 | 403 | 500 {
   return 500;
 }
 
-console.info(`agent-computer listening on http://localhost:${PORT}`);
+// `listener.port` rather than `PORT`: on port 0 it is the port actually given.
+log.info("boot", {
+  ...buildOf(),
+  port: listener.port,
+  profilesDir: process.env.PROFILES_DIR ?? "/profiles",
+  navigationTimeoutMs: NAVIGATION_TIMEOUT_MS,
+  actionTimeoutMs: ACTION_TIMEOUT_MS,
+});
 
 /**
  * Hand the profile back before dying.
@@ -1718,7 +1712,10 @@ console.info(`agent-computer listening on http://localhost:${PORT}`);
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
     void (async () => {
-      console.info(`${signal}: closing the browser so its profile is flushed`);
+      log.info("shutdown", {
+        reason: signal,
+        note: "closing the browser so its profile is flushed",
+      });
       await profiles.closeAll();
       process.exit(0);
     })();

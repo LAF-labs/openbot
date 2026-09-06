@@ -37,6 +37,7 @@ import { TURN_FAILURE_CODES } from "../channels/turn-failures";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
 import { redactSecretTyping } from "./secret-redaction";
@@ -291,9 +292,11 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         label: lafThreadRuns.label,
       });
     if (reconciled.length > 0) {
-      console.info(
-        `[laf-runner] ${reconciled.length} run(s) had no ending; reconciled to unknown`,
-      );
+      log.warn("runs_reconciled", {
+        count: reconciled.length,
+        to: "unknown",
+        note: "These runs were still `running` when the last process died; nothing is known about how they ended.",
+      });
     }
     return new LafPostgresRunner(database, ledger, auditStore, reconciled);
   }
@@ -363,10 +366,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
        * parameters into `message`. The parameters of this file's statements are conversations: a
        * failed append carried the whole message array into the operator log. See failure-text.ts.
        */
-      console.error(
-        "[laf-runner] reading a thread failed:",
-        describeFailure(error),
-      );
+      log.error("thread_read_failed", { reason: describeFailure(error) });
       return false;
     }
   }
@@ -394,10 +394,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       );
     } catch (error) {
       this.listed = [];
-      console.error(
-        "[laf-runner] reading the thread list failed:",
-        describeFailure(error),
-      );
+      log.error("thread_list_failed", { reason: describeFailure(error) });
     }
   }
 
@@ -567,10 +564,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       await appendMessages(this.database, threadId, messages, { runId });
       return runId;
     } catch (error) {
-      console.error(
-        "[laf-runner] persisting run start failed:",
-        describeFailure(error),
-      );
+      log.error("run_start_not_persisted", {
+        thread: threadId,
+        reason: describeFailure(error),
+      });
       return null;
     }
   }
@@ -600,10 +597,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         await this.recordUsage(runId, threadId, agentId, events);
       }
     } catch (error) {
-      console.error(
-        "[laf-runner] persisting run end failed:",
-        describeFailure(error),
-      );
+      log.error("run_end_not_persisted", {
+        thread: threadId,
+        reason: describeFailure(error),
+      });
     }
   }
 
@@ -688,10 +685,10 @@ export async function reportInterruptedRuns(input: {
         });
         channelId = marked?.channelId;
       } catch (error) {
-        console.error(
-          "[laf-runner] marking an interrupted routine failed:",
-          describeFailure(error),
-        );
+        log.error("interrupted_routine_not_marked", {
+          run: run.runId,
+          reason: describeFailure(error),
+        });
       }
     }
     if (!channelId && run.threadId) {
@@ -703,10 +700,11 @@ export async function reportInterruptedRuns(input: {
           .limit(1);
         channelId = owner?.channelId;
       } catch (error) {
-        console.error(
-          "[laf-runner] reading an interrupted run's conversation failed:",
-          describeFailure(error),
-        );
+        log.error("interrupted_conversation_not_read", {
+          run: run.runId,
+          thread: run.threadId,
+          reason: describeFailure(error),
+        });
       }
     }
     const record = await input.outbox.enqueue({
@@ -723,9 +721,7 @@ export async function reportInterruptedRuns(input: {
     if (record) told += 1;
   }
   if (told > 0) {
-    console.info(
-      `[laf-runner] ${told} interrupted run(s) reported as run.failed`,
-    );
+    log.info("interrupted_runs_reported", { count: told, as: "run.failed" });
   }
   return told;
 }

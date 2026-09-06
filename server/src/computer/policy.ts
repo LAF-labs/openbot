@@ -27,6 +27,7 @@
  * configuration, so the first rule anybody ever wrote here would silently do nothing.
  */
 import { evaluate } from "cel-js";
+import { log } from "../log";
 import { isSecretField } from "./default-policy";
 
 export type ActionPolicy = {
@@ -349,14 +350,11 @@ function matches(
       ) === true
     );
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        type: "computer-policy-expression-error",
-        expression,
-        error: String(error),
-        treatedAs: onError,
-      }),
-    );
+    log.error("computer_policy_expression_failed", {
+      expression,
+      reason: error,
+      treatedAs: onError,
+    });
     return onError;
   }
 }
