@@ -7,6 +7,9 @@ name: Images
 #
 # Channels, chosen by how the run started:
 #   a `v*` tag      → :vX.Y.Z and :stable — a release moves the fleet's default channel
+#   push to main    → :edge, so a rehearsal VM always runs what main is. Measured 2026-09-07: :edge
+#                     was twelve days and two sign-in changes behind main, because nobody dispatched,
+#                     and no image on GHCR could sign anybody in. Docs-only pushes skip the build.
 #   manual dispatch → :edge from the default branch; tick `promote_stable` to also move :stable,
 #                     which exists so the very first :stable can be minted before any release tag
 #
@@ -30,6 +33,8 @@ name: Images
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   workflow_dispatch:
     inputs:
       promote_stable:
