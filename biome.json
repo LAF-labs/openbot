@@ -27,6 +27,16 @@
   },
   "overrides": [
     {
+      "includes": ["agent-computer/tests/fixtures/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["server/tests/**", "tests/**", "app/tests/**"],
       "linter": {
         "rules": {
