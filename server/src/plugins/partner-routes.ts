@@ -93,11 +93,11 @@ export function createPartnerRoutes(
     try {
       await store.ensureCatalogueServer({ key: provider, by });
       await store.refreshTools(provider, userId);
-      const bots = await partners.botsOwnedBy(userId);
-      for (const tool of partners.toolsOf(provider)) {
-        for (const botId of bots) {
-          await store.grant("mcp", `${provider}/${tool.name}`, botId, by);
-        }
+      // The per-Bot half is the runtime's, and it is the same half the create route runs for a
+      // Bot made after this moment (`PartnerRuntime.offerTo`). Measured 2026-09-06: a loop written
+      // here reached the Bots of that day and no later one.
+      for (const botId of await partners.botsOwnedBy(userId)) {
+        await partners.grantTo(store, provider, botId, by);
       }
     } catch (error) {
       log.error("partner_tools_not_offered", { provider, reason: error });

@@ -279,10 +279,13 @@ export function createAgentRoutes(
    *
    * The deployment-wide tools (`plugins/public-data-rest.ts`) are granted to every Bot at boot,
    * and a Bot made after boot would otherwise wait for the next restart to hear of them — a
-   * capability the screen promises and the new Bot does not have. Never fails the create: the Bot
-   * exists by the time this runs, and a grant that could not be written is repaired at the next boot.
+   * capability the screen promises and the new Bot does not have. The owner travels with the id
+   * because the other thing a new Bot is handed is scoped by person: the partner channels they
+   * connected before it existed (`plugins/partners.ts`), which until 2026-09-06 reached only the
+   * Bots of the day they connected. Never fails the create: the Bot exists by the time this runs,
+   * and a grant that could not be written is repaired at the next boot or the next connect.
    */
-  onCreated?: (agentId: string) => Promise<void>,
+  onCreated?: (agentId: string, ownerUserId: string) => Promise<void>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -383,7 +386,10 @@ export function createAgentRoutes(
       const agent = await store.create(context.var.actor, parsed.value);
       if (onCreated) {
         // The Bot exists whatever happens here; a grant that did not land is repaired at boot.
-        await onCreated(agent.id).catch((error: unknown) => {
+        await onCreated(
+          agent.id,
+          agent.ownerUserId ?? context.var.actor.id,
+        ).catch((error: unknown) => {
           log.error("agent_created_hook_failed", {
             agent: agent.id,
             reason: describeFailure(error),

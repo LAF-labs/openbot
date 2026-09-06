@@ -726,9 +726,24 @@ export function createApp(
         readWorking,
         // What each Bot has learned, and the three endpoints that let a person read and undo it.
         agentMemoryStore,
-        // A new Bot is offered the deployment-wide tools the moment it exists, not at the next boot.
-        publicData && pluginStore
-          ? (agentId) => publicData.offerTo(pluginStore, agentId, "deployment")
+        // A new Bot is offered what its owner already has the moment it exists, not at the next
+        // boot or the next connect: the deployment-wide tools, and the partner channels this person
+        // connected before the Bot was made. `by` is the deployment for both, because nobody
+        // pressed anything — a standing decision is being extended to a Bot it could not name.
+        pluginStore && (publicData || partners)
+          ? async (agentId, ownerUserId) => {
+              if (publicData) {
+                await publicData.offerTo(pluginStore, agentId, "deployment");
+              }
+              if (partners) {
+                await partners.offerTo(
+                  pluginStore,
+                  agentId,
+                  ownerUserId,
+                  "deployment",
+                );
+              }
+            }
           : undefined,
       ),
     );

@@ -19,6 +19,7 @@
  * control" means for a connector whose credential belongs to the platform.
  */
 import type { Database } from "../db/client";
+import { log } from "../log";
 import {
   type AlimtalkConnect,
   createAlimtalkConnect,
@@ -33,7 +34,11 @@ import {
 } from "./partner-connections";
 import type { PartnerToolSpec } from "./partner-tools";
 import { botsOwnedBy } from "./skills-and-grants";
+import type { PluginStore } from "./store";
 import type { VendorTransport } from "./transport";
+
+/** The slice of the store a grant needs, so a caller — or a test — hands in exactly that. */
+export type PartnerGrantStore = Pick<PluginStore, "grant" | "listForAgent">;
 
 /** What every partner connector offers a screen, in the shape the routes hand back. */
 export type PartnerRuntime = {
@@ -55,6 +60,36 @@ export type PartnerRuntime = {
    * 알림톡 would find that one Bot could not send.
    */
   botsOwnedBy: (userId: string) => Promise<string[]>;
+  /**
+   * One partner's tools, granted to one Bot — the one definition of what a partner gives a Bot.
+   *
+   * The connect route calls it for every Bot the person owns at that moment, and {@link offerTo}
+   * for a Bot made afterwards, so the two cannot drift. Only the refs the Bot does not already
+   * hold are written, the same rule as the public-data grants: a reconnect must not rewrite rows
+   * of trail. Throws, because the callers are in the middle of different acts and each decides
+   * what a grant that did not land means for its own.
+   */
+  grantTo: (
+    store: PartnerGrantStore,
+    provider: PartnerFamily,
+    botId: string,
+    by: string,
+  ) => Promise<void>;
+  /**
+   * A Bot that has just come into being gets the tools of every partner its owner has connected.
+   *
+   * MEASURED 2026-09-06: a connect granted to the Bots that existed at that moment and to no
+   * other, so a Bot made the next day could not send 알림톡 until the person reconnected a channel
+   * that had never been disconnected. This is the other half of the connect, run from the create
+   * route. Never throws — the Bot exists by the time this runs, and a grant that did not land is
+   * repaired by pressing 연결 again.
+   */
+  offerTo: (
+    store: PartnerGrantStore,
+    botId: string,
+    ownerUserId: string,
+    by: string,
+  ) => Promise<void>;
 };
 
 export function createPartnerRuntime(input: {
@@ -77,18 +112,54 @@ export function createPartnerRuntime(input: {
       : {}),
   };
 
+  const configured: readonly PartnerFamily[] = Object.freeze(
+    (["kakao-alimtalk"] as const satisfies readonly PartnerFamily[]).filter(
+      (family) => transports[family] !== undefined,
+    ),
+  );
+  const toolsOf: PartnerRuntime["toolsOf"] = () => ALIMTALK_TOOLS;
+
+  const grantTo: PartnerRuntime["grantTo"] = async (
+    store,
+    provider,
+    botId,
+    by,
+  ) => {
+    const held = new Set(
+      (await store.listForAgent(botId)).tools.map((tool) => tool.ref),
+    );
+    for (const tool of toolsOf(provider)) {
+      const ref = `${provider}/${tool.name}`;
+      if (!held.has(ref)) await store.grant("mcp", ref, botId, by);
+    }
+  };
+
   return {
     connections,
     alimtalk,
     transports,
-    configured: Object.freeze(
-      (["kakao-alimtalk"] as const satisfies readonly PartnerFamily[]).filter(
-        (family) => transports[family] !== undefined,
-      ),
-    ),
-    toolsOf: () => ALIMTALK_TOOLS,
+    configured,
+    toolsOf,
     // The one definition, shared with the OAuth callback's own grant path: two expressions of
     // "their Bots" is how one of them quietly stops including hidden ones.
     botsOwnedBy: (userId) => botsOwnedBy(input.database, userId),
+    grantTo,
+    async offerTo(store, botId, ownerUserId, by) {
+      for (const provider of configured) {
+        try {
+          // The registration is the person's own decision, and without one there is nothing to
+          // extend: a configured key alone must not put 알림톡 in front of a Bot whose owner never
+          // connected a channel.
+          if (!(await connections.find(provider, ownerUserId))) continue;
+          await grantTo(store, provider, botId, by);
+        } catch (error) {
+          log.error("partner_tools_not_offered", {
+            provider,
+            bot: botId,
+            reason: error,
+          });
+        }
+      }
+    },
   };
 }

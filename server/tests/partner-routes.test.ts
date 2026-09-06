@@ -150,6 +150,9 @@ function fakeStore(calls: StoreCalls): PluginStore {
     removeServer: async (serverId: string) => {
       calls.removed.push(serverId);
     },
+    // A Bot holding nothing yet, which is what the grant path reads before writing: every ref is
+    // missing, so every one is granted and shows up in `granted`.
+    listForAgent: async () => ({ tools: [], skills: [] }),
   } as unknown as PluginStore;
 }
 
