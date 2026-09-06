@@ -4,6 +4,7 @@ import {
   IconCopy,
   IconEye,
   IconEyeOff,
+  IconHelp,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
@@ -151,6 +152,12 @@ const FOOTER_LINKS = [
    * it leads back to. People are what this screen is made of, so people is the icon.
    */
   { to: "/agents", icon: IconUsers, label: "Bots" },
+  /*
+   * ONE `?`, AT THE BOTTOM. The help page and the 문의·의견 box behind it are the only way a person
+   * who is stuck can say so; a way out that lives only under Settings is a way out that a person
+   * who does not know where Settings is cannot take.
+   */
+  { to: "/help", icon: IconHelp, label: "Help" },
 ] as const;
 
 /**

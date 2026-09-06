@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
+import { FeedbackDialog } from "@/components/help/feedback-dialog";
 import {
   PageRows,
   PageSection,
@@ -48,6 +49,7 @@ function RouteComponent() {
   const signOut = useMutation(signOutMutationOptions(queryClient));
 
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
   /*
    * The language is applied once the menu has dismissed, not the instant a row inside it is
@@ -292,6 +294,47 @@ function RouteComponent() {
           </Item>
         </PageRows>
       </PageSection>
+      {/*
+       * The way to say something back, and the guide. Here as well as on the help page because
+       * Settings is where a person who has run out of other ideas ends up looking.
+       */}
+      <PageSection title={t("Help")}>
+        <PageRows className="divide-y divide-border">
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>{t("Questions and feedback")}</ItemTitle>
+              <ItemDescription>
+                {t(
+                  "Something did not work, or you would like something. A person reads it.",
+                )}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button onClick={() => setAsking(true)} variant="outline">
+                {t("Write a message")}
+              </Button>
+            </ItemActions>
+          </Item>
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>{t("Help")}</ItemTitle>
+              <ItemDescription>
+                {t("How the app works, in five short sections.")}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button
+                nativeButton={false}
+                render={(props) => <Link to="/help" {...props} />}
+                variant="outline"
+              >
+                {t("Open the help page")}
+              </Button>
+            </ItemActions>
+          </Item>
+        </PageRows>
+      </PageSection>
+      <FeedbackDialog onOpenChange={setAsking} open={asking} />
       {/*
        * The two documents, where a person who already has an account would look for them. Under
        * the preferences rather than in the rail: the rail is not drawn below `lg`, and a link

@@ -2097,4 +2097,43 @@ export const ko: Record<string, string> = {
   user: "사용자",
   "a recording, read back": "시연 기록 다시 보기",
   "the live screen": "실시간 화면",
+
+  /*
+   * Help and the 문의·의견 box. The guide itself is Korean content in `app/src/help/guide.md`;
+   * these are the words around it, on the Settings rows that lead to it, and inside the box.
+   */
+  Help: "도움말",
+  "Making a Bot, connecting a site, answering it, setting a routine — and what to do when something goes wrong.":
+    "봇 만들기, 연결, 승인, 루틴 — 그리고 문제가 생겼을 때 할 일.",
+  "Still stuck?": "그래도 안 되면",
+  "Questions and feedback": "문의·의견",
+  "Write a message": "글 남기기",
+  "Open the help page": "도움말 열기",
+  "Something did not work, or you would like something. A person reads it.":
+    "안 되는 것이 있거나 바라는 것이 있으면 적어 주세요. 사람이 읽습니다.",
+  "How the app works, in five short sections.":
+    "앱 사용법을 다섯 절로 짧게 적었습니다.",
+  "Write what did not work, or what you would like. The people who make the app read it.":
+    "안 된 것이나 바라는 것을 적어 주세요. 이 앱을 만드는 사람이 읽습니다.",
+  "For example: the review summary has not worked since yesterday.":
+    "예: 리뷰 요약이 어제부터 안 됩니다.",
+  "Send what is on screen too": "지금 화면을 같이 보냄",
+  "Only this screen's address and the last failure code. Never a screenshot, never a message.":
+    "지금 화면의 주소와 마지막 실패 코드만 보냅니다. 스크린샷이나 대화 내용은 보내지 않습니다.",
+  "Will attach: {route}": "함께 보냄: {route}",
+  "Will attach: {route} and the last failure, {code}":
+    "함께 보냄: {route} · 마지막 실패 {code}",
+  Send: "보내기",
+  // The server's facts, read back: the row was received at this time, and — when a door took
+  // it — the operator's channel has it too.
+  "Sent.": "보냈습니다.",
+  "Received {time}.": "{time}에 접수됐습니다.",
+  "It has reached the people who run the app.":
+    "앱을 만드는 사람에게 전달됐습니다.",
+  "Write something first.": "먼저 내용을 적어 주세요.",
+  "That is longer than {limit} characters. Shorten it a little.":
+    "{limit}자를 넘었습니다. 조금 줄여 주세요.",
+  // 감사 표: 사람이 운영자에게 글을 보냈다. 글 자체는 표에 없다.
+  "A message was sent to the operator": "운영자에게 문의·의견을 보냄",
+  "A message to the operator": "문의·의견",
 };

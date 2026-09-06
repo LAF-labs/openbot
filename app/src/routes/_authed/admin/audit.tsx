@@ -608,6 +608,9 @@ export const DECISIONS: Record<string, string> = {
   // the one worth finding — an account that is gone here and still paid for there.
   "fleet.notified": "The fleet was told",
   "fleet.notify_failed": "The fleet could not be told",
+  // Neither a permission nor a refusal: a person wrote to the operator. The payload says how far
+  // it got; the words themselves are not in the trail.
+  "support.feedback_sent": "A message was sent to the operator",
 };
 
 /**
@@ -828,4 +831,5 @@ export const EVENTS: Record<string, string> = {
   "account.deleted": "An account",
   "fleet.notified": "The fleet",
   "fleet.notify_failed": "The fleet",
+  "support.feedback_sent": "A message to the operator",
 };

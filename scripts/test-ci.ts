@@ -166,6 +166,16 @@ const projectRoot = resolve(import.meta.dir, "..");
  * REBASED 2026-09-06 onto the first-task chips and 3-B: each floor is the higher of what the two
  * branches had measured, so `app` keeps the chips' 617 above rather than this run's 582.
  *
+ * RAISED AGAIN 2026-09-06, with the help page and the 문의·의견 box, rebased onto 3-D and 2-B.
+ * Twenty-eight tests to `server` (what the route keeps and refuses, the alert-webhook door and its
+ * body, the feedback row's cascade, and the outbox's two rules about support rows) and thirty-seven
+ * to `app` (the guide's five sections and every bold name against the dictionary, the body that
+ * leaves the browser, the last failure a tab remembers). Measured on the rebased tree; `server` and
+ * `app` are re-raised to 3% under, and the other two keep 3-D's floors, which are within 3% still:
+ *
+ *     server           1,775 tests across 139 files  → 1,721
+ *     app                674 tests across 77 files   →   653
+ *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -173,8 +183,8 @@ const projectRoot = resolve(import.meta.dir, "..");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1636, roots: ["server"] },
-  { name: "app", floor: 617, roots: ["app"] },
+  { name: "server", floor: 1721, roots: ["server"] },
+  { name: "app", floor: 653, roots: ["app"] },
   { name: "agent-computer", floor: 131, roots: ["agent-computer"] },
   { name: "root", floor: 142, roots: ["tests", "agent-bot"] },
 ] as const;

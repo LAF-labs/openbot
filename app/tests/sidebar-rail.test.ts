@@ -189,7 +189,7 @@ describe("the roster speaks the app's language", () => {
     const labels = [...table.matchAll(/label: "([^"]+)"/g)].map(
       (match) => match[1] as string,
     );
-    expect(labels.length).toBe(3);
+    expect(labels.length).toBe(4);
     for (const label of labels) {
       expect(ko[label]).toBeTruthy();
     }

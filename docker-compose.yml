@@ -145,6 +145,9 @@ services:
       # Passed through because it was not: the server has always read it and no deployment could
       # set it, so every question waited silently on a surface nobody was looking at.
       LAF_NOTIFY_WEBHOOK_URL: ${LAF_NOTIFY_WEBHOOK_URL:-}
+      # Where the 문의·의견 box reaches the operator: the fleet's alert webhook, the same address
+      # `laf watch` posts to. Unset keeps the message on the deployment and tells nobody.
+      LAF_ALERT_WEBHOOK_URL: ${LAF_ALERT_WEBHOOK_URL:-}
       # The partner vendor LAF holds the ACCOUNT at, for the whole fleet: 솔라피 for 카카오 알림톡.
       # The business never obtains a key — it connects its own 카카오톡 채널 under LAF's account, on
       # the 연결 screen.

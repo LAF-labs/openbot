@@ -491,3 +491,45 @@ export const lafSiteConnections = pgTable(
     index("laf_site_connections_user_idx").on(table.userId),
   ],
 );
+
+/**
+ * What a person wrote to the people who run this product, from the 문의·의견 box.
+ *
+ * ITS OWN TABLE, NOT AN OUTBOX ROW. The outbox is a queue the retention tick empties after thirty
+ * days, and it is not the trail (see `laf_notifications`); a person's words to the operator are
+ * neither a thing to be delivered and forgotten nor a fact about a Bot. The row here is the
+ * message. The outbox row that goes with it is only the telling — which door carried it to the
+ * fleet's alert webhook, if any did — and may be gone long before this is.
+ *
+ * TWO FACTS ABOUT THE SCREEN, AND NOTHING ELSE. `route` and `failure_code` are filled only when the
+ * person ticked 지금 화면을 같이 보냄, and they are what that phrase means: the path of the screen
+ * they were on, and the code of the last failed turn it had drawn. Never a screenshot, never a
+ * message from the conversation, never what was typed to a Bot — the same rule as the audit
+ * payload, because a box that says "send what is on screen" and quietly sends a transcript is a
+ * box nobody would tick twice.
+ *
+ * CASCADES WITH THE PERSON. The words are theirs; a departure takes them. The operator who needed
+ * them has had them on the webhook already.
+ */
+export const lafFeedback = pgTable(
+  "laf_feedback",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** What they wrote, at most `FEEDBACK_MAX_LENGTH` characters (`support/feedback.ts`). */
+    text: text("text").notNull(),
+    /** The app path they were looking at, when they chose to say so: `/channel/…`, `/routines`. */
+    route: text("route"),
+    /** The last turn-failure code that screen had drawn, when they chose to say so. */
+    failureCode: text("failure_code"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // The operator's read, newest first — from the fleet, or by hand.
+    index("laf_feedback_created_at_idx").on(table.createdAt),
+  ],
+);

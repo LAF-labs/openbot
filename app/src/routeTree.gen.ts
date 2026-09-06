@@ -22,6 +22,7 @@ import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
 import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
+import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -102,6 +103,11 @@ const LegalTermsRoute = LegalTermsRouteImport.update({
 const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppHelpRoute = AuthedAppHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -210,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/help': typeof AuthedAppHelpRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -239,6 +246,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/help': typeof AuthedAppHelpRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -272,6 +280,7 @@ export interface FileRoutesById {
   '/_authed/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/_authed/_app/help': typeof AuthedAppHelpRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -306,6 +315,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/help'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -335,6 +345,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/help'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -367,6 +378,7 @@ export interface FileRouteTypes {
     | '/_authed/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/_authed/_app/help'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -489,6 +501,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedAppIndexRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/help': {
+      id: '/_authed/_app/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof AuthedAppHelpRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -663,6 +682,7 @@ const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
 interface AuthedAppRouteChildren {
+  AuthedAppHelpRoute: typeof AuthedAppHelpRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -673,6 +693,7 @@ interface AuthedAppRouteChildren {
 }
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
+  AuthedAppHelpRoute: AuthedAppHelpRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,

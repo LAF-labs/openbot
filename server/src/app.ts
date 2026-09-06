@@ -67,6 +67,7 @@ import {
   type SuggestionDismissalStore,
 } from "./routines/suggestions";
 import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
+import { createSupportRoutes, type SupportService } from "./support/routes";
 import type { PackageStatusReader } from "./tenant-package";
 
 export function createApp(
@@ -316,6 +317,13 @@ export function createApp(
    * own; this one is for the demonstration read below, which is the other way a screen is seen.
    */
   screenViews?: ScreenViewAudit,
+  /**
+   * The 문의·의견 box's other end. Last, like everything new.
+   *
+   * Absent leaves the route unmounted and the box answering 404, which is the honest degraded
+   * behaviour: a deployment that cannot keep a message must not draw a box that says 보냈습니다.
+   */
+  support?: SupportService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -838,6 +846,11 @@ export function createApp(
   // is an administrator's. See account/routes.ts.
   if (accountService)
     app.route("/api", createAccountRoutes(accountService, requireUser));
+
+  // A person writing to the operator. Under its own prefix: it is neither about the account nor
+  // about a Bot, and a message to whoever runs the product should not read as either.
+  if (support)
+    app.route("/api/support", createSupportRoutes(support, requireUser));
 
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));

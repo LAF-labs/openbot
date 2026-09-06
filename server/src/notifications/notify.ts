@@ -68,6 +68,9 @@ const HEADLINES: Record<NotificationKind, string> = {
   "run.needs_you": "[LAF] 봇이 당신의 손을 기다립니다",
   "run.finished": "[LAF] 봇이 일을 마쳤습니다",
   "run.failed": "[LAF] 봇이 끝내지 못했습니다",
+  // Never posted from here: a support row goes only to the door that asked for it
+  // (`outbox.ts` `deliver`), and this door did not. The entry keeps the table total.
+  "support.feedback": "[LAF] 문의·의견",
 };
 
 export function headlineFor(kind: NotificationKind): string {

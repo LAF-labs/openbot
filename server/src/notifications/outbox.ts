@@ -56,6 +56,15 @@ export const NOTIFICATION_KINDS = [
   "run.finished",
   /** A run ended without an answer. */
   "run.failed",
+  /**
+   * A person wrote to the people who run the product, from the 문의·의견 box.
+   *
+   * The odd one out twice over. It is addressed to the operator, not to the person, so it goes
+   * through no door that reaches a person — only a door that says it takes support rows (see
+   * `deliver`). And it is the person's own words, so it never appears in their list (see `list`):
+   * "you wrote to us" is not a thing anybody needs interrupting about.
+   */
+  "support.feedback",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -63,6 +72,28 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export function isNotificationKind(value: unknown): value is NotificationKind {
   return NOTIFICATION_KINDS.includes(value as NotificationKind);
 }
+
+/** Rows addressed to the operator rather than to the person. One kind today; the prefix is the rule. */
+export function isSupportKind(kind: string): boolean {
+  return kind.startsWith("support.");
+}
+
+/**
+ * What a `support.feedback` row carries, in facts — and, this once, the words too.
+ *
+ * `text` is the person's own message and rides in the row so the door can post it without a second
+ * read; the row it duplicates lives in `laf_feedback` and outlives this one. The two screen facts
+ * are present only when the person chose to attach them, and are the only two the box can send:
+ * the path they were on and the last failure code that screen drew. Never a screenshot, never a
+ * transcript — `support/routes.ts` keeps nothing else whatever the client sends.
+ */
+export type SupportFacts = {
+  /** The `laf_feedback` row, which is the message; this row is only the telling. */
+  feedbackId: string;
+  text: string;
+  route?: string;
+  failureCode?: string;
+};
 
 /**
  * What a `run.failed` row is about, in facts.
@@ -99,6 +130,8 @@ export type NotificationRecord = {
   subject?: AskSubject;
   /** What the run was and how it ended, for a `run.failed` row. See {@link RunFailureFacts}. */
   run?: RunFailureFacts;
+  /** What the person wrote and where they were, for a `support.feedback` row. */
+  support?: SupportFacts;
   createdAt: string;
   deliveredVia: string[];
   deliveredAt?: string;
@@ -113,20 +146,28 @@ export type NotificationRecord = {
  * took it — NOT whether it tried. A door that logged "nobody is configured" and returned true would
  * make an undelivered notification indistinguishable from a delivered one, which is the whole
  * question this table exists to answer.
+ *
+ * `accepts` says which kinds this door is for. A door that does not say is a door to a PERSON —
+ * the socket, the phone, the buzz webhook — and is offered everything except the support rows,
+ * which are addressed to the operator. The default is written that way round so that the three
+ * doors that existed before there were support rows did not each need a line saying "not those".
  */
 export type NotificationAdapter = {
   name: string;
   deliver: (record: NotificationRecord) => Promise<boolean>;
+  accepts?: (kind: NotificationKind) => boolean;
 };
 
 export type EnqueueInput = {
   kind: NotificationKind;
+  /** Which Bot this is about. Empty for a support row, which is about nobody's Bot. */
   botId: string;
   userId: string;
   approvalId?: string;
   channelId?: string;
   subject?: AskSubject;
   run?: RunFailureFacts;
+  support?: SupportFacts;
 };
 
 export type NotificationOutbox = {
@@ -205,9 +246,16 @@ export function createNotificationOutbox(input: {
   const deliver = async (
     record: NotificationRecord,
   ): Promise<NotificationRecord> => {
-    if (adapters.length === 0) return record;
+    // A support row goes only to a door that asked for it; every other row goes to every door
+    // that did not ask for anything. See `NotificationAdapter.accepts`.
+    const doors = adapters.filter((adapter) =>
+      adapter.accepts
+        ? adapter.accepts(record.kind)
+        : !isSupportKind(record.kind),
+    );
+    if (doors.length === 0) return record;
     const outcomes = await Promise.allSettled(
-      adapters.map(async (adapter) => ({
+      doors.map(async (adapter) => ({
         name: adapter.name,
         ok: await adapter.deliver(record),
       })),
@@ -266,7 +314,9 @@ export function createNotificationOutbox(input: {
               ? { subject: enqueueInput.subject as Record<string, unknown> }
               : enqueueInput.run
                 ? { subject: { kind: "run", ...enqueueInput.run } }
-                : {}),
+                : enqueueInput.support
+                  ? { subject: { kind: "support", ...enqueueInput.support } }
+                  : {}),
             createdAt: now(),
           })
           .returning();
@@ -301,6 +351,9 @@ export function createNotificationOutbox(input: {
           and(
             eq(lafNotifications.userId, userId),
             isNull(lafNotifications.seenAt),
+            // The list is what is waiting for this person. Their own words to the operator are
+            // not, and a row that stayed here would sit unseen until the thirty-day sweep.
+            sql`${lafNotifications.kind} not like 'support.%'`,
             // An unparseable `since` is ignored rather than refused: it is a client's bookmark, and
             // answering with everything is a worse day than answering with nothing.
             ...(since && !Number.isNaN(since.getTime())
@@ -363,12 +416,20 @@ export async function purgeNotificationsBefore(
 }
 
 /** The `subject` column, read back as whichever of the two facts it holds. See `RunFailureFacts`. */
-function factsOf(stored: unknown): Pick<NotificationRecord, "subject" | "run"> {
+function factsOf(
+  stored: unknown,
+): Pick<NotificationRecord, "subject" | "run" | "support"> {
   if (!stored || typeof stored !== "object") return {};
   const held = stored as Record<string, unknown>;
-  if (held.kind !== "run") return { subject: stored as AskSubject };
-  const { kind: _kind, ...facts } = held;
-  return { run: facts as RunFailureFacts };
+  if (held.kind === "run") {
+    const { kind: _kind, ...facts } = held;
+    return { run: facts as RunFailureFacts };
+  }
+  if (held.kind === "support") {
+    const { kind: _kind, ...facts } = held;
+    return { support: facts as SupportFacts };
+  }
+  return { subject: stored as AskSubject };
 }
 
 function message(error: unknown): string {

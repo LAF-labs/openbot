@@ -353,6 +353,13 @@ export const auditEventTypes = [
    */
   "fleet.notified",
   "fleet.notify_failed",
+
+  /*
+   * A person wrote to the people who run the product. The payload says how long the message was,
+   * whether they attached their screen, and which doors told the operator — never the words, which
+   * live in `laf_feedback` and leave with the person, where this row stays a year under a pseudonym.
+   */
+  "support.feedback_sent",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

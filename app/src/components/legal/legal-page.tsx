@@ -28,8 +28,10 @@ const NAV_LINK_CLASS = "hover:text-foreground";
 /**
  * Links inside the documents. The two point at each other by path, and those stay inside the app;
  * anything else is somebody else's site and opens in a new tab, as a Bot's links do.
+ *
+ * Exported for the help page, which is the third document drawn this way and links to these two.
  */
-const components = {
+export const documentLinkComponents = {
   a: ({ href, children, ...rest }: ComponentProps<"a">) => {
     const className = "underline underline-offset-2 hover:no-underline";
     if (href === "/legal/terms" || href === "/legal/privacy") {
@@ -88,7 +90,7 @@ export function LegalPage({
         </nav>
         <article className="text-base leading-7">
           <Streamdown
-            components={components}
+            components={documentLinkComponents}
             controls={false}
             linkSafety={{ enabled: false }}
             mode="static"

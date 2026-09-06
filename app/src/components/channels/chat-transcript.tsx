@@ -40,6 +40,7 @@ import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
+import { noteTurnFailure } from "@/lib/support/last-failure";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -171,6 +172,9 @@ function TurnFailed({
   code: string;
   onRetry?: (() => void) | undefined;
 }) {
+  // Remembered for the 문의·의견 box: "send what is on screen too" attaches this code, and this
+  // line is the one place the screen says one.
+  useEffect(() => noteTurnFailure(code), [code]);
   return (
     <div
       className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1"

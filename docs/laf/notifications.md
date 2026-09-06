@@ -37,6 +37,7 @@
 | `run.needs_you` | 봇이 도움이나 비밀값을 부탁할 때 | 감사 행 `computer.help_requested`·`computer.secret_requested`를 듣는 데코레이터(`notifications/from-audit.ts`) |
 | `run.finished` | 루틴이나 룸 턴이 **아무도 접속해 있지 않은 사이에** 끝났을 때 | 룸·루틴의 전달 알림(`notifications/in-app.ts` `createFinishedNotice`) |
 | `run.failed` | 루틴 런이 `RUN_ERROR`·시간 초과로 끝났을 때, 그리고 서버가 도중에 다시 시작되어 런이 `unknown`으로 정산됐을 때 | 감사 행 `routine.ran`(`ok: false`)을 듣는 같은 데코레이터(`notifications/from-audit.ts`); 부팅 정산은 `runner/laf-runner.ts`의 `reportInterruptedRuns` |
+| `support.feedback` | 사람이 문의·의견 칸에 글을 써서 보냈을 때. **받는 쪽이 사람이 아니라 운영자**다 — 사람에게 닿는 문(소켓·버즈 웹훅·알림톡)에는 주지 않고 `LAF_ALERT_WEBHOOK_URL`(함대의 알림 웹훅) 문에만 준다(`NotificationAdapter.accepts`). 본인의 목록(`GET /api/me/notifications`)에도 나오지 않는다. 글 자체는 `laf_feedback`에 있고, 이 행은 "누구에게 전해졌나"만이다 | `POST /api/support/feedback`(`support/routes.ts`) |
 
 들어가지 않는 것: 봇이 일하는 동안 하는 모든 것. 현장 규칙 그대로다 — **막혀 있으면
 알린다, 끝났으면 부탁받았을 때만 알린다, 나머지는 비켜 있는다.**

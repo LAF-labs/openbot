@@ -111,6 +111,10 @@ import { createRunLedger } from "./runner/run-ledger";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
 import {
+  createFeedbackStore,
+  createSupportWebhookAdapter,
+} from "./support/feedback";
+import {
   createPackageStatusReader,
   loadTenantPackage,
   recordTenantPackage,
@@ -288,9 +292,19 @@ log.info("public_data", { dataGoKr: publicDataRuntime.configured });
  *             카카오 has approved LAF's template under it. Until then it declines honestly and the
  *             row stays undelivered for the other two.
  *
+ * And a fourth that faces the other way:
+ *
+ *   support   `LAF_ALERT_WEBHOOK_URL`, the fleet's alert channel. The only door that takes a
+ *             `support.feedback` row, and it takes nothing else — a person's message to the
+ *             operator must not buzz the person, and an approval must not page the operator.
+ *
  * The socket goes first because it is the only door that is free and instantaneous, and the order
  * is otherwise cosmetic — they are offered the row together (see `outbox.ts`).
  */
+// Absent is announced on the `boot` line (`supportWebhook: false`): a message kept in `laf_feedback`
+// that nobody was told about is correct on a laptop and wrong on a VM, and invisible from every
+// surface — the box still says 보냈습니다, because the row is there.
+const supportWebhookUrl = process.env.LAF_ALERT_WEBHOOK_URL?.trim();
 const notificationOutbox = createNotificationOutbox({
   database,
   adapters: [
@@ -302,6 +316,16 @@ const notificationOutbox = createNotificationOutbox({
       partners: partnerRuntime.connections,
       log: (message) => log.info("alimtalk", { message }),
     }),
+    ...(supportWebhookUrl
+      ? [
+          createSupportWebhookAdapter({
+            webhookUrl: supportWebhookUrl,
+            // What the fleet knows this deployment by, or the auth origin on a laptop.
+            origin:
+              process.env.PUBLIC_ORIGIN?.trim() || config.auth?.baseUrl || "",
+          }),
+        ]
+      : []),
   ],
   // The outbox and the adapter each take a line-writer so their tests can read them; here the
   // writer is the process log, so their one-line reports come out in the same shape as everything
@@ -1139,6 +1163,12 @@ const app = createApp(
   // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
   createConsentStore(database),
   screenViews,
+  // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator.
+  {
+    feedback: createFeedbackStore(database),
+    auditStore: bootAuditStore,
+    outbox: notificationOutbox,
+  },
 );
 
 /**
@@ -1387,6 +1417,7 @@ log.info("boot", {
   port: server.port,
   computer: config.computer ? "one shared computer" : "none",
   fleetWebhook: Boolean(fleetNotifier),
+  supportWebhook: Boolean(supportWebhookUrl),
   stallTimeoutMs: config.agentStallTimeoutMs,
   retentionDays: retentionDays(),
 });
