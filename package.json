@@ -24,7 +24,8 @@
     "test:smoke": "LAF_SMOKE=1 bun test tests/smoke",
     "diagram": "bun scripts/architecture-diagram.ts",
     "eval:model": "bun --env-file=.env evals/run.ts",
-    "eval:cache": "bun --env-file=.env evals/cache.ts"
+    "eval:cache": "bun --env-file=.env evals/cache.ts",
+    "eval:deferral": "bun --env-file=.env evals/deferral.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
