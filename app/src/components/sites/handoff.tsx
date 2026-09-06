@@ -4,6 +4,7 @@ import { pokeControl, watchControl } from "@/components/computer/control-poll";
 import { releaseControl } from "@/components/computer/take-the-wheel";
 import { LiveScreen } from "@/components/computer/live-screen";
 import { Button } from "@/components/ui/button";
+import { screenProblemText } from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
 import type { BusinessSite } from "@/lib/sites/catalogue";
 import { checkSiteConnection } from "@/lib/sites/queries";
@@ -37,6 +38,7 @@ export const Handoff = ({
   /** Called after the wheel is handed back, with what the page turned out to say. */
   onDone: (signedIn: boolean | null) => void;
 }) => {
+  /** A fact code from the live screen, said in the person's words where it is rendered. */
   const [problem, setProblem] = useState<string | null>(null);
   const [isHandingBack, setHandingBack] = useState(false);
   /** Null until the first read comes back: "we do not know yet" is not "the Bot has it". */
@@ -124,7 +126,7 @@ export const Handoff = ({
       </div>
       {problem ? (
         <p className="relative mt-2 text-sm text-white" role="alert">
-          {problem}
+          {screenProblemText(problem)}
         </p>
       ) : null}
     </div>,

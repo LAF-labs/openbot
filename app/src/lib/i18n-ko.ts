@@ -696,6 +696,24 @@ export const ko: Record<string, string> = {
   "The schedule stops and its run history goes with it. This cannot be undone.":
     "일정이 멈추고 실행 기록도 함께 사라집니다. 되돌릴 수 없습니다.",
   "The screen is not available right now.": "지금은 화면을 볼 수 없습니다.",
+  // 봇의 화면을 못 보여주는 이유. 서버와 컴퓨터 컨테이너는 사실 코드만 보내고, 문장은
+  // `lib/computer/screen-problems.ts`에서 붙는다 — 영어 문장이 화면에 그대로 찍히던 것을 고친 자리.
+  "This Bot's screen could not be found.": "이 봇의 화면을 찾지 못했습니다.",
+  "The page is taking too long to open.":
+    "페이지가 너무 오래 열리지 않고 있습니다.",
+  "Somebody is using this browser right now.":
+    "지금 다른 사람이 이 브라우저를 쓰고 있습니다.",
+  "The Bot's computer is not responding.": "봇의 컴퓨터가 응답하지 않습니다.",
+  "The page changed while it was being read.":
+    "읽는 사이에 페이지가 바뀌었습니다.",
+  "Something went wrong on the Bot's computer.":
+    "봇의 컴퓨터에서 문제가 생겼습니다.",
+  "The live picture could not be started.":
+    "실시간 화면을 시작하지 못했습니다.",
+  "Take control before clicking or typing on the page.":
+    "페이지를 클릭하거나 입력하려면 먼저 제어를 가져오세요.",
+  "That click or keystroke did not reach the page.":
+    "방금 누른 클릭이나 키가 페이지에 전달되지 않았습니다.",
   "The server did not answer": "서버가 응답하지 않음",
   "The service refused this deployment's registration. Please try again in a moment.":
     "해당 서비스가 이 배포의 등록을 거절했습니다. 잠시 후 다시 시도해 주세요.",

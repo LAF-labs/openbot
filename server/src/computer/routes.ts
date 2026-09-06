@@ -11,6 +11,7 @@ import {
   type ComputerClient,
   ComputerUnavailableError,
   ElementNotFoundError,
+  PAGE_TIMEOUT,
   PageLoadTimeoutError,
   NavigationRefusedError,
   StaleSnapshotError,
@@ -100,13 +101,24 @@ export function createComputerRoutes(
     context.json(await client.status(context.req.param("botId"))),
   );
 
+  /*
+   * THE TWO ROUTES A PANE READS, AND SO THE TWO WHOSE FAILURE A PERSON SEES.
+   *
+   * Measured 2026-09-06: the screen card printed `error` out of this body under a Korean heading —
+   * "The assistant's computer did not respond in time.", and once a Playwright call log. The
+   * server sends facts; `code` is the fact, and the surface owns the words for it. `error` stays
+   * beside it for any reader that still expects a sentence.
+   */
   routes.get("/:botId/screenshot", requireUser, async (context) => {
     try {
       return context.json(
         await client.forBot(context.req.param("botId")).screenshot(),
       );
     } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
+      return context.json(
+        { error: describe(error), code: codeFor(error) },
+        statusFor(error),
+      );
     }
   });
 
@@ -114,7 +126,10 @@ export function createComputerRoutes(
     try {
       return context.json(await gateway.read(context.req.param("botId")));
     } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
+      return context.json(
+        { error: describe(error), code: codeFor(error) },
+        statusFor(error),
+      );
     }
   });
 
@@ -916,6 +931,18 @@ function describe(error: unknown): string {
 }
 
 /**
+ * A person holding the wheel, or a person driving before taking it.
+ *
+ * The client says so in the message, not in a type of its own, and two functions below read it.
+ * One predicate so they cannot disagree about which failures are this one.
+ */
+function isHeldByAPerson(error: unknown): boolean {
+  return (
+    error instanceof ComputerUnavailableError && /control/i.test(error.message)
+  );
+}
+
+/**
  * Which HTTP status a failure deserves.
  *
  * Three genuinely different conditions that read identically if they all become 500: the computer is
@@ -934,14 +961,33 @@ function statusFor(error: unknown): 400 | 409 | 500 | 503 | 504 {
   // The page did not load in time. Not 409 — a fresh snapshot would not help — and not 503, which
   // sends an operator after a container that is running: the site, not the computer, is the problem.
   if (error instanceof PageLoadTimeoutError) return 504;
-  // A person holding the wheel, or a person driving before taking it. Nothing is broken; the caller
-  // has to wait or take control first, and 409 is how both of those are already reported.
-  if (
-    error instanceof ComputerUnavailableError &&
-    /control/i.test(error.message)
-  ) {
-    return 409;
-  }
+  // Nothing is broken; the caller has to wait or take control first, and 409 is how both of those
+  // are already reported.
+  if (isHeldByAPerson(error)) return 409;
   if (error instanceof ComputerUnavailableError) return 503;
   return 500;
+}
+
+/**
+ * Which fact a failure is, for a surface that has to say it in the person's language.
+ *
+ * The same branches as `statusFor`, in the same order, so the status and the code never describe
+ * two different failures. `describe(error)` beside it is a sentence for a log or an older reader;
+ * the pane shows the words for this code (`app/src/lib/computer/screen-problems.ts`) and never
+ * the sentence — which is what it did, in English, until 2026-09-06.
+ */
+function codeFor(error: unknown): string {
+  if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
+  if (
+    error instanceof StaleSnapshotError ||
+    error instanceof ElementNotFoundError
+  ) {
+    return "laf:snapshot_stale";
+  }
+  if (error instanceof PageLoadTimeoutError) return PAGE_TIMEOUT;
+  if (isHeldByAPerson(error)) return "laf:human_has_control";
+  if (error instanceof ComputerUnavailableError) {
+    return "laf:computer_unavailable";
+  }
+  return "laf:computer_failed";
 }

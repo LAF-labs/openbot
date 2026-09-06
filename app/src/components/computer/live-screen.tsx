@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  SCREEN_UNAVAILABLE,
+  SCREEN_UNREACHABLE,
+} from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
 import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
@@ -40,7 +44,12 @@ type Props = {
   computerId: string;
   /** Whether the user currently holds the wheel. Input is only sent when true. */
   driving: boolean;
-  /** Called with a human-readable reason when the stream cannot be established. */
+  /**
+   * Called with a fact code (`laf:…`) when the stream cannot be established, null once it is.
+   *
+   * A code and never a sentence: the container's `error` text used to be handed up here as it
+   * came, and it came in English. `screenProblemText` turns the code into the person's words.
+   */
   onProblem?: (problem: string | null) => void;
 };
 
@@ -88,7 +97,8 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         data?: string;
         width?: number;
         height?: number;
-        error?: string;
+        /** The container's fact code. Its `error` sentence is for a log, never for this pane. */
+        code?: string;
       };
       try {
         message = JSON.parse(String(event.data));
@@ -96,7 +106,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         return;
       }
       if (message.type === "error") {
-        onProblem?.(message.error ?? "The screen could not be shown.");
+        onProblem?.(message.code ?? SCREEN_UNAVAILABLE);
         return;
       }
       if (message.type !== "frame" || !message.data) return;
@@ -122,7 +132,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       bitmap.close();
     };
 
-    socket.onerror = () => onProblem?.("The live screen could not be reached.");
+    socket.onerror = () => onProblem?.(SCREEN_UNREACHABLE);
     socket.onclose = () => setConnected(false);
 
     return () => {

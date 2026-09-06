@@ -4,6 +4,10 @@ import { TeachATask } from "@/components/computer/teach-a-task";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
+import {
+  SCREEN_UNAVAILABLE,
+  screenProblemText,
+} from "@/lib/computer/screen-problems";
 import { focusRing, focusRingInset } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -115,6 +119,13 @@ export function ComputerView({
   teachable = false,
 }: Props) {
   const [shot, setShot] = useState<Screenshot | null>(null);
+  /**
+   * Why the screen cannot be shown, as a fact code (`laf:…`), or null while it can.
+   *
+   * A code and not a sentence, so what is rendered is always `screenProblemText(problem)` in the
+   * person's language. It used to hold the server's `error` prose straight out of the response
+   * body, and what a Korean reader then saw was "The assistant's computer is not running."
+   */
   const [problem, setProblem] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [control, setControl] = useState<ControlState | null>(null);
@@ -227,12 +238,12 @@ export function ComputerView({
         if (generation.current !== mine) return;
 
         if (!response.ok) {
+          // `code` is the fact; `error` beside it is the server's own sentence, kept for older
+          // readers and never shown here.
           const body = (await response.json().catch(() => null)) as {
-            error?: string;
+            code?: string;
           } | null;
-          setProblem(
-            body?.error ?? t("The screen is not available right now."),
-          );
+          setProblem(body?.code ?? SCREEN_UNAVAILABLE);
         } else {
           const next = (await response.json()) as Screenshot;
           // Exact byte comparison is the settling signal.
@@ -252,7 +263,7 @@ export function ComputerView({
         }
       } catch {
         if (generation.current !== mine) return;
-        setProblem(t("The screen is not available right now."));
+        setProblem(SCREEN_UNAVAILABLE);
       } finally {
         if (generation.current === mine && shouldContinue()) {
           timer = setTimeout(tick, intervalMs);
@@ -385,7 +396,7 @@ export function ComputerView({
                   <span className="font-medium text-foreground">
                     {t("You cannot see the screen right now")}
                   </span>
-                  <span>{problem}</span>
+                  <span>{screenProblemText(problem)}</span>
                   <span>
                     {t(
                       "The Bot may still be working. An administrator can check whether its computer is running.",
