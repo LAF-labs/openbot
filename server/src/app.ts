@@ -368,7 +368,17 @@ export function createApp(
     return next();
   });
 
-  app.route("/health", createHealthRoute(healthProbes));
+  /*
+   * One route at two paths. The front door (`app/Caddyfile`) hands only `/api/*` to the API, and a
+   * `/health` asked from outside a VM was the SPA's index.html — measured 2026-09-06 on a customer
+   * VM: 200 and 1,790 bytes, and still 200 through a six-second API outage, which is what the fleet
+   * monitor had been reading as "alive". The Caddyfile now passes `/health` through as well, and
+   * `/api/health` answers the same so a poller that only ever speaks `/api` reads the truth too.
+   * The same instance, so the two paths share one cache and one round of probes.
+   */
+  const health = createHealthRoute(healthProbes);
+  app.route("/health", health);
+  app.route("/api/health", health);
   /*
    * What this deployment can do, for anybody who asks — and it is anybody: this endpoint has no
    * session guard, so every field added here is published. It once reported a runtime `mode` and an

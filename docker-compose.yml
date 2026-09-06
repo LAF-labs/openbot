@@ -243,20 +243,24 @@ services:
     # serving nothing — and the front door is the one service whose death is the whole product's
     # death.
     #
-    # Caddy's own admin API, on the container's loopback, rather than a request to the site: the
-    # site address is PUBLIC_ORIGIN, so an in-container request for `localhost` matches no site
-    # block and a request for the real name either leaves the machine or is redirected to https and
-    # a certificate this container is not the one answering for. `/config/` needs neither the name
-    # nor TLS, and it answers only once Caddy has loaded a configuration — which is the thing being
-    # asked about. wget is busybox's, already in the alpine image; the admin listener is
-    # loopback-only by default and is not published anywhere.
+    # It then asked Caddy's own admin API whether a configuration was loaded, which is a different
+    # question and one that cannot be answered no. Measured 2026-09-06, both commands run against
+    # the same stopped API: this one exits 1, that one exits 0 — the same lie the SPA fallback was
+    # telling at /health, one layer down. A dial that cannot go red is not a dial.
+    #
+    # So it asks the front door the question the internet asks it, through the address app/Caddyfile
+    # keeps for this and publishes nowhere. Red when the API is gone (502 from here), red when the
+    # API is degraded (503 from the API), red when Caddy is not routing at all. wget is busybox's,
+    # already in the alpine image, and exits non-zero on an HTTP error status; `-O /dev/null` rather
+    # than `--spider`, which sends a HEAD the API's GET route does not answer.
     healthcheck:
-      test:
-        ["CMD-SHELL", "wget -q --spider http://127.0.0.1:2019/config/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2021/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # The API waits on migrations and on two other containers being healthy, so a cold boot spends
+      # a while with nothing behind this door. Failures in here do not count against `retries`.
+      start_period: 60s
     depends_on:
       server:
         condition: service_started

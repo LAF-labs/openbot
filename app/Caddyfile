@@ -8,8 +8,16 @@
 #
 # It carries a scheme on purpose. The same value is the API's cookie origin, and the two must be
 # the same string down to the scheme or sign-in issues a cookie the next request will not send.
+#
+# The second address is this container asking itself, for the healthcheck in docker-compose.yml and
+# for nothing else. It is an ADDRESS ON THIS BLOCK rather than a block of its own so that the
+# healthcheck travels the exact routes below: a rewrite that breaks /health for the internet breaks
+# it for the healthcheck in the same edit. It has to be a second address at all because the first
+# cannot be asked from in here — on a VM PUBLIC_ORIGIN is https, so :80 is a redirect to a name that
+# resolves off this machine and :443 wants a certificate this container may still be acquiring.
+# 2021 is routed nowhere: compose publishes 80 and 443 and no other port.
 
-{$PUBLIC_ORIGIN:http://localhost} {
+{$PUBLIC_ORIGIN:http://localhost}, http://localhost:2021 {
 	encode zstd gzip
 
 	# Everything the API owns, including the live screen's WebSocket. `reverse_proxy` passes an
@@ -24,6 +32,17 @@
 	# finishes in the person's own browser, which has no session for the app — so this page needs
 	# none either, and index.html here would be the signed-out app it exists to avoid.
 	handle /connected {
+		reverse_proxy server:3001
+	}
+
+	# "Is this deployment serving", answered by the API, at the path every monitor already asks.
+	# Without this block the fallback below answered it: measured 2026-09-06 on a customer VM,
+	# `/health` from outside was index.html — 200, 1,790 bytes — and stayed 200 through a six-second
+	# API outage, so the fleet monitor read a dead API as alive. With it, the API's JSON comes
+	# through (503 when it is degraded), and an API that is not there is a 502 from here: a poller
+	# that reads only the status code learns the truth either way. `/api/health` is the same answer
+	# through the `/api/*` block above.
+	handle /health {
 		reverse_proxy server:3001
 	}
 

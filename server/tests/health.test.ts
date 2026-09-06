@@ -36,6 +36,42 @@ describe("health endpoint", () => {
     });
   });
 
+  /*
+   * The front door hands `/api/*` to the API and everything else to the SPA, so `/health` asked
+   * from outside a VM was index.html — 200 through an API outage, measured 2026-09-06. The
+   * Caddyfile now passes `/health` through; this is the other half, so a poller that only speaks
+   * `/api` reads the same answer.
+   */
+  test("answers the same at /api/health", async () => {
+    const response = await app.request("http://laf.local/api/health");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "ok",
+      checks: {},
+    });
+  });
+
+  // One instance behind both paths, as `createApp` mounts it: two pollers on two paths are one
+  // round of probes, not two.
+  test("shares one cache between /health and /api/health", async () => {
+    let calls = 0;
+    const route = createHealthRoute({
+      database: async () => {
+        calls += 1;
+        return true;
+      },
+    });
+    const both = new Hono().route("/health", route).route("/api/health", route);
+
+    const first = await both.request("http://laf.local/health");
+    const second = await both.request("http://laf.local/api/health");
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(calls).toBe(1);
+  });
+
   test("reports every dependency it was given", async () => {
     const response = await ask({ database: up, agentBot: up, computer: up });
 

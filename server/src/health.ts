@@ -80,7 +80,8 @@ async function settle(probe: HealthProbe, timeoutMs: number) {
 }
 
 /**
- * The route, mounted by `createApp` at `/health`.
+ * The route, mounted by `createApp` at `/health` and again at `/api/health` — one instance, so the
+ * two paths share the cache below.
  *
  * A probe that is absent is not reported and cannot degrade the deployment: a VM with no computer
  * configured is not a broken VM, and drawing a check for a thing this deployment does not have is

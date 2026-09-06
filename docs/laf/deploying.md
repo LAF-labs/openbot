@@ -285,8 +285,9 @@ docker compose logs web --tail=30
 
 A `200 https` means DNS, both firewalls, ACME and the static build all
 worked — the whole chain in one line. `docker compose ps` should show `server`
-healthy; if it is restarting, its logs name the missing setting directly,
-because `config.ts` refuses by name rather than crashing on an undefined.
+and `web` healthy; if either is restarting, its logs name the missing setting
+directly, because `config.ts` refuses by name rather than crashing on an
+undefined.
 
 `server` healthy now means something. `/health` used to return the constant
 `{"status":"ok"}` — it said that with the database refusing connections and with
@@ -299,9 +300,34 @@ docker compose exec -T server bun -e "const r = await fetch('http://localhost:30
 # 200 {"status":"ok","checks":{"database":"ok","agentBot":"ok","computer":"ok"}}
 ```
 
-Asked from inside the container because `server` is unpublished — there is no
-port on the host to curl. The answer is cached for a few seconds, so polling it
-costs nothing.
+The same answer is public, at `<PUBLIC_ORIGIN>/health` and at `/api/health`,
+so a monitor outside the VM reads it too:
+
+```bash
+curl -i https://<name>.agent.laf-co.com/health
+# 200 {"status":"ok","checks":{"database":"ok","agentBot":"ok","computer":"ok"}}
+```
+
+It was not, until 2026-09-06: the front door handed only `/api/*` to the API, so
+a `/health` asked from outside was the SPA's `index.html` — 200, 1,790 bytes,
+and still 200 through a six-second API outage, which is what the fleet watcher
+had been reading as "alive". A watcher can now hold the API to three things:
+
+- **`200` and `"status":"ok"`** — serving. Anything else is not.
+- **`503` with `"status":"degraded"`** — the API is up and `checks` names which
+  dependency is down. A probe that is absent is not reported, so a deployment
+  with no computer configured has two checks and is not degraded for it.
+- **`502`, empty body** — the API is not answering at all. That comes from the
+  front door, not the API, so a watcher reading only the status code still
+  learns it.
+
+The answer is cached for a few seconds, so polling it costs nothing.
+
+`web` asks the same question of itself, on an address `app/Caddyfile` keeps for
+that and compose publishes nowhere. It used to ask Caddy's admin API whether a
+configuration was loaded, which is green whatever the API is doing — the same
+lie the SPA fallback was telling, one layer down. A dial that cannot go red is
+not a dial.
 
 ## Upgrading
 
