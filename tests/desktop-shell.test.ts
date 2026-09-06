@@ -59,6 +59,42 @@ test("every origin the shell can open is granted the shell's capabilities", () =
 });
 
 /**
+ * The window no longer only opens the address it was compiled with.
+ *
+ * One build opens the whole fleet, so a person installs it, signs in at the front door and is
+ * walked to their own `<name>.agent.laf-co.com` — and `remember_origin` in `lib.rs` writes that
+ * down so the next launch goes straight there. Which means the set of addresses this window can end
+ * up at is now a RULE IN RUST rather than a literal in a config file, and an origin outside the
+ * grant fails the same silent way as ever: the page loads, the badge and the notices are refused,
+ * and nothing is logged anywhere. So the rule's two constants are read here against the grant.
+ */
+test("every domain the shell may reopen is granted the shell's capabilities", () => {
+  const granted = json<{ remote: { urls: string[] } }>(
+    "desktop/src-tauri/capabilities/default.json",
+  ).remote.urls;
+
+  const shell = read("desktop/src-tauri/src/lib.rs");
+  const constant = (name: string): string => {
+    const found = shell.match(new RegExp(`const ${name}: &str = "([^"]+)"`));
+    // Asserted rather than assumed: a renamed constant would otherwise leave nothing to compare,
+    // and a test that compares nothing passes.
+    expect(found?.[1]).toBeTruthy();
+    return found?.[1] ?? "";
+  };
+  const domain = constant("FLEET_DOMAIN");
+  const development = constant("DEV_ORIGIN");
+
+  for (const origin of [
+    `https://${domain}`,
+    `https://*.${domain}`,
+    development,
+  ]) {
+    expect(granted).toContain(origin);
+    expect(granted).toContain(`${origin}/*`);
+  }
+});
+
+/**
  * The development override repeats the whole window because Tauri replaces arrays when it merges
  * configs. A partial window would merge cleanly and open at the wrong size, which is the kind of
  * wrong nobody files a bug about.

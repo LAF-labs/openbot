@@ -10,14 +10,20 @@
 //! THE ORIGIN IS A SETTING, NOT A CONSTANT. The SPA is same-origin by construction: cookie auth,
 //! relative `/api` calls, a socket built from `window.location`. Loading it from `tauri://` would
 //! break every one of those at once, so the window navigates to the origin and the app runs there,
-//! exactly as it does in a browser. Today that origin is the development server; the day a deployed
-//! address exists it is TWO values, and it is the same address a phone will use:
+//! exactly as it does in a browser. It is TWO values, and it is the same address a phone will use:
 //!
-//!   1. `app.windows[0].url` in `tauri.conf.json` — where the window goes.
+//!   1. `app.windows[0].url` in `tauri.conf.json` — where the window goes on a first launch.
 //!   2. `remote.urls` in `capabilities/default.json` — whether the page there may ask the shell for
 //!      anything. Change the first without the second and the window loads, the app works, and the
 //!      badge and notifications silently stop: the bridge below feature-detects, so there is no
 //!      error anywhere, just an app that quietly stopped being an app.
+//!
+//! ONE BUILD OPENS THE WHOLE FLEET, so those two name the front door and the wildcard rather than a
+//! customer: `https://agent.laf-co.com` and `https://*.agent.laf-co.com`. A person installs the one
+//! installer, signs in at the front door and is walked to their own `<name>.agent.laf-co.com`. The
+//! shell writes that down (`remember_origin`) and opens there next time, so the walk is a first
+//! launch and not every launch — and `origin()` is where the window IS rather than what it was
+//! compiled with, because a link and a notice belong to the deployment, not to the front door.
 //!
 //! The one page the shell serves itself is the connection page: an app whose whole UI lives on a
 //! server has exactly one failure it must explain on its own, and that is not reaching the server.
@@ -58,11 +64,24 @@ const PROBE_BUDGET: Duration = Duration::from_millis(1200);
 /// place and read in the other is a link that opens nothing, so both say `lafagent`.
 const SCHEME: &str = "lafagent";
 
-/// The shell's own settings, beside the app's data. Not the product's: two booleans about this
-/// process, which is why they are here rather than on the person's account.
+/// The shell's own settings, beside the app's data. Not the product's: a switch and an address
+/// about this process, which is why they are here rather than on the person's account.
 const SETTINGS_FILE: &str = "shell.json";
 /// Whether a notice from the page reaches the notification centre.
 const NOTICES_KEY: &str = "notices";
+/// The deployment this app was last used on, so the next launch opens there.
+const ORIGIN_KEY: &str = "origin";
+
+/// The product's domain. The front door is this name; every customer is ONE name under it.
+///
+/// The same shape `capabilities/default.json` grants — `https://agent.laf-co.com` and
+/// `https://*.agent.laf-co.com`. An origin this shell opens that the capability does not grant is
+/// a window where the badge, the notices and the links out silently stop, so the two are read
+/// together by `tests/desktop-shell.test.ts` rather than kept in step by hand.
+const FLEET_DOMAIN: &str = "agent.laf-co.com";
+
+/// The development server, the one address outside the fleet this shell will open.
+const DEV_ORIGIN: &str = "http://localhost:3010";
 
 /// How long the destination of a notice is worth honouring.
 ///
@@ -89,10 +108,13 @@ struct ShellState {
     notice_destination: Mutex<Option<(String, Instant)>>,
 }
 
-/// Where the app lives. Read from the bundled config so a build for a different deployment is a
-/// different config and not a different binary.
-fn origin(app: &tauri::AppHandle) -> String {
-    app.config()
+/// The address this build was compiled pointing at: the product's front door.
+///
+/// Read from the bundled config rather than written here, so `tauri.dev.conf.json` moves a
+/// development launch without a second constant to keep in step.
+fn configured_origin(app: &tauri::AppHandle) -> String {
+    let declared = app
+        .config()
         .app
         .windows
         .first()
@@ -100,7 +122,89 @@ fn origin(app: &tauri::AppHandle) -> String {
             tauri::WebviewUrl::External(url) => Some(url.to_string()),
             _ => None,
         })
-        .unwrap_or_else(|| "http://localhost:3010".to_string())
+        .unwrap_or_else(|| DEV_ORIGIN.to_string());
+    // Normalised to a bare origin so it compares with what the window reports and with what was
+    // remembered: `Url::to_string` adds the trailing slash that an origin does not carry.
+    fleet_origin(&declared).unwrap_or(declared)
+}
+
+/// `candidate` as a bare origin, when it is one this shell is allowed to open. Nothing otherwise.
+///
+/// EVERY ANSWER HERE HAS TO BE INSIDE THE CAPABILITY GRANT. A window pointed at an origin
+/// `capabilities/default.json` does not list still loads and still works — and the badge, the
+/// notices and the links out are refused with no error anywhere, because the bridge feature-detects
+/// and reads a rejection as "no shell". So this is stricter than a suffix check in both of the ways
+/// a suffix check is wrong: `evil-agent.laf-co.com` ends with the domain and is not under it, and
+/// `a.b.agent.laf-co.com` is two names deep where the grant has one `*`.
+fn fleet_origin(candidate: &str) -> Option<String> {
+    let url = tauri::Url::parse(candidate).ok()?;
+    let serialized = url.origin().ascii_serialization();
+    if serialized == DEV_ORIGIN {
+        return Some(serialized);
+    }
+    // A port would put it outside the grant as surely as a different host would.
+    if url.scheme() != "https" || url.port().is_some() {
+        return None;
+    }
+    let host = url.host_str()?;
+    let under_the_domain = host
+        .strip_suffix(FLEET_DOMAIN)
+        .and_then(|name| name.strip_suffix('.'))
+        .is_some_and(|name| !name.is_empty() && !name.contains('.'));
+    (host == FLEET_DOMAIN || under_the_domain).then_some(serialized)
+}
+
+/// The deployment this app was last used on, if there is one and it is still one we may open.
+///
+/// Validated on the way out as well as on the way in: a settings file somebody edited by hand, or
+/// one written by a build that granted a different domain, must not decide where this window goes.
+fn remembered_origin(app: &tauri::AppHandle) -> Option<String> {
+    let stored = app.store(SETTINGS_FILE).ok()?.get(ORIGIN_KEY)?;
+    fleet_origin(stored.as_str()?)
+}
+
+/// Where the window goes when the app opens: the deployment last used, or the front door.
+fn launch_origin(app: &tauri::AppHandle) -> String {
+    remembered_origin(app).unwrap_or_else(|| configured_origin(app))
+}
+
+/// Where the window is right now, when that is somewhere this shell knows.
+///
+/// A link and a notice are relative to the deployment the person is signed into, NOT to the address
+/// this build was compiled with. One build opens the whole fleet, so those stopped being the same
+/// thing: an approval raised on `mystore.agent.laf-co.com` used to resolve to
+/// `https://agent.laf-co.com/approve/<id>` — the front door, which knows nothing about it.
+fn origin(app: &tauri::AppHandle) -> String {
+    app.get_webview_window("main")
+        .and_then(|window| window.url().ok())
+        .and_then(|url| fleet_origin(url.as_str()))
+        .or_else(|| remembered_origin(app))
+        .unwrap_or_else(|| configured_origin(app))
+}
+
+/// Write down where the window is, so the next launch opens there instead of at the front door.
+///
+/// WHY THE SHELL REMEMBERS RATHER THAN THE PERSON TYPING IT. Every customer has an origin of their
+/// own and one build opens all of them, so a freshly installed app can only start at the front
+/// door, which signs the person in and walks them to theirs. That is the right first launch and the
+/// wrong tenth: it needs the front door to be up, and it happens again every single time. So
+/// whatever fleet origin the window is on when it is put away is kept, and the next launch goes
+/// straight there. Nothing has to unwind it — signing out lands back on the front door, which is a
+/// fleet origin too, and the next put-away writes that.
+fn remember_origin(app: &tauri::AppHandle) {
+    let here = origin(app);
+    if remembered_origin(app).as_deref() == Some(here.as_str()) {
+        return;
+    }
+    let Ok(store) = app.store(SETTINGS_FILE) else {
+        log::warn!("the shell's settings could not be opened; the next launch starts at the front door");
+        return;
+    };
+    log::info!("remembering {here} for the next launch");
+    store.set(ORIGIN_KEY, here);
+    if let Err(error) = store.save() {
+        log::warn!("the shell's settings could not be written: {error}");
+    }
 }
 
 /// Whether anything answers at the origin's address. A TCP connect, not an HTTP request: the
@@ -148,7 +252,7 @@ fn reachable(origin: &str) -> bool {
 /// The shell's own connection page, with the origin for it to keep probing. A webview that cannot
 /// load its page explains nothing — WKWebView stays blank, WebView2 shows its own error — so the
 /// window is sent here instead, and the page navigates to the origin the moment it answers.
-fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
+fn connection_page(app: &tauri::AppHandle, origin: &str, home: &str) -> tauri::Url {
     let base = match &app.config().build.dev_url {
         // `tauri dev` does not embed `frontendDist`; it serves the folder from a server of its own
         // and writes that address here. A debug build asking its own scheme for the page gets
@@ -164,7 +268,7 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
         })
         .expect("the shell page address is a literal"),
     };
-    tauri::Url::parse(&connection_page_url(base.as_str(), origin))
+    tauri::Url::parse(&connection_page_url(base.as_str(), origin, home))
         .expect("the page address was already a URL")
 }
 
@@ -172,9 +276,18 @@ fn connection_page(app: &tauri::AppHandle, origin: &str) -> tauri::Url {
 ///
 /// Split out from the config lookup so the encoding can be tested: an origin that arrives at the
 /// page half-escaped is a page that retries the wrong address, or nothing at all.
-fn connection_page_url(base: &str, origin: &str) -> String {
+///
+/// `home` is carried only when it differs from `origin`, and it is the way out of a remembered
+/// deployment that is never coming back. Without it a customer whose address changed would be an
+/// app retrying a dead host forever, with the front door — which is where they would be told the
+/// new one — unreachable from inside the window. The page draws no button when there is no second
+/// address to offer.
+fn connection_page_url(base: &str, origin: &str, home: &str) -> String {
     let mut url = tauri::Url::parse(base).expect("the page address is a URL");
     url.query_pairs_mut().append_pair("origin", origin);
+    if home != origin {
+        url.query_pairs_mut().append_pair("home", home);
+    }
     url.to_string()
 }
 
@@ -564,8 +677,13 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                 let _ = autostart.set_checked(launcher.is_enabled().unwrap_or(false));
             }
             // The one way out other than the platform's own Quit. Everything else about this menu
-            // exists because closing the window no longer ends the process.
-            "quit" => app.exit(0),
+            // exists because closing the window no longer ends the process. Where the person was
+            // is written down here while the window is certainly still there, rather than left to
+            // the run loop's `Exit` to catch on the way past.
+            "quit" => {
+                remember_origin(app);
+                app.exit(0);
+            }
             other => log::warn!("unknown tray item: {other}"),
         });
     if let Some(icon) = app.default_window_icon().cloned() {
@@ -629,16 +747,32 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let target = origin(app.handle());
-            log::info!("window origin: {target}");
+            let home = configured_origin(app.handle());
+            let target = launch_origin(app.handle());
+            log::info!("window origin: {target} (front door: {home})");
             if let Some(window) = app.get_webview_window("main") {
-                // The window is declared with the origin as its URL and is already loading it. It
-                // is surfaced only once the webview exists, which avoids a white flash on launch —
-                // and only after the origin answered, so what appears is the app or an explanation,
-                // never a blank page.
+                // The window is declared with the front door as its URL and is already loading it.
+                // A remembered deployment is one navigation away from that, done here rather than
+                // by rebuilding the window in Rust — the window's shape lives in the two config
+                // files and is checked by `tests/desktop-shell.test.ts`, and only its address moves.
+                if target != home {
+                    match tauri::Url::parse(&target) {
+                        Ok(url) => {
+                            if let Err(error) = window.navigate(url) {
+                                log::error!("could not open the remembered deployment: {error}");
+                            }
+                        }
+                        Err(error) => log::error!("the remembered deployment is not a URL: {error}"),
+                    }
+                }
+                // It is surfaced only once the webview exists, which avoids a white flash on launch
+                // — and only after the origin answered, so what appears is the app or an
+                // explanation, never a blank page.
                 if !reachable(&target) {
                     log::warn!("origin unreachable, showing the connection page: {target}");
-                    if let Err(error) = window.navigate(connection_page(app.handle(), &target)) {
+                    if let Err(error) =
+                        window.navigate(connection_page(app.handle(), &target, &home))
+                    {
                         log::error!("could not show the connection page: {error}");
                     }
                 }
@@ -656,8 +790,25 @@ pub fn run() {
                  */
                 let handle = app.handle().clone();
                 window.on_window_event(move |event| {
+                    /*
+                     * WHERE THE WINDOW IS, NOTED EVERY TIME THE PERSON LOOKS AWAY.
+                     *
+                     * The obvious place to write this down is the way out, and the way out is not
+                     * reliable: measured on macOS 15, quitting the app fires neither
+                     * `ExitRequested` nor a `CloseRequested` — `shell.json` stayed `{}` across a
+                     * whole session — and by `RunEvent::Exit` there may be no webview left to ask.
+                     * Losing focus is the opposite: it happens constantly, always with the window
+                     * alive, and it survives even a process that is killed rather than quit. The
+                     * write is skipped when nothing changed, so the common case reads a cached
+                     * store value and stops.
+                     */
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        remember_origin(&handle);
+                    }
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
+                        // Read before the window is hidden, while it can still say where it is.
+                        remember_origin(&handle);
                         if let Some(window) = handle.get_webview_window("main") {
                             let _ = window.hide();
                         }
@@ -719,13 +870,23 @@ pub fn run() {
             {
                 present_where_the_notice_pointed(app);
             }
+            /*
+             * The last chance, and only that. Measured on macOS 15: the platform's own Quit
+             * reaches `Exit` and nothing before it — no `ExitRequested`, no `CloseRequested` — so
+             * without this line an app that was only ever quit remembered nothing at all. Whether
+             * a webview is still there to answer is the platform's business; when it is not,
+             * `origin()` falls back to what was already written and this is a no-op.
+             */
+            if let tauri::RunEvent::Exit = event {
+                remember_origin(app);
+            }
             let _ = (app, event);
         });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{connection_page_url, deep_link_url, link_target, web_url};
+    use super::{connection_page_url, deep_link_url, fleet_origin, link_target, web_url};
 
     const ORIGIN: &str = "https://agent.laf-co.com";
 
@@ -871,9 +1032,76 @@ mod tests {
 
     #[test]
     fn the_connection_page_carries_the_origin_it_should_retry() {
-        let page = connection_page_url("tauri://localhost/index.html", "http://localhost:3010");
+        let page = connection_page_url(
+            "tauri://localhost/index.html",
+            "http://localhost:3010",
+            "http://localhost:3010",
+        );
         assert!(page.starts_with("tauri://localhost/index.html?origin="));
         // Encoded, so the page reads back exactly the address the shell was pointed at.
         assert!(page.contains("http%3A%2F%2Flocalhost%3A3010"));
+        // The front door is the same address here, so there is no second one to offer.
+        assert!(!page.contains("home="));
+    }
+
+    /// A remembered deployment that never answers again must not be a window with no way out.
+    ///
+    /// The front door is where somebody is told their new address, and from inside a page that is
+    /// retrying a dead host it is otherwise unreachable — there is no address bar in this window.
+    #[test]
+    fn the_connection_page_offers_the_front_door_when_it_is_somewhere_else() {
+        let page = connection_page_url(
+            "tauri://localhost/index.html",
+            "https://gone.agent.laf-co.com",
+            ORIGIN,
+        );
+        assert!(page.contains("home=https%3A%2F%2Fagent.laf-co.com"));
+    }
+
+    /// Every origin this shell will open, and it has to be inside what the capability grants.
+    ///
+    /// A window pointed anywhere else loads and runs, and the badge, the notices and the links out
+    /// are refused with no error anywhere — the failure this whole file is arranged around. The
+    /// refusals below are each a way a suffix check would have said yes.
+    #[test]
+    fn only_the_fleet_and_the_development_server_can_be_opened() {
+        for (candidate, expected) in [
+            (ORIGIN, "https://agent.laf-co.com"),
+            // Serialised as a bare origin, whatever shape it arrived in: this is compared against
+            // what the window reports and against what was written down.
+            ("https://agent.laf-co.com/", "https://agent.laf-co.com"),
+            (
+                "https://mystore.agent.laf-co.com/channel/7?x=1#y",
+                "https://mystore.agent.laf-co.com",
+            ),
+            ("http://localhost:3010/approve/a", "http://localhost:3010"),
+        ] {
+            assert_eq!(
+                fleet_origin(candidate).as_deref(),
+                Some(expected),
+                "should open {candidate}"
+            );
+        }
+        for refused in [
+            // Ends with the domain without being under it.
+            "https://evil-agent.laf-co.com",
+            // Has the domain in front of one somebody else owns.
+            "https://agent.laf-co.com.evil.example",
+            // Two names deep, where the grant carries one `*`.
+            "https://a.b.agent.laf-co.com",
+            // The grant names no port and no other scheme.
+            "https://mystore.agent.laf-co.com:8443",
+            "http://mystore.agent.laf-co.com",
+            // The development server is one address, not a host.
+            "http://localhost:3011",
+            "http://localhost",
+            // The shell's own page, which is not a place to be sent back to.
+            "tauri://localhost/index.html",
+            "file:///etc/passwd",
+            "not a url at all",
+            "",
+        ] {
+            assert!(fleet_origin(refused).is_none(), "should refuse {refused}");
+        }
     }
 }

@@ -13,6 +13,12 @@
 
   The origin arrives in the query string, written by the shell. Only http(s) is honoured.
 
+  `home` arrives with it when the shell opened a REMEMBERED deployment rather than the address it
+  was built with — and it is the way out of one that is never coming back. This window has no
+  address bar, so a customer whose deployment moved would otherwise be looking at an app retrying a
+  dead host forever, with the front door, which is where they would be told the new address,
+  unreachable from inside it. No `home`, no button.
+
   Styled in the file: the shell serves this page itself, outside the app's build, so the app's
   Tailwind pipeline never sees it.
 -->
@@ -28,6 +34,7 @@
   .status { margin-top: 20px; min-height: 1.5em; }
   button { margin-top: 12px; padding: 9px 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 500; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
+  button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); }
   .en { margin-top: 24px; font-size: 12px; }
 </style>
 </head>
@@ -38,22 +45,32 @@
   <p class="origin" id="origin"></p>
   <p class="status" id="status"></p>
   <button id="retry" type="button">다시 시도</button>
+  <button id="home" type="button" class="secondary" hidden>기본 주소로 열기</button>
   <p class="en">Can't reach the server. Retrying automatically.</p>
 </main>
 <script>
   const params = new URLSearchParams(location.search);
-  const origin = (() => {
+  const web = (name) => {
     try {
-      const url = new URL(params.get("origin") || "");
+      const url = new URL(params.get(name) || "");
       return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
     } catch { return null; }
-  })();
+  };
+  const origin = web("origin");
+  const home = web("home");
   const status = document.getElementById("status");
   const retry = document.getElementById("retry");
   document.getElementById("origin").textContent = origin || "";
   if (!origin) {
     status.textContent = "접속할 서버 주소가 없습니다.";
     retry.disabled = true;
+  }
+  // Leaving for the front door is a navigation and not a setting: the shell writes down wherever
+  // the window ends up, so arriving there is what makes it the address the next launch opens.
+  const homeButton = document.getElementById("home");
+  if (home && home !== origin) {
+    homeButton.hidden = false;
+    homeButton.addEventListener("click", () => location.replace(home));
   }
   const INTERVAL_MS = 3000;
   let checking = false;

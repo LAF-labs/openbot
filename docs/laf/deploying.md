@@ -68,7 +68,12 @@ session that never sticks rather than as a configuration error.
 opens the product's entry page, `https://agent.laf-co.com`, and
 `capabilities/default.json` grants `https://*.agent.laf-co.com` alongside it, so
 a deployment born at a subdomain there is reached by signing in at the entry —
-one build for the whole fleet rather than a binary per deployment.
+one build for the whole fleet rather than a binary per deployment. The shell
+then **writes that deployment down** and opens there next time (`shell.json`,
+`remember_origin`), so the walk through the entry is a first launch rather than
+every launch, and a link or a notice resolves against the deployment the person
+is on rather than against the entry. [installing.md](installing.md) is what a
+person is handed with the installer.
 
 **The wildcard is the only supported shape.** A customer is a name under
 `agent.laf-co.com` and nothing else; an apex of its own is no longer supported

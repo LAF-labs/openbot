@@ -28,6 +28,32 @@ domain of their own — was retired on 2026-09-03 and is not coming back; a
 deployment outside the wildcard is a binary of its own, which is the thing this
 grant exists to avoid. A phone build will use the same address.
 
+### And the shell remembers where you were
+
+The front door is the right FIRST launch and the wrong tenth: it has to be up,
+and it walks the person to their deployment again every single time. So
+whatever fleet origin the window is on when it is put away — closed, quit from
+the tray, quit from the platform's menu — is written to `shell.json` beside the
+notices switch, and the next launch opens there instead. Signing out lands back
+on the front door, which is a fleet origin too, so nothing has to unwind it.
+
+Three things follow, and each is a bug that existed before it:
+
+- **`origin()` is where the window IS**, not what the build was compiled with.
+  One build opens the whole fleet, so those stopped being the same address: an
+  approval raised on `mystore.agent.laf-co.com` used to resolve to
+  `https://agent.laf-co.com/approve/<id>` — the front door, which knows nothing
+  about that approval. Deep links and notices both go through it.
+- **A remembered address is validated on the way out as well as the way in**
+  (`fleet_origin`), against the same shape `capabilities/default.json` grants:
+  the domain itself or ONE name under it, https, no port. A suffix check would
+  have said yes to `evil-agent.laf-co.com`, and an origin the capability does
+  not grant is a window where the badge and the notices silently stop.
+- **The connection page offers the front door** when the remembered address is
+  the one that did not answer. This window has no address bar; without it, a
+  customer whose deployment moved is looking at an app retrying a dead host
+  forever, unable to reach the one page that would tell them the new one.
+
 `withGlobalTauri` is on: the page is not bundled, so it cannot `import`
 `@tauri-apps/api` — the global is the only way the SPA can ask the shell for
 what a webview cannot do itself (a dock badge, a native notification). The
@@ -182,10 +208,33 @@ when a `v*` tag is pushed:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-A manual run of the workflow only builds and keeps the installers as
-workflow artifacts. The updater reads
-`releases/latest/download/latest.json`, which serves published releases
-only — publishing the draft is what offers the update to installed apps.
+**A push to `main` builds both installers and publishes nothing.** They are
+kept as workflow artifacts on the run — `darwin-universal-dmg` and
+`windows-x64-nsis`, one file each, downloadable for ninety days — which is how
+anybody gets an installer without cutting a release. Docs-only pushes skip it,
+the same filter `images.yml` uses. A manual run does the same. Nothing on that
+path touches a release: `tagName` is empty, and `tauri-action` reaches nothing
+release-shaped without one.
+
+**That path builds with the updater taken out**, both halves of it — no
+updater artifacts, and no endpoints. The first is because the bundler refuses
+to build an updater artifact it has no key to sign, so the run would need the
+signing secrets to produce an installer at all. The second is worse and was
+measured: `tauri.conf.json` carries 0.2.0 while the last published release is
+0.4.4, so a build-only installer launched, found a newer version at the
+endpoint and **replaced itself with the release** — `update 0.4.4 is
+available; installing` — and the commit somebody installed it to try was gone
+by the next launch. With the endpoints emptied the plugin says `no updater
+configured` and the app runs as built. A **tag** keeps both: it is the only
+path with a release to offer anybody, and without the signing key it still
+fails, as it should.
+
+The updater reads `releases/latest/download/latest.json`, which serves
+published releases only — publishing the draft is what offers the update to
+installed apps.
+
+`docs/laf/installing.md` is what a person is handed: how to install each one,
+and exactly what an unsigned build shows them.
 
 The workflow needs `TAURI_SIGNING_PRIVATE_KEY` (the private half of the
 updater pubkey in `tauri.conf.json`, as the base64 file `tauri signer

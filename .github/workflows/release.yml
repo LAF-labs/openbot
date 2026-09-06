@@ -1,8 +1,20 @@
 name: Release
 
 # Builds the desktop shell for every platform it ships on, signs the updater artifacts, and
-# publishes them as a DRAFT release. Pushing a `v*` tag does the whole thing; a manual run only
-# builds and keeps the installers as workflow artifacts, so nobody can publish by clicking.
+# publishes them as a DRAFT release. Pushing a `v*` tag does the whole thing; a push to `main` and a
+# manual run only build and keep the installers as workflow artifacts, so nobody can publish by
+# clicking.
+#
+# THE INSTALLERS EXIST ON EVERY PUSH TO MAIN, and that is the point of the build-only path. Before
+# it, getting a `.dmg` or a `.exe` into anybody's hands took a tag — which is a release, with a
+# version, a draft and an update feed behind it — or a manual dispatch, which is a person with the
+# right browser tab open. So for weeks the answer to "can I try the app?" was "not without cutting a
+# release". A push to main now leaves both installers as workflow artifacts (`darwin-universal-dmg`,
+# `windows-x64-nsis`), downloadable from the run, for ninety days. Docs-only pushes skip it, the same
+# filter `images.yml` uses. Nothing on that path creates, extends or publishes a release: the action
+# only touches a release when `tagName` is non-empty, and it is empty on everything but a tag. It
+# also builds with the updater taken out — otherwise the installer replaces itself with the last
+# published release the first time somebody opens it, which was measured, not feared.
 #
 # The shell is a window onto the deployed origin (see desktop/README.md): there is no frontend to
 # build here and nothing native beyond Tauri itself, which is why a universal macOS binary is cheap
@@ -36,6 +48,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # The build-only path. A push to main produces both installers and no release.
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   # And on a pull request that touches the shell, for the `shell` job below only. `ci.yml` runs on
   # Linux, where this crate does not build at all, so before this the shell's own tests ran nowhere
   # until somebody pushed a tag — which is the last moment anybody wants to learn about them.
@@ -120,10 +135,41 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo test
 
+      # THE UPDATER BELONGS TO A RELEASE, AND A BUILD-ONLY RUN IS NOT ONE. Two things go wrong
+      # without this, and the second was measured on a real bundle:
+      #
+      #   1. `createUpdaterArtifacts` is on in `tauri.conf.json`, and the bundler REFUSES TO BUILD
+      #      with it on and no signing key in the environment. A build-only run that has no key
+      #      would produce nothing at all instead of the installers it exists for.
+      #   2. The endpoint is `releases/latest/download/latest.json`, and the version in the file is
+      #      whatever main happens to carry — 0.2.0, while the last published release is 0.4.4. So a
+      #      build-only installer launched, found a "newer" version, and REPLACED ITSELF WITH THE
+      #      RELEASE: the log read `update 0.4.4 is available; installing`, and the commit somebody
+      #      installed the build to try was gone on the next launch. Emptying the endpoints makes
+      #      the plugin inert (`no updater configured: Updater does not have any endpoints set.`)
+      #      and the app runs unchanged.
+      #
+      # Both are stamped on the runner, like the version below, and neither is committed: the file
+      # in the repository keeps the updater on, for the tag path, which is the only path that has a
+      # release to update anybody to.
+      - name: Take the updater out of a build that is not a release
+        if: github.ref_type != 'tag'
+        shell: bash
+        working-directory: desktop
+        run: |
+          bun -e 'const p = "src-tauri/tauri.conf.json"; const c = await Bun.file(p).json(); c.bundle.createUpdaterArtifacts = false; c.plugins.updater.endpoints = []; await Bun.write(p, JSON.stringify(c, null, 2))'
+          echo "This build makes no updater artifacts and checks for no updates."
+
       # Sign a throwaway file before spending the build on it. A mangled secret — the decoded text
       # pasted instead of the file, a stray carriage return — fails here in seconds with the same
       # decode path the bundler uses, instead of as a cryptic error after the compile.
+      #
+      # A TAG WITHOUT THE KEY STILL FAILS HERE, and should: a release whose `latest.json` is
+      # unsigned is one no installed app will accept, and the moment to learn that is not after the
+      # draft is published. A build-only run skips the step entirely — it signs nothing, so a
+      # missing key costs it nothing.
       - name: Prove the updater key can sign
+        if: github.ref_type == 'tag'
         shell: bash
         # Run in the desktop workspace, which is where the Tauri CLI is installed. From the
         # repository root `bunx tauri` finds nothing local and fetches an unrelated package of that
@@ -205,7 +251,11 @@ jobs:
 
       # On a tag: build, sign the updater artifacts, create or extend the draft release. Both matrix
       # jobs land in the same draft, and the action merges their platforms into one latest.json.
-      # On a manual run: build only, and keep the installers as workflow artifacts.
+      # On a push to main or a manual run: build only, and keep the installers as workflow
+      # artifacts. `tagName` is empty on those, and the action reaches nothing release-shaped
+      # without one — no create, no extend, no publish, no latest.json. The artifacts are named
+      # `[platform]-[arch]-[bundle]`, one file each: `darwin-universal-dmg` here and
+      # `windows-x64-nsis` (the `-setup.exe`) on the other runner.
       - name: Build and publish draft
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
