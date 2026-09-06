@@ -33,6 +33,13 @@ const MAX_HEIGHT_PX = 220;
 const COMPACT_MIN_HEIGHT_PX = 26;
 const COMPACT_MAX_HEIGHT_PX = 104;
 
+/**
+ * One identity for "nobody to mention". `agents = []` in the parameter list is a NEW array on
+ * every render, which is how a caller that passed nothing at all still handed the editor a fresh
+ * trigger list each time the screen redrew — see `sources` below.
+ */
+const EMPTY_AGENTS: readonly AgentOption[] = [];
+
 export type ComposerProps = {
   className?: string;
   compact?: boolean;
@@ -89,7 +96,7 @@ export type ComposerProps = {
 export function Composer({
   className,
   compact = false,
-  agents = [],
+  agents = EMPTY_AGENTS,
   commands = PLACEHOLDER_COMMANDS,
   onSubmit,
   onQueue,
@@ -106,27 +113,48 @@ export function Composer({
   const wantsFocus = useRef(false);
 
   const isBusy = pending || isSubmitting;
+
+  /*
+   * THE EDITOR IS HANDED ONE TRIGGER LIST AND ONE `onChange` FOR ITS WHOLE LIFE.
+   *
+   * Measured 2026-09-06: a character typed within half a second of a conversation opening ended
+   * up at the END of everything typed after it — "안녕하세요" came out "녕하세요안", one try in
+   * three, never on a settled screen. The roster and the granted skills arrive a moment after the
+   * composer mounts, and each render that carried them rebuilt `triggers` and `handleChange`. The
+   * editor keys the effect that syncs its DOM from `value` on both, so every such render re-ran
+   * it — against the `value` that render had closed over. A keystroke landing between the commit
+   * and that effect had already moved the editor's own record on, so the stale value was judged
+   * foreign and rendered over the box: the character vanished, came back on the next render, and
+   * the caret came back at the start. Everything after was typed in front of it.
+   *
+   * So the lists are read through a ref at the moment a menu asks, and neither the trigger list
+   * nor the change handler ever changes identity. The effect then re-runs only when `value` does,
+   * and a render caused by `value` is never behind the editor's record of it.
+   */
+  const sources = useRef({ agents, commands });
+  sources.current = { agents, commands };
   const triggers = useMemo(
-    () => buildTriggers({ agents, commands }),
-    [agents, commands],
+    () =>
+      buildTriggers({
+        agents: () => sources.current.agents,
+        commands: () => sources.current.commands,
+      }),
+    [],
   );
   const draft = useMemo(() => toDraft(value), [value]);
 
-  const handleChange = useCallback(
-    (next: Segment[]) => {
-      const { segments, actions } = applyCommandChips(
-        enforceSingleAgent(next),
-        commands,
-      );
-      setValue(segments);
-      // Run after the commit so an action that navigates or opens a panel is not fighting the
-      // editor's own state update for the same tick.
-      for (const action of actions) {
-        action();
-      }
-    },
-    [commands],
-  );
+  const handleChange = useCallback((next: Segment[]) => {
+    const { segments, actions } = applyCommandChips(
+      enforceSingleAgent(next),
+      sources.current.commands,
+    );
+    setValue(segments);
+    // Run after the commit so an action that navigates or opens a panel is not fighting the
+    // editor's own state update for the same tick.
+    for (const action of actions) {
+      action();
+    }
+  }, []);
 
   /**
    * The single submit path for Enter, the send button, and the form.
@@ -200,6 +228,35 @@ export function Composer({
     wantsFocus.current = false;
     promptAreaRef.current?.focus();
   }, [disabled, isBusy]);
+
+  /**
+   * THE CARET IS THE COMPOSER'S FROM THE MOMENT THE SCREEN OPENS.
+   *
+   * Nothing focused the editor when a conversation opened; the effect above only gives the caret
+   * BACK after a send. So the first thing typed into a freshly opened conversation went to the
+   * body, and the conversation started with a click on the one control the whole screen exists
+   * for. Half of what was measured on 2026-09-06 as "the first character moves to the end" was
+   * simply this: the characters typed before the click were never in the box.
+   *
+   * A PASSIVE effect, and not the layout effect it looks like it should be. The editor initialises
+   * in a passive effect of its own — the one that syncs its DOM from `value` — and until that has
+   * run, a keystroke is compared against the empty value the mount closed over and rendered over
+   * (the same wipe `sources` above describes, measured here with the focus in a layout effect:
+   * "안녕하세요" came out "녕하세요안" again). Passive effects run child-first, so this one lands
+   * in the same flush as the editor's, immediately after it, and never before it. A keystroke in
+   * the few milliseconds between the first paint and that flush still goes to the body — as it
+   * always did — which is the honest half of the trade: lost is better than moved.
+   *
+   * Keyed on `disabled` so the compose screen hands the caret over the moment a Bot is picked —
+   * the box is enabled by that press and the person's next move is to type — and stays off it
+   * while there is nobody to write to.
+   */
+  useEffect(() => {
+    if (disabled) {
+      return;
+    }
+    promptAreaRef.current?.focus();
+  }, [disabled]);
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

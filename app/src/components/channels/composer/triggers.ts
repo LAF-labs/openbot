@@ -48,18 +48,34 @@ function matches(query: string, ...fields: (string | undefined)[]): boolean {
 }
 
 /**
+ * A trigger takes its options as something to CALL, not as a list, and the difference is the
+ * caret.
+ *
+ * The lists these menus draw from — the roster, the granted skills — arrive a moment after the
+ * composer mounts, and a trigger built around the list itself has to be rebuilt every time the list
+ * does. The editor keys its DOM-sync effect on the trigger list, so each rebuild re-runs that
+ * effect against the value its render closed over, and a keystroke that lands between the commit
+ * and the effect is judged foreign and rendered over — with the caret dropped at the start of the
+ * box (measured 2026-09-06: "안녕하세요" typed as a screen opened came out "녕하세요안"). Read at
+ * the moment a menu asks, the list can change as often as it likes and the trigger never has to.
+ */
+export type OptionsReader<T> = () => readonly T[];
+
+/**
  * `@` selects the agent that answers this message.
  *
  * `reopenOnChipClick` keeps an inserted mention editable without deleting and retyping.
  */
-export function agentTrigger(agents: readonly AgentOption[]): TriggerConfig {
+export function agentTrigger(
+  agents: OptionsReader<AgentOption>,
+): TriggerConfig {
   return mentionTrigger({
     char: AGENT_TRIGGER,
     accessibilityLabel: "agent",
     reopenOnChipClick: true,
     emptyMessage: t("No Bots in this conversation"),
     onSearch: (query): TriggerSuggestion[] =>
-      agents
+      agents()
         .filter((agent) => matches(query, agent.name, agent.description))
         .map((agent) => ({
           value: agent.id,
@@ -76,7 +92,7 @@ export function agentTrigger(agents: readonly AgentOption[]): TriggerConfig {
  * are really prompts or client actions.
  */
 export function slashCommandTrigger(
-  commands: readonly CommandOption[],
+  commands: OptionsReader<CommandOption>,
 ): TriggerConfig {
   return commandTrigger({
     char: COMMAND_TRIGGER,
@@ -84,7 +100,7 @@ export function slashCommandTrigger(
     accessibilityLabel: "command",
     emptyMessage: t("No matching commands"),
     onSearch: (query): TriggerSuggestion[] =>
-      commands
+      commands()
         .filter((command) => matches(query, command.name, command.description))
         .map((command) => ({
           value: command.id,
@@ -99,8 +115,8 @@ export function buildTriggers({
   agents,
   commands,
 }: {
-  agents: readonly AgentOption[];
-  commands: readonly CommandOption[];
+  agents: OptionsReader<AgentOption>;
+  commands: OptionsReader<CommandOption>;
 }): TriggerConfig[] {
   return [agentTrigger(agents), slashCommandTrigger(commands)];
 }
