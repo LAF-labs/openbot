@@ -122,6 +122,10 @@ export function createAccountExport(database: Database): AccountExport {
             emailVerified: person.emailVerified,
             groups: person.groups,
             onboardedAt: person.onboardedAt,
+            // What they agreed to and when: theirs to take, and the one fact about the account a
+            // dispute would turn on.
+            consentedAt: person.consentedAt,
+            consentVersion: person.consentVersion,
             createdAt: person.createdAt,
             updatedAt: person.updatedAt,
             roles: roles.map((row) => row.role),

@@ -7,6 +7,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
@@ -291,6 +292,14 @@ function RouteComponent() {
           </Item>
         </PageRows>
       </PageSection>
+      {/*
+       * The two documents, where a person who already has an account would look for them. Under
+       * the preferences rather than in the rail: the rail is not drawn below `lg`, and a link
+       * that exists on a wide window only is a link that does not exist on a phone.
+       */}
+      <footer className="mt-12">
+        <LegalLinks className="text-muted-foreground text-xs" />
+      </footer>
     </PageShell>
   );
 }

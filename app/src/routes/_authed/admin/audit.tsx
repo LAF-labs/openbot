@@ -461,6 +461,24 @@ function Row({
             {t("Dry run: recorded, not enforced")}
           </div>
         ) : null}
+        {/*
+         * Whose screen, and through which door. The rows that matter in this family are the ones
+         * where `own` is false — a person looking at a browser signed into somebody else's
+         * accounts — and a reader must not have to compare two ids to find them.
+         */}
+        {event.eventType === "computer.screen_viewed" ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {payload.own === true
+              ? t("Their own Bot")
+              : t("Somebody else's Bot, as {role}", {
+                  role: t(payload.viewerRole === "admin" ? "admin" : "user"),
+                })}
+            {" · "}
+            {payload.source === "demonstration"
+              ? t("a recording, read back")
+              : t("the live screen")}
+          </div>
+        ) : null}
       </td>
     </tr>
   );
@@ -505,6 +523,9 @@ export const DECISIONS: Record<string, string> = {
   "computer.isolation_loaded": "Isolation at start-up",
   "computer.control_taken": "A person took the wheel",
   "computer.control_released": "The wheel was handed back",
+  // Somebody looked at a Bot's browser — live, or a recording read back. Not a refusal and not a
+  // permission: an access, said plainly. The row beneath says whose Bot and which door.
+  "computer.screen_viewed": "The screen was looked at",
   "computer.help_requested": "The Bot asked for help",
   "computer.secret_requested": "The Bot asked for a secret",
   "computer.secret_supplied": "A person supplied a secret",
@@ -771,6 +792,7 @@ export const EVENTS: Record<string, string> = {
   "computer.help_requested": "Ask for help",
   "computer.control_taken": "The wheel",
   "computer.control_released": "The wheel",
+  "computer.screen_viewed": "The screen",
   "computer.secret_requested": "A secret",
   "computer.secret_supplied": "A secret",
   "approval.requested": "A question",

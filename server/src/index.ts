@@ -20,6 +20,7 @@ import {
 import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
+import { createConsentStore } from "./account/consent";
 import { createOnboardingStore } from "./auth/onboarding";
 import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
@@ -45,6 +46,11 @@ import {
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
 import { createRepeatDetector } from "./computer/repeat";
+import {
+  botOwnerLookup,
+  createScreenViewAudit,
+  type ScreenViewer,
+} from "./computer/screen-view";
 import { createSiteConnectionStore } from "./computer/site-connections";
 import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
@@ -934,6 +940,16 @@ const copilotEndpoint = new Hono()
     ),
   );
 
+/**
+ * The row a looked-at screen leaves, from the same trail every other computer row lands in. Built
+ * once and handed to both doors: the live-screen proxy below, and the demonstration read inside
+ * the computer routes.
+ */
+const screenViews = createScreenViewAudit({
+  auditStore: bootAuditStore,
+  ownerOf: botOwnerLookup(database),
+});
+
 const app = createApp(
   config,
   auth,
@@ -1128,6 +1144,9 @@ const app = createApp(
   // The public-data entry: hidden from the catalogue without the key, and handed to a Bot the
   // moment it is made with it. Built above, so the listing and the boot reconciliation agree.
   publicDataRuntime,
+  // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
+  createConsentStore(database),
+  screenViews,
 );
 
 /**
@@ -1183,6 +1202,12 @@ const streamAccessFor = (
 type StreamData = {
   upstream: string;
   inward?: WebSocket;
+  /**
+   * Who opened it, with their role. Resolved at the upgrade — the only moment a session cookie is
+   * in hand — and carried so `open` can write the row once the socket actually exists, rather than
+   * at the upgrade, where a refused upgrade would leave a row saying a screen was watched.
+   */
+  viewer: ScreenViewer;
   /**
    * Which Bot's browser this socket drives.
    *
@@ -1252,7 +1277,8 @@ serve<SocketData>({
       if (access === "bad_id") {
         return fact("laf:bot_id_invalid", 400);
       }
-      if (access === "unauthenticated") {
+      // `|| !actor` says nothing the rule did not; it is here so the compiler knows it too.
+      if (access === "unauthenticated" || !actor) {
         return fact("laf:unauthenticated", 401);
       }
       if (access === "not_found") {
@@ -1271,7 +1297,15 @@ serve<SocketData>({
           { status: 502 },
         );
       }
-      if (server.upgrade(request, { data: { upstream, botId: streamBotId } })) {
+      if (
+        server.upgrade(request, {
+          data: {
+            upstream,
+            botId: streamBotId,
+            viewer: { id: actor.id, role: actor.role },
+          },
+        })
+      ) {
         return undefined as unknown as Response;
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
@@ -1284,6 +1318,9 @@ serve<SocketData>({
         channelSocket.open(asChannelSocket(ws));
         return;
       }
+      // Once per socket, here and not per frame: the session is the fact. Not awaited — the
+      // screen opens whether or not the trail is reachable, as every other computer row does.
+      void screenViews.opened(ws.data.botId, ws.data.viewer);
       const inward = new WebSocket(ws.data.upstream);
       ws.data.inward = inward;
       // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for

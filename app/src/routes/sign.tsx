@@ -3,6 +3,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import { type SignInProvider, signInWithProvider } from "@/lib/auth/client";
 import {
@@ -221,6 +222,20 @@ function SignScreen() {
               {error}
             </p>
           ) : null}
+        </motion.div>
+        {/*
+         * THE TWO DOCUMENTS, READABLE BEFORE THERE IS AN ACCOUNT.
+         *
+         * Two links and no sentence: nobody has agreed to anything on this screen. The agreement
+         * is the first screen after sign-in, which says so in words (`welcome.tsx`) — this is only
+         * where somebody can read what they would be agreeing to first.
+         */}
+        <motion.div
+          className="mt-8"
+          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
+          variants={{ hidden, shown }}
+        >
+          <LegalLinks className="text-muted-foreground text-xs" />
         </motion.div>
       </motion.div>
     </div>

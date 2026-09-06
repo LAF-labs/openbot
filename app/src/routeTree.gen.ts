@@ -10,12 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SignRouteImport } from './routes/sign'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as UnreachableRouteImport } from './routes/unreachable'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
+import { Route as AuthedConsentRouteImport } from './routes/_authed/consent'
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
+import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
+import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
@@ -40,9 +45,19 @@ const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UnreachableRoute = UnreachableRouteImport.update({
@@ -59,6 +74,11 @@ const AuthedAdminRouteRoute = AuthedAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedConsentRoute = AuthedConsentRouteImport.update({
+  id: '/consent',
+  path: '/consent',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsRouteRoute = AuthedSettingsRouteRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -68,6 +88,16 @@ const AuthedWelcomeRoute = AuthedWelcomeRouteImport.update({
   id: '/welcome',
   path: '/welcome',
   getParentRoute: () => AuthedRoute,
+} as any)
+const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
+  id: '/legal/privacy',
+  path: '/legal/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalTermsRoute = LegalTermsRouteImport.update({
+  id: '/legal/terms',
+  path: '/legal/terms',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
   id: '/',
@@ -170,11 +200,16 @@ const AuthedAppChannelNewRoute = AuthedAppChannelNewRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
+  '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
+  '/terms': typeof TermsRoute
   '/unreachable': typeof UnreachableRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
+  '/consent': typeof AuthedConsentRoute
   '/welcome': typeof AuthedWelcomeRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -196,9 +231,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
+  '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
+  '/terms': typeof TermsRoute
   '/unreachable': typeof UnreachableRoute
+  '/consent': typeof AuthedConsentRoute
   '/welcome': typeof AuthedWelcomeRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -221,12 +261,17 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
+  '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
+  '/terms': typeof TermsRoute
   '/unreachable': typeof UnreachableRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
+  '/_authed/consent': typeof AuthedConsentRoute
   '/_authed/welcome': typeof AuthedWelcomeRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -251,11 +296,16 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/privacy'
     | '/sign'
+    | '/terms'
     | '/unreachable'
     | '/admin'
     | '/settings'
+    | '/consent'
     | '/welcome'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -277,9 +327,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/privacy'
     | '/sign'
+    | '/terms'
     | '/unreachable'
+    | '/consent'
     | '/welcome'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -301,12 +356,17 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
+    | '/privacy'
     | '/sign'
+    | '/terms'
     | '/unreachable'
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
+    | '/_authed/consent'
     | '/_authed/welcome'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -330,8 +390,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
+  PrivacyRoute: typeof PrivacyRoute
   SignRoute: typeof SignRoute
+  TermsRoute: typeof TermsRoute
   UnreachableRoute: typeof UnreachableRoute
+  LegalPrivacyRoute: typeof LegalPrivacyRoute
+  LegalTermsRoute: typeof LegalTermsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -343,11 +407,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign': {
       id: '/sign'
       path: '/sign'
       fullPath: '/sign'
       preLoaderRoute: typeof SignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/unreachable': {
@@ -371,6 +449,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminRouteRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/consent': {
+      id: '/_authed/consent'
+      path: '/consent'
+      fullPath: '/consent'
+      preLoaderRoute: typeof AuthedConsentRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings': {
       id: '/_authed/settings'
       path: '/settings'
@@ -384,6 +469,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/welcome'
       preLoaderRoute: typeof AuthedWelcomeRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/legal/privacy': {
+      id: '/legal/privacy'
+      path: '/legal/privacy'
+      fullPath: '/legal/privacy'
+      preLoaderRoute: typeof LegalPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/terms': {
+      id: '/legal/terms'
+      path: '/legal/terms'
+      fullPath: '/legal/terms'
+      preLoaderRoute: typeof LegalTermsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/_app/': {
       id: '/_authed/_app/'
@@ -591,6 +690,7 @@ interface AuthedRouteChildren {
   AuthedAdminRouteRoute: typeof AuthedAdminRouteRouteWithChildren
   AuthedSettingsRouteRoute: typeof AuthedSettingsRouteRouteWithChildren
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
+  AuthedConsentRoute: typeof AuthedConsentRoute
   AuthedWelcomeRoute: typeof AuthedWelcomeRoute
 }
 
@@ -598,6 +698,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRouteRoute: AuthedAdminRouteRouteWithChildren,
   AuthedSettingsRouteRoute: AuthedSettingsRouteRouteWithChildren,
   AuthedAppRoute: AuthedAppRouteWithChildren,
+  AuthedConsentRoute: AuthedConsentRoute,
   AuthedWelcomeRoute: AuthedWelcomeRoute,
 }
 
@@ -606,8 +707,12 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
+  PrivacyRoute: PrivacyRoute,
   SignRoute: SignRoute,
+  TermsRoute: TermsRoute,
   UnreachableRoute: UnreachableRoute,
+  LegalPrivacyRoute: LegalPrivacyRoute,
+  LegalTermsRoute: LegalTermsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -65,6 +65,18 @@ export const users = pgTable("users", {
    * is the honest answer and a boolean would have thrown it away.
    */
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+  /**
+   * When this person agreed to the terms and the privacy policy, and which version they agreed to.
+   *
+   * Stamped by the same call that marks onboarding, because the first screen of the product is the
+   * one that says "continuing means you agree" — there is no separate consent form, and a stamp
+   * written by a different call could record consent from somebody who never saw that screen.
+   * The version is the one printed at the head of `app/src/legal/*.md` (`LEGAL_VERSION` in
+   * `account/consent.ts`), so that when the text changes it is answerable which text somebody
+   * actually agreed to. Both null for anybody who joined before the text existed.
+   */
+  consentedAt: timestamp("consented_at", { withTimezone: true }),
+  consentVersion: text("consent_version"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -234,6 +234,12 @@ describe("the export", () => {
 
     expect(document.format).toBe("laf.account-export/1");
     expect((document.profile as { email: string }).email).toBe(leaver.email);
+    // What they agreed to is theirs to take too. Present as keys even when null: a person who
+    // joined before the text existed should see that nothing was recorded, not nothing at all.
+    expect(document.profile as Record<string, unknown>).toMatchObject({
+      consentedAt: null,
+      consentVersion: null,
+    });
     expect(
       (document.bots as Array<{ id: string }>).map((bot) => bot.id),
     ).toEqual([leaver.botId]);

@@ -30,6 +30,21 @@ export const Route = createFileRoute("/_authed")({
     if (!user.onboarded && location.pathname !== "/welcome") {
       throw redirect({ to: "/welcome" });
     }
+    /*
+     * AND NOBODY GETS PAST IT ON AN AGREEMENT TO A TEXT THAT HAS SINCE CHANGED.
+     *
+     * After the first-run check, because the first run carries the sentence itself: its first
+     * screen says continuing means agreeing, and 다음 records it. Everybody else whose recorded
+     * version is not the current one — including people who joined before there was a text —
+     * meets one screen that says so and asks again, and reaches nothing else until they answer.
+     */
+    if (
+      user.onboarded &&
+      user.consentRequired &&
+      location.pathname !== "/consent"
+    ) {
+      throw redirect({ to: "/consent" });
+    }
   },
   // Mounted INSIDE the authed boundary, not at the root: the runtime endpoint requires a session, so
   // a provider above the sign-in gate would open a run for a visitor who has not signed in yet.

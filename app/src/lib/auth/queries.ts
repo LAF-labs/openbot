@@ -9,6 +9,14 @@ export type AuthenticatedUser = {
   role: "admin" | "user";
   /** False until they have been through onboarding and their first Bot exists. */
   onboarded: boolean;
+  /**
+   * True when the terms and the privacy policy must be agreed to before anything else is drawn:
+   * the deployment records consent, and this person's recorded version is not the current one —
+   * which includes never having agreed at all. False on a deployment that records nothing, for
+   * the same reason `onboarded` defaults to true there: a screen demanding an agreement the server
+   * cannot keep is a wall with nothing behind it.
+   */
+  consentRequired: boolean;
 };
 
 /**
@@ -91,14 +99,19 @@ async function currentUser(): Promise<CurrentUserResult> {
   }
 
   const body = (await response.json()) as {
-    user: AuthenticatedUser;
+    user: Omit<AuthenticatedUser, "consentRequired">;
     deployment?: Partial<Deployment>;
+    /** Two facts and no verdict; the verdict is drawn here. Absent when nothing records it. */
+    consent?: { version: string | null; current: string };
   };
   // Absent reads as yes, field by field, matching the server's own default: a server that does not
   // say is far more likely to be one that has both than one that has neither, and the failure of
   // guessing wrong here is a control that is missing rather than a control that lies.
   return {
     ...body.user,
+    consentRequired:
+      body.consent !== undefined &&
+      body.consent.version !== body.consent.current,
     deployment: {
       effort: body.deployment?.effort !== false,
       autoReview: body.deployment?.autoReview !== false,

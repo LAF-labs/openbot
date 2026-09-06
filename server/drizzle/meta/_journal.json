@@ -253,6 +253,13 @@
       "when": 1788550000000,
       "tag": "0035_thread_allowances",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788560000000,
+      "tag": "0036_consent",
+      "breakpoints": true
     }
   ]
 }

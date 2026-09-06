@@ -2,9 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { ConsentLine } from "@/components/legal/consent-line";
 import { Button } from "@/components/ui/button";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { createBotNow, useSeats } from "@/lib/agents/new-bot";
+import { agreeToLegal } from "@/lib/auth/consent";
 import { authKeys } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
@@ -46,6 +48,28 @@ function Welcome() {
    * Measured: a double click made exactly that.
    */
   const submitting = useRef(false);
+
+  /*
+   * 다음 IS THE AGREEMENT. The sentence under the buttons says that continuing means agreeing to
+   * the terms and the privacy policy, and this is the continuing: the stamp is written here, before
+   * the second screen is shown, and the screen does not move until the server has it. A person who
+   * closes the laptop between the two screens comes back to this one, and pressing again records
+   * nothing new — the server keeps the first moment for the same version.
+   */
+  const [agreeing, setAgreeing] = useState(false);
+  const proceed = async () => {
+    if (agreeing) return;
+    setAgreeing(true);
+    setProblem(null);
+    try {
+      await agreeToLegal(queryClient);
+      setStep("create");
+    } catch {
+      setProblem(t("Could not record your agreement. Try again."));
+    } finally {
+      setAgreeing(false);
+    }
+  };
 
   const finish = async () => {
     if (submitting.current) return;
@@ -161,8 +185,17 @@ function Welcome() {
              * daily sites used to be a sentence with nothing to press: the one setup act that turns
              * an empty Bot into a useful one, described and then abandoned.
              */}
+            {problem ? (
+              <p className="text-destructive text-sm" role="alert">
+                {problem}
+              </p>
+            ) : null}
             <div className="flex w-full flex-col gap-2">
-              <Button className="w-full" onClick={() => setStep("create")}>
+              <Button
+                className="w-full"
+                disabled={agreeing}
+                onClick={() => void proceed()}
+              >
                 {t("Next")}
               </Button>
               <Button
@@ -179,6 +212,16 @@ function Welcome() {
                 {t("Connect the sites you use — you can do this later")}
               </Button>
             </div>
+            {/*
+             * THE AGREEMENT, IN WORDS, ON THE SCREEN IT HAPPENS ON.
+             *
+             * Pressing 다음 is what `POST /api/me/consent` records (`users.consented_at`, with the
+             * version of the text) — see `proceed` above. A stamp with no sentence in front of it
+             * would be a consent nobody gave, so the sentence is on the FIRST screen, beside the
+             * button that records it, and the two documents are one press away, readable without
+             * an account.
+             */}
+            <ConsentLine className="text-pretty text-muted-foreground text-xs" />
           </section>
         ) : (
           <section className="flex flex-col items-center gap-6 text-center">

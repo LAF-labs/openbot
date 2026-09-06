@@ -119,6 +119,17 @@ export const auditEventTypes = [
   "computer.help_requested",
   "computer.control_taken",
   "computer.control_released",
+  /**
+   * Somebody looked at a Bot's screen: opened the live browser, or read back a demonstration.
+   *
+   * The screen is the Bot's browser, signed into whatever sites its owner signed it into, so a
+   * person watching it is a person looking at somebody's logged-in accounts — the one kind of
+   * access `docs/laf/data-lifecycle.md` §5 had to list as unrecorded. Once per socket and once per
+   * recording read, never per frame or per poll: the fact is that a screen was looked at, and
+   * thirty rows a second would bury every other row in the trail under one afternoon of it. The
+   * payload says which of the two it was, who owns the Bot, and whether the viewer is that owner.
+   */
+  "computer.screen_viewed",
   // A credential a person entered by hand. The row records that it happened, what it was called and
   // which field it went in; the value is on a path this trail is not on.
   "computer.secret_requested",

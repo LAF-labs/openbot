@@ -2068,4 +2068,33 @@ export const ko: Record<string, string> = {
   "Making the routine…": "루틴 만드는 중…",
   "The routine is made.": "루틴을 만들었습니다",
   "See it on Routines": "루틴 화면에서 보기",
+
+  /*
+   * The legal surface. The documents themselves are Korean content in `app/src/legal/*.md`; these
+   * are the words around them — the two names, the sentence on the first screen, the screen that
+   * asks again when the text has changed, and the trail's row for a screen somebody looked at.
+   */
+  Legal: "약관과 방침",
+  "Terms of Service": "이용약관",
+  "Privacy Policy": "개인정보 처리방침",
+  // 약관 ends in a 받침, so the josa is 과, and it is fixed here because the placeholder always
+  // resolves to 이용약관.
+  "By continuing you agree to the {terms} and the {privacy}.":
+    "계속하면 {terms}과 {privacy}에 동의하는 것입니다.",
+  "Could not record your agreement. Try again.":
+    "동의를 기록하지 못했습니다. 다시 눌러 주세요.",
+  "The terms have changed": "약관이 바뀌었습니다",
+  "The terms of service and the privacy policy were updated since you last agreed to them. Read them, then continue.":
+    "마지막으로 동의하신 뒤 이용약관과 개인정보 처리방침이 바뀌었습니다. 읽어 보신 뒤 계속해 주세요.",
+  "Agree and continue": "동의하고 계속",
+  // 감사 표: 누군가 봇의 화면을 봤다 — 실시간이든, 시연 기록을 다시 본 것이든. 아래 줄이 누구의
+  // 봇이었는지와 어느 문으로 봤는지를 말한다.
+  "The screen was looked at": "화면을 봄",
+  "The screen": "봇의 화면",
+  "Their own Bot": "자기 봇",
+  "Somebody else's Bot, as {role}": "다른 사람의 봇 · {role}",
+  admin: "관리자",
+  user: "사용자",
+  "a recording, read back": "시연 기록 다시 보기",
+  "the live screen": "실시간 화면",
 };

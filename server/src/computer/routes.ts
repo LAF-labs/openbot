@@ -16,6 +16,7 @@ import {
   WorkspaceRequestError,
 } from "./client";
 import type { DemonstrationRecorder } from "./demonstration";
+import type { ScreenViewAudit } from "./screen-view";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -62,6 +63,12 @@ export function createComputerRoutes(
    * gateway's own store — this one is for the edit to the rules, which no gateway call goes through.
    */
   auditStore?: AuditStore,
+  /**
+   * Where reading a recording back is written down. A recording is the pages a person's own
+   * browser went to and the controls they pressed; reading it is looking at that screen after the
+   * fact, and the trail records it the way it records the live one. See `screen-view.ts`.
+   */
+  screenViews?: ScreenViewAudit,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -393,19 +400,26 @@ export function createComputerRoutes(
    * payroll page, every control they pressed by name — so the asker goes in and a stranger is told
    * there is nothing, which for them is true.
    *
-   * A read, so no audit row. What is in here never leaves this process and never becomes a Bot's
-   * instruction until somebody says so — see the note at the top of `demonstration.ts` about what
-   * it does and does not keep.
+   * A read, but not an unrecorded one. What is in here never leaves this process and never
+   * becomes a Bot's instruction until somebody says so — see the note at the top of
+   * `demonstration.ts` about what it does and does not keep — but a FINISHED recording read back
+   * is a person looking at a screen after the fact, and `computer.screen_viewed` says so, once per
+   * recording (`screen-view.ts` holds the once). Not while it is still being made: the panel polls
+   * this once a second then, and the person reading it is the person driving.
    */
-  routes.get("/:botId/demonstration", requireUser, (context) =>
-    context.json({
-      demonstration:
-        demonstrations?.read(
-          context.req.param("botId") ?? "",
-          context.var.actor.id,
-        ) ?? null,
-    }),
-  );
+  routes.get("/:botId/demonstration", requireUser, (context) => {
+    const botId = context.req.param("botId") ?? "";
+    const actor = context.var.actor;
+    const recording = demonstrations?.read(botId, actor.id) ?? null;
+    if (recording?.finished) {
+      void screenViews?.replayed(
+        botId,
+        { id: actor.id, role: actor.role },
+        recording,
+      );
+    }
+    return context.json({ demonstration: recording });
+  });
 
   /**
    * Write the recording up as a procedure, for the person to read and edit.

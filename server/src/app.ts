@@ -14,6 +14,7 @@ import {
   type RoleRepository,
   requireAdmin,
 } from "./auth/guards";
+import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
 import type { OnboardingStore } from "./auth/onboarding";
 import {
   isOriginExempt,
@@ -33,6 +34,7 @@ import type { ApprovalRegistry } from "./computer/approvals";
 import { MAX_BOTS_PER_COMPUTER } from "./computer/assignment";
 import type { ComputerClient } from "./computer/client";
 import type { DemonstrationRecorder } from "./computer/demonstration";
+import type { ScreenViewAudit } from "./computer/screen-view";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
@@ -303,6 +305,17 @@ export function createApp(
    * fact about the whole machine and not about a request.
    */
   publicData?: PublicDataRuntime,
+  /**
+   * What each person agreed to, and when. Absent means nobody is asked and `/api/me` says nothing
+   * about it, the same shape as `onboarding`: a deployment that cannot record an agreement must not
+   * stand a screen in front of people demanding one.
+   */
+  consent?: ConsentStore,
+  /**
+   * The row a looked-at screen leaves. The live socket is terminated in `index.ts` and writes its
+   * own; this one is for the demonstration read below, which is the other way a screen is seen.
+   */
+  screenViews?: ScreenViewAudit,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -433,10 +446,42 @@ export function createApp(
      * instruction. The surface cannot work either out for itself — it is never told which model this
      * deployment serves, and it should not have to know model names to draw a form.
      */
+    /*
+     * Which text they agreed to, beside which text is current. Two facts and no verdict: the app
+     * decides that a version other than the current one — including none — means asking again,
+     * and it is the app that draws the screen that asks. Absent when nothing records consent.
+     */
+    const agreed = consent
+      ? await consent.read(actor.id).catch(() => null)
+      : null;
     return context.json({
       user: { ...actor, onboarded },
       deployment: await capabilities(),
+      ...(consent
+        ? {
+            consent: {
+              version: agreed?.version ?? null,
+              at: agreed?.at?.toISOString() ?? null,
+              current: LEGAL_VERSION,
+            },
+          }
+        : {}),
     });
+  });
+
+  /**
+   * They agreed to the terms and the privacy policy, as they stand today.
+   *
+   * Called by the first screen's 다음 — the screen that says continuing means agreeing — and by
+   * the screen that asks again once the version has moved. Not a side effect of onboarding, for
+   * the reason `account/consent.ts` gives: the stamp must be written by the act the sentence names.
+   */
+  app.post("/api/me/consent", requireUser, async (context) => {
+    if (!consent) {
+      return context.json({ error: "laf:consent_not_recorded" }, 503);
+    }
+    await consent.record(context.var.actor.id);
+    return context.body(null, 204);
   });
 
   /**
@@ -606,6 +651,7 @@ export function createApp(
         writeUp,
         // So a change to the boundary itself lands in the same trail as the actions it governs.
         auditStore,
+        screenViews,
       ),
     );
 

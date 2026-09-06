@@ -38,6 +38,7 @@ function seeded(answers: Onboarding[]) {
         email: "someone@example.com",
         role: "user" as const,
         onboarded: answer.onboarded,
+        consentRequired: false,
         deployment: { effort: true, autoReview: true, seats: 5 },
       };
     },
