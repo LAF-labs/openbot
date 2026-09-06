@@ -111,6 +111,43 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
   },
 ]);
 
+/**
+ * Everything a send can be refused for by its arguments alone, in one place.
+ *
+ * ONE LIST, TWO READERS. The call path runs it before a person is asked and `run` runs it again
+ * before the vendor is reached, and they are the same function so the two cannot disagree — a
+ * check that lived only in `run` is exactly how two approvals were spent on a send with the wrong
+ * blank names (2026-09-06). Nothing here reads a row or an environment: what the channel and the
+ * template's inspection say is `run`'s to ask, after the person has said yes.
+ */
+function sendArguments(args: Record<string, unknown>) {
+  const code = requiredString(args, "template", "laf:alimtalk_no_template");
+  const entry = standardTemplate(code);
+  if (!entry) refuse("laf:alimtalk_unknown_template");
+  /*
+   * A Bot may not send the owner's own notifications.
+   *
+   * `laf_approval` and `laf_done` are the outbox's, and they are addressed to the person who
+   * owns this deployment. A Bot that could send them could tell its owner it was waiting for an
+   * approval it had never asked for, which is a Bot writing the notification that decides
+   * whether it gets looked at.
+   */
+  if (entry.audience !== "customer") {
+    refuse("laf:alimtalk_template_not_for_customers");
+  }
+
+  const to = normalizeRecipientOrRefuse(
+    requiredString(args, "to", "laf:alimtalk_no_recipient"),
+  );
+  const supplied = withVariableBraces(
+    (args.variables ?? {}) as Record<string, unknown>,
+  );
+  const missing = missingVariables(entry, supplied);
+  if (missing.length > 0) refuse("laf:alimtalk_variables_missing");
+
+  return { entry, to, supplied };
+}
+
 export function createAlimtalkTools(
   partners: PartnerConnections,
   environment: Record<string, string | undefined> = process.env,
@@ -118,6 +155,11 @@ export function createAlimtalkTools(
   return partnerTransport({
     tools: ALIMTALK_TOOLS,
     anonymousFact: "laf:alimtalk_no_actor",
+    validate: ({ toolName, args }) => {
+      // Listing takes no arguments, and a name that is neither is not in `mcp_tools`, so the grant
+      // has already refused it by the time this runs.
+      if (toolName === "alimtalk_send") sendArguments(args);
+    },
     run: async ({ toolName, args, actorId }) => {
       if (toolName === "alimtalk_templates") {
         const rows = await partners.templatesFor(actorId);
@@ -148,23 +190,12 @@ export function createAlimtalkTools(
       const connection = await partners.find(PROVIDER, actorId);
       if (!connection) refuse("laf:alimtalk_not_connected");
 
-      const code = requiredString(args, "template", "laf:alimtalk_no_template");
-      const entry = standardTemplate(code);
-      if (!entry) refuse("laf:alimtalk_unknown_template");
-      /*
-       * A Bot may not send the owner's own notifications.
-       *
-       * `laf_approval` and `laf_done` are the outbox's, and they are addressed to the person who
-       * owns this deployment. A Bot that could send them could tell its owner it was waiting for an
-       * approval it had never asked for, which is a Bot writing the notification that decides
-       * whether it gets looked at.
-       */
-      if (entry.audience !== "customer") {
-        refuse("laf:alimtalk_template_not_for_customers");
-      }
+      // Again, not only in `validate`: this transport is also called directly, and a send that
+      // skipped the call path must not skip the checks.
+      const { entry, to, supplied } = sendArguments(args);
 
       const known = (await partners.templatesFor(actorId)).find(
-        (row) => row.code === code,
+        (row) => row.code === entry.code,
       );
       if (!known) refuse("laf:alimtalk_template_not_registered");
       if (known.status !== "approved") {
@@ -174,15 +205,6 @@ export function createAlimtalkTools(
             : "laf:alimtalk_template_pending",
         );
       }
-
-      const to = normalizeRecipientOrRefuse(
-        requiredString(args, "to", "laf:alimtalk_no_recipient"),
-      );
-      const supplied = withVariableBraces(
-        (args.variables ?? {}) as Record<string, unknown>,
-      );
-      const missing = missingVariables(entry, supplied);
-      if (missing.length > 0) refuse("laf:alimtalk_variables_missing");
 
       const sent = await sendTemplateMessage({
         settings,

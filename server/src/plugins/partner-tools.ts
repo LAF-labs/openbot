@@ -40,6 +40,21 @@ export type PartnerToolRun = (input: {
 }) => Promise<string>;
 
 /**
+ * What can be known about a call from its arguments alone. Throws a refusal, or returns.
+ *
+ * PURE, ON PURPOSE. It runs before a person is asked and before any row is written, so it may
+ * read nothing but what it is handed: no database, no vendor, no environment. Everything a send
+ * needs beyond that — is the channel connected, is the template approved — is `run`'s to check,
+ * after the person has said yes.
+ */
+export type PartnerToolValidate = (input: {
+  toolName: string;
+  args: Record<string, unknown>;
+  actorId: string;
+  botId: string;
+}) => Promise<void> | void;
+
+/**
  * The guard a partner tool's own declaration asks for, or null when it declares a plain read.
  *
  * Derived from the annotations rather than written beside them, so there is one source: a tool whose
@@ -59,9 +74,18 @@ export function guardOfSpec(spec: PartnerToolSpec): LafGuard | null {
 export function partnerTransport(input: {
   tools: readonly PartnerToolSpec[];
   run: PartnerToolRun;
+  /**
+   * The checks that need only the arguments, run by the call path before anybody is asked.
+   *
+   * Absent means the connector can tell nothing in advance and the first look at the arguments
+   * is `run`'s — which is what every connector did until 2026-09-06, and what spent two
+   * approvals on an 알림톡 that could never go out. See `VendorTransport.validateArgs`.
+   */
+  validate?: PartnerToolValidate;
   /** The fact a call with nobody attributed to it is refused with. */
   anonymousFact: string;
 }): VendorTransport {
+  const { validate } = input;
   return {
     listNeedsCredential: false,
     listTools: async () =>
@@ -69,6 +93,20 @@ export function partnerTransport(input: {
         ...tool,
         annotations: { ...tool.annotations },
       })),
+    ...(validate
+      ? {
+          validateArgs: async (connection, toolName, args) => {
+            // Not the anonymous check: who the call is for is a fact about the run, and refusing
+            // it here would be refusing before the boundary has a row to write it in.
+            await validate({
+              toolName,
+              args,
+              actorId: connection.actorId ?? "",
+              botId: connection.botId ?? "",
+            });
+          },
+        }
+      : {}),
     callTool: async (connection, toolName, args): Promise<McpCallResult> => {
       /*
        * A call nobody is attributed to is refused before anything is looked up.

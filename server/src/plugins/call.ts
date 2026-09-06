@@ -122,6 +122,46 @@ function withoutEmptyOptionals(
   );
 }
 
+/** The fact a call is refused with when its arguments do not fit the tool's own schema. */
+const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
+
+/**
+ * The first argument that cannot be what the advertised schema says, or null when they all fit.
+ *
+ * TOP LEVEL ONLY, AND ONLY TWO FACTS: a `required` property that is absent, and a property with
+ * an `enum` holding something not in it. Not a JSON Schema validator — the vendor has one, and a
+ * partial one here that disagreed with it would refuse calls the vendor would have taken. These
+ * two are the facts a model gets wrong most and that no vendor needs to be asked about, and either
+ * one is a call that can never succeed.
+ *
+ * Absent means `undefined`, not empty: an empty string in a required field is a value the model
+ * meant, and `withoutEmptyOptionals` above deliberately leaves it for the vendor to judge.
+ */
+function argumentOffSchema(
+  args: Record<string, unknown>,
+  schema: Record<string, unknown> | undefined,
+): string | null {
+  const required = Array.isArray(schema?.required)
+    ? (schema.required as unknown[])
+    : [];
+  for (const name of required) {
+    if (typeof name === "string" && args[name] === undefined) return name;
+  }
+  const properties =
+    schema?.properties && typeof schema.properties === "object"
+      ? (schema.properties as Record<string, unknown>)
+      : {};
+  for (const [name, property] of Object.entries(properties)) {
+    const allowed =
+      property && typeof property === "object"
+        ? (property as { enum?: unknown }).enum
+        : undefined;
+    if (!Array.isArray(allowed) || args[name] === undefined) continue;
+    if (!allowed.includes(args[name])) return name;
+  }
+  return null;
+}
+
 export function createCallPath(
   context: PluginContext,
   servers: Servers,
@@ -418,6 +458,80 @@ export function createCallPath(
         input.args,
         advertised[0]?.inputSchema as Record<string, unknown> | undefined,
       );
+
+      /*
+       * COULD THIS CALL SUCCEED AT ALL? ASKED BEFORE ANYBODY IS.
+       *
+       * Measured on 2026-09-06 against the real stack: `alimtalk_send` — external, so a person
+       * answers for every call — arrived with the wrong blank names. The person approved, the tool
+       * refused `laf:alimtalk_variables_missing`, the model retried, the person approved again,
+       * refused again. Two approvals spent on a send that could never have gone out, because the
+       * first look at the arguments was after the yes.
+       *
+       * So two checks here, ahead of the policy and the question. The generic one reads the
+       * advertised schema and needs no transport; the transport's own reads nothing but the
+       * arguments and touches no vendor (`VendorTransport.validateArgs`). A refusal from either is
+       * final in the same way `not_granted` is — nothing was permitted and nothing attempted — so
+       * it is written the same way, and no question is ever opened for it.
+       */
+      const offSchema = argumentOffSchema(
+        args,
+        advertised[0]?.inputSchema as Record<string, unknown> | undefined,
+      );
+      if (offSchema !== null) {
+        await recordAuditEvent(auditStore, {
+          eventType: "mcp.call_rejected",
+          targetType: "mcp_tool",
+          targetId: input.ref,
+          payload: {
+            actor: input.actorId,
+            bot: input.botId,
+            server: serverId,
+            tool: toolName,
+            effect,
+            refusal: ARGUMENTS_INVALID,
+            // The name of the argument, never its value: the trail says what was wrong with the
+            // call, and a value a model filled in is the same kind of thing typed text is.
+            argument: offSchema,
+          },
+        });
+        throw new PluginRefusedError(
+          ARGUMENTS_INVALID,
+          null,
+          ARGUMENTS_INVALID,
+        );
+      }
+
+      try {
+        await context.transportFor(entry).validateArgs?.(
+          {
+            url: effectiveUrl(row, entry),
+            actorId: input.actorId,
+            botId: input.botId,
+          },
+          toolName,
+          args,
+        );
+      } catch (error) {
+        if (error instanceof PluginRefusedError) {
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            payload: {
+              actor: input.actorId,
+              bot: input.botId,
+              server: serverId,
+              tool: toolName,
+              effect,
+              refusal: error.code ?? error.message,
+            },
+          });
+        }
+        // Unchanged, so the route and the runner map it as they map every other refusal; anything
+        // that is not a refusal is a transport that threw, and hiding that would hide the next one.
+        throw error;
+      }
 
       /**
        * The same policy the computer actions are judged by, asked about a tool call.

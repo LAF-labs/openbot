@@ -66,6 +66,13 @@ const serverId = "google-sheets";
 const guardedTool = "update_sheet_values";
 const plainTool = "read_sheet_values";
 const ref = `${serverId}/${plainTool}`;
+/**
+ * Arguments both tools' schemas accept. These calls used to carry `{}`, which was fine while the
+ * first look at the arguments was the vendor's; since 2026-09-06 the call path refuses a call
+ * missing a `required` property before the credential is even chosen (`laf:tool_arguments_invalid`),
+ * and a refusal there is exactly the exchange this file exists to reach past.
+ */
+const ARGS = { spreadsheetId: "sheet-health", range: "주문", values: [["1"]] };
 /** Every tool that entry offers, so "every advertised tool" is a set rather than the two named. */
 const everyTool = [
   "list_sheet_tabs",
@@ -272,7 +279,7 @@ describe("what one exchange writes down about a connection", () => {
     });
     const before = Date.now();
 
-    await store.callTool({ ref, args: {}, botId: firstBot, actorId: asker });
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
 
     const health = await healthRow(asker);
     expect(health?.lastFailureAt).toBeNull();
@@ -292,7 +299,7 @@ describe("what one exchange writes down about a connection", () => {
       refreshToken: "rt-rotate-2",
     });
 
-    await store.callTool({ ref, args: {}, botId: firstBot, actorId: asker });
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
 
     const [stored] = await database
       .select({ encryptedValue: credentials.encryptedValue })
@@ -314,7 +321,7 @@ describe("what one exchange writes down about a connection", () => {
     };
 
     await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
       .catch(() => undefined);
 
     const health = await healthRow(asker);
@@ -329,7 +336,7 @@ describe("what one exchange writes down about a connection", () => {
     };
 
     await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
       .catch(() => undefined);
 
     expect((await healthRow(asker))?.lastFailureCode).toBe("refresh_failed");
@@ -347,7 +354,7 @@ describe("what one exchange writes down about a connection", () => {
     };
 
     await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
       .catch(() => undefined);
 
     expect((await healthRow(asker))?.lastFailureCode).toBe("vendor_down");
@@ -368,7 +375,7 @@ describe("what one exchange writes down about a connection", () => {
     };
 
     await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
       .catch(() => undefined);
 
     expect(await healthRow(asker)).toEqual(before);
@@ -388,7 +395,7 @@ describe("what one exchange writes down about a connection", () => {
 
     // Nobody's run: refused before the connection is even looked up.
     await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: "" })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: "" })
       .catch(() => undefined);
 
     expect(await healthRow(other)).toEqual(before);
@@ -474,7 +481,7 @@ describe("a connection the last exchange proved dead", () => {
     };
 
     const thrown = await store
-      .callTool({ ref, args: {}, botId: firstBot, actorId: asker })
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
       .catch((error: unknown) => error);
 
     expect(thrown).toBeInstanceOf(PluginRefusedError);
@@ -492,7 +499,7 @@ describe("a connection the last exchange proved dead", () => {
       accessToken: `access(${refreshToken})`,
     });
 
-    await store.callTool({ ref, args: {}, botId: firstBot, actorId: asker });
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
 
     expect(exchanged).toEqual(["rt-transient-1"]);
   });
@@ -506,7 +513,7 @@ describe("a connection the last exchange proved dead", () => {
       accessToken: `access(${refreshToken})`,
     });
 
-    await store.callTool({ ref, args: {}, botId: firstBot, actorId: asker });
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
 
     expect(exchanged).toEqual(["rt-again-2"]);
   });
@@ -533,7 +540,7 @@ describe("a connection the last exchange proved dead", () => {
       .values({ kind: "mcp", ref, agentId: strangersBot })
       .onConflictDoNothing();
     const thrown = await store
-      .callTool({ ref, args: {}, botId: strangersBot, actorId: other })
+      .callTool({ ref, args: ARGS, botId: strangersBot, actorId: other })
       .catch((error: unknown) => error);
     await database
       .delete(pluginGrants)
@@ -581,7 +588,7 @@ describe("a connection somebody just made, on the Bots they own", () => {
     const thrown = await store
       .callTool({
         ref: `${serverId}/${guardedTool}`,
-        args: {},
+        args: ARGS,
         botId: firstBot,
         actorId: asker,
       })

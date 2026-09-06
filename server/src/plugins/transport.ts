@@ -65,6 +65,37 @@ export type VendorTransport = {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<McpCallResult>;
+  /**
+   * Whether this call could succeed at all, asked BEFORE anybody is asked to approve it.
+   *
+   * Throws a `PluginRefusedError` for a call that can never go out — a blank the template needs
+   * and the arguments do not carry, a number that is not a phone number. Resolves for everything
+   * else, including calls that will fail later for reasons only the vendor knows.
+   *
+   * WHY IT IS A SEPARATE FUNCTION AND NOT THE FIRST LINES OF `callTool`. The boundary asks a
+   * person about an `external` tool before the transport is reached, and until 2026-09-06 the
+   * arguments were first looked at after they had said yes. Measured against the real stack:
+   * `alimtalk_send` called with the wrong blank names, approved, refused; the model retried,
+   * the person approved again, refused again — two approvals spent on a send that could never
+   * have gone out. The call path runs this first so that question is never asked.
+   *
+   * MUST HAVE NO SIDE EFFECTS AND TOUCH NO VENDOR. It runs before the audit row, before the
+   * credential is chosen and before consent; a transport that sent anything from here would be
+   * acting on a call nobody has agreed to. The connection carries no token for that reason.
+   *
+   * Optional: MCP has nothing to check without asking the server, and the REST adapters validate
+   * where they build the request. Absent means "nothing this side can know in advance".
+   */
+  validateArgs?(
+    connection: {
+      url: string;
+      token?: string | undefined;
+      actorId?: string;
+      botId?: string;
+    },
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<void>;
 };
 
 /**
