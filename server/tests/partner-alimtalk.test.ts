@@ -18,7 +18,10 @@ import {
 import { createAlimtalkConnect } from "../src/plugins/alimtalk/connect";
 import { solapiAuthorization } from "../src/plugins/alimtalk/solapi";
 import { STANDARD_TEMPLATES } from "../src/plugins/alimtalk/templates";
-import { createAlimtalkTools } from "../src/plugins/alimtalk/tools";
+import {
+  ALIMTALK_TOOLS,
+  createAlimtalkTools,
+} from "../src/plugins/alimtalk/tools";
 import { catalogueEntry } from "../src/plugins/catalogue";
 import { createPartnerConnections } from "../src/plugins/partner-connections";
 import { TEST_POOL } from "./support/database";
@@ -332,6 +335,25 @@ describe("the 솔라피 wire", () => {
 });
 
 describe("what a Bot may send", () => {
+  test("the send tool names every blank of every customer template, so a model need not guess", () => {
+    const send = ALIMTALK_TOOLS.find((tool) => tool.name === "alimtalk_send");
+    const schema = send?.inputSchema as {
+      properties: { variables: { description: string } };
+    };
+    const description = schema.properties.variables.description;
+    // Measured 2026-09-06: without the names the model invented 예약일·예약시간·요청사항 for a
+    // template whose blanks are 상호·고객명·일시·인원, and two approvals were spent on nothing.
+    for (const entry of STANDARD_TEMPLATES) {
+      if (entry.audience !== "customer") continue;
+      expect(description).toContain(entry.code);
+      for (const name of entry.variables) {
+        // Bare, the way a model is asked to key them; `#{}` is the vendor's spelling, not the schema's.
+        expect(description).toContain(name.replace(/^#\{(.*)\}$/, "$1"));
+        expect(description).not.toContain(name);
+      }
+    }
+  });
+
   test("refuses a send while the template is still being inspected", async () => {
     const userId = await createUser();
     const { connect } = connectors();

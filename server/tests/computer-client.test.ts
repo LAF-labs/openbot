@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   ComputerUnavailableError,
   createComputerClient,
+  PAGE_TIMEOUT,
+  PageLoadTimeoutError,
   ElementNotFoundError,
   NavigationRefusedError,
 } from "../src/computer/client";
@@ -205,6 +208,46 @@ describe("acting on an element that is not there", () => {
       // Not several lines of Playwright internals, which are noise to a model and to a person.
       expect(message).not.toContain("Call log");
       expect(message).not.toContain("Timeout");
+    }
+  });
+});
+
+/**
+ * A page that never finishes loading.
+ *
+ * Playwright says "Timeout" here too, and until 2026-09-06 that word alone sent it down the locator
+ * branch above: a Bot whose browser could not reach 기업마당 was told an element had left the page
+ * and to snapshot again — four navigations, two snapshots, six minutes, no sentence to act on.
+ */
+describe("a navigation that never finishes", () => {
+  const gotoTimeout = {
+    error:
+      'goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating to "https://www.bizinfo.go.kr/", waiting until "domcontentloaded"\n',
+  };
+
+  const hanging = () =>
+    clientWith(
+      () =>
+        new Response(JSON.stringify(gotoTimeout), {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+  test("is the page not loading, not an element that left it", async () => {
+    await expect(
+      hanging().navigate("https://www.bizinfo.go.kr/"),
+    ).rejects.toBeInstanceOf(PageLoadTimeoutError);
+  });
+
+  test("is said as the fact code, which has Korean behind it", async () => {
+    try {
+      await hanging().navigate("https://www.bizinfo.go.kr/");
+      throw new Error("should have refused");
+    } catch (error) {
+      expect((error as Error).message).toBe(PAGE_TIMEOUT);
+      expect(toolResultText(PAGE_TIMEOUT)).not.toBe(PAGE_TIMEOUT);
+      expect(toolResultText(PAGE_TIMEOUT)).not.toContain("snapshot");
     }
   });
 });

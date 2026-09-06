@@ -77,6 +77,25 @@ export class ElementNotFoundError extends Error {
   }
 }
 
+/** The fact a navigation that never finished is said with, on every path that reads it. */
+export const PAGE_TIMEOUT = "laf:page_timeout";
+
+/**
+ * The page never finished loading.
+ *
+ * Playwright reports this as a timeout too, so until 2026-09-06 it fell into the locator branch
+ * and a Bot facing a site its browser could not reach was told an ELEMENT had gone and to snapshot
+ * again — measured against 기업마당: four navigations, two snapshots, six minutes, and nothing
+ * anybody could act on. The message is the fact code, so the surface and the runner say it in
+ * Korean and the audit row holds a fact rather than a sentence.
+ */
+export class PageLoadTimeoutError extends Error {
+  constructor() {
+    super(PAGE_TIMEOUT);
+    this.name = "PageLoadTimeoutError";
+  }
+}
+
 export class NavigationRefusedError extends Error {
   constructor(reason: string) {
     super(reason);
@@ -236,6 +255,11 @@ export function createComputerClient(options: ComputerClientOptions) {
          * message is a call log naming the selector, which is how "that button is not there" ended up
          * indistinguishable from "the computer is down".
          */
+        // Asked before the locator branch, which would otherwise take it: `goto` times out with the
+        // same word, and a page that will not load is not an element that left it.
+        if (/goto: Timeout .* exceeded|navigating to "/i.test(detail)) {
+          throw new PageLoadTimeoutError();
+        }
         if (/waiting for locator|Timeout .* exceeded/i.test(detail)) {
           const ref = detail.match(/aria-ref=([A-Za-z0-9_-]+)/)?.[1];
           throw new ElementNotFoundError(

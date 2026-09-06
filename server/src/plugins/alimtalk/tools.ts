@@ -31,6 +31,16 @@ import {
 
 const PROVIDER = "kakao-alimtalk" as const;
 
+/** `laf_reservation: 상호, 고객명, 일시, 인원 · laf_review: …` — one clause per template a Bot may send. */
+const CUSTOMER_BLANKS = STANDARD_TEMPLATES.filter(
+  (entry) => entry.audience === "customer",
+)
+  .map(
+    (entry) =>
+      `${entry.code}: ${entry.variables.map((name) => name.replace(/^#\{(.*)\}$/, "$1")).join(", ")}`,
+  )
+  .join(" · ");
+
 /**
  * The two tools, with their declarations.
  *
@@ -74,8 +84,15 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
         },
         variables: {
           type: "object",
-          description:
-            '서식의 빈칸을 채울 값. 예: {"상호": "미소상회", "고객명": "김민수"}',
+          /*
+           * THE BLANKS, BY NAME, PER TEMPLATE. Measured on 2026-09-06 against the real stack: given
+           * only an example, the model filled 예약일·예약시간·요청사항 into a template whose blanks are
+           * 상호·고객명·일시·인원, was refused, retried with `{}`, and the person had by then approved
+           * the send twice for nothing. The names are the contract, so they ride in the schema —
+           * derived from the templates rather than typed here, so a renamed blank cannot leave a
+           * stale list behind.
+           */
+          description: `서식의 빈칸을 채울 값. 빈칸 이름을 그대로 키로 쓴다 — ${CUSTOMER_BLANKS}. 예: {"상호": "미소상회", "고객명": "김민수"}`,
           additionalProperties: { type: "string" },
         },
       },

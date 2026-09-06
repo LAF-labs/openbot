@@ -11,6 +11,7 @@ import {
   type ComputerClient,
   ComputerUnavailableError,
   ElementNotFoundError,
+  PageLoadTimeoutError,
   NavigationRefusedError,
   StaleSnapshotError,
   WorkspaceRefusedError,
@@ -921,7 +922,7 @@ function describe(error: unknown): string {
  * not running (an operator fixes it), the refs are stale (the model fixes it by snapshotting again),
  * and everything else. Navigation established this; the acting routes follow it.
  */
-function statusFor(error: unknown): 400 | 409 | 500 | 503 {
+function statusFor(error: unknown): 400 | 409 | 500 | 503 | 504 {
   // A caller that named something no filesystem should be asked about. The request is wrong, so it
   // is a 400 — never a 500, which would send an operator looking at a container that is behaving.
   if (error instanceof BotIdRefusedError) return 400;
@@ -930,6 +931,9 @@ function statusFor(error: unknown): 400 | 409 | 500 | 503 {
   // another snapshot. Not 503, which says the computer is unavailable and sends an operator hunting a
   // container that is running perfectly.
   if (error instanceof ElementNotFoundError) return 409;
+  // The page did not load in time. Not 409 — a fresh snapshot would not help — and not 503, which
+  // sends an operator after a container that is running: the site, not the computer, is the problem.
+  if (error instanceof PageLoadTimeoutError) return 504;
   // A person holding the wheel, or a person driving before taking it. Nothing is broken; the caller
   // has to wait or take control first, and 409 is how both of those are already reported.
   if (

@@ -504,9 +504,18 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       rule: error.rule,
     };
   }
+  /*
+   * The same rule as the surface's `computer-tools.tsx`: a message that IS a fact code is said in
+   * Korean, anything else is passed through where a person can see it and object. Without this the
+   * navigation-timeout fact reached a routine's model as `laf:page_timeout`, a symbol it has never
+   * seen, while the chat path read a sentence.
+   */
+  const said = error instanceof Error ? error.message : "";
+  const code = said.startsWith("laf:") ? said : undefined;
   return {
     ok: false,
-    reason: error instanceof Error ? error.message : "That did not work.",
+    ...(code ? { code } : {}),
+    reason: code ? toolResultText(code) : said || "That did not work.",
   };
 }
 

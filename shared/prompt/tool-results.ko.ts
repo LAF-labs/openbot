@@ -53,6 +53,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:secret_request_lost":
     "네가 부탁한 비밀값 입력이 컴퓨터가 다시 시작되면서 사라졌다. 아무도 입력하지 않았다. 아직 필요하면 computer_snapshot을 새로 찍고 computer_request_secret으로 다시 부탁해라.",
 
+  // 실측(2026-09-06): 봇 브라우저에서 열리지 않는 사이트를 "요소가 사라졌다"로 듣고 여섯 번 다시 열었다.
+  "laf:page_timeout":
+    "그 주소의 페이지가 30초 안에 열리지 않았다. 봇의 브라우저에서 그 사이트가 느리거나 막혀 있는 것이지 화면이 바뀐 것이 아니다. 같은 주소를 거듭 다시 열지 말고, 열리지 않았다고 사람에게 말해라.",
+
   "laf:tab_missing":
     "그 번호의 탭이 없다. computer_snapshot을 다시 찍고 tabs 목록의 index를 다시 봐라.",
 
@@ -332,8 +336,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:alimtalk_no_recipient": "받는 사람의 휴대폰 번호를 to에 적어야 한다.",
   "laf:alimtalk_recipient_invalid":
     "받는 번호가 휴대폰 번호 형식이 아니다. 사람에게 번호를 다시 확인해 달라고 말해라 — 네가 지어내지 마라.",
+  // 실측(2026-09-06): 빈칸 이름을 모르는 모델이 예약일·예약시간을 지어 넣고, 거절되자 {}로 다시 보냈다.
+  // 이름을 어디서 보는지가 문장에 있어야 두 번째 시도가 첫 번째와 달라진다.
   "laf:alimtalk_variables_missing":
-    "그 템플릿이 요구하는 값이 빠졌다. 무엇이 필요한지 사람에게 묻고, 빈 값이나 지어낸 값으로 채우지 마라.",
+    "그 템플릿의 빈칸 중 채우지 않은 것이 있다. 빈칸 이름은 alimtalk_send의 variables 설명과 alimtalk_templates에 있으니 그 이름을 그대로 키로 써라. 모르는 값은 사람에게 묻고, 빈 값이나 지어낸 값으로 채우지 마라.",
   "laf:alimtalk_send_failed":
     "알림톡을 보내지 못했다. 같은 것을 계속 다시 보내지 말고, 보내지 못했다고 말해라.",
   "laf:alimtalk_vendor_failed":
