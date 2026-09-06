@@ -36,13 +36,22 @@
 | `approval.expired` | 10분 동안 아무도 답하지 않았을 때 | 레지스트리의 만료 청소(`computer/approvals.ts` `onExpire`) |
 | `run.needs_you` | 봇이 도움이나 비밀값을 부탁할 때 | 감사 행 `computer.help_requested`·`computer.secret_requested`를 듣는 데코레이터(`notifications/from-audit.ts`) |
 | `run.finished` | 루틴이나 룸 턴이 **아무도 접속해 있지 않은 사이에** 끝났을 때 | 룸·루틴의 전달 알림(`notifications/in-app.ts` `createFinishedNotice`) |
-| `run.failed` | 런이 답 없이 끝났을 때 | **아직 생산자 없음** — 아래 §7 |
+| `run.failed` | 루틴 런이 `RUN_ERROR`·시간 초과로 끝났을 때, 그리고 서버가 도중에 다시 시작되어 런이 `unknown`으로 정산됐을 때 | 감사 행 `routine.ran`(`ok: false`)을 듣는 같은 데코레이터(`notifications/from-audit.ts`); 부팅 정산은 `runner/laf-runner.ts`의 `reportInterruptedRuns` |
 
 들어가지 않는 것: 봇이 일하는 동안 하는 모든 것. 현장 규칙 그대로다 — **막혀 있으면
 알린다, 끝났으면 부탁받았을 때만 알린다, 나머지는 비켜 있는다.**
 
 `approval.expired`는 일부러 **울리지 않는다.** 이미 지난 질문은 사람이 답할 수 없고,
 답할 수 없는 것으로 사람을 방해하는 것은 소음이다. 행은 남고 목록에는 보인다.
+
+`run.failed`는 **소켓과 웹훅으로만** 나간다. 알림톡 서식이 없고(`alimtalk.ts`의
+`TEMPLATE_FOR`), 사람이 손쓸 수 없는 일로 전화기를 울리는 것은 채널이 음소거되는
+길이다. 행은 `subject` 대신 `run: { origin, label, code }`를 싣는다 — 어떤 런이었나
+(`routine`·`chat`…), 루틴이면 그 이름, 그리고 대화방의 빨간 줄이 쓰는 것과 같은
+사실 코드(`laf:turn_timed_out`, `laf:turn_interrupted`…). 같은 런은 대화방에도
+남는다: 루틴 이름만 적힌 메시지 한 줄 아래에 `GET /api/channels/:id/failures`가
+그리는 빨간 줄, 그리고 안 읽음 점(`docs/laf/routines.md` "When it does not
+finish").
 
 ---
 
@@ -166,9 +175,10 @@ GET /api/admin/metrics/approvals?days=30   (관리자)
   `LAF_ALIMTALK_TEMPLATE_CODE`는 이제 사람의 행에 있고, `LAF_ALIMTALK_TO`는 특히
   사라져야 했다 — 받는 사람이 배포 설정이면 그건 아무도 증명하지 않은 번호다.
 - **웹 푸시·모바일.** 범위에서 제외(§0 결정 메모). 전용 앱을 나중에 따로 만든다.
-- **`run.failed`.** kind는 있고 넣는 자리가 아직 없다. 런 실패를 아는 자리는
-  루틴·룸 모듈 안이고 이번 작업의 범위 밖이었다. 목록에 남긴 이유는 표에 있는 다섯
-  중 넷이 실제로 쓰이고 하나가 비었다는 것을, 나중에 찾는 것보다 지금 적어 두는 쪽이
-  낫기 때문이다.
+- **`run.failed` — 이제 생산자가 있다 (2026-09-06).** 루틴 런이 답 없이 끝나면
+  `routine.ran` 감사 행이 `ok: false`와 함께 누구에게 알릴지(`actor`), 실패의 사실
+  코드(`failure`), 표시된 대화방(`channelId`)을 싣고, 아웃박스 감시가 그것을 행으로
+  만든다. 서버가 도중에 다시 시작된 런은 부팅이 `unknown`으로 정산하면서 같은 행을
+  `laf:turn_interrupted`로 쓴다. 룸 턴의 실패는 여전히 룸 소켓의 프레임이 맡는다.
 - **관리 화면의 네 숫자.** API와 이 문서까지가 이번 범위다. 감사 화면은 동시에 다른
   작업이 만지고 있어 건드리지 않았다.

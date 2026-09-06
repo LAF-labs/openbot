@@ -48,6 +48,8 @@ export type NotificationFrame = {
   approvalId?: string;
   channelId?: string;
   subject?: Record<string, unknown>;
+  /** For `run.failed`: what the run was and how it ended. See `RunFailureFacts` in outbox.ts. */
+  run?: Record<string, unknown>;
   at: string;
 };
 
@@ -63,6 +65,9 @@ export function notificationFrame(
     ...(record.channelId ? { channelId: record.channelId } : {}),
     ...(record.subject
       ? { subject: record.subject as unknown as Record<string, unknown> }
+      : {}),
+    ...(record.run
+      ? { run: record.run as unknown as Record<string, unknown> }
       : {}),
     at: record.createdAt,
   };

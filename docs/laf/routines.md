@@ -40,6 +40,43 @@ it.
 The answer lands in the Bot's own conversation as one message headed by the
 routine's name, and marks the room unread.
 
+## When it does not finish
+
+A run that ends in `RUN_ERROR`, hits its ten-minute deadline, or is found still
+open when the server comes back up is reported in three places, none of which
+is the Routines page:
+
+- **The conversation.** The failure path leaves one message headed by the
+  routine's name and nothing else, carrying the failed run's id
+  (`routines/deliver.ts`, `createRoutineFailureDelivery`). The transcript draws
+  the red line under it from `GET /api/channels/:id/failures` — the same reader
+  a failed chat turn uses, joining the ledger row to the message by `run_id` —
+  and the room goes unread. The sentence is the surface's; the server wrote a
+  name and a fact code. A routine's ledger row now carries the conversation's
+  `thread_id` for exactly this join.
+- **The outbox.** The `routine.ran` audit row says `ok: false`, who to tell
+  (`actor`), the failure as a code (`failure`, one of the transcript's
+  `laf:turn_*` codes) and the conversation it was marked in (`channelId`); the
+  outbox watch on the trail (`notifications/from-audit.ts`) turns that into a
+  `run.failed` row carrying `run: { origin, label, code }`. It goes out through
+  the socket and the webhook. Never AlimTalk: there is no template for it, and
+  a phone buzzing about something nobody can act on is how a channel gets
+  muted.
+- **The trail.** The same `routine.ran` row, as always.
+
+A run the server restarted under is the same failure with a different code.
+Boot reconciles every `running` row to `unknown` (`runner/laf-runner.ts`),
+then `reportInterruptedRuns` marks each routine's conversation and writes a
+`run.failed` row for each run that had a Bot and a person, with
+`laf:turn_interrupted` — a code that claims nothing about why, because nothing
+is known. A chat turn cut the same way gets the same line under the person's
+own message. An approval card that was open when the server restarted is gone
+with the registry it lived in (`deployment-model.md`): the card disappears, the
+run it belonged to is reported as above, and the Bot asks again the next time
+it reaches the same boundary. That is the allowed behaviour, not a bug to
+paper over with a persisted question nobody could bind to a run that no longer
+exists.
+
 One unattended run per Bot at a time, through a lane shared with every other
 server-side path (`runner/bot-lane.ts`). An account has one virtual computer
 and its Bots share it, so a routine firing at seven and a room turn asking the
@@ -60,20 +97,43 @@ in a conditional UPDATE. The claim precedes the run — a crash mid-run costs on
 execution rather than repeating one, and a tick that overlaps the previous one
 on the single server process cannot fire the same routine twice.
 
-A window more than an hour late is **skipped**, not fired
-(`MISSED_WINDOW_MS`). A VM that was off overnight would otherwise deliver
-yesterday's seven o'clock briefing at nine, and an hourly monitor that missed six
-windows would deliver six of them at once. The claim is what makes the skip safe
-to record: exactly one pass takes the row, so exactly one `routine.skipped` row
-is written — with how many minutes late it was — and the clock is already on the
-next window either way.
+### Catching up
+
+A window that has passed is either **caught up** — run once, now — or
+**skipped**, and the line between them is a **grace of half the period,
+clamped to 2 minutes–2 hours** (`catchUpGraceMs`; the shape Hermes' scheduler
+uses). Within the grace the routine runs once; however many windows fell inside
+the gap, the claim has already moved the clock from the moment of the tick, so
+the misses are collapsed and never queued. Past the grace the window is let go
+and the clock is on the next one.
+
+| schedule | period | grace |
+|---|---|---|
+| every 5 min | 5 min | 2.5 min |
+| every 30 min | 30 min | 15 min |
+| every 60 min | 1 h | 30 min |
+| every 5 h | 5 h | 2 h (clamped) |
+| daily, any weekdays | 1 day | 2 h (clamped) |
+
+So a VM that was off overnight does not deliver yesterday's seven o'clock
+briefing at nine, and a five-minute monitor that was down for a quarter of an
+hour does not deliver three verdicts — or one stale one — when it comes back;
+it simply runs at its next slot. A briefing that was six minutes late because
+the server restarted at 07:29 still arrives.
+
+Both outcomes leave a row, and the claim is what makes either safe to write —
+exactly one pass takes the routine: `routine.caught_up` when the run was later
+than one tick can explain, `routine.skipped_missed` when it was let go. Each
+carries `lateByMinutes`, `graceMinutes` and the window that was `missed`; the
+skip also carries the `next` one.
 
 ## Records
 
 Each routine keeps its last twenty runs (`laf_routine_runs`), which is what an
 operator actually reads. The history of record is `audit_events`: every firing
-writes a `routine.ran` row whichever way it went, and a window that was let go
-writes `routine.skipped`.
+writes a `routine.ran` row whichever way it went (with `failure` and
+`channelId` when it went badly), a late window that ran writes
+`routine.caught_up`, and one that was let go writes `routine.skipped_missed`.
 
 ## Ownership
 

@@ -27,9 +27,11 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import type { TurnFailureCode } from "../channels/turn-failures";
 import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
 import { lafNotifications } from "../db/schema";
+import type { RunOrigin } from "../runner/run-ledger";
 
 /**
  * The list of things worth interrupting somebody about.
@@ -62,6 +64,28 @@ export function isNotificationKind(value: unknown): value is NotificationKind {
   return NOTIFICATION_KINDS.includes(value as NotificationKind);
 }
 
+/**
+ * What a `run.failed` row is about, in facts.
+ *
+ * The same rule as `subject`: the words belong to the surface. `label` is the routine's name — a
+ * thing the person wrote, not a sentence — and `code` is one of the transcript's own failure codes
+ * (`channels/turn-failures.ts`), so the notification and the red line under the message are two
+ * readings of one fact rather than two opinions. `origin` says what kind of run it was, which is
+ * what a webhook receiver needs to tell "the 07:30 briefing failed" from "a chat turn died".
+ *
+ * STORED IN THE SAME COLUMN AS `subject`, under `kind: "run"`. A `run.failed` row has no action to
+ * describe and an approval row has no run to name, so the column holds whichever the row is about;
+ * `factsOf` tells them apart by that discriminator, and a reader of the other field sees nothing.
+ * `AskSubject` itself is not widened to carry this, because a run is not an action and the AlimTalk
+ * door reads that type to say what is waiting — a run that failed is never waiting.
+ */
+export type RunFailureFacts = {
+  origin: RunOrigin;
+  /** What the run was doing, in words a person wrote: a routine's name. */
+  label?: string;
+  code: TurnFailureCode;
+};
+
 /** A row of the outbox, as everything that reads one sees it. */
 export type NotificationRecord = {
   id: string;
@@ -73,6 +97,8 @@ export type NotificationRecord = {
   channelId?: string;
   /** What the action was, in facts. The words belong to whichever surface says them. */
   subject?: AskSubject;
+  /** What the run was and how it ended, for a `run.failed` row. See {@link RunFailureFacts}. */
+  run?: RunFailureFacts;
   createdAt: string;
   deliveredVia: string[];
   deliveredAt?: string;
@@ -100,6 +126,7 @@ export type EnqueueInput = {
   approvalId?: string;
   channelId?: string;
   subject?: AskSubject;
+  run?: RunFailureFacts;
 };
 
 export type NotificationOutbox = {
@@ -158,7 +185,7 @@ export function createNotificationOutbox(input: {
       userId: row.userId,
       ...(row.approvalId ? { approvalId: row.approvalId } : {}),
       ...(row.channelId ? { channelId: row.channelId } : {}),
-      ...(row.subject ? { subject: row.subject as AskSubject } : {}),
+      ...factsOf(row.subject),
       createdAt: row.createdAt.toISOString(),
       deliveredVia: row.deliveredVia ?? [],
       ...(row.deliveredAt
@@ -237,7 +264,9 @@ export function createNotificationOutbox(input: {
               : {}),
             ...(enqueueInput.subject
               ? { subject: enqueueInput.subject as Record<string, unknown> }
-              : {}),
+              : enqueueInput.run
+                ? { subject: { kind: "run", ...enqueueInput.run } }
+                : {}),
             createdAt: now(),
           })
           .returning();
@@ -331,6 +360,15 @@ export async function purgeNotificationsBefore(
     .where(sql`${lafNotifications.createdAt} < ${cutoff}`)
     .returning({ id: lafNotifications.id });
   return removed.length;
+}
+
+/** The `subject` column, read back as whichever of the two facts it holds. See `RunFailureFacts`. */
+function factsOf(stored: unknown): Pick<NotificationRecord, "subject" | "run"> {
+  if (!stored || typeof stored !== "object") return {};
+  const held = stored as Record<string, unknown>;
+  if (held.kind !== "run") return { subject: stored as AskSubject };
+  const { kind: _kind, ...facts } = held;
+  return { run: facts as RunFailureFacts };
 }
 
 function message(error: unknown): string {

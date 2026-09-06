@@ -40,6 +40,14 @@ export const TURN_FAILURE_CODES = {
   /** The Bot's stream went quiet and `stall-guard.ts` ended the turn for it. */
   stalled: "laf:turn_stalled",
   timedOut: "laf:turn_timed_out",
+  /**
+   * The process running it died — a restart, a crash — and boot found the run still open.
+   *
+   * Nothing is known about how it would have ended, and the code says exactly that much: not that
+   * the model failed, not that anything refused, only that this run has no ending. It is what
+   * `LafPostgresRunner.create` writes as `unknown` in the ledger, said in the transcript's terms.
+   */
+  interrupted: "laf:turn_interrupted",
   unknown: "laf:turn_failed",
   unreachable: "laf:turn_unreachable",
 } as const;
@@ -92,7 +100,20 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   if (said.includes("429") || said.includes("rate limit")) {
     return TURN_FAILURE_CODES.rateLimited;
   }
-  if (said.includes("timed out") || said.includes("timeout")) {
+  /*
+   * "The run did not finish in time." is the routine deadline's own sentence
+   * (`RunDeadline` in runner/unattended.ts) and "did not answer in time" the coworker call's
+   * (`runAgentOnce`, the path a routine takes when it has no tools) — matched by name for the same
+   * reason the stall guard's is: it is this deployment's prose, and a ten-minute routine that ran
+   * out of time was reading as "no answer came back", which sends a person looking for a fault
+   * that is not there.
+   */
+  if (
+    said.includes("timed out") ||
+    said.includes("timeout") ||
+    said.includes("did not finish in time") ||
+    said.includes("did not answer in time")
+  ) {
     return TURN_FAILURE_CODES.timedOut;
   }
   /*
@@ -128,20 +149,28 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
 /**
  * The failed turns in one thread, newest last, capped.
  *
- * `status = 'error'` only. `stopped` is a person pressing Stop, which is not a failure and must
- * never be drawn as one — telling somebody their Bot broke when they were the one who stopped it is
- * worse than saying nothing. `unknown` is boot's verdict on a run whose process died; it is left
- * out for the same reason, since a run reconciled at boot has no reason to report.
+ * `error` and `unknown`. `stopped` is a person pressing Stop, which is not a failure and must never
+ * be drawn as one — telling somebody their Bot broke when they were the one who stopped it is worse
+ * than saying nothing.
+ *
+ * `unknown` USED TO BE LEFT OUT, on the argument that a run reconciled at boot has no reason to
+ * report. It has one: the person asked, the server restarted, and after the reload their question
+ * sat alone as if nothing had happened — which is the shape of lie this fork's restart work exists
+ * to remove (launch plan 3-B). A run with no ending is reported as interrupted, not as an error,
+ * because the two want different things: one wants a look at the model, the other wants asking
+ * again.
  *
  * The message a failure is keyed to is the LAST message of that run, which for a chat turn that
  * died before the Bot said anything is the person's own question. That is exactly the row the
- * surface needs to draw under.
+ * surface needs to draw under. A routine's failure is keyed the same way, to the one message its
+ * failure path leaves in the Bot's conversation — see `routines/deliver.ts`.
  */
 export function createTurnFailureReader(database: Database) {
   return async (threadId: string, limit = 50): Promise<TurnFailure[]> => {
     const failed = await database
       .select({
         runId: lafThreadRuns.runId,
+        status: lafThreadRuns.status,
         error: lafThreadRuns.error,
         finishedAt: lafThreadRuns.finishedAt,
       })
@@ -149,7 +178,7 @@ export function createTurnFailureReader(database: Database) {
       .where(
         and(
           eq(lafThreadRuns.threadId, threadId),
-          eq(lafThreadRuns.status, "error"),
+          inArray(lafThreadRuns.status, ["error", "unknown"]),
         ),
       )
       .orderBy(desc(lafThreadRuns.finishedAt))
@@ -190,7 +219,10 @@ export function createTurnFailureReader(database: Database) {
       if (!messageId) continue;
       failures.push({
         at: (run.finishedAt ?? new Date()).toISOString(),
-        code: classifyTurnFailure(run.error),
+        code:
+          run.status === "unknown"
+            ? TURN_FAILURE_CODES.interrupted
+            : classifyTurnFailure(run.error),
         messageId,
       });
     }

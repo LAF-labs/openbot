@@ -159,6 +159,8 @@ export function createWebhookAdapter(webhookUrl: string): NotificationAdapter {
         ...(record.approvalId ? { approvalId: record.approvalId } : {}),
         ...(record.channelId ? { channelId: record.channelId } : {}),
         ...(record.subject ? { subject: record.subject } : {}),
+        // A `run.failed` row's facts: which routine, and the same code the transcript line uses.
+        ...(record.run ? { run: record.run } : {}),
         notificationId: record.id,
       }),
   };

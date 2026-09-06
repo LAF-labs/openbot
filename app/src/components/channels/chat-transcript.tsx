@@ -963,7 +963,16 @@ export function ChatTranscript({
                       <TurnFailed
                         code={failures[item.id]}
                         onRetry={
-                          onRetry && item.kind === "text"
+                          /*
+                           * Only under the person's own words. A routine that did not finish
+                           * leaves the Bot's heading with the failure under it (routines/deliver.ts
+                           * on the server), and "try again" there would send that heading back
+                           * as if the person had typed it. The routine runs again at its next
+                           * slot; nothing here can hurry it.
+                           */
+                          onRetry &&
+                          item.kind === "text" &&
+                          item.role === "user"
                             ? () => onRetry(item.text)
                             : undefined
                         }

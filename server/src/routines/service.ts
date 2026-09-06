@@ -16,9 +16,12 @@ import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
+import { soloChannelFor } from "../channels/solo-channel";
+import { classifyTurnFailure } from "../channels/turn-failures";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { agentProfiles, lafRoutineRuns, lafRoutines } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import type { BotLane } from "../runner/bot-lane";
 import type { RunLedger } from "../runner/run-ledger";
 import {
@@ -27,7 +30,11 @@ import {
   type UnattendedRunResult,
   type UnattendedToolkit,
 } from "../runner/unattended";
-import { type DeliverRoutineAnswer, isSilentAnswer } from "./deliver";
+import {
+  type DeliverRoutineAnswer,
+  type DeliverRoutineFailure,
+  isSilentAnswer,
+} from "./deliver";
 import {
   dayAfter,
   instantOf,
@@ -54,7 +61,7 @@ import {
 export const MAX_ROUTINES = 20;
 
 /**
- * How late a routine may be and still run.
+ * How late a routine may be and still run: the catch-up grace.
  *
  * `nextRunAt` in the past fires at the first tick, however long ago it passed. That is right for a
  * server that was down for four minutes and wrong for one that was down overnight: the 07:30
@@ -62,11 +69,45 @@ export const MAX_ROUTINES = 20;
  * morning that is over, and an hourly monitor that missed six windows should not deliver six
  * verdicts at once when the machine comes back.
  *
- * An hour, because that is roughly the span in which "it is late" is still the same piece of work.
- * Past it the window is skipped, recorded as `routine.skipped` with how late it was, and the clock
- * moves to the next one — skipped, never queued.
+ * IT WAS ONE HOUR FOR EVERY ROUTINE, and one hour is the wrong span for most of them. For a
+ * five-minute monitor an hour late is twelve windows gone, and running it "late" is running it on
+ * time for the thirteenth; for a daily briefing an hour is fine and two would be too. Hermes'
+ * scheduler gets this right by making the grace a fraction of the period: half of it, clamped so
+ * a fast interval still gets a couple of minutes of slack and a weekly routine does not get three
+ * and a half days. Within the grace the routine runs ONCE, now — the misses in between are
+ * collapsed, never queued, because the claim already moves the clock from the moment of the tick.
+ * Past it the window is let go and the clock moves to the next one.
+ *
+ * Both outcomes leave a row: `routine.caught_up` when the run was later than a tick can explain
+ * (the server was down, or the previous pass held the ticker), `routine.skipped_missed` when it
+ * was let go — each carrying how late the window was and what the grace was, so "the VM was off
+ * for nine hours" is readable from the trail.
  */
-export const MISSED_WINDOW_MS = 60 * 60_000;
+export const CATCH_UP_GRACE_MIN_MS = 2 * 60_000;
+export const CATCH_UP_GRACE_MAX_MS = 2 * 60 * 60_000;
+
+/**
+ * How late a window may be before its run is recorded as a catch-up rather than as on time.
+ *
+ * One tick. The ticker fires every minute (`start(60_000)` in index.ts), so a window is normally
+ * found up to a minute after it passed — that is the schedule working, not the schedule being
+ * late, and writing a `routine.caught_up` row for it would put one on every run.
+ */
+export const CAUGHT_UP_AFTER_MS = 60_000;
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/** The grace for a schedule, in milliseconds. Pure, so the table can be pinned without a clock. */
+export function catchUpGraceMs(schedule: RoutineSchedule): number {
+  // A daily routine's period is a day whichever weekdays it keeps: a Monday-only routine that is
+  // three days late is not "within half its period", it is a Thursday.
+  const periodMs =
+    schedule.kind === "interval" ? schedule.minutes * 60_000 : DAY_MS;
+  return Math.min(
+    CATCH_UP_GRACE_MAX_MS,
+    Math.max(CATCH_UP_GRACE_MIN_MS, periodMs / 2),
+  );
+}
 
 /** Five minutes. Anything faster is polling, and polling is the watch service's job. */
 export const MIN_INTERVAL_MINUTES = 5;
@@ -332,6 +373,12 @@ export type RoutineServiceOptions = {
    */
   deliver?: DeliverRoutineAnswer;
   /**
+   * Where a run that did not finish is marked, so the person finds out where they would have read
+   * the answer. Optional and caught, like `deliver`: the failure is already recorded, and a mark
+   * that could not be written must not hide the record of it.
+   */
+  deliverFailure?: DeliverRoutineFailure;
+  /**
    * The Bot's tools, assembled per run — the same gateway and grants the browser goes through.
    *
    * Absent, a routine runs as it always did: toolless, able to think and not to look. Present, it
@@ -473,10 +520,24 @@ export function createRoutineService(options: RoutineServiceOptions) {
      * record. While a routine ran there was nothing anywhere saying so, which is why the roster
      * could not show scheduled work in progress. This row exists from here to the `finally`.
      */
+    /*
+     * The conversation the run belongs to, looked up before the ledger row is opened.
+     *
+     * A routine used to open its row with no thread — "nobody typed it". But its answer goes into
+     * the Bot's own conversation with its author, and so does the mark a failure leaves; the
+     * transcript's failure line (`channels/turn-failures.ts`) joins the ledger to the thread by
+     * this column, so a row without it is a failure the conversation can never show. Read once
+     * here rather than again in the failure path, and resolved to null rather than thrown: a Bot
+     * with no conversation yet is a routine that runs as it always did.
+     */
+    const conversation = author
+      ? await soloChannelFor(database, author, row.agentId).catch(() => null)
+      : null;
     const ledgerRunId = await options.ledger
       ?.begin({
         agentId: row.agentId,
         userId: row.createdById,
+        threadId: conversation?.threadId ?? null,
         origin: "routine",
         label: row.name,
       })
@@ -584,7 +645,35 @@ export function createRoutineService(options: RoutineServiceOptions) {
           at: now(),
         });
       } catch (error) {
-        console.error("[routines] delivering the answer failed:", error);
+        console.error(
+          "[routines] delivering the answer failed:",
+          describeFailure(error),
+        );
+      }
+    }
+
+    /*
+     * A run that did not finish is marked where its answer would have gone, keyed to the ledger
+     * run so the transcript can say what kind of failure it was — the same line a failed chat turn
+     * gets, drawn from the same reader. Only with a ledger run to key it to: a heading with no line
+     * under it would read as a routine that spoke and said nothing, which is a different fact.
+     */
+    let failedIn: { channelId: string } | null = null;
+    if (!ok && author && ledgerRunId) {
+      try {
+        failedIn =
+          (await options.deliverFailure?.({
+            agentId: row.agentId,
+            userId: author,
+            routineName: row.name,
+            runId: ledgerRunId,
+            at: now(),
+          })) ?? null;
+      } catch (error) {
+        console.error(
+          "[routines] marking the failure failed:",
+          describeFailure(error),
+        );
       }
     }
 
@@ -630,8 +719,23 @@ export function createRoutineService(options: RoutineServiceOptions) {
           agentId: row.agentId,
           name: row.name,
           ok,
+          /*
+           * Who the run was made as, in the payload rather than the actor column — the column is
+           * for a person who did something, and nobody did this; the local fixture in particular
+           * must never become the actor of a row (auth/dev-actor.ts). It is what the outbox watch
+           * reads to know who to tell (notifications/from-audit.ts).
+           */
+          ...(author ? { actor: author } : {}),
+          ...(ledgerRunId ? { runId: ledgerRunId } : {}),
           // Only when true: a row that ran and reported reads exactly as it always did.
           ...(silent ? { silent: true } : {}),
+          /*
+           * The failure as a fact code, never the sentence that threw — the same table the
+           * transcript reads, so the notification and the red line agree — and the conversation
+           * it was marked in, so the notification can point there.
+           */
+          ...(ok ? {} : { failure: classifyTurnFailure(failure) }),
+          ...(failedIn ? { channelId: failedIn.channelId } : {}),
         },
       });
     } catch {
@@ -679,7 +783,8 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
     let ran = 0;
     for (const row of due) {
-      const next = nextRunAt(scheduleOf(row), at);
+      const schedule = scheduleOf(row);
+      const next = nextRunAt(schedule, at);
       const [claimed] = await database
         .update(lafRoutines)
         .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
@@ -699,29 +804,45 @@ export function createRoutineService(options: RoutineServiceOptions) {
        * How late this window is, measured against the moment it was supposed to fire — `row`, not
        * `claimed`, because the claim above has already moved the clock to the next one.
        *
-       * The claim is what makes the skip safe to record: exactly one pass takes the row, so exactly
-       * one `routine.skipped` is written, and the routine leaves this loop armed for the next window
-       * either way. `lastRunAt` moves too, which is the truthful reading — the scheduler did look at
-       * this routine, and the tick's own debounce should treat it as attended to.
+       * The claim is what makes either row safe to write: exactly one pass takes the routine, so
+       * exactly one `routine.skipped_missed` or `routine.caught_up` is written, and the routine
+       * leaves this loop armed for the next window either way. `lastRunAt` moves too, which is the
+       * truthful reading — the scheduler did look at this routine, and the tick's own debounce
+       * should treat it as attended to. See `catchUpGraceMs` for the policy.
        */
       const lateBy = at.getTime() - row.nextRunAt.getTime();
-      if (lateBy > MISSED_WINDOW_MS) {
+      const graceMs = catchUpGraceMs(schedule);
+      const lateness = {
+        agentId: row.agentId,
+        name: row.name,
+        lateByMinutes: Math.round(lateBy / 60_000),
+        graceMinutes: Math.round(graceMs / 60_000),
+        missed: row.nextRunAt.toISOString(),
+      };
+      if (lateBy > graceMs) {
         try {
           await options.auditStore?.insert({
-            eventType: "routine.skipped",
+            eventType: "routine.skipped_missed",
             targetType: "routine",
             targetId: row.id,
-            payload: {
-              agentId: row.agentId,
-              name: row.name,
-              lateByMinutes: Math.round(lateBy / 60_000),
-              missed: row.nextRunAt.toISOString(),
-            },
+            payload: { ...lateness, next: next.toISOString() },
           });
         } catch {
           // Losing the audit row must not turn a skip into a run.
         }
         continue;
+      }
+      if (lateBy > CAUGHT_UP_AFTER_MS) {
+        try {
+          await options.auditStore?.insert({
+            eventType: "routine.caught_up",
+            targetType: "routine",
+            targetId: row.id,
+            payload: lateness,
+          });
+        } catch {
+          // Losing the audit row must not turn a catch-up into a skip.
+        }
       }
 
       await execute(claimed);

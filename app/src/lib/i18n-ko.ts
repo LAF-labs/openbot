@@ -2021,4 +2021,12 @@ export const ko: Record<string, string> = {
     "다른 봇 대신 답하는 봇은 또 다른 봇에게 물을 수 없습니다.",
   "That needed your say-so, and a Bot answering for another cannot ask you. Ask the Bot directly.":
     "그 일은 허락이 필요한데, 다른 봇 대신 답하는 봇은 물어볼 수 없습니다. 그 봇에게 직접 시켜 주세요.",
+
+  /*
+   * 재시작이 거짓말하지 않는다. 서버가 도중에 다시 시작된 런은 대화방에 이 한 줄로 남고(루틴이면
+   * 루틴 이름 아래), 감사 표에는 놓친 시각을 유예 안에서 뒤늦게 실행한 행이 따로 적힌다.
+   */
+  "It could not finish: the server restarted partway through.":
+    "끝내지 못했습니다. 도중에 서버가 다시 시작됐습니다.",
+  "A routine ran late, within its grace": "루틴이 늦었지만 유예 안에 실행됨",
 };

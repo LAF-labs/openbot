@@ -88,11 +88,12 @@ import { createApprovalWaiter } from "./rooms/wait-for-approval";
 import {
   appendToSoloConversation,
   createRoutineDelivery,
+  createRoutineFailureDelivery,
 } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
-import { LafPostgresRunner } from "./runner/laf-runner";
+import { LafPostgresRunner, reportInterruptedRuns } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
 import { createUnattendedTools } from "./runner/unattended";
@@ -821,6 +822,15 @@ const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
     resultSpill,
   );
 
+/**
+ * Where a routine that did not finish is marked: the Bot's conversation, with the roster row moved
+ * on every open tab. Not the answer's announce — that one also raises `run.finished` for anybody
+ * not connected, and a failure has its own row (`run.failed`, from the audit trail below).
+ */
+const markRoutineFailure = createRoutineFailureDelivery(database, (event) =>
+  channelEvents.deliver(event),
+);
+
 // Instructions on a clock, running through the same server-side path a coworker answer does.
 const routineService = createRoutineService({
   database,
@@ -832,7 +842,9 @@ const routineService = createRoutineService({
       botTimeZone(),
       resultSpill,
     ),
-  auditStore: bootAuditStore,
+  // The trail with the outbox listening: a `routine.ran` row that says `ok: false` becomes a
+  // `run.failed` notification, the same way the computer's help and secret rows become one.
+  auditStore: withOutboxWatch(bootAuditStore, notificationOutbox),
   ledger: runLedger,
   lane: botLane,
   // And the answer lands in the Bot's own conversation, where a person already reads — plus a
@@ -841,11 +853,26 @@ const routineService = createRoutineService({
     channelEvents.deliver(event);
     noticeFinished(event);
   }),
+  deliverFailure: markRoutineFailure,
   // The Bot's tools, on the server, through the same gateway and grants the browser uses.
   tools: createUnattendedTools({
     ...(computerGateway ? { gateway: computerGateway } : {}),
     pluginStore,
   }),
+});
+
+/*
+ * The runs the last process died on, told to the people they belonged to.
+ *
+ * Here rather than inside the runner's boot, because the outbox and the failure mark are built
+ * after the runner is. Not awaited: a webhook door has a ten-second bound per row, and boot must
+ * not wait on somebody else's server to start answering requests.
+ */
+void reportInterruptedRuns({
+  database,
+  runs: lafRunner.interruptedAtBoot(),
+  outbox: notificationOutbox,
+  markRoutine: markRoutineFailure,
 });
 
 /**

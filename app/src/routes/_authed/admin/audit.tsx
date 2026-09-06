@@ -556,8 +556,12 @@ export const DECISIONS: Record<string, string> = {
   "room.member_turn": "A Bot took its turn in a room",
   "routine.ran": "A routine ran",
   // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
-  // and a row that reads as an accident hides the decision.
+  // and a row that reads as an accident hides the decision. `routine.skipped` is the name rows were
+  // written under before the grace became a fraction of the period; they still read the same.
   "routine.skipped": "A routine's window was skipped",
+  "routine.skipped_missed": "A routine's window was skipped",
+  // The other half of the same decision: late, within grace, run once now.
+  "routine.caught_up": "A routine ran late, within its grace",
   // A read, not a permission: the grant was checked and this is the Bot opening the body.
   "skill.viewed": "The Bot read a skill",
   "model.usage": "Model usage recorded",
@@ -784,6 +788,8 @@ export const EVENTS: Record<string, string> = {
   "room.member_turn": "A room turn",
   "routine.ran": "A routine",
   "routine.skipped": "A routine",
+  "routine.skipped_missed": "A routine",
+  "routine.caught_up": "A routine",
   "skill.viewed": "A skill",
   "component.granted": "A component",
   "component.revoked": "A component",

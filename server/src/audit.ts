@@ -249,9 +249,20 @@ export const auditEventTypes = [
    * The evidence that a scheduled thing did not happen. Without it, a machine down overnight leaves
    * a routine with a gap in its history and nothing anywhere saying whether it was skipped, failed,
    * or was never armed — three different problems that look identical from a missing row. Carries
-   * how late the window was, so "the VM was off for nine hours" is readable from the trail.
+   * how late the window was and what the grace was, so "the VM was off for nine hours" is readable
+   * from the trail. Was `routine.skipped` until the grace became a fraction of the period
+   * (routines/service.ts, `catchUpGraceMs`); rows written under the old name are still labelled.
    */
-  "routine.skipped",
+  "routine.skipped_missed",
+  /**
+   * A routine's window was missed and run anyway, once, because it was still within its grace.
+   *
+   * The other half of the same decision, written only when the run was later than a tick can
+   * explain — the server was down for a few minutes, or the previous pass held the ticker — so
+   * that a briefing which arrived at 07:36 instead of 07:30 has a row saying it was late and by
+   * how much, rather than reading as on time.
+   */
+  "routine.caught_up",
   /**
    * A Bot read the body of one of its skills through `skill_view`.
    *

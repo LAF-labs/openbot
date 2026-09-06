@@ -48,7 +48,12 @@ gateway 스냅샷 캐시)는 미봉책이 아니라 **이 결정에 의해 옳�
 전체 목록**이다. 멀티프로세스로 가는 날의 출발점은 이 목록이다:
 
 - 대기 중인 승인 질문 — `server/src/computer/approvals.ts`의 Map. 10분 TTL,
-  fingerprint 바인딩, 1회용. 재시작하면 사라지고, 봇이 다시 묻는다.
+  fingerprint 바인딩, 1회용. **재시작하면 사라지고, 봇이 다시 묻는다 — 허용된
+  동작이다.** 열려 있던 카드는 화면에서 사라지고(앱은 `/api/approvals`를 다시 읽어
+  빈 목록을 받는다), 그 질문이 속한 런은 부팅이 `unknown`으로 정산하면서
+  `run.failed`로 알리며(`runner/laf-runner.ts` `reportInterruptedRuns`), 봇은 다음
+  턴에 같은 경계에 닿으면 다시 묻는다. 질문을 DB에 남겨 두지 않는 이유: 그 질문은
+  이미 죽은 런의 fingerprint에 묶여 있어, 살아남아도 아무 행동에도 쓸 수 없다.
 - 붙는 No — 같은 파일의 `createDeclineMemory`. 30분, `(botId, fingerprint)` 키.
 - 승인 대기자 — 같은 파일의 `waitFor`. 룸의 턴이 쥐고 있는 프로미스이며,
   `rooms/wait-for-approval.ts`가 이것 하나로 폴링을 대체했다(브라우저 쪽

@@ -576,17 +576,38 @@ describe("a window that came and went", () => {
     return { asked, ran, routine, row, rows, service };
   }
 
-  test("thirty minutes late still runs, once", async () => {
-    const { asked, ran, routine, rows, service } = await overdue(30);
+  /*
+   * A thirty-minute routine's grace is fifteen minutes — half its period (`catchUpGraceMs`). The
+   * numbers below sit on either side of that line, not on the old one-hour line every routine used
+   * to share.
+   */
+  test("a minute late is the ticker working, not a catch-up", async () => {
+    const { ran, rows } = await overdue(1);
+
+    expect(ran).toBe(1);
+    expect(rows.map((row) => row.eventType)).toEqual(["routine.ran"]);
+  });
+
+  test("ten minutes late still runs, once, and the trail says it was late", async () => {
+    const { asked, ran, routine, rows, service } = await overdue(10);
 
     expect(ran).toBe(1);
     expect(asked).toEqual(["오늘 할 일 알려줘"]);
     expect(await service.runs(ACTOR, routine.id)).toHaveLength(1);
-    expect(rows.map((row) => row.eventType)).toEqual(["routine.ran"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "routine.caught_up",
+      "routine.ran",
+    ]);
+    // How late, and against what: the row is readable without the source beside it.
+    expect(rows[0]?.payload).toMatchObject({
+      lateByMinutes: 10,
+      graceMinutes: 15,
+      missed: "2026-08-20T07:30:00.000Z",
+    });
   });
 
-  test("ninety minutes late is skipped, recorded, and re-armed", async () => {
-    const { asked, ran, routine, row, rows, service } = await overdue(90);
+  test("twenty minutes late is skipped, recorded, and re-armed", async () => {
+    const { asked, ran, routine, row, rows, service } = await overdue(20);
 
     expect(ran).toBe(0);
     expect(asked).toEqual([]);
@@ -595,25 +616,29 @@ describe("a window that came and went", () => {
     // The row that says a scheduled thing did not happen, and how late the window already was.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      eventType: "routine.skipped",
+      eventType: "routine.skipped_missed",
       targetId: routine.id,
       targetType: "routine",
     });
     expect(rows[0]?.payload).toMatchObject({
-      lateByMinutes: 90,
+      lateByMinutes: 20,
+      graceMinutes: 15,
       missed: "2026-08-20T07:30:00.000Z",
+      next: "2026-08-20T08:20:00.000Z",
     });
 
     // Skipped to the NEXT window, not queued: one interval on from the moment the tick looked.
-    expect(row?.nextRunAt?.toISOString()).toBe("2026-08-20T09:30:00.000Z");
+    expect(row?.nextRunAt?.toISOString()).toBe("2026-08-20T08:20:00.000Z");
   });
 
-  test("a routine an hour and a half behind does not fire on the tick after it either", async () => {
+  test("a routine twenty minutes behind does not fire on the tick after it either", async () => {
     // The skip has to leave the routine armed. A skip that forgot to move the clock would find the
-    // same stale window again on the next pass and write a `routine.skipped` row every tick.
-    const { rows, service } = await overdue(90);
+    // same stale window again on the next pass and write a skip row every tick.
+    const { rows, service } = await overdue(20);
     expect(await service.tick()).toBe(0);
-    expect(rows.map((row) => row.eventType)).toEqual(["routine.skipped"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "routine.skipped_missed",
+    ]);
   });
 });
 

@@ -18,6 +18,7 @@ import { t } from "@/lib/i18n";
 /** The codes `GET /api/channels/:id/failures` can send. Keep in step with the server's table. */
 export const TURN_FAILURE_CODES = [
   "laf:turn_failed",
+  "laf:turn_interrupted",
   "laf:turn_model_failed",
   "laf:turn_rate_limited",
   "laf:turn_refused",
@@ -48,6 +49,13 @@ export type TurnFailure = {
  */
 export const TURN_FAILURE_SENTENCES: Record<string, string> = {
   "laf:turn_failed": "No answer came back.",
+  /*
+   * The server restarted while this ran. Not a fault of the model's and not the person's: the run
+   * simply has no ending, and both a question and a routine get this line — the routine runs again
+   * at its next slot, the question wants asking again, and the sentence claims neither.
+   */
+  "laf:turn_interrupted":
+    "It could not finish: the server restarted partway through.",
   "laf:turn_model_failed": "The Bot could not reach its model. Ask again.",
   "laf:turn_rate_limited":
     "Answers are coming faster than the model can take right now. Give it a moment and ask again.",
