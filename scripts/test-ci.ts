@@ -178,15 +178,19 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  * The rule, unchanged: re-raise when the suite outgrows this one by the same margin.
  *
+ * RE-RAISED 2026-09-06 after the 2-B follow-up (a hung site, partner grants for later Bots,
+ * arguments checked before the approval, the screen pane's codes, the composer's caret) — measured
+ * server 1,779 / app 661 / agent-computer 147 / root 156, each floor 3% under.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1721, roots: ["server"] },
+  { name: "server", floor: 1725, roots: ["server"] },
   { name: "app", floor: 653, roots: ["app"] },
-  { name: "agent-computer", floor: 131, roots: ["agent-computer"] },
-  { name: "root", floor: 142, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 142, roots: ["agent-computer"] },
+  { name: "root", floor: 151, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
