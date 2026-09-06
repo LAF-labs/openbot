@@ -15,7 +15,11 @@ import type {
 import type { CredentialSecretReader, CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import { createCallPath } from "./call";
-import type { CatalogueEntry, PartnerFamily } from "./catalogue";
+import type {
+  CatalogueEntry,
+  DeploymentKeyFamily,
+  PartnerFamily,
+} from "./catalogue";
 import { createConnections } from "./connections";
 import type { LafGuard } from "./laf-contract";
 import { McpServerError } from "./mcp";
@@ -99,7 +103,7 @@ export type ServerRecord = {
    * How this server is authenticated: the catalogue entry's declaration, `deployment-bearer` for a
    * custom server. The surface phrases connection states from this rather than guessing.
    */
-  authKind: "none" | "deployment-bearer" | "user-oauth";
+  authKind: "none" | "deployment-bearer" | "user-oauth" | "deployment-key";
   /**
    * Whether the catalogue entry registers its own OAuth client (RFC 7591) rather than waiting on
    * an administrator to paste one in. So the admin screen can hide the paste-a-client form where
@@ -478,6 +482,15 @@ export type PluginStoreOptions = {
    */
   partnerTransports?: Partial<Record<PartnerFamily, VendorTransport>>;
   /**
+   * The same again for the entries that spend a key the fleet holds (`public-data-rest.ts`), for
+   * the same reason: assembled by the process from the key `config` read, and handed in so this
+   * file does not import the module that imports it. A missing entry is a key this VM was not
+   * given, and {@link PluginContext.transportFor} refuses rather than posting JSON-RPC at data.go.kr.
+   */
+  deploymentKeyTransports?: Partial<
+    Record<DeploymentKeyFamily, VendorTransport>
+  >;
+  /**
    * The counter that says how many times this Bot has just made this exact call.
    *
    * The same detector the computer gateway feeds, because "the same Bot going round in circles" is
@@ -550,6 +563,26 @@ const PARTNER_UNAVAILABLE: VendorTransport = {
   },
 };
 
+/**
+ * A deployment-key entry on a VM that was given no key, refusing.
+ *
+ * The same reasoning as the partner above, with one difference in when it can be reached: the
+ * catalogue listing hides the entry and the boot reconciliation removes its row, so a call landing
+ * here means a row outlived its key — which the code says, and which MCP-by-default would answer by
+ * posting a JSON-RPC frame at data.go.kr.
+ */
+const KEY_UNAVAILABLE: VendorTransport = {
+  listNeedsCredential: false,
+  listTools: async () => [],
+  callTool: async () => {
+    throw new PluginRefusedError(
+      "laf:deployment_key_missing",
+      null,
+      "laf:deployment_key_missing",
+    );
+  },
+};
+
 export function createPluginStore(options: PluginStoreOptions) {
   const context: PluginContext = {
     options,
@@ -565,7 +598,10 @@ export function createPluginStore(options: PluginStoreOptions) {
     transportFor: (entry) =>
       entry?.partner
         ? (options.partnerTransports?.[entry.partner] ?? PARTNER_UNAVAILABLE)
-        : transportFor(entry),
+        : entry?.auth.kind === "deployment-key"
+          ? (options.deploymentKeyTransports?.[entry.auth.key] ??
+            KEY_UNAVAILABLE)
+          : transportFor(entry),
   };
 
   const grants = createSkillsAndGrants(context);

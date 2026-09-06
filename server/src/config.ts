@@ -10,9 +10,13 @@
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
-import type { SharedClientFamily } from "./plugins/catalogue";
+import type {
+  DeploymentKeyFamily,
+  SharedClientFamily,
+} from "./plugins/catalogue";
 import { isCustomerSlug } from "./plugins/oauth";
 import {
+  deploymentKeysFrom,
   type SharedOAuthClient,
   sharedClientsFrom,
 } from "./plugins/shared-clients";
@@ -125,6 +129,15 @@ export type DeploymentConfig = {
   connectors: {
     /** The applications LAF registered, by vendor. Missing means that vendor is not offered here. */
     clients: Partial<Record<SharedClientFamily, SharedOAuthClient>>;
+    /**
+     * The API keys LAF obtained, by vendor, for data that is everybody's (나라장터, 기업마당).
+     *
+     * The value rather than a boolean, unlike `partners`, because the one module that spends it is
+     * assembled by the process from this object rather than reading the environment a second time.
+     * Missing means the entry is not offered here. A key in the spelling that cannot work refuses
+     * to start — see `plugins/shared-clients.ts`.
+     */
+    keys: Partial<Record<DeploymentKeyFamily, string>>;
     /**
      * The fleet's relay, and this deployment's own name in front of it.
      *
@@ -479,9 +492,11 @@ function connectorsConfig(
   environment: Environment,
 ): DeploymentConfig["connectors"] {
   const clients = sharedClientsFrom(environment);
+  // Refuses to start on the spelling that cannot work, like every half-configured thing here.
+  const keys = deploymentKeysFrom(environment);
 
   const relayUrl = url(environment, "LAF_OAUTH_RELAY_URL");
-  if (!relayUrl) return { clients };
+  if (!relayUrl) return { clients, keys };
 
   const relay = new URL(relayUrl);
   if (relay.protocol !== "https:" && relay.hostname !== "localhost") {
@@ -527,6 +542,7 @@ function connectorsConfig(
 
   return {
     clients,
+    keys,
     // No trailing slash: the provider segment is appended to this.
     relay: { url: relayUrl.replace(/\/+$/, ""), slug, productDomain },
   };

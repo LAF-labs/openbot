@@ -54,6 +54,7 @@ import {
 } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
+import type { PublicDataRuntime } from "./plugins/public-data-rest";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import { connectableCatalogue } from "./plugins/shared-clients";
 import type { PluginStore } from "./plugins/store";
@@ -293,6 +294,15 @@ export function createApp(
    * the nag wall the feature exists not to be.
    */
   routineSuggestionDismissals?: SuggestionDismissalStore,
+  /**
+   * The public data the fleet holds one key for. Last, like everything new here.
+   *
+   * Absent leaves nothing unmounted — there is no route of its own, since nobody connects anything —
+   * and takes one thing away: a Bot made after boot is not handed the tools on the spot. The boot
+   * reconciliation lives in the process (`index.ts`), beside the retention sweep, because it is a
+   * fact about the whole machine and not about a request.
+   */
+  publicData?: PublicDataRuntime,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -662,6 +672,10 @@ export function createApp(
         readWorking,
         // What each Bot has learned, and the three endpoints that let a person read and undo it.
         agentMemoryStore,
+        // A new Bot is offered the deployment-wide tools the moment it exists, not at the next boot.
+        publicData && pluginStore
+          ? (agentId) => publicData.offerTo(pluginStore, agentId, "deployment")
+          : undefined,
       ),
     );
   }
@@ -726,7 +740,13 @@ export function createApp(
   if (pluginStore) {
     app.route(
       "/api/plugins",
-      createPluginRoutes(pluginStore, requireUser, pluginConnect),
+      // The key lookup apart from the connect config, which a laptop without a public URL has none of.
+      createPluginRoutes(
+        pluginStore,
+        requireUser,
+        pluginConnect,
+        publicData?.keys,
+      ),
     );
     /*
      * The one page this server draws for a person, and the one route outside `/api`.

@@ -1,6 +1,7 @@
 import {
   CATALOGUE,
   type CatalogueEntry,
+  type DeploymentKeyFamily,
   type SharedClientFamily,
 } from "./catalogue";
 
@@ -114,4 +115,82 @@ export function connectableCatalogue(
   sharedClient: SharedClientLookup,
 ): CatalogueEntry[] {
   return CATALOGUE.filter((entry) => entryIsConnectable(entry, sharedClient));
+}
+
+/* ── API keys the platform obtained once, for data that is everybody's ───────────────────────── */
+
+/**
+ * The one environment name per key.
+ *
+ * A key rather than a pair, so the all-or-nothing rule above has nothing to apply to. What it has
+ * instead is a SPELLING rule — see {@link deploymentKeysFrom}.
+ */
+export const DEPLOYMENT_KEY_ENV: Readonly<Record<DeploymentKeyFamily, string>> =
+  Object.freeze({ "data-go-kr": "DATA_GO_KR_SERVICE_KEY" });
+
+/** How a caller asks for a key. The same seam shape as {@link SharedClientLookup}. */
+export type DeploymentKeyLookup = (
+  family: DeploymentKeyFamily,
+) => string | null;
+
+/**
+ * What a query-string value may carry without being encoded: unreserved characters and the percent
+ * escapes of an already-encoded one. Anything else in a key is the decoded spelling.
+ */
+const QUERY_SAFE = /^[A-Za-z0-9%._~-]+$/;
+
+/**
+ * Every deployment key this environment carries, refusing the spelling that cannot work.
+ *
+ * data.go.kr issues each key twice: "encoding" (`%2B`, `%3D`, `%2F` in it) and "decoding" (`+`,
+ * `=`, `/`). Its gateway compares the RAW query string, and the adapters concatenate the key into
+ * that string without encoding it — because encoding the encoded spelling turns `%2B` into `%252B`,
+ * which is a key nobody registered. The decoded spelling fails the same way from the other side: a
+ * `+` on a query string is a space. Either mistake produces a deployment that boots, lists the
+ * tools, and answers every call with `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`, which reads to a shop
+ * owner as the government being down. So the wrong spelling is refused here, at boot, by name.
+ */
+export function deploymentKeysFrom(
+  environment: Environment,
+): Partial<Record<DeploymentKeyFamily, string>> {
+  const found: Partial<Record<DeploymentKeyFamily, string>> = {};
+  for (const [family, name] of Object.entries(DEPLOYMENT_KEY_ENV) as [
+    DeploymentKeyFamily,
+    string,
+  ][]) {
+    const value = environment[name]?.trim();
+    if (!value) continue;
+    if (!QUERY_SAFE.test(value)) {
+      throw new Error(
+        `${name} must be the URL-encoded spelling data.go.kr issues (the one with %2B and %3D in it): it goes into the query string as-is, and the decoded spelling reads as an unregistered key at the vendor`,
+      );
+    }
+    found[family] = value;
+  }
+  return found;
+}
+
+/** A lookup over a resolved set of keys. */
+export function keyLookupOver(
+  keys: Partial<Record<DeploymentKeyFamily, string>>,
+): DeploymentKeyLookup {
+  return (family) => keys[family] ?? null;
+}
+
+/** No keys. The default wherever a lookup is optional, and what tests inherit. */
+export const NO_DEPLOYMENT_KEYS: DeploymentKeyLookup = () => null;
+
+/**
+ * May this entry be listed at all on this deployment?
+ *
+ * Only a deployment-key entry can answer no, and it does so exactly when the key is absent: the
+ * partner rule again — a card, or a row on the admin's catalogue, in front of a vendor this VM
+ * holds no key for is a control that can only ever refuse. Every other entry is listed as before.
+ */
+export function entryIsOffered(
+  entry: CatalogueEntry,
+  deploymentKey: DeploymentKeyLookup,
+): boolean {
+  if (entry.auth.kind !== "deployment-key") return true;
+  return deploymentKey(entry.auth.key) !== null;
 }

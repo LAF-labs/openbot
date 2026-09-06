@@ -431,3 +431,32 @@ describe("the partner connectors", () => {
     ).toThrow("LAF_ALIMTALK_BASE_URL");
   });
 });
+
+describe("the deployment keys", () => {
+  test("not configured is a correct deployment, and no key is offered", () => {
+    expect(loadConfig(baseEnvironment).connectors.keys).toEqual({});
+  });
+
+  test("the encoded spelling is carried through, as the value", () => {
+    // The value and not a boolean: the one module that spends it is assembled from this object,
+    // rather than reading the environment a second time.
+    expect(
+      loadConfig({
+        ...baseEnvironment,
+        DATA_GO_KR_SERVICE_KEY: "abc%2Bdef%3D%2Fghi",
+      }).connectors.keys,
+    ).toEqual({ "data-go-kr": "abc%2Bdef%3D%2Fghi" });
+  });
+
+  test("the decoded spelling refuses to boot, by name", () => {
+    /*
+     * A deployment started on this would list the tools and answer every call with the portal's
+     * "unregistered key" — a working-looking feature that reads as the government being down.
+     */
+    for (const decoded of ["abc+def=/ghi", "abc def", "abc%2Bdef="]) {
+      expect(() =>
+        loadConfig({ ...baseEnvironment, DATA_GO_KR_SERVICE_KEY: decoded }),
+      ).toThrow("DATA_GO_KR_SERVICE_KEY");
+    }
+  });
+});

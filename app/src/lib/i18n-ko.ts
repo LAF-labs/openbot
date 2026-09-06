@@ -362,6 +362,14 @@ export const ko: Record<string, string> = {
     "우리 가게의 구글 비즈니스 정보와 리뷰.",
   "Orders, products and board posts of one mall.":
     "카페24 쇼핑몰의 주문·상품·게시글.",
+  // 공공데이터 — 함대의 키 하나, 연결할 것 없음. 서버 카탈로그의 이름과 한 줄 설명.
+  나라장터·기업마당: "나라장터·기업마당",
+  "Public tenders on 나라장터 and support programmes on 기업마당.":
+    "나라장터 입찰공고와 기업마당 지원사업 공고.",
+  "Finds tenders and support programmes for your line of work, and can report new ones every morning.":
+    "우리 업종의 입찰공고와 지원사업을 찾고, 매일 아침 새 공고를 알려 줄 수 있습니다.",
+  "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
+    "LAF의 키로 이 배포의 모든 봇에 제공됩니다. 연결할 것이 없습니다.",
   "Connected accounts": "연결된 계정",
   "Connected accounts could not be loaded.":
     "연결된 계정을 불러오지 못했습니다.",

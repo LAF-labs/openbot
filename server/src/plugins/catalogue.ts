@@ -71,6 +71,21 @@ export type SharedClientFamily = "google" | "cafe24";
 export type PartnerFamily = "kakao-alimtalk";
 
 /**
+ * A vendor LAF obtained ONE API KEY from, for the whole fleet, that nobody registers under.
+ *
+ * The third arrangement. An OAuth vendor issues the person a grant; a partner registers the
+ * business under LAF's account; this one asks for neither, because what it serves is public — 나라장터
+ * bids, 기업마당 support programmes — and the key exists to count calls, not to say whose they are.
+ * So there is no consent, no registration and no row per person: the key is fleet configuration,
+ * every Bot on a VM that carries it is offered the tools at boot, and a VM without it has no entry.
+ *
+ * Closed, like the two unions above it: an entry naming a family with no environment variable behind
+ * it (`shared-clients.ts`) and no transport assembled for it (`public-data-rest.ts`) should not
+ * typecheck.
+ */
+export type DeploymentKeyFamily = "data-go-kr";
+
+/**
  * How a server is authenticated, and whose credential does it.
  *
  * The OAuth addresses are pinned here beside the MCP host, for the same reason and with the same
@@ -83,6 +98,15 @@ export type CatalogueAuth =
   | { kind: "none" }
   /** One token, held by the deployment, used for everybody. */
   | { kind: "deployment-bearer" }
+  /**
+   * One API key LAF obtained for the fleet, spent for everybody, held in the environment.
+   *
+   * Not `deployment-bearer`, which names a vault row an administrator pasted and makes
+   * {@link serverCredentialKind} demand one; and not `none`, which is what the partner entry says
+   * for want of a better word and is not true here — a key exists, it is LAF's, and the call path
+   * selects nothing because the transport already holds it. See {@link DeploymentKeyFamily}.
+   */
+  | { kind: "deployment-key"; key: DeploymentKeyFamily }
   /**
    * The asker's own grant. The deployment registers an OAuth client; each person consents once and
    * the call runs on their token, so the vendor decides what comes back.
@@ -612,6 +636,30 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
      */
     guardedTools: Object.freeze({ alimtalk_send: "external" as const }),
     docsUrl: "https://developers.solapi.com/references/kakao",
+  },
+  /*
+   * THE DEPLOYMENT-KEY ENTRY: public data, on the fleet's one key, offered to every Bot.
+   *
+   * Nobody consents and nobody registers. 나라장터 bids and 기업마당 support programmes are
+   * everybody's; the portal's key exists to count calls. So the arrangement is the partner's turned
+   * around — the platform holds the credential AND nothing belongs to the person — and the
+   * consequence is that a VM carrying the key offers these tools to every Bot from boot, while a
+   * VM without it has no entry at all (`shared-clients.ts`, `public-data-rest.ts`).
+   *
+   * One host, two services under it. The entry pins the host and the adapter pins each path in
+   * reviewed code, the way the Business Profile adapter pins its second and third hosts.
+   */
+  {
+    key: "public-data",
+    title: "나라장터·기업마당",
+    vendor: "data.go.kr",
+    summary: "Public tenders on 나라장터 and support programmes on 기업마당.",
+    host: "https://apis.data.go.kr",
+    path: "/",
+    auth: { kind: "deployment-key", key: "data-go-kr" },
+    // Nothing here writes anything anywhere, and no guard: a routine asking every morning is the point.
+    writeTools: Object.freeze([]),
+    docsUrl: "https://www.data.go.kr/data/15129394/openapi.do",
   },
 ]);
 

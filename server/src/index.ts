@@ -78,7 +78,9 @@ import {
 import { createNotificationOutbox } from "./notifications/outbox";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
+import { createPublicDataRuntime } from "./plugins/public-data-rest";
 import { lookupOver } from "./plugins/shared-clients";
+import { allLiveBots } from "./plugins/skills-and-grants";
 import { createPluginStore } from "./plugins/store";
 import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
@@ -255,6 +257,23 @@ console.info(
   JSON.stringify({
     type: "partner-connectors",
     alimtalk: config.partners.alimtalk,
+  }),
+);
+/**
+ * The public data the fleet holds one key for, assembled once, from the key `config` already read.
+ *
+ * Nothing per person: a VM with the key offers 나라장터 and 기업마당 to every Bot on it from boot
+ * (the reconciliation runs below, beside the retention sweep), and a VM without it has no entry.
+ * Said at boot, like the partner line above, so an operator reading the log knows which it is.
+ */
+const publicDataRuntime = createPublicDataRuntime({
+  keys: config.connectors.keys,
+  listBots: () => allLiveBots(database),
+});
+console.info(
+  JSON.stringify({
+    type: "public-data",
+    dataGoKr: publicDataRuntime.configured,
   }),
 );
 /**
@@ -592,6 +611,8 @@ const pluginStore = createPluginStore({
   // The two entries whose tools are this repository's own code, for the vendors this VM has keys
   // for. Empty leaves both entries unreachable rather than falling back to MCP — see `store.ts`.
   partnerTransports: partnerRuntime.transports,
+  // The same again for the public-data entry, on the fleet's data.go.kr key.
+  deploymentKeyTransports: publicDataRuntime.transports,
 });
 
 /*
@@ -1077,6 +1098,9 @@ const app = createApp(
   partnerRuntime,
   // The 다음에 latch behind the routine suggestion cards. See routines/suggestions.ts.
   createSuggestionDismissalStore(database),
+  // The public-data entry: hidden from the catalogue without the key, and handed to a Bot the
+  // moment it is made with it. Built above, so the listing and the boot reconciliation agree.
+  publicDataRuntime,
 );
 
 /**
@@ -1319,3 +1343,11 @@ void retention.runOnce().catch((error) => {
   );
 });
 retention.start(6 * 60 * 60_000);
+
+/*
+ * The public-data entry, reconciled to the key this boot was given: the row, its two tools and a
+ * grant on each for every Bot on the machine — or, with the key gone, every one of those taken
+ * back. Once, at boot, because the key is fleet configuration and only changes with a restart.
+ * Never fatal: a store that could not be written leaves the tools missing, which the log says.
+ */
+void publicDataRuntime.reconcile(pluginStore, "deployment");

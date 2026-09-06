@@ -55,6 +55,21 @@ export async function botsOwnedBy(
   return rows.map((row) => row.agentId);
 }
 
+/**
+ * Every live Bot on this deployment, whoever owns it.
+ *
+ * The set a deployment-wide capability is offered to (`public-data-rest.ts`): a key the fleet holds
+ * is nobody's in particular, so unlike {@link botsOwnedBy} there is no person to scope it by. One VM
+ * is one person and their staff (docs/laf/deployment-model.md), which is why this is not a leak.
+ */
+export async function allLiveBots(database: Database): Promise<string[]> {
+  const rows = await database
+    .select({ agentId: agentProfiles.agentId })
+    .from(agentProfiles)
+    .where(isNull(agentProfiles.deletedAt));
+  return rows.map((row) => row.agentId);
+}
+
 export function createSkillsAndGrants(context: PluginContext) {
   const { database, auditStore } = context;
 

@@ -272,6 +272,15 @@ export function createAgentRoutes(
    * a screen that shows nothing is indistinguishable from a Bot that has learned nothing.
    */
   memoryStore?: AgentMemoryStore,
+  /**
+   * What a Bot is handed the moment it exists. Last, like everything new here.
+   *
+   * The deployment-wide tools (`plugins/public-data-rest.ts`) are granted to every Bot at boot,
+   * and a Bot made after boot would otherwise wait for the next restart to hear of them — a
+   * capability the screen promises and the new Bot does not have. Never fails the create: the Bot
+   * exists by the time this runs, and a grant that could not be written is repaired at the next boot.
+   */
+  onCreated?: (agentId: string) => Promise<void>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -370,6 +379,18 @@ export function createAgentRoutes(
 
     try {
       const agent = await store.create(context.var.actor, parsed.value);
+      if (onCreated) {
+        // The Bot exists whatever happens here; a grant that did not land is repaired at boot.
+        await onCreated(agent.id).catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              type: "agent-created-hook-failed",
+              agent: agent.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        });
+      }
       return context.json({ agent: agentDto(context.var.actor, agent) }, 201);
     } catch (error) {
       return mapStoreError(context, error);

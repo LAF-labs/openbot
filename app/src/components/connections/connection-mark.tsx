@@ -72,6 +72,9 @@ export const MARKS: Readonly<Record<string, Mark>> = {
   instagram: { ground: "#E1306C", ink: "#FFFFFF", glyph: "camera" },
   // A form, because 홈택스 is the one row here that is a government office rather than a brand.
   hometax: { ground: "#1A4F9C", ink: "#FFFFFF", glyph: "document" },
+  // 나라장터 and 기업마당 through data.go.kr: two letters off the portal's own domain, on its
+  // blue, rather than a second document glyph that would read as 홈택스 from across the room.
+  "public-data": { ground: "#0F5CB5", ink: "#FFFFFF", letters: "GO" },
   [GENERIC_MARK]: { ink: "currentColor", glyph: "globe" },
 };
 

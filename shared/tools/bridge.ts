@@ -102,6 +102,7 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     cafe24: "카페24",
     notion: "노션",
     "kakao-alimtalk": "카카오 알림톡",
+    "public-data": "나라장터·기업마당",
   },
 );
 

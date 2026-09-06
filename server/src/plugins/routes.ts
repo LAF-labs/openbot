@@ -27,7 +27,10 @@ import {
 } from "./oauth";
 import {
   connectableCatalogue,
+  type DeploymentKeyLookup,
   entryIsConnectable,
+  entryIsOffered,
+  NO_DEPLOYMENT_KEYS,
   NO_SHARED_CLIENTS,
   type SharedClientLookup,
 } from "./shared-clients";
@@ -100,6 +103,16 @@ export function createPluginRoutes(
   store: PluginStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   connect?: ConnectConfig,
+  /**
+   * The API keys LAF obtained once for the whole fleet. Absent means none, which leaves every entry
+   * that spends one out of the catalogue this surface lists — the same rule as the partner cards.
+   *
+   * ITS OWN PARAMETER, NOT A FIELD OF `connect`. The connect config exists only on a deployment with
+   * a public URL, because that is what an OAuth callback needs; the key needs nothing of the kind.
+   * It sat on `connect` first, and measured on a laptop with the key set and no public URL, the
+   * entry was hidden — the whole config was `undefined`, and the key with it.
+   */
+  deploymentKey: DeploymentKeyLookup = NO_DEPLOYMENT_KEYS,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -190,7 +203,11 @@ export function createPluginRoutes(
   /** Everything the Plugins page draws: the catalogue, what is added, and the skills. */
   routes.get("/", requireUser, async (context) =>
     context.json({
-      catalogue: CATALOGUE.map((entry) => ({
+      // A deployment-key entry is left out on a VM without its key — the partner-card rule: a row
+      // in front of a vendor this VM cannot reach is a control that can only refuse.
+      catalogue: CATALOGUE.filter((entry) =>
+        entryIsOffered(entry, deploymentKey),
+      ).map((entry) => ({
         key: entry.key,
         title: entry.title,
         vendor: entry.vendor,
@@ -224,6 +241,22 @@ export function createPluginRoutes(
     } | null;
     if (!body?.key) {
       return context.json({ error: "A catalogue key is required." }, 400);
+    }
+
+    /*
+     * The listing above hid this entry, so a request naming it was typed rather than pressed. A row
+     * made here would have no transport behind it and refuse every call with the same code — better
+     * said now, once, than found by a Bot later.
+     */
+    const entry = catalogueEntry(body.key);
+    if (entry && !entryIsOffered(entry, deploymentKey)) {
+      return context.json(
+        {
+          error: `${entry.title} is not configured on this deployment.`,
+          code: "laf:deployment_key_missing",
+        },
+        503,
+      );
     }
 
     try {

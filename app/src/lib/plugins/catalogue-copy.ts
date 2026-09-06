@@ -67,6 +67,16 @@ export const CATALOGUE_COPY: Readonly<
     summary: "Template messages from this business's own KakaoTalk channel.",
     can: "Sends booking confirmations and review requests from your own channel.",
   },
+  /*
+   * The deployment-key entry. Nothing to connect and no row on the 연결 screen — the fleet's key is
+   * the whole of the setup — but the catalogue is walked for its words all the same, and a shop
+   * owner reads this line wherever the entry is listed.
+   */
+  "public-data": {
+    mark: "public-data",
+    summary: "Public tenders on 나라장터 and support programmes on 기업마당.",
+    can: "Finds tenders and support programmes for your line of work, and can report new ones every morning.",
+  },
 };
 
 /**

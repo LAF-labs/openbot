@@ -439,6 +439,18 @@ function Catalogue({
                 value={token[item.key] ?? ""}
               />
             ) : null}
+            {/*
+             * Nothing to type and nobody to connect: the fleet's key is the whole of the setup, and
+             * the entry is only listed on a VM that holds it. Said, or the absence of a field reads
+             * as a form that forgot one.
+             */}
+            {item.auth === "deployment-key" ? (
+              <p className="mt-2 text-muted-foreground text-xs">
+                {t(
+                  "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.",
+                )}
+              </p>
+            ) : null}
             <a
               className="mt-2 inline-block text-xs text-muted-foreground underline"
               href={item.docsUrl}

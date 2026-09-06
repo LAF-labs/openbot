@@ -37,7 +37,12 @@ export type PluginTool = {
  * asker's own grant, so the same question gets each person the answer their own account can see —
  * which is why the surface has to phrase these two differently rather than just say "connected".
  */
-export type PluginAuthKind = "none" | "deployment-bearer" | "user-oauth";
+export type PluginAuthKind =
+  | "none"
+  | "deployment-bearer"
+  | "user-oauth"
+  /** One key LAF holds for the fleet, spent for everybody: nothing to paste and nothing to consent to. */
+  | "deployment-key";
 
 /**
  * A grant on a tool its server no longer advertises.

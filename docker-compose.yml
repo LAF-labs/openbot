@@ -151,6 +151,11 @@ services:
       LAF_ALIMTALK_API_KEY: ${LAF_ALIMTALK_API_KEY:-}
       LAF_ALIMTALK_BASE_URL: ${LAF_ALIMTALK_BASE_URL:-}
       LAF_ALIMTALK_FROM: ${LAF_ALIMTALK_FROM:-}
+      # The public data portal's key (나라장터 입찰공고, 기업마당 지원사업), LAF's one for the fleet.
+      # Nobody connects anything: set, every Bot on this VM is offered the two search tools at
+      # boot; unset, there is no entry. The encoded spelling, as issued — the server refuses to
+      # start on the decoded one. See docs/laf/connections.md.
+      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
       # The deployment's own name, and the one thing the fleet identifies a customer by. The web
       # service has always had it; the API server needs it too now that it signs notices with it.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
