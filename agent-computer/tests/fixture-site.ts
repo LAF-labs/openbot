@@ -8,7 +8,16 @@
  * real content in it, a password box, and a mega-menu that is in the markup and not on the screen.
  *
  * The measurements against the real sites live in `docs/laf/browser-limits.md`, taken by hand.
+ *
+ * THE JOB PAGES ARE FILES, under `fixtures/`. The four jobs the launch plan measures (리뷰 답글,
+ * 문의·예약, 아침 브리핑, 정산·재고) each open a page shaped like a real seller portal, and those
+ * pages are long enough that a template string here would bury the one page that matters. Each is
+ * served at `/sites/<name>`; a `-quiet` sibling, where one exists, is what the same address serves
+ * once `setQuiet(true)` has been called — the morning on which nothing came in, at the same URL a
+ * routine would open on any other morning. No real customer's data is in any of them.
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 /** The words that are actually on the screen. If a read does not contain these it read nothing. */
 export const VISIBLE_TEXT = "오늘 주문 3건";
@@ -32,6 +41,47 @@ export const FRAME_CLICKED = "프레임 버튼 눌림";
 
 export const DOWNLOAD_NAME = "정산내역.csv";
 export const DOWNLOAD_BODY = "날짜,금액\n2026-09-01,12000\n";
+
+const FIXTURES_DIR = join(import.meta.dir, "fixtures");
+
+/**
+ * The pages under `fixtures/`, by the name they are served under at `/sites/<name>`.
+ *
+ * Listed rather than globbed so a test can walk them and a typo in a URL is a failing test rather
+ * than a 404 the Bot reads as "the site is down".
+ */
+export const JOB_PAGES = [
+  "smartplace-reviews",
+  "smartstore-enquiries",
+  "smartstore-orders",
+  "smartstore-stock",
+  "booking-tomorrow",
+  "baemin-settlement",
+  "naver-id-login",
+  "smartstore-login",
+  "baemin-login",
+] as const;
+
+export type JobPage = (typeof JOB_PAGES)[number];
+
+/** The pages that have a quiet morning to show. `setQuiet(true)` swaps these and only these. */
+export const QUIET_PAGES: readonly JobPage[] = [
+  "smartplace-reviews",
+  "smartstore-enquiries",
+  "smartstore-orders",
+];
+
+/** What 엑셀 다운로드 on the 정산 page hands over: the same five rows, as a real site's CSV export. */
+export const SETTLEMENT_CSV_NAME = "정산내역_20260901-20260906.csv";
+export const SETTLEMENT_CSV_BODY = [
+  "정산일,주문건수,주문금액,배달팁,중개이용료,결제수수료,입금예정액,입금액,입금일,상태",
+  "2026-09-05,38,412000,76000,-27720,-13290,371300,356300,2026-09-06,입금완료",
+  "2026-09-04,31,335500,62000,-22570,-10830,302100,302100,2026-09-05,입금완료",
+  "2026-09-03,29,301000,58000,-20240,-9720,271040,271040,2026-09-04,입금완료",
+  "2026-09-02,35,388000,70000,-26100,-12530,349370,349370,2026-09-03,입금완료",
+  "2026-09-01,27,276000,54000,-18560,-8910,248530,248530,2026-09-02,입금완료",
+  "",
+].join("\n");
 
 const HIDDEN_MENU = Array.from(
   { length: 120 },
@@ -95,11 +145,48 @@ const OTHER_HTML = `<!doctype html>
  * worktree, and a fixed port is how that turns into a test failure nobody can reproduce alone.
  */
 export function serveFixture(port = 0) {
+  const html = { "content-type": "text/html; charset=utf-8" };
+  /** Whether the job pages show the morning on which nothing came in. */
+  let quiet = false;
+
   const server = Bun.serve({
     port,
     hostname: "127.0.0.1",
-    fetch(request) {
-      const path = new URL(request.url).pathname;
+    async fetch(request) {
+      const url = new URL(request.url);
+      const path = url.pathname;
+      if (path.startsWith("/sites/")) {
+        const name = path.slice("/sites/".length);
+        if (!(JOB_PAGES as readonly string[]).includes(name)) {
+          return new Response("없는 페이지", { status: 404, headers: html });
+        }
+        const file =
+          quiet && QUIET_PAGES.includes(name as JobPage)
+            ? `${name}-quiet.html`
+            : `${name}.html`;
+        return new Response(Bun.file(join(FIXTURES_DIR, file)), {
+          headers: html,
+        });
+      }
+      if (path === "/downloads/settlement.csv") {
+        return new Response(SETTLEMENT_CSV_BODY, {
+          headers: {
+            "content-type": "text/csv; charset=utf-8",
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(SETTLEMENT_CSV_NAME)}`,
+          },
+        });
+      }
+      /*
+       * The quiet switch over HTTP, for a run that drives this server from another process — the
+       * launch-plan measurement starts it once and flips the morning between two routine runs.
+       * A test in this process calls `setQuiet` directly.
+       */
+      if (path === "/__quiet") {
+        quiet = url.searchParams.get("on") === "1";
+        return new Response(JSON.stringify({ quiet }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (path === "/frame") {
         return new Response(FRAME_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -133,5 +220,13 @@ export function serveFixture(port = 0) {
   return {
     url: `http://127.0.0.1:${server.port}/`,
     stop: () => server.stop(true),
+    setQuiet: (on: boolean) => {
+      quiet = on;
+    },
+    /** Every job page is present on disk, or the name of the one that is not. */
+    missingPages: () =>
+      JOB_PAGES.filter(
+        (name) => !existsSync(join(FIXTURES_DIR, `${name}.html`)),
+      ),
   };
 }

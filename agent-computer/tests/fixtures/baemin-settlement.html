@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  배민사장님 정산 내역 — signed in, with one line that does not add up.
+
+  Mimics the settlement table under `ceo.baemin.com`: one row per settlement day, the expected and
+  the actual deposit side by side, an adjustments table that explains the gap, and the 엑셀 다운로드
+  link every such page has — served as CSV with the RFC 5987 Korean filename a real site sends.
+  The 09.05 row is the one an owner asks about: 입금예정액 371,300원 against 입금액 356,300원.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>정산 내역 - 배민사장님</title>
+  <style>
+    nav a { margin-right: 12px; }
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>배민사장님</strong> · 미소분식
+    <a href="/sites/baemin-login">로그아웃</a>
+  </header>
+  <nav><a href="#top">주문</a><a href="#top">정산</a><a href="#top">메뉴</a><a href="#top">리뷰</a><a href="#top">광고</a><a href="#top">가게관리</a></nav>
+  <main>
+    <h1>정산 내역</h1>
+    <p>조회 기간 2026.09.01 ~ 2026.09.06 · <a href="/downloads/settlement.csv">엑셀 다운로드</a></p>
+    <table>
+      <thead><tr><th>정산일</th><th>주문건수</th><th>주문금액</th><th>배달팁</th><th>중개이용료</th><th>결제수수료</th><th>입금예정액</th><th>입금액</th><th>입금일</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td>2026.09.05</td><td>38</td><td>412,000원</td><td>76,000원</td><td>-27,720원</td><td>-13,290원</td><td>371,300원</td><td>356,300원</td><td>2026.09.06</td><td>입금완료</td></tr>
+        <tr><td>2026.09.04</td><td>31</td><td>335,500원</td><td>62,000원</td><td>-22,570원</td><td>-10,830원</td><td>302,100원</td><td>302,100원</td><td>2026.09.05</td><td>입금완료</td></tr>
+        <tr><td>2026.09.03</td><td>29</td><td>301,000원</td><td>58,000원</td><td>-20,240원</td><td>-9,720원</td><td>271,040원</td><td>271,040원</td><td>2026.09.04</td><td>입금완료</td></tr>
+        <tr><td>2026.09.02</td><td>35</td><td>388,000원</td><td>70,000원</td><td>-26,100원</td><td>-12,530원</td><td>349,370원</td><td>349,370원</td><td>2026.09.03</td><td>입금완료</td></tr>
+        <tr><td>2026.09.01</td><td>27</td><td>276,000원</td><td>54,000원</td><td>-18,560원</td><td>-8,910원</td><td>248,530원</td><td>248,530원</td><td>2026.09.02</td><td>입금완료</td></tr>
+      </tbody>
+    </table>
+    <h2>조정 내역</h2>
+    <table>
+      <thead><tr><th>정산일</th><th>구분</th><th>금액</th><th>사유</th></tr></thead>
+      <tbody>
+        <tr><td>2026.09.05</td><td>차감</td><td>-15,000원</td><td>고객 환불 (주문번호 B0905A1234, 누락 메뉴)</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <footer>© Woowa Brothers Corp.</footer>
+</body>
+</html>

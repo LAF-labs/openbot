@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  스마트스토어센터 고객문의 관리 — 로그인된 상태.
+
+  Mimics `sell.smartstore.naver.com/#/naverpay/sale/inquiry`. The top bar shows a visible 로그아웃
+  AND the words 최근 로그인, which is the case the predicate's logout override exists for: a
+  signed-in page that carries the word 로그인 somewhere. The reply form opens per row on 답변하기.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>고객문의 관리 - 스마트스토어센터</title>
+  <style>
+    .closed { display: none; }
+    nav a { margin-right: 12px; }
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>스마트스토어센터</strong> · 미소상회 · 최근 로그인 2026.09.06 08:12
+    <a href="/sites/smartstore-login">로그아웃</a>
+  </header>
+  <nav><a href="#top">상품관리</a><a href="#top">판매관리</a><a href="#top">정산관리</a><a href="#top">문의/리뷰관리</a><a href="#top">통계</a><a href="#top">스토어관리</a></nav>
+  <main>
+    <h1>고객문의 관리</h1>
+    <p>미답변 2건 · 답변완료 5건</p>
+    <table>
+      <thead><tr><th>문의번호</th><th>문의일시</th><th>상품명</th><th>문의유형</th><th>문의내용</th><th>답변상태</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Q20260906001</td><td>2026.09.06 09:10</td><td>유자청 500g</td><td>상품</td>
+          <td>유통기한이 어떻게 되나요? 선물용인데 개봉 후 보관 방법도 알려주세요.</td>
+          <td>미답변</td><td><button type="button" onclick="openAnswer('answer-1')">답변하기</button></td>
+        </tr>
+        <tr id="answer-1" class="closed">
+          <td colspan="7">
+            <form onsubmit="return postAnswer(event, 'answer-1')">
+              <label for="answer-1-text">답변 내용</label>
+              <textarea id="answer-1-text" rows="3"></textarea>
+              <button type="submit">답변 등록</button>
+              <button type="button" onclick="closeAnswer('answer-1')">취소</button>
+            </form>
+            <p class="posted"></p>
+          </td>
+        </tr>
+        <tr>
+          <td>Q20260905003</td><td>2026.09.05 14:22</td><td>수제 딸기잼 250g</td><td>배송</td>
+          <td>주문한 지 3일 됐는데 아직 배송준비중이에요. 언제 보내주시나요?</td>
+          <td>미답변</td><td><button type="button" onclick="openAnswer('answer-2')">답변하기</button></td>
+        </tr>
+        <tr id="answer-2" class="closed">
+          <td colspan="7">
+            <form onsubmit="return postAnswer(event, 'answer-2')">
+              <label for="answer-2-text">답변 내용</label>
+              <textarea id="answer-2-text" rows="3"></textarea>
+              <button type="submit">답변 등록</button>
+              <button type="button" onclick="closeAnswer('answer-2')">취소</button>
+            </form>
+            <p class="posted"></p>
+          </td>
+        </tr>
+        <tr>
+          <td>Q20260903002</td><td>2026.09.03 11:05</td><td>수제 딸기잼 250g</td><td>교환/반품</td>
+          <td>병이 깨져서 왔어요. 교환 가능한가요?</td>
+          <td>답변완료</td><td></td>
+        </tr>
+        <tr>
+          <td>Q20260902001</td><td>2026.09.02 16:40</td><td>선물세트 A (잼 2종)</td><td>배송</td>
+          <td>선물 포장 되나요?</td>
+          <td>답변완료</td><td></td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+  <footer>© NAVER Corp.</footer>
+  <script>
+    function openAnswer(id) { document.getElementById(id).classList.remove("closed"); }
+    function closeAnswer(id) { document.getElementById(id).classList.add("closed"); }
+    function postAnswer(event, id) {
+      event.preventDefault();
+      const row = document.getElementById(id);
+      row.querySelector("form").classList.add("closed");
+      row.querySelector(".posted").textContent = "답변이 등록되었습니다.";
+      return false;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  네이버 로그인 — `nid.naver.com/nidlogin.login`, where every 네이버 service sends a browser with no
+  session. A different host from every 네이버 site in the catalogue, which is the first thing the
+  predicate checks.
+-->
+<html lang="ko">
+<head><meta charset="utf-8"><title>네이버 : 로그인</title></head>
+<body>
+  <h1>네이버 로그인</h1>
+  <form onsubmit="return false">
+    <label for="id">아이디</label> <input id="id" type="text" autocomplete="username">
+    <label for="pw">비밀번호</label> <input id="pw" type="password" autocomplete="current-password">
+    <label><input type="checkbox"> 로그인 상태 유지</label>
+    <button type="submit">로그인</button>
+  </form>
+  <p><a href="#top">QR코드</a> · <a href="#top">일회용 번호</a></p>
+  <p><a href="#top">아이디 찾기</a> · <a href="#top">비밀번호 찾기</a> · <a href="#top">회원가입</a></p>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+  네이버 예약 파트너센터 예약 관리 — tomorrow's list, signed in.
+
+  Mimics `partner.booking.naver.com/bizes/…/booking-list-view` with the date tabs a person presses
+  and the table under them. 로그아웃 is visible in the header.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>예약 관리 - 네이버 예약 파트너센터</title>
+  <style>
+    nav a { margin-right: 12px; }
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>네이버 예약 파트너센터</strong> · 미소분식
+    <a href="/sites/naver-id-login">로그아웃</a>
+  </header>
+  <nav><a href="#top">예약 관리</a><a href="#top">톡톡</a><a href="#top">상품 관리</a><a href="#top">통계</a></nav>
+  <main>
+    <h1>예약 관리</h1>
+    <p>날짜: <button type="button">오늘 09.06(토)</button> <button type="button" aria-pressed="true">내일 09.07(일)</button> <button type="button">달력</button></p>
+    <p>내일 예약 5건 · 확정 3 · 대기 1 · 취소 1 · 방문 예정 15명</p>
+    <table>
+      <thead><tr><th>예약시간</th><th>예약자</th><th>인원</th><th>상품</th><th>상태</th><th>요청사항</th></tr></thead>
+      <tbody>
+        <tr><td>11:30</td><td>김*수</td><td>2명</td><td>점심 세트</td><td>확정</td><td></td></tr>
+        <tr><td>12:00</td><td>박*민</td><td>4명</td><td>단체석</td><td>확정</td><td>유아 의자 1개</td></tr>
+        <tr><td>13:00</td><td>이*라</td><td>3명</td><td>점심 세트</td><td>대기</td><td></td></tr>
+        <tr><td>18:30</td><td>정*호</td><td>6명</td><td>저녁 모임</td><td>확정</td><td>룸 요청, 생일 케이크 반입</td></tr>
+        <tr><td>19:00</td><td>최*영</td><td>2명</td><td>저녁</td><td>취소</td><td></td></tr>
+      </tbody>
+    </table>
+  </main>
+  <footer>© NAVER Corp.</footer>
+</body>
+</html>

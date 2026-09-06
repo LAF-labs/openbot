@@ -39,9 +39,11 @@ const suppliedBot = process.env.LAF_SMOKE_BOT;
  * How the Bot's browser reaches a page this process is serving.
  *
  * The computer runs in a container and `localhost` there is the container. `host.docker.internal`
- * is Docker's name for the machine outside it, and it is also not a private address literal, so the
- * navigation guard admits it without the deployment having to opt into private hosts. A deployment
- * that runs the computer some other way sets this.
+ * is Docker's name for the machine outside it. The navigation guard refuses it by NAME — `.internal`
+ * is one of the suffixes `net/host-verdict` calls not publicly routable — so the server this run
+ * talks to must have `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` (`smoke.yml` sets it; measured on
+ * 2026-09-06: without it the Bot is told the address is inside the deployment and gives up). A
+ * deployment that runs the computer some other way sets this.
  */
 const FIXTURE_HOST =
   process.env.LAF_SMOKE_FIXTURE_HOST ?? "host.docker.internal";

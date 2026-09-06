@@ -1,0 +1,92 @@
+<!doctype html>
+<!--
+  스마트플레이스 리뷰 관리 — 로그인된 상태.
+
+  Mimics `new.smartplace.naver.com/bizes/place/…/reviews`: a header with the account menu, the
+  review list for this week, and a reply form that is NOT on the page until 답글 달기 is pressed.
+  The trap it carries: 로그아웃 lives inside a closed dropdown (`display:none`), so a text read
+  never sees it, and the page reads as signed in only because no login word is on it either.
+  Every name is masked the way the site masks them, and every customer is fictional.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>리뷰 관리 - 스마트플레이스</title>
+  <style>
+    .closed { display: none; }
+    nav a { margin-right: 12px; }
+    .review { border-top: 1px solid #ddd; padding: 12px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>스마트플레이스</strong> · 미소분식
+    <button type="button" id="account" onclick="document.getElementById('account-menu').classList.toggle('closed')">사장님 계정</button>
+    <div id="account-menu" class="closed"><a href="/sites/naver-id-login">로그아웃</a></div>
+  </header>
+  <nav><a href="#top">홈</a><a href="#top">리뷰</a><a href="#top">예약</a><a href="#top">톡톡</a><a href="#top">통계</a><a href="#top">업체정보</a></nav>
+  <main>
+    <h1>리뷰 관리</h1>
+    <p>방문자 리뷰 128 · 이번 주 새 리뷰 3 · 답글 미작성 3</p>
+    <p>필터: <button type="button">전체</button> <button type="button">답글 미작성</button></p>
+    <section id="reviews">
+      <article class="review">
+        <p><strong>김*수</strong> · 2026.09.04 · 영수증 인증</p>
+        <p>떡볶이가 매콤하고 순대가 따뜻했어요. 사장님도 친절하시고 다음에 또 올게요.</p>
+        <p>키워드: 음식이 맛있어요 · 친절해요</p>
+        <button type="button" onclick="openReply('reply-1')">답글 달기</button>
+        <form id="reply-1" class="closed" onsubmit="return postReply(event, 'reply-1')">
+          <label for="reply-1-text">답글 내용</label>
+          <textarea id="reply-1-text" rows="3"></textarea>
+          <button type="submit">답글 등록</button>
+          <button type="button" onclick="closeReply('reply-1')">취소</button>
+        </form>
+        <p class="posted"></p>
+      </article>
+      <article class="review">
+        <p><strong>이*영</strong> · 2026.09.03 · 영수증 인증</p>
+        <p>튀김이 눅눅했어요. 포장 20분 기다렸는데 아쉽습니다.</p>
+        <p>키워드: 양이 많아요</p>
+        <button type="button" onclick="openReply('reply-2')">답글 달기</button>
+        <form id="reply-2" class="closed" onsubmit="return postReply(event, 'reply-2')">
+          <label for="reply-2-text">답글 내용</label>
+          <textarea id="reply-2-text" rows="3"></textarea>
+          <button type="submit">답글 등록</button>
+          <button type="button" onclick="closeReply('reply-2')">취소</button>
+        </form>
+        <p class="posted"></p>
+      </article>
+      <article class="review">
+        <p><strong>박*준</strong> · 2026.09.02</p>
+        <p>점심에 갔는데 자리가 없어서 포장했어요. 김밥 맛있음. 주차가 어려워요.</p>
+        <p>키워드: 음식이 맛있어요</p>
+        <button type="button" onclick="openReply('reply-3')">답글 달기</button>
+        <form id="reply-3" class="closed" onsubmit="return postReply(event, 'reply-3')">
+          <label for="reply-3-text">답글 내용</label>
+          <textarea id="reply-3-text" rows="3"></textarea>
+          <button type="submit">답글 등록</button>
+          <button type="button" onclick="closeReply('reply-3')">취소</button>
+        </form>
+        <p class="posted"></p>
+      </article>
+      <article class="review">
+        <p><strong>최*희</strong> · 2026.08.27 · 영수증 인증</p>
+        <p>순대국이 진해요. 재방문 의사 있음.</p>
+        <p>사장님 답글 · 2026.08.28: 찾아 주셔서 감사합니다. 다음에도 따뜻하게 준비해 두겠습니다.</p>
+      </article>
+    </section>
+  </main>
+  <footer>© NAVER Corp.</footer>
+  <script>
+    function openReply(id) { document.getElementById(id).classList.remove("closed"); }
+    function closeReply(id) { document.getElementById(id).classList.add("closed"); }
+    function postReply(event, id) {
+      event.preventDefault();
+      const form = document.getElementById(id);
+      form.classList.add("closed");
+      form.parentElement.querySelector(".posted").textContent = "답글이 등록되었습니다.";
+      return false;
+    }
+  </script>
+</body>
+</html>
