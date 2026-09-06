@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 /**
@@ -26,8 +26,16 @@ import { resolve } from "node:path";
  * with the build and the model, a `run_failed` whose reason is `provider_rate_limited` rather than
  * the provider's sentence, and a `shutdown` with its reason once each process is told to stop.
  *
- * Needs the test database, like every other integration test here: the server boots against
- * `DATABASE_URL`, which `scripts/test-ci.ts` has already pointed at `<name>_test`.
+ * The two subprocesses see exactly the environment built here and nothing of this process's own:
+ * a developer's shell holds a real key and a real provider URL, and either reaching a process
+ * whose output is grepped for secrets would make the grep meaningless. The one value that has to
+ * come from outside is the database, which is `DATABASE_URL` as `scripts/test-ci.ts` hands it to
+ * every test here, already pointed at `<name>_test`.
+ *
+ * A boot that does not come is reported the moment the process dies, with everything it wrote.
+ * The first time this ran on CI the server crashed at import, and the test sat out its whole
+ * 60-second wait before printing the crash under "(unnamed)": the wait was on the boot line alone,
+ * and the setup was a bare `beforeAll`, which bun reports with no name at all.
  */
 
 const root = resolve(import.meta.dir, "../..");
@@ -46,16 +54,38 @@ const REPLY = "네, 알겠습니다.";
 /** The example key from .env.example, which the server warns about and accepts outside production. */
 const EXAMPLE_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
+/**
+ * The database, as the harness hands it over; bare `bun test` falls back to the same local
+ * default every other integration test in this directory uses.
+ */
+const DATABASE_URL =
+  process.env.DATABASE_URL ??
+  "postgres://openbot:openbot@localhost:5432/openbot";
+
 type Line = Record<string, unknown> & { raw: string };
 
 /** One subprocess and everything it wrote, line by line, as it wrote it. */
 class Captured {
   readonly lines: string[] = [];
   private waiters: Array<() => void> = [];
-  constructor(readonly process: ReturnType<typeof Bun.spawn>) {
+  private readonly drained: Promise<void>[] = [];
+
+  constructor(
+    readonly name: string,
+    readonly process: ReturnType<typeof Bun.spawn>,
+  ) {
     for (const stream of [process.stdout, process.stderr]) {
-      if (stream && typeof stream !== "number") void this.drain(stream);
+      if (stream && typeof stream !== "number") {
+        this.drained.push(this.drain(stream));
+      }
     }
+    // A process that dies wakes whoever is waiting on a line, so the death is reported now rather
+    // than at the deadline.
+    void process.exited.then(() => this.wake());
+  }
+
+  private wake() {
+    for (const wake of this.waiters.splice(0)) wake();
   }
 
   private async drain(stream: ReadableStream<Uint8Array>) {
@@ -69,10 +99,10 @@ class Captured {
         pending = pending.slice(newline + 1);
         newline = pending.indexOf("\n");
       }
-      for (const wake of this.waiters.splice(0)) wake();
+      this.wake();
     }
     if (pending) this.lines.push(pending);
-    for (const wake of this.waiters.splice(0)) wake();
+    this.wake();
   }
 
   /** Every line that parses as JSON, with the raw text kept beside it. */
@@ -88,15 +118,38 @@ class Captured {
       });
   }
 
-  /** The first line with this event, or a wait for it. */
+  private find(name: string): Line | undefined {
+    return this.parsed().find((line) => line.event === name);
+  }
+
+  private get hasExited(): boolean {
+    return this.process.exitCode !== null || this.process.signalCode !== null;
+  }
+
+  /**
+   * The first line with this event, or a wait for it. A process that exits first fails the wait
+   * at once, with its exit and everything it wrote — a crash at import is the whole story, and it
+   * is in the stderr the process left behind.
+   */
   async event(name: string, timeoutMs = 30_000): Promise<Line> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const found = this.parsed().find((line) => line.event === name);
+      const found = this.find(name);
       if (found) return found;
+      if (this.hasExited) {
+        // The pipes may still hold the last of what it wrote, and the line asked for may be in
+        // there: `shutdown` is written on the way out.
+        await Promise.all(this.drained);
+        const last = this.find(name);
+        if (last) return last;
+        throw new Error(
+          `${this.name} exited (code ${this.process.exitCode}, signal ${this.process.signalCode}) ` +
+            `before writing "${name}". Everything it wrote:\n${this.lines.join("\n")}`,
+        );
+      }
       if (Date.now() > deadline) {
         throw new Error(
-          `No "${name}" line within ${timeoutMs}ms. Output so far:\n${this.lines.join("\n")}`,
+          `${this.name} wrote no "${name}" line within ${timeoutMs}ms. Output so far:\n${this.lines.join("\n")}`,
         );
       }
       await new Promise<void>((wake) => {
@@ -108,7 +161,7 @@ class Captured {
 }
 
 /** The provider, as much of it as one turn needs. */
-let provider: ReturnType<typeof Bun.serve>;
+let provider: ReturnType<typeof Bun.serve> | undefined;
 /** What the next completion request is answered with. */
 let providerMode: "answer" | "rate_limit" = "answer";
 /** Whether the canary key ever reached the provider, which is what makes the grep meaningful. */
@@ -134,12 +187,19 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-function spawn(cwd: string, env: Record<string, string>): Captured {
+/**
+ * One of the two services, with exactly this environment. `PATH` is how `bun` is found and `HOME`
+ * is where it keeps its cache; nothing else of this process's environment goes through.
+ */
+function spawn(
+  name: string,
+  cwd: string,
+  env: Record<string, string>,
+): Captured {
   return new Captured(
+    name,
     Bun.spawn(["bun", "src/index.ts"], {
       cwd,
-      // Only what is named: the developer's own environment — a real key in `.env`, an
-      // `OPENAI_BASE_URL` pointing at a real provider — must not reach either process.
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -151,7 +211,7 @@ function spawn(cwd: string, env: Record<string, string>): Captured {
   );
 }
 
-beforeAll(async () => {
+function startProvider(): string {
   provider = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -207,36 +267,18 @@ beforeAll(async () => {
       });
     },
   });
-  const providerUrl = `http://127.0.0.1:${provider.port}/v1`;
+  return `http://127.0.0.1:${provider.port}/v1`;
+}
 
-  bot = spawn(resolve(root, "agent-bot"), {
-    PORT: "0",
-    OPENAI_API_KEY: CANARY_KEY,
-    OPENAI_BASE_URL: providerUrl,
-    BOT_MODEL: MODEL,
-    IMAGE_TAG,
-  });
-  const botBoot = await bot.event("boot");
-
-  server = spawn(resolve(root, "server"), {
-    PORT: "0",
-    DATABASE_URL: process.env.DATABASE_URL ?? "",
-    KEY_ENCRYPTION_KEY: EXAMPLE_ENCRYPTION_KEY,
-    TENANT_PACKAGE_DIR: "../tenant/laf",
-    LAF_DEV_NO_AUTH: "true",
-    TRUSTED_ORIGINS: "http://localhost:3010",
-    MANAGED_AGENT_AG_UI_URL: `http://127.0.0.1:${botBoot.port}/ag-ui`,
-    OPENAI_API_KEY: CANARY_KEY,
-    OPENAI_BASE_URL: providerUrl,
-    BOT_MODEL: MODEL,
-    // Room for this file's two Bots beside whatever else the shared test database holds.
-    BOT_SEATS_PER_ACCOUNT: "50",
-    AUDIT_RETENTION_DAYS: "0",
-    IMAGE_TAG,
-  });
-  const serverBoot = await server.event("boot", 60_000);
-  api = `http://127.0.0.1:${serverBoot.port}`;
-}, 90_000);
+/** Both services, once the boot test has brought them up; a plain sentence otherwise. */
+function running(): { bot: Captured; server: Captured } {
+  if (!bot || !server || !api) {
+    throw new Error(
+      "The two services never booted; the boot test above says why.",
+    );
+  }
+  return { bot, server };
+}
 
 afterAll(async () => {
   provider?.stop(true);
@@ -289,7 +331,43 @@ afterAll(async () => {
 });
 
 describe("a running deployment's log", () => {
+  test("the Bot service and the API server boot, each against the fake provider and nothing of this shell", async () => {
+    const providerUrl = startProvider();
+
+    bot = spawn("agent-bot", resolve(root, "agent-bot"), {
+      PORT: "0",
+      OPENAI_API_KEY: CANARY_KEY,
+      OPENAI_BASE_URL: providerUrl,
+      BOT_MODEL: MODEL,
+      IMAGE_TAG,
+    });
+    const botBoot = await bot.event("boot");
+
+    server = spawn("server", resolve(root, "server"), {
+      PORT: "0",
+      DATABASE_URL,
+      KEY_ENCRYPTION_KEY: EXAMPLE_ENCRYPTION_KEY,
+      TENANT_PACKAGE_DIR: "../tenant/laf",
+      LAF_DEV_NO_AUTH: "true",
+      TRUSTED_ORIGINS: "http://localhost:3010",
+      MANAGED_AGENT_AG_UI_URL: `http://127.0.0.1:${botBoot.port}/ag-ui`,
+      OPENAI_API_KEY: CANARY_KEY,
+      OPENAI_BASE_URL: providerUrl,
+      BOT_MODEL: MODEL,
+      // Room for this file's two Bots beside whatever else the shared test database holds.
+      BOT_SEATS_PER_ACCOUNT: "50",
+      AUDIT_RETENTION_DAYS: "0",
+      IMAGE_TAG,
+    });
+    const serverBoot = await server.event("boot", 60_000);
+    api = `http://127.0.0.1:${serverBoot.port}`;
+
+    expect(typeof botBoot.port).toBe("number");
+    expect(typeof serverBoot.port).toBe("number");
+  }, 90_000);
+
   test("carries a whole turn through the API and the Bot service without the key, the message or the provider's words", async () => {
+    const { bot } = running();
     const asker = await makeBot(askerName);
     const answerer = await makeBot(answererName);
 
@@ -304,7 +382,7 @@ describe("a running deployment's log", () => {
     );
     expect(answer).toContain(REPLY);
     expect(providerSawKey).toBe(true);
-    const finished = await bot!.event("run_finished");
+    const finished = await bot.event("run_finished");
     expect(typeof finished.tools).toBe("number");
 
     // The refusal: the same turn again, answered with a 429 whose body names a vendor.
@@ -319,7 +397,7 @@ describe("a running deployment's log", () => {
     const refusedBody = await refused.text();
     expect(refusedBody).not.toContain(REPLY);
     expect(refusedBody).not.toContain(CANARY_VENDOR);
-    const failed = await bot!.event("run_failed");
+    const failed = await bot.event("run_failed");
     expect(failed.reason).toBe("provider_rate_limited");
     expect(failed.code).toBe("laf:model_rate_limited");
     expect(failed.bot).toBe(answerer);
@@ -356,20 +434,22 @@ describe("a running deployment's log", () => {
   }, 120_000);
 
   test("says which build, which model and how many tools at boot", async () => {
-    const serverBoot = await server!.event("boot");
+    const { bot, server } = running();
+    const serverBoot = await server.event("boot");
     expect(serverBoot.version).toBe(IMAGE_TAG);
     expect(serverBoot.model).toBe(MODEL);
     expect(serverBoot.tools).toBeGreaterThan(0);
     expect(serverBoot.computer).toBe("none");
 
-    const botBoot = await bot!.event("boot");
+    const botBoot = await bot.event("boot");
     expect(botBoot.version).toBe(IMAGE_TAG);
     expect(botBoot.model).toBe(MODEL);
     expect(botBoot.baseUrl).toContain("127.0.0.1");
   });
 
   test("says why it stopped when it is told to", async () => {
-    for (const captured of [server!, bot!]) {
+    const { bot, server } = running();
+    for (const captured of [server, bot]) {
       captured.process.kill("SIGTERM");
       const stopped = await captured.event("shutdown", 15_000);
       expect(stopped.reason).toBe("SIGTERM");

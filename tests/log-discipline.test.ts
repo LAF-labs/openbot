@@ -29,7 +29,7 @@ const ALLOWED = new Set(["shared/log.ts"]);
  * These belonged to other workstreams landing at the same time (routines and notifications to
  * 3-B, the account routes to 4-A/4-B), and a change here would have landed on top of theirs. 3-B
  * has since landed: what it added writes through the logger, what it left is counted here. Each writes
- * either through an injectable `log` whose default is `console` — which `server/src/index.ts`
+ * either through an injectable `log` whose default is `console` — which `server/src/main.ts`
  * already overrides with the process log — or a bare line on a path the canary turn does not
  * take. The count is a ceiling: converting one lowers it and passes; adding one fails.
  */

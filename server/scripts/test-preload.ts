@@ -11,11 +11,15 @@
  * registered and never reported.
  *
  * Importing it here evaluates it as ESM once, before anything requires it, so the order no longer
- * decides the outcome. `eventsource` is declared as a dev dependency of this package for the same
- * reason; test determinism depends on it.
+ * decides the outcome.
  *
- * This compatibility shim is narrow enough to delete when the SDK ships an ESM-safe require or Bun
- * handles it.
+ * The running server has the same race without any test file involved — the runtime's own graph
+ * imports `eventsource` as ESM while the CommonJS side requires it, and which one gets there first
+ * is the loader's timing — so `src/index.ts` does for the process what this file does for the
+ * suite, and `eventsource` is a dependency of this package rather than a dev dependency.
+ *
+ * This compatibility shim is narrow enough to delete, together with the entry's, when the SDK
+ * ships an ESM-safe require or Bun handles it.
  */
 
 import "eventsource";
