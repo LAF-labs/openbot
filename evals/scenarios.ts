@@ -491,7 +491,106 @@ export const SCENARIOS: Scenario[] = [
       ]);
     },
   },
+  /*
+   * Born on 2026-09-06, in exactly this phrasing, against the real stack (launch plan 2-B).
+   *
+   * The templates had already been looked up, so the blanks were on the table: 상호, 고객명, 일시,
+   * 인원. The model sent 예약일·예약시간·요청사항 instead, was refused, sent `{}` next, and the
+   * person had approved the send twice for nothing by then. The schema now names the blanks per
+   * template; this is the check that a candidate reads them.
+   */
+  {
+    id: "send-alimtalk-with-the-blanks-named",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "박*민 손님(010-2222-3333)께 내일 9월 7일 12:00 4명 단체석 예약 확정 알림톡 보내줘. 상호는 미소분식이야.",
+      ),
+      ...alimtalkTemplatesLookedUp(),
+    ],
+    tools: [...REALISTIC_TOOLSET],
+    check: (turn) => {
+      const send = turn.calls.find(
+        (call) => call.name === "mcp__kakao-alimtalk__alimtalk_send",
+      );
+      const variables = (send?.arguments?.variables ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const filled = (name: string) =>
+        String(variables[name] ?? variables[`#{${name}}`] ?? "").trim().length >
+        0;
+      return verdict([
+        [
+          "mcp__kakao-alimtalk__alimtalk_send가 실제 이름으로 와이어에 실리지 않음",
+          send !== undefined,
+        ],
+        [
+          "예약 확정 서식(laf_reservation)이 아님",
+          send?.arguments?.template === "laf_reservation",
+        ],
+        [
+          "받는 번호가 010-2222-3333이 아님",
+          String(send?.arguments?.to ?? "").replace(/\D/g, "") ===
+            "01022223333",
+        ],
+        [
+          "빈칸을 서식의 이름(상호·고객명·일시·인원)으로 채우지 않음",
+          ["상호", "고객명", "일시", "인원"].every(filled),
+        ],
+      ]);
+    },
+  },
 ];
+
+/**
+ * The 알림톡 templates already looked up, as the bridge would have left them in the thread.
+ *
+ * The lookup is the honest first step and a model that takes it is right to; seeding it keeps the
+ * scenario about the SECOND step, which is the one that failed: reading the blanks off the answer
+ * rather than guessing them. The rows are the shape `alimtalk_templates` actually returns.
+ */
+function alimtalkTemplatesLookedUp(): unknown[] {
+  const callId = "call_alimtalk_templates";
+  return [
+    {
+      id: "a_alimtalk_templates",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: callId,
+          type: "function",
+          function: {
+            name: "mcp__kakao-alimtalk__alimtalk_templates",
+            arguments: "{}",
+          },
+        },
+      ],
+    },
+    {
+      id: "t_alimtalk_templates",
+      role: "tool",
+      toolCallId: callId,
+      content: JSON.stringify([
+        {
+          code: "laf_reservation",
+          audience: "customer",
+          variables: ["#{상호}", "#{고객명}", "#{일시}", "#{인원}"],
+          status: "approved",
+          reason: "",
+        },
+        {
+          code: "laf_review",
+          audience: "customer",
+          variables: ["#{상호}", "#{고객명}", "#{링크}"],
+          status: "approved",
+          reason: "",
+        },
+      ]),
+    },
+  ];
+}
 
 /**
  * Twelve pages already opened, as the client loop would have left them in the thread.
