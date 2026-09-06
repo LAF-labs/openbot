@@ -2029,4 +2029,43 @@ export const ko: Record<string, string> = {
   "It could not finish: the server restarted partway through.":
     "끝내지 못했습니다. 도중에 서버가 다시 시작됐습니다.",
   "A routine ran late, within its grace": "루틴이 늦었지만 유예 안에 실행됨",
+  /**
+   * 첫 일 제안 — 빈 대화 위의 칩. 연결된 사이트·계정이 있으면 그 카드의 첫 문장을, 없으면
+   * 연결 없이도 답할 수 있는 문장과 사이트 연결로 가는 칩을 낸다. 문장 표는 `t(변수)`로
+   * 읽히므로 first-tasks.test.ts가 표를 직접 훑는다.
+   */
+  "Try one of these first": "이런 일부터 시켜 보세요",
+  "Tell me today's date and this week's public holidays.":
+    "오늘 날짜와 이번 주 공휴일 알려줘",
+  "Write three short introductions for our shop.":
+    "우리 가게 소개 문구 세 가지 써줘",
+  "Make a checklist for opening up tomorrow morning.":
+    "내일 아침 오픈 준비 체크리스트 만들어줘",
+  "Draft a polite reply to a customer asking about a refund.":
+    "환불을 문의한 손님에게 보낼 정중한 답장 초안 써줘",
+  "Make a simple table I can fill in with each day's sales.":
+    "하루 매출을 적어 넣을 간단한 표 만들어줘",
+  "Make a checklist for counting the stock we use every week.":
+    "매주 쓰는 재료의 재고 확인표 만들어줘",
+  "Draft a notice about a holiday closure for me to check before it goes up.":
+    "올리기 전에 내가 확인할 휴무일 안내문 초안 써줘",
+  "Tell me which receipts a small business has to keep, and for how long.":
+    "사업자가 꼭 보관해야 하는 영수증과 보관 기간 알려줘",
+  "Show me the mail nobody has answered.": "답장 안 한 메일을 보여줘",
+  "Tell me what is on the calendar tomorrow.": "내일 일정을 알려줘",
+  "Read my spreadsheet and tell me what stands out.":
+    "내 스프레드시트를 읽고 눈에 띄는 것을 알려줘",
+  "Tell me which files were added to Drive this week.":
+    "이번 주 드라이브에 새로 올라온 파일을 알려줘",
+  "Sum up what changed in Notion this week.":
+    "이번 주 노션에서 바뀐 것을 정리해줘",
+  "Connect a site": "사이트 연결하기",
+  // 네 번째 칩. 첫 문장을 그대로 매일 아침 루틴으로 건다 — 같은 대화에 답이 온다.
+  "Get a report every morning at 7:30": "매일 아침 7:30에 보고받기",
+  "The first sentence above, asked every morning at 7:30, answered in this conversation.":
+    "위의 첫 문장을 매일 아침 7:30에 물어보고, 이 대화에 답합니다.",
+  "Morning report": "아침 보고",
+  "Making the routine…": "루틴 만드는 중…",
+  "The routine is made.": "루틴을 만들었습니다",
+  "See it on Routines": "루틴 화면에서 보기",
 };

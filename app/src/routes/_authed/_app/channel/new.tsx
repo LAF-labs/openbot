@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { BotIntroCard } from "@/components/agents/bot-intro-card";
+import { FirstTaskChips } from "@/components/agents/first-task-chips";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
@@ -14,9 +15,16 @@ import {
 } from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
-import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
-import { useStartChannel } from "@/lib/channels/start";
 import { focusRing } from "@/components/ui/focus";
+import {
+  isFirstConversation,
+  pickFirstTasks,
+  roleHint,
+} from "@/lib/agents/first-tasks";
+import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
+import { channelListQueryOptions } from "@/lib/channels/queries";
+import { useStartChannel } from "@/lib/channels/start";
+import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -40,7 +48,7 @@ function RouteComponent() {
   // Optimistic seed shown before the first channel record exists.
   const [sent, setSent] = useState<Message | null>(null);
 
-  // Stale or private `?agent={` values are ignored because the roster is permission-filtered.
+  // Stale or private `?agent=` values are ignored because the roster is permission-filtered.
   const listed = profiles?.find((profile) => profile.id === agent);
   /**
    * Hidden coworkers are omitted from the roster but may still be valid recipients from a profile
@@ -55,7 +63,7 @@ function RouteComponent() {
   /*
    * STATE, NOT A READING OF THE URL.
    *
-   * This was derived straight from `}?agent={`, so the recipient field's chips and its remove buttons
+   * This was derived straight from `?agent=`, so the recipient field's chips and its remove buttons
    * were decoration — nothing they did could change what the screen would send. A room holds
    * several Bots now, so the field has to be the source of truth; the URL seeds it and then stops
    * being consulted.
@@ -65,8 +73,54 @@ function RouteComponent() {
     ? [{ id: chosen.id, name: chosen.name }]
     : [];
   const recipients = picked ?? seeded;
-  // Skills are the first member's; a room's `}/` menu cannot offer four Bots' commands at once.
+  // Skills are the first member's; a room's `/` menu cannot offer four Bots' commands at once.
   const skillCommands = useSkillCommands(recipients[0]?.id ?? "");
+
+  /*
+   * WHAT THIS PERSON HAS CONNECTED, AND WHETHER THIS BOT HAS EVER BEEN SPOKEN TO, DECIDE THE CHIPS.
+   *
+   * Both read here rather than assumed. A chip for a site the Bot's browser is not signed into is
+   * the first thing the product does for somebody and it fails; a chip offered to somebody on
+   * their fifth conversation with the Bot is a screen that has not noticed them. Nothing is drawn
+   * until both have answered: a "connect a site" chip that appears and is then replaced by a
+   * 스마트플레이스 sentence, or a row of chips that vanishes a moment later, is a screen changing
+   * its mind in front of somebody. The channel list is the sidebar's own query, already cached.
+   */
+  const { data: overview } = useQuery(connectionsOverviewQueryOptions());
+  const { data: channels } = useQuery(channelListQueryOptions());
+  const hint = chosen ? roleHint(chosen) : null;
+  const firstTasks =
+    chosen && overview && channels && isFirstConversation(channels, chosen.id)
+      ? pickFirstTasks(overview, { hint })
+      : null;
+
+  /**
+   * One send for the composer and the chips alike. The chip is a sentence typed on the person's
+   * behalf, so it goes out exactly as a typed one would: seeded into the transcript, then the
+   * channel started, then the seed withdrawn if that failed.
+   */
+  const send = async (text: string) => {
+    if (!canSend(recipients, text)) return;
+
+    setError(null);
+    setSent(seedMessage(text, crypto.randomUUID()));
+
+    try {
+      await start(
+        recipients.map((recipient) => recipient.id),
+        text,
+      );
+    } catch (caught) {
+      // Preserve the unsent draft when channel creation fails.
+      setSent(null);
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : t("Could not start the conversation."),
+      );
+      throw caught;
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -199,6 +253,26 @@ function RouteComponent() {
                     {chosen.roleDescription}
                   </p>
                 ) : null}
+                {/*
+                 * THE FIRST THING TO ASK, AS SOMETHING TO PRESS — for a Bot nobody has spoken to.
+                 *
+                 * Keyed on the Bot for the same reason the card is: a routine made for one Bot must
+                 * not show as made for the next. Not the SAME key as the card — they are siblings,
+                 * and React logged the duplicate on every new Bot (measured 2026-09-06).
+                 */}
+                {chosen.canManage && firstTasks ? (
+                  <FirstTaskChips
+                    agent={chosen}
+                    disabled={pending || sent !== null}
+                    hint={hint}
+                    key={`first-tasks:${chosen.id}`}
+                    onAsk={(sentence) => {
+                      // The failure is already on screen as the notice; nothing else to do with it.
+                      void send(sentence).catch(() => undefined);
+                    }}
+                    tasks={firstTasks}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -212,28 +286,7 @@ function RouteComponent() {
             </p>
           ) : null
         }
-        onSubmit={async (draft) => {
-          if (!canSend(recipients, draft.text)) return;
-
-          setError(null);
-          setSent(seedMessage(draft.text, crypto.randomUUID()));
-
-          try {
-            await start(
-              recipients.map((recipient) => recipient.id),
-              draft.text,
-            );
-          } catch (caught) {
-            // Preserve the unsent draft when channel creation fails.
-            setSent(null);
-            setError(
-              caught instanceof Error
-                ? caught.message
-                : t("Could not start the conversation."),
-            );
-            throw caught;
-          }
-        }}
+        onSubmit={(draft) => send(draft.text)}
         pending={pending}
       />
     </div>

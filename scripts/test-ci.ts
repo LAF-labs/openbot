@@ -98,6 +98,14 @@ const projectRoot = resolve(import.meta.dir, "..");
  *
  *     app                332 tests across 43 files   →   322
  *
+ * RAISED AGAIN 2026-09-06, with the first-task chips on a new Bot's empty conversation. Thirty-six
+ * tests to `app`: which four sentences are offered for which connection state and which role, when
+ * they are withheld, what a press reports, and a rendered press of each chip inside a memory-history
+ * router — the first suite here that mounts a TanStack `Link`. `app` had drifted to 12% under; the
+ * other three did not grow.
+ *
+ *     app                637 tests across 76 files   →   617
+ *
  * MEASURED TOGETHER 2026-09-05, once 세금계산서 was gone and the Settings, avatar and Bot-creation
  * branches were on one branch: server 1395 → 1353, app 402 → 389 (3% under, rounded down);
  * agent-computer and root unchanged.
@@ -154,7 +162,7 @@ const projectRoot = resolve(import.meta.dir, "..");
  */
 const GROUPS = [
   { name: "server", floor: 1353, roots: ["server"] },
-  { name: "app", floor: 557, roots: ["app"] },
+  { name: "app", floor: 617, roots: ["app"] },
   { name: "agent-computer", floor: 128, roots: ["agent-computer"] },
   { name: "root", floor: 109, roots: ["tests", "agent-bot"] },
 ] as const;
