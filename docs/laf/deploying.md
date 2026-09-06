@@ -344,11 +344,76 @@ into `/var/backups/laf/` (gzip, `umask 077`) and keeps the newest fourteen.
 the schedule silently never fires. Learned the measured way: the entry sat for
 two days doing nothing until the fleet monitor read the backup age, because
 running the script by hand had proven the script, not the schedule.
-Restore is the reverse:
+
+### Restoring, and the monthly drill
 
 ```bash
-zcat /var/backups/laf/laf-<stamp>.sql.gz |   docker compose exec -T postgres psql -U openbot openbot
+scripts/restore.sh latest              # newest dump in /var/backups/laf → openbot_restore, then the table
+scripts/restore.sh latest --replace    # …and only then: stop the API, swap the names, start, /health
 ```
+
+The bare form — `zcat dump | docker compose exec -T postgres psql -U openbot openbot` —
+restores **into** the live database: every row since the dump is gone the moment
+it finishes, and a dump that turns out to be the wrong day's, or empty, or from
+before a migration, is discovered afterwards, on top of the data it replaced.
+`scripts/restore.sh` restores into a database of its own (`openbot_restore`,
+`RESTORE_DB` renames it), prints every table's row count on both sides, and
+stops:
+
+```
+   table                                                live   restored
+   drizzle.__drizzle_migrations                           36         36  =
+   public.audit_events                                  1204       1180  DIFF (-24)
+   public.users                                            3          3  =
+   …
+   33 tables · 31 equal · 2 differ · restore took 3s
+```
+
+A day's difference on `audit_events`, `laf_thread_messages` and the run tables
+is what yesterday's dump looks like; a difference on `users`, `agents` or
+`credentials` is a question to answer before going further. The live database
+is read for its counts and never written without `--replace`. Re-running is
+safe: a target that already holds a restore is refused until `--fresh` says to
+drop it, and `--replace` keeps the previous live database under a dated name
+(`openbot_before_restore_<stamp>`) rather than dropping it — drop that by hand
+once the restored deployment has been used. `--replace` runs the migration
+container before the API, the same path an upgrade takes, so an older dump is
+brought forward to the current schema. `--dry-run` prints the plan and opens
+no connection at all.
+
+**Drill monthly, on a dump from the day before.** The point of a drill is not
+that the script works — `tests/restore-script.test.ts` proves that on every
+gate — but that *this deployment's* dumps restore, in a known number of
+seconds, to the row counts it has. Once a month, on the VM:
+
+1. `scripts/restore.sh latest` — read the table. Every table present on both
+   sides, the slow-moving ones equal, the fast-moving ones a day behind.
+2. Open the app against the restored copy if the month's change touched the
+   schema: `DATABASE_URL=…/openbot_restore` on a second API process, or simply
+   trust the counts when it did not.
+3. `docker compose exec -T postgres psql -U openbot -d postgres -c 'drop database openbot_restore'`.
+4. Write down the date, the table count and the seconds where the fleet keeps
+   its log. A restore that took 3s last month and 40s this month is a
+   database that grew, and that is worth knowing before the day it matters.
+
+A dump that only exists in the bucket cannot be listed from the VM — it holds
+a **write-only** door. The fleet tool does the whole trip from the operator's
+machine: `laf restore <name> [--from YYYY-MM-DD] [--dry-run]` reads the bucket
+with the operator's credentials, mints a one-object, one-hour read door, has
+the VM download its own dump straight from the bucket (the bytes never pass
+through the operator's machine), and runs this script without `--replace`
+(laf-control README §3.9). `--dry-run` there is the monthly drill: it reads
+the bucket, checks the VM, and prints the command. By hand instead:
+`OFFSITE_BUCKET=laf-backup-<name> scripts/restore.sh latest` on the operator's
+machine (the `oci` CLI; `OFFSITE_REGION` if the bucket is not in the config's
+default region), or `oci os object get`, then `scp` to the VM and the file
+form above.
+
+First drill, 2026-09-06, against the development database: a 607KB dump,
+33 tables, 33 equal, restore 1s (4.6s wall including the two count queries);
+a second run without `--fresh` refused as designed; the swap was rehearsed
+against a throwaway live name (`LIVE_DB=openbot_drill … --replace --yes`,
+1.8s), never `openbot`.
 
 The same dump also goes off the machine, when — and only when —
 `/etc/laf-backup-remote` exists: a root-only file holding a **write-only**
@@ -363,14 +428,17 @@ dumps survive a bad migration or a fat-fingered delete, not the machine.
 **백업은 사람이 떠난 뒤에도 그 사람을 갖고 있다.** `POST /api/me/delete`는
 데이터베이스와 봇의 브라우저 프로필을 지우지만, 어제 만든 덤프는 지우지 못한다 —
 덤프는 그 시점의 전체 사본이고 이 저장소의 코드가 닿지 않는 곳(VM의 `/var/backups/laf`와
-객체 스토리지 버킷)에 있다. 그래서 **보존 기간은 30일이고, 실제 파기는 이 백업 스크립트가
-한다**(결정: `redesign-2026-09.md` §7-7). `laf-backup-db`는 지금 최신 14벌만 남기므로 로컬
-사본은 이미 2주 안에 사라지지만, **원격 버킷에는 만료 규칙이 없다** — 버킷에
-30일 수명주기 정책을 걸거나, 업로드 뒤 30일이 지난 객체를 지우는 한 줄을 스크립트에
-넣어야 한다. 그 전까지 "계정을 지웠다"는 문장은 데이터베이스에 대해서만 참이다. 계정
-삭제 요청을 받았고 그 사람이 30일을 기다릴 수 없다면, 그때는 해당 시점 이후의 덤프를 손으로
-지우는 것 말고 방법이 없다 — 덤프는 한 사람만 골라낼 수 있는 형식이 아니다. 사람에게
-설명해야 하는 내용은 `docs/laf/data-lifecycle.md`에 그 사람의 말로 적혀 있다.
+객체 스토리지 버킷)에 있다. 그래서 **보존 기간은 30일이다**(결정: `redesign-2026-09.md`
+§7-7). 로컬은 `laf-backup-db`가 최신 14벌만 남기므로 2주 안에 사라지고, **원격 버킷은
+수명주기 규칙이 30일 뒤 지운다** — 객체도, 덮어쓰기가 묻은 이전 버전도. 규칙은 함대 도구가
+버킷을 만들 때 건다(laf-control `core/offsite.ts`의 표 하나가 두 클라우드의 본문이 된다).
+규칙이 정말 걸려 있는지는 **API에서 읽어서** 본다 — 오프사이트 잡의 "수명주기 규칙 확인"
+단계와 `laf offsite lifecycle <name>`이 그 일이고, 이 저장소가 무엇을 썼다고 기억하는지는
+증거가 아니다(첫 실물 버킷은 손으로 30일이 걸려 있는 동안 코드는 90일을 쓰고 있었다,
+2026-09-06 실측). 계정 삭제 요청을 받았고 그 사람이 30일을 기다릴 수 없다면, 그때는 해당
+시점 이후의 덤프를 손으로 지우는 것 말고 방법이 없다 — 덤프는 한 사람만 골라낼 수 있는
+형식이 아니다. 사람에게 설명해야 하는 내용은 `docs/laf/data-lifecycle.md`에 그 사람의 말로
+적혀 있다.
 
 ## The shell
 
