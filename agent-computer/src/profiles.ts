@@ -192,10 +192,35 @@ export type ProfileSummary = {
 /** A moment after the browser process is gone, for whatever it was still flushing. */
 const FLUSH_SETTLE_MS = 250;
 
+/**
+ * How long a graceful close is given before the process is killed instead.
+ *
+ * Measured 2026-09-06 against 기업마당: a navigation that hit its 30s deadline left that Bot's
+ * Chromium answering nothing at all — the next `goto` sat out its own deadline, `context.close()`
+ * never returned, and because the launch path waits for a close in flight, every later call on that
+ * Bot waited on it too. Stop, reset and ten idle minutes all queued behind the same promise. A close
+ * that cannot finish in this long is not going to, and the kill below is what ends it.
+ */
+export const CLOSE_GRACE_MS = 3_000;
+
+/** After a kill, how long the `disconnected` event is waited for before the profile is presumed free. */
+const KILL_SETTLE_MS = 1_000;
+
+/** How long a page-level recovery step (close the tab, open another) is given before the browser goes. */
+const RECYCLE_STEP_MS = 2_000;
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The slice of a context a close needs, so the bounded close can be tested without a browser. */
+export type ClosableContext = Pick<BrowserContext, "close"> & {
+  browser(): {
+    isConnected(): boolean;
+    once(event: "disconnected", handler: () => void): unknown;
+  } | null;
+};
+
 /**
- * Close a context and wait for Chromium to actually be gone.
+ * Close a context and wait for Chromium to actually be gone — or make it go.
  *
  * Chromium batches cookie writes and commits them as it exits, while `close()` only asks it to exit.
  * Bounded, because a shutdown that hangs must never be the reason a computer does not come back. We
@@ -207,21 +232,81 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * a browser also closes on its own after ten idle minutes: returning from a close before the process
  * has released the profile directory is how two Chromiums end up on one user-data-dir, and the
  * second one comes up in a state where every call hangs until its timeout.
+ *
+ * AND THE CLOSE ITSELF IS BOUNDED, which it was not. `context.close()` was awaited without a limit
+ * on the assumption that a browser asked to exit exits; a Chromium wedged mid-navigation does not,
+ * and everything for that Bot then waited for ever (see CLOSE_GRACE_MS). So: ask nicely, wait the
+ * grace, and if the browser is still connected, kill the process by the id recorded at launch. The
+ * profile directory is on disk either way; what a kill costs is the last few seconds of cookies.
  */
-async function closeAndWait(context: BrowserContext): Promise<void> {
+export async function closeAndWait(
+  context: ClosableContext,
+  process: { pid: number | null; kill?: (pid: number) => void } = {
+    pid: null,
+  },
+): Promise<void> {
   const browser = context.browser();
   const gone = browser
     ? new Promise<void>((resolve) => {
         browser.once("disconnected", () => resolve());
       })
     : null;
-  await context.close().catch(() => undefined);
+  const asked = context.close().catch(() => undefined);
+  await Promise.race([asked, wait(CLOSE_GRACE_MS)]);
+  if (browser?.isConnected()) {
+    log.warn("computer_close_hung", {
+      pid: process.pid,
+      graceMs: CLOSE_GRACE_MS,
+    });
+    if (process.pid !== null) {
+      try {
+        (process.kill ?? killProcess)(process.pid);
+      } catch {
+        // Already gone between the check and the kill; nothing to end.
+      }
+    }
+    // With no pid there is nothing more to do than not wait: the caller gets its answer and the
+    // launch path's lock sweep takes its chances, which is what it did before this existed.
+    if (gone) await Promise.race([gone, wait(KILL_SETTLE_MS)]);
+    await wait(FLUSH_SETTLE_MS);
+    return;
+  }
   if (gone) {
     await Promise.race([gone, wait(CLOSE_SETTLE_MS)]);
     await wait(FLUSH_SETTLE_MS);
     return;
   }
   await wait(CLOSE_SETTLE_MS);
+}
+
+/** SIGKILL, not SIGTERM: a Chromium that ignored a graceful close is not going to honour a signal it may handle. */
+function killProcess(pid: number): void {
+  globalThis.process.kill(pid, "SIGKILL");
+}
+
+/**
+ * The operating-system id of the browser behind a context, read the moment it starts.
+ *
+ * Playwright exposes no process for a persistent context, but the browser will say its own pid over
+ * CDP. Asked once, at launch, while the browser is certainly answering: by the time a kill is needed
+ * it no longer is, which is the whole point of asking early. Null when it cannot be read — then a
+ * hung close still returns after the grace, it just cannot end the process.
+ */
+async function browserPidOf(context: BrowserContext): Promise<number | null> {
+  try {
+    const browser = context.browser();
+    if (!browser) return null;
+    const session = await browser.newBrowserCDPSession();
+    const info = (await Promise.race([
+      session.send("SystemInfo.getProcessInfo"),
+      wait(RECYCLE_STEP_MS).then(() => null),
+    ])) as { processInfo?: { type: string; id: number }[] } | null;
+    await session.detach().catch(() => undefined);
+    const main = info?.processInfo?.find((entry) => entry.type === "browser");
+    return typeof main?.id === "number" ? main.id : null;
+  } catch {
+    return null;
+  }
 }
 
 /** What the process around this wants to know about a page the moment it exists. */
@@ -260,6 +345,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       startedAt: string;
       /** When this Bot last had a call. See IDLE_CLOSE_MS. */
       usedAt: number;
+      /** The browser process, for the close that has to end it. See closeAndWait. */
+      pid: number | null;
     }
   >();
   /** Launches in flight, so a cold computer is started once however many callers ask at once. */
@@ -275,8 +362,12 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
   const closing = new Map<string, Promise<void>>();
 
   /** Close this Bot's context, and make the wait for it visible to anything that wants to launch. */
-  const closeContext = (botId: string, context: BrowserContext) => {
-    const done = closeAndWait(context).finally(() => {
+  const closeContext = (
+    botId: string,
+    context: BrowserContext,
+    pid: number | null,
+  ) => {
+    const done = closeAndWait(context, { pid }).finally(() => {
       if (closing.get(botId) === done) closing.delete(botId);
     });
     closing.set(botId, done);
@@ -379,6 +470,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
           page,
           startedAt: new Date().toISOString(),
           usedAt: now(),
+          pid: await browserPidOf(context),
         };
         live.set(botId, entry);
         /*
@@ -469,7 +561,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       );
       for (const [botId] of stale) live.delete(botId);
       await Promise.all(
-        stale.map(([botId, entry]) => closeContext(botId, entry.context)),
+        stale.map(([botId, entry]) =>
+          closeContext(botId, entry.context, entry.pid),
+        ),
       );
       if (stale.length) {
         log.info("computer_idle_closed", {
@@ -490,8 +584,42 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       const existing = live.get(botId);
       if (!existing) return false;
       live.delete(botId);
-      await closeContext(botId, existing.context);
+      await closeContext(botId, existing.context, existing.pid);
       return true;
+    },
+
+    /**
+     * Get this Bot a page that answers, after the one it had stopped answering.
+     *
+     * A navigation that ran out its deadline is the caller. Two steps, each bounded, cheapest
+     * first: close the tab and open another in the same browser, which keeps the logins in memory
+     * and costs nothing visible; and if the browser will not even do that, it is the browser that
+     * is wedged, so it is closed — killed, if it will not close — and the next call starts a fresh
+     * one on the same profile. Measured 2026-09-06: without this, one site that never finished
+     * loading kept a Bot's browser dead for the rest of the day.
+     *
+     * Says which step it took, so the caller can put that in front of the Bot.
+     */
+    async recycle(botId: string): Promise<"page" | "browser" | "none"> {
+      const existing = live.get(botId);
+      if (!existing) return "none";
+      // Held before `newPage`, because the `page` listener moves `existing.page` to the new tab.
+      const stuck = existing.page;
+      const fresh = await Promise.race([
+        existing.context.newPage().catch(() => null),
+        wait(RECYCLE_STEP_MS).then(() => null),
+      ]);
+      if (fresh && live.get(botId) === existing) {
+        // `context.on("page")` has already adopted it; this only covers the race where it has not.
+        existing.page = fresh;
+        existing.usedAt = now();
+        // Not awaited: a tab that will not close must not hold the one that just opened hostage.
+        void stuck.close().catch(() => undefined);
+        return "page";
+      }
+      log.warn("computer_recycled_browser", { bot: botId });
+      await profiles.stop(botId);
+      return "browser";
     },
 
     /**

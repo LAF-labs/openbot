@@ -148,6 +148,8 @@ export function serveFixture(port = 0) {
   const html = { "content-type": "text/html; charset=utf-8" };
   /** Whether the job pages show the morning on which nothing came in. */
   let quiet = false;
+  /** Every `/hang` request still being held open. See the route. */
+  const hanging = new Set<(response: Response) => void>();
 
   const server = Bun.serve({
     port,
@@ -187,6 +189,16 @@ export function serveFixture(port = 0) {
           headers: { "content-type": "application/json" },
         });
       }
+      /*
+       * A page that never answers — the connection is accepted and then nothing is sent, which is
+       * what a site behind a dead load balancer looks like to a browser. The response is released
+       * when the server stops, so a test that ends mid-hang does not leave Bun waiting on it.
+       */
+      if (path === "/hang") {
+        return new Promise<Response>((resolve) => {
+          hanging.add(resolve);
+        });
+      }
       if (path === "/frame") {
         return new Response(FRAME_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -219,7 +231,11 @@ export function serveFixture(port = 0) {
   });
   return {
     url: `http://127.0.0.1:${server.port}/`,
-    stop: () => server.stop(true),
+    stop: () => {
+      for (const release of hanging) release(new Response("", { status: 503 }));
+      hanging.clear();
+      return server.stop(true);
+    },
     setQuiet: (on: boolean) => {
       quiet = on;
     },

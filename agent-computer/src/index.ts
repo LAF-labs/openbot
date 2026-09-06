@@ -92,6 +92,18 @@ const NAVIGATION_TIMEOUT_MS = Number.parseInt(
 );
 
 /**
+ * Whether `goto` gave up on the deadline rather than on the page.
+ *
+ * Playwright's own class is not imported for this: its `errors.TimeoutError` is also what a locator
+ * wait throws, and here the question is narrower — the navigation itself. The name is the class's,
+ * the phrase is what `goto` writes, and the server recognises the same phrase (computer/client.ts).
+ */
+const isNavigationTimeout = (error: unknown): error is Error =>
+  error instanceof Error &&
+  error.name === "TimeoutError" &&
+  /goto: Timeout|navigating to "/i.test(error.message);
+
+/**
  * How long one action waits for its element.
  *
  * Much shorter than a navigation. Playwright waits for a control to become clickable, which is the
@@ -721,9 +733,15 @@ const listener = serve<StreamData>({
         }, FOLLOW_INTERVAL_MS);
         if (session.viewer) session.viewer.follow = follow;
       } catch (error) {
+        /*
+         * `code` beside the sentence, here and on the two sends below. The pane on the far side is
+         * Korean and the sentence is this process's English; it used to be shown as it was
+         * (measured 2026-09-06). The surface owns the words, so it gets a fact to choose them by.
+         */
         ws.send(
           JSON.stringify({
             type: "error",
+            code: "laf:screen_not_started",
             error: describe(error, "The screen could not be started."),
           }),
         );
@@ -746,7 +764,13 @@ const listener = serve<StreamData>({
       //
       // Refuse with an error so the surface can explain why input is ignored.
       if (!session.control.humanMayDrive()) {
-        ws.send(JSON.stringify({ type: "error", error: TAKE_CONTROL_FIRST }));
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            code: "laf:take_control_first",
+            error: TAKE_CONTROL_FIRST,
+          }),
+        );
         return;
       }
       try {
@@ -763,6 +787,7 @@ const listener = serve<StreamData>({
         ws.send(
           JSON.stringify({
             type: "error",
+            code: "laf:input_not_applied",
             error: describe(error, "That input could not be applied."),
           }),
         );
@@ -1031,6 +1056,8 @@ const listener = serve<StreamData>({
      * to discard a login by mistyping a parameter.
      */
     if (url.pathname === "/computers/reset" && request.method === "POST") {
+      // Always answers: a browser that will not close is killed (profiles.ts, closeAndWait), so a
+      // reset cannot be the fourth thing queued behind a page that never loaded.
       await profiles.reset(botId);
       // Reset releases control because any previous browser session and pending secret request are gone.
       session.control.release();
@@ -1074,6 +1101,31 @@ const listener = serve<StreamData>({
         // A person holding the wheel is not a failed navigation; the Bot should wait.
         if (error instanceof ControlError) {
           return json({ error: error.message, humanHasControl: true }, 409);
+        }
+        /*
+         * A PAGE THAT NEVER ARRIVED IS ABANDONED, NOT KEPT.
+         *
+         * Playwright's `goto` returning after its deadline does not mean the browser gave up on the
+         * page — measured 2026-09-06 against 기업마당, the tab stayed stuck on it, the next `goto`
+         * (to a site that was fine) sat out its own deadline too, and `context.close()` never
+         * returned. The wedge outlived stop, reset and the idle sweep, because all three waited on
+         * that close. So the deadline is the moment this process stops trusting the page: the tab is
+         * replaced, or the browser is, before the Bot is told. The message is left as Playwright wrote
+         * it because the server recognises the timeout by it; the code is the fact for everything
+         * that reads facts.
+         */
+        if (isNavigationTimeout(error)) {
+          const recycled = await profiles.recycle(botId);
+          session.snapshotId += 1;
+          return json(
+            withNotes(session, {
+              error: error.message,
+              code: "laf:page_timeout",
+              recycled,
+              elapsedMs: Date.now() - startedAt,
+            }),
+            504,
+          );
         }
         // The page is the Bot's working surface, so a failed navigation is reported rather than
         // thrown: the transcript needs to say what happened, and the browser stays usable.
