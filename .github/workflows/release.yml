@@ -60,7 +60,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, 2026-08-05
+      # `actions-rust-lang`, not `dtolnay/rust-toolchain`: dtolnay force-pushes its `stable` branch, so
+      # a commit pinned there stops belonging to any branch and zizmor's impostor-commit audit
+      # failed every run from 2026-08-05 on. A tag on this action keeps its history.
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          cache: false
       - name: Test the shell
         working-directory: desktop/src-tauri
         run: cargo test
@@ -99,9 +104,10 @@ jobs:
           # restored into a run that publishes.
           no-cache: true
 
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, 2026-08-05
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
-          targets: ${{ matrix.targets }}
+          target: ${{ matrix.targets }}
+          cache: false
 
       # No build cache on purpose: a workflow that publishes must not restore from a cache that a
       # pull request could have written (zizmor's cache-poisoning audit). The compile is minutes.
