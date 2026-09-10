@@ -1,9 +1,17 @@
 name: Images
 
-# Builds the four deployment images and publishes them to GHCR, so a deployment PULLS instead of
-# compiling. This is the half of unattended provisioning that lives in this repository: the external
-# control plane (a separate repo) clones nothing heavy and builds nothing — it writes an .env,
-# `docker compose pull`, `up -d`, and the VM never spends its one small OCPU on a 20-minute build.
+# Builds the four runtime images plus the deploy bundle and publishes all five to GHCR, so a
+# deployment PULLS instead of compiling. This is the half of unattended provisioning that lives in
+# this repository: the external control plane (a separate repo) clones nothing and builds nothing —
+# it extracts the bundle, writes an .env, `docker compose pull`, `up -d`, and the VM never spends
+# its one small OCPU on a 20-minute build.
+#
+# The fifth image, `openbot-deploy`, is the compose file, the two scripts a VM runs, `.env.example`
+# and a VERSION file (deploy/Dockerfile). Until 2026-09-10 a VM held a full `git clone` of this
+# repository for the sake of those files, and the fleet's upgrade ran `git pull` there — anonymous
+# HTTPS, which died the day the repository went private, and which had put the whole source on
+# every customer's disk. The bundle rides the same channel and tag as the runtime images, so
+# IMAGE_TAG names one consistent set of five and a VM never needs git.
 #
 # Channels, chosen by how the run started:
 #   a `v*` tag      → :vX.Y.Z and :stable — a release moves the fleet's default channel
@@ -158,9 +166,63 @@ jobs:
             --push \
             .
 
+  # The deploy bundle, both architectures from one runner. deploy/Dockerfile is `FROM scratch` with
+  # COPY instructions only — nothing in it executes — so the arm64 half needs neither the native
+  # runner nor QEMU, and each half takes seconds (measured locally 2026-09-10: 28KB an image). Two
+  # more matrix entries above would have booked the arm64 runner for a build with no reason to leave
+  # this one, so it is its own small job. It is still tagged per architecture and merged by `merge`
+  # like the others rather than published as amd64 only: the bundle is only ever `docker create`d
+  # and `docker cp`'d, never run, so a single-arch manifest would work — but every customer VM is
+  # arm64, and Docker warns on every platform mismatch, so each upgrade log would carry a warning
+  # forever to save ten seconds of build. Same gate as everything here: nothing before `checks`.
+  deploy:
+    name: deploy (amd64 + arm64)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sign in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Build and push (both architectures)
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: |
+          # The same channel rule as "Decide the channel" above, so the bundle's VERSION file and
+          # the tag it is published under cannot disagree.
+          if [ "$REF_TYPE" = "tag" ]; then CHANNEL="$REF_NAME"; else CHANNEL=edge; fi
+          for ARCH in amd64 arm64; do
+            docker buildx build \
+              --platform "linux/$ARCH" \
+              --file deploy/Dockerfile \
+              --build-arg REVISION="$REVISION" \
+              --build-arg CHANNEL="$CHANNEL" \
+              --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+              --label "org.opencontainers.image.revision=$REVISION" \
+              --tag "$REGISTRY/openbot-deploy:$CHANNEL-$ARCH" \
+              --push \
+              .
+          done
+
   merge:
     name: manifest ${{ matrix.service }}
-    needs: build
+    # Both, so a channel never names a set of five with one half missing: the bundle is only
+    # consistent beside the images it was built with, and the images only beside their bundle.
+    needs: [build, deploy]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -168,7 +230,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [server, web, agent-bot, agent-computer]
+        service: [server, web, agent-bot, agent-computer, deploy]
     steps:
       - name: Sign in to GHCR
         env:

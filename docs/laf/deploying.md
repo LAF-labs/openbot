@@ -139,8 +139,8 @@ answers, which looks like a server that is still starting.
 
 ## Images: CI bakes, deployments pull
 
-The four deployment images are published to GHCR by
-`.github/workflows/images.yml` — on every `v*` tag (`:vX.Y.Z` + `:stable`),
+Five images are published to GHCR by `.github/workflows/images.yml` — the
+four runtime images and the deploy bundle — on every `v*` tag (`:vX.Y.Z` + `:stable`),
 on every push to `main` that changes more than documentation (`:edge`), and
 on manual dispatch (`:edge`, optionally promoting `:stable`). The compose
 file names them with one channel switch:
@@ -165,22 +165,41 @@ there is one definition of the gate. Before it existed, a `v*` tag moved
 even start: measured on v0.3.2, untested code reached the fleet's default
 channel two minutes after the tag was pushed.
 
-So a deployment — human or the external provisioner — never compiles:
+So a deployment — human or the external provisioner — never compiles, and
+since 2026-09-10 never clones either:
 
 ```bash
+docker create --name laf-deploy ghcr.io/laf-labs/openbot-deploy:$IMAGE_TAG
+docker cp laf-deploy:/deploy/. /home/ubuntu/openbot/
+docker rm laf-deploy
 docker compose pull
 docker compose up -d
 ```
 
-and an upgrade is the same two commands after the channel moves. Building
+and an upgrade is the same five lines after the channel moves. Building
 locally still works (`docker compose build` produces the same names), which is
 what development does; the point is that a customer's one small OCPU never
 spends twenty minutes on vite.
 
+**The fifth image is the deploy bundle.** `ghcr.io/laf-labs/openbot-deploy`
+holds, under `/deploy/`, exactly what a VM needs on disk and nothing else:
+`docker-compose.yml`, `scripts/upgrade.sh`, `scripts/restore.sh`,
+`.env.example` and `VERSION`. `deploy/Dockerfile` builds it from `scratch` —
+28KB, never run, only ever `docker create`d and `docker cp`'d out, which is
+why the three lines above start nothing — and it rides the same tag as the
+other four, so `IMAGE_TAG` names one consistent set of five. Until then a VM
+held a full `git clone` of this repository at `/home/ubuntu/openbot` for the
+sake of those files, and the fleet's upgrade ran `git pull` there: anonymous
+HTTPS, which stopped working the day the repository went private, and which
+had put the whole source on every customer's machine — the thing going
+private is meant to end. A deployment directory now has no `.git`, nothing in
+the bundle may assume one, and the copy never touches the directory's own
+`.env`.
+
 This is also the contract the external control plane (separate repository)
-holds with this one: clone, write `.env` (the required values are all in
-`.env.example`), `pull`, `up`, wait for healthy. Nothing else here is load-
-bearing for unattended provisioning.
+holds with this one: extract the bundle, write `.env` (the required values
+are all in `.env.example`), `pull`, `up`, wait for healthy. Nothing else here
+is load-bearing for unattended provisioning.
 
 Recommended VM for one person: **1 OCPU / 6GB + a 4GB swapfile** (measured:
 the whole stack idles at 1.1GB; Chromium spikes are what the swap absorbs).
@@ -193,10 +212,22 @@ echo '/swapfile none swap sw 0 0' >> /etc/fstab
 
 ## Standing it up
 
+No checkout. The deployment directory is the bundle's files plus a `.env`:
+
 ```bash
-git clone https://github.com/LAF-labs/openbot.git && cd openbot
+mkdir -p ~/openbot && cd ~/openbot
+IMAGE_TAG=stable
+docker create --name laf-deploy ghcr.io/laf-labs/openbot-deploy:$IMAGE_TAG
+docker cp laf-deploy:/deploy/. .
+docker rm laf-deploy
 cp .env.example .env
 ```
+
+The packages are private with the repository, so `docker login ghcr.io` with
+a token that can read them comes before the `create` — the fleet plants
+root's login on every VM ahead of its first pull (laf-control
+`core/registry-login.ts`); by hand it is a personal token with
+`read:packages`.
 
 Then edit `.env` by hand. The values that have no usable default:
 
@@ -358,6 +389,34 @@ deployment on `IMAGE_TAG=stable` cannot recover its previous version from
 Nothing pulls on its own. There is no `pull_policy: always` in the compose file
 on purpose, so a reboot or an unrelated `up -d` re-runs what is already on the
 machine rather than quietly moving the deployment to a new image.
+
+**The bundle first, then the script.** `laf upgrade` re-extracts the bundle
+for the channel `.env` names before it pulls, so the compose file and the
+scripts on the VM are the ones the new images were built beside. By hand it
+is the three `docker create` / `cp` / `rm` lines above, then
+`scripts/upgrade.sh`. The script pulls images only and takes its compose file
+from the directory it sits in; it never reached for git, and now there is no
+checkout to reach for.
+
+### What a VM runs
+
+```bash
+cat /home/ubuntu/openbot/VERSION
+# revision=1ecd51ffa1045d90d2b9a50a4a2ece30e33c5129
+# channel=edge
+```
+
+The commit the bundle was built from, and the channel that build was made for
+— `edge` from main, `vX.Y.Z` from a tag. `:stable` is only ever an alias
+minted onto one of those in the merge job (a release, or an `edge` build on a
+`promote_stable` dispatch), so a VM on `IMAGE_TAG=stable` reads here what
+stable resolved to, which is the question being asked. The four images say the
+same commit in their labels
+(`docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/laf-labs/openbot-server:$IMAGE_TAG`),
+and they agree with `VERSION` exactly when the bundle and the images were
+taken in the same upgrade — which `laf upgrade` guarantees, and a by-hand
+upgrade guarantees only if the bundle was refreshed first. `git rev-parse` in
+`/home/ubuntu/openbot` used to be this answer; there is no checkout to ask now.
 
 ## Backups
 
