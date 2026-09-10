@@ -11,6 +11,6 @@
   "dependencies": {
     "@ag-ui/core": "0.0.57",
     "@ag-ui/encoder": "0.0.57",
-    "openai": "^4.104.0"
+    "openai": "^7.9.0"
   }
 }
