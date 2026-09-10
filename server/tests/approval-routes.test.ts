@@ -149,6 +149,9 @@ describe("answering a question", () => {
       next,
     ) => {
       context.set("actor", BYSTANDER);
+      // THEIR Bot: the ownership guard lets them through, and it is answering that is refused.
+      // A Bot that was not theirs would be 404 before this handler — see the last describe.
+      context.set("mayDriveBot", async (botId) => botId === "bot-1");
       await next();
     };
     const app = new Hono<{ Variables: AppVariables }>();
@@ -769,5 +772,71 @@ describe("the Bot an approval address names", () => {
 
     // Refused before anything was looked up or written about it.
     expect(rows).toHaveLength(before);
+  });
+});
+
+/**
+ * WHOSE BOT THE ADDRESS NAMES.
+ *
+ * Measured 2026-09-10 (audit A8): the list answered any signed-in person about any Bot, so a
+ * colleague naming the owner's Bot read what it was about to do — the URL, the host, the tool, the
+ * scope — while it waited for the owner's answer. Both routes refuse a Bot that is not the caller's
+ * with the same 404 the rest of the product gives, before the question is looked up and before the
+ * administrator check, so the refusal confirms neither that the Bot exists nor that a question is
+ * waiting on it.
+ */
+describe("a Bot that is not the caller's", () => {
+  /** The same registry the question was raised on, reached by somebody whose Bot it is not. */
+  async function asColleague() {
+    const { approvals, gateway, ask, rows } = await surface();
+    const asked = await ask("bot-1");
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createApprovalRoutes(
+        approvals,
+        { insert: async (event) => void rows.push(event) },
+        async (context, next) => {
+          context.set("actor", BYSTANDER);
+          context.set("mayDriveBot", async (botId) => botId !== "bot-1");
+          await next();
+        },
+      ),
+    );
+    return { app, asked, gateway, rows };
+  }
+
+  test("cannot list its open questions", async () => {
+    const { app } = await asColleague();
+    const response = await app.request("/bot-1");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+  });
+
+  test("cannot answer one, and the answer stays unspent", async () => {
+    const { app, asked, gateway, rows } = await asColleague();
+    const before = rows.length;
+
+    const response = await answer(app)("bot-1", asked.approvalId, true);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+    // Nothing was recorded about it, and the question is still open for the person it was for.
+    expect(rows).toHaveLength(before);
+    await expect(
+      gateway.click(
+        "bot-1",
+        "bot-1",
+        DRIVER,
+        { ref: "e9", snapshotId: 7 },
+        undefined,
+        asked.approvalId,
+      ),
+    ).rejects.toBeInstanceOf(ActionNeedsApprovalError);
   });
 });

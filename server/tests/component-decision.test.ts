@@ -25,11 +25,16 @@ const store = {
     functionName === GRANTED,
 } as unknown as ComponentStore;
 
+/**
+ * The guard as `createRequireUser` ships it: the actor, and beside it whose Bots they may drive.
+ * `risk-analyst` is theirs; every other Bot is somebody else's, which the last test presses on.
+ */
 const asSignedIn: MiddlewareHandler<{ Variables: AppVariables }> = async (
   context,
   next,
 ) => {
   context.set("actor", { id: "u1", email: "someone@laf.test", role: "user" });
+  context.set("mayDriveBot", async (botId) => botId === "risk-analyst");
   return next();
 };
 
@@ -94,6 +99,43 @@ describe("deciding a component", () => {
     expect(
       await decide({ agentId: "risk-analyst", functions: [1, null, {}] }),
     ).toEqual({ allowed: true });
+  });
+
+  /*
+   * THE BOT IN THE BODY IS SOMEBODY'S.
+   *
+   * Measured 2026-09-10 (audit A8): `decision`, `call` and `for-agent` took the Bot on trust, so a
+   * colleague could name the owner's Bot and read through a grant given to it and not to theirs.
+   * 404 with the code, never 403 or a 200 saying `allowed: false`: the refusal must not confirm
+   * that the Bot exists, and it must not be recorded as a component refusal, which is a fact about
+   * a grant and not about who asked.
+   */
+  test("a Bot the person may not drive is not here, on every door that takes one", async () => {
+    const surface = app();
+    const elsewhere = { agentId: "somebody-elses-bot" };
+    const post = (path: string, body: unknown) =>
+      surface.request(`http://laf.local/components/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    for (const response of [
+      await post("showActivityReport/decision", elsewhere),
+      await post("showActivityReport/call", {
+        ...elsewhere,
+        function: GRANTED,
+      }),
+      await surface.request(
+        "http://laf.local/components/for-agent/somebody-elses-bot",
+      ),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        error: "laf:bot_not_found",
+        code: "laf:bot_not_found",
+      });
+    }
   });
 });
 

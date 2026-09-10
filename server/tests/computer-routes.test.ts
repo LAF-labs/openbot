@@ -168,11 +168,17 @@ function surface(
    * assertion is about what the shipped recorder keeps.
    */
   const demonstrations = createDemonstrationRecorder();
+  /**
+   * The guard as `createRequireUser` ships it: the actor, and beside it whose Bots they may drive.
+   * `bot-1` is theirs; every other id is somebody else's, which is what the cross-use sweep at the
+   * bottom presses on. An administrator is not asked (`mayDriveBot` short-circuits on the role).
+   */
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
     next,
   ) => {
     context.set("actor", actor);
+    context.set("mayDriveBot", async (botId) => botId === "bot-1");
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();
@@ -812,9 +818,15 @@ describe("the whole surface", () => {
     ["PUT", "/policy", { deny: [], ask: [], allow: ["true"] }],
   ];
 
-  /** Which of them an ordinary member of staff may not have. */
+  /**
+   * Which of them an ordinary member of staff may not have.
+   *
+   * `GET /:botId/computers` joined the list with the ownership guard: it lists what the container
+   * holds — every Bot's browser, not this Bot's — and the only page that reads it is the admin one.
+   */
   const ADMIN_ONLY = new Set([
     "POST /bot-1/computers/reset",
+    "GET /bot-1/computers",
     "GET /policy",
     "PUT /policy",
   ]);
@@ -832,7 +844,40 @@ describe("the whole surface", () => {
       });
     };
 
-  test("answers every route, and refuses exactly the three that are an owner's", async () => {
+  /*
+   * THE SAME SWEEP ON A BOT THAT IS NOT THE CALLER'S.
+   *
+   * Measured 2026-09-10 (audit A8): a signed-in colleague named the owner's Bot in the path and got
+   * the screenshot back, 200 and 6,387 bytes, then `/read`, `/control` and `control/take` — the
+   * one middleware here looked at the SHAPE of the id and nothing asked whose it was, while every
+   * other door a Bot id opens (chat, the live screen, tool calls) had been closed with the same
+   * predicate. One middleware, so the next route added cannot forget; and 404 with the code, not
+   * 403, so the refusal does not confirm that the Bot exists.
+   */
+  test("refuses every one of them on a Bot that is not the caller's, and reaches nothing", async () => {
+    const { app, seen, calls, rows, sentToComputer } = surface(STAFF);
+    await seen();
+    const hit = send(app);
+
+    for (const [method, path, body] of ROUTES) {
+      if (!path.startsWith("/bot-1/")) continue;
+      const elsewhere = path.replace("/bot-1/", "/bot-2/");
+      const response = await hit([method, elsewhere, body]);
+      const answer = (await response.json()) as { code?: string };
+      expect([`${method} ${path}`, response.status, answer.code]).toEqual([
+        `${method} ${path}`,
+        404,
+        "laf:bot_not_found",
+      ]);
+    }
+    // Nothing reached the computer and nothing was written about a Bot the caller may not drive:
+    // the refusal happened before any handler, which is the only place it can be relied on.
+    expect(calls).toEqual([]);
+    expect(sentToComputer).toEqual([]);
+    expect(rows.filter((row) => row.targetId === "bot-2")).toEqual([]);
+  });
+
+  test("answers every route, and refuses exactly the four that are an owner's", async () => {
     const { app, seen } = surface(STAFF);
     await seen();
     const hit = send(app);
@@ -881,7 +926,7 @@ describe("the whole surface", () => {
     }
   });
 
-  test("gives an administrator the three the staff member was refused", async () => {
+  test("gives an administrator the four the staff member was refused", async () => {
     const { app, seen } = surface(ADMIN);
     await seen();
     const hit = send(app);

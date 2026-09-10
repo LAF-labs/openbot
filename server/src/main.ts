@@ -1211,14 +1211,17 @@ const streamPathBotId = (pathname: string): string | null => {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 };
 
-/** The rule, with this deployment's roster behind it. See auth/stream-access.ts. */
+/**
+ * The rule, with this deployment's tables behind it. See auth/stream-access.ts.
+ *
+ * Whose the Bot is, through the same lookup `requireUser` hands every route — not the profile
+ * store's `get`, which answers what the person may SEE and let a public Bot's socket open for
+ * anybody signed in.
+ */
 const streamAccessFor = (
   botId: string,
   actor: { id: string; role: UserRole } | null,
-) =>
-  streamBotAccess(botId, actor, (person, id) =>
-    agentProfileStore.get(person, id),
-  );
+) => streamBotAccess(botId, actor, roleRepository.botOwner);
 
 /** What each proxied socket carries: where to connect inward, and the socket once opened. */
 type StreamData = {

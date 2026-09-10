@@ -1,5 +1,5 @@
 /**
- * Who may watch a Bot's screen, and which Bot.
+ * Who may open a Bot's screen, and which Bot.
  *
  * The live-screen socket is the one place in this product where a person drives another process's
  * browser directly: clicks and keystrokes go down it, frames come back. It was guarded by the
@@ -11,6 +11,7 @@
  * connection over before Hono sees it — so the rule has to be somewhere a test can call it.
  */
 import { isBotId } from "../computer/bot-id";
+import { actorMayDriveBot, type BotOwnerLookup } from "./guards";
 import type { UserRole } from "./roles";
 
 /** What the deployment decided about one attempt to open the screen. */
@@ -26,23 +27,27 @@ export type StreamAccess =
  * The id is checked FIRST, before any lookup: a malformed one has no business reaching a database
  * query, let alone a filesystem path in another container.
  *
- * `lookup` is the profile store's own `get`, which is scoped to the actor — so a Bot they cannot
- * see is a Bot they cannot watch, and a Bot that does not exist and a Bot that is somebody else's
- * come back the same way. Which of the two it is, is itself a fact about another person's roster.
+ * OWNERSHIP, NOT VISIBILITY. This used to take the profile store's `get`, which is scoped to what
+ * the actor may SEE — and a Bot marked `public` is visible to every signed-in person on the
+ * deployment, an administrator sees all of them, and so the socket their keystrokes travel down
+ * opened for anybody on a public Bot. Measured 2026-09-10 (audit A8) against the real store; the
+ * unit test had stubbed a stricter roster than the store and proved nothing about it. The lookup
+ * is whose the Bot is, and the answer is the one predicate every other door a Bot id opens uses
+ * (`actorMayDriveBot`): the owner, an administrator, a Bot nobody made — and never "you can see
+ * it". A Bot that does not exist and a Bot that is somebody else's come back the same way; which of
+ * the two it is, is itself a fact about another person's roster.
  */
 export async function streamBotAccess(
   botId: string,
   actor: { id: string; role: UserRole } | null,
-  lookup: (
-    actor: { id: string; role: UserRole },
-    botId: string,
-  ) => Promise<unknown | null>,
+  lookup: BotOwnerLookup,
 ): Promise<StreamAccess> {
   // The one shape a Bot id may have (`computer/bot-id.ts`): the id becomes a directory in the
   // browser container, and `decodeURIComponent` on the way out of the route pattern will happily
   // produce a path.
   if (!isBotId(botId)) return "bad_id";
   if (!actor) return "unauthenticated";
-  const found = await lookup(actor, botId).catch(() => null);
-  return found ? "allowed" : "not_found";
+  // A lookup that failed is a Bot that is not there. Never "allowed" on an error.
+  const owner = await lookup(botId).catch(() => undefined);
+  return actorMayDriveBot(actor, owner) ? "allowed" : "not_found";
 }

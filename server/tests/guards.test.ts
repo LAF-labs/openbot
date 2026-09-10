@@ -55,6 +55,43 @@ describe("server authorization", () => {
     });
   });
 
+  /*
+   * A SESSION WITHOUT A ROLE IS NOT A USER.
+   *
+   * Measured 2026-09-10 (audit A6, mutation M9): the branch that refuses a person with a session
+   * and no `user_roles` row was turned into "then they are a user", and every suite importing the
+   * guard stayed green — the only `rolesForUser: async () => []` in this file was paired with no
+   * session, so the branch was never reached. Today a role is written by the sign-up hook and
+   * removed by account deletion, so nobody arrives here; the day "take this member of staff's
+   * access away" ships, this branch is the boundary, and it has to be one that a test can see fall.
+   */
+  test("refuses a session that holds no role, on an ordinary route", async () => {
+    const app = createApp(config, authenticatedAs("member"), {
+      rolesForUser: async () => [],
+    });
+
+    const response = await app.request("http://laf.local/api/me");
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Authorization required.",
+    });
+  });
+
+  test("refuses a session that holds no role before the administrator guard is reached", async () => {
+    const app = createApp(config, authenticatedAs("member"), {
+      rolesForUser: async () => [],
+    });
+
+    const response = await app.request("http://laf.local/api/admin/status");
+
+    // The session guard's answer, not the administrator guard's: there is no actor to ask about.
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Authorization required.",
+    });
+  });
+
   test("returns the authenticated user actor", async () => {
     const app = createApp(config, authenticatedAs("member"), {
       rolesForUser: async () => ["user"],

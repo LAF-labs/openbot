@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdminRoute } from "../auth/guards";
+import { requireAdminRoute, requireBotAccess } from "../auth/guards";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
@@ -88,6 +88,14 @@ export function createComputerRoutes(
    * Registered before every route so it runs first, and refusing rather than sanitising: an id that
    * has to be rewritten to be safe is not this deployment's id, and quietly repairing it is how a
    * call ends up on a browser belonging to nobody.
+   *
+   * WHOSE BOT IT IS is the other question, and it is asked in every route's own declaration below
+   * (`requireBotAccess`, after `requireUser`) rather than here, because it needs the actor the
+   * session guard resolves and this runs ahead of it. Measured 2026-09-10 (audit A8): with only the
+   * shape checked, a signed-in colleague named the owner's Bot and got its screenshot, read its
+   * page, took the wheel and read its workspace — every door the approval card guards, opened
+   * without one. `computer-routes.test.ts` sweeps every route here on a Bot that is not the
+   * caller's, so one added without the guard turns that sweep red.
    */
   routes.use("/:botId/*", async (context, next) => {
     const botId = context.req.param("botId");
@@ -97,8 +105,12 @@ export function createComputerRoutes(
     await next();
   });
 
-  routes.get("/:botId/status", requireUser, async (context) =>
-    context.json(await client.status(context.req.param("botId"))),
+  routes.get(
+    "/:botId/status",
+    requireUser,
+    requireBotAccess(),
+    async (context) =>
+      context.json(await client.status(context.req.param("botId"))),
   );
 
   /*
@@ -109,92 +121,112 @@ export function createComputerRoutes(
    * server sends facts; `code` is the fact, and the surface owns the words for it. `error` stays
    * beside it for any reader that still expects a sentence.
    */
-  routes.get("/:botId/screenshot", requireUser, async (context) => {
-    try {
-      return context.json(
-        await client.forBot(context.req.param("botId")).screenshot(),
-      );
-    } catch (error) {
-      return context.json(
-        { error: describe(error), code: codeFor(error) },
-        statusFor(error),
-      );
-    }
-  });
-
-  routes.get("/:botId/read", requireUser, async (context) => {
-    try {
-      return context.json(await gateway.read(context.req.param("botId")));
-    } catch (error) {
-      return context.json(
-        { error: describe(error), code: codeFor(error) },
-        statusFor(error),
-      );
-    }
-  });
-
-  routes.post("/:botId/navigate", requireUser, async (context) => {
-    const body = (await context.req.json().catch(() => null)) as {
-      url?: unknown;
-      approvalId?: unknown;
-    } | null;
-    if (typeof body?.url !== "string" || !body.url.trim()) {
-      return context.json({ error: "A web address is required." }, 400);
-    }
-
-    try {
-      return context.json(
-        await gateway.navigate(
-          // No `?? "default"`. It was the server's half of a pair of silent fallbacks — the computer
-          // had `"shared"` at the other end — and between them an unnamed call landed on a browser
-          // belonging to nobody and answered as though it had worked. This route declares `:botId`,
-          // so the value is there; `act()` below refuses when it somehow is not.
-          botIdOf(context),
-          botIdOf(context),
-          {
-            id: context.var.actor.id,
-            ...(context.var.actor.email === DEV_ACTOR.email
-              ? {}
-              : { userId: context.var.actor.id }),
-          },
-          body.url.trim(),
-          asApprovalId(body),
-        ),
-      );
-    } catch (error) {
-      if (error instanceof ActionNeedsApprovalError) {
-        return awaitingApproval(context, error);
-      }
-      if (error instanceof ActionRefusedError) {
+  routes.get(
+    "/:botId/screenshot",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      try {
         return context.json(
-          {
-            // The code twice, deliberately: `error` is what every caller of these routes already
-            // reads, and `code` is where a refusal's fact has been since the surface started owning
-            // the words. Neither is a sentence any more. See ActionRefusedError.
-            error: error.message,
-            rule: error.rule,
-            code: error.code,
-          },
-          403,
+          await client.forBot(context.req.param("botId")).screenshot(),
+        );
+      } catch (error) {
+        return context.json(
+          { error: describe(error), code: codeFor(error) },
+          statusFor(error),
         );
       }
-      // A refusal is the rules working, not a fault, so it is a 403 with the reason a person reads.
-      // Collapsing it into the same 5xx as an unreachable computer would send somebody looking for
-      // an outage that is not happening.
-      if (error instanceof NavigationRefusedError) {
-        return context.json({ error: error.message }, 403);
-      }
-      return context.json({ error: describe(error) }, statusFor(error));
-    }
-  });
+    },
+  );
 
-  routes.post("/:botId/snapshot", requireUser, async (context) => {
-    try {
-      return context.json(await gateway.snapshot(context.req.param("botId")));
-    } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
-    }
-  });
+  routes.get(
+    "/:botId/read",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      try {
+        return context.json(await gateway.read(context.req.param("botId")));
+      } catch (error) {
+        return context.json(
+          { error: describe(error), code: codeFor(error) },
+          statusFor(error),
+        );
+      }
+    },
+  );
+
+  routes.post(
+    "/:botId/navigate",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const body = (await context.req.json().catch(() => null)) as {
+        url?: unknown;
+        approvalId?: unknown;
+      } | null;
+      if (typeof body?.url !== "string" || !body.url.trim()) {
+        return context.json({ error: "A web address is required." }, 400);
+      }
+
+      try {
+        return context.json(
+          await gateway.navigate(
+            // No `?? "default"`. It was the server's half of a pair of silent fallbacks — the computer
+            // had `"shared"` at the other end — and between them an unnamed call landed on a browser
+            // belonging to nobody and answered as though it had worked. This route declares `:botId`,
+            // so the value is there; `act()` below refuses when it somehow is not.
+            botIdOf(context),
+            botIdOf(context),
+            {
+              id: context.var.actor.id,
+              ...(context.var.actor.email === DEV_ACTOR.email
+                ? {}
+                : { userId: context.var.actor.id }),
+            },
+            body.url.trim(),
+            asApprovalId(body),
+          ),
+        );
+      } catch (error) {
+        if (error instanceof ActionNeedsApprovalError) {
+          return awaitingApproval(context, error);
+        }
+        if (error instanceof ActionRefusedError) {
+          return context.json(
+            {
+              // The code twice, deliberately: `error` is what every caller of these routes already
+              // reads, and `code` is where a refusal's fact has been since the surface started owning
+              // the words. Neither is a sentence any more. See ActionRefusedError.
+              error: error.message,
+              rule: error.rule,
+              code: error.code,
+            },
+            403,
+          );
+        }
+        // A refusal is the rules working, not a fault, so it is a 403 with the reason a person reads.
+        // Collapsing it into the same 5xx as an unreachable computer would send somebody looking for
+        // an outage that is not happening.
+        if (error instanceof NavigationRefusedError) {
+          return context.json({ error: error.message }, 403);
+        }
+        return context.json({ error: describe(error) }, statusFor(error));
+      }
+    },
+  );
+
+  routes.post(
+    "/:botId/snapshot",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      try {
+        return context.json(await gateway.snapshot(context.req.param("botId")));
+      } catch (error) {
+        return context.json({ error: describe(error) }, statusFor(error));
+      }
+    },
+  );
 
   /**
    * The acting routes.
@@ -206,7 +238,7 @@ export function createComputerRoutes(
    * or judge it: an approval means something only against the action the gateway is about to take,
    * and a route that decided anything about it would be a second place deciding.
    */
-  routes.post("/:botId/click", requireUser, (context) =>
+  routes.post("/:botId/click", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
       if (!ref) return badRef;
@@ -221,7 +253,7 @@ export function createComputerRoutes(
     }),
   );
 
-  routes.post("/:botId/type", requireUser, (context) =>
+  routes.post("/:botId/type", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
       if (!ref) return badRef;
@@ -243,7 +275,7 @@ export function createComputerRoutes(
     }),
   );
 
-  routes.post("/:botId/key", requireUser, (context) =>
+  routes.post("/:botId/key", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       if (typeof body?.key !== "string" || !body.key) {
         return { error: "A key name is required, such as Enter or Tab." };
@@ -263,7 +295,7 @@ export function createComputerRoutes(
     }),
   );
 
-  routes.post("/:botId/scroll", requireUser, (context) =>
+  routes.post("/:botId/scroll", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body) =>
       gateway.scroll(
         botId,
@@ -283,23 +315,27 @@ export function createComputerRoutes(
    * An acting route although it changes nothing on any site: it goes through the gateway so the trail
    * says which page the Bot was on when it pressed the next thing.
    */
-  routes.post("/:botId/tabs/switch", requireUser, (context) =>
-    act(context, (botId, actor, body) => {
-      if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
-        return { error: "A tab index is required." };
-      }
-      return gateway.switchTab(
-        botId,
-        botId,
-        actor,
-        { index: body.index },
-        asApprovalId(body),
-      );
-    }),
+  routes.post(
+    "/:botId/tabs/switch",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) => {
+        if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
+          return { error: "A tab index is required." };
+        }
+        return gateway.switchTab(
+          botId,
+          botId,
+          actor,
+          { index: body.index },
+          asApprovalId(body),
+        );
+      }),
   );
 
   /** Hand one of the Bot's own files to a file input on the page. */
-  routes.post("/:botId/upload", requireUser, (context) =>
+  routes.post("/:botId/upload", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
       if (!ref) return badRef;
@@ -321,25 +357,34 @@ export function createComputerRoutes(
    * Who has the wheel. Polled by the surface next to the screen, so the person sees the Bot ask for
    * help without reloading anything.
    */
-  routes.get("/:botId/control", requireUser, async (context) => {
-    try {
-      return context.json(await gateway.control(context.req.param("botId")));
-    } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
-    }
-  });
+  routes.get(
+    "/:botId/control",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      try {
+        return context.json(await gateway.control(context.req.param("botId")));
+      } catch (error) {
+        return context.json({ error: describe(error) }, statusFor(error));
+      }
+    },
+  );
 
-  routes.post("/:botId/control/request", requireUser, (context) =>
-    act(context, (botId, actor, body) =>
-      gateway.requestHelp(
-        botId,
-        botId,
-        actor,
-        typeof body?.reason === "string" && body.reason.trim()
-          ? body.reason.trim()
-          : "The assistant needs a person to continue.",
+  routes.post(
+    "/:botId/control/request",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) =>
+        gateway.requestHelp(
+          botId,
+          botId,
+          actor,
+          typeof body?.reason === "string" && body.reason.trim()
+            ? body.reason.trim()
+            : "The assistant needs a person to continue.",
+        ),
       ),
-    ),
   );
 
   /**
@@ -348,18 +393,33 @@ export function createComputerRoutes(
    * Not per-Bot in the path the way the acting routes are: this asks the computer what it holds, and
    * it holds a list. `:botId` is still there because every route under this router has it and the
    * gateway wants somebody to attribute the call to.
+   *
+   * AN ADMINISTRATOR'S, in the declaration and not only in the comment. It answers with every
+   * Bot's browser on the container — not this Bot's — and sat behind `requireUser` alone, so the
+   * ownership guard in front of it would have let any member of staff read the whole machine's
+   * roster through their own Bot's id. The admin page is the only reader.
    */
-  routes.get("/:botId/computers", requireUser, async (context) => {
-    try {
-      return context.json(await gateway.computers());
-    } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
-    }
-  });
+  routes.get(
+    "/:botId/computers",
+    requireUser,
+    requireBotAccess(),
+    requireAdminRoute,
+    async (context) => {
+      try {
+        return context.json(await gateway.computers());
+      } catch (error) {
+        return context.json({ error: describe(error) }, statusFor(error));
+      }
+    },
+  );
 
   /** Stop the browser, keep the logins. */
-  routes.post("/:botId/computers/stop", requireUser, (context) =>
-    act(context, (botId, actor) => gateway.stopComputer(botId, botId, actor)),
+  routes.post(
+    "/:botId/computers/stop",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor) => gateway.stopComputer(botId, botId, actor)),
   );
 
   /**
@@ -373,6 +433,7 @@ export function createComputerRoutes(
   routes.post(
     "/:botId/computers/reset",
     requireUser,
+    requireBotAccess(),
     requireAdminRoute,
     (context) =>
       act(context, (botId, actor) =>
@@ -391,21 +452,29 @@ export function createComputerRoutes(
    *
    * So a demonstration is entered by pressing the button that says so, and by nothing else.
    */
-  routes.post("/:botId/control/take", requireUser, (context) =>
-    act(context, async (botId, actor, body) => {
-      const state = await gateway.takeControl(botId, botId, actor);
-      if (body?.teaching === true) demonstrations?.start(botId, actor.id);
-      return state;
-    }),
+  routes.post(
+    "/:botId/control/take",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, async (botId, actor, body) => {
+        const state = await gateway.takeControl(botId, botId, actor);
+        if (body?.teaching === true) demonstrations?.start(botId, actor.id);
+        return state;
+      }),
   );
 
-  routes.post("/:botId/control/release", requireUser, (context) =>
-    act(context, async (botId, actor) => {
-      // Handing back ends the demonstration, always. A recording with its own stop button is a
-      // second state to get wrong, and somebody who has finished showing has finished showing.
-      demonstrations?.finish(botId);
-      return await gateway.releaseControl(botId, botId, actor);
-    }),
+  routes.post(
+    "/:botId/control/release",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, async (botId, actor) => {
+        // Handing back ends the demonstration, always. A recording with its own stop button is a
+        // second state to get wrong, and somebody who has finished showing has finished showing.
+        demonstrations?.finish(botId);
+        return await gateway.releaseControl(botId, botId, actor);
+      }),
   );
 
   /**
@@ -424,19 +493,24 @@ export function createComputerRoutes(
    * recording (`screen-view.ts` holds the once). Not while it is still being made: the panel polls
    * this once a second then, and the person reading it is the person driving.
    */
-  routes.get("/:botId/demonstration", requireUser, (context) => {
-    const botId = context.req.param("botId") ?? "";
-    const actor = context.var.actor;
-    const recording = demonstrations?.read(botId, actor.id) ?? null;
-    if (recording?.finished) {
-      void screenViews?.replayed(
-        botId,
-        { id: actor.id, role: actor.role },
-        recording,
-      );
-    }
-    return context.json({ demonstration: recording });
-  });
+  routes.get(
+    "/:botId/demonstration",
+    requireUser,
+    requireBotAccess(),
+    (context) => {
+      const botId = context.req.param("botId") ?? "";
+      const actor = context.var.actor;
+      const recording = demonstrations?.read(botId, actor.id) ?? null;
+      if (recording?.finished) {
+        void screenViews?.replayed(
+          botId,
+          { id: actor.id, role: actor.role },
+          recording,
+        );
+      }
+      return context.json({ demonstration: recording });
+    },
+  );
 
   /**
    * Write the recording up as a procedure, for the person to read and edit.
@@ -450,6 +524,7 @@ export function createComputerRoutes(
   routes.post(
     "/:botId/demonstration/write-up",
     requireUser,
+    requireBotAccess(),
     async (context) => {
       // Theirs, like the read above: a recording nobody may look at is not one anybody may spend a
       // model call turning into a procedure either.
@@ -499,35 +574,44 @@ export function createComputerRoutes(
    * of theirs recorded on this Bot any more — and a 404 for somebody else's would answer the
    * question the read above declines to.
    */
-  routes.delete("/:botId/demonstration", requireUser, (context) => {
-    demonstrations?.discard(
-      context.req.param("botId") ?? "",
-      context.var.actor.id,
-    );
-    return context.body(null, 204);
-  });
+  routes.delete(
+    "/:botId/demonstration",
+    requireUser,
+    requireBotAccess(),
+    (context) => {
+      demonstrations?.discard(
+        context.req.param("botId") ?? "",
+        context.var.actor.id,
+      );
+      return context.body(null, 204);
+    },
+  );
 
   /** The Bot asking for a value it must not be told. */
-  routes.post("/:botId/control/secret", requireUser, (context) =>
-    act(context, (botId, actor, body) => {
-      if (typeof body?.ref !== "string" || !body.ref) {
-        return {
-          error:
-            "Say which field the value goes in, using a ref from your snapshot.",
-        };
-      }
-      if (typeof body?.snapshotId !== "number") {
-        return { error: "The snapshotId the ref came from is required." };
-      }
-      return gateway.requestSecret(botId, botId, actor, {
-        label:
-          typeof body?.label === "string" && body.label.trim()
-            ? body.label.trim()
-            : "the value this page is asking for",
-        ref: body.ref,
-        snapshotId: body.snapshotId,
-      });
-    }),
+  routes.post(
+    "/:botId/control/secret",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) => {
+        if (typeof body?.ref !== "string" || !body.ref) {
+          return {
+            error:
+              "Say which field the value goes in, using a ref from your snapshot.",
+          };
+        }
+        if (typeof body?.snapshotId !== "number") {
+          return { error: "The snapshotId the ref came from is required." };
+        }
+        return gateway.requestSecret(botId, botId, actor, {
+          label:
+            typeof body?.label === "string" && body.label.trim()
+              ? body.label.trim()
+              : "the value this page is asking for",
+          ref: body.ref,
+          snapshotId: body.snapshotId,
+        });
+      }),
   );
 
   /**
@@ -537,13 +621,17 @@ export function createComputerRoutes(
    * route rather than a `kind` on the input route below, so that grepping for where a secret can enter
    * this server returns exactly one place.
    */
-  routes.post("/:botId/human/secret", requireUser, (context) =>
-    act(context, (botId, actor, body) => {
-      if (typeof body?.text !== "string" || !body.text) {
-        return { error: "A value is required." };
-      }
-      return gateway.supplySecret(botId, botId, actor, body.text);
-    }),
+  routes.post(
+    "/:botId/human/secret",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) => {
+        if (typeof body?.text !== "string" || !body.text) {
+          return { error: "A value is required." };
+        }
+        return gateway.supplySecret(botId, botId, actor, body.text);
+      }),
   );
 
   /**
@@ -554,88 +642,105 @@ export function createComputerRoutes(
    * unrecorded, because the reason a takeover exists is to let them enter the thing nothing else
    * should keep.
    */
-  routes.post("/:botId/human/:kind", requireUser, async (context) => {
-    const kind = context.req.param("kind");
-    if (
-      kind !== "click" &&
-      kind !== "type" &&
-      kind !== "key" &&
-      kind !== "scroll"
-    ) {
-      return context.json({ error: "Unknown input." }, 400);
-    }
-    const body = (await context.req.json().catch(() => null)) as Record<
-      string,
-      unknown
-    > | null;
-    try {
-      return context.json(
-        await gateway.humanInput(context.req.param("botId"), {
-          // The body first and the validated `kind` LAST. Spread the other way round, a body
-          // carrying `kind: "secret"` overwrote the one this route checked, and the person's own
-          // input became a secret being supplied — down a path this route does not audit and whose
-          // whole design is that there is exactly one door into it.
-          ...(body ?? {}),
-          kind,
-        } as Parameters<typeof gateway.humanInput>[1]),
-      );
-    } catch (error) {
-      return context.json({ error: describe(error) }, statusFor(error));
-    }
-  });
+  routes.post(
+    "/:botId/human/:kind",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const kind = context.req.param("kind");
+      if (
+        kind !== "click" &&
+        kind !== "type" &&
+        kind !== "key" &&
+        kind !== "scroll"
+      ) {
+        return context.json({ error: "Unknown input." }, 400);
+      }
+      const body = (await context.req.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      try {
+        return context.json(
+          await gateway.humanInput(context.req.param("botId"), {
+            // The body first and the validated `kind` LAST. Spread the other way round, a body
+            // carrying `kind: "secret"` overwrote the one this route checked, and the person's own
+            // input became a secret being supplied — down a path this route does not audit and whose
+            // whole design is that there is exactly one door into it.
+            ...(body ?? {}),
+            kind,
+          } as Parameters<typeof gateway.humanInput>[1]),
+        );
+      } catch (error) {
+        return context.json({ error: describe(error) }, statusFor(error));
+      }
+    },
+  );
 
   /** The Bot's files. Through the gateway, like every other acting call. */
-  routes.post("/:botId/files/list", requireUser, (context) =>
-    act(context, (botId, actor, body) =>
-      gateway.listFiles(
-        botId,
-        botId,
-        actor,
-        {
-          ...(typeof body?.path === "string" && body.path.trim()
-            ? { path: body.path.trim() }
-            : {}),
-        },
-        asApprovalId(body),
+  routes.post(
+    "/:botId/files/list",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) =>
+        gateway.listFiles(
+          botId,
+          botId,
+          actor,
+          {
+            ...(typeof body?.path === "string" && body.path.trim()
+              ? { path: body.path.trim() }
+              : {}),
+          },
+          asApprovalId(body),
+        ),
       ),
-    ),
   );
 
-  routes.post("/:botId/files/read", requireUser, (context) =>
-    act(context, (botId, actor, body) => {
-      if (typeof body?.path !== "string" || !body.path.trim()) {
-        return { error: "A file path is required." };
-      }
-      return gateway.readFile(
-        botId,
-        botId,
-        actor,
-        { path: body.path.trim() },
-        asApprovalId(body),
-      );
-    }),
+  routes.post(
+    "/:botId/files/read",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) => {
+        if (typeof body?.path !== "string" || !body.path.trim()) {
+          return { error: "A file path is required." };
+        }
+        return gateway.readFile(
+          botId,
+          botId,
+          actor,
+          { path: body.path.trim() },
+          asApprovalId(body),
+        );
+      }),
   );
 
-  routes.post("/:botId/files/write", requireUser, (context) =>
-    act(context, (botId, actor, body) => {
-      if (typeof body?.path !== "string" || !body.path.trim()) {
-        return { error: "A file path is required." };
-      }
-      if (typeof body?.contents !== "string") {
-        return { error: "The contents to write are required." };
-      }
-      return gateway.writeFile(
-        botId,
-        botId,
-        actor,
-        {
-          path: body.path.trim(),
-          contents: body.contents,
-          append: body.append === true,
-        },
-        asApprovalId(body),
-      );
-    }),
+  routes.post(
+    "/:botId/files/write",
+    requireUser,
+    requireBotAccess(),
+    (context) =>
+      act(context, (botId, actor, body) => {
+        if (typeof body?.path !== "string" || !body.path.trim()) {
+          return { error: "A file path is required." };
+        }
+        if (typeof body?.contents !== "string") {
+          return { error: "The contents to write are required." };
+        }
+        return gateway.writeFile(
+          botId,
+          botId,
+          actor,
+          {
+            path: body.path.trim(),
+            contents: body.contents,
+            append: body.append === true,
+          },
+          asApprovalId(body),
+        );
+      }),
   );
 
   /**

@@ -13,13 +13,16 @@
  * The row is written here, next to the answer, because these two handlers are the only place in the
  * product where consent is recorded and a second place would eventually record it differently.
  */
-import type { Context, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin, requireAdminRoute } from "../auth/guards";
-import { BOT_ID_INVALID, isBotId } from "./bot-id";
+import {
+  requireAdmin,
+  requireAdminRoute,
+  requireBotAccess,
+} from "../auth/guards";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -70,8 +73,8 @@ export function createApprovalRoutes(
    * What this deployment has stopped asking about.
    *
    * The owner's, like answering: this is the list of places a boundary has been stood down, and it
-   * names the Bot, the rule and the scope. `GET /api/approvals/:botId` next door is readable by any
-   * signed-in person, which is its own thing to fix; this one is not going to inherit it.
+   * names the Bot, the rule and the scope. `GET /api/approvals/:botId` next door is the Bot's
+   * driver's (see below); this one names every Bot at once, so it is narrower still.
    */
   routes.get("/standing", requireUser, requireAdminRoute, async (context) => {
     const botId = context.req.query("bot");
@@ -117,15 +120,25 @@ export function createApprovalRoutes(
     },
   );
 
+  /*
+   * WHOSE BOT, ON BOTH OF THESE.
+   *
+   * The list read any Bot's open questions for any signed-in person — measured 2026-09-10 (audit
+   * A8): a colleague naming the owner's Bot got 200 and, once a question was waiting, the URL, the
+   * host, the tool and the scope of what the owner's Bot was about to do. The comment on
+   * `/standing` above called that "its own thing to fix"; this is it. `requireBotAccess` also owns
+   * the shape check the two handlers used to carry themselves, so a malformed id is still a 400 and
+   * still refused before it is used as a key — see the guard.
+   */
+
   /**
    * The questions this Bot is waiting on, for the surface to poll.
    *
    * A read, so no audit row, exactly like asking who holds the wheel. The interesting rows are the
    * one written when the question was raised and the one written when somebody answered it.
    */
-  routes.get("/:botId", requireUser, async (context) => {
+  routes.get("/:botId", requireUser, requireBotAccess(), async (context) => {
     const botId = context.req.param("botId") ?? "";
-    if (!isBotId(botId)) return refuseBotId(context);
     return context.json({
       approvals: (await approvals.pending(botId)).map(presentable),
     });
@@ -137,129 +150,124 @@ export function createApprovalRoutes(
    * spend a Bot's approval. Routing a question to a named approver other than
    * the owner is a later, multi-person feature — until then the narrow rule is
    * the honest one.
+   *
+   * The ownership guard sits in front of the administrator check so that a Bot that is not yours
+   * is "not here" before it is "not yours to answer for" — the same order as the computer's reset.
    */
-  routes.post("/:botId/:approvalId", requireUser, async (context) => {
-    const denied = requireAdmin(context);
-    if (denied) {
-      return denied;
-    }
-    const body = (await context.req.json().catch(() => null)) as Record<
-      string,
-      unknown
-    > | null;
-    // Said explicitly, never defaulted. A body that forgot to say which way it went must not be
-    // read as an approval, and reading a missing field as a refusal would be equally wrong.
-    if (typeof body?.granted !== "boolean") {
-      return context.json(
-        { error: "Say whether this is allowed or not." },
-        400,
-      );
-    }
-
-    const botId = context.req.param("botId") ?? "";
-    if (!isBotId(botId)) return refuseBotId(context);
-    const record = context.var.actor;
-    const answered = await approvals.answer(
-      context.req.param("approvalId") ?? "",
-      botId,
-      record.id,
-      body.granted,
-    );
-    // Nothing is broken and there is nothing to fix: the question expired, or somebody else answered
-    // it, most likely in another tab. A conflict rather than a fault.
-    if (!answered.ok) {
-      return context.json(
-        {
-          error:
-            "That request is no longer waiting for an answer. It may have expired, or somebody else answered it.",
-        },
-        409,
-      );
-    }
-
-    await recordAuditEvent(auditStore, {
-      eventType: body.granted ? "approval.granted" : "approval.denied",
-      targetType: answered.approval.target.type,
-      targetId: answered.approval.target.id,
-      // Only a real users row may go in the audit table's foreign key column. The local development
-      // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
-      // it was is recorded in the payload regardless.
-      ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
-      payload: payloadFor(answered.approval, record.id),
-    });
-
-    // After the row, never before it: the trail is the record and the notification is bookkeeping.
-    onAnswered?.(answered.approval.id);
-
-    /*
-     * "And stop asking me about this."
-     *
-     * The scope is read off the approval, never off the body. The request says only that the person
-     * pressed the wider button; WHAT that covers was decided when the question was raised, from the
-     * action itself, and is the same string the surface printed on the button. A body that could
-     * name its own scope would let a page show "always allow this one site" and grant every site.
-     *
-     * Granted after the answer, and only when the answer was yes: "always deny" is not a thing this
-     * offers, because a person who wants an action forbidden should write it into the boundary where
-     * everybody can see it rather than leave a refusal buried in an allowance table.
-     *
-     * Its own row in the trail, because this is an edit to the boundary rather than an answer to a
-     * question — see the type's own comment in audit.ts.
-     *
-     * THE MIDDLE ANSWER binds to the thread the question was raised from, which is on the approval
-     * for the same reason the scope is: a body that could name the thread could bind an allowance
-     * to a conversation the person was not looking at. A question with no thread on it — raised
-     * from outside any conversation — cannot be answered that way, and the card did not offer it;
-     * a request that asks anyway gets the once it did give and no allowance, rather than a
-     * standing one it did not ask for.
-     */
-    const tier = tierOf(body);
-    if (body.granted && tier && standing) {
-      const scope = answered.approval.scope;
-      const threadId = answered.approval.threadId;
-      if (scope && (tier === "always" || threadId)) {
-        const granted = await standing.grant({
-          botId: answered.approval.botId,
-          rule: answered.approval.rule,
-          scope,
-          subject: answered.approval.subject,
-          grantedBy: record.id,
-          tier,
-          ...(tier === "thread" ? { threadId } : {}),
-        });
-        await recordAuditEvent(auditStore, {
-          eventType: "approval.standing_granted",
-          targetType: "bot",
-          targetId: granted.botId,
-          ...(record.email === DEV_ACTOR.email
-            ? {}
-            : { actorUserId: record.id }),
-          payload: {
-            ...standingPayload(granted, record.id),
-            approval: answered.approval.id,
-          },
-        });
+  routes.post(
+    "/:botId/:approvalId",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
       }
-    }
+      const body = (await context.req.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      // Said explicitly, never defaulted. A body that forgot to say which way it went must not be
+      // read as an approval, and reading a missing field as a refusal would be equally wrong.
+      if (typeof body?.granted !== "boolean") {
+        return context.json(
+          { error: "Say whether this is allowed or not." },
+          400,
+        );
+      }
 
-    // Projected, like the list above. What the surface does with an answer is stop showing the
-    // question, and nothing it needs for that is worth sending the binding out of this process for.
-    return context.json(presentable(answered.approval));
-  });
+      const botId = context.req.param("botId") ?? "";
+      const record = context.var.actor;
+      const answered = await approvals.answer(
+        context.req.param("approvalId") ?? "",
+        botId,
+        record.id,
+        body.granted,
+      );
+      // Nothing is broken and there is nothing to fix: the question expired, or somebody else answered
+      // it, most likely in another tab. A conflict rather than a fault.
+      if (!answered.ok) {
+        return context.json(
+          {
+            error:
+              "That request is no longer waiting for an answer. It may have expired, or somebody else answered it.",
+          },
+          409,
+        );
+      }
+
+      await recordAuditEvent(auditStore, {
+        eventType: body.granted ? "approval.granted" : "approval.denied",
+        targetType: answered.approval.target.type,
+        targetId: answered.approval.target.id,
+        // Only a real users row may go in the audit table's foreign key column. The local development
+        // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
+        // it was is recorded in the payload regardless.
+        ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
+        payload: payloadFor(answered.approval, record.id),
+      });
+
+      // After the row, never before it: the trail is the record and the notification is bookkeeping.
+      onAnswered?.(answered.approval.id);
+
+      /*
+       * "And stop asking me about this."
+       *
+       * The scope is read off the approval, never off the body. The request says only that the person
+       * pressed the wider button; WHAT that covers was decided when the question was raised, from the
+       * action itself, and is the same string the surface printed on the button. A body that could
+       * name its own scope would let a page show "always allow this one site" and grant every site.
+       *
+       * Granted after the answer, and only when the answer was yes: "always deny" is not a thing this
+       * offers, because a person who wants an action forbidden should write it into the boundary where
+       * everybody can see it rather than leave a refusal buried in an allowance table.
+       *
+       * Its own row in the trail, because this is an edit to the boundary rather than an answer to a
+       * question — see the type's own comment in audit.ts.
+       *
+       * THE MIDDLE ANSWER binds to the thread the question was raised from, which is on the approval
+       * for the same reason the scope is: a body that could name the thread could bind an allowance
+       * to a conversation the person was not looking at. A question with no thread on it — raised
+       * from outside any conversation — cannot be answered that way, and the card did not offer it;
+       * a request that asks anyway gets the once it did give and no allowance, rather than a
+       * standing one it did not ask for.
+       */
+      const tier = tierOf(body);
+      if (body.granted && tier && standing) {
+        const scope = answered.approval.scope;
+        const threadId = answered.approval.threadId;
+        if (scope && (tier === "always" || threadId)) {
+          const granted = await standing.grant({
+            botId: answered.approval.botId,
+            rule: answered.approval.rule,
+            scope,
+            subject: answered.approval.subject,
+            grantedBy: record.id,
+            tier,
+            ...(tier === "thread" ? { threadId } : {}),
+          });
+          await recordAuditEvent(auditStore, {
+            eventType: "approval.standing_granted",
+            targetType: "bot",
+            targetId: granted.botId,
+            ...(record.email === DEV_ACTOR.email
+              ? {}
+              : { actorUserId: record.id }),
+            payload: {
+              ...standingPayload(granted, record.id),
+              approval: answered.approval.id,
+            },
+          });
+        }
+      }
+
+      // Projected, like the list above. What the surface does with an answer is stop showing the
+      // question, and nothing it needs for that is worth sending the binding out of this process for.
+      return context.json(presentable(answered.approval));
+    },
+  );
 
   return routes;
-}
-
-/**
- * A Bot id that is not one, refused before it is used as a key.
- *
- * Nothing here joins it to a path, unlike the computer's own routes — but the id in these two
- * handlers is the one an audit row is written against and the one a question is looked up under, and
- * an id that this deployment could never have minted has no business doing either. One shape, both
- * hops, everywhere: see `bot-id.ts`.
- */
-function refuseBotId(context: Context<{ Variables: AppVariables }>) {
-  return context.json({ error: BOT_ID_INVALID, code: BOT_ID_INVALID }, 400);
 }
 
 /**

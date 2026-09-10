@@ -68,6 +68,8 @@ function surface(failure?: Error) {
     next,
   ) => {
     context.set("actor", STAFF);
+    // Their own Bot, so the ownership guard lets these reach the code under test.
+    context.set("mayDriveBot", async () => true);
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();

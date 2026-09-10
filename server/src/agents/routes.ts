@@ -589,11 +589,28 @@ export function createAgentRoutes(
    * is. It is written that way because sign-in is not yet restricted to one person, and because an
    * endpoint that reads by Bot alone is the shape that quietly becomes wrong the day one is.
    */
+  /*
+   * A BOT THIS PERSON CANNOT SEE HAS NO MEMORIES TO SPEAK OF.
+   *
+   * All three memory routes went "through the store" and then ignored what it said: `get` answers
+   * null for a Bot outside the person's view rather than throwing, so the await was a lookup with
+   * no consequence. Measured 2026-09-10 (audit A8, and again in the authorization matrix): a
+   * colleague naming the owner's private Bot got 200 and an empty list — nothing of the owner's,
+   * since memories are per person, but a 200 that says "this Bot exists" to somebody it is hidden
+   * from. The same 404 `GET /:agentId` gives, from the same answer.
+   */
+  const visibleOr404 = async (
+    context: Context<{ Variables: AppVariables }>,
+  ): Promise<Response | null> =>
+    (await store.get(context.var.actor, context.req.param("agentId") ?? ""))
+      ? null
+      : context.json({ error: "Agent not found." }, 404);
+
   routes.get("/:agentId/memories", requireUser, async (context) => {
     if (!memoryStore) return context.json({ error: "Not found." }, 404);
     try {
-      // Through the store, so a Bot this person cannot see cannot have its memories read by id.
-      await store.get(context.var.actor, context.req.param("agentId"));
+      const hidden = await visibleOr404(context);
+      if (hidden) return hidden;
       const memories = await memoryStore.list(
         context.req.param("agentId"),
         context.var.actor.id,
@@ -653,7 +670,8 @@ export function createAgentRoutes(
       );
     }
     try {
-      await store.get(context.var.actor, context.req.param("agentId"));
+      const hidden = await visibleOr404(context);
+      if (hidden) return hidden;
       const memory = await memoryStore.remember(
         context.req.param("agentId"),
         context.var.actor.id,
@@ -695,7 +713,8 @@ export function createAgentRoutes(
     async (context) => {
       if (!memoryStore) return context.json({ error: "Not found." }, 404);
       try {
-        await store.get(context.var.actor, context.req.param("agentId"));
+        const hidden = await visibleOr404(context);
+        if (hidden) return hidden;
         const forgotten = await memoryStore.forget(
           context.req.param("memoryId"),
           context.var.actor.id,

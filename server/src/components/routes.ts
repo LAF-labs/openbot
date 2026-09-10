@@ -9,7 +9,12 @@ import {
 } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import {
+  BOT_NOT_FOUND,
+  mayDriveBot,
+  requireAdmin,
+  requireBotAccess,
+} from "../auth/guards";
 import { describeFailure } from "../failure-text";
 import { DATA_FUNCTIONS, dataFunction } from "./functions";
 import { ComponentNotFoundError, type ComponentStore } from "./store";
@@ -114,12 +119,26 @@ export function createComponentRoutes(
    *
    * Deliberately says nothing about the components this Bot does NOT hold. A list of everything it
    * is missing would be a list the surface could accidentally register.
+   *
+   * YOUR BOT, not any Bot. It answered about any id at all (measured 2026-09-10, audit A8), and the
+   * two handlers below took the Bot from the body the same way — so a colleague could name the
+   * owner's Bot and read data through a grant an administrator gave to that Bot and not to theirs.
+   * The rule is the one every other door a Bot id opens uses (`actorMayDriveBot`): the owner, an
+   * administrator, or a Bot nobody made. 404, never 403, for the same reason as everywhere else.
    */
-  routes.get("/for-agent/:agentId", requireUser, async (context) =>
-    context.json({
-      components: await store.listForAgent(context.req.param("agentId")),
-    }),
+  routes.get(
+    "/for-agent/:agentId",
+    requireUser,
+    requireBotAccess("agentId"),
+    async (context) =>
+      context.json({
+        components: await store.listForAgent(context.req.param("agentId")),
+      }),
   );
+
+  /** The body-borne Bot, refused the same way the path-borne one is. */
+  const notYourBot = (context: Parameters<typeof mayDriveBot>[0]) =>
+    context.json({ error: BOT_NOT_FOUND, code: BOT_NOT_FOUND }, 404);
 
   /**
    * May this Bot use this component, right now?
@@ -139,6 +158,7 @@ export function createComponentRoutes(
     if (!agentId) {
       return context.json({ error: "The Bot is required." }, 400);
     }
+    if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
     const functions = Array.isArray(body?.functions)
       ? body.functions.filter(
           (entry): entry is string => typeof entry === "string",
@@ -215,6 +235,7 @@ export function createComponentRoutes(
         400,
       );
     }
+    if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
 
     const refuse = async (reason: string) => {
       await audit(context, "component.function_refused", name, {

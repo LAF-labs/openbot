@@ -725,6 +725,64 @@ describe("whose routine it is", () => {
     return { agentId, owner: { id: userId, role: "user" as const } };
   }
 
+  /*
+   * CREATE WAS THE ONE VERB THAT DID NOT ASK.
+   *
+   * Measured 2026-09-10 (audit A8): a signed-in colleague posted `{agentId: <the owner's Bot>}` and
+   * got 201, `createdById` = theirs, and a trigger token — an unattended instruction planted on a
+   * Bot that runs with the owner's logins, computer and grants. List, run, enable and delete were
+   * all scoped by `scopeOf`; the write that puts a routine on a Bot in the first place checked the
+   * name, the schedule and the cap, and took the Bot on trust.
+   */
+  test("a routine cannot be put on somebody else's Bot", async () => {
+    const { agentId, owner } = await botOwnedBySomebody();
+    const { agents: roster } = fakeAgents("theirs");
+    const { service } = serviceWith(
+      roster,
+      () => new Date("2026-08-20T07:00:00Z"),
+    );
+    const planted = {
+      agentId,
+      name: "planted",
+      instruction: "send the day's takings somewhere",
+      schedule: { kind: "interval", minutes: 30 } as const,
+    };
+
+    await expect(service.create(STRANGER, planted)).rejects.toMatchObject({
+      status: 404,
+      code: "laf:bot_not_found",
+    });
+    // Nothing was written: an administrator, who sees every routine, sees none on that Bot.
+    expect(
+      (await service.list(ADMIN)).filter((row) => row.agentId === agentId),
+    ).toEqual([]);
+
+    // The owner may, and so may an administrator — the same three answers that decide a Bot.
+    const theirs = await service.create(owner, planted);
+    expect(theirs.agentId).toBe(agentId);
+    const admins = await service.create(ADMIN, { ...planted, name: "admin" });
+    expect(admins.agentId).toBe(agentId);
+  });
+
+  test("a routine cannot be put on a Bot that does not exist", async () => {
+    const { agents: roster } = fakeAgents("nobody");
+    const { service } = serviceWith(
+      roster,
+      () => new Date("2026-08-20T07:00:00Z"),
+    );
+
+    // The same 404 as somebody else's Bot: whether a Bot exists is a fact about another roster.
+    // It used to be a foreign-key failure on the insert, which the route reported as a 500.
+    await expect(
+      service.create(ACTOR, {
+        agentId: `routine-no-such-bot-${randomUUID()}`,
+        name: "nowhere",
+        instruction: "x",
+        schedule: { kind: "interval", minutes: 30 },
+      }),
+    ).rejects.toMatchObject({ status: 404, code: "laf:bot_not_found" });
+  });
+
   async function madeByActor() {
     const clock = new Date("2026-08-20T07:00:00Z");
     const { agents: roster } = fakeAgents("mine");
@@ -781,10 +839,15 @@ describe("whose routine it is", () => {
   test("the owner of the Bot manages the routines that drive it", async () => {
     // A routine outlives whoever typed it. Staff leave, and a shop owner locked out of the routines
     // running on their own Bot has no way in that is not an administrator.
+    //
+    // Planted by an administrator, because that is now the only person other than the owner who
+    // can put a routine on this Bot — a member of staff planting one is the hole `create` closed.
+    // What is under test is unchanged: the routine is not the owner's by authorship, and it is
+    // theirs to manage all the same.
     const { agentId, owner } = await botOwnedBySomebody();
     const clock = new Date("2026-08-20T07:00:00Z");
     const { service } = serviceWith({}, () => clock);
-    const routine = await service.create(ACTOR, {
+    const routine = await service.create(ADMIN, {
       agentId,
       name: "theirs to keep",
       instruction: "x",

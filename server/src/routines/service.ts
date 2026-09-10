@@ -16,6 +16,11 @@ import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
+import {
+  actorMayDriveBot,
+  BOT_NOT_FOUND,
+  lookupBotOwner,
+} from "../auth/guards";
 import { soloChannelFor } from "../channels/solo-channel";
 import { classifyTurnFailure } from "../channels/turn-failures";
 import type { ActionActor } from "../computer/gateway";
@@ -875,6 +880,23 @@ export function createRoutineService(options: RoutineServiceOptions) {
           400,
           "laf:routine_needs_instruction",
         );
+      }
+      /*
+       * WHOSE BOT, BEFORE THE ROW.
+       *
+       * Create was the one verb here that did not ask: list, run, enable and delete are scoped by
+       * `scopeOf`, and the write that puts a routine on a Bot in the first place checked the name,
+       * the schedule and the cap, and took `agentId` on trust. Measured 2026-09-10 (audit A8): a
+       * colleague posted the owner's Bot and got 201, `createdById` theirs, and a trigger token —
+       * an unattended instruction planted on a Bot that runs with the owner's logins, computer and
+       * grants. The rule is the one every other door a Bot id opens uses (`actorMayDriveBot`), and
+       * the refusal is the same 404 the rest of the product gives for a Bot that is not yours,
+       * which a Bot that does not exist — a foreign-key failure and a 500, before — now shares.
+       */
+      if (
+        !actorMayDriveBot(actor, await lookupBotOwner(database, input.agentId))
+      ) {
+        throw new RoutineError("There is no such Bot.", 404, BOT_NOT_FOUND);
       }
 
       return database.transaction(async (transaction) => {
