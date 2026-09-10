@@ -9,8 +9,8 @@
     "typecheck": "bunx tsc --noEmit -p ."
   },
   "dependencies": {
-    "@ag-ui/core": "0.0.57",
-    "@ag-ui/encoder": "0.0.57",
+    "@ag-ui/core": "0.0.59",
+    "@ag-ui/encoder": "0.0.59",
     "openai": "^4.104.0"
   }
 }
