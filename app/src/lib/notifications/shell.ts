@@ -40,6 +40,10 @@ type TauriGlobal = {
     isPermissionGranted?: () => Promise<boolean>;
     requestPermission?: () => Promise<string>;
   };
+  /** The shell's own version — `core:app:default`, part of `core:default` in the capability. */
+  app?: {
+    getVersion?: () => Promise<string>;
+  };
 };
 
 function shell(): TauriGlobal | null {
@@ -51,6 +55,26 @@ function shell(): TauriGlobal | null {
 /** Whether the app is running inside the desktop shell rather than a browser tab. */
 export function inShell(): boolean {
   return shell() !== null;
+}
+
+/**
+ * Which shell this page is running in, or null when it is a browser tab.
+ *
+ * The server's build is on `/api/version`; this is the other half of "what are you running", and
+ * the only half a page cannot learn from the origin. Null rather than an empty string so a footer
+ * draws nothing about a shell that is not there.
+ */
+export async function shellVersion(): Promise<string | null> {
+  const getVersion = shell()?.app?.getVersion;
+  if (!getVersion) return null;
+  try {
+    const version = await getVersion();
+    return typeof version === "string" && version.trim()
+      ? version.trim()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import { FeedbackDialog } from "@/components/help/feedback-dialog";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { documentLinkComponents } from "@/components/legal/legal-page";
+import { VersionLine } from "@/components/settings/version-line";
 import { Button } from "@/components/ui/button";
 import guide from "@/help/guide.md?raw";
 import { t } from "@/lib/i18n";
@@ -51,8 +52,9 @@ export function HelpPage() {
           {t("Questions and feedback")}
         </Button>
       </PageSection>
-      <footer className="mt-12">
+      <footer className="mt-12 space-y-2">
         <LegalLinks className="text-muted-foreground text-xs" />
+        <VersionLine />
       </footer>
       <FeedbackDialog onOpenChange={setAsking} open={asking} />
     </PageShell>

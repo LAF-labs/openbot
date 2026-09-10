@@ -182,15 +182,21 @@ const projectRoot = resolve(import.meta.dir, "..");
  * arguments checked before the approval, the screen pane's codes, the composer's caret) — measured
  * server 1,779 / app 661 / agent-computer 147 / root 156, each floor 3% under.
  *
+ * RE-RAISED 2026-09-10, with the build and dependency audit (A7): the version route and its walk
+ * of the footer, the Dockerfile digest pins, the server image's shape, what Dependabot watches,
+ * the two overrides and the shell's version files. Measured server 1,808 / app 694 /
+ * agent-computer 147 / root 176; `root` had drifted to 14% under and `server` and `app` past 3%,
+ * so those three are re-raised to 3% under, and `agent-computer`, which did not grow, keeps its floor.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1725, roots: ["server"] },
-  { name: "app", floor: 653, roots: ["app"] },
+  { name: "server", floor: 1753, roots: ["server"] },
+  { name: "app", floor: 673, roots: ["app"] },
   { name: "agent-computer", floor: 142, roots: ["agent-computer"] },
-  { name: "root", floor: 151, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 170, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

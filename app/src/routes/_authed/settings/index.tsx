@@ -10,6 +10,7 @@ import {
 } from "@/components/layout/page-shell";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
+import { VersionLine } from "@/components/settings/version-line";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -340,8 +341,9 @@ function RouteComponent() {
        * the preferences rather than in the rail: the rail is not drawn below `lg`, and a link
        * that exists on a wide window only is a link that does not exist on a phone.
        */}
-      <footer className="mt-12">
+      <footer className="mt-12 space-y-2">
         <LegalLinks className="text-muted-foreground text-xs" />
+        <VersionLine />
       </footer>
     </PageShell>
   );

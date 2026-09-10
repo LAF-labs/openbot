@@ -182,8 +182,37 @@ describe("the logger", () => {
     expect(buildOf({ IMAGE_TAG: "edge", GIT_SHA: "abc123" })).toEqual({
       version: "edge",
       revision: "abc123",
+      channel: "edge",
     });
-    expect(buildOf({ IMAGE_TAG: " v0.4.0 " })).toEqual({ version: "v0.4.0" });
+    expect(buildOf({ IMAGE_TAG: " v0.4.0 " })).toEqual({
+      version: "v0.4.0",
+      channel: "v0.4.0",
+    });
     expect(buildOf({})).toEqual({ version: "source" });
+  });
+
+  /*
+   * What was BUILT outranks what was PULLED: a VM on `IMAGE_TAG=stable` runs some `vX.Y.Z`, and
+   * "stable" is the name of the channel that delivered it, not of the build. The image bakes the
+   * build in (server/Dockerfile, `BUILD_CHANNEL`); a local build bakes an empty string, which is
+   * absent, not a version called "".
+   */
+  test("prefers the baked build to the compose channel, and treats an empty bake as none", () => {
+    expect(
+      buildOf({
+        BUILD_CHANNEL: "v0.4.5",
+        IMAGE_TAG: "stable",
+        GIT_SHA: "dba36c3",
+      }),
+    ).toEqual({ version: "v0.4.5", revision: "dba36c3", channel: "stable" });
+    expect(
+      buildOf({ BUILD_CHANNEL: "", GIT_SHA: "", IMAGE_TAG: "edge" }),
+    ).toEqual({
+      version: "edge",
+      channel: "edge",
+    });
+    expect(buildOf({ BUILD_CHANNEL: "", GIT_SHA: "" })).toEqual({
+      version: "source",
+    });
   });
 });

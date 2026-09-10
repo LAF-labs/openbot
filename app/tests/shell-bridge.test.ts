@@ -4,6 +4,7 @@ import {
   requestShellNoticePermission,
   setShellBadge,
   shellNoticePermission,
+  shellVersion,
   showShellNotice,
 } from "../src/lib/notifications/shell";
 
@@ -203,5 +204,39 @@ describe("in the shell", () => {
       },
     };
     expect(await setShellBadge(1)).toBe(false);
+  });
+});
+
+/**
+ * The shell's own version, for the footer's second number.
+ *
+ * `core:app:default` is inside `core:default` in the capability, so `getVersion` is reachable from
+ * the remote origin; a shell too old to expose it, or a call that throws, reads as "no shell
+ * version" rather than as an error on a footer.
+ */
+describe("the shell's version", () => {
+  test("is null in a browser tab, and where the shell cannot say", async () => {
+    expect(await shellVersion()).toBeNull();
+    (globalThis as WindowWithTauri).__TAURI__ = { core: {} };
+    expect(await shellVersion()).toBeNull();
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      app: {
+        getVersion: async () => {
+          throw new Error("not allowed");
+        },
+      },
+    };
+    expect(await shellVersion()).toBeNull();
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      app: { getVersion: async () => "  " },
+    };
+    expect(await shellVersion()).toBeNull();
+  });
+
+  test("is what the shell answers, trimmed", async () => {
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      app: { getVersion: async () => " 0.2.0 " },
+    };
+    expect(await shellVersion()).toBe("0.2.0");
   });
 });

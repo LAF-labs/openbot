@@ -156,10 +156,15 @@ jobs:
             agent-bot)      DOCKERFILE=agent-bot/Dockerfile ;;
             agent-computer) DOCKERFILE=agent-computer/Dockerfile ;;
           esac
+          # REVISION and CHANNEL are baked into the server and Bot images (`GET /api/version`, the
+          # `boot` log line) — the same two the deploy bundle's VERSION file takes below, so what a
+          # VM reads from the bundle and what its server answers cannot name different builds.
           docker buildx build \
             --platform "linux/$ARCH" \
             --file "$DOCKERFILE" \
             --build-arg AUTH_PROVIDERS="$AUTH_PROVIDERS" \
+            --build-arg REVISION="$REVISION" \
+            --build-arg CHANNEL="$CHANNEL" \
             --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag "$REGISTRY/openbot-$SERVICE:$CHANNEL-$ARCH" \

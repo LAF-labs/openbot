@@ -4,14 +4,23 @@ version: 2
 # workflows pin action SHAs by hand, and a published advisory reached this repository only when
 # somebody happened to read one.
 #
+# And for its first week this file watched nothing either. Measured 2026-09-10: one Monday past its
+# schedule, zero pull requests, zero `dependabot/*` branches, and no "Dependabot Updates" run in
+# Actions at all — while `bun audit` held three fixed advisories against the API server's `hono`
+# for fifteen days. The manifest ecosystem was `npm`, and the only lockfile here is `bun.lock`,
+# which Dependabot's npm updater does not read. `bun` is the ecosystem that does. Alerts and
+# security updates are a repository setting, not a line here; both are on, and
+# `tests/dependabot.test.ts` reads this file against the Dockerfiles so a new image cannot be
+# added without the entry that re-pins its base.
+#
 # Weekly and grouped, on purpose. Ungrouped, a monorepo this size opens a dozen pull requests every
 # Monday, each needing its own CI run and its own review, and the pile is how a person learns to
 # ignore the whole channel. One pull request per ecosystem per week is a thing somebody actually
-# reads — and CI, which now runs the same checks that gate an image, is what says whether it is safe.
+# reads — and CI, which runs the same checks that gate an image, is what says whether it is safe.
 updates:
   # Bun reads the same manifests, and the root manifest declares the workspaces, so one entry
   # covers app, server, agent-bot, agent-computer and desktop.
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
@@ -35,6 +44,49 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+
+  # The base images. Every FROM is `name:tag@sha256:…` — the tag says what it is, the digest says
+  # which bytes — and a digest is a thing nobody re-reads by hand: `caddy:2-alpine` would have sat
+  # on 2.11.4 forever while the tag moved on without it. One entry per image directory; the deploy
+  # bundle is `FROM scratch` and has nothing to pin.
+  - package-ecosystem: docker
+    directories:
+      - /server
+      - /app
+      - /agent-bot
+      - /agent-computer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+
+  # The shell's crates. `Cargo.lock` pins them and nothing else ever moves it; a Tauri patch that
+  # fixes the updater or the webview reaches an installed app only through here.
+  - package-ecosystem: cargo
+    directory: /desktop/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      shell:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
 
   # The workflows pin every action by commit SHA, which is the safe form and also the form nobody
   # can read for freshness. This is what re-pins them.

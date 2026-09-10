@@ -4,7 +4,8 @@
 # no step at which a stale `dist` outlives the build that produced it. What Caddy serves and what
 # this image built cannot drift apart, because they are the same layer.
 
-FROM oven/bun:1.3.14 AS build
+# oven/bun:1.3.14 — pinned by digest as well; the tag is the name, the digest is the bytes.
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS build
 
 WORKDIR /app
 
@@ -50,7 +51,9 @@ RUN bun scripts/generate-app-config.ts
 WORKDIR /app/app
 RUN bun run build
 
-FROM caddy:2-alpine
+# caddy:2-alpine — resolved to 2.11.4 on 2026-09-10. The tag floats across every 2.x minor; the
+# digest is what a customer VM actually gets, and Dependabot's docker entry is what moves it.
+FROM caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
 
 # Certificates and the ACME account live in /data, which compose gives a volume. Without that
 # volume every restart asks Let's Encrypt for the same certificate again, and five of those in a

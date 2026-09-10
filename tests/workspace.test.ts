@@ -68,7 +68,9 @@ describe("LAF Agent workspace", () => {
 
     for (const dockerfile of dockerfiles) {
       const contents = readFileSync(join(repositoryRoot, dockerfile), "utf8");
-      const install = contents.indexOf("bun install --frozen-lockfile");
+      // The instruction, not the first mention: a Dockerfile may well explain its install in a
+      // comment above the manifests, and a comment is not where bun reads them.
+      const install = contents.search(/^RUN bun install --frozen-lockfile/m);
       expect(install).toBeGreaterThan(0);
 
       for (const workspace of rootManifest.workspaces) {
@@ -93,5 +95,74 @@ describe("LAF Agent workspace", () => {
     const desktop = packageManifest("desktop");
     expect(desktop.scripts?.build).toBeUndefined();
     expect(desktop.scripts?.bundle).toBe("tauri build");
+  });
+
+  /**
+   * No manifest pretends to be the version.
+   *
+   * There were six of them: `0.0.0` in two, `0.2.0` in three that had to be kept equal by hand,
+   * and none in the rest — while the fleet ran `v0.4.5`. The version IS the git tag: images.yml
+   * bakes the ref and the commit into the images (`GET /api/version`), release.yml stamps the tag
+   * into the shell's bundle. A number here would be a second source that is wrong on every day
+   * but the one it was edited, so the manifests say so in words.
+   */
+  test("leaves the version to git", () => {
+    const rootManifest = JSON.parse(
+      readFileSync(join(repositoryRoot, "package.json"), "utf8"),
+    ) as { version?: string; workspaces: string[] };
+    expect(rootManifest.version).toBeUndefined();
+
+    for (const workspace of rootManifest.workspaces) {
+      const manifest = JSON.parse(
+        readFileSync(join(repositoryRoot, workspace, "package.json"), "utf8"),
+      ) as { version?: string };
+      if (manifest.version !== undefined) {
+        expect(manifest.version, `${workspace}/package.json`).toBe(
+          "0.0.0-workspace",
+        );
+      }
+    }
+  });
+
+  /**
+   * Two advisories the lockfile could not close on its own, closed by overriding UPWARD.
+   *
+   * `bun audit` on 2026-09-10: 27 findings, nine high. Updating the packages this repository
+   * names (`hono`, `fast-uri`, `js-yaml`) took it to four high, all in packages nobody here
+   * names: `lodash-es` 4.17.21 pinned EXACTLY by chevrotain under cel-js (the policy language), and
+   * `undici` 5.29.0 asked for by `@ai-sdk/provider-utils` under CopilotKit's runtime — which never
+   * imports it: the only code in the tree that does is `openai` and `dotenvx`, and they want 7.x.
+   * So both are overridden to the fixed line, and the floor is written down here: an override
+   * moved BELOW the fix, or dropped, would reopen an advisory without `bun audit` being run.
+   */
+  test("overrides the two transitive advisories to their fixed versions, and no lower", () => {
+    const rootManifest = JSON.parse(
+      readFileSync(join(repositoryRoot, "package.json"), "utf8"),
+    ) as { overrides?: Record<string, string> };
+    const overrides = rootManifest.overrides ?? {};
+
+    const atLeast = (name: string, floor: [number, number, number]) => {
+      const spec = overrides[name];
+      expect(spec, `${name} is no longer overridden`).toBeDefined();
+      // A caret range, so Dependabot can still move it forward within the fixed major.
+      const found = spec?.match(/^\^(\d+)\.(\d+)\.(\d+)$/);
+      expect(found, `${name}: ${spec} is not a caret range`).not.toBeNull();
+      const [major = 0, minor = 0, patch = 0] = (found ?? [])
+        .slice(1, 4)
+        .map(Number);
+      const order = major - floor[0] || minor - floor[1] || patch - floor[2];
+      expect(order, `${name} ${spec} is below the fix`).toBeGreaterThanOrEqual(
+        0,
+      );
+    };
+    // GHSA-r5fr-rjxr-66jc and the two `_.unset` prototype pollutions: fixed in 4.17.23.
+    atLeast("lodash-es", [4, 17, 23]);
+    // The WebSocket and header advisories: fixed across 6.23 / 7.x; 7 is what its importers want.
+    atLeast("undici", [7, 29, 0]);
+
+    // And the lockfile agrees: the vulnerable lines are gone from what would be installed.
+    const lock = readFileSync(join(repositoryRoot, "bun.lock"), "utf8");
+    expect(lock).not.toMatch(/"undici@5\./);
+    expect(lock).not.toMatch(/"lodash-es@4\.17\.2[012]"/);
   });
 });

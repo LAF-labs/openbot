@@ -2154,4 +2154,7 @@ export const ko: Record<string, string> = {
   // 감사 표: 사람이 운영자에게 글을 보냈다. 글 자체는 표에 없다.
   "A message was sent to the operator": "운영자에게 문의·의견을 보냄",
   "A message to the operator": "문의·의견",
+  // The footer on Settings and the help page: what is running, for a support thread to start from.
+  "Version {build}": "버전 {build}",
+  "Version {build} · app {shell}": "버전 {build} · 앱 {shell}",
 };

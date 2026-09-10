@@ -606,6 +606,23 @@ fn install_updates(app: tauri::AppHandle) {
 /// for itself once it has been put away: come back, stop making noise, start with the machine, and
 /// end.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    /*
+     * WHICH SHELL THIS IS, as the first line of the menu and as a fact rather than a button.
+     *
+     * macOS draws an "About LAF Agent" in the app menu on its own; Windows draws nothing, so until
+     * this line a person on Windows had no way to read the version of the thing they had installed
+     * — and the server's build, on the Settings footer, is only half of "what are you running".
+     * `package_info()` is the version the bundler stamped from the release tag (release.yml), so it
+     * is the same number the updater compares against. Disabled: there is nothing to do with it.
+     */
+    let info = app.package_info();
+    let about = MenuItem::with_id(
+        app,
+        "about",
+        format!("{} {}", info.name, info.version),
+        false,
+        None::<&str>,
+    )?;
     let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
     let notices = CheckMenuItem::with_id(
         app,
@@ -636,6 +653,8 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
+            &about,
+            &PredefinedMenuItem::separator(app)?,
             &open,
             &PredefinedMenuItem::separator(app)?,
             &notices,

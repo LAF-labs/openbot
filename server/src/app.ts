@@ -1,5 +1,6 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { buildOf } from "../../shared/log";
 import { type AccountService, createAccountRoutes } from "./account/routes";
 import type { CoworkerCall } from "./agents/coworker-call";
 import type { AgentMemoryStore } from "./agents/memory-store";
@@ -396,6 +397,16 @@ export function createApp(
    * body to one field for exactly that reason.
    */
   app.get("/api/capabilities", (context) => context.json({ status: "ok" }));
+  /*
+   * WHICH BUILD IS ANSWERING. Until 2026-09-10 nothing on any surface said: a customer writing
+   * "it does not work" could not be asked what they were running, and a shell at 0.4.4 in front of
+   * a server at 0.4.5 was a combination nobody could tell from a healthy one. Three facts, read
+   * once at boot from the environment the image was built and pulled with (`buildOf`), and never
+   * the config object — the rule two comments up. Public like `/health`, because the fleet monitor
+   * and a support thread both need it before anybody has signed in.
+   */
+  const build = buildOf();
+  app.get("/api/version", (context) => context.json(build));
   /*
    * Which sign-ins this deployment offers, for the surface to draw its buttons from.
    *

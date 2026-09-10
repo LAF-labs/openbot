@@ -211,16 +211,32 @@ export function reportCrashes(log: Logger): void {
 }
 
 /**
- * Which build this is, for the `boot` line.
+ * Which build this is, for the `boot` line and for `GET /api/version`.
  *
- * `IMAGE_TAG` is the compose channel the image was pulled by (stable, edge, vX.Y.Z), passed into
- * every service's environment by docker-compose.yml; `GIT_SHA` is there for anybody who bakes one
- * in. Neither set is a source checkout, and says so rather than guessing.
+ * Three facts, each from one place, and the one source of truth behind all of them is git:
+ *
+ *   - `version`  — what was BUILT. `BUILD_CHANNEL` is baked into the image by images.yml from the
+ *                  ref it built: `vX.Y.Z` from a release tag, `edge` from main. It is what the
+ *                  footer on Settings shows, because "stable" names a channel and not a build.
+ *   - `channel`  — what was PULLED. `IMAGE_TAG` is the compose channel (stable, edge, vX.Y.Z),
+ *                  passed into every service's environment by docker-compose.yml. Before anything
+ *                  was baked this was the only version there was, so it is still the fallback for
+ *                  `version` when an image carries no `BUILD_CHANNEL`.
+ *   - `revision` — the commit, `GIT_SHA`, baked beside the channel.
+ *
+ * A source checkout has none of the three and says `source` rather than guessing.
  */
+export type Build = { version: string; revision?: string; channel?: string };
+
 export function buildOf(
   environment: Record<string, string | undefined> = process.env,
-): { version: string; revision?: string } {
-  const version = environment.IMAGE_TAG?.trim() || "source";
-  const revision = environment.GIT_SHA?.trim();
-  return revision ? { version, revision } : { version };
+): Build {
+  const channel = environment.IMAGE_TAG?.trim() || undefined;
+  const version = environment.BUILD_CHANNEL?.trim() || channel || "source";
+  const revision = environment.GIT_SHA?.trim() || undefined;
+  return {
+    version,
+    ...(revision ? { revision } : {}),
+    ...(channel ? { channel } : {}),
+  };
 }

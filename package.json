@@ -10,6 +10,10 @@
     "agent-computer",
     "desktop"
   ],
+  "overrides": {
+    "lodash-es": "^4.17.23",
+    "undici": "^7.29.0"
+  },
   "scripts": {
     "build": "bun run generate:app-config && bun run --filter '*' build",
     "dev": "bun run generate:app-config && bun run --filter '*' --parallel dev",

@@ -189,3 +189,48 @@ test("the scheme the shell registers is the scheme it answers", () => {
   );
   expect(answered?.[1]).toBe(registered?.[0]);
 });
+
+/**
+ * The shell's version lives in two files that have to agree, and in a third that is not one.
+ *
+ * `Cargo.toml` is what the crate says it is; `tauri.conf.json` is what the bundle says, and
+ * release.yml stamps the tag over it on the runner (never committed). At any commit the two must
+ * be one number, or the About line the tray draws (`package_info()`, read from the config) and the
+ * crate's own metadata disagree with nothing to say which is right. `desktop/package.json` is a
+ * workspace manifest nothing reads for a version, and says so rather than carrying a third copy.
+ */
+test("the shell's two version files agree, and the manifest does not pretend to be a third", () => {
+  const cargo = read("desktop/src-tauri/Cargo.toml").match(
+    /^version = "([^"]+)"/m,
+  );
+  const config = json<{ version?: string }>(
+    "desktop/src-tauri/tauri.conf.json",
+  ).version;
+
+  // Asserted rather than assumed: a config without a version would compare undefined to undefined.
+  expect(cargo?.[1]).toBeTruthy();
+  expect(config).toBeTruthy();
+  expect(config).toBe(cargo?.[1]);
+
+  expect(json<{ version?: string }>("desktop/package.json").version).toBe(
+    "0.0.0-workspace",
+  );
+});
+
+/**
+ * The tray says which shell this is.
+ *
+ * macOS draws an About item on its own; Windows draws nothing, and the Settings footer can only
+ * say the server's build. The tray line reads `package_info()`, which is the stamped version the
+ * updater compares against — the same number, from the same place, or it is not an About.
+ */
+test("the tray's first line is the shell's own name and version, and is not a button", () => {
+  const shell = read("desktop/src-tauri/src/lib.rs");
+  const tray = shell.slice(shell.indexOf("fn build_tray("));
+  expect(tray).toContain("app.package_info()");
+  expect(tray).toMatch(
+    /MenuItem::with_id\(\s*app,\s*"about",\s*format!\("\{\} \{\}", info\.name, info\.version\),\s*false,/,
+  );
+  // First in the menu, so it reads as a title rather than as one more thing to click.
+  expect(tray).toMatch(/&\[\s*&about,\s*&PredefinedMenuItem::separator/);
+});

@@ -2,7 +2,7 @@
 #
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
-FROM mcr.microsoft.com/playwright:v1.62.1-noble
+FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
 
 # Bun, taken from the official image at the exact version the rest of the repository builds with.
 #
@@ -10,7 +10,7 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 # build time: the service that drives a browser holding somebody's real logins ran on a runtime
 # version no commit here named, and two builds of one commit could differ. A COPY from a pinned
 # image also drops the apt layer that only existed because bun's installer needs unzip.
-COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
 
