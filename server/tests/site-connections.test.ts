@@ -162,6 +162,45 @@ describe("the 사이트 연결 store", () => {
     ]);
   });
 
+  /*
+   * ANOTHER BOT'S WALL IS NOT THIS SESSION EXPIRING (audit 2026-09-10, A9 F4). A browser profile
+   * is per Bot, so Bot B visiting 배민 on its own never-signed-in profile sees the login wall every
+   * time — and the row, which says the session lives in Bot A's browser, was flipped to
+   * 다시 로그인 필요 by it. Measured: A signs in, B's routine runs, the card says log in again; A
+   * visits, the card says connected; B runs again, and so on, several times a day.
+   */
+  test("a login wall seen by another Bot's browser does not flip the connection", async () => {
+    const userId = await createUser();
+    await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-a",
+      signedIn: true,
+    });
+
+    // Bot B, on its own profile, which was never signed in.
+    const seenByB = await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-b",
+      signedIn: false,
+    });
+
+    expect(seenByB).toBeNull();
+    expect(
+      (await store.list(userId)).map((row) => [row.botId, row.needsLogin]),
+    ).toEqual([["bot-a", false]]);
+
+    // The browser the session lives in seeing the wall is the session expiring.
+    const seenByA = await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-a",
+      signedIn: false,
+    });
+    expect(seenByA?.needsLogin).toBe(true);
+  });
+
   test("turning a site off takes this person's row and nobody else's", async () => {
     const mine = await createUser();
     const theirs = await createUser();

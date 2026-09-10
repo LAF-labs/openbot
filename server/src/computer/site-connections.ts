@@ -42,6 +42,12 @@ export type SiteConnectionStore = {
    * `signedIn: false` marks an EXISTING row as needing a login and creates nothing. A login wall on
    * a site nobody ever connected is not news; a login wall on one they did is the whole reason this
    * flag exists, and it is what explains a routine that came back empty.
+   *
+   * AND ONLY WHEN IT IS THE SESSION'S OWN BROWSER THAT SAW THE WALL. A profile is per Bot, so a
+   * second Bot visiting the site on its never-signed-in profile sees the wall every time and says
+   * nothing about the session in the first Bot's browser. Measured 2026-09-10 (audit A9, F4): Bot
+   * A signs in, Bot B's routine runs, the card says 다시 로그인 필요; A visits, it says connected;
+   * B runs again — several flips a day, and a person re-logging into a session that never expired.
    */
   record(input: {
     userId: string;
@@ -93,6 +99,8 @@ export function createSiteConnectionStore(
             and(
               eq(lafSiteConnections.userId, userId),
               eq(lafSiteConnections.siteId, siteId),
+              // Only the browser the session lives in can report it gone. See `record` above.
+              eq(lafSiteConnections.botId, botId),
             ),
           )
           .returning();
