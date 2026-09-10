@@ -18,6 +18,7 @@ import {
   TokenRefusedError,
   type Transaction,
 } from "./store";
+import { TIMEOUT_MS } from "./timeouts";
 
 /**
  * The deployment's own identity at one vendor: the OAuth client it introduces itself with.
@@ -28,9 +29,6 @@ import {
  * reaches everybody who ever consented, and the locking exists to make sure exactly one writer
  * decides that at a time.
  */
-
-/** How long a vendor's token endpoint gets. Shorter than a call: it is one round trip, or nothing. */
-export const TOKEN_TIMEOUT_MS = 10_000;
 
 /**
  * How long a freshly stored OAuth client is left alone after `invalid_client`.
@@ -103,14 +101,16 @@ export async function exchangeRefreshTokenOverHttp(input: {
      * the registration already state; this one had been left to the default.
      */
     redirect: "manual",
-    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+    signal: AbortSignal.timeout(TIMEOUT_MS.token),
   });
 
   if (!response.ok) {
     /*
      * The code, when the refusal is JSON and carries one. Read defensively: a token endpoint that
      * is refusing may be refusing with an HTML error page, and a parse failure here would replace
-     * the vendor's status — the one fact we do have — with a syntax error.
+     * the vendor's status — the one fact we do have — with a syntax error. The status travels on
+     * the error as a field beside the code, because the health judgement reads it first: a 503 or
+     * a 429 is the vendor being unable to answer anybody, whatever code its body carries.
      */
     const refusal = (await response.json().catch(() => null)) as {
       error?: unknown;
@@ -126,6 +126,7 @@ export async function exchangeRefreshTokenOverHttp(input: {
     throw new TokenRefusedError(
       `The vendor would not renew this access (${response.status}).${code ? ` (${code})` : ""}`,
       code,
+      response.status,
     );
   }
 

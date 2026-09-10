@@ -6,6 +6,7 @@ import {
   readJson,
   type RestConnection,
   stringArg,
+  unknownTool,
   vendorRequest,
 } from "./rest-support";
 
@@ -197,7 +198,7 @@ export async function callTool(
         embed: "items",
       },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ orders?: Order[] }>(result.response);
     if (!body) return failure("카페24가 읽을 수 없는 답을 보냈습니다.");
@@ -233,7 +234,7 @@ export async function callTool(
       headers: HEADERS,
       query: { embed: "items" },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ order?: Order }>(result.response);
     const order = body?.order;
@@ -259,7 +260,7 @@ export async function callTool(
       headers: HEADERS,
       query: { product_name: stringArg(args, "name") ?? undefined, limit },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ products?: Product[] }>(result.response);
     if (!body) return failure("카페24가 읽을 수 없는 답을 보냈습니다.");
@@ -289,7 +290,7 @@ export async function callTool(
       headers: HEADERS,
       query: { limit },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ articles?: Article[] }>(result.response);
     if (!body) return failure("카페24가 읽을 수 없는 답을 보냈습니다.");
@@ -325,11 +326,9 @@ export async function callTool(
       // shop this product is for has. Cafe24 refuses the call without it.
       body: { shop_no: 1, request: { status } },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
     return asResult(`주문 ${orderId}의 상태를 ${status}로 바꿨습니다.`);
   }
 
-  return failure(
-    `${toolName} is not a tool this connector implements. The stored tool list is out of date; refresh it on the Plugins page.`,
-  );
+  return unknownTool(toolName);
 }

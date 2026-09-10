@@ -18,7 +18,7 @@ import {
   type ToolAnnotations,
 } from "./laf-contract";
 import { log } from "../log";
-import { McpRedirectRefusedError } from "./mcp";
+import { McpRefusedError, McpServerError, trimDetail } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
 import type { SkillsAndGrants } from "./skills-and-grants";
 import {
@@ -785,6 +785,21 @@ export function createCallPath(
           toolName,
           args,
         );
+        /*
+         * What the vendor's API answered, judged for the connection — the half the exchange above
+         * cannot see. A 401 here is a grant that no longer works however alive its refresh token
+         * is, and until 2026-09-10 nothing recorded it: the card said 연결됨 and `last_ok_at`
+         * moved forward on every failed call. Judged in `connection-health.ts`, by the same table
+         * as the exchange, so a status means one thing wherever it is answered.
+         */
+        if (result.isError) {
+          await connections.recordVendorStatus({
+            serverId,
+            entry,
+            actorId: input.actorId,
+            status: result.status,
+          });
+        }
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
           targetType: "mcp_tool",
@@ -800,34 +815,48 @@ export function createCallPath(
                 ...decided,
                 // The vendor's own sentence where it wrote one; ours is a code, because a vendor
                 // that says "this failed" and nothing else leaves this side speaking for it.
-                failure: result.text.slice(0, 400) || TOOL_REPORTED_ERROR,
+                failure: trimDetail(result.text) || TOOL_REPORTED_ERROR,
               }
             : decided,
         });
         return { text: result.text, isError: result.isError };
       } catch (error) {
         /*
-         * A server that answered by pointing somewhere else is OUR refusal, not the vendor's
-         * failure, and the row says so with a code rather than with a sentence.
+         * A call this deployment DECLINED is our refusal, not the vendor's failure, and the row
+         * says so with a code rather than with a sentence.
          *
          * The branch is worth its lines. Every other failure here is something that happened TO the
-         * call — a vendor down, a credential it would not take. This one is the deployment declining
-         * to follow a 3xx, which is the whole reason the transport now refuses redirects: a custom
-         * server nobody reviewed can answer 302 with the Bot's own computer, or an address on this
-         * network, and a followed redirect carries the credential there. A reader counting refusals
-         * should find these; a reader counting vendor outages should not be reading them.
+         * call — a vendor down, a credential it would not take. These are the deployment declining:
+         * to follow a 3xx (a custom server nobody reviewed can answer 302 with the Bot's own
+         * computer, and a followed redirect carries the credential there), to read an answer past
+         * the size it will hold, or to wait past the bound. A reader counting refusals should find
+         * these; a reader counting vendor outages should not be reading them.
          *
-         * `rule` carries the fact code for the same reason the guard floors do — the surface names
-         * the boundary from a code, never from our sentence.
+         * The fact rides as `rule` for the same reason the guard floors do — the surface names the
+         * boundary from a code, never from our sentence — and as `code`, which is what the model's
+         * Korean is looked up by (`shared/prompt/tool-results.ko.ts`).
          */
-        if (error instanceof McpRedirectRefusedError) {
+        if (error instanceof McpRefusedError) {
           await recordAuditEvent(auditStore, {
             eventType: "mcp.call_rejected",
             targetType: "mcp_tool",
             targetId: input.ref,
-            payload: { ...decided, refusal: error.fact, status: error.status },
+            payload: {
+              ...decided,
+              refusal: error.fact,
+              ...(error.status !== null ? { status: error.status } : {}),
+            },
           });
-          throw new PluginRefusedError(error.message, error.fact);
+          throw new PluginRefusedError(error.message, error.fact, error.fact);
+        }
+        // A vendor that answered with a status is judged the same way a result carrying one is.
+        if (error instanceof McpServerError && error.status !== null) {
+          await connections.recordVendorStatus({
+            serverId,
+            entry,
+            actorId: input.actorId,
+            status: error.status,
+          });
         }
         /*
          * Recorded, then rethrown unchanged. The caller's behaviour is unaffected — what changes is
@@ -841,10 +870,9 @@ export function createCallPath(
           targetId: input.ref,
           payload: {
             ...decided,
-            failure: (error instanceof Error
-              ? error.message
-              : String(error)
-            ).slice(0, 400),
+            failure: trimDetail(
+              error instanceof Error ? error.message : String(error),
+            ),
           },
         });
         throw error;

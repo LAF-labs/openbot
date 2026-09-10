@@ -24,18 +24,10 @@ import { Hono } from "hono";
 import { BUSINESS_SITES } from "../../../shared/sites/catalogue";
 import type { AppVariables } from "../auth/guards";
 import type { SiteConnectionStore } from "../computer/site-connections";
-import type { CatalogueEntry } from "./catalogue";
+import { type CatalogueEntry, instanceNameOf } from "./catalogue";
+import { healthFrom } from "./connection-health";
 import type { PartnerRuntime } from "./partners";
-import type { PluginStore } from "./store";
-
-/** Whether a connection this deployment holds is still usable. */
-export type ConnectionHealth = {
-  status: "ok" | "needs_reconnect";
-  lastOkAt: string | null;
-  lastFailureAt: string | null;
-  /** The `laf:` fact behind a refusal, when one is known. Never a sentence. */
-  failureCode: string | null;
-};
+import type { ConnectionHealth, PluginStore } from "./store";
 
 export type OverviewAccount =
   | {
@@ -96,11 +88,11 @@ export type ConnectionsOverviewSources = {
 };
 
 /**
- * A connection row as this reader takes it, with the health another part of the server may add.
+ * A connection row as this reader takes it, with the health the store says it has.
  *
- * Optional on purpose: the field is being introduced alongside this and a reader that required it
- * would fail closed on every deployment that has not got it yet — as "다시 연결 필요" on every
- * healthy account, which is the worst possible way to be wrong about a connection.
+ * Still read through `healthFrom` rather than trusted as typed: a reader that required the field
+ * would fail closed on a store that did not send it — as "다시 연결 필요" on every healthy
+ * account, which is the worst possible way to be wrong about a connection.
  */
 type HeldConnection = {
   serverId: string;
@@ -110,40 +102,6 @@ type HeldConnection = {
 
 const ISO = (value: unknown): string | null =>
   typeof value === "string" && value ? value : null;
-
-/** What a connection's health says, or the healthy reading when nothing says anything. */
-function healthOf(row: HeldConnection | undefined): ConnectionHealth {
-  const said = (row?.health ?? null) as Record<string, unknown> | null;
-  const status = said?.status === "needs_reconnect" ? "needs_reconnect" : "ok";
-  return {
-    status,
-    lastOkAt: ISO(said?.lastOkAt),
-    lastFailureAt: ISO(said?.lastFailureAt),
-    failureCode:
-      typeof said?.failureCode === "string" && said.failureCode
-        ? said.failureCode
-        : null,
-  };
-}
-
-/**
- * The first label of a stored per-instance URL — the mall id somebody typed, read back.
- *
- * Only for an entry that HAS one, the same guard `plugins/routes.ts` learned the hard way: every
- * hostname has a first label, so reading it unconditionally answers "sheets" for Google Sheets — a
- * name the person never typed, shown back to them as their own shop.
- */
-function instanceNameOf(
-  entry: CatalogueEntry,
-  url: string | undefined,
-): string | null {
-  if (entry.host !== null || !url) return null;
-  try {
-    return new URL(url).hostname.split(".")[0] || null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The composition itself, apart from the route, because a second reader needs the same facts.
@@ -163,7 +121,7 @@ export async function readConnectionsOverview(
 
   const accounts: OverviewAccount[] = sources.catalogue().map((entry) => {
     const connection = byServerId.get(entry.key);
-    const health = healthOf(connection);
+    const health: ConnectionHealth = healthFrom(connection?.health);
     const row = stored.find((server) => server.id === entry.key);
     return {
       kind: "oauth",

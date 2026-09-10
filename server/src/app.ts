@@ -737,10 +737,12 @@ export function createApp(
         // What each Bot has learned, and the three endpoints that let a person read and undo it.
         agentMemoryStore,
         // A new Bot is offered what its owner already has the moment it exists, not at the next
-        // boot or the next connect: the deployment-wide tools, and the partner channels this person
-        // connected before the Bot was made. `by` is the deployment for both, because nobody
-        // pressed anything — a standing decision is being extended to a Bot it could not name.
-        pluginStore && (publicData || partners)
+        // boot or the next connect: the deployment-wide tools, the partner channels this person
+        // connected before the Bot was made, and — since the audit of 2026-09-10 measured a Bot
+        // made after Google Sheets was connected holding nothing — the accounts they consented to
+        // at a vendor. `by` is the deployment for all three, because nobody pressed anything: a
+        // standing decision is being extended to a Bot it could not name.
+        pluginStore
           ? async (agentId, ownerUserId) => {
               if (publicData) {
                 await publicData.offerTo(pluginStore, agentId, "deployment");
@@ -753,6 +755,11 @@ export function createApp(
                   "deployment",
                 );
               }
+              await pluginStore.offerConnectionsTo(
+                agentId,
+                ownerUserId,
+                "deployment",
+              );
             }
           : undefined,
       ),

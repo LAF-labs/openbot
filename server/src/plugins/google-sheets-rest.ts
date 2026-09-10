@@ -6,6 +6,7 @@ import {
   readJson,
   type RestConnection,
   stringArg,
+  unknownTool,
   vendorRequest,
 } from "./rest-support";
 
@@ -188,7 +189,7 @@ export async function callTool(
       url: `${base}/${sheetId}`,
       query: { fields: "properties.title,sheets.properties" },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{
       properties?: { title?: string };
@@ -220,7 +221,7 @@ export async function callTool(
     const result = await vendorRequest("Google Sheets", connection, {
       url: `${base}/${sheetId}/values/${encodeURIComponent(range)}`,
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ values?: unknown[][] }>(result.response);
     if (!body) return failure("구글 시트가 읽을 수 없는 답을 보냈습니다.");
@@ -258,7 +259,7 @@ export async function callTool(
       },
       body: { values: [row] },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ updates?: { updatedRange?: string } }>(
       result.response,
@@ -277,7 +278,7 @@ export async function callTool(
       query: { valueInputOption: "USER_ENTERED" },
       body: { values: rows },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{
       updatedCells?: number;
@@ -288,7 +289,5 @@ export async function callTool(
     );
   }
 
-  return failure(
-    `${toolName} is not a tool this connector implements. The stored tool list is out of date; refresh it on the Plugins page.`,
-  );
+  return unknownTool(toolName);
 }

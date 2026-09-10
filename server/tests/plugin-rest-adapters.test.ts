@@ -4,6 +4,7 @@ import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
 import * as gmail from "../src/plugins/gmail-rest";
 import * as business from "../src/plugins/google-business-rest";
 import * as calendar from "../src/plugins/google-calendar-rest";
+import * as drive from "../src/plugins/google-drive-rest";
 import * as sheets from "../src/plugins/google-sheets-rest";
 import { transportFor } from "../src/plugins/transport";
 import { stubFetch } from "./support/fetch";
@@ -258,6 +259,219 @@ describe("Gmail", () => {
 
     expect(result.isError).toBe(true);
     expect(result.text).toContain("429");
+  });
+
+  /*
+   * THE N+1, BOUNDED (audit 2026-09-10, A9 F7). Gmail's list answers ids and nothing else, so a
+   * search is one list and up to fifty reads. One after another, at a 40 ms round trip, fifty took
+   * 2,157 ms; each allowed its own thirty seconds, the worst case was twenty-five minutes in a chat
+   * turn nothing else bounds.
+   */
+  test("a search reads the headers six at a time, in the order Gmail listed them", async () => {
+    const ids = Array.from({ length: 50 }, (_, index) => `m${index}`);
+    let inFlight = 0;
+    let peak = 0;
+    globalThis.fetch = stubFetch(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/messages")) {
+        return json({ messages: ids.map((id) => ({ id })) });
+      }
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Bun.sleep(40);
+      inFlight -= 1;
+      const id = decodeURIComponent(path.split("/").at(-1) ?? "");
+      return json({
+        id,
+        payload: { headers: [{ name: "Subject", value: `제목 ${id}` }] },
+      });
+    });
+    const started = Date.now();
+
+    const result = await gmail.callTool(connection, "search_messages", {
+      max: 50,
+    });
+
+    const elapsed = Date.now() - started;
+    expect(result.isError).toBe(false);
+    const lines = result.text.split("\n");
+    expect(lines).toHaveLength(50);
+    // Gmail's order, not the order the reads happened to finish in.
+    expect(lines[0]).toContain("제목 m0");
+    expect(lines[49]).toContain("제목 m49");
+    expect(peak).toBeLessThanOrEqual(6);
+    expect(peak).toBeGreaterThan(1);
+    // Fifty serial reads at 40 ms would be two seconds; nine rounds of six is under half of one.
+    expect(elapsed).toBeLessThan(1_500);
+    // Nothing was cut short, so nothing says so.
+    expect(result.text).not.toContain("통만 읽었습니다");
+  });
+
+  test("one deadline bounds the whole search, and the answer says once what it is missing", async () => {
+    const ids = Array.from({ length: 50 }, (_, index) => `m${index}`);
+    globalThis.fetch = stubFetch(async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/messages")) {
+        return json({ messages: ids.map((id) => ({ id })) });
+      }
+      const id = decodeURIComponent(path.split("/").at(-1) ?? "");
+      if (Number(id.slice(1)) < 3) {
+        return json({
+          id,
+          payload: { headers: [{ name: "Subject", value: `제목 ${id}` }] },
+        });
+      }
+      // A vendor that never answers, until the call's own deadline lets go of the request.
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      });
+    });
+    const started = Date.now();
+
+    const result = await gmail.callTool(
+      connection,
+      "search_messages",
+      { max: 50 },
+      { deadlineMs: 200 },
+    );
+
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.isError).toBe(false);
+    // What was read is the answer, and the one note says how much was not.
+    expect(result.text).toContain("제목 m0");
+    expect(result.text).toContain("50통 중 3통만 읽었습니다");
+    expect(result.text.split("통만 읽었습니다")).toHaveLength(2);
+  });
+});
+
+/* ── Google Drive ────────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * THE FIRST ADAPTER, LAST TO JOIN THE SHARED SHAPE (audit 2026-09-10, A9 F6). Drive kept private
+ * copies of the request helper from before `rest-support.ts` existed, and the copies had drifted on
+ * the two details that matter: it followed a redirect with somebody's token on the request, and it
+ * parsed a 200 unguarded, so Google's maintenance page threw a `SyntaxError` out of the tool call.
+ */
+describe("Google Drive", () => {
+  const connection = connectionTo("https://www.googleapis.com/drive/v3");
+
+  test("a search escapes the quote and asks for the fields a citation needs", async () => {
+    reply = () =>
+      json({
+        files: [
+          {
+            id: "f1",
+            name: "메뉴판 [2026]",
+            mimeType: "application/vnd.google-apps.document",
+            modifiedTime: "2026-09-01T00:00:00Z",
+            webViewLink: "https://docs.google.com/document/d/f1",
+          },
+        ],
+      });
+
+    const result = await drive.callTool(connection, "search_files", {
+      query: "don't",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(asked[0]?.url.pathname).toBe("/drive/v3/files");
+    // An apostrophe would otherwise end the clause; escaped, a term is only ever a term.
+    expect(asked[0]?.url.searchParams.get("q")).toContain("don\\'t");
+    expect(asked[0]?.url.searchParams.get("fields")).toContain("webViewLink");
+    // A link a reader can click, with the bracket in the name kept out of the link syntax.
+    expect(result.text).toContain(
+      "[메뉴판 \\[2026\\]](https://docs.google.com/document/d/f1)",
+    );
+    expect(result.text).toContain("id: f1");
+  });
+
+  test("a Doc is exported as text rather than downloaded", async () => {
+    reply = (request) =>
+      request.url.pathname.endsWith("/export")
+        ? new Response("본문", { headers: { "content-type": "text/plain" } })
+        : json({
+            id: "f1",
+            name: "기획서",
+            mimeType: "application/vnd.google-apps.document",
+          });
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "f1",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(asked[1]?.url.pathname).toBe("/drive/v3/files/f1/export");
+    expect(asked[1]?.url.searchParams.get("mimeType")).toBe("text/plain");
+    expect(result.text).toContain("기획서");
+    expect(result.text).toContain("본문");
+  });
+
+  test("a binary file is declined by name, not decoded and hoped for", async () => {
+    reply = () => json({ id: "f2", name: "사진.png", mimeType: "image/png" });
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "f2",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("image/png");
+    expect(asked).toHaveLength(1);
+  });
+
+  test("a redirect is refused rather than followed, with somebody's token on the request", async () => {
+    // Measured: a 302 to another origin had THAT origin's file list read back as Drive's answer.
+    let sawRedirectManual = false;
+    globalThis.fetch = stubFetch(async (_url, init) => {
+      sawRedirectManual = init?.redirect === "manual";
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://evil.example/files" },
+      });
+    });
+
+    const result = await drive.callTool(connection, "list_recent_files", {});
+
+    expect(sawRedirectManual).toBe(true);
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("302");
+  });
+
+  test("a 200 that is not JSON is a refusal, not a crash", async () => {
+    // Google's maintenance page. This used to escape as `SyntaxError: Failed to parse JSON`, filed
+    // as `mcp.call_failed` and shown to a person as a 502 in English.
+    reply = () =>
+      new Response("<html>maintenance</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+
+    const result = await drive.callTool(connection, "get_file_metadata", {
+      fileId: "f1",
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
+  test("a refusal carries Google's sentence and the status behind it", async () => {
+    reply = refuses(
+      403,
+      "Google Drive API has not been used in project 123 before or it is disabled.",
+    );
+
+    const result = await drive.callTool(connection, "list_recent_files", {});
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("has not been used in project");
+    expect(result.status).toBe(403);
+  });
+
+  test("a tool the stored list still names, that this connector does not have, says so", async () => {
+    const result = await drive.callTool(connection, "delete_everything", {});
+
+    expect(result.isError).toBe(true);
+    expect(asked).toHaveLength(0);
   });
 });
 
@@ -534,5 +748,47 @@ describe("the shared REST behaviour", () => {
     expect(sawRedirectManual).toBe(true);
     expect(result.isError).toBe(true);
     expect(result.text).toContain("302");
+  });
+
+  /*
+   * The status is a FIELD beside the sentence, because one reader acts on it: the call path judges
+   * a connection's health off a 401 (`connection-health.ts`). Read out of the prose, that judgement
+   * would be one rewording away from never running again.
+   */
+  test("a refusal carries its status as a fact, for every adapter", async () => {
+    reply = refuses(401, "Invalid Credentials");
+
+    const results = await Promise.all([
+      sheets.callTool(
+        connectionTo("https://sheets.googleapis.com/v4/spreadsheets"),
+        "list_sheet_tabs",
+        { spreadsheetId: "x" },
+      ),
+      gmail.callTool(
+        connectionTo("https://gmail.googleapis.com/gmail/v1/users/me"),
+        "read_message",
+        { messageId: "m1" },
+      ),
+      calendar.callTool(
+        connectionTo("https://www.googleapis.com/calendar/v3"),
+        "list_events",
+        {},
+      ),
+      drive.callTool(
+        connectionTo("https://www.googleapis.com/drive/v3"),
+        "list_recent_files",
+        {},
+      ),
+      cafe24.callTool(
+        connectionTo("https://sunnymart.cafe24api.com/api/v2/admin"),
+        "list_orders",
+        { startDate: "2026-09-01", endDate: "2026-09-04" },
+      ),
+    ]);
+
+    for (const result of results) {
+      expect(result.isError).toBe(true);
+      expect(result.status).toBe(401);
+    }
   });
 });

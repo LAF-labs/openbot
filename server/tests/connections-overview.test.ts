@@ -146,7 +146,7 @@ describe("the 연결 screen's one read", () => {
               status: "needs_reconnect",
               lastOkAt: "2026-09-01T09:00:00.000Z",
               lastFailureAt: "2026-09-04T06:00:00.000Z",
-              failureCode: "laf:refresh_refused",
+              failureCode: "refresh_failed",
             },
           },
         ],
@@ -156,7 +156,7 @@ describe("the 연결 screen's one read", () => {
     const row = body.accounts[0];
     if (row?.kind !== "oauth") throw new Error("unreachable");
     expect(row.status).toBe("needs_reconnect");
-    expect(row.health.failureCode).toBe("laf:refresh_refused");
+    expect(row.health.failureCode).toBe("refresh_failed");
   });
 
   test("the mall id is read back only for the vendor that has one", async () => {

@@ -734,6 +734,30 @@ export function authEndpointsFor(
 }
 
 /**
+ * The first label of a stored per-instance URL — the mall id somebody typed, read back.
+ *
+ * Only for an entry that HAS one. Every hostname has a first label, so reading it unconditionally
+ * answered "sheets" for Google Sheets and "mybusiness" for Business Profile: a name the person
+ * never typed, sent to a surface that would have shown it back to them as their own shop.
+ *
+ * Here beside {@link authEndpointsFor} because it is the same fact read the other way round — that
+ * function fills the customer's host into the entry, this one reads the customer's name back out of
+ * it — and because two readers (the connections list and the overview) each carried a copy until
+ * 2026-09-10.
+ */
+export function instanceNameOf(
+  entry: CatalogueEntry,
+  url: string | null | undefined,
+): string | null {
+  if (entry.host !== null || !url) return null;
+  try {
+    return new URL(url).hostname.split(".")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Is this host one this entry is allowed to be pointed at?
  *
  * Compares the RAW host string, case-sensitively, and returns false for anything it does not

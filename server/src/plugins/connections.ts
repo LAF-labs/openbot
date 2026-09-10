@@ -16,83 +16,29 @@ import {
   type CatalogueEntry,
   catalogueEntry,
 } from "./catalogue";
-import { type OAuthClients, TOKEN_TIMEOUT_MS } from "./oauth-client";
 import {
-  type ConnectionFailureCode,
+  type HealthReason,
+  healthOf,
+  judgeHealth,
+  needsReconnect,
+} from "./connection-health";
+import type { OAuthClients } from "./oauth-client";
+import {
   type ConnectionHealth,
-  INVALID_CLIENT,
   iso,
   type OAuthClient,
   type PluginContext,
   PluginRefusedError,
   type StoredClient,
-  TokenRefusedError,
   type Transaction,
 } from "./store";
+import { TIMEOUT_MS } from "./timeouts";
 
-/**
- * Which of our three failures a vendor's refusal is, or nothing when it is not the vendor's at all.
- *
- * READ OFF THE ERROR CLASS AND THE PROTOCOL CODE, never off the sentence — the same rule
- * {@link secretFor} records for the vault. The vendor's prose is written for whoever registered the
- * client and is in whatever language that vendor writes; a classifier that read it would be one
- * rewording away from calling every revoked grant a transient outage.
- *
- * `invalid_grant` is the one the protocol reserves for exactly this (RFC 6749 §5.2): the grant is
- * gone, whether the person withdrew it at the vendor, an administrator did, or a rotation was
- * replayed and the family was killed. It is the only thing here that says "connect again" on its
- * own authority.
- *
- * `invalid_client` is the one refusal that is recorded NOWHERE, and it is the most important line
- * here. It is the vendor disowning the DEPLOYMENT's client rather than saying anything about this
- * person's grant — every connection in the deployment gets it at once — and it is also, as
- * `oauth-client.ts` measured, what a vendor that is simply down answers every exchange with. Marked
- * on the row it would put every person on this VM behind 다시 연결 for one outage, and leave them
- * there after the vendor came back. It already has an owner: `refuseAndReplaceEvictedClient`
- * registers this deployment again and refuses the call with the sentence that fits.
- *
- * Every other refusal the token endpoint issues is `refresh_failed`: something about this exchange
- * is wrong in a way another call will not fix, and the person needs to be told rather than left
- * with a connection that quietly never works.
- *
- * Anything that is NOT the vendor refusing — a timeout, DNS, a connection refused, a 200 that was
- * not a token — is `vendor_down`, and deliberately does not mark the connection as needing
- * anything. It is the failure that comes back on its own, and drawing 다시 연결 in front of it
- * would send somebody through a consent screen to fix somebody else's outage.
- *
- * A refusal of OURS returns nothing: `PluginRefusedError` here means the connection was withdrawn
- * or removed while the call queued, and there is either no row left to write to or nothing new to
- * say about it.
+/*
+ * What a failure MEANS for a connection is decided in `connection-health.ts` and nowhere else. This
+ * file only knows where the two kinds of failure come from — the exchange below, and the vendor's
+ * answer the call path reports through `recordVendorStatus` — and writes down the verdict.
  */
-function failureCodeFor(error: unknown): ConnectionFailureCode | null {
-  if (error instanceof PluginRefusedError) return null;
-  if (error instanceof TokenRefusedError) {
-    if (error.code === INVALID_CLIENT) return null;
-    return error.code === "invalid_grant" ? "revoked" : "refresh_failed";
-  }
-  return "vendor_down";
-}
-
-/**
- * Whether a recorded failure is one a person has to answer, in ONE place.
- *
- * Two callers ask it — the refusal before the vendor is contacted, and the status the settings page
- * draws — and they must never disagree. A screen saying 연결됨 in front of a tool path that refuses
- * with "connect again" is the exact lie this whole change exists to remove, and two expressions of
- * the same rule is how it comes back.
- */
-function needsReconnect(code: string | null): boolean {
-  return code === "revoked" || code === "refresh_failed";
-}
-
-/** The column narrowed to a code this build knows, or null. Text in, closed set out. */
-function knownFailureCode(code: string | null): ConnectionFailureCode | null {
-  return code === "revoked" ||
-    code === "refresh_failed" ||
-    code === "vendor_down"
-    ? code
-    : null;
-}
 
 /**
  * One person's own access to one vendor: the grant they consented to, and the token a call goes out
@@ -189,11 +135,11 @@ export function createConnections(
    * which token presents it.
    */
   /**
-   * Write down that an exchange failed, on the connection it failed for.
+   * Write down that a call failed, on the connection it failed for.
    *
-   * Only ever OUR three codes and never the vendor's words — see {@link failureCodeFor}. A refusal
-   * of ours (the row is gone, the grant was withdrawn mid-queue) classifies to nothing and writes
-   * nothing: there is either no row left or nothing new to say about it.
+   * Only ever OUR three codes and never the vendor's words — see `judgeHealth`. A reason that
+   * judges to nothing (a refusal of ours, a vendor 403) writes nothing: there is either no row left
+   * or nothing new to say about it.
    *
    * Swallows its own failure. It runs on the error path of a call that is about to refuse, and a
    * throw from here would replace the sentence that explains what went wrong with a database error
@@ -202,9 +148,9 @@ export function createConnections(
   async function recordFailure(
     serverId: string,
     userId: string,
-    error: unknown,
+    reason: HealthReason,
   ): Promise<void> {
-    const code = failureCodeFor(error);
+    const code = judgeHealth(reason);
     if (!code) return;
     try {
       await database
@@ -641,7 +587,7 @@ export function createConnections(
          * bookkeeping does; a write that fails here costs a screen one stale 연결됨, and a throw
          * would cost the person the sentence that says what actually went wrong.
          */
-        await recordFailure(row.id, actorId, error);
+        await recordFailure(row.id, actorId, { at: "exchange", error });
         /*
          * Outside the transaction, so the row lock is already released and the vault read this does
          * is not a second connection held behind this one's.
@@ -755,6 +701,33 @@ export function createConnections(
     connectionTokenFor,
 
     /**
+     * What the vendor's API answered AFTER the exchange succeeded, judged for the connection.
+     *
+     * THE HALF THE EXCHANGE CANNOT SEE. A token exchange that works proves the refresh token is
+     * alive; it proves nothing about whether the access token it minted is honoured. Measured
+     * 2026-09-10 (audit A9, F3): a grant missing a scope, or an account whose workspace
+     * administrator had blocked the app, exchanged perfectly and was refused 401 on every API call
+     * — and the row recorded a success each time, so the card said 연결됨 beside a Bot that never
+     * once got an answer. `last_ok_at` moved FORWARD on each failure.
+     *
+     * Only for a `user-oauth` entry, because only those have a row to write to; and only through
+     * `judgeHealth`, so that a 401 and a 503 mean here exactly what they mean at the exchange.
+     */
+    async recordVendorStatus(input: {
+      serverId: string;
+      entry: CatalogueEntry | null;
+      actorId: string;
+      status: number | undefined;
+    }): Promise<void> {
+      if (input.entry?.auth.kind !== "user-oauth") return;
+      if (!input.actorId || input.status === undefined) return;
+      await recordFailure(input.serverId, input.actorId, {
+        at: "vendor",
+        status: input.status,
+      });
+    },
+
+    /**
      * Record that one person connected their own account to one server.
      *
      * The credential swap is {@link swapUserCredential}, and this is its only caller: a person
@@ -819,20 +792,8 @@ export function createConnections(
         serverId: row.serverId,
         scope: row.scope,
         connectedAt: iso(row.connectedAt) ?? "",
-        health: {
-          status: needsReconnect(row.lastFailureCode)
-            ? "needs_reconnect"
-            : "ok",
-          lastOkAt: iso(row.lastOkAt),
-          lastFailureAt: iso(row.lastFailureAt),
-          /*
-           * Carried even when the status is `ok`, because `vendor_down` is a fact worth having: a
-           * screen can say 잠시 문제가 있었어요 without telling anybody to go and reconnect.
-           * Narrowed rather than cast — the column is text, and a value this build does not know is
-           * no code at all rather than one the surface has no words for.
-           */
-          failureCode: knownFailureCode(row.lastFailureCode),
-        },
+        // The same reading the tool path refuses on, from the same three columns.
+        health: healthOf(row),
       }));
     },
 
@@ -911,7 +872,7 @@ export function createConnections(
             headers: { "content-type": "application/x-www-form-urlencoded" },
             body: params,
             redirect: "manual",
-            signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+            signal: AbortSignal.timeout(TIMEOUT_MS.token),
           });
           vendorRevoked = response.ok;
         } catch {

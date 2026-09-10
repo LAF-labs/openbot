@@ -1,4 +1,13 @@
-import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
+import type { McpCallResult, McpTool } from "./mcp";
+import {
+  asResult,
+  failure,
+  readJson,
+  type RestConnection,
+  stringArg,
+  unknownTool,
+  vendorRequest,
+} from "./rest-support";
 
 /**
  * Google Drive, reached over its ordinary REST API instead of its MCP server.
@@ -25,10 +34,15 @@ import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
  *
  * Read-only, and only the tools that can be implemented faithfully. Google's MCP server also
  * advertises writes; the `drive.readonly` scope refuses them, and nothing here offers them.
+ *
+ * THE FIRST ADAPTER, AND THE LAST TO JOIN THE SHARED SHAPE. Every helper in `rest-support.ts` was
+ * born here, and this file kept its own copies after the others were written against the shared
+ * ones. Measured 2026-09-10 (audit A9, F6): the private copy followed redirects — a 302 to another
+ * origin had that origin's file list read back as Drive's answer — and parsed a 200 unguarded, so
+ * Google's maintenance page reached the person as a 502 `Failed to parse JSON`. The five adapters
+ * written later did neither. There is nothing of the transport left in this file now; what remains
+ * is which URL, which fields, and what a file reads like.
  */
-
-/** Long enough for a slow listing, short enough that a Bot's turn is not held open on it. */
-const REQUEST_TIMEOUT_MS = 30_000;
 
 /** How many files a listing returns before the model is reading a directory rather than an answer. */
 const PAGE_SIZE = 25;
@@ -117,8 +131,6 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   },
 ]);
 
-type Connection = { url: string; token?: string };
-
 /**
  * No credential is needed to know what this adapter can do, because the answer is in this file.
  *
@@ -131,71 +143,10 @@ type Connection = { url: string; token?: string };
 export const listNeedsCredential = false;
 
 /** The same list for everybody, because this adapter's capability is this code rather than a server. */
-export async function listTools(_connection: Connection): Promise<McpTool[]> {
+export async function listTools(
+  _connection: RestConnection,
+): Promise<McpTool[]> {
   return TOOLS.map((tool) => ({ ...tool }));
-}
-
-/**
- * One request to Drive, with the caller's own token.
- *
- * `token` is never optional in practice here — Drive is `user-oauth`, so the store has already
- * refused a call with nobody's credential before this module is reached — but it is typed optional
- * by the shared connection shape, so a missing one is named rather than sent as `Bearer undefined`.
- */
-async function request(
-  connection: Connection,
-  path: string,
-  query: Record<string, string>,
-): Promise<{ ok: true; response: Response } | { ok: false; message: string }> {
-  if (!connection.token) {
-    return { ok: false, message: "No credential was available for this call." };
-  }
-
-  const url = new URL(`${connection.url.replace(/\/+$/, "")}${path}`);
-  for (const [key, value] of Object.entries(query)) {
-    url.searchParams.set(key, value);
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: { authorization: `Bearer ${connection.token}` },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      message:
-        error instanceof Error && error.name === "TimeoutError"
-          ? "Google Drive did not answer in time."
-          : `Google Drive could not be reached: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-
-  if (!response.ok) {
-    /*
-     * Google's own sentence, kept. For a 403 this is where it names the API that is not enabled and
-     * gives the console URL, which is the difference between a fix and a guess. Dropping it once
-     * already cost a diagnosis.
-     */
-    const body = await response.text().catch(() => "");
-    let detail = "";
-    try {
-      const parsed = JSON.parse(body) as { error?: { message?: unknown } };
-      if (typeof parsed.error?.message === "string")
-        detail = parsed.error.message;
-    } catch {
-      // Not JSON. The status alone is still worth saying.
-    }
-    return {
-      ok: false,
-      message: detail
-        ? `Google Drive refused this request (${response.status}): ${detail}`
-        : `Google Drive refused this request (${response.status}).`,
-    };
-  }
-
-  return { ok: true, response };
 }
 
 /**
@@ -278,38 +229,8 @@ const driveQuery = (query: string) => {
   return `name contains '${escaped}' or fullText contains '${escaped}'`;
 };
 
-/**
- * Text as an MCP result, through the one function that decides what a model is told.
- *
- * Reused rather than reimplemented so the empty case and the size cap behave identically across both
- * transports. The empty case is the one that matters: a search that matched nothing has to SAY so,
- * because an empty string reads to a model as "the tool had nothing to say" and gets filled in from
- * memory — which for a connector somebody searches is the exact failure it exists to prevent.
- */
-function asResult(text: string): McpCallResult {
-  const joined = text.trim();
-  if (joined === "") {
-    return {
-      text: "The tool returned no content. Nothing was found, so there is nothing here to answer from.",
-      isError: false,
-      truncated: false,
-    };
-  }
-  if (joined.length <= MAX_RESULT_CHARS) {
-    return { text: joined, isError: false, truncated: false };
-  }
-  return {
-    text: `${joined.slice(0, MAX_RESULT_CHARS)}\n\n[truncated: the tool returned ${joined.length} characters]`,
-    isError: false,
-    truncated: true,
-  };
-}
-
-const failure = (message: string): McpCallResult => ({
-  text: message,
-  isError: true,
-  truncated: false,
-});
+/** The one sentence for a 200 that was not JSON, said the way the other Google adapters say it. */
+const UNREADABLE = "구글 드라이브가 읽을 수 없는 답을 보냈습니다.";
 
 /**
  * Call one tool.
@@ -320,46 +241,50 @@ const failure = (message: string): McpCallResult => ({
  * and this code have diverged, which is a bug to surface rather than to absorb.
  */
 export async function callTool(
-  connection: Connection,
+  connection: RestConnection,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpCallResult> {
-  const stringArg = (key: string): string | null => {
-    const value = args[key];
-    return typeof value === "string" && value.trim() !== "" ? value : null;
-  };
+  const base = connection.url.replace(/\/+$/, "");
+  const fileUrl = (fileId: string, suffix = "") =>
+    `${base}/files/${encodeURIComponent(fileId)}${suffix}`;
 
   if (toolName === "search_files" || toolName === "list_recent_files") {
-    const query = stringArg("query");
+    const query = stringArg(args, "query");
     if (toolName === "search_files" && !query) {
       return failure("A search needs something to search for.");
     }
 
-    const result = await request(connection, "/files", {
-      pageSize: String(PAGE_SIZE),
-      fields: `files(${FILE_FIELDS})`,
-      // Drive's own ordering for "recent". Search leaves it to relevance.
-      ...(query ? { q: driveQuery(query) } : { orderBy: "modifiedTime desc" }),
+    const result = await vendorRequest("Google Drive", connection, {
+      url: `${base}/files`,
+      query: {
+        pageSize: String(PAGE_SIZE),
+        fields: `files(${FILE_FIELDS})`,
+        // Drive's own ordering for "recent". Search leaves it to relevance.
+        ...(query
+          ? { q: driveQuery(query) }
+          : { orderBy: "modifiedTime desc" }),
+      },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
-    const body = (await result.response.json()) as { files?: DriveFile[] };
-    const files = body.files ?? [];
-    return asResult(files.map(fileLine).join("\n"));
+    const body = await readJson<{ files?: DriveFile[] }>(result.response);
+    if (!body) return failure(UNREADABLE);
+    return asResult((body.files ?? []).map(fileLine).join("\n"));
   }
 
   if (toolName === "get_file_metadata") {
-    const fileId = stringArg("fileId");
+    const fileId = stringArg(args, "fileId");
     if (!fileId) return failure("A file id is needed to look a file up.");
 
-    const result = await request(
-      connection,
-      `/files/${encodeURIComponent(fileId)}`,
-      { fields: FILE_FIELDS },
-    );
-    if (!result.ok) return failure(result.message);
+    const result = await vendorRequest("Google Drive", connection, {
+      url: fileUrl(fileId),
+      query: { fields: FILE_FIELDS },
+    });
+    if (!result.ok) return failure(result.message, result.status);
 
-    const file = (await result.response.json()) as DriveFile;
+    const file = await readJson<DriveFile>(result.response);
+    if (!file) return failure(UNREADABLE);
     const owner = file.owners?.[0]?.emailAddress;
     return asResult(
       [
@@ -373,7 +298,7 @@ export async function callTool(
   }
 
   if (toolName === "read_file_content") {
-    const fileId = stringArg("fileId");
+    const fileId = stringArg(args, "fileId");
     if (!fileId) return failure("A file id is needed to read a file.");
 
     /*
@@ -381,13 +306,13 @@ export async function callTool(
      * bytes and must be exported; anything else is downloaded. Asking Drive rather than guessing from
      * the name means a mislabelled file still reads correctly.
      */
-    const metadata = await request(
-      connection,
-      `/files/${encodeURIComponent(fileId)}`,
-      { fields: "id,name,mimeType" },
-    );
-    if (!metadata.ok) return failure(metadata.message);
-    const file = (await metadata.response.json()) as DriveFile;
+    const metadata = await vendorRequest("Google Drive", connection, {
+      url: fileUrl(fileId),
+      query: { fields: "id,name,mimeType" },
+    });
+    if (!metadata.ok) return failure(metadata.message, metadata.status);
+    const file = await readJson<DriveFile>(metadata.response);
+    if (!file) return failure(UNREADABLE);
 
     const exportAs = file.mimeType ? EXPORTABLE[file.mimeType] : undefined;
 
@@ -410,23 +335,16 @@ export async function callTool(
       );
     }
 
-    const content = exportAs
-      ? await request(
-          connection,
-          `/files/${encodeURIComponent(fileId)}/export`,
-          { mimeType: exportAs },
-        )
-      : await request(connection, `/files/${encodeURIComponent(fileId)}`, {
-          alt: "media",
-        });
-    if (!content.ok) return failure(content.message);
+    const content = await vendorRequest("Google Drive", connection, {
+      url: exportAs ? fileUrl(fileId, "/export") : fileUrl(fileId),
+      query: exportAs ? { mimeType: exportAs } : { alt: "media" },
+    });
+    if (!content.ok) return failure(content.message, content.status);
 
-    const text = await content.response.text();
+    const text = await content.response.text().catch(() => "");
     // Named, because a model handed only the body cannot cite what it read.
     return asResult(`${file.name ?? fileId}\n\n${text}`);
   }
 
-  return failure(
-    `${toolName} is not a tool this connector implements. The stored tool list is out of date; refresh it on the Plugins page.`,
-  );
+  return unknownTool(toolName);
 }

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { seal, unseal } from "../auth/signed-value";
 import type { CatalogueAuth } from "./catalogue";
 import type { ConnectFailureReason } from "./connected-page";
+import { TIMEOUT_MS } from "./timeouts";
 
 /**
  * The connect flow: sending a person to a vendor to consent, and believing what comes back.
@@ -611,7 +612,7 @@ export async function redeemAuthorizationCode(input: {
        * refusal below.
        */
       redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(TIMEOUT_MS.redeem),
     });
   } catch {
     return null;
@@ -685,7 +686,7 @@ export async function registerDynamicClient(input: {
       // The registration endpoint is pinned in the catalogue, so a redirect is somebody else
       // deciding where this deployment introduces itself. Left as the response, which is not `ok`.
       redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(TIMEOUT_MS.registration),
     });
   } catch {
     return null;

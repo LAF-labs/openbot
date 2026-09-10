@@ -271,8 +271,18 @@ export class TokenRefusedError extends McpServerError {
   constructor(
     message: string,
     readonly code: string | null,
+    /**
+     * The HTTP status the token endpoint answered with, beside the code.
+     *
+     * The code alone could not tell a considered refusal from an outage: a token endpoint behind a
+     * maintenance page answers 503 with whatever `error` a defensive parser finds in the HTML, and
+     * classifying on the code alone wrote that as `refresh_failed` — 다시 연결 in front of every
+     * connection on the VM for one bad five minutes at Google (audit 2026-09-10, A9 F2). The
+     * status is what `judgeHealth` reads first.
+     */
+    status: number | null = null,
   ) {
-    super(message);
+    super(message, status);
     this.name = "TokenRefusedError";
   }
 }
@@ -413,7 +423,7 @@ export type PluginStoreOptions = {
     },
     toolName: string,
     args: Record<string, unknown>,
-  ) => Promise<{ text: string; isError: boolean }>;
+  ) => Promise<{ text: string; isError: boolean; status?: number }>;
   /** Trading a refresh token for a short-lived access token. Defaults to a real HTTP exchange. */
   exchangeRefreshToken?: (input: {
     tokenUrl: string;
@@ -629,6 +639,8 @@ export function createPluginStore(options: PluginStoreOptions) {
     /** What a connect and a disconnect do beyond the credential. See `servers.ts`. */
     offerToolsTo: servers.offerToolsTo,
     withdrawToolsFrom: servers.withdrawToolsFrom,
+    /** What a Bot made after the connects is handed. The create hook's half. See `servers.ts`. */
+    offerConnectionsTo: servers.offerConnectionsTo,
 
     listSkills: grants.listSkills,
     skillOwner: grants.skillOwner,

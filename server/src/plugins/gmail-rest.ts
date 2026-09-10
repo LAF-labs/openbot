@@ -6,8 +6,10 @@ import {
   readJson,
   type RestConnection,
   stringArg,
+  unknownTool,
   vendorRequest,
 } from "./rest-support";
+import { TIMEOUT_MS } from "./timeouts";
 
 /**
  * Gmail over its ordinary REST API: search, read, draft, send.
@@ -31,8 +33,26 @@ import {
 const DEFAULT_MESSAGES = 10;
 const MAX_MESSAGES = 50;
 
+/**
+ * How many of a search's per-message reads are in flight at once.
+ *
+ * Gmail's list endpoint returns ids and nothing else, so a search is one list and up to
+ * {@link MAX_MESSAGES} reads. Measured 2026-09-10 (audit A9, F7) against a fake Gmail with a 40 ms
+ * round trip: fifty reads one after another took 2,157 ms, and the worst case — each read allowed
+ * its own thirty seconds — was fifty times that, in a chat turn nothing else bounds. Six at a time
+ * is under Google's per-user concurrency guidance and turns the fifty into nine round trips.
+ */
+const DETAIL_CONCURRENCY = 6;
+
 /** How much of one mail's body a model is given. Enough to answer from, short of a whole thread. */
 const MAX_BODY_CHARS = 4_000;
+
+/**
+ * What a test may narrow, so a slow vendor can be shown to be bounded without being slow for real.
+ *
+ * The transport hands nothing here; the deployment's bound is {@link TIMEOUT_MS.toolCall}.
+ */
+export type GmailLimits = { deadlineMs?: number };
 
 const TOOLS: readonly McpTool[] = Object.freeze([
   {
@@ -176,10 +196,22 @@ export async function callTool(
   connection: RestConnection,
   toolName: string,
   args: Record<string, unknown>,
+  limits: GmailLimits = {},
 ): Promise<McpCallResult> {
   const base = connection.url.replace(/\/+$/, "");
 
   if (toolName === "search_messages") {
+    /*
+     * ONE DEADLINE FOR THE WHOLE CALL, handed to every request it makes.
+     *
+     * Each request keeps its own bound as well (`vendorRequest`), but the sum of fifty of those is
+     * not a bound a person waiting on a chat turn would recognise. When this runs out, whatever has
+     * been read is the answer, and the answer says so once — the model is told what it is missing
+     * rather than handed a short list that reads as the whole mailbox.
+     */
+    const deadline = AbortSignal.timeout(
+      limits.deadlineMs ?? TIMEOUT_MS.toolCall,
+    );
     const listed = await vendorRequest("Gmail", connection, {
       url: `${base}/messages`,
       query: {
@@ -188,8 +220,9 @@ export async function callTool(
           countArg(args, "max", DEFAULT_MESSAGES, MAX_MESSAGES),
         ),
       },
+      signal: deadline,
     });
-    if (!listed.ok) return failure(listed.message);
+    if (!listed.ok) return failure(listed.message, listed.status);
 
     const body = await readJson<{ messages?: { id?: string }[] }>(
       listed.response,
@@ -197,32 +230,49 @@ export async function callTool(
     if (!body) return failure("지메일이 읽을 수 없는 답을 보냈습니다.");
     const ids = (body.messages ?? [])
       .map((message) => message.id)
-      .filter(Boolean);
+      .filter((id): id is string => typeof id === "string" && id !== "");
     if (ids.length === 0) return asResult("");
 
     /*
-     * One request per message, for the headers only.
+     * One request per message, for the headers only — {@link DETAIL_CONCURRENCY} at a time, in
+     * the order Gmail listed them.
      *
      * Gmail's list endpoint returns ids and nothing else — no subject, no sender — so a list without
      * this is a page of identifiers a model cannot say anything about. `metadata` format keeps each
-     * of these small, and the count is bounded by `max` above.
+     * of these small, and the count is bounded by `max` above. A message that would not read is
+     * left out rather than reported: one refusal among fifty is not the search failing.
      */
-    const lines: string[] = [];
-    for (const id of ids) {
-      const detail = await vendorRequest("Gmail", connection, {
-        url: `${base}/messages/${encodeURIComponent(id as string)}`,
-        // `metadata`, not `full`: the headers are the whole of a list line, and the bodies of ten
-        // mails are ten times the tokens for something nobody asked to read yet.
-        query: { format: "metadata" },
-      });
-      if (!detail.ok) continue;
-      const message = await readJson<GmailMessage>(detail.response);
-      if (!message) continue;
-      lines.push(
-        `- ${headerOf(message, "Subject") || "(제목 없음)"} · ${headerOf(message, "From")} · ${headerOf(message, "Date")} · id: ${message.id ?? id}`,
-      );
-    }
-    return asResult(lines.join("\n"));
+    const lines: (string | null)[] = ids.map(() => null);
+    let next = 0;
+    const worker = async () => {
+      while (next < ids.length && !deadline.aborted) {
+        const index = next++;
+        const id = ids[index] as string;
+        const detail = await vendorRequest("Gmail", connection, {
+          url: `${base}/messages/${encodeURIComponent(id)}`,
+          // `metadata`, not `full`: the headers are the whole of a list line, and the bodies of ten
+          // mails are ten times the tokens for something nobody asked to read yet.
+          query: { format: "metadata" },
+          signal: deadline,
+        });
+        if (!detail.ok) continue;
+        const message = await readJson<GmailMessage>(detail.response);
+        if (!message) continue;
+        lines[index] =
+          `- ${headerOf(message, "Subject") || "(제목 없음)"} · ${headerOf(message, "From")} · ${headerOf(message, "Date")} · id: ${message.id ?? id}`;
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(DETAIL_CONCURRENCY, ids.length) }, worker),
+    );
+
+    const shown = lines.filter((line): line is string => line !== null);
+    // Said once, and only when the deadline decided the count: a short list that reads like the
+    // whole mailbox is how a Bot answers "그게 다예요" about a search it never finished.
+    const note = deadline.aborted
+      ? `\n\n[${ids.length}통 중 ${shown.length}통만 읽었습니다. 시간이 다 돼 나머지는 건너뛰었습니다. 더 필요하면 개수를 줄이거나 검색어를 좁혀 다시 부르세요.]`
+      : "";
+    return asResult(`${shown.join("\n")}${note}`);
   }
 
   if (toolName === "read_message") {
@@ -233,7 +283,7 @@ export async function callTool(
       url: `${base}/messages/${encodeURIComponent(messageId)}`,
       query: { format: "full" },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const message = await readJson<GmailMessage>(result.response);
     if (!message) return failure("지메일이 읽을 수 없는 답을 보냈습니다.");
@@ -272,7 +322,7 @@ export async function callTool(
       method: "POST",
       body: draft ? { message: { raw } } : { raw },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ id?: string }>(result.response);
     return asResult(
@@ -282,7 +332,5 @@ export async function callTool(
     );
   }
 
-  return failure(
-    `${toolName} is not a tool this connector implements. The stored tool list is out of date; refresh it on the Plugins page.`,
-  );
+  return unknownTool(toolName);
 }

@@ -4,6 +4,8 @@ import {
   credentials as credentialRows,
   mcpServers,
   mcpTools,
+  mcpUserCredentials,
+  pluginGrants,
 } from "../db/schema";
 import {
   type CatalogueEntry,
@@ -21,7 +23,7 @@ import {
   type ToolAnnotations,
 } from "./laf-contract";
 import { log } from "../log";
-import { McpServerError } from "./mcp";
+import { McpServerError, trimDetail } from "./mcp";
 import { botsOwnedBy, type SkillsAndGrants } from "./skills-and-grants";
 import {
   CatalogueEntryUnknownError,
@@ -441,12 +443,9 @@ export function createServers(
       await database
         .update(mcpServers)
         .set({
-          /*
-           * Capped at the same 400 characters `callTool` caps its recorded failure at. Parts of
-           * this sentence come from a vendor, and it is drawn on the admin page — neither is a
-           * promise about length.
-           */
-          lastError: message.slice(0, 400),
+          // Cut where every vendor sentence is cut: parts of this come from a vendor, and it is
+          // drawn on the admin page — neither is a promise about length.
+          lastError: trimDetail(message),
           updatedAt: new Date(),
         })
         .where(eq(mcpServers.id, serverId));
@@ -564,6 +563,53 @@ export function createServers(
     return row?.url ?? null;
   }
 
+  /**
+   * One connection's tools, granted to one Bot — THE ONE DEFINITION of what a connection gives a Bot.
+   *
+   * Two callers, and they must not drift: the connect ({@link offerToolsTo}) runs it for every Bot
+   * the person owns at that moment, and the create hook ({@link offerConnectionsTo}) runs it for a
+   * Bot made afterwards. The partner connectors have had exactly this shape since 2026-09-06
+   * (`PartnerRuntime.grantTo` / `offerTo`); the OAuth connectors had only the first half, and the
+   * audit of 2026-09-10 (A9, F1) measured the result: connect Google Sheets, make a Bot, and the
+   * Bot held nothing while the card said 연결됨.
+   *
+   * Only the refs the Bot does not already hold are written, read off the grant table itself
+   * rather than off what the runtime would list: a reconnect, or a boot, must not rewrite rows of
+   * trail for a grant that already stands.
+   *
+   * GRANTING IS NOT PERMISSION TO ACT UNASKED. A guard floor is decided on the call
+   * (`call.ts`/`laf-contract.ts`), not on the grant, so a tool the catalogue marks `destructive`,
+   * `external` or `money` still stops and asks the first time a Bot reaches for it. This makes the
+   * tool reachable; it does not make it quiet.
+   *
+   * Throws, because the two callers are in the middle of different acts and each decides what a
+   * grant that did not land means for its own.
+   */
+  async function grantConnectionTo(
+    serverId: string,
+    botId: string,
+    by: string,
+  ): Promise<void> {
+    const held = new Set(
+      (
+        await database
+          .select({ ref: pluginGrants.ref })
+          .from(pluginGrants)
+          .where(
+            and(eq(pluginGrants.kind, "mcp"), eq(pluginGrants.agentId, botId)),
+          )
+      ).map((row) => row.ref),
+    );
+    const advertised = await database
+      .select({ name: mcpTools.name })
+      .from(mcpTools)
+      .where(eq(mcpTools.serverId, serverId));
+    for (const tool of advertised) {
+      const ref = `${serverId}/${tool.name}`;
+      if (!held.has(ref)) await grants.grant("mcp", ref, botId, by);
+    }
+  }
+
   /*
    * Named rather than returned anonymously, because one of these calls another: the ensure below is
    * the add path with an existence check in front of it, and reaching it through `this` would break
@@ -596,10 +642,9 @@ export function createServers(
      * this deployment has for it — which is also why this runs AFTER `recordConnection` rather than
      * beside it.
      *
-     * GRANTING IS NOT PERMISSION TO ACT UNASKED. A guard floor is decided on the call
-     * (`call.ts`/`laf-contract.ts`), not on the grant, so a tool the catalogue marks `destructive`,
-     * `external` or `money` still stops and asks the first time a Bot reaches for it. This makes
-     * the tool reachable; it does not make it quiet.
+     * THE PER-BOT HALF IS {@link grantConnectionTo}, shared with the create hook. A loop written
+     * here reached the Bots of that day and no later one (audit 2026-09-10, A9 F1) — the same
+     * defect the partner connect had measured and fixed on 2026-09-06.
      *
      * NEVER FAILS THE CONNECT. By the time this runs the grant at the vendor exists and the vault
      * holds the refresh token. A vendor that will not list, or a grant row that would not write, is
@@ -613,19 +658,47 @@ export function createServers(
     ): Promise<void> {
       try {
         await refreshTools(serverId, userId);
-        const advertised = await database
-          .select({ name: mcpTools.name })
-          .from(mcpTools)
-          .where(eq(mcpTools.serverId, serverId));
-        const bots = await botsOwnedBy(database, userId);
-        for (const tool of advertised) {
-          for (const botId of bots) {
-            await grants.grant("mcp", `${serverId}/${tool.name}`, botId, by);
-          }
+        for (const botId of await botsOwnedBy(database, userId)) {
+          await grantConnectionTo(serverId, botId, by);
         }
       } catch (error) {
         log.error("connection_tools_not_offered", {
           server: serverId,
+          reason: error,
+        });
+      }
+    },
+
+    /**
+     * A Bot that has just come into being gets the tools of every account its owner has connected.
+     *
+     * The other half of the connect, run from the create route's hook (`app.ts`) — the same place,
+     * and the same moment, the partner channels and the deployment-wide tools reach a new Bot. The
+     * connections are read off the join table, which is the one fact "this person connected X"
+     * has; the tool rows are whatever the connect's refresh listed, so a connect whose listing
+     * failed hands the new Bot nothing until 연결 is pressed again, exactly as it does for the Bots
+     * that existed then.
+     *
+     * Never throws. The Bot exists by the time this runs, and a grant that did not land is repaired
+     * by the next connect.
+     */
+    async offerConnectionsTo(
+      botId: string,
+      ownerUserId: string,
+      by: string,
+    ): Promise<void> {
+      if (!ownerUserId) return;
+      try {
+        const connected = await database
+          .select({ serverId: mcpUserCredentials.serverId })
+          .from(mcpUserCredentials)
+          .where(eq(mcpUserCredentials.userId, ownerUserId));
+        for (const { serverId } of connected) {
+          await grantConnectionTo(serverId, botId, by);
+        }
+      } catch (error) {
+        log.error("connection_tools_not_offered", {
+          bot: botId,
           reason: error,
         });
       }

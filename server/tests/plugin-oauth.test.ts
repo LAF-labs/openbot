@@ -1000,6 +1000,33 @@ describe("trading a refresh token for an access token", () => {
    * rewording — translating it, dropping the parenthesis — would have turned self-registration off
    * with every test still green.
    */
+  /**
+   * The status travels beside the code, because the code alone lied.
+   *
+   * A token endpoint behind a maintenance page answers 503 with whatever body the page has, and a
+   * 429 with a body naming a rate limit. Classified on the code alone both became `refresh_failed`
+   * — 다시 연결 in front of every connection on the VM for one bad five minutes at Google (audit
+   * 2026-09-10, A9 F2). The judge reads the status first, so it has to be here to read.
+   */
+  test("a token endpoint that cannot answer carries its status beside the code", async () => {
+    answer = () => json({ error: "internal_failure" }, 503);
+    const outage = (await exchange("").catch(
+      (error: unknown) => error,
+    )) as TokenRefusedError;
+    expect(outage).toBeInstanceOf(TokenRefusedError);
+    expect(outage.status).toBe(503);
+    expect(outage.code).toBe("internal_failure");
+
+    answer = () => html("<html>slow down</html>", 429);
+    const limited = (await exchange("").catch(
+      (error: unknown) => error,
+    )) as TokenRefusedError;
+    expect(limited).toBeInstanceOf(TokenRefusedError);
+    expect(limited.status).toBe(429);
+    // HTML carries no code, and no code is what is said — never a syntax error.
+    expect(limited.code).toBeNull();
+  });
+
   test("a refusal naming the client carries the code the recovery reads", async () => {
     answer = () => json({ error: "invalid_client" }, 401);
 
@@ -1008,6 +1035,7 @@ describe("trading a refresh token for an access token", () => {
     )) as TokenRefusedError;
     expect(refusal).toBeInstanceOf(TokenRefusedError);
     expect(refusal.code).toBe(INVALID_CLIENT);
+    expect(refusal.status).toBe(401);
     // The status is in the sentence, because that is the one fact worth showing whoever operates
     // this deployment; the vendor's own body is not, because it is written for a developer console.
     expect(refusal.message).toContain("401");

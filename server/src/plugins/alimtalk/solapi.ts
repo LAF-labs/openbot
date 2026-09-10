@@ -18,8 +18,7 @@
  * what came back.
  */
 
-/** How long any one vendor call may take. Ten seconds, the same bound the webhook door uses. */
-const CALL_TIMEOUT_MS = 10_000;
+import { TIMEOUT_MS } from "../timeouts";
 
 /** Where 솔라피 answers, unless a deployment (or a test's fake) says otherwise. */
 export const SOLAPI_DEFAULT_BASE_URL = "https://api.solapi.com";
@@ -174,7 +173,7 @@ async function callSolapi<T>(call: SolapiCall): Promise<T> {
       },
       ...(call.body ? { body: JSON.stringify(call.body) } : {}),
       redirect: "manual",
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(TIMEOUT_MS.partner),
     });
   } catch (error) {
     throw new SolapiError(

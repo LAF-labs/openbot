@@ -6,6 +6,7 @@ import {
   readJson,
   type RestConnection,
   stringArg,
+  unknownTool,
   vendorRequest,
 } from "./rest-support";
 
@@ -121,7 +122,7 @@ export async function callTool(
         q: stringArg(args, "query") ?? undefined,
       },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const body = await readJson<{ items?: CalendarEvent[] }>(result.response);
     if (!body) return failure("구글 캘린더가 읽을 수 없는 답을 보냈습니다.");
@@ -183,7 +184,7 @@ export async function callTool(
         ...(attendees.length > 0 ? { attendees } : {}),
       },
     });
-    if (!result.ok) return failure(result.message);
+    if (!result.ok) return failure(result.message, result.status);
 
     const created = await readJson<CalendarEvent>(result.response);
     return asResult(
@@ -193,7 +194,5 @@ export async function callTool(
     );
   }
 
-  return failure(
-    `${toolName} is not a tool this connector implements. The stored tool list is out of date; refresh it on the Plugins page.`,
-  );
+  return unknownTool(toolName);
 }

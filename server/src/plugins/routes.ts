@@ -8,6 +8,7 @@ import {
   CATALOGUE,
   type CatalogueEntry,
   catalogueEntry,
+  instanceNameOf,
 } from "./catalogue";
 import type { ConnectFailureReason } from "./connected-page";
 import {
@@ -150,26 +151,6 @@ export function createPluginRoutes(
     const family =
       entry.auth.kind === "user-oauth" ? entry.auth.sharedClient : undefined;
     return relayRedirectUriFor(relayed.url, family ?? entry.key);
-  };
-
-  /**
-   * The first label of a stored per-instance URL — the mall id somebody typed, read back.
-   *
-   * Only for an entry that HAS one. Every hostname has a first label, so reading it unconditionally
-   * answered "sheets" for Google Sheets and "mybusiness" for Business Profile: a name the person
-   * never typed, sent to a surface that would have shown it back to them as their own.
-   */
-  const instanceNameOf = (
-    entry: CatalogueEntry,
-    url: string | undefined,
-  ): string | null => {
-    if (entry.host !== null || !url) return null;
-    try {
-      const label = new URL(url).hostname.split(".")[0];
-      return label || null;
-    } catch {
-      return null;
-    }
   };
 
   const actorEmail = (context: { var: AppVariables }) =>

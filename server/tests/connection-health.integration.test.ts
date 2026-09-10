@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
@@ -9,6 +9,7 @@ import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
+  auditEvents,
   credentials,
   mcpServers,
   mcpTools,
@@ -24,6 +25,7 @@ import {
   TokenRefusedError,
 } from "../src/plugins/store";
 import { TEST_POOL } from "./support/database";
+import { realMcpModule } from "./support/mcp-module";
 
 /**
  * Whether a connection still works, and who finds out.
@@ -100,6 +102,11 @@ const secondBot = `agent_health_two_${suite}`;
 /** And one that is somebody else's, so a grant reaching it would be visible. */
 const strangersBot = `agent_health_other_${suite}`;
 const bots = [firstBot, secondBot, strangersBot];
+/**
+ * A Bot of the asker's made AFTER the connect. Not in `bots`, because it must not exist while the
+ * connect-time grants are counted; it is made by the test that is about it and removed with the rest.
+ */
+const laterBot = `agent_health_later_${suite}`;
 
 const policy: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
 
@@ -110,6 +117,14 @@ let exchange: (input: { refreshToken: string }) => Promise<AccessToken> =
   async ({ refreshToken }) => ({
     accessToken: `access(${refreshToken})`,
   });
+
+/** What the vendor's API answers once the exchange has worked. Reset by the tests that care. */
+const vendorAnswers = () => ({
+  text: "[no vendor is reached here]",
+  isError: false,
+});
+let vendorReply: () => { text: string; isError: boolean; status?: number } =
+  vendorAnswers;
 
 const store = createPluginStore({
   database,
@@ -122,10 +137,7 @@ const store = createPluginStore({
     family === "google"
       ? { clientId: "fleet-google", clientSecret: "fleet-secret" }
       : null,
-  callVendor: async () => ({
-    text: "[no vendor is reached here]",
-    isError: false,
-  }),
+  callVendor: async () => vendorReply(),
   exchangeRefreshToken: async (input) => {
     exchanged.push(input.refreshToken);
     return await exchange(input);
@@ -192,6 +204,10 @@ async function markFailed(userId: string, code: string) {
 }
 
 beforeAll(async () => {
+  // The real error classes, whatever another suite left in the registry: one test below hands the
+  // call path a thrown `McpServerError`, and the class it checks has to be the class thrown.
+  mock.module("../src/plugins/mcp", () => realMcpModule);
+
   for (const id of everybody) {
     await database
       .insert(users)
@@ -246,9 +262,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  const everyBot = [...bots, laterBot];
   await database
     .delete(pluginGrants)
-    .where(inArray(pluginGrants.agentId, bots));
+    .where(inArray(pluginGrants.agentId, everyBot));
   await database
     .delete(mcpUserCredentials)
     .where(inArray(mcpUserCredentials.userId, everybody));
@@ -263,8 +280,8 @@ afterAll(async () => {
   await database.delete(mcpTools).where(eq(mcpTools.serverId, serverId));
   await database
     .delete(agentProfiles)
-    .where(inArray(agentProfiles.agentId, bots));
-  await database.delete(agents).where(inArray(agents.id, bots));
+    .where(inArray(agentProfiles.agentId, everyBot));
+  await database.delete(agents).where(inArray(agents.id, everyBot));
   await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
   await database.delete(users).where(inArray(users.id, everybody));
 });
@@ -358,6 +375,47 @@ describe("what one exchange writes down about a connection", () => {
       .catch(() => undefined);
 
     expect((await healthRow(asker))?.lastFailureCode).toBe("vendor_down");
+  });
+
+  /*
+   * THE FIRST LIE THE AUDIT MEASURED (2026-09-10, A9 F2). A token endpoint answering 503 or 429 is
+   * still a `TokenRefusedError` — the response is not `ok`, and a defensive reader finds whatever
+   * `error` the body carries — and judged on the code alone it was `refresh_failed`: 다시 연결 in
+   * front of every connection on this VM for one bad five minutes at Google, and still there after
+   * Google came back, because the row does not clear itself.
+   */
+  test("a token endpoint that cannot answer anybody is `vendor_down`, not a reason to reconnect", async () => {
+    for (const [status, code] of [
+      [503, "internal_failure"],
+      [429, "rate_limited"],
+    ] as const) {
+      await connect(asker, `rt-outage-${status}`);
+      exchange = async () => {
+        throw new TokenRefusedError(
+          `the vendor could not answer (${status})`,
+          code,
+          status,
+        );
+      };
+
+      await store
+        .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
+        .catch(() => undefined);
+
+      expect({
+        status,
+        code: (await healthRow(asker))?.lastFailureCode,
+        health: (await reported(asker))?.health.status,
+      }).toEqual({ status, code: "vendor_down", health: "ok" });
+    }
+
+    // And the next call goes to the vendor, because an outage is the failure that comes back.
+    exchanged.length = 0;
+    exchange = async ({ refreshToken }) => ({
+      accessToken: `access(${refreshToken})`,
+    });
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
+    expect(exchanged).toEqual(["rt-outage-429"]);
   });
 
   /*
@@ -615,5 +673,188 @@ describe("a connection somebody just made, on the Bots they own", () => {
       .from(mcpServers)
       .where(eq(mcpServers.id, serverId));
     expect(row?.id).toBe(serverId);
+  });
+});
+
+/*
+ * THE SECOND LIE THE AUDIT MEASURED (2026-09-10, A9 F3). An exchange that works proves the refresh
+ * token is alive and nothing else; the access token it minted can still be refused by the API — a
+ * grant missing a scope, an account whose workspace administrator blocked the app. Every such call
+ * failed, and the row recorded a SUCCESS each time: `last_ok_at` moved forward, the card said 연결됨.
+ */
+describe("what the vendor's API answers after a good exchange", () => {
+  const ok: typeof exchange = async ({ refreshToken }) => ({
+    accessToken: `access(${refreshToken})`,
+  });
+
+  // The disconnect above took the Bot's grant back; these are about the connection, not the grant.
+  beforeAll(async () => {
+    await database
+      .insert(pluginGrants)
+      .values({ kind: "mcp", ref, agentId: firstBot })
+      .onConflictDoNothing();
+  });
+
+  test("a 401 is a grant that no longer works: recorded, and the next call refused unasked", async () => {
+    await connect(asker, "rt-api-401");
+    exchange = ok;
+    vendorReply = () => ({
+      text: "Google Sheets refused this request (401): Invalid Credentials",
+      isError: true,
+      status: 401,
+    });
+
+    const result = await store.callTool({
+      ref,
+      args: ARGS,
+      botId: firstBot,
+      actorId: asker,
+    });
+    expect(result.isError).toBe(true);
+
+    expect((await healthRow(asker))?.lastFailureCode).toBe("refresh_failed");
+    expect((await reported(asker))?.health.status).toBe("needs_reconnect");
+
+    // Refused before the vendor is contacted, exactly as a refused exchange is.
+    exchanged.length = 0;
+    vendorReply = vendorAnswers;
+    const thrown = await store
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
+      .catch((error: unknown) => error);
+    expect((thrown as PluginRefusedError).code).toBe("laf:needs_reconnect");
+    expect(exchanged).toEqual([]);
+  });
+
+  test("a 503 from the API is the vendor being down, and the connection stays ok", async () => {
+    await connect(asker, "rt-api-503");
+    exchange = ok;
+    vendorReply = () => ({
+      text: "Google Sheets refused this request (503).",
+      isError: true,
+      status: 503,
+    });
+
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
+
+    expect((await healthRow(asker))?.lastFailureCode).toBe("vendor_down");
+    expect((await reported(asker))?.health.status).toBe("ok");
+    vendorReply = vendorAnswers;
+  });
+
+  test("a 403 says nothing about the connection", async () => {
+    // Google answers 403 for an API not enabled on the project as well as for a missing scope, and
+    // only the first is not the person's to fix. The status cannot tell them apart, so it decides
+    // nothing; the vendor's sentence stays on the result, where it names which.
+    await connect(asker, "rt-api-403");
+    exchange = ok;
+    vendorReply = () => ({
+      text: "Google Sheets refused this request (403): API has not been used in project 123.",
+      isError: true,
+      status: 403,
+    });
+
+    await store.callTool({ ref, args: ARGS, botId: firstBot, actorId: asker });
+
+    expect((await healthRow(asker))?.lastFailureCode).toBeNull();
+    expect((await reported(asker))?.health.status).toBe("ok");
+    vendorReply = vendorAnswers;
+  });
+
+  test("a transport that throws with a status is judged the same way", async () => {
+    // The MCP transport answers a refusal by throwing rather than by a result; the status rides on
+    // the error class instead, and the judgement is the same table.
+    await connect(asker, "rt-api-thrown");
+    exchange = ok;
+    vendorReply = () => {
+      throw new realMcpModule.McpServerError(
+        "The vendor rejected this credential (401).",
+        401,
+      );
+    };
+
+    await store
+      .callTool({ ref, args: ARGS, botId: firstBot, actorId: asker })
+      .catch(() => undefined);
+
+    expect((await healthRow(asker))?.lastFailureCode).toBe("refresh_failed");
+    vendorReply = vendorAnswers;
+  });
+});
+
+/*
+ * THE FIRST FINDING OF THE AUDIT (2026-09-10, A9 F1). A connect granted to the Bots the person owned
+ * at that moment and to no other. The partner connectors had this measured and fixed on
+ * 2026-09-06; the OAuth connectors had the connect half only. The route-level proof — `POST
+ * /api/agents` after connecting, then `/for/:id` — is `oauth-grants-new-bot.test.ts`; this is the
+ * store's own half, beside the connect it mirrors.
+ */
+describe("a Bot made after the connect", () => {
+  const trailRowsFor = async (botId: string) =>
+    (
+      await database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "configuration.changed"),
+            sql`${auditEvents.payload} ->> 'change' = 'plugin_granted'`,
+            sql`${auditEvents.payload} ->> 'bot' = ${botId}`,
+          ),
+        )
+    ).length;
+
+  test("is handed the same tools as the Bots that existed then, once", async () => {
+    await connect(asker, "rt-later-1");
+    exchange = async ({ refreshToken }) => ({
+      accessToken: `access(${refreshToken})`,
+    });
+    await store.offerToolsTo(serverId, asker, asker);
+
+    await database
+      .insert(agents)
+      .values({
+        id: laterBot,
+        name: laterBot,
+        type: "remote_ag_ui",
+        configuration: {},
+      })
+      .onConflictDoNothing();
+    await database
+      .insert(agentProfiles)
+      .values({
+        agentId: laterBot,
+        ownerUserId: asker,
+        title: laterBot,
+        roleDescription: "",
+        avatarSeed: laterBot,
+        visibility: "private",
+      })
+      .onConflictDoNothing();
+    expect(await granted(ref)).not.toContain(laterBot);
+
+    await store.offerConnectionsTo(laterBot, asker, "deployment");
+
+    for (const name of everyTool) {
+      expect({ name, held: await granted(`${serverId}/${name}`) }).toEqual({
+        name,
+        held: expect.arrayContaining([laterBot]),
+      });
+    }
+    // Once per tool, by the deployment — and the same offer again writes no more trail.
+    expect(await trailRowsFor(laterBot)).toBe(everyTool.length);
+    await store.offerConnectionsTo(laterBot, asker, "deployment");
+    expect(await trailRowsFor(laterBot)).toBe(everyTool.length);
+  });
+
+  test("a Bot of somebody who connected nothing is handed nothing", async () => {
+    const before = await granted(ref);
+
+    await store.offerConnectionsTo(
+      strangersBot,
+      `user_health_nobody_${suite}`,
+      "deployment",
+    );
+
+    expect(await granted(ref)).toEqual(before);
   });
 });

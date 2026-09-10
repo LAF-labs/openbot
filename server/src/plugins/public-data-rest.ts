@@ -33,8 +33,9 @@ import { PluginRefusedError } from "./store";
 import type { DeploymentKeyFamily } from "./catalogue";
 import type { McpCallResult } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
-import { asResult, countArg, REST_TIMEOUT_MS, stringArg } from "./rest-support";
+import { asResult, countArg, stringArg } from "./rest-support";
 import { type DeploymentKeyLookup, keyLookupOver } from "./shared-clients";
+import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
 
 /** The catalogue entry these tools live under. Prefixes every tool ref: `public-data/search_bids`. */
@@ -263,7 +264,7 @@ export function createPublicDataTransport(input: {
         headers: { accept: "application/json" },
         // The key rides on the query string, so a redirect would carry it wherever the answer said.
         redirect: "manual",
-        signal: AbortSignal.timeout(REST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(TIMEOUT_MS.rest),
       });
     } catch (error) {
       refuseWith(
