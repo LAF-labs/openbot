@@ -75,6 +75,18 @@ client in `agent-bot`, or the hand-written call in `server/src/computer/model-ca
 The words are `describeFailure` / `providerStatusFact` in `shared/failure-text.ts`, and the same
 function is what the audit trail and a run's `error` column store, so the log and the trail agree.
 
+Two facts live outside the three services' JSON lines, since 2026-09-10:
+
+```bash
+docker compose logs postgres | grep 'duration:'                       # every statement over 1s (log_min_duration_statement)
+docker inspect --format '{{.State.OOMKilled}} {{.RestartCount}}' openbot-server-1   # killed at its memory ceiling?
+```
+
+Every service has a memory ceiling now (`deploying.md`, the bounds). A container that hit it was
+killed by the kernel, not stopped: its log ends without a `shutdown` line, `OOMKilled` reads
+`true`, and `unless-stopped` has already restarted it. A `crashed` line names a bug; no last line
+at all names the ceiling.
+
 ## 3. What is never in it
 
 The log is on a disk that is rotated, shipped to a laptop by `laf collect`, and pasted into

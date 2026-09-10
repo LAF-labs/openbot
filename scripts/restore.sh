@@ -300,6 +300,23 @@ if ! scalar postgres "alter database \"$restore_db\" rename to \"$live_db\"" >/d
 fi
 echo "   Done. The previous live database is kept as $kept."
 
+# Every 사이트 연결 card now says 다시 로그인 필요, whatever the restored rows said.
+#
+# A row in `laf_site_connections` is the database's memory of a cookie in the Bot's browser
+# profile, and the profile is not in the dump (docs/laf/data-lifecycle.md §4): on a new VM there
+# is no profile at all, and on this one the profile is whatever it is today, not what it was on
+# the dump's day. A restored row saying "connected" is therefore a claim about something the
+# restore did not carry, and a routine runs on that claim and comes back empty in the morning.
+# Marked rather than deleted — "you signed in here in March and it has expired" is what the card
+# is for — and the first look that finds the login still there clears it again
+# (`server/src/computer/site-connections.ts`): a wrong "needs login" costs a person one look; a
+# wrong "connected" costs a routine its morning. Guarded on the table existing, because a dump
+# from before migration 0030 has no such table and the migration below creates it empty.
+if [ "$(scalar "$live_db" "select to_regclass('public.laf_site_connections') is not null")" = t ]; then
+  marked="$(scalar "$live_db" "with marked as (update laf_site_connections set needs_login = true where not needs_login returning 1) select count(*) from marked")"
+  echo "   $marked site connection(s) marked as needing a login again; the first visit that finds the login still there clears it."
+fi
+
 if [ -z "$pg_url" ]; then
   say "Starting"
   # `up -d server` runs the migration container first (compose: service_completed_successfully), so

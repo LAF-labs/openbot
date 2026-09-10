@@ -257,4 +257,35 @@ describe("scripts/restore.sh", () => {
     expect(deploying).toContain("--fresh");
     expect(deploying).toContain("openbot_restore");
   });
+
+  /**
+   * A restore carries the rows and not the Bot's browser profile, so a restored "connected" is a
+   * claim about a cookie that may not exist. The swap marks every site connection as needing a
+   * login (measured 2026-09-10 on a compose stack: `1 site connection(s) marked`, then `t`), and
+   * both documents say a restore onto a new VM means signing in again.
+   */
+  test("after the swap, every site connection is marked as needing a login, and the documents say so", () => {
+    const source = readFileSync(script, "utf8");
+    const swap = source.indexOf('rename to \\"$live_db\\"');
+    const mark = source.indexOf(
+      "update laf_site_connections set needs_login = true",
+    );
+    expect(swap).toBeGreaterThan(0);
+    expect(mark).toBeGreaterThan(swap);
+    // Guarded on the table existing: a dump from before migration 0030 has no such table.
+    expect(source).toContain("to_regclass('public.laf_site_connections')");
+
+    const deploying = readFileSync(
+      join(root, "docs", "laf", "deploying.md"),
+      "utf8",
+    );
+    expect(deploying).toContain("every site is signed in");
+    expect(deploying).toContain("Never in it — `.env`");
+    const lifecycle = readFileSync(
+      join(root, "docs", "laf", "data-lifecycle.md"),
+      "utf8",
+    );
+    expect(lifecycle).toContain("봇의 브라우저 프로필");
+    expect(lifecycle).toContain("다시 로그인");
+  });
 });

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 /*
  * Plain postgres, and NOT pgvector, which this asserted for as long as one dead table carried a
@@ -191,4 +192,109 @@ test("every built service names its published image, on one switchable channel",
       /image: ghcr\.io\/laf-labs\/openbot-server:\$\{IMAGE_TAG:-stable\}/g,
     ),
   ).toHaveLength(2);
+});
+
+/*
+ * The facts below are read from the file as YAML rather than matched as text, because what they
+ * assert is structural — which keys a service has — and a text match on `depends_on:` cannot tell
+ * whose it is.
+ */
+const parsedCompose = parseYaml(
+  readFileSync(join(import.meta.dir, "..", "docker-compose.yml"), "utf8"),
+) as {
+  services: Record<
+    string,
+    {
+      depends_on?: unknown;
+      mem_limit?: string;
+      restart?: string;
+      command?: string[];
+      shm_size?: string;
+      logging?: { driver?: string; options?: Record<string, string> };
+      healthcheck?: { test?: string[] };
+    }
+  >;
+};
+
+/**
+ * The front door depends on nothing.
+ *
+ * It waited for the API's container to exist, and the API waits for the migration to succeed;
+ * compose does not start a service whose dependency failed. Measured 2026-09-10: with the
+ * migration table dropped, `up -d` ended in `dependency failed to start` and `web` was never
+ * created — 80 and 443 closed, connection refused where the fleet monitor is written to read 502.
+ * Without the dependency the app answers and `/health` is the 502 the documentation promises.
+ */
+test("starts the front door whatever the migration did", () => {
+  expect(parsedCompose.services.web).toBeDefined();
+  expect(parsedCompose.services.web?.depends_on).toBeUndefined();
+});
+
+/**
+ * Every service is bounded twice — its log on disk and its memory — and restarts the same way.
+ *
+ * A service added without the logging anchor writes until the disk is full; one added without a
+ * memory ceiling is the one the OOM killer's arithmetic lands on Postgres for. The browser's
+ * ceiling was the only one until 2026-09-10 (audit A5 §12).
+ */
+test("bounds every service's log and memory, and restarts every long-lived one the same way", () => {
+  const services = Object.entries(parsedCompose.services);
+  expect(services.length).toBeGreaterThanOrEqual(6);
+  for (const [name, service] of services) {
+    expect(service.logging?.driver, name).toBe("json-file");
+    expect(service.logging?.options?.["max-size"], name).toBe("10m");
+    expect(service.logging?.options?.["max-file"], name).toBe("5");
+    expect(service.mem_limit, name).toMatch(/^\d+(m|g)$/);
+    // The migration is a one-shot; everything else outlives a reboot.
+    expect(service.restart, name).toBe(
+      name === "migrate" ? "no" : "unless-stopped",
+    );
+  }
+});
+
+/**
+ * Postgres is set for the machine it runs on.
+ *
+ * The image's defaults are for a much smaller box and a spinning disk: 128MB of shared buffers,
+ * a planner told random reads cost four times sequential ones. Each value here is documented on
+ * the service; the test keeps the list from silently shrinking back to `max_connections`.
+ */
+test("sets Postgres for a 6GB VM on SSD, and logs the slow statements", () => {
+  const command = parsedCompose.services.postgres?.command ?? [];
+  const settings = command
+    .filter((_, index) => index > 0 && command[index - 1] === "-c")
+    .map((entry) => entry.split("=")[0]);
+  expect(settings).toEqual([
+    "max_connections",
+    "shared_buffers",
+    "effective_cache_size",
+    "work_mem",
+    "random_page_cost",
+    "log_min_duration_statement",
+  ]);
+  expect(command).toContain("shared_buffers=256MB");
+  expect(command).toContain("random_page_cost=1.1");
+  // Parallel workers share memory through /dev/shm, and Docker's default 64MB is where a hash
+  // join fails with "could not resize shared memory segment" once work_mem is raised.
+  expect(parsedCompose.services.postgres?.shm_size).toBe("256m");
+});
+
+/**
+ * Every healthcheck goes red on an HTTP error.
+ *
+ * `bun -e "await fetch(…)"` resolves on a 503 exactly as on a 200 — measured 2026-09-10 (audit A5
+ * §9): 503 → exit 0 — so two dials could not go red for anything short of a closed port. `r.ok`
+ * and busybox `wget` both fail on a non-2xx; `pg_isready` is Postgres's own word.
+ */
+test("gives every healthcheck a way to go red", () => {
+  for (const [name, service] of Object.entries(parsedCompose.services)) {
+    if (!service.healthcheck) continue;
+    const command = service.healthcheck.test?.join(" ") ?? "";
+    expect(
+      /process\.exit\(r\.ok \? 0 : 1\)|^CMD-SHELL wget |^CMD-SHELL pg_isready /.test(
+        command,
+      ),
+      `${name}: ${command}`,
+    ).toBe(true);
+  }
 });

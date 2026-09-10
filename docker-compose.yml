@@ -5,12 +5,35 @@
 # stops everything. 10MB × 5 is a couple of days of a busy Bot and 50MB per service at worst.
 #
 # An anchor rather than five copies, so the next service added either inherits the bound or visibly
-# does not.
+# does not. `tests/compose.test.ts` walks every service for it.
 x-logging: &logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "5"
+
+# Every service's memory, bounded — for the recommended VM, 1 OCPU / 6GB with a 4GB swapfile.
+#
+# Until 2026-09-10 the browser was the only service with a ceiling, and that protected Postgres
+# from Chromium and from nothing else. The API server reads a whole conversation per turn and
+# holds it while the Bot answers; when that grows, the process that grows is the one WITHOUT a
+# limit, and the kernel's OOM killer then picks the largest process on the box — which is
+# Postgres, whose death is the product's death. A ceiling per service turns "the machine is out
+# of memory" into "this one container restarts", which is what `restart: unless-stopped` is for.
+#
+# The numbers are ceilings, not reservations: measured 2026-09-10 on the :stable images
+# (`docker stats`), the whole stack idles at ~440MB — server 215, computer 97, postgres 69,
+# agent-bot 45, web 14 — so each limit is several times its service's idle, and the sum of the
+# five long-lived ones (3g + 1.5g + 1g + 512m + 256m = 6.25g) exceeds the box only on paper: the
+# swapfile is the margin, and a service is killed at ITS ceiling long before the box is at its
+# own. Compose v2 honours both spellings outside swarm, `mem_limit` and
+# `deploy.resources.limits.memory`; the short one is used, and `docker inspect` reads it back as
+# `HostConfig.Memory` (measured 2026-09-10, compose 5.1.1). Docker allows swap up to the same
+# amount again by default (`MemorySwap` = 2 × `Memory`), so a limit of 1g is 1g of RAM and up to
+# 1g of the swapfile before the kill.
+#
+# Postgres also carries an `oom_score_adj` below zero, so that when the HOST runs out — the
+# global killer, not a cgroup's — it is the last of these the kernel chooses.
 
 services:
   postgres:
@@ -31,8 +54,44 @@ services:
     # gates at once exhaust the default and fail with "sorry, too many clients already", which reads
     # as a broken test and is a full connection table. Parallel local runs want 300; see
     # docs/development.md.
+    #
+    # The rest are the image's defaults re-set for a 6GB machine rather than the 2005 laptop they
+    # were chosen for. `shared_buffers` 128MB → 256MB (a quarter of this service's ceiling, the
+    # usual rule); `effective_cache_size` 4GB → 768MB, since the planner should count on the page
+    # cache this cgroup can actually hold and not on a box it does not have; `random_page_cost`
+    # 4 → 1.1 because the block volume is SSD and 4 is the number for spinning disks, which made
+    # the planner shun index scans it should have taken; `work_mem` 4MB → 8MB for the sorts on the
+    # trail and the run tables. `log_min_duration_statement` 1000 writes any statement that took a
+    # second or more to the container log — the first thing to read when "the Bot got slow".
+    # `tests/compose.test.ts` walks the list.
     command:
-      ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-100}"]
+      [
+        "postgres",
+        "-c",
+        "max_connections=${POSTGRES_MAX_CONNECTIONS:-100}",
+        "-c",
+        "shared_buffers=256MB",
+        "-c",
+        "effective_cache_size=768MB",
+        "-c",
+        "work_mem=8MB",
+        "-c",
+        "random_page_cost=1.1",
+        "-c",
+        "log_min_duration_statement=1000",
+      ]
+    # 1g: shared_buffers plus a working set for one API process, and the page cache the cgroup is
+    # charged for on top — reclaimable, so it does not count toward the kill. The one service the
+    # host's own OOM killer should reach for last; see the note on x-logging.
+    mem_limit: 1g
+    oom_score_adj: -500
+    # Docker's default /dev/shm is 64MB, and that is where Postgres puts the memory a parallel
+    # query shares between its workers (`dynamic_shared_memory_type = posix`). With `work_mem`
+    # raised above, a parallel hash join on the trail can want more than 64MB of it at once and
+    # fails with "could not resize shared memory segment … No space left on device" — a query
+    # error that reads as a broken screen. 256MB is the usual container-side answer; it is a
+    # ceiling on a tmpfs, not memory taken.
+    shm_size: 256m
     ports:
       # Loopback only. Nothing off this host has any business here: the API reaches the database as
       # `postgres:5432` on the compose network, and a person on the VM reaches it through the tunnel
@@ -60,6 +119,10 @@ services:
     environment:
       DATABASE_URL: postgres://openbot:${POSTGRES_PASSWORD:-openbot}@postgres:5432/openbot
     logging: *logging
+    # drizzle-kit reads the journal and applies what is missing in one transaction; measured
+    # under 200MB. A ceiling anyway, so a migration that somehow does not fit says so in the
+    # container's exit rather than by taking the database with it.
+    mem_limit: 512m
     depends_on:
       postgres:
         condition: service_healthy
@@ -204,15 +267,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # The process that holds a conversation in memory while a Bot answers it, and the one that
+    # grows with the trail. 1.5g is several times its idle; past it the kernel restarts this one
+    # container and Postgres does not notice.
+    mem_limit: 1536m
     restart: unless-stopped
 
   # The only service published to the internet: TLS, the built app, and the proxy to the API.
   # `postgres`, `agent-bot` and `agent-computer` publish too, but each binds 127.0.0.1, so 80 and
   # 443 here are the whole of this deployment's routed surface.
   #
-  # It starts as soon as the API's container exists rather than waiting for it to be healthy. A
-  # front door that refuses to open while the kitchen warms up is worse than one that answers 502
-  # — and the certificate cannot be issued at all until this is listening on 80.
+  # It depends on NOTHING, on purpose. It used to wait for the API's container to exist, which
+  # read as harmless — but the API waits for the migration to succeed, and compose does not start
+  # a service whose dependency failed. So one failed migration closed 80 and 443 along with the
+  # API: measured 2026-09-10, `docker compose up -d` against a database whose migration table had
+  # been dropped ended with `dependency failed to start`, and with the dependency in place the
+  # front door was never created — the fleet monitor saw connection refused rather than the 502
+  # it is written to read, and a person at the address saw a browser error rather than the app.
+  # Caddy resolves `server` per request and answers 502 while it is absent, which is the answer
+  # `/health` is documented to give for "the API is not there" (deploying.md); a front door that
+  # refuses to open while the kitchen is broken is worse than one that answers 502 — and the
+  # certificate cannot be issued or renewed at all until this is listening on 80.
+  # `tests/compose.test.ts` asserts the absence.
   web:
     image: ghcr.io/laf-labs/openbot-web:${IMAGE_TAG:-stable}
     build:
@@ -261,9 +337,9 @@ services:
       # The API waits on migrations and on two other containers being healthy, so a cold boot spends
       # a while with nothing behind this door. Failures in here do not count against `retries`.
       start_period: 60s
-    depends_on:
-      server:
-        condition: service_started
+    # Caddy: a few tens of MB idle, TLS and compression on top. The smallest ceiling here, and the
+    # one whose death matters most — which is why it is generous relative to what it uses.
+    mem_limit: 256m
     restart: unless-stopped
 
   # The Bot's computer is long-lived so browser sessions remain signed in across turns.
@@ -304,8 +380,12 @@ services:
     # A browser nobody has used for ten minutes closes itself, which is the other half of this.
     # Gives Chromium time to flush its profile after SIGTERM before Docker sends SIGKILL.
     stop_grace_period: 30s
+    # `r.ok`, not merely "it answered": a bare `await fetch(...)` resolves on a 503 as happily as on
+    # a 200, so the dial could not go red for anything short of the port being closed. Measured
+    # 2026-09-10 (audit A5 §9): 503 → exit 0. The `web` healthcheck's `wget` fails on an HTTP error
+    # status for the same reason.
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:4100/health')\""]
+      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4100/health'); process.exit(r.ok ? 0 : 1)\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -339,10 +419,13 @@ services:
       BOT_MODEL: ${BOT_MODEL:-}
     logging: *logging
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:4200/health')\""]
+      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4200/health'); process.exit(r.ok ? 0 : 1)\""]
       interval: 10s
       timeout: 5s
       retries: 5
+    # One turn in flight at a time per Bot, each carrying the conversation the API handed it.
+    # Several times its idle.
+    mem_limit: 512m
     # A person's VM reboots; their Bots are supposed to still be there when it does.
     restart: unless-stopped
 

@@ -34,18 +34,55 @@ only warnings: the public example encryption key, and `LAF_DEV_NO_AUTH`.
 A development `.env` copied onto a VM fails loudly instead of quietly serving
 the internet as one signed-in administrator.
 
-Three bounds are in the file because a VM is finite and the failure mode of
-each is the whole deployment stopping, not one service misbehaving:
+Every service is bounded three ways, because a VM is finite and the failure
+mode of each is the whole deployment stopping, not one service misbehaving.
+`tests/compose.test.ts` walks every service for all three:
 
 - **Logs.** Every service logs through `json-file` capped at 10MB × 5. Docker's
   default is unbounded, and a full disk stops Postgres.
-- **The browser.** `agent-computer` gets `mem_limit: 3g` and `shm_size: 1g`.
-  Chromium is the one process here that can eat the machine; past the limit the
-  kernel kills the browser, which restarts, instead of killing whatever the OOM
-  killer would otherwise pick on a 6GB box — which is Postgres.
-- **`web`** has a healthcheck at last, against Caddy's own admin API on the
-  container's loopback. The front door is the one service whose death is the
-  product's death, and it had nothing.
+- **Memory.** Every service has a ceiling, for the recommended 1 OCPU / 6GB VM
+  with its 4GB swapfile. Until 2026-09-10 only the browser had one, which
+  protected Postgres from Chromium and from nothing else: the process that grows
+  with a long conversation is the API, and the host's OOM killer picks the
+  largest process on the box — Postgres. A ceiling per service turns "the
+  machine is out of memory" into "this one container restarts".
+
+  | service | `mem_limit` | idle, measured 2026-09-10 (`docker stats`, `:stable`) |
+  |---|---|---|
+  | `agent-computer` | 3g (+ `shm_size: 1g`) | 97–111MB, a browser open |
+  | `server` | 1536m | 205–215MB |
+  | `postgres` | 1g (+ `shm_size: 256m`, `oom_score_adj: -500`) | 67–69MB |
+  | `agent-bot` | 512m | 31–45MB |
+  | `migrate` | 512m | one-shot, under 200MB |
+  | `web` | 256m | 13–14MB |
+
+  Ceilings, not reservations: the long-lived five sum to 6.25g and the box has
+  6g, and that is fine because a service is killed at *its* ceiling long before
+  the box is at its own. Measured the same day: a process inside `agent-bot`
+  allocating without limit was killed after 256MB held (`OOMKilled=true` on the
+  container) while the service itself stayed up, healthy, with zero restarts —
+  the cgroup killer takes the largest process in the cgroup, not the container.
+  Docker allows swap up to the limit again by default, so 1g is 1g of RAM and
+  up to 1g of swapfile before the kill. Compose honours both spellings outside
+  swarm; the file uses `mem_limit`, and `docker inspect` reads it back as
+  `HostConfig.Memory` (compose 5.1.1). Postgres alone carries a negative
+  `oom_score_adj`, so that when the *host* runs out it is the last of these the
+  kernel chooses.
+- **Postgres itself** is set for the machine rather than for the image's 2005
+  defaults: `shared_buffers` 256MB, `effective_cache_size` 768MB, `work_mem`
+  8MB, `random_page_cost` 1.1 (the block volume is SSD; 4 is the number for
+  spinning disks, and it made the planner shun index scans it should have
+  taken), and `log_min_duration_statement` 1000, so any statement over a second
+  lands in `docker compose logs postgres` — the first thing to read when "the
+  Bot got slow". `SHOW` inside the container reads all five back.
+- **Restarts.** Every long-lived service is `unless-stopped`; the migration
+  one-shot is `"no"`. A person's VM reboots and their Bots are supposed to still
+  be there.
+
+`web` also has a healthcheck that can go red — it asks its own `/health` on a
+loopback address the Caddyfile keeps for that, so it is red when the API is
+absent (502) or degraded (503). The front door is the one service whose death
+is the product's death, and it used to have nothing.
 
 `POSTGRES_PASSWORD` comes from `.env` now, defaulting to `openbot` so that
 existing deployments are unchanged. It is worth setting on a new one — but only
@@ -390,6 +427,56 @@ Nothing pulls on its own. There is no `pull_policy: always` in the compose file
 on purpose, so a reboot or an unrelated `up -d` re-runs what is already on the
 machine rather than quietly moving the deployment to a new image.
 
+**The order is the safety.** The dump is taken while everything is still
+running; the pull happens before anything is replaced; only `up -d` moves
+anything; and the script never writes `.env` — compose reads it, the script
+reads one line of it. `tests/upgrade-script.test.ts` drills all of that with a
+fake `docker` on PATH (the call order, the bytes of `.env` before and after,
+the words it prints), and each case below was also run against a real compose
+stack on 2026-09-10:
+
+- **The pull fails** (a registry that refuses, a token that expired, no
+  network). Nothing was stopped or replaced; every container keeps the id it
+  had and `/health` keeps answering 200. The script says exactly that, names
+  the dump it took, and exits 1. Measured with a tag that does not exist:
+  `failed to resolve reference … not found`, exit 1, same five container ids.
+- **The migration fails.** Compose recreates the changed containers first and
+  starts them in dependency order, so the *old* API container is already gone
+  when `migrate` exits non-zero: the new one is created and never started
+  (`service "migrate" didn't complete successfully: exit 1`, and for the API
+  `dependency failed to start`). The front door does **not** wait for either
+  — `web` depends on nothing, on purpose — so `/` keeps serving the app (200,
+  1,790 bytes) and `/health` answers 502 from Caddy: exactly the "API is not
+  answering" state the watcher list above reads. Before 2026-09-10 `web`
+  waited for the API's container to exist, and one failed migration closed 80
+  and 443 with it — connection refused where the monitor is written to read
+  502, and no ACME renewal while it lasted. The script reads `migrate`'s exit
+  code before any health wait, prints the migration's own log, says that the
+  schema is where it was (drizzle applies the missing migrations in one
+  transaction), and prints the way back.
+- **Not healthy** after the wait: the deployment is up and answering 503, or
+  not answering. The script prints the three commands that say which
+  dependency is down, and the way back.
+
+The way back is printed by both failures and has two steps, and the second is
+the *safe* restore:
+
+```
+IMAGE_TAG=<previous version> docker compose pull && docker compose up -d
+scripts/restore.sh <dump> --replace       # only if the rollback does not come up clean
+```
+
+The version to name is read from the inventory file beside the dump (a
+deployment on `stable` cannot read it from `.env`), or is `.env`'s own value
+when it is a pinned `vX.Y.Z`. The restore line is the one in "Restoring"
+below: beside the live database first, every table's row count on both
+sides, and the swap only after the name is typed. It used to print
+`zcat dump | psql openbot` — the form `restore.sh`'s own header calls
+dangerous, and without `--clean` in the dump it half-applies on top of the
+live rows. Measured 2026-09-10, the printed line run as printed against a
+compose stack: restore beside, `users 2 vs 1 DIFF`, swap, API started,
+`/health` ok, 22 seconds.
+
 **The bundle first, then the script.** `laf upgrade` re-extracts the bundle
 for the channel `.env` names before it pulls, so the compose file and the
 scripts on the VM are the ones the new images were built beside. By hand it
@@ -433,6 +520,46 @@ was installed by hand.
 
 `/usr/local/sbin/laf-backup-db` pipes `pg_dump` out of the compose Postgres
 into `/var/backups/laf/` (gzip, `umask 077`) and keeps the newest fourteen.
+
+### What a backup holds, and what it does not
+
+A backup is **the database and nothing else**. Said plainly because
+`data-lifecycle.md` used to say more, and a restore that does less than the
+document promised is discovered on the day it matters.
+
+- **In it:** every table — the trail, conversations, Bot profiles and
+  memories, routines, the encrypted credential vault, and (measured
+  2026-09-10, audit A5 §5) better-auth's `sessions.token` and the sign-in
+  providers' `accounts.access_token` **in plaintext**. A dump is a credential
+  file and is handled as one: `umask 077` on disk, a write-only door to the
+  bucket, thirty days and gone.
+- **Not in it — the Bot's browser profiles** (`agent-profiles`, one Chromium
+  directory per Bot; 67MB for three Bots on the development machine). This is
+  where a Bot's logins live — 스마트스토어, 홈택스, the bank — as cookies, not
+  rows, and no SQL reaches them. They are left out **on purpose**: the dump is
+  not encrypted at rest, so a tar of the profiles beside it would put the
+  session cookies of a business's bank in a bucket for thirty days, which is a
+  worse exposure than the login it would save; and a Chromium profile copied
+  while the browser runs is a set of half-written SQLite files. Encrypting the
+  backups is a fleet decision (`laf-control`, where the script lives) and has
+  not been taken. **So a restore onto a new VM means every site is signed in
+  again, by hand, once per Bot.** On the same VM (the rollback case above) the
+  profiles are untouched and the logins survive — only the rows move back in
+  time. Either way `scripts/restore.sh --replace` marks every row of
+  `laf_site_connections` as needing a login, because a restored row saying
+  "connected" is a claim about a cookie the restore did not carry, and a
+  routine runs on that claim and comes back empty in the morning; the first
+  visit that finds the login still there clears the mark.
+- **Never in it — `.env`.** `KEY_ENCRYPTION_KEY` is what opens the credential
+  vault the dump carries; a backup holding both is the vault in plaintext. The
+  key is the operator's to keep (the fleet holds each deployment's `.env`), and
+  a dump restored onto a VM with a different key reads every credential as
+  unreadable bytes — that is the design, not a fault. Neither `upgrade.sh` nor
+  `restore.sh` reads `.env` for anything but the channel name, and
+  `tests/upgrade-script.test.ts` compares its bytes before and after.
+- **Not in it — `caddy-data`** (certificates). A new VM asks Let's Encrypt
+  again; five of those in a week is a rate limit measured in days, which is
+  why the volume exists, and why it is not worth a backup.
 
 **Ubuntu Minimal ships no cron daemon** — `apt-get install -y cron` first, or
 the schedule silently never fires. Learned the measured way: the entry sat for
