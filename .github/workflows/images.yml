@@ -9,20 +9,34 @@ name: Images
 #   a `v*` tag      → :vX.Y.Z and :stable — a release moves the fleet's default channel
 #   push to main    → :edge, so a rehearsal VM always runs what main is. Measured 2026-09-07: :edge
 #                     was twelve days and two sign-in changes behind main, because nobody dispatched,
-#                     and no image on GHCR could sign anybody in. Docs-only pushes skip the build.
+#                     and no image on GHCR could sign anybody in. Pushes that change only
+#                     documentation skip the build (the filter below).
 #   manual dispatch → :edge from the default branch; tick `promote_stable` to also move :stable,
 #                     which exists so the very first :stable can be minted before any release tag
 #
 # NOTHING IS PUBLISHED UNTIL THE CHECKS PASS. Every build here waits on `checks`, which is the same
-# `.github/workflows/checks.yml` that CI runs — one definition, called twice, rather than a copy of
-# the steps that drifts from the original. Before it, `:stable` moved on a tag with no `needs` at
-# all: measured on v0.3.2, images finished at 05:50:53 while CI was still a separate run that a tag
-# did not even start.
+# `.github/workflows/checks.yml` that CI runs — one definition, called from two places, rather than
+# a copy of the steps that drifts from the original. Before it, `:stable` moved on a tag with no
+# `needs` at all: measured on v0.3.2, images finished at 05:50:53 while CI was still a separate run
+# that a tag did not even start. Since 2026-09-10 this is the ONLY run of the checks on main and on
+# tags — `ci.yml` covers pull requests and `laf/**` — so a commit is checked once, not twice.
 #
-# Both architectures are built on NATIVE runners (amd64 on ubuntu-latest, arm64 on the free public
-# ARM runners) and merged into one manifest per image — QEMU emulation would turn the app build
-# into a half-hour job. No build cache, same reason as release.yml: a workflow that publishes must
-# not restore what a pull request could have written.
+# Both architectures are built on NATIVE runners — amd64 on `ubuntu-latest`, arm64 on
+# `ubuntu-24.04-arm` — and merged into one manifest per image; QEMU emulation would turn the app
+# build into a half-hour job. arm64 is not optional: customer VMs are Ampere A1. The repository went
+# private on 2026-09-10 and stayed on that runner, because GitHub's runner reference lists
+# `ubuntu-24.04-arm` under "Standard GitHub-hosted runners for private repositories" (2 vCPU / 8 GB
+# there, against 4 / 16 GB for public ones) and says those runners "use your GitHub account's
+# allotment of free minutes, and are then charged at the per minute rates" — $0.005 a minute for
+# Linux arm64 against $0.006 for x64, so this is the cheapest leg here, not a premium one.
+# Measured 2026-09-01..10 on the public 4-vCPU runner: the four arm64 builds took ≈5 minutes a run;
+# the private runner has half the cores, so expect more. If the label is ever refused, the fallback
+# is `docker/setup-qemu-action` on `ubuntu-latest` — unmeasured, and the reason the native runner
+# was chosen in the first place.
+#   https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+#   https://docs.github.com/en/billing/reference/actions-runner-pricing
+# No build cache, same reason as release.yml: a workflow that publishes must not restore what a
+# pull request could have written.
 #
 # The one value baked into an image that could differ per deployment is AUTH_PROVIDERS. Since
 # 2026-09-06 it is only the web surface's FALLBACK: the sign-in screen asks the running server
@@ -32,9 +46,17 @@ name: Images
 
 on:
   push:
+    # Tags are never path-filtered: GitHub does not evaluate path filters for pushes of tags.
     tags: ["v*"]
     branches: [main]
-    paths-ignore: ["docs/**", "**/*.md"]
+    # Documentation only. Not `**/*.md`, which this used to be: `app/src/help/guide.md` and
+    # `app/src/legal/*.md` are bundled into the web image, and a change to the privacy policy alone
+    # published nothing. Same list as ci.yml.
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "**/README.md"
+      - ".github/pull_request_template.md"
   workflow_dispatch:
     inputs:
       promote_stable:
@@ -45,6 +67,16 @@ on:
 # Nothing at the top: each job says what it needs. `checks` reads the tree; the two publishing jobs
 # write packages, and only they do.
 permissions: {}
+
+# A burst of pushes to main publishes only the newest: the run for an older commit is cancelled when
+# a newer one queues, which is what a private repository on the Free plan can afford (a run here is
+# ≈13 Linux + 5 arm64 minutes, measured 2026-09-01..10). A cancelled run can leave a per-arch tag
+# (`:edge-amd64`) ahead of the merged `:edge`, which is harmless: the manifest references digests,
+# not tags, and the newer run rewrites both halves and merges again. A tag is never cancelled — it
+# is its own group, and a release build must finish.
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   REGISTRY: ghcr.io/laf-labs

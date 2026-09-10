@@ -141,16 +141,20 @@ answers, which looks like a server that is still starting.
 
 The four deployment images are published to GHCR by
 `.github/workflows/images.yml` — on every `v*` tag (`:vX.Y.Z` + `:stable`),
-and on manual dispatch (`:edge`, optionally promoting `:stable`). The compose
+on every push to `main` that changes more than documentation (`:edge`), and
+on manual dispatch (`:edge`, optionally promoting `:stable`). The compose
 file names them with one channel switch:
 
 ```
-IMAGE_TAG=stable   # released (default) · vX.Y.Z = pinned · edge = the last manual dispatch
+IMAGE_TAG=stable   # released (default) · vX.Y.Z = pinned · edge = what main is
 ```
 
-`:edge` is **not** "main". Nothing publishes on a push to `main`: `:edge` moves
-only when somebody runs Images by hand, so an `:edge` deployment is sitting on
-whichever commit was dispatched last, which may be weeks old.
+`:edge` **is** "main", since 2026-09-07. Before that it moved only when
+somebody ran Images by hand, and was measured twelve days and two sign-in
+changes behind main. A burst of pushes builds only the newest — the run for an
+older commit is cancelled — so `:edge` can trail main by one run while a burst
+settles. What each workflow costs, and why it runs when it does, is under
+"비공개 저장소의 CI 비용" at the end of this document.
 
 **Nothing is published until the checks pass.** Every build in `images.yml`
 waits on `.github/workflows/checks.yml` — format, lint, types, the test floor
@@ -494,3 +498,70 @@ bunx tauri signer generate -w <somewhere-private>/laf-agent.key
 then replace the secrets and the `pubkey` in `tauri.conf.json` in the same
 change — a release signed by a key the config does not name builds and
 publishes fine and is then rejected by every installed app.
+
+## 비공개 저장소의 CI 비용
+
+2026-09-10에 이 저장소는 비공개가 됐다. 조직은 GitHub **Free** 플랜이고, 비공개
+저장소의 Actions는 한 달 **2,000분**까지만 포함된다 — 공개 저장소일 때는 표준
+러너가 무제한 무료였다. GitHub 문서는 지금 OS별 배수 대신 SKU별 분당 단가로
+적는다: Linux x64 `$0.006`, Linux arm64 `$0.005`, Windows `$0.010`, macOS
+`$0.062`. 예전 배수(Windows ×2, macOS ×10)와 같은 비율이라 아래 가중치는 그
+배수로 센다.
+
+공개 상태이던 9월 1–10일 실측(`openbot` 저장소, 청구 API 기준):
+
+| SKU | 분 | 가중치 | 가중 분 |
+| --- | ---: | ---: | ---: |
+| Actions Linux | 627 | ×1 | 627 |
+| Actions Linux ARM | 107 | ×1 | 107 |
+| Actions Windows | 111 | ×2 | 222 |
+| Actions macOS 3-core | 83 | ×10 | 830 |
+| 합계 | 928 | | **1,786** |
+
+열흘에 1,786분 — 그대로 두면 열하루 만에 한 달치를 다 쓴다. 어디서 나왔는지는
+실행 단위로 세면 보인다(작업마다 분 단위 올림, GitHub이 청구하는 방식 그대로):
+
+- `ci.yml`: `main` 푸시 77회 × 4분 = 308분. 그중 62회는 문서만 바뀐 푸시였고,
+  나머지 15회는 `images.yml`이 같은 커밋에 같은 `checks.yml`을 한 번 더 돌렸다.
+- `images.yml`: 22회(`main` 15, 태그 7) × (Linux 13분 + arm64 5분).
+- `release.yml`: 8회(`main` 1, 태그 7) × (macOS 10–13분 ×10 + Windows 13–16분
+  ×2) ≈ 회당 130–160 가중 분. **태그 하나가 한 달치의 7%다.**
+- `smoke.yml` 매일 1분(모델 키가 없어 여정을 건너뜀 — 키를 넣으면 회당 15분쯤),
+  `security_zizmor.yml` 회당 1분.
+
+2026-09-10부터 각 워크플로가 도는 조건:
+
+| 워크플로 | 도는 때 | 안 도는 때 |
+| --- | --- | --- |
+| `ci.yml` | PR, `laf/**` 푸시 | `main`과 태그(`images.yml`이 같은 `checks.yml`을 돌린다), 문서만 바뀐 푸시 |
+| `images.yml` | `v*` 태그, `main` 푸시, 수동 | 문서만 바뀐 푸시 — `docs/**`, 루트 `*.md`, `**/README.md`. `app/src/**/*.md`는 이미지에 들어가므로 돈다 |
+| `release.yml` | `v*` 태그, `desktop/**`나 `release.yml`이 바뀐 `main` 푸시, 수동. PR은 `shell` 테스트만 | 그 밖의 `main` 푸시 전부 |
+| `smoke.yml` | 매일 02:40 UTC, 수동 | — |
+| `security_zizmor.yml` | `.github/**` 변경, 매주 월요일 | — |
+
+`ci.yml`·`images.yml`·`release.yml`은 ref별 `concurrency` 그룹이라 한 브랜치에
+푸시가 몰리면 가장 최근 것만 끝까지 돈다. 태그는 취소하지 않는다.
+
+같은 속도로 한 달을 가정한 추정 — 코드 푸시 45회, 문서 푸시 186회, 태그 3회, 셸
+변경 2회: Linux+arm64 ≈ 45×18 + 3×18 + 40 ≈ 900분, macOS·Windows ≈ 5회 × 140 ≈
+700 가중 분, 합계 **≈ 1,600–1,700 가중 분/월**. 9월 첫 열흘처럼 태그를 일곱 개
+찍으면 넘친다 — 태그가 가장 비싼 행위이고, 리허설은 `:edge`로 한다.
+
+arm64 러너는 그대로 둔다. GitHub 러너 문서는 `ubuntu-24.04-arm`을 비공개
+저장소용 표준 러너로도 적고(2 vCPU/8GB, 공개용은 4/16), 그 러너들이 포함 분을
+쓰고 넘으면 분당 단가로 청구된다고 쓴다 — Linux arm64 `$0.005`는 x64보다 싸다.
+고객 VM이 Ampere A1이라 arm64 이미지는 선택이 아니고, QEMU 대체는 측정한 적이
+없다.
+
+- https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+- https://docs.github.com/en/billing/reference/actions-runner-pricing
+
+이번 달 사용량은 한 줄로 읽는다(조직 오너 권한):
+
+```bash
+gh api "/orgs/LAF-labs/settings/billing/usage?year=2026&month=9"
+```
+
+항목마다 `sku`(`Actions Linux`, `Actions Linux ARM`, `Actions Windows`,
+`Actions macOS 3-core`), `quantity`(분), `repositoryName`이 온다. 조직 설정의
+예산 알림을 켜 두면 포함 분의 90%와 100%에서 메일이 온다.

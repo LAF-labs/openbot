@@ -5,16 +5,27 @@ name: Release
 # manual run only build and keep the installers as workflow artifacts, so nobody can publish by
 # clicking.
 #
-# THE INSTALLERS EXIST ON EVERY PUSH TO MAIN, and that is the point of the build-only path. Before
-# it, getting a `.dmg` or a `.exe` into anybody's hands took a tag — which is a release, with a
-# version, a draft and an update feed behind it — or a manual dispatch, which is a person with the
-# right browser tab open. So for weeks the answer to "can I try the app?" was "not without cutting a
-# release". A push to main now leaves both installers as workflow artifacts (`darwin-universal-dmg`,
-# `windows-x64-nsis`), downloadable from the run, for ninety days. Docs-only pushes skip it, the same
-# filter `images.yml` uses. Nothing on that path creates, extends or publishes a release: the action
-# only touches a release when `tagName` is non-empty, and it is empty on everything but a tag. It
-# also builds with the updater taken out — otherwise the installer replaces itself with the last
-# published release the first time somebody opens it, which was measured, not feared.
+# THE INSTALLERS EXIST ON EVERY PUSH THAT TOUCHES THE SHELL, and that is the point of the build-only
+# path. Before it, getting a `.dmg` or a `.exe` into anybody's hands took a tag — which is a
+# release, with a version, a draft and an update feed behind it — or a manual dispatch, which is a
+# person with the right browser tab open. So for weeks the answer to "can I try the app?" was "not
+# without cutting a release". A push to main that changes `desktop/**` (or this file) now leaves
+# both installers as workflow artifacts (`darwin-universal-dmg`, `windows-x64-nsis`), downloadable
+# from the run, for ninety days; a manual run does the same from any ref. Nothing on that path
+# creates, extends or publishes a release: the action only touches a release when `tagName` is
+# non-empty, and it is empty on everything but a tag. It also builds with the updater taken out —
+# otherwise the installer replaces itself with the last published release the first time somebody
+# opens it, which was measured, not feared.
+#
+# WHY NOT EVERY PUSH TO MAIN: this is the most expensive run in the repository, and since 2026-09-10
+# the repository is private on GitHub's Free plan — 2,000 included minutes a month, with macOS
+# counted at ten times and Windows at twice the Linux rate. Measured 2026-09-01..10: the macOS leg
+# takes 10–13 minutes and the Windows leg 13–16, so one run is ≈130–160 weighted minutes, 7% of a
+# month, for a shell that is a window onto the origin and changes a few times a month, on a main
+# that moves several times a day. The shell's version and config (`tauri.conf.json`, `Cargo.toml`,
+# `Cargo.lock`, `package.json`) all live under `desktop/`, so `desktop/**` is the whole trigger;
+# everything else on main ships through the origin, which the installed app loads at launch. The
+# numbers are in docs/laf/deploying.md, "비공개 저장소의 CI 비용".
 #
 # The shell is a window onto the deployed origin (see desktop/README.md): there is no frontend to
 # build here and nothing native beyond Tauri itself, which is why a universal macOS binary is cheap
@@ -47,10 +58,17 @@ name: Release
 
 on:
   push:
+    # The tag path is not filtered: GitHub does not evaluate path filters for pushes of tags, so a
+    # release builds whatever the tag holds.
     tags: ["v*"]
-    # The build-only path. A push to main produces both installers and no release.
+    # The build-only path. A push to main that touches the shell produces both installers and no
+    # release. The shell's README is documentation; the workflow file is in the list because a
+    # change to how the shell is built is only proven by building it.
     branches: [main]
-    paths-ignore: ["docs/**", "**/*.md"]
+    paths:
+      - "desktop/**"
+      - "!desktop/README.md"
+      - ".github/workflows/release.yml"
   # And on a pull request that touches the shell, for the `shell` job below only. `ci.yml` runs on
   # Linux, where this crate does not build at all, so before this the shell's own tests ran nowhere
   # until somebody pushed a tag — which is the last moment anybody wants to learn about them.
@@ -60,6 +78,13 @@ on:
 
 permissions:
   contents: read
+
+# The newest push wins on a branch or a pull request: a burst of shell commits builds once, at the
+# end, instead of once per commit at macOS prices. A tag is never cancelled — its run is writing a
+# draft release, and half a draft is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   # The shell's decisions, on the pull request that changes them. macOS is the cheapest runner that

@@ -9,10 +9,12 @@ name: Checks
 # and created the real problem — two definitions of "the gate", drifting apart the first time
 # somebody edits one.
 #
-# So the jobs live here and both callers reference them. `ci.yml` runs them on pull requests, on
-# branch pushes and on tags; `images.yml` runs them as the prerequisite of the build that moves
-# `:stable`. Called from a tag, the reference resolves at that tag, so what is checked is exactly
-# what is about to be published.
+# So the jobs live here and both callers reference them, each on its own refs so that a commit is
+# checked once: `ci.yml` runs them on pull requests and on `laf/**` pushes; `images.yml` runs them
+# on main and on tags, as the prerequisite of the build that moves `:edge` and `:stable`. Called
+# from a tag, the reference resolves at that tag, so what is checked is exactly what is about to be
+# published. (Until 2026-09-10 `ci.yml` ran them on main and tags as well — the same commit twice,
+# which a private repository on the Free plan's 2,000 minutes cannot afford; see ci.yml.)
 
 on:
   workflow_call:

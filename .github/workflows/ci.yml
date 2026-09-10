@@ -1,5 +1,15 @@
 name: CI
 
+# The gate on the refs that `images.yml` does not already gate. Pull requests and the long-lived
+# `laf/**` branches run here; main and `v*` tags run the same `checks.yml` inside `images.yml`, as
+# the prerequisite of the build that publishes them. Until 2026-09-10 main and tags ran here too,
+# because a `v*` tag is what puts code in front of the whole fleet and for a while it was the one
+# ref nobody checked — but `images.yml` has gated on the checks since then, so the same commit was
+# checked twice. Measured 2026-09-01..10: 77 pushes to main, 4 Linux minutes each, 308 minutes, 62
+# of them for pushes that changed only documentation. A public repository could ignore that; a
+# private one on the Free plan's 2,000 minutes a month cannot. The README badge still points here
+# and reports the branches this runs on.
+
 on:
   pull_request:
   push:
@@ -7,19 +17,24 @@ on:
     # request. Without it those pushes run nothing at all, and every guarantee below — the test
     # floor, the fresh-database run, the typecheck — is only as good as the last time somebody
     # happened to open a PR.
-    branches: [main, "laf/**"]
-    # And tags, because a `v*` tag is what puts code in front of the whole fleet. Until this line
-    # existed the one ref nobody checked was the only ref that shipped.
-    tags: ["v*"]
+    branches: ["laf/**"]
+    # Documentation cannot fail the gate — nothing `checks.yml` runs reads it — so it does not pay
+    # for one. Same list as images.yml.
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "**/README.md"
+      - ".github/pull_request_template.md"
 
 # Least privilege by default. Jobs that need more must declare it locally.
 permissions:
   contents: read
 
-# The newest push on a branch wins; main runs are retained for badge and release history.
+# The newest push wins. Cancelling the run for an older commit on a pull request or a laf/** branch
+# loses nothing a person will read: the newest commit is the one that gets reviewed.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   # The checks live in checks.yml so that this workflow and the one that publishes images run the
