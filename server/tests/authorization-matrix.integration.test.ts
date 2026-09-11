@@ -572,6 +572,7 @@ const PUBLIC: Record<string, number> = {
   "GET /api/capabilities": 200,
   "GET /api/health": 200,
   "GET /api/plugins/oauth/callback": 302,
+  "GET /api/version": 200,
   "GET /connected": 200,
   "GET /health": 200,
 };
@@ -650,6 +651,7 @@ const B_ALLOWED = [
   "GET /api/routines/suggestions",
   "GET /api/sandboxed/published",
   "GET /api/sites/connections",
+  "GET /api/version",
   "GET /connected",
   "GET /health",
   "POST /api/agents/test-connection",
