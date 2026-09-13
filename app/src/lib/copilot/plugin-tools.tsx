@@ -1,12 +1,11 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Streamdown } from "streamdown";
 import * as z from "zod";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
-import { markdownComponents } from "@/lib/markdown";
+import { LazyMarkdown } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
   callPluginTool,
@@ -206,10 +205,9 @@ function PluginTool({
             running={status !== "complete"}
           >
             {result ? (
-              /* The server's own words, drawn the way a Bot's prose is drawn. */
-              <Streamdown components={markdownComponents}>
-                {forDisplay(result.text)}
-              </Streamdown>
+              /* The server's own words, drawn the way a Bot's prose is drawn — behind the lazy
+                 boundary, because this renderer is registered on every signed-in screen. */
+              <LazyMarkdown>{forDisplay(result.text)}</LazyMarkdown>
             ) : null}
           </ToolLine>
         </>

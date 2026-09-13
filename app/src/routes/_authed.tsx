@@ -4,7 +4,6 @@ import { ConnectionNotice } from "../components/layout/connection-notice";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
-import { CopilotProvider } from "../lib/copilot/provider";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
 
@@ -48,8 +47,6 @@ export const Route = createFileRoute("/_authed")({
       throw redirect({ to: "/consent" });
     }
   },
-  // Mounted INSIDE the authed boundary, not at the root: the runtime endpoint requires a session, so
-  // a provider above the sign-in gate would open a run for a visitor who has not signed in yet.
   component: AuthedShell,
 });
 
@@ -60,6 +57,12 @@ export const Route = createFileRoute("/_authed")({
  * `_authed/_app`, so a person sitting on Settings or an admin screen had no socket at all: their
  * roster went stale and a Bot that finished work while they were reading their own settings told
  * them nothing. Every authenticated screen is inside this route, and one socket is the point.
+ *
+ * NO COPILOTKIT PROVIDER HERE ANY MORE. It wrapped this Outlet, so its 800 kB — and the transcript
+ * renderer it drags in — were a static part of every signed-in screen, Home and Settings included
+ * (audit A4, finding 5: 706 kB of a 894 kB first load was these two, on a screen with no
+ * transcript). The screens that run a Bot mount it themselves (`lib/copilot/provider.tsx`), and
+ * those are route components, which the router splits into chunks fetched on the way there.
  */
 function AuthedShell() {
   useChannelEvents();
@@ -69,9 +72,9 @@ function AuthedShell() {
   useEffect(handleShellLinks, []);
 
   return (
-    <CopilotProvider>
+    <>
       <ConnectionNotice />
       <Outlet />
-    </CopilotProvider>
+    </>
   );
 }

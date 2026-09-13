@@ -8,6 +8,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import {
@@ -21,8 +22,17 @@ import {
  * and used by conversations only after publishing.
  */
 export const Route = createFileRoute("/_authed/admin/playground")({
-  component: PlaygroundPage,
+  component: PlaygroundScreen,
 });
+
+/** The preview renders through CopilotKit; see `channel/$channelId.tsx` for why the provider is here. */
+function PlaygroundScreen() {
+  return (
+    <CopilotProvider>
+      <PlaygroundPage />
+    </CopilotProvider>
+  );
+}
 
 /**
  * The worked example, and it is CONTENT rather than copy: every string below is inside a code panel

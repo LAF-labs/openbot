@@ -25,6 +25,7 @@ import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
+import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -36,8 +37,17 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
   validateSearch: (search: Record<string, unknown>): { agent?: string } => ({
     ...(typeof search.agent === "string" ? { agent: search.agent } : {}),
   }),
-  component: RouteComponent,
+  component: ComposeScreen,
 });
+
+/** The transcript's tool renderer needs the CopilotKit context; see `$channelId.tsx` for why it is here. */
+function ComposeScreen() {
+  return (
+    <CopilotProvider>
+      <RouteComponent />
+    </CopilotProvider>
+  );
+}
 
 function RouteComponent() {
   const { agent } = Route.useSearch();

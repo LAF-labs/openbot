@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
+import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 
 const chatSearchSchema = z
@@ -67,8 +68,24 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
     const roster = context.queryClient.ensureQueryData(agentListQueryOptions());
     await Promise.allSettled([channel, roster]);
   },
-  component: RouteComponent,
+  component: ChannelScreen,
 });
+
+/**
+ * THE COPILOTKIT PROVIDER LIVES ON THE SCREENS THAT RUN A BOT, NOT ON EVERY SCREEN.
+ *
+ * It used to wrap `_authed`'s Outlet, which made its 800 kB — and the transcript renderer it
+ * drags in — a static part of Home, Settings and every admin page (audit A4, finding 5). A route
+ * component is split into a chunk of its own by the router, so from here the runtime is fetched on
+ * the way to a conversation and not before. The compose screen and the playground do the same.
+ */
+function ChannelScreen() {
+  return (
+    <CopilotProvider>
+      <RouteComponent />
+    </CopilotProvider>
+  );
+}
 
 function RouteComponent() {
   const { channelId } = Route.useParams();

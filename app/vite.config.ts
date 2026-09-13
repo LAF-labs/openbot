@@ -2,7 +2,65 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import {
+  lazyBoundaryOffences,
+  lazyOnlyPackageOf,
+  packageOf,
+} from "./src/lib/build/static-closure";
+
+/**
+ * THE BUILD FAILS IF THE FIRST SCREEN AFTER SIGN-IN REACHES THE RENDERER OR THE RUNTIME STATICALLY.
+ *
+ * The comment on `MANUAL_CHUNKS` below has promised since W2 that `markdown` is an async chunk
+ * "reached only through route components". By 2026-09-10 it was not: one `import { Streamdown }`
+ * in a tool renderer the CopilotKit provider registers, plus the provider wrapping every signed-in
+ * screen, had put 1,049 kB of renderer and 815 kB of runtime into the static closure of
+ * `_authed-*.js` (audit A4, finding 5), and the only thing that could have said so was a sentence
+ * in a comment — while `chunkSizeWarningLimit` kept the build quiet. This reads Rollup's own graph
+ * (`imports` are static, `dynamicImports` lazy) and refuses the build rather than warning, because
+ * a warning is what the size limit already was. See `src/lib/build/static-closure.ts`.
+ */
+const lazyBoundaries = (): Plugin => ({
+  name: "laf:lazy-boundaries",
+  generateBundle(_options, bundle) {
+    const chunks = Object.values(bundle).flatMap((output) =>
+      output.type === "chunk"
+        ? [
+            {
+              fileName: output.fileName,
+              imports: output.imports,
+              isEntry: output.isEntry,
+              facadeModuleId: output.facadeModuleId,
+              heavy: [
+                ...new Set(
+                  output.moduleIds.flatMap((id) => {
+                    const pkg = lazyOnlyPackageOf(id);
+                    return pkg ? [pkg] : [];
+                  }),
+                ),
+              ],
+            },
+          ]
+        : [],
+    );
+    const offences = lazyBoundaryOffences(chunks);
+    if (offences.length === 0) return;
+    this.error(
+      "The first screen after sign-in would fetch a chunk that belongs behind a lazy boundary:\n" +
+        offences
+          .flatMap((offence) =>
+            offence.reaches.map(
+              (reached) =>
+                `  ${offence.from} statically reaches ${reached.fileName} (${reached.packages.join(", ")})`,
+            ),
+          )
+          .join("\n") +
+        "\n\nStreamdown goes through `LazyMarkdown` (src/lib/markdown.tsx) outside route components, and\n" +
+        "`CopilotProvider` is mounted by the screens that run a Bot, never by a layout route.",
+    );
+  },
+});
 
 /**
  * One proxy, declared once. The dev server and `vite preview` each need their
@@ -29,28 +87,6 @@ const apiProxy = {
 };
 
 /**
- * The installed package a module came from, read from the LAST `node_modules/` in its path.
- *
- * Bun installs isolated: the real path of a dependency is
- * `node_modules/.bun/<name>@<version>/node_modules/<name>/…`, and Vite resolves the symlink before
- * it hands the id to Rollup. Reading the FIRST `node_modules/` would name every package `.bun`;
- * reading the last one names it correctly here and under a hoisted npm layout both.
- */
-const packageOf = (id: string): string | null => {
-  const marker = id.lastIndexOf("node_modules/");
-  if (marker === -1) {
-    return null;
-  }
-  const [first, second] = id
-    .slice(marker + "node_modules/".length)
-    .split("/") as Array<string | undefined>;
-  if (!first) {
-    return null;
-  }
-  return first.startsWith("@") && second ? `${first}/${second}` : first;
-};
-
-/**
  * WHAT IS GROUPED BY HAND, AND — MORE IMPORTANTLY — WHAT IS LEFT ALONE.
  *
  * The first four are what every screen needs, so they are static imports of the entry however the
@@ -60,7 +96,8 @@ const packageOf = (id: string): string | null => {
  * The transcript's renderer (`markdown`) is the opposite case. It is reached only through route
  * components, which `autoCodeSplitting` turns into dynamic imports, so this group comes out as an
  * ASYNC chunk — the sign-in screen never fetches it. The grouping only gives it one name instead of
- * a hash that moves whenever the chat screens do.
+ * a hash that moves whenever the chat screens do. `lazyBoundaries` above is what makes this
+ * sentence checked rather than believed: it was untrue for a while, silently.
  *
  * Shiki's grammars, Mermaid's diagram types, KaTeX and Cytoscape are deliberately ABSENT. Streamdown
  * already reaches all four through `import()`, so Rollup gives each grammar and each diagram type a
@@ -114,6 +151,7 @@ export default defineConfig({
     tanstackRouter({ autoCodeSplitting: true }),
     react(),
     tailwindcss(),
+    lazyBoundaries(),
   ],
   resolve: {
     alias: {
