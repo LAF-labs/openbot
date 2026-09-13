@@ -6,6 +6,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
@@ -23,7 +24,11 @@ import {
   channelFailuresQueryOptions,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
-import { loadThreadHistory } from "@/lib/channels/thread-history";
+import { retriesInPlace, standingFailures } from "@/lib/channels/retry";
+import {
+  loadThreadHistory,
+  mergeStoredHistory,
+} from "@/lib/channels/thread-history";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
 import {
   CHANNEL_ACTIVITY,
@@ -200,14 +205,18 @@ export function ChannelChat({
           channel.threadId,
           runtimeAgentId,
         );
-        // Never overwrite local messages that arrived while history was loading.
-        if (
-          current &&
-          stored &&
-          stored.length > 0 &&
-          agent.messages.length === 0
-        ) {
-          agent.setMessages(stored);
+        /*
+         * MERGED, NOT APPLIED ONLY TO AN EMPTY AGENT. Joining replays the runtime's last run from
+         * memory, and a question whose run failed after it is in the store and not in that replay —
+         * it vanished on reload, and the 다시 시도 under it with it. See `mergeStoredHistory`, which
+         * also keeps anything this tab sent while the history was on its way. Not over a run in
+         * flight, whose stream is still appending to the array.
+         */
+        if (current && stored && stored.length > 0 && !agent.isRunning) {
+          const merged = mergeStoredHistory(stored, agent.messages);
+          if (merged !== agent.messages) {
+            agent.setMessages(merged as typeof agent.messages);
+          }
         }
       } finally {
         // Release even on join/restore failure; the gate orders messages, not withholds them.
@@ -342,16 +351,18 @@ export function ChannelChat({
    * Everything `say` does once it has something worth sending, split out so the counter it is
    * wrapped in covers every way out of here, a throw included.
    */
+  /** Wait briefly for the runtime agent instance; a stalled join must not lose the turn. */
+  const untilReady = async () => {
+    if (isReadyRef.current) return;
+    await Promise.race([
+      readyGatePromise,
+      new Promise((resolve) => setTimeout(resolve, SEND_WITHOUT_JOIN_AFTER_MS)),
+    ]);
+  };
+
   const deliver = async (trimmed: string, skillInstructions: string[]) => {
-    // Wait briefly for the runtime agent instance before adding the message.
-    if (!isReadyRef.current) {
-      await Promise.race([
-        readyGatePromise,
-        new Promise((resolve) =>
-          setTimeout(resolve, SEND_WITHOUT_JOIN_AFTER_MS),
-        ),
-      ]);
-    }
+    // Before adding the message, not after: a message added to a provisional agent is lost.
+    await untilReady();
 
     setRunError(null);
     awaitingReply.current = true;
@@ -398,6 +409,17 @@ export function ChannelChat({
     });
     report(trimmed, null);
 
+    await run();
+  };
+
+  /**
+   * The run itself: the thread as it stands, sent.
+   *
+   * Its own function because a retry needs exactly this and nothing above it. The failed question
+   * is already in the thread — the server stored it the moment the run began — so asking again is
+   * running the thread again, not adding the words a second time.
+   */
+  const run = async () => {
     // Providers reject later turns if prior tool calls have no result; repair before sending.
     const repaired = repairUnansweredToolCalls(agent.messages);
     if (repaired !== agent.messages) {
@@ -409,6 +431,32 @@ export function ChannelChat({
       await copilotkit.runAgent({ agent });
     } finally {
       setRunsInFlight((count) => count - 1);
+    }
+  };
+
+  /**
+   * 다시 시도 under a failed question.
+   *
+   * MEASURED 2026-09-10 (audit A4, finding 1): this used to be `say(text)`, and the thread held
+   * "지금 몇 시야" twice afterwards — on screen, in the store, in the export and in every prompt from
+   * then on. The message was still there; what had not happened was the answer. So the thread is run
+   * again with the question where it is, under the id the server's store already holds, which it
+   * treats as a re-arrival of that row rather than a second one (`lib/channels/retry.ts`).
+   *
+   * The transcript draws the button only where that is possible. A press that arrives after the
+   * thread moved on — a routine landing in the second between render and click — does nothing,
+   * because the only other way to ask is the duplicate.
+   */
+  const retry = async ({ id }: RetriedMessage) => {
+    if (!retriesInPlace(agent.messages, id)) return;
+    setTurnsInFlight((count) => count + 1);
+    try {
+      await untilReady();
+      setRunError(null);
+      awaitingReply.current = true;
+      await run();
+    } finally {
+      setTurnsInFlight((count) => count - 1);
     }
   };
 
@@ -501,6 +549,8 @@ export function ChannelChat({
   /** Stable reference for effects and component callbacks. */
   const sayRef = useRef(say);
   sayRef.current = say;
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
 
   /**
    * Component buttons speak as user turns without forcing every transcript card to re-render.
@@ -561,14 +611,18 @@ export function ChannelChat({
         : { ...sentAt, ...(stored ?? {}) },
     [sentAt, stored],
   );
-  /** Message id to failure code, which is the shape the transcript draws from. */
-  const failuresById = useMemo(() => {
-    const byId: Record<string, string> = {};
-    for (const failure of storedFailures.data ?? []) {
-      byId[failure.messageId] = failure.code;
-    }
-    return byId;
-  }, [storedFailures.data]);
+  /**
+   * Message id to failure code, which is the shape the transcript draws from — without the ones a
+   * retry has since answered, which the server's record keeps (`standingFailures`).
+   *
+   * Not memoised: `agent.messages` is the same array mutated in place, so a memo keyed on it would
+   * keep the first answer forever (see `ChatTranscript`), and this is a walk over the thread.
+   */
+  const failuresById = standingFailures(
+    storedFailures.data,
+    agent.messages,
+    storedTimes.data ? messageTimes : undefined,
+  );
 
   /*
    * No names on the bubbles. This is a conversation with ONE Bot, whose name is in the header; a
@@ -663,10 +717,10 @@ export function ChannelChat({
          */
         stoppedCode={runError ?? undefined}
         failures={failuresById}
-        onRetry={(text) => {
+        onRetry={(message) => {
           // The failure line is this tab's; clear it so the retry is not drawn as still failed.
           setRunError(null);
-          void sayRef.current(text);
+          void retryRef.current(message);
         }}
       />
     </ConversationProvider>

@@ -19,6 +19,7 @@ import {
   channelFailuresQueryOptions,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
+import { retriesInPlace, standingFailures } from "@/lib/channels/retry";
 import {
   applyRoomFrame,
   EMPTY_ROOM,
@@ -315,21 +316,42 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   }, [channel.id]);
 
   const post = useCallback(
-    async (text: string, addressedAgentIds: string[]) => {
+    async (
+      text: string,
+      addressedAgentIds: string[],
+      /**
+       * The id of a message already in the room, for 다시 시도 under one that got no answer. The
+       * server stores a re-arrival as an edit of the row it holds, never as a second row, so the
+       * question is asked again without being said twice. Absent for anything newly typed.
+       */
+      retryOf?: string,
+    ) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       setNotice(null);
       setQuiet(null);
       setPosting(true);
       try {
-        const messageId = crypto.randomUUID();
-        // On screen at once, under the id the server will store it as, so catch-up keeps it.
+        const messageId = retryOf ?? crypto.randomUUID();
+        // On screen at once, under the id the server will store it as, so catch-up keeps it. A
+        // retried message is on screen already; it goes back to pending rather than appearing twice.
         setRoom((state) => ({
           ...state,
-          messages: [
-            ...state.messages,
-            { id: messageId, role: "user", content: trimmed, pending: true },
-          ],
+          messages: state.messages.some((message) => message.id === messageId)
+            ? state.messages.map((message) =>
+                message.id === messageId
+                  ? { ...message, pending: true }
+                  : message,
+              )
+            : [
+                ...state.messages,
+                {
+                  id: messageId,
+                  role: "user",
+                  content: trimmed,
+                  pending: true,
+                },
+              ],
         }));
         /*
          * A network failure is caught HERE and not left to throw. Thrown, the composer would put
@@ -389,10 +411,13 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
                 ? t("That message could not be sent. It may be too long.")
                 : t("The room could not take that message."),
           );
-          setRoom((state) => ({
-            ...state,
-            messages: state.messages.filter((m) => m.id !== messageId),
-          }));
+          // A retried message stays: it is the server's row, not this press's bubble.
+          if (!retryOf) {
+            setRoom((state) => ({
+              ...state,
+              messages: state.messages.filter((m) => m.id !== messageId),
+            }));
+          }
         }
       } finally {
         setPosting(false);
@@ -457,18 +482,24 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     [memberIds, roster],
   );
 
-  /** Message id to failure code, the shape the transcript draws from. */
-  const failuresById = useMemo(() => {
-    const byId: Record<string, string> = {};
-    for (const failure of storedFailures.data ?? []) {
-      byId[failure.messageId] = failure.code;
-    }
-    return byId;
-  }, [storedFailures.data]);
-
   const messageTimes = useMemo(
     () => ({ ...(marks.data?.times ?? {}), ...room.times }),
     [marks.data?.times, room.times],
+  );
+
+  /**
+   * Message id to failure code, the shape the transcript draws from — without the ones a retry has
+   * since answered, which the server's record keeps. A member that answered during the failed turn
+   * was stamped before the failure and leaves it standing. See `standingFailures`.
+   */
+  const failuresById = useMemo(
+    () =>
+      standingFailures(
+        storedFailures.data,
+        room.messages,
+        marks.data ? messageTimes : undefined,
+      ),
+    [storedFailures.data, room.messages, marks.data, messageTimes],
   );
 
   const inTurn = room.turnId !== null;
@@ -537,7 +568,12 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         ) : null
       }
       failures={failuresById}
-      onRetry={(text) => void post(text, [])}
+      onRetry={({ id, text }) => {
+        // Drawn only where it holds; checked again because the room can move on under a press.
+        if (!retriesInPlace(room.messages, id, { keepsReplies: true })) return;
+        void post(text, [], id);
+      }}
+      retryKeepsReplies
       speakers={speakers}
       stoppable={inTurn && !stopping}
     />

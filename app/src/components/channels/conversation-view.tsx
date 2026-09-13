@@ -6,7 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChatTranscript } from "@/components/channels/chat-transcript";
+import {
+  ChatTranscript,
+  type RetriedMessage,
+} from "@/components/channels/chat-transcript";
 import {
   type AgentOption,
   type CommandOption,
@@ -31,6 +34,7 @@ export function ConversationView({
   stoppedCode,
   failures,
   onRetry,
+  retryKeepsReplies = false,
   stoppable,
   queueWhileBusy = false,
   emptyState,
@@ -72,8 +76,10 @@ export function ConversationView({
   stoppedCode?: string;
   /** Turns that failed earlier and are still on the server's record: message id to failure code. */
   failures?: Readonly<Record<string, string>>;
-  /** Ask one of them again. The transcript hands back the words that got no answer. */
-  onRetry?: (text: string) => void;
+  /** Ask one of them again. The transcript hands back the message that got no answer. */
+  onRetry?: (message: RetriedMessage) => void;
+  /** A room, where a retry keeps the replies some members already gave. See `ChatTranscript`. */
+  retryKeepsReplies?: boolean;
   /**
    * There is a run for Stop to abort, which is a narrower fact than `pending` and is the honest one
    * to draw a Stop button from. Defaults to `pending` for a caller with no gap between the two.
@@ -256,6 +262,7 @@ export function ConversationView({
           {...(stoppedCode ? { stoppedCode } : {})}
           {...(failures ? { failures } : {})}
           {...(onRetry ? { onRetry } : {})}
+          retryKeepsReplies={retryKeepsReplies}
         />
       </div>
       {/*

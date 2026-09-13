@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/message-scroller";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
+import { retriesInPlace } from "@/lib/channels/retry";
 import { turnFailureSentence } from "@/lib/channels/turn-failure";
 import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
@@ -94,9 +95,28 @@ type ChatTranscriptProps = {
    * handed back to the model on the next turn.
    */
   failures?: Readonly<Record<string, string>>;
-  /** Ask the same thing again. Absent draws the failure line with nothing to press. */
-  onRetry?: (text: string) => void;
+  /**
+   * Ask the same thing again. Absent draws the failure line with nothing to press.
+   *
+   * THE ID TRAVELS WITH THE WORDS, AND THE BUTTON IS DRAWN ONLY WHERE THE ID CAN BE REUSED. It used
+   * to hand back the text alone, which the caller could only send as a new message: the same
+   * question stored twice, measured 2026-09-10. Now it is offered only under a question nobody has
+   * asked past (`retriesInPlace`), and pressing it runs the thread again with that message where it
+   * is — so there is no press anywhere that can say a question twice.
+   */
+  onRetry?: (message: RetriedMessage) => void;
+  /**
+   * A room: the members that did answer may sit between a failed question and a retry of it.
+   *
+   * A room turn is composed by the server from the whole transcript, so running it again with some
+   * members' replies already there is what a retry means. A conversation with one Bot is run from its
+   * messages as they stand, and a half-answer at the end is not something to run from.
+   */
+  retryKeepsReplies?: boolean;
 };
+
+/** What a press of 다시 시도 hands back: the failed message as it is in the thread. */
+export type RetriedMessage = { id: string; text: string };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
 const EMPTY_QUEUE: readonly QueuedMessage[] = [];
@@ -737,6 +757,7 @@ export function ChatTranscript({
   speakers = EMPTY_SPEAKERS,
   onRemoveQueued,
   onRetry,
+  retryKeepsReplies = false,
   queued = EMPTY_QUEUE,
   stoppedCode,
   failures = EMPTY_FAILURES,
@@ -768,15 +789,22 @@ export function ChatTranscript({
   /**
    * The last thing the person actually typed, which is what "try again" means.
    *
-   * Read off the transcript rather than remembered by the caller: a retry has to re-send the words
-   * that got no answer, and after a failure those words are still the newest user message there is.
+   * Read off the transcript rather than remembered by the caller: a retry asks that message again,
+   * and after a failure it is still the newest user message there is.
    */
   const lastAsked = [...items]
     .reverse()
     .find(
       (item): item is Extract<typeof item, { kind: "text" }> =>
         item.kind === "text" && item.role === "user",
-    )?.text;
+    );
+  /**
+   * Whether 다시 시도 can be drawn under this question: it can be asked again in place, and nothing
+   * is running that a second press would race. See `retriesInPlace`.
+   */
+  const retryable = (messageId: string) =>
+    !busy &&
+    retriesInPlace(messages, messageId, { keepsReplies: retryKeepsReplies });
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
 
@@ -963,7 +991,14 @@ export function ChatTranscript({
                      * say so twice — the server's record and this tab's own view of the same failure.
                      */
                     failures[item.id] &&
-                    !(stoppedCode && item.id === lastItem?.id) ? (
+                    !(stoppedCode && item.id === lastItem?.id) &&
+                    /*
+                     * And not while the question it is under is being asked again. The failure
+                     * stays on the server's record until an answer lands after it
+                     * (`standingFailures`), and "no answer came back" above a turn that is running
+                     * says the retry already failed.
+                     */
+                    !(busy && item.id === lastAsked?.id) ? (
                       <TurnFailed
                         code={failures[item.id]}
                         onRetry={
@@ -976,8 +1011,9 @@ export function ChatTranscript({
                            */
                           onRetry &&
                           item.kind === "text" &&
-                          item.role === "user"
-                            ? () => onRetry(item.text)
+                          item.role === "user" &&
+                          retryable(item.id)
+                            ? () => onRetry({ id: item.id, text: item.text })
                             : undefined
                         }
                       />
@@ -1007,7 +1043,9 @@ export function ChatTranscript({
               <TurnFailed
                 code={stoppedCode}
                 onRetry={
-                  onRetry && lastAsked ? () => onRetry(lastAsked) : undefined
+                  onRetry && lastAsked && retryable(lastAsked.id)
+                    ? () => onRetry({ id: lastAsked.id, text: lastAsked.text })
+                    : undefined
                 }
               />
             ) : waitingOnFirstToken ? (
