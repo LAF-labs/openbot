@@ -179,7 +179,11 @@ describe("classifyTurnFailure", () => {
     );
   });
 
-  test("recognises the stall guard's own English prose", () => {
+  test("recognises the stall guard's fact, and the English prose it wrote before", () => {
+    expect(classifyTurnFailure("laf:agent_stalled")).toBe(
+      TURN_FAILURE_CODES.stalled,
+    );
+    // Ledger rows from before the fact still carry the sentence; they are still somebody's turn.
     expect(
       classifyTurnFailure(
         "지식 도우미 stopped responding. Nothing arrived from it for 2 minutes, so this turn was ended.",

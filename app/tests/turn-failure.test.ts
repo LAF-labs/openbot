@@ -77,8 +77,10 @@ describe("liveTurnFailureCode", () => {
     );
   });
 
-  it("recognises the stall guard, whose sentence is English prose", () => {
-    // server/src/channels/stall-guard.ts writes this into RUN_ERROR, and it was reaching the screen.
+  it("recognises the stall guard's fact, and the English prose it sent before", () => {
+    // server/src/channels/stall-guard.ts sends the fact now. The sentence below is what it wrote
+    // into RUN_ERROR until then, and it was reaching the screen.
+    expect(liveTurnFailureCode("laf:agent_stalled")).toBe("laf:turn_stalled");
     expect(
       liveTurnFailureCode(
         "지식 도우미 stopped responding. Nothing arrived from it for 2 minutes, so this turn was ended. Ask again, or check that the Bot is running.",

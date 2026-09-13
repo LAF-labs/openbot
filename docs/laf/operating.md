@@ -57,7 +57,7 @@ The lines worth knowing by name:
 | `consumer_gone`                | agent-bot        | Whoever was reading the run went away mid-turn — a person pressed Stop. Not a failure; it used to be logged as `run_failed` with `laf:model_failed`. |
 | `runs_reconciled`              | server           | At boot: `count` runs were still `running` when the last process died and were marked `unknown`. |
 | `interrupted_runs_reported`    | server           | At boot, once the outbox exists: `count` of those runs whose person was told (`run.failed`, `laf:turn_interrupted`). `interrupted_routine_not_marked` / `interrupted_conversation_not_read` name a run that could not be marked or placed; it is still told about. |
-| `agent_stream_stalled`         | server           | A Bot's stream produced nothing for `AGENT_STALL_TIMEOUT_MS`; the turn was ended for the person. |
+| `agent_stream_stalled`         | server           | A Bot's stream produced nothing for `AGENT_STALL_TIMEOUT_MS` (`stallMs`, a minute unless set; `0` switches the watchdog off); the turn was ended for the person with `laf:agent_stalled`. Facts only: `silentForMs`, `chunks`, `thread`, `run`. |
 | `model_call_refused`, `auto_review_probe_failed` | server | The server's own model calls (the auto-review judge, the demonstration write-up) were refused or unusable. |
 | `dev_no_auth`, `encryption_key_is_example`, `fleet_webhook_unconfigured` | server | Boot warnings about settings that are fine on a laptop and wrong on a VM. |
 | `unhandled_rejection`          | server           | A promise nobody awaited rejected; the server kept running (a remote Bot's socket resetting must not take everyone down). |

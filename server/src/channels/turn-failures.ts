@@ -114,11 +114,12 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   }
 
   /*
-   * The stall guard writes an English sentence into RUN_ERROR and carries
-   * `code: "AGENT_STREAM_STALLED"` beside it. The sentence is what reaches the ledger, so the
-   * sentence is what there is to match here — and it was reaching Korean screens verbatim.
+   * The stall guard sends `laf:agent_stalled` now. It used to write an English sentence into
+   * RUN_ERROR, with `code: "AGENT_STREAM_STALLED"` beside it, and that sentence is what ledger rows
+   * from before 2026-09-13 still carry — so the substrings stay, for them.
    */
   if (
+    said.includes("laf:agent_stalled") ||
     said.includes("agent_stream_stalled") ||
     said.includes("stopped responding")
   ) {

@@ -139,7 +139,9 @@ export function liveTurnFailureCode(reported: unknown): TurnFailureCode {
     return "laf:turn_tool_failed";
   }
   if (said.includes("laf:tool_budget_spent")) return "laf:turn_budget_spent";
+  // The stall guard sends its fact now; the two substrings are the English sentence it sent before.
   if (
+    said.includes("laf:agent_stalled") ||
     said.includes("agent_stream_stalled") ||
     said.includes("stopped responding")
   ) {

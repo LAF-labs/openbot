@@ -232,10 +232,14 @@ describe("deployment configuration", () => {
     ).toThrow("Authentication requires at least one OAuth client");
   });
 
-  // A turn that is ended is a turn somebody loses, so an unset variable leaves every stream alone
-  // rather than acquiring a timeout the deployment never asked for. `.env.example` ships a value.
-  test("leaves the stall watchdog off when nothing is configured", () => {
-    expect(loadConfig(baseEnvironment).agentStallTimeoutMs).toBe(0);
+  /*
+   * ON BY DEFAULT, at the minute `.env.example` ships. Unset used to mean off, and that was the
+   * state of every fleet VM: laf-control's `.env` never carried the variable, so the watchdog ran
+   * on developers' machines and on no customer's (audit A2 §2, 2026-09-10). A turn that is ended
+   * is a turn somebody loses; a turn that never ends is a spinner somebody watches for ever.
+   */
+  test("runs the stall watchdog at a minute when nothing is configured", () => {
+    expect(loadConfig(baseEnvironment).agentStallTimeoutMs).toBe(60_000);
   });
 
   test("takes a timeout in milliseconds, and zero as switching it off", () => {
@@ -257,8 +261,9 @@ describe("deployment configuration", () => {
       const attempt = () =>
         loadConfig({ ...baseEnvironment, AGENT_STALL_TIMEOUT_MS: value });
       if (value === "") {
-        // An empty value is an absent one, which is the off case rather than a malformed one.
-        expect(attempt().agentStallTimeoutMs).toBe(0);
+        // An empty value is an absent one — compose passes `${AGENT_STALL_TIMEOUT_MS:-}` — which
+        // is the default rather than a malformed one, and the default is on.
+        expect(attempt().agentStallTimeoutMs).toBe(60_000);
         return;
       }
       expect(attempt).toThrow("AGENT_STALL_TIMEOUT_MS");

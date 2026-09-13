@@ -638,7 +638,19 @@ function actionPolicy(environment: Environment): ActionPolicy | undefined {
 }
 
 /**
- * How long silence on a Bot's stream is allowed to last.
+ * A minute: what `.env.example` ships, and the silence `agent-bot`'s fifteen-second heartbeat was
+ * sized against ("its stall watchdog ends the turn at the configured silence (60 s by default)").
+ */
+const DEFAULT_STALL_TIMEOUT_MS = 60_000;
+
+/**
+ * How long silence on a Bot's stream is allowed to last. A minute, unless the deployment says.
+ *
+ * UNSET USED TO MEAN OFF, and that put the watchdog on every developer's machine and on no
+ * customer's: `.env.example` ships 60000, but the fleet's `.env` is written by laf-control and
+ * never carried the variable, and compose passes `${AGENT_STALL_TIMEOUT_MS:-}` — so every VM ran
+ * with the value nobody had written, which was zero (audit A2 §2, 2026-09-10). The default is now
+ * the value the code has always documented as its own, and off is a value an operator has to write.
  *
  * Refuses to start on anything that is not a whole number of milliseconds, rather than falling back
  * to the default. Same reasoning as the action policy above it: an operator who meant to write a
@@ -650,7 +662,7 @@ function actionPolicy(environment: Environment): ActionPolicy | undefined {
 function agentStallTimeoutMs(environment: Environment): number {
   const raw = optional(environment, "AGENT_STALL_TIMEOUT_MS");
   if (!raw) {
-    return 0;
+    return DEFAULT_STALL_TIMEOUT_MS;
   }
 
   const milliseconds = Number(raw);

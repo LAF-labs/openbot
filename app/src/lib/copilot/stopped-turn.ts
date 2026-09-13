@@ -39,8 +39,9 @@ export const MODEL_FAILURES: Record<string, string> = {
     "The model took too long and the turn was ended. Ask again, or ask for less at once.",
   /*
    * The codes a run ends on for reasons of its own rather than the provider's: `agent-bot` when a
-   * stream was cut or a guard had the last word (audit A2). The same words `turn-failure.ts` gives
-   * the same facts, so a failure reads the same live and after a reload.
+   * stream was cut or a guard had the last word (audit A2), and the server's stall watchdog, which
+   * used to send an English sentence here. The same words `turn-failure.ts` gives the same facts, so
+   * a failure reads the same live and after a reload.
    */
   "laf:provider_stream_cut":
     "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.",
@@ -52,6 +53,8 @@ export const MODEL_FAILURES: Record<string, string> = {
     "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
   "laf:tool_budget_spent":
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
+  "laf:agent_stalled":
+    "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.",
 };
 
 /**

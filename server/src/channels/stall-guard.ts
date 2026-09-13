@@ -30,14 +30,13 @@
  * wire.
  *
  * On a stall it writes one RUN_ERROR event into the same stream and closes it. RUN_ERROR is the
- * event both surfaces already subscribe to, so nothing downstream had to learn a new one. What
- * neither of them had was anywhere to put it, and both now draw the sentence themselves: see
- * app/src/components/channels/chat-transcript.tsx for the channel and
- * app/src/routes/_authed/_app/bot.tsx for the direct Bot chat. The packaged chat draws nothing of
- * its own for a failed run — the banner that would have done it belongs to the v1 provider this app
- * does not mount, and is suppressed even there unless the dev console is switched on. AG-UI permits
- * RUN_ERROR at any point in a stream, including as the very first event, which is what a Bot that
- * never spoke produces.
+ * event both surfaces already subscribe to, so nothing downstream had to learn a new one. The event
+ * carries the fact `laf:agent_stalled`; the surfaces own the sentence (`stopped-turn.ts`,
+ * `turn-failure.ts`), and `turn-failures.ts` files it as `laf:turn_stalled`. The packaged chat draws
+ * nothing of its own for a failed run — the banner that would have done it belongs to the v1
+ * provider this app does not mount, and is suppressed even there unless the dev console is switched
+ * on. AG-UI permits RUN_ERROR at any point in a stream, including as the very first event, which is
+ * what a Bot that never spoke produces.
  */
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { log } from "../log";
@@ -49,7 +48,7 @@ export type AgentFetch = (
   requestInit: RequestInit,
 ) => Promise<Response>;
 
-/** Which Bot a watched stream belongs to. The name is for the sentence a person reads. */
+/** Which Bot a watched stream belongs to. The name was for a sentence this no longer writes. */
 export type WatchedBot = { id: string; name: string };
 
 export type StallGuardOptions = {
@@ -197,12 +196,14 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
     if (!stream) return;
 
     const turn = turnOf(stream.requestBody);
+    // Facts only: the Bot, the silence, the bound it crossed, the turn. The sentence that used to
+    // ride here as `note` said nothing these do not.
     log.error("agent_stream_stalled", {
       bot: stream.bot.id,
       silentForMs: stalled.silentForMs,
+      stallMs: options.stallMs,
       chunks: stalled.chunks,
       ...(turn ? { thread: turn.threadId, run: turn.runId } : {}),
-      note: "The Bot's stream produced nothing for the configured timeout, so the turn was ended.",
     });
 
     // The Bot's side goes first, so a socket into an endpoint that will never answer is released
@@ -211,9 +212,7 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
 
     if (stream.sse) {
       // The write is queued ahead of the close, so it either lands in order or neither does.
-      void stream.writer
-        .write(stalledEvent(stream.bot.name, options.stallMs))
-        .catch(() => undefined);
+      void stream.writer.write(stalledEvent()).catch(() => undefined);
     }
     void stream.writer.close().catch(() => undefined);
 
@@ -356,33 +355,18 @@ function turnOf(
  * dependency to produce them would be the larger change. The AG-UI client parses `data:` lines as
  * JSON and validates them against its own schemas, so this is the same shape a Bot would have sent.
  *
- * The wording is the whole of what a person gets. Both surfaces draw this message and nothing else
- * around it, so it names the Bot, says what was observed rather than what was concluded, says the
- * turn is over, and says what to do next. No identifiers and no milliseconds: a run id in a sentence
- * is a thing the reader has to decide to ignore, and it is not what they came to find out.
+ * THE MESSAGE IS A FACT, NOT A SENTENCE. It used to be "<Bot> stopped responding. Nothing arrived
+ * from it for a minute, so this turn was ended. Ask again, or check that the Bot is running." —
+ * English, composed here, reaching a Korean screen and the ledger's `error` column verbatim, which
+ * `turn-failures.ts` then recognised by substring. The surface owns the words (`stopped-turn.ts`,
+ * `turn-failure.ts`) and the server sends which fact applies, as everywhere else. `code` stays for
+ * whatever already reads it.
  */
-function stalledEvent(botName: string, stallMs: number): Uint8Array {
+function stalledEvent(): Uint8Array {
   const event = {
     type: "RUN_ERROR",
-    message:
-      `${botName} stopped responding. Nothing arrived from it for ${inWords(stallMs)}, ` +
-      "so this turn was ended. Ask again, or check that the Bot is running.",
+    message: "laf:agent_stalled",
     code: "AGENT_STREAM_STALLED",
   };
   return ENCODER.encode(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-/**
- * The timeout as a person would say it, because the sentence above is read by one.
- *
- * Floored at a second. A timeout below one is only ever a test's, and "nothing arrived from it for
- * 0 seconds" is a sentence that makes a reader doubt everything else on the screen.
- */
-function inWords(ms: number): string {
-  if (ms >= 60_000 && ms % 60_000 === 0) {
-    const minutes = ms / 60_000;
-    return minutes === 1 ? "a minute" : `${minutes} minutes`;
-  }
-  const seconds = Math.max(1, Math.round(ms / 1_000));
-  return seconds === 1 ? "a second" : `${seconds} seconds`;
 }

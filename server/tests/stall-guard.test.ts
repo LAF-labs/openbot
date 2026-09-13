@@ -72,7 +72,7 @@ describe("a Bot that stops streaming", () => {
     guard.stop();
 
     expect(body).toContain('"RUN_ERROR"');
-    expect(body).toContain("Risk Analyst stopped responding");
+    expect(body).toContain("laf:agent_stalled");
     expect(body).toContain("AGENT_STREAM_STALLED");
     // The framing has to be one an AG-UI client parses, which is a `data:` line and a blank line.
     expect(body.startsWith("data: ")).toBe(true);
@@ -101,8 +101,14 @@ describe("a Bot that stops streaming", () => {
   });
 });
 
-describe("the sentence a person is left with", () => {
-  test("is the whole explanation, because nothing is drawn around it", async () => {
+describe("what a person is left with", () => {
+  /*
+   * A FACT, NOT A SENTENCE. The message used to be "Risk Analyst stopped responding. Nothing
+   * arrived from it for a second, so this turn was ended. Ask again…" — English composed here,
+   * reaching a Korean screen and the ledger verbatim. The surface owns the words now
+   * (`app/src/lib/copilot/stopped-turn.ts`), and this sends which fact applies.
+   */
+  test("is the fact code, with nothing of the deployment's prose or identifiers in it", async () => {
     const guard = createStallGuard({ stallMs: 60 });
     const watched = guard.watch(BOT, async () => sse(saysNothing()));
 
@@ -110,20 +116,17 @@ describe("the sentence a person is left with", () => {
     const body = await new Response(response.body).text();
     guard.stop();
 
-    const message = String(
-      (JSON.parse(body.slice("data: ".length)) as { message: unknown }).message,
-    );
-    // Both surfaces draw this message and nothing else: no banner, no heading, no error code beside
-    // it. So it has to name what went quiet, say the turn is over, and say what to do about it.
-    expect(message).toContain("Risk Analyst");
-    expect(message).toContain("this turn was ended");
-    expect(message).toContain("Ask again");
-    // Said in words a person reads, not in the milliseconds a deployment configured, and never as
-    // "0 seconds": the timeout here is a test's, and a floor keeps the sentence sane at any value.
-    expect(message).toContain("for a second");
-    // No identifiers. The thread and run are in the audit row, where somebody is looking for them.
-    expect(message).not.toContain("thread-7");
-    expect(message).not.toContain("run-9");
+    const event = JSON.parse(body.slice("data: ".length)) as {
+      message: unknown;
+      code: unknown;
+    };
+    expect(event.message).toBe("laf:agent_stalled");
+    expect(event.code).toBe("AGENT_STREAM_STALLED");
+    // No identifiers and no English. The thread and run are in the audit row, where somebody is
+    // looking for them; the sentence is the surface's.
+    expect(body).not.toContain("thread-7");
+    expect(body).not.toContain("run-9");
+    expect(body).not.toContain("stopped responding");
   });
 });
 
@@ -235,7 +238,7 @@ describe("what the watch refuses to touch", () => {
     const body = await new Response(response.body).text();
     guard.stop();
 
-    expect(body).toContain("Risk Analyst stopped responding");
+    expect(body).toContain("laf:agent_stalled");
   });
 });
 
@@ -255,7 +258,7 @@ describe("the recovery a person is waiting on", () => {
     const body = await new Response(response.body).text();
     guard.stop();
 
-    expect(body).toContain("Risk Analyst stopped responding");
+    expect(body).toContain("laf:agent_stalled");
   });
 });
 
