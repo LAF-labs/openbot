@@ -180,3 +180,95 @@ test("serves the port the web container's healthcheck asks on", () => {
   expect(healthcheckPort).toBeDefined();
   expect(caddyfile).toContain(`http://localhost:${healthcheckPort} {`);
 });
+
+/*
+ * THE HEADERS THE FRONT DOOR PUTS ON WHAT IT SERVES ITSELF.
+ *
+ * There were none (A8, measured 2026-09-10: no CSP, no HSTS, no frame-ancestors, no nosniff), so the
+ * approval button could be framed by any page and pressed through the frame. The policy below was
+ * measured on 2026-09-13 against the built SPA in Chromium, every main screen and a chat turn with a
+ * code block: no violation — after one fix (Zod's `eval` probe) and one allowance (inline script,
+ * for the sandboxed components that inherit this policy). These pin both, because each is the kind
+ * of edit that looks like a tidy-up and breaks a screen with nothing but a console line to say so.
+ */
+const securityPolicy = /Content-Security-Policy "([^"]+)"/.exec(caddyfile)?.[1];
+const directives = new Map(
+  (securityPolicy ?? "")
+    .split(";")
+    .map((directive) => directive.trim().split(/\s+/))
+    .filter(([name]) => name)
+    .map(([name, ...values]) => [name as string, values] as const),
+);
+
+test("sets a Content-Security-Policy that frames nothing, embeds nothing and evaluates nothing", () => {
+  expect(securityPolicy).toBeDefined();
+  expect(directives.get("frame-ancestors")).toEqual(["'none'"]);
+  expect(directives.get("object-src")).toEqual(["'none'"]);
+  expect(directives.get("base-uri")).toEqual(["'self'"]);
+  expect(directives.get("form-action")).toEqual(["'self'"]);
+  expect(directives.get("default-src")).toEqual(["'self'"]);
+  // The live screen and the activity feed are WebSockets on this host, spelled out — with the
+  // port, which a deployment on a non-default one would otherwise lose — for the engines that do
+  // not read `'self'` as covering them.
+  expect(directives.get("connect-src")).toEqual([
+    "'self'",
+    "wss://{http.request.hostport}",
+    "ws://{http.request.hostport}",
+  ]);
+  // Images: this origin, data and blob, and the sign-in providers' avatars. Nothing a Bot's answer
+  // could point at.
+  const images = directives.get("img-src") ?? [];
+  expect(images).not.toContain("*");
+  expect(images).not.toContain("https:");
+  expect(images.filter((source) => source.startsWith("https://"))).toEqual([
+    "https://*.googleusercontent.com",
+    "https://*.kakaocdn.net",
+    "https://*.pstatic.net",
+  ]);
+});
+
+test("scripts come from this origin or inline, never evaluated and never named by hash", () => {
+  const scripts = directives.get("script-src") ?? [];
+  expect(scripts).not.toContain("'unsafe-eval'");
+  expect(
+    scripts.filter((source) => /^(https?:|\*|data:|blob:)/.test(source)),
+  ).toEqual([]);
+  /*
+   * NO HASH, ON PURPOSE. A sandboxed component's iframe is `srcdoc`, and a srcdoc document inherits
+   * this policy — measured: with the theme script named by hash, the playground's preview had its
+   * inline script refused and drew nothing. A hash or nonce also switches `'unsafe-inline'` off.
+   */
+  expect(scripts).toEqual(["'self'", "'unsafe-inline'"]);
+  expect(
+    scripts.some((source) => /^'(sha256|sha384|sha512|nonce)-/.test(source)),
+  ).toBe(false);
+
+  // What keeps `eval` refusable: Zod's probe is switched off before the first schema is built.
+  const main = readFileSync(join(root, "app", "src", "main.tsx"), "utf8");
+  expect(main.split("\n")[0]).toBe('import "@/lib/zod-jitless";');
+  expect(
+    readFileSync(join(root, "app", "src", "lib", "zod-jitless.ts"), "utf8"),
+  ).toContain("config({ jitless: true })");
+});
+
+test("sets HSTS, nosniff, no framing and a referrer policy on what it serves, and not on what it proxies", () => {
+  const block =
+    /@served not path ([^\n]+)\n\theader @served \{([\s\S]*?)\n\t\}/.exec(
+      caddyfile,
+    );
+  expect(block).not.toBeNull();
+  // Proxied answers carry the API's own (server/src/middleware/security.ts); doubling up would send
+  // two policies, and a browser enforces both.
+  expect(block?.[1]?.split(/\s+/)).toEqual(["/api/*", "/connected", "/health"]);
+  const headers = block?.[2] ?? "";
+  expect(headers).toContain(
+    'Strict-Transport-Security "max-age=31536000; includeSubDomains"',
+  );
+  expect(headers).toContain('X-Content-Type-Options "nosniff"');
+  expect(headers).toContain('X-Frame-Options "DENY"');
+  expect(headers).toMatch(/Referrer-Policy "[^"]+"/);
+  expect(headers).toMatch(/Permissions-Policy "[^"]*camera=\(\)/);
+  // Deliberately absent: the shell's unreachable page probes this origin with a no-cors fetch,
+  // which Cross-Origin-Resource-Policy would turn into a permanent "server down".
+  expect(headers).not.toContain("Cross-Origin-Resource-Policy");
+});

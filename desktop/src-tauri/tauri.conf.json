@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'sha256-w2JpHBYCkD21l050om5rnvLZxhJEyvEehMcTCNJ8Pec='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://agent.laf-co.com https://*.agent.laf-co.com http://localhost:3010; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     },
     "withGlobalTauri": true
   },

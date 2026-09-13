@@ -63,6 +63,34 @@
 	@page not path /assets/* /api/*
 	header @page Cache-Control "no-cache"
 
+	# What every page and asset served FROM HERE carries (A8, 2026-09-10: there was nothing — no CSP,
+	# no HSTS, no frame-ancestors — so the approval button could be framed by any page and pressed
+	# through the frame, which is the one thing the boundary exists to stop). What this block proxies
+	# carries the API's own (server/src/middleware/security.ts), and the matcher leaves it alone so
+	# the two never double up.
+	#
+	# SCRIPTS: this origin, and inline — and no hash, on purpose. A sandboxed component (the admin
+	# playground's preview, and the same component in a conversation) runs in an iframe whose
+	# document is `srcdoc`, and a srcdoc document INHERITS this policy: measured 2026-09-13, with the
+	# theme script named by hash the preview's own inline script was refused and the component drew
+	# nothing. A hash would also switch `'unsafe-inline'` off, so there is none, and the theme script
+	# runs as inline. `eval` stays refused — the one caller, Zod's probe, is switched off
+	# (app/src/lib/zod-jitless.ts) — and no script loads from anywhere but here, in the app or in a
+	# sandbox, which is also why a component cannot pull a library off a CDN.
+	#
+	# The image hosts are the three sign-in providers' avatars, and nothing else: a Bot's answer
+	# cannot make this origin fetch an attacker's image. The WebSocket entries are this host spelled
+	# out, for the engines that do not read `'self'` as covering `ws:`.
+	@served not path /api/* /connected /health
+	header @served {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://*.kakaocdn.net https://*.pstatic.net; font-src 'self' data:; connect-src 'self' wss://{http.request.hostport} ws://{http.request.hostport}; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+	}
+
 	handle {
 		root * /srv
 

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -233,4 +234,75 @@ test("the tray's first line is the shell's own name and version, and is not a bu
   );
   // First in the menu, so it reads as a title rather than as one more thing to click.
   expect(tray).toMatch(/&\[\s*&about,\s*&PredefinedMenuItem::separator/);
+});
+
+/**
+ * THE SHELL'S OWN POLICY HOLDS THE DEPLOYMENT'S FLOOR.
+ *
+ * The window shows the deployment, whose pages carry the front door's headers (app/Caddyfile); the
+ * one page the shell serves itself is `public/index.html`, shown when the deployment cannot be
+ * reached, and Tauri's `csp` is what governs that page. It was `null` — no policy at all (measured
+ * 2026-09-10). Its inline script probes the deployment, so it is named by hash, and the two policies
+ * share a floor: nothing frames either page, no plugin runs, nothing is evaluated, and no script
+ * loads from another origin. The shell's is the stricter of the two on inline script — the front
+ * door allows it for the sandboxed components that inherit its policy, and this page has none.
+ * Measured 2026-09-13 in Chromium with this policy as the page's header: no violation probing a
+ * fleet origin or the development one, and a foreign origin refused.
+ */
+test("the shell's csp names its own page's script by hash and holds the front door's floor", () => {
+  const shell = json<{ app?: { security?: { csp?: string | null } } }>(
+    "desktop/src-tauri/tauri.conf.json",
+  ).app?.security?.csp;
+  expect(typeof shell).toBe("string");
+  const caddy = /Content-Security-Policy "([^"]+)"/.exec(
+    read("app/Caddyfile"),
+  )?.[1];
+  expect(caddy).toBeDefined();
+
+  const directivesOf = (policy: string) =>
+    new Map(
+      policy
+        .split(";")
+        .map((directive) => directive.trim().split(/\s+/))
+        .map(([name, ...values]) => [name, values] as const),
+    );
+  const shellPolicy = directivesOf(shell as string);
+  const caddyPolicy = directivesOf(caddy as string);
+
+  const scripts = [
+    ...read("desktop/public/index.html").matchAll(
+      /<script>([\s\S]*?)<\/script>/g,
+    ),
+  ].map((match) => match[1] ?? "");
+  expect(scripts).toHaveLength(1);
+  const hash = `'sha256-${createHash("sha256")
+    .update(scripts[0] as string)
+    .digest("base64")}'`;
+  expect(shellPolicy.get("script-src")).toEqual(["'self'", hash]);
+
+  // The page's one job is to reach the deployment: the fleet's entry, every deployment under it,
+  // the development origin, and Tauri's own bridge.
+  const reaches = shellPolicy.get("connect-src") ?? [];
+  const shellOrigin = json<TauriConfig>("desktop/src-tauri/tauri.conf.json").app
+    ?.windows?.[0]?.url as string;
+  const devOrigin = json<TauriConfig>("desktop/src-tauri/tauri.dev.conf.json")
+    .app?.windows?.[0]?.url as string;
+  expect(reaches).toContain(shellOrigin);
+  expect(reaches).toContain(devOrigin);
+  expect(reaches).toContain("ipc:");
+
+  // The same floor in both places.
+  for (const policy of [shellPolicy, caddyPolicy]) {
+    expect(policy.get("frame-ancestors")).toEqual(["'none'"]);
+    expect(policy.get("object-src")).toEqual(["'none'"]);
+    expect(policy.get("base-uri")).toEqual(["'self'"]);
+    expect(policy.get("script-src")).not.toContain("'unsafe-eval'");
+    expect(
+      (policy.get("script-src") ?? []).filter((source) =>
+        /^(https?:|\*)/.test(source),
+      ),
+    ).toEqual([]);
+  }
+  // And the shell's page, which embeds nothing, runs no inline script it did not name.
+  expect(shellPolicy.get("script-src")).not.toContain("'unsafe-inline'");
 });

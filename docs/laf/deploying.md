@@ -407,6 +407,34 @@ configuration was loaded, which is green whatever the API is doing — the same
 lie the SPA fallback was telling, one layer down. A dial that cannot go red is
 not a dial.
 
+### The headers, the ceilings and the rates
+
+Every answer carries a Content-Security-Policy, HSTS, `nosniff` and
+`X-Frame-Options: DENY` — the app's from `app/Caddyfile`, the API's from
+`server/src/middleware/security.ts`, never both on one answer. There were none
+until 2026-09-13 (audit A8), so the approval button could be framed by any page
+and pressed through the frame. Check both halves:
+
+```bash
+curl -sI https://<name>.agent.laf-co.com/ | grep -i -E 'content-security|strict-transport|x-frame'
+curl -sI https://<name>.agent.laf-co.com/api/version | grep -i -E 'content-security|strict-transport|x-frame'
+```
+
+The app's policy allows inline script and nothing evaluated: a sandboxed
+component's iframe inherits the page's policy, and a hash-based one refused the
+component's own script (measured). A component therefore cannot load a library
+from a CDN. A console line naming the policy on any screen is a bug in the app
+or in the policy, not noise.
+
+The API refuses a body over a megabyte with `413 laf:body_too_large` before any
+route reads it — a Bot's file write is allowed 2.5 MB, and a conversation turn
+32 MB, because CopilotKit posts the whole thread with every turn; both only for
+a body that declares its length. Three doors answer `429 laf:rate_limited` with
+`Retry-After` past a minute's allowance: starting a sign-in (20 per address), a
+message (60 per session, 240 per address) and the routine trigger webhook
+(30 per token, 60 per address). The counts are in the one API process's
+memory, which on a one-VM deployment is all of them, and a restart zeroes them.
+
 ## Upgrading
 
 ```bash
