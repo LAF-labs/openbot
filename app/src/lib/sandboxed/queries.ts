@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { polled } from "@/lib/polling";
 
 /** A component authored in the browser, as the playground edits it. */
 export type SandboxedRecord = {
@@ -67,9 +68,8 @@ export function publishedSandboxedQueryOptions(enabled = true) {
     queryKey: sandboxedKeys.published(),
     // Nothing renders a sandboxed component while no surface has declared a Bot to render it for.
     enabled,
-    refetchInterval: 30_000,
-    // Publishing takes effect in an OPEN conversation; a hidden tab is not one.
-    refetchIntervalInBackground: false,
+    // Publishing takes effect in an OPEN conversation; a hidden tab is not one (see `polled`).
+    ...polled(60_000),
     queryFn: async (): Promise<PublishedSandboxed[]> => {
       const response = await fetch("/api/sandboxed/published", {
         credentials: "include",

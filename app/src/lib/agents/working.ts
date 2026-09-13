@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { polled } from "@/lib/polling";
 
 /**
  * Which of this person's Bots are working right now.
@@ -9,6 +10,12 @@ import { t } from "@/lib/i18n";
  * the one case this feature exists for, a routine firing at six in the morning with nobody at a
  * keyboard, would never reach it. A short poll of one indexed row set answers for every run path
  * the same way.
+ *
+ * SLOWLY, THOUGH, AND NUDGED BY THE SOCKET. At four seconds this alone was fifteen requests a
+ * minute on every signed-in screen (audit A4, finding 4). The moments that change the answer — a
+ * Bot finishing, failing, stopping to ask — reach the socket as notification and activity frames,
+ * and `use-channel-events.ts` invalidates this on each of them, so the poll is only for the run
+ * nobody's browser started and no frame described. Thirty seconds is inside one such run.
  */
 export type WorkingRun = {
   agentId: string;
@@ -30,16 +37,17 @@ export function workingQueryOptions() {
       const response = await fetch("/api/agents/working", {
         credentials: "include",
       });
-      // A roster that cannot reach the ledger should look calm, not broken.
-      if (!response.ok) return [];
+      /*
+       * A failure is thrown rather than read as "nobody is working", so the poll backs off during
+       * an outage. The roster still looks calm: TanStack keeps the last good answer as `data`
+       * beside the error, and a roster that never had one shows nothing working, as before.
+       */
+      if (!response.ok) {
+        throw new Error(`/api/agents/working answered ${response.status}`);
+      }
       return ((await response.json()) as { working: WorkingRun[] }).working;
     },
-    /*
-     * Four seconds. A turn takes tens of seconds, so this is comfortably inside one; going faster
-     * buys nothing a person can perceive and costs a query per Bot per tick.
-     */
-    refetchInterval: 4000,
-    refetchIntervalInBackground: false,
+    ...polled(30_000),
     staleTime: 2000,
   });
 }

@@ -11,6 +11,7 @@ import {
 import { activeConversationHeaders } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { inShell } from "@/lib/notifications/shell";
+import { polled } from "@/lib/polling";
 
 /** A tool one server offers, as the Plugins page sees it. */
 export type PluginTool = {
@@ -407,15 +408,16 @@ export async function saveOauthClient(
 
 /**
  * Polled grant snapshot for what the active Bot should be offered; call-time checks still enforce.
+ *
+ * A minute between reads, and a read on every return to the window (`polled`): a grant changes when
+ * a person changes it, on another screen, and that is the moment it needs to show.
  */
 export function agentPluginsQueryOptions(agentId: string | undefined) {
   return queryOptions({
     queryKey: pluginKeys.forAgent(agentId ?? ""),
     // No Bot in front of the person is not a Bot with no plugins; it is nothing to ask about.
     enabled: Boolean(agentId),
-    refetchInterval: 15_000,
-    // A hidden tab cannot act on a revoked tool, and its throttled timers only bank up requests.
-    refetchIntervalInBackground: false,
+    ...polled(60_000),
     queryFn: async (): Promise<GrantedPlugins> => {
       const response = await fetch(
         `/api/plugins/for/${encodeURIComponent(agentId ?? "")}`,

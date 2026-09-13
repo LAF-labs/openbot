@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { ConnectionNotice } from "../components/layout/connection-notice";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
@@ -69,6 +70,7 @@ function AuthedShell() {
 
   return (
     <CopilotProvider>
+      <ConnectionNotice />
       <Outlet />
     </CopilotProvider>
   );

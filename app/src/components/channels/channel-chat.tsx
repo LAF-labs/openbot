@@ -29,6 +29,7 @@ import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
   channelActivity,
+  isSocketLost,
 } from "@/lib/channels/use-channel-events";
 import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
@@ -447,8 +448,15 @@ export function ChannelChat({
     const subscription = agent.subscribe?.({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
-      onRunErrorEvent: ({ event }) => fail(liveTurnFailureCode(event?.message)),
-      onRunFailed: ({ error }) => fail(liveTurnFailureCode(error)),
+      // With the account's socket down, the server is the thing that failed, whatever the status.
+      onRunErrorEvent: ({ event }) =>
+        fail(
+          liveTurnFailureCode(event?.message, {
+            connectionLost: isSocketLost(),
+          }),
+        ),
+      onRunFailed: ({ error }) =>
+        fail(liveTurnFailureCode(error, { connectionLost: isSocketLost() })),
       onRunFinishedEvent: () => {
         const wasOurs = awaitingReply.current;
         awaitingReply.current = false;

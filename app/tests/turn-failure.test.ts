@@ -127,21 +127,61 @@ describe("liveTurnFailureCode", () => {
       "laf:turn_rate_limited",
     );
     expect(liveTurnFailureCode("HTTP 403 Forbidden")).toBe("laf:turn_refused");
-    expect(liveTurnFailureCode("HTTP 503 Service Unavailable")).toBe(
-      "laf:turn_model_failed",
+    // The server's own 500 is nobody's model. It is "no answer", and nothing more specific.
+    expect(liveTurnFailureCode("HTTP 500: Internal Server Error")).toBe(
+      "laf:turn_failed",
     );
   });
 
-  it("reads a browser's own network failures", () => {
+  /*
+   * MEASURED 2026-09-10 (audit A4, finding 3): with the API stopped, `onRunFailed` received
+   * CopilotKit's `HTTP 500:` from Vite's proxy and the screen said 봇이 모델에 닿지 못했습니다. The
+   * model was never asked. A proxy speaking for a dead server, and a browser whose request got no
+   * answer at all, are the one fact the /unreachable screen already has a sentence for.
+   */
+  it("says the server is unreachable when a proxy answered for it", () => {
+    for (const said of [
+      "HTTP 502: Bad Gateway",
+      "HTTP 503: Service Unavailable",
+      "HTTP 504: Gateway Timeout",
+    ]) {
+      expect(liveTurnFailureCode(said)).toBe("laf:turn_server_unreachable");
+    }
+    expect(
+      ko[TURN_FAILURE_SENTENCES["laf:turn_server_unreachable"] as string],
+    ).toBe("서버에 닿지 못했습니다.");
+  });
+
+  it("reads a browser's own network failures as the server being gone", () => {
+    // Chrome, Firefox and Safari, in that order. Each is this tab failing to reach its own origin.
     expect(liveTurnFailureCode(new TypeError("Failed to fetch"))).toBe(
-      "laf:turn_unreachable",
+      "laf:turn_server_unreachable",
     );
+    expect(liveTurnFailureCode("NetworkError when attempting to fetch")).toBe(
+      "laf:turn_server_unreachable",
+    );
+    expect(liveTurnFailureCode(new TypeError("Load failed"))).toBe(
+      "laf:turn_server_unreachable",
+    );
+    // Node's undici says it the other way round, and that is the SERVER failing to reach the Bot.
     expect(liveTurnFailureCode(new Error("fetch failed"))).toBe(
       "laf:turn_unreachable",
     );
-    expect(liveTurnFailureCode("NetworkError when attempting to fetch")).toBe(
-      "laf:turn_unreachable",
-    );
+  });
+
+  it("trusts a dropped connection over whatever status the proxy chose", () => {
+    // Vite answers 500 for a dead API and Caddy 502; the socket dropping is the fact under both.
+    expect(
+      liveTurnFailureCode("HTTP 500: Internal Server Error", {
+        connectionLost: true,
+      }),
+    ).toBe("laf:turn_server_unreachable");
+    expect(
+      liveTurnFailureCode("laf:model_failed", { connectionLost: true }),
+    ).toBe("laf:turn_server_unreachable");
+    expect(
+      liveTurnFailureCode("laf:model_failed", { connectionLost: false }),
+    ).toBe("laf:turn_model_failed");
   });
 
   it("falls back rather than guessing, and never throws on rubbish", () => {

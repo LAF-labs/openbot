@@ -67,8 +67,13 @@ async function watching(
   computerId: string,
   isLive: () => boolean,
   body: () => Promise<void>,
+  intervalMs = 0,
 ): Promise<void> {
-  const stop = watchControl(computerId, { isLive, onState: () => {} }, 0);
+  const stop = watchControl(
+    computerId,
+    { isLive, onState: () => {} },
+    intervalMs,
+  );
   try {
     await body();
   } finally {
@@ -161,6 +166,79 @@ describe("the shared control poll", () => {
       () => true,
       async () => {
         expect(await quiet()).toBe(1);
+      },
+    );
+  });
+
+  /*
+   * MEASURED 2026-09-10 (audit A4, finding 4): with the API stopped, a read answered
+   * `{state: null}`, which counted as neither a change nor a repeat, so the loop never settled and
+   * asked once a second for the whole outage — twelve 500s in twelve seconds — and was the first
+   * thing waiting at the door when the server came back.
+   */
+  test("a failing read counts as nothing new, and each one waits longer than the last", async () => {
+    answer = () => new Response("{}", { status: 500 });
+    const stamps: number[] = [];
+    globalThis.fetch = stubFetch(async () => {
+      stamps.push(Date.now());
+      requests += 1;
+      return answer();
+    });
+    const computerId = nextComputer();
+    // Live throughout, so nothing but the backoff decides the rhythm.
+    await watching(
+      computerId,
+      () => true,
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      },
+      10,
+    );
+    // At a 10ms base a healthy loop makes ~30 reads in 300ms; 10, 20, 40, 80, 160 makes five.
+    expect(stamps.length).toBeLessThanOrEqual(7);
+    expect(stamps.length).toBeGreaterThanOrEqual(3);
+    // The last wait is several times the first. Not every step is compared with its neighbour:
+    // timer jitter at these sizes is a few milliseconds, which is a whole first step.
+    const gaps = stamps
+      .slice(1)
+      .map((at, index) => at - (stamps[index] as number));
+    expect(gaps.at(-1) as number).toBeGreaterThanOrEqual(
+      (gaps[0] as number) * 3,
+    );
+  });
+
+  test("a failing read settles a card that has no reason to stay awake", async () => {
+    answer = () => new Response("{}", { status: 500 });
+    await watching(
+      nextComputer(),
+      () => false,
+      async () => {
+        // Not one read per second forever: `SETTLED_READS` failures, then silence.
+        expect(await quiet()).toBeLessThanOrEqual(SETTLED_READS + 1);
+      },
+    );
+  });
+
+  test("a request that throws is a failed read, not the end of the loop", async () => {
+    globalThis.fetch = stubFetch(async () => {
+      requests += 1;
+      throw new TypeError("Failed to fetch");
+    });
+    const computerId = nextComputer();
+    await watching(
+      computerId,
+      () => false,
+      async () => {
+        expect(await quiet()).toBeLessThanOrEqual(SETTLED_READS + 1);
+        // And a poke still wakes it: the loop is settled, not dead.
+        answer = () => new Response(JSON.stringify(BOT), { status: 200 });
+        globalThis.fetch = stubFetch(async () => {
+          requests += 1;
+          return answer();
+        });
+        const before = requests;
+        pokeControl(computerId);
+        expect(await quiet()).toBeGreaterThan(before);
       },
     );
   });

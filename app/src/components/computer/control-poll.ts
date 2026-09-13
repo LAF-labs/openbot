@@ -1,3 +1,4 @@
+import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { type ControlState, readControl } from "./take-the-wheel";
 
 /**
@@ -24,6 +25,16 @@ import { type ControlState, readControl } from "./take-the-wheel";
 export const SETTLED_READS = 5;
 
 const DEFAULT_INTERVAL_MS = 1000;
+/**
+ * The longest the loop waits after a read that failed — the same minute every poll in the app backs
+ * off to (`OUTAGE_CAP_MS` in `lib/polling.ts`).
+ *
+ * MEASURED 2026-09-10 (audit A4, finding 4): a failed read answered `{state: null}`, which counted
+ * as neither a change nor a repeat, so with the API stopped the loop never settled and asked once a
+ * second for the whole outage — twelve 500s in twelve seconds. A failure now counts as a read that
+ * changed nothing, and each one doubles the wait up to this.
+ */
+export const MAX_FAILURE_INTERVAL_MS = OUTAGE_CAP_MS;
 
 type Watcher = {
   onState: (state: ControlState) => void;
@@ -41,6 +52,8 @@ type Loop = {
   /** No control surface on this deployment. There is nothing this loop could ever learn. */
   absent: boolean;
   intervalMs: number;
+  /** The wait before the next read: `intervalMs` while reads succeed, doubling while they fail. */
+  waitMs: number;
 };
 
 const loops = new Map<string, Loop>();
@@ -56,6 +69,7 @@ function loopFor(computerId: string, intervalMs: number): Loop {
     last: "",
     absent: false,
     intervalMs,
+    waitMs: intervalMs,
   };
   loops.set(computerId, created);
   return created;
@@ -75,7 +89,12 @@ function start(computerId: string, loop: Loop): void {
   loop.polling = true;
 
   const tick = async () => {
-    const { state, absent } = await readControl(computerId);
+    // A request that throws — the API gone, not merely answering badly — is a failed read too,
+    // and must not take the loop down with it: `polling` would stay true and nothing could restart it.
+    const { state, absent } = await readControl(computerId).catch(() => ({
+      state: null,
+      absent: false,
+    }));
     if (absent) loop.absent = true;
     if (state) {
       // The whole answer, not one field: a reason appearing or a secret being asked for are both
@@ -83,10 +102,17 @@ function start(computerId: string, loop: Loop): void {
       const shape = JSON.stringify(state);
       loop.unchanged = shape === loop.last ? loop.unchanged + 1 : 0;
       loop.last = shape;
+      loop.waitMs = loop.intervalMs;
       for (const watcher of loop.watchers) watcher.onState(state);
+    } else if (!absent) {
+      loop.unchanged += 1;
+      loop.waitMs = Math.min(
+        Math.max(loop.waitMs * 2, 1),
+        MAX_FAILURE_INTERVAL_MS,
+      );
     }
     if (shouldContinue(loop)) {
-      loop.timer = setTimeout(tick, loop.intervalMs);
+      loop.timer = setTimeout(tick, loop.waitMs);
       return;
     }
     loop.polling = false;
@@ -127,6 +153,8 @@ export function pokeControl(computerId: string): void {
   const loop = loops.get(computerId);
   if (!loop) return;
   loop.unchanged = 0;
+  // Something happened, so the next read is worth making now rather than at the end of a backoff.
+  loop.waitMs = loop.intervalMs;
   start(computerId, loop);
 }
 

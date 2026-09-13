@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { t } from "@/lib/i18n";
+import { polled } from "@/lib/polling";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
 export type ComponentRecord = {
@@ -52,23 +53,16 @@ export function componentListQueryOptions() {
  * What one Bot may answer with.
  *
  * Polled so open conversations stop offering revoked components; call-time checks still enforce
- * the grant.
+ * the grant. A minute, not five seconds: a grant is changed by a person on the admin screen, in
+ * another window, and the focus refetch inside `polled` is what shows that change the moment they
+ * come back — the interval was twelve requests a minute for a change that arrives a few times a
+ * year (audit A4, finding 4).
  */
 export function agentComponentsQueryOptions(agentId: string | undefined) {
   return queryOptions({
     queryKey: componentKeys.forAgent(agentId ?? ""),
     enabled: Boolean(agentId),
-    refetchInterval: 5_000,
-    /*
-     * NOT WHILE THE TAB IS HIDDEN. A background tab is throttled to about one timer a minute, so
-     * this does not buy freshness there — it buys a queue of requests that all fire at once when
-     * the tab comes back. The focus refetch below is what actually makes a grant change visible,
-     * and it is the same instant.
-     */
-    refetchIntervalInBackground: false,
-    // Refetched when the tab is looked at again, so a grant changed on another screen is not waiting
-    // out an interval before it shows.
-    refetchOnWindowFocus: true,
+    ...polled(60_000),
     queryFn: async (): Promise<GrantedComponent[]> => {
       const response = await fetch(
         `/api/components/for-agent/${encodeURIComponent(agentId ?? "")}`,

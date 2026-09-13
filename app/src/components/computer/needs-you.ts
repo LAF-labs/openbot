@@ -1,12 +1,32 @@
 import { useEffect, useState } from "react";
-import { readControl } from "./take-the-wheel";
+import {
+  SOCKET_RECONNECTED,
+  socketState,
+} from "@/lib/channels/use-channel-events";
+import {
+  NOTIFICATION_FRAME,
+  type NotificationFrame,
+  notificationFrames,
+} from "@/lib/notifications/outbox";
+import { pokeControl, watchControl } from "./control-poll";
 
 /**
- * Poll closed screens for control/secret prompts so blocked Bots can surface outside the screen.
+ * Whether a Bot is stopped and waiting on a person — the wheel requested, or a secret asked for —
+ * so a closed screen pane can say so.
+ *
+ * NO LOOP OF ITS OWN ANY MORE. This was a bare `setInterval` at three seconds, the one poll in the
+ * app that ignored a hidden tab: measured 2026-09-10 (audit A4, finding 4) at twenty requests a
+ * minute on an idle conversation, and eighteen in fifty-four seconds with the tab hidden. The
+ * answer it wanted travels two other ways already, both of which it now listens to:
+ *
+ *  - the shared control loop (`control-poll.ts`), which the computer cards use, settles once the
+ *    state stops changing and is woken by anything in this tab that touches the wheel; and
+ *  - the outbox, whose `notification` frames the socket carries for a Bot stopped by a routine or
+ *    a room turn on the server — the cases no poll in this tab could have caused.
+ *
+ * So the loop is read while it runs, and poked when a frame for this Bot arrives, when the socket
+ * comes back, and when the tab is looked at again. An idle conversation costs nothing.
  */
-
-const INTERVAL_MS = 3_000;
-
 export function useNeedsYou(botId: string | undefined, when: boolean): boolean {
   const [needed, setNeeded] = useState(false);
 
@@ -16,27 +36,27 @@ export function useNeedsYou(botId: string | undefined, when: boolean): boolean {
       return;
     }
 
-    let live = true;
-    const check = async () => {
-      const read = await readControl(botId).catch(() => null);
-      if (!live) return;
-      // A deployment with no computer has no wheel to need anybody at. Stop asking.
-      if (read?.absent) {
-        clearInterval(timer);
-        setNeeded(false);
-        return;
-      }
-      const state = read?.state ?? null;
-      setNeeded(
-        Boolean(state && (state.requested || state.secretWanted !== undefined)),
-      );
+    const stop = watchControl(botId, {
+      isLive: () => false,
+      onState: (state) =>
+        setNeeded(Boolean(state.requested || state.secretWanted !== undefined)),
+    });
+    const wake = () => pokeControl(botId);
+    const onFrame = (event: Event) => {
+      if ((event as CustomEvent<NotificationFrame>).detail.botId === botId)
+        wake();
     };
-
-    const timer = setInterval(() => void check(), INTERVAL_MS);
-    void check();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") wake();
+    };
+    notificationFrames.addEventListener(NOTIFICATION_FRAME, onFrame);
+    socketState.addEventListener(SOCKET_RECONNECTED, wake);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      live = false;
-      clearInterval(timer);
+      stop();
+      notificationFrames.removeEventListener(NOTIFICATION_FRAME, onFrame);
+      socketState.removeEventListener(SOCKET_RECONNECTED, wake);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [botId, when]);
 

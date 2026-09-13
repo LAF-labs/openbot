@@ -569,6 +569,8 @@ export const ko: Record<string, string> = {
   "Skip to the conversation": "대화로 건너뛰기",
   Snail: "달팽이",
   "Cannot reach the server.": "서버에 닿지 못했습니다.",
+  "The connection to the server was lost. Reconnecting…":
+    "서버와 연결이 끊겼습니다 — 다시 잇는 중",
   // /no-access: the server answered /api/me with 403. Not an outage, and it will not clear by itself.
   "This account no longer has access here.":
     "이 계정은 더 이상 여기에 들어올 수 없습니다.",

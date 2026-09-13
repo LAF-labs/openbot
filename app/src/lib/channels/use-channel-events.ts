@@ -1,5 +1,7 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { workingKeys } from "@/lib/agents/working";
+import { OUTAGE_CAP_MS } from "@/lib/polling";
 import {
   isNotificationFrame,
   NOTIFICATION_FRAME,
@@ -58,9 +60,30 @@ export const ROOM_FRAME = "room-frame";
  */
 export const socketState = new EventTarget();
 export const SOCKET_RECONNECTED = "socket-reconnected";
+/**
+ * The socket had been open and is not any more.
+ *
+ * MEASURED 2026-09-10 (audit A4, finding 3): the API was stopped for fifteen seconds and the screen
+ * showed nothing about it — sidebar and header as they were, eighteen console lines, and a question
+ * sent meanwhile blamed the model. This `onclose` was the one place in the app that knew, and it
+ * told nobody. Now it says so, once, and `isSocketLost()` holds the fact for whoever draws it or
+ * decides by it. Cleared by the reconnect, which also fires `SOCKET_RECONNECTED`.
+ */
+export const SOCKET_LOST = "socket-lost";
+
+let lost = false;
+
+/** Whether the account's socket is currently down after having been up. */
+export function isSocketLost(): boolean {
+  return lost;
+}
 
 const FIRST_RETRY_MS = 500;
-const MAX_RETRY_MS = 30_000;
+/**
+ * The longest wait between attempts: the minute every poll in the app backs off to during an outage
+ * (`OUTAGE_CAP_MS`). A person coming back to the window does not wait it out — see `tryNow`.
+ */
+const MAX_RETRY_MS = OUTAGE_CAP_MS;
 
 function socketUrl() {
   const url = new URL("/api/channels/events", window.location.href);
@@ -106,9 +129,14 @@ function openConnection(queryClient: QueryClient): Connection {
 
     socket.onopen = () => {
       retryDelay = FIRST_RETRY_MS;
+      lost = false;
       // Recover events missed while the socket was disconnected.
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
-      if (opened) socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
+      if (opened) {
+        // And what the polls would have learned meanwhile, once rather than on their next tick.
+        void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+        socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
+      }
       opened = true;
     };
 
@@ -137,6 +165,12 @@ function openConnection(queryClient: QueryClient): Connection {
        * to the roster patch below, which would spread `approvalId` onto a row the sidebar draws.
        */
       if (isNotificationFrame(parsed)) {
+        /*
+         * A Bot finishing, failing or stopping to ask is exactly what the "working" poll exists
+         * to notice, so the frame refreshes it now and the poll can run at a walking pace
+         * (`lib/agents/working.ts`).
+         */
+        void queryClient.invalidateQueries({ queryKey: workingKeys.all });
         notificationFrames.dispatchEvent(
           new CustomEvent<NotificationFrame>(NOTIFICATION_FRAME, {
             detail: parsed,
@@ -196,6 +230,8 @@ function openConnection(queryClient: QueryClient): Connection {
        */
       if (activity.lastMessageAgentId) {
         void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+        // A Bot that just spoke has, as a rule, just stopped working.
+        void queryClient.invalidateQueries({ queryKey: workingKeys.all });
       }
 
       channelActivity.dispatchEvent(
@@ -208,10 +244,34 @@ function openConnection(queryClient: QueryClient): Connection {
     // WebSocket needs explicit reconnect handling.
     socket.onclose = () => {
       if (stopped) return;
-      retryTimer = setTimeout(connect, retryDelay);
+      // Only a socket that had been up: a first connection failing is the /unreachable screen's.
+      if (opened && !lost) {
+        lost = true;
+        socketState.dispatchEvent(new Event(SOCKET_LOST));
+      }
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        connect();
+      }, retryDelay);
       retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
     };
   };
+
+  /*
+   * A PERSON LOOKING AT THE WINDOW AGAIN IS WORTH AN ATTEMPT NOW. The wait between attempts grows to a
+   * minute over a long outage, which is right for a window nobody is watching and wrong for the one
+   * somebody has just brought forward to see whether it works yet. Only while an attempt is waiting:
+   * a socket that is open, or already connecting, is left alone.
+   */
+  const tryNow = () => {
+    if (stopped || retryTimer === undefined) return;
+    if (document.visibilityState === "hidden") return;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    connect();
+  };
+  document.addEventListener("visibilitychange", tryNow);
+  window.addEventListener("focus", tryNow);
 
   connect();
 
@@ -219,6 +279,8 @@ function openConnection(queryClient: QueryClient): Connection {
     client: queryClient,
     close: () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", tryNow);
+      window.removeEventListener("focus", tryNow);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       // Cleared first: the close below must not schedule a reconnect for a screen that is gone.
       if (socket) socket.onclose = null;
