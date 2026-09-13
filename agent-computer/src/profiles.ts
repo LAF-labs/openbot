@@ -155,9 +155,33 @@ const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
  * enough that five Bots cannot fill a 40GB box. Compose left a note saying this belonged to the
  * browser wave because the args are a literal list here rather than read from the environment: it
  * is still a literal list, because a cache size is not a thing a deployment tunes.
+ *
+ * THERE IS NO `--no-sandbox` HERE ANY MORE, AND THERE MUST NOT BE. It was the first flag in this
+ * list from the day the image existed, and with the Dockerfile naming no `USER` it meant the one
+ * process in this product that opens pages a model chose — holding somebody's bank and 홈택스 cookies
+ * — ran its renderers unsandboxed as the container's root (audit A5 §1, `docker exec … id` → `uid=0`).
+ * One renderer bug was the whole container, every Bot's profile included.
+ *
+ * Chromium's sandbox on Linux is user namespaces, and Docker's default seccomp profile refuses them
+ * to an unprivileged process. Measured 2026-09-13 on the customer VMs' platform — Ubuntu 24.04.4,
+ * kernel 6.8 aarch64, `apparmor_restrict_unprivileged_userns=1`, Docker 29.8 from get.docker.com —
+ * in this image as `pwuser`: under the default profile Chromium exits 133 with "No usable sandbox!";
+ * under Playwright's published profile (`agent-computer/seccomp_profile.json`, the same JSON) it
+ * starts, and every renderer runs in a user, PID and network namespace of its own, where the shipped
+ * image had them in the container's, as root. No AppArmor change: the container is confined by
+ * `docker-default`, which does not mediate user namespaces, so Ubuntu's restriction — which is on
+ * UNconfined processes — never applies. `docker-compose.yml` hands the container the profile, the
+ * Dockerfile runs it as `pwuser`, and this list is what the two make possible. Putting the flag back
+ * would "fix" a deployment that lost the profile by removing the boundary in silence;
+ * `tests/sandbox.test.ts` pins its absence.
+ *
+ * AND ITS ABSENCE HERE WAS NOT ENOUGH. Playwright adds `--no-sandbox` itself unless it is launched
+ * with `chromiumSandbox: true` (see the launch below). Measured 2026-09-13 in the rebuilt container
+ * with the flag already gone from this list: the running browser's command line still carried
+ * `--no-sandbox`, and every renderer sat in the container's own user and network namespaces. A
+ * test that only read this array would have passed with the sandbox off.
  */
 const LAUNCH_ARGS = [
-  "--no-sandbox",
   "--disable-dev-shm-usage",
   "--password-store=basic",
   "--disk-cache-size=104857600",
@@ -439,6 +463,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         const proxy = egressFor(botId, process.env);
         const context = await chromium.launchPersistentContext(dir, {
           args: LAUNCH_ARGS,
+          // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
+          chromiumSandbox: true,
           viewport: VIEWPORT,
           locale: LOCALE,
           timezoneId: botTimeZone(),

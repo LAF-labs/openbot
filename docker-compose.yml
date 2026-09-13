@@ -374,6 +374,38 @@ services:
     # this machine and no more": past that the kernel kills the browser, which restarts, rather than
     # killing whatever the OOM killer picks — which on a box like this is Postgres.
     mem_limit: 3g
+    # Threads as well as processes — the kernel counts both. Measured 2026-09-10 (audit A3): five
+    # Bots' browsers after twenty navigations each were 332 tasks, twelve browsers 660. A thousand is
+    # every seat plus a browser or two lingering to its idle close, and a ceiling under a page that
+    # forks without end, which mem_limit alone does not stop.
+    pids_limit: 1024
+    # AN INIT AS PID 1, BECAUSE BUN IS NOT ONE. A closed browser's zygotes are orphaned to PID 1, and a
+    # PID 1 that does not reap them keeps every one as a zombie. Measured 2026-09-13: five Bots'
+    # browsers closed by deleting the Bots left ten `[headless_shell] <defunct>` under `bun`, and every
+    # idle close adds more — which the pid ceiling above would turn, some days later, into a computer
+    # that cannot start a browser at all. Docker's own init reaps them and passes SIGTERM on to `bun`.
+    init: true
+    # Chromium's sandbox on Linux is user namespaces, and Docker's default seccomp profile refuses
+    # them to an unprivileged process — which is why this image ran the browser as root with
+    # `--no-sandbox` until 2026-09-13. This is Playwright's published profile for exactly this
+    # (`utils/docker/seccomp_profile.json` at v1.62.1, the same JSON): Docker's default plus the user
+    # namespace syscalls. Measured on Ubuntu 24.04 aarch64 with `apparmor_restrict_unprivileged_userns=1`
+    # and Docker 29.8, as `pwuser`: without it Chromium exits with "No usable sandbox!"; with it every
+    # renderer runs in a user, PID and network namespace of its own. No AppArmor change is needed.
+    # The path is read on the host, so the file rides in the deploy bundle beside this one.
+    security_opt:
+      - seccomp=./agent-computer/seccomp_profile.json
+    # THE VOLUMES, HANDED TO THE USER THE COMPUTER NOW RUNS AS. Every deployment that ran the image
+    # before 2026-09-13 has `agent-profiles` and `agent-workspace` owned by root, and a computer that
+    # starts as `pwuser` cannot open a root-owned profile — every Bot's logins would be unreadable
+    # after the upgrade. So this runs once per `up`, as root and only this command, right after the
+    # container starts and before anything asks for a browser (the server waits for the healthcheck,
+    # and nothing here touches either volume at boot). `--from=root` makes it a no-op on a volume that
+    # is already right: a fresh one takes the image's ownership, and every later file is pwuser's.
+    post_start:
+      - command:
+          ["chown", "-R", "--from=root", "pwuser:pwuser", "/profiles", "/workspace"]
+        user: root
     # Docker's default /dev/shm is 64MB, which Chromium exhausts on ordinary pages. The launch args
     # pass --disable-dev-shm-usage so it writes to /tmp instead and survives; this makes the shared
     # memory real, so it does not have to.

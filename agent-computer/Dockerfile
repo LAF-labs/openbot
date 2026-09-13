@@ -32,7 +32,12 @@ COPY shared ./shared
 COPY agent-computer/src ./agent-computer/src
 
 # Durable working directory. Bot-produced files that must survive replacement live here.
-RUN mkdir -p /workspace
+#
+# Both volume roots are created here and owned by `pwuser`, because a named volume Docker creates
+# fresh takes the ownership of the image directory it is mounted over. A volume that already exists
+# keeps the ownership it has — root, on every deployment that ran the earlier image — which is what
+# the `post_start` chown on the service in docker-compose.yml is for.
+RUN mkdir -p /workspace /profiles && chown pwuser:pwuser /workspace /profiles
 ENV WORKSPACE_DIR=/workspace
 
 ENV PORT=4100
@@ -40,5 +45,15 @@ EXPOSE 4100
 # Readiness is exposed through Docker health so the caller need not know the network route.
 HEALTHCHECK --interval=2s --timeout=3s --start-period=2s --retries=30 \
   CMD bun -e "const r = await fetch('http://localhost:4100/health'); process.exit(r.ok ? 0 : 1)"
+
+# NOT ROOT. This process opens pages a model chose, holding somebody's bank and 홈택스 cookies and
+# the computer token, and until 2026-09-13 it did so as uid 0 with Chromium's sandbox switched off
+# (audit A5 §1: `docker exec … id` → `uid=0(root)`). One renderer bug was the whole container, every
+# Bot's profile included. `pwuser` is the account the Playwright image ships for this, and with
+# `--no-sandbox` gone from profiles.ts the renderers run in namespaces of their own — which Docker's
+# default seccomp profile refuses, so docker-compose.yml hands the container Playwright's profile.
+# Without it the browser does not start at all ("No usable sandbox!"), which is the honest failure:
+# a deployment that loses the profile finds out on its first page, not after a renderer is owned.
+USER pwuser
 
 CMD ["bun", "agent-computer/src/index.ts"]

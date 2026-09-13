@@ -31,6 +31,10 @@ ARG REVISION=unknown
 ARG CHANNEL=local
 
 COPY docker-compose.yml .env.example /deploy/
+# The seccomp profile the compose file hands the Bot's browser (`security_opt`), at the relative
+# path the compose file names it by. Docker applies it from the host, so it cannot live inside the
+# computer's image; a bundle without it cannot start the computer at all.
+COPY agent-computer/seccomp_profile.json /deploy/agent-computer/
 # The mode is set here rather than trusted from the context: the scripts are run by path from the
 # deployment directory, and a checkout on a filesystem that dropped the bit would ship one that
 # `Permission denied`s.
