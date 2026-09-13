@@ -3,6 +3,27 @@ import { t } from "@/lib/i18n";
 import { type AgentChannel, channelKeys } from "./queries";
 
 /**
+ * What starting a conversation can be refused for, in this surface's own words.
+ *
+ * The server sends `laf:…` codes and no prose (`server/src/channels/routes.ts`); these are the
+ * sentences. `t()` on a variable, so `channel-refusals.test.ts` walks the table the way
+ * `agent-refusals.test.ts` walks its own — the coverage walk only sees a literal argument.
+ */
+export const CHANNEL_REFUSALS: Record<string, string> = {
+  "laf:channel_input_invalid": "That could not be read. Try again.",
+  "laf:channel_agents_required": "Choose at least one Bot.",
+  "laf:channel_agents_invalid": "That is not a valid Bot.",
+  "laf:channel_agents_duplicate": "That Bot is already in the list.",
+  "laf:channel_not_found": "That conversation is no longer there.",
+  "laf:agent_not_found": "That Bot is no longer there.",
+};
+
+function channelRefusal(code: string | undefined): string {
+  const known = code ? CHANNEL_REFUSALS[code] : undefined;
+  return known ? t(known) : t("Could not start a conversation. Try again.");
+}
+
+/**
  * Start a new channel with one or more coworkers.
  *
  * Deliberately not idempotent: every call creates a channel with its own thread.
@@ -17,13 +38,11 @@ export function createChannelMutationOptions(queryClient: QueryClient) {
         body: JSON.stringify({ agentIds }),
       });
       if (!response.ok) {
-        const message = await response
+        const code = await response
           .json()
-          .then((body: { error?: string }) => body.error)
+          .then((body: { code?: string }) => body.code)
           .catch(() => undefined);
-        throw new Error(
-          message ?? t("Could not start a conversation. Try again."),
-        );
+        throw new Error(channelRefusal(code));
       }
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },

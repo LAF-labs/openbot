@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AuditStore } from "../audit";
-import type { FactCode } from "../computer/policy";
+import type { RefusalCode } from "../failure-text";
 import type { RunLedger } from "../runner/run-ledger";
 import type { AgentActor } from "./profile-types";
 
@@ -35,13 +35,17 @@ export class CoworkerCallError extends Error {
     /** Mirrors HTTP so the route does not re-derive it from prose. */
     readonly status: 400 | 403 | 404 | 502 | 504,
     /**
-     * The fact, where the refusal is one the surfaces phrase for themselves.
+     * The fact, which is what a route answers with and what a surface phrases.
      *
-     * Most of these errors are sentences a model acts on and a route passes through; this one is
-     * the boundary's, and a Korean screen owes its reader its own words for it (`i18n-ko.ts`)
-     * rather than this server's English.
+     * Every one of these carries one now. The sentences are still here because a MODEL reads
+     * them — the coworker tool hands the refusal back to the asking Bot as a tool result, and
+     * "ask for what you actually need" is an instruction it can act on — but a screen renders the
+     * code, and a Korean screen owes its reader its own words (`i18n-ko.ts`) rather than this
+     * server's English. The 502 in particular used to carry the provider's own sentence.
      */
-    readonly code?: FactCode,
+    readonly code: RefusalCode,
+    /** Numbers beside the code, for the surface and the asking Bot to phrase. Never a sentence. */
+    readonly facts: Record<string, number> = {},
   ) {
     super(message);
     this.name = "CoworkerCallError";
@@ -136,7 +140,11 @@ export async function runAgentOnce(
       setTimeout(
         () =>
           reject(
-            new CoworkerCallError("The coworker did not answer in time.", 504),
+            new CoworkerCallError(
+              "The coworker did not answer in time.",
+              504,
+              "laf:coworker_timed_out",
+            ),
           ),
         timeoutMs,
       ).unref?.();
@@ -250,7 +258,11 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         );
       }
       if (!question) {
-        throw new CoworkerCallError("Ask the coworker something.", 400);
+        throw new CoworkerCallError(
+          "Ask the coworker something.",
+          400,
+          "laf:coworker_question_empty",
+        );
       }
       if (question.length > COWORKER_QUESTION_MAX_CHARS) {
         // Says what to do instead. A refusal a model cannot act on is a refusal it will retry
@@ -258,12 +270,15 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         throw new CoworkerCallError(
           `That question is ${question.length} characters, and a coworker takes at most ${COWORKER_QUESTION_MAX_CHARS}. Ask for what you actually need, and point at the rest rather than pasting it.`,
           400,
+          "laf:coworker_question_too_long",
+          { length: question.length, limit: COWORKER_QUESTION_MAX_CHARS },
         );
       }
       if (callerId === targetId) {
         throw new CoworkerCallError(
           "That is you. Ask a different coworker.",
           400,
+          "laf:coworker_is_self",
         );
       }
 
@@ -273,6 +288,7 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         throw new CoworkerCallError(
           `There is no coworker with the id "${targetId}".`,
           404,
+          "laf:coworker_not_found",
         );
       }
 
@@ -299,7 +315,9 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         if (error instanceof CoworkerCallError) throw error;
         // An UnavailableAgent's refusal and a dead endpoint both land here: the coworker exists in
         // the roster and could not answer, which is the upstream's failure, not the request's.
-        throw new CoworkerCallError(reason, 502);
+        // The sentence is the upstream's — measured as the provider's own "Unable to connect. Is
+        // the computer able to access the url?" — and the code is what crosses to a screen.
+        throw new CoworkerCallError(reason, 502, "laf:coworker_failed");
       }
 
       if (runId) await options.ledger?.finish(runId).catch(() => {});

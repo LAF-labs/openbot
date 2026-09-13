@@ -55,6 +55,19 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_auto_review_too_long":
     "That instruction can be up to 1,000 characters.",
   "laf:agent_auth_header_invalid": "That header name cannot be used.",
+  /*
+   * The refusals the store and the memory and coworker routes throw, which used to reach the roster
+   * and the ask box as the server's own English — "Agent not found.", "You do not have permission
+   * to manage this agent." The words are the surface's now (audit A1-3).
+   */
+  "laf:agent_not_found": "That Bot is no longer there.",
+  "laf:agent_not_manageable": "You cannot change this Bot.",
+  "laf:agent_protected": "This Bot came with the app and cannot be changed.",
+  "laf:memory_not_found": "That memory is no longer there.",
+  "laf:preference_invalid": "That setting could not be changed. Try again.",
+  "laf:coworker_from_required": "Say which Bot is asking.",
+  "laf:coworker_unavailable":
+    "This deployment cannot have one Bot ask another.",
 };
 
 export type AgentInput = {
@@ -114,17 +127,19 @@ async function agentRequest(
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: string;
       code?: string;
       seats?: number;
     } | null;
     const known = body?.code ? AGENT_REFUSALS[body.code] : undefined;
-    // The code first, the server's sentence only where there is no code for what happened — it
-    // names the field or the permission that failed, which is more use than nothing.
+    /*
+     * The code, and never the server's `error`. That field carried an English sentence until
+     * 2026-09-11 and carries the code now, so reading it as a fallback would print `laf:…` on the
+     * screen; a code this table has no words for gets the general sentence instead.
+     */
     throw new Error(
       known
         ? t(known, { seats: body?.seats ?? "" })
-        : (body?.error ?? t("That did not go through. Try again.")),
+        : t("That did not go through. Try again."),
     );
   }
   return response;

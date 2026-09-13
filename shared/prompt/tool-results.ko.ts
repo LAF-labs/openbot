@@ -260,6 +260,23 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:routine_not_found": "그 루틴은 더 이상 없다.",
   "laf:routine_cap_reached": "루틴 수가 한도에 닿아 더 만들 수 없다.",
   "laf:routine_incomplete": "봇과 일정을 먼저 정해야 한다.",
+  // 일정이 거절된 까닭. 서버가 영어 문장만 보내던 때는 전부 위의 한 줄로 뭉개졌다(감사 A1-3).
+  "laf:routine_time_invalid": "시각은 07:30처럼 HH:MM으로 줘야 한다.",
+  "laf:routine_zone_unknown":
+    "그 시간대 이름을 이 서버가 모른다. Asia/Seoul처럼 IANA 이름을 써라.",
+  "laf:routine_days_invalid":
+    "요일은 0(일요일)부터 6(토요일)까지의 숫자로 준다.",
+  "laf:routine_days_empty":
+    "요일을 하나 이상 골라야 한다. 매일이면 days를 빼라.",
+  "laf:routine_interval_too_short":
+    "실행 간격이 너무 짧다. 5분보다 긴 주기로 잡아라.",
+  "laf:routine_schedule_invalid":
+    "일정은 interval(분 단위 주기)과 daily(매일 정한 시각) 중 하나다.",
+  "laf:routine_schedule_unreachable":
+    "그 일정으로는 실행되는 날이 없다. 요일을 다시 골라라.",
+  "laf:routine_not_created":
+    "루틴을 저장하지 못했다. 한 번만 다시 시도하고, 또 안 되면 사람에게 알려라.",
+  "laf:agent_not_found": "그 봇을 찾을 수 없다.",
   "laf:no_bot_here": "이 대화에는 기억을 맡길 봇이 없다.",
   "laf:memory_empty": "적을 내용이 비어 있다.",
   "laf:memory_too_long": "한 번에 기억하기에는 너무 길다. 한 문장으로 줄여라.",

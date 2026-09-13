@@ -2163,4 +2163,44 @@ export const ko: Record<string, string> = {
   // The footer on Settings and the help page: what is running, for a support thread to start from.
   "Version {build}": "버전 {build}",
   "Version {build} · app {shell}": "버전 {build} · 앱 {shell}",
+  /*
+   * 서버가 코드로만 보내고 화면이 말을 고르는 거절들 (감사 A1-3, 2026-09-10). 예전에는 서버의
+   * 영어 문장이 그대로 떴다 — "Agent not found.", "The daily time must be HH:MM.". 표는
+   * AGENT_REFUSALS·ROUTINE_REFUSALS·CHANNEL_REFUSALS·COWORKER_REFUSALS이고 각자의 테스트가 걷는다.
+   */
+  "You cannot change this Bot.": "이 봇은 바꿀 수 없습니다.",
+  "This Bot came with the app and cannot be changed.":
+    "앱에 기본으로 들어 있는 봇이라 바꿀 수 없습니다.",
+  "That memory is no longer there.": "그 기억은 이미 지워졌습니다.",
+  "That setting could not be changed. Try again.":
+    "설정을 바꾸지 못했습니다. 다시 시도해 주세요.",
+  "Say which Bot is asking.": "어느 봇이 묻는지 알려 주세요.",
+  "This deployment cannot have one Bot ask another.":
+    "이 서버에서는 봇이 다른 봇에게 물을 수 없습니다.",
+  "Give a time as HH:MM.": "시각을 07:30처럼 적어 주세요.",
+  "That time zone is not one this server knows.":
+    "이 서버가 모르는 시간대입니다.",
+  "Choose days from Sunday to Saturday.":
+    "일요일부터 토요일 중에서 골라 주세요.",
+  "Choose a longer gap between runs.": "실행 간격을 더 길게 잡아 주세요.",
+  "Choose how often it should run.": "얼마나 자주 실행할지 골라 주세요.",
+  "That schedule never comes round.": "그 일정으로는 실행되는 날이 없습니다.",
+  "The routine could not be made. Try again.":
+    "루틴을 만들지 못했습니다. 다시 시도해 주세요.",
+  "That link is missing its key.": "이 링크에는 실행 키가 빠져 있습니다.",
+  "That could not be read. Try again.":
+    "요청을 읽지 못했습니다. 다시 시도해 주세요.",
+  "Choose at least one Bot.": "봇을 하나 이상 골라 주세요.",
+  "That is not a valid Bot.": "올바른 봇이 아닙니다.",
+  "That Bot is already in the list.": "그 봇은 이미 골랐습니다.",
+  "That conversation is no longer there.": "그 대화는 이제 없습니다.",
+  // 다른 봇에게 물었는데 돌아온 거절. 봇에게는 영어 지시문이 따로 가고, 사람에게는 이 줄이 뜬다.
+  "There was no question to ask.": "물어볼 질문이 비어 있었습니다.",
+  "The question was too long to hand over.":
+    "질문이 너무 길어서 넘기지 못했습니다.",
+  "A Bot cannot ask itself.": "봇은 자기 자신에게 물을 수 없습니다.",
+  "That coworker is no longer there.": "물어보려던 봇이 이제 없습니다.",
+  "The coworker did not answer in time.":
+    "다른 봇이 제시간에 답하지 않았습니다.",
+  "The coworker could not answer.": "다른 봇이 답하지 못했습니다.",
 };

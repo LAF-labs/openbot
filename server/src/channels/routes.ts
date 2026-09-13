@@ -11,6 +11,7 @@ import type { AgentActor, AgentProfile } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import { originRefusalBody, upgradeOriginAllowed } from "../auth/origin";
 import type { Database } from "../db/client";
+import { NOT_FOUND } from "../failure-text";
 import {
   agentProfiles,
   agents,
@@ -727,6 +728,8 @@ export function createChannelStore(
  * different refusals with different things to do about them, which is why they are not one.
  */
 export class ChannelMembershipError extends Error {
+  readonly status = 409;
+
   constructor(readonly code: ChannelMembershipRefusal) {
     super(code);
     this.name = "ChannelMembershipError";
@@ -739,37 +742,71 @@ export type ChannelMembershipRefusal =
   | "laf:room_too_small";
 
 export class ChannelNotFoundError extends Error {
+  readonly code = "laf:channel_not_found";
+  readonly status = 404;
+
   constructor(id: string) {
     super(`Channel ${id} was not found.`);
     this.name = "ChannelNotFoundError";
   }
 }
 
+/**
+ * The refusals a channel route answers with, as facts.
+ *
+ * Every one used to be an English sentence in `error` and nothing else — "Agent IDs must be a
+ * non-empty array.", "Channel not found." — which the surface could only show as it was. The
+ * words are the surface's (`CHANNEL_REFUSALS`, app/src/lib/channels/mutations.ts); the code is
+ * what crosses. Kept as one union so the app's table can be checked against it.
+ */
+export type ChannelRefusal =
+  | ChannelMembershipRefusal
+  | "laf:channel_not_found"
+  | "laf:channel_input_invalid"
+  | "laf:channel_agents_required"
+  | "laf:channel_agents_invalid"
+  | "laf:channel_agents_duplicate"
+  | "laf:activity_invalid"
+  | "laf:activity_text_required"
+  | "laf:activity_too_long"
+  | "laf:activity_agent_invalid"
+  | "laf:activity_time_required"
+  | "laf:activity_time_invalid"
+  | "laf:read_flag_invalid"
+  | "laf:room_message_empty"
+  | "laf:room_message_too_long"
+  | "laf:room_message_id_invalid";
+
+/** The body every channel refusal is answered with: the code, twice, and no sentence. */
+function refusal(code: ChannelRefusal) {
+  return { error: code, code };
+}
+
 type ChannelInputParseResult =
   | { ok: true; value: { agentIds: string[] } }
-  | { ok: false; error: string };
+  | { ok: false; code: ChannelRefusal };
 
 type ChannelInputObject = { agentIds?: unknown };
 
 export function parseChannelInput(input: unknown): ChannelInputParseResult {
   if (!isChannelInputObject(input)) {
-    return { ok: false, error: "Channel input must be a JSON object." };
+    return { ok: false, code: "laf:channel_input_invalid" };
   }
 
   if (!Array.isArray(input.agentIds) || input.agentIds.length === 0) {
-    return { ok: false, error: "Agent IDs must be a non-empty array." };
+    return { ok: false, code: "laf:channel_agents_required" };
   }
 
   const agentIds: string[] = [];
   for (const agentId of input.agentIds) {
     if (typeof agentId !== "string" || agentId.trim().length === 0) {
-      return { ok: false, error: "Agent IDs must be non-empty strings." };
+      return { ok: false, code: "laf:channel_agents_invalid" };
     }
     agentIds.push(agentId.trim());
   }
 
   if (new Set(agentIds).size !== agentIds.length) {
-    return { ok: false, error: "Agent IDs must be unique." };
+    return { ok: false, code: "laf:channel_agents_duplicate" };
   }
 
   return { ok: true, value: { agentIds: agentIds.sort() } };
@@ -797,7 +834,7 @@ const MAX_ROOM_TURN_TEXT = 8000;
 
 type ActivityInputParseResult =
   | { ok: true; value: ChannelActivity }
-  | { ok: false; error: string };
+  | { ok: false; code: ChannelRefusal };
 
 /**
  * Parse a reported message.
@@ -807,12 +844,12 @@ type ActivityInputParseResult =
  */
 export function parseActivityInput(input: unknown): ActivityInputParseResult {
   if (!isChannelInputObject(input)) {
-    return { ok: false, error: "Activity must be a JSON object." };
+    return { ok: false, code: "laf:activity_invalid" };
   }
   const object = input as { text?: unknown; agentId?: unknown; at?: unknown };
 
   if (typeof object.text !== "string" || object.text.trim().length === 0) {
-    return { ok: false, error: "Text is required." };
+    return { ok: false, code: "laf:activity_text_required" };
   }
   /*
    * BOUNDED, because nothing else here is. Only a preview of this is ever stored, so a caller
@@ -821,17 +858,17 @@ export function parseActivityInput(input: unknown): ActivityInputParseResult {
    * and small against a request built to cost something.
    */
   if (object.text.length > MAX_ACTIVITY_TEXT) {
-    return { ok: false, error: "That message is too long to report." };
+    return { ok: false, code: "laf:activity_too_long" };
   }
   if (object.agentId !== null && typeof object.agentId !== "string") {
-    return { ok: false, error: "Agent ID must be a string or null." };
+    return { ok: false, code: "laf:activity_agent_invalid" };
   }
   if (typeof object.at !== "string") {
-    return { ok: false, error: "Timestamp is required." };
+    return { ok: false, code: "laf:activity_time_required" };
   }
   const at = new Date(object.at);
   if (Number.isNaN(at.getTime())) {
-    return { ok: false, error: "Timestamp must be an ISO-8601 date." };
+    return { ok: false, code: "laf:activity_time_invalid" };
   }
 
   return {
@@ -927,7 +964,9 @@ export function createChannelRoutes(
     const parsed = parseChannelInput(
       await context.req.json().catch(() => null),
     );
-    if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+    if (!parsed.ok) {
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
+    }
 
     try {
       const channel = await store.create(
@@ -953,7 +992,9 @@ export function createChannelRoutes(
     const parsed = parseActivityInput(
       await context.req.json().catch(() => null),
     );
-    if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+    if (!parsed.ok) {
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
+    }
 
     try {
       await store.recordActivity(
@@ -990,7 +1031,7 @@ export function createChannelRoutes(
         ? (body as { read?: unknown }).read
         : undefined;
     if (typeof read !== "boolean") {
-      return context.json({ error: "`read` must be true or false." }, 400);
+      return context.json(refusal("laf:read_flag_invalid"), 400);
     }
 
     try {
@@ -1026,7 +1067,7 @@ export function createChannelRoutes(
        * Read state is compared against message stamps, so it is set from message stamps.
        */
       const channel = await store.get(context.var.actor, channelId);
-      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
       const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
         : { times: {}, speakers: {} };
@@ -1077,10 +1118,10 @@ export function createChannelRoutes(
       } | null;
       const text = typeof body?.text === "string" ? body.text : "";
       if (!text.trim()) {
-        return context.json({ error: "Say something first." }, 400);
+        return context.json(refusal("laf:room_message_empty"), 400);
       }
       if (text.length > MAX_ROOM_TURN_TEXT) {
-        return context.json({ error: "That message is too long." }, 400);
+        return context.json(refusal("laf:room_message_too_long"), 400);
       }
       /*
        * The browser mints the message's id so it can draw the bubble before the round trip and
@@ -1089,11 +1130,11 @@ export function createChannelRoutes(
        * two messages share one key.
        */
       if (body?.messageId !== undefined && !isUuid(body.messageId)) {
-        return context.json({ error: "messageId must be a UUID." }, 400);
+        return context.json(refusal("laf:room_message_id_invalid"), 400);
       }
       const channelId = context.req.param("channelId");
       const channel = await store.get(context.var.actor, channelId);
-      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
 
       try {
         const started = await rooms.post({
@@ -1125,7 +1166,10 @@ export function createChannelRoutes(
         );
       } catch (error) {
         if (error instanceof RoomError) {
-          return context.json({ error: error.message }, error.status);
+          return context.json(
+            { error: error.code, code: error.code },
+            error.status,
+          );
         }
         throw error;
       }
@@ -1137,7 +1181,10 @@ export function createChannelRoutes(
         return context.body(null, 204);
       } catch (error) {
         if (error instanceof RoomError) {
-          return context.json({ error: error.message }, error.status);
+          return context.json(
+            { error: error.code, code: error.code },
+            error.status,
+          );
         }
         throw error;
       }
@@ -1157,7 +1204,7 @@ export function createChannelRoutes(
         context.var.actor,
         context.req.param("channelId"),
       );
-      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
       const messages = readThreadMessages
         ? await readThreadMessages(channel.threadId)
         : [];
@@ -1176,7 +1223,7 @@ export function createChannelRoutes(
    */
   routes.post("/:channelId/participants", requireUser, async (context) => {
     if (!store.addParticipant)
-      return context.json({ error: "Not supported." }, 404);
+      return context.json({ error: NOT_FOUND, code: NOT_FOUND }, 404);
     const body = (await context.req.json().catch(() => null)) as {
       agentId?: unknown;
     } | null;
@@ -1184,7 +1231,7 @@ export function createChannelRoutes(
       typeof body?.agentId === "string" ? body.agentId.trim() : "";
     if (!agentId) {
       return context.json(
-        { error: "An agent id is required.", code: "laf:not_in_room" },
+        { error: "laf:not_in_room", code: "laf:not_in_room" },
         400,
       );
     }
@@ -1205,7 +1252,7 @@ export function createChannelRoutes(
     requireUser,
     async (context) => {
       if (!store.removeParticipant) {
-        return context.json({ error: "Not supported." }, 404);
+        return context.json({ error: NOT_FOUND, code: NOT_FOUND }, 404);
       }
       try {
         const channel = await store.removeParticipant(
@@ -1232,7 +1279,7 @@ export function createChannelRoutes(
         context.var.actor,
         context.req.param("channelId"),
       );
-      if (!channel) return context.json({ error: "Channel not found." }, 404);
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
       const failures = store.failuresFor
         ? await store.failuresFor(channel.threadId)
         : [];
@@ -1249,7 +1296,7 @@ export function createChannelRoutes(
         context.req.param("channelId"),
       );
       if (!channel) {
-        return context.json({ error: "Channel not found." }, 404);
+        return context.json(refusal("laf:channel_not_found"), 404);
       }
       const marks = readMessageTimes
         ? await readMessageTimes(channel.threadId)
@@ -1275,7 +1322,7 @@ export function createChannelRoutes(
         context.req.param("channelId"),
       );
       if (!channel) {
-        return context.json({ error: "Channel not found." }, 404);
+        return context.json(refusal("laf:channel_not_found"), 404);
       }
       return context.json({ channel: channelDto(channel) });
     } catch (error) {
@@ -1308,16 +1355,17 @@ function channelSummaryDto(channel: ChannelSummary) {
   };
 }
 
+/**
+ * A code and no sentence, whichever class refused. The surface owns the words; see the classes.
+ * Anything else is rethrown to the boundary in `app.ts`, which answers `laf:internal` and logs.
+ */
 function mapStoreError(context: Context, error: unknown): Response {
-  if (error instanceof AgentNotFoundError) {
-    return context.json({ error: "Agent not found." }, 404);
-  }
-  if (error instanceof ChannelNotFoundError) {
-    return context.json({ error: "Channel not found." }, 404);
-  }
-  if (error instanceof ChannelMembershipError) {
-    // A code and no sentence. The surface owns the words; see the class.
-    return context.json({ error: error.code, code: error.code }, 409);
+  if (
+    error instanceof AgentNotFoundError ||
+    error instanceof ChannelNotFoundError ||
+    error instanceof ChannelMembershipError
+  ) {
+    return context.json({ error: error.code, code: error.code }, error.status);
   }
   throw error;
 }

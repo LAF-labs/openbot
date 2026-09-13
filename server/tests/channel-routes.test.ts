@@ -104,36 +104,38 @@ async function json(response: Response) {
 }
 
 describe("channel input parser", () => {
+  // The refusal carries a fact code now, and the sentence beside it is for a log. The surface
+  // renders the code (`CHANNEL_REFUSALS`); this pins which code each shape earns.
   test.each([[null], [[]], ["input"], [42], [true]])(
     "rejects a non-object root: %p",
     (input) => {
-      expect(parseChannelInput(input)).toEqual({
+      expect(parseChannelInput(input)).toMatchObject({
         ok: false,
-        error: "Channel input must be a JSON object.",
+        code: "laf:channel_input_invalid",
       });
     },
   );
 
   test.each([
-    [undefined, "Agent IDs must be a non-empty array."],
-    [null, "Agent IDs must be a non-empty array."],
-    ["agent-1", "Agent IDs must be a non-empty array."],
-    [{}, "Agent IDs must be a non-empty array."],
-    [[], "Agent IDs must be a non-empty array."],
-  ])("rejects invalid agentIds: %p", (agentIds, error) => {
-    expect(parseChannelInput({ agentIds })).toEqual({ ok: false, error });
+    [undefined, "laf:channel_agents_required"],
+    [null, "laf:channel_agents_required"],
+    ["agent-1", "laf:channel_agents_required"],
+    [{}, "laf:channel_agents_required"],
+    [[], "laf:channel_agents_required"],
+  ])("rejects invalid agentIds: %p", (agentIds, code) => {
+    expect(parseChannelInput({ agentIds })).toMatchObject({ ok: false, code });
   });
 
   test.each([
-    [[""], "Agent IDs must be non-empty strings."],
-    [["  "], "Agent IDs must be non-empty strings."],
-    [[1], "Agent IDs must be non-empty strings."],
-    [[false], "Agent IDs must be non-empty strings."],
-    [[null], "Agent IDs must be non-empty strings."],
-    [[{}], "Agent IDs must be non-empty strings."],
-    [["agent-1", " agent-1 "], "Agent IDs must be unique."],
-  ])("rejects invalid agent ID members: %p", (agentIds, error) => {
-    expect(parseChannelInput({ agentIds })).toEqual({ ok: false, error });
+    [[""], "laf:channel_agents_invalid"],
+    [["  "], "laf:channel_agents_invalid"],
+    [[1], "laf:channel_agents_invalid"],
+    [[false], "laf:channel_agents_invalid"],
+    [[null], "laf:channel_agents_invalid"],
+    [[{}], "laf:channel_agents_invalid"],
+    [["agent-1", " agent-1 "], "laf:channel_agents_duplicate"],
+  ])("rejects invalid agent ID members: %p", (agentIds, code) => {
+    expect(parseChannelInput({ agentIds })).toMatchObject({ ok: false, code });
   });
 
   test("trims, sorts, and whitelists channel input", () => {
@@ -219,13 +221,15 @@ describe("channel routes", () => {
     expect(await json(fetched)).toEqual({ channel: channel() });
   });
 
+  // The refusal is a fact code, twice: `error` and `code` both the code, so nothing prose crosses
+  // to the surface (CLAUDE.md). The malformed body is a `laf:channel_input_invalid`.
   test.each([
-    ["{", "Channel input must be a JSON object."],
-    [JSON.stringify([]), "Channel input must be a JSON object."],
-    [JSON.stringify({ agentIds: [] }), "Agent IDs must be a non-empty array."],
+    ["{", "laf:channel_input_invalid"],
+    [JSON.stringify([]), "laf:channel_input_invalid"],
+    [JSON.stringify({ agentIds: [] }), "laf:channel_agents_required"],
   ])(
     "returns safe validation errors for malformed POST bodies",
-    async (body, error) => {
+    async (body, code) => {
       const store = fakeStore();
       const response = await appFor(store).request("http://laf.test/", {
         method: "POST",
@@ -234,7 +238,7 @@ describe("channel routes", () => {
       });
 
       expect(response.status).toBe(400);
-      expect(await json(response)).toEqual({ error });
+      expect(await json(response)).toEqual({ error: code, code });
       expect(store.calls).toEqual([]);
     },
   );
@@ -245,15 +249,23 @@ describe("channel routes", () => {
     const response = await appFor(store).request("http://laf.test/missing");
 
     expect(response.status).toBe(404);
-    expect(await json(response)).toEqual({ error: "Channel not found." });
+    expect(await json(response)).toEqual({
+      error: "laf:channel_not_found",
+      code: "laf:channel_not_found",
+    });
   });
 
   test.each([
-    ["create", new AgentNotFoundError("agent-1"), 404, "Agent not found."],
-    ["get", new ChannelNotFoundError("channel-1"), 404, "Channel not found."],
+    ["create", new AgentNotFoundError("agent-1"), 404, "laf:agent_not_found"],
+    [
+      "get",
+      new ChannelNotFoundError("channel-1"),
+      404,
+      "laf:channel_not_found",
+    ],
   ] as const)(
     "maps known store errors from %s",
-    async (method, error, status, message) => {
+    async (method, error, status, code) => {
       const store = fakeStore({
         ...(method === "create"
           ? {
@@ -278,7 +290,7 @@ describe("channel routes", () => {
           : await app.request("http://laf.test/channel-1");
 
       expect(response.status).toBe(status);
-      expect(await json(response)).toEqual({ error: message });
+      expect(await json(response)).toEqual({ error: code, code });
     },
   );
 
@@ -560,7 +572,10 @@ describe("channel store integration", () => {
       `http://laf.test/${created.id}`,
     );
     expect(response.status).toBe(404);
-    expect(await json(response)).toEqual({ error: "Channel not found." });
+    expect(await json(response)).toEqual({
+      error: "laf:channel_not_found",
+      code: "laf:channel_not_found",
+    });
   });
 
   test("reads linked agent IDs in lexicographic order", async () => {

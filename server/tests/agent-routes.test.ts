@@ -130,10 +130,10 @@ async function json(response: Response) {
 
 describe("agent input parser", () => {
   /*
-   * THE CODE, NOT THE SENTENCE. The English body is still there and still what the route answers
-   * with, but it is a placeholder for words the surface has yet to write in Korean, and a test that
-   * pins it makes rewording the placeholder a failing test. What is being asserted is which refusal
-   * this is (docs/laf/redesign-2026-09.md §4-2).
+   * THE CODE, AND THERE IS NO SENTENCE. The parser carried an English one beside each code until
+   * 2026-09-11 and the route answered with it; the surface says the code in Korean
+   * (`AGENT_REFUSALS`), so what is asserted is which refusal this is (docs/laf/redesign-2026-09.md
+   * §4-2).
    */
   test.each([[null], [[]], ["input"], [42], [true]])(
     "rejects a non-object root: %p",
@@ -545,22 +545,18 @@ describe("agent lifecycle routes", () => {
     const response = await appFor(store).request("http://laf.test/missing");
 
     expect(response.status).toBe(404);
-    expect(await json(response)).toEqual({ error: "Agent not found." });
+    expect(await json(response)).toEqual({
+      error: "laf:agent_not_found",
+      code: "laf:agent_not_found",
+    });
   });
 
+  // A fact code, twice: the surface owns the words (`AGENT_REFUSALS`), so nothing prose crosses.
   test.each([
-    [new AgentNotFoundError("agent-1"), 404, "Agent not found."],
-    [
-      new AgentNotManageableError("agent-1"),
-      403,
-      "You do not have permission to manage this agent.",
-    ],
-    [
-      new ProtectedAgentError("agent-1"),
-      403,
-      "System-owned agents are protected.",
-    ],
-  ])("maps known store errors", async (error, status, message) => {
+    [new AgentNotFoundError("agent-1"), 404, "laf:agent_not_found"],
+    [new AgentNotManageableError("agent-1"), 403, "laf:agent_not_manageable"],
+    [new ProtectedAgentError("agent-1"), 403, "laf:agent_protected"],
+  ])("maps known store errors", async (error, status, code) => {
     const store = fakeStore({
       update: async () => {
         throw error;
@@ -574,7 +570,7 @@ describe("agent lifecycle routes", () => {
     });
 
     expect(response.status).toBe(status);
-    expect(await json(response)).toEqual({ error: message });
+    expect(await json(response)).toEqual({ error: code, code });
   });
 
   test("rethrows unexpected errors to the outer Hono error handler", async () => {

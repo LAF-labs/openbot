@@ -195,7 +195,7 @@ describe("the routines surface, as its owner", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       code: "laf:routine_incomplete",
-      error: "Name a Bot.",
+      error: "laf:routine_incomplete",
     });
     expect(service.calls).toEqual([]);
   });
@@ -218,7 +218,7 @@ describe("the routines surface, as its owner", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       code: "laf:routine_needs_schedule",
-      error: "Name a schedule.",
+      error: "laf:routine_needs_schedule",
     });
     expect(service.calls).toEqual([]);
   });
@@ -249,7 +249,7 @@ describe("the routines surface, as somebody else on the same VM", () => {
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({
         code: "laf:routine_not_found",
-        error: "There is no such routine.",
+        error: "laf:routine_not_found",
       });
     },
   );

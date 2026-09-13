@@ -3,9 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useRef } from "react";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
+import { AGENT_REFUSALS } from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { useActiveBotHolder } from "./active-bot";
+import {
+  COWORKER_REFUSALS,
+  coworkerRefusalForModel,
+} from "./coworker-refusals";
 
 /**
  * A Bot asking a coworker, as a tool.
@@ -19,24 +24,6 @@ import { useActiveBotHolder } from "./active-bot";
  * The model addresses coworkers by name because names are what it can see in the conversation; the
  * handler resolves the name against the roster it already has cached and sends the id.
  */
-/**
- * The boundary's refusals of a handoff, in the words a person reads on the transcript line.
- *
- * Literal `t()` calls so `i18n-coverage.test.ts` sees them. Two codes: a Bot answering for
- * another tried to ask a third, and an action inside such a turn wanted a person. Anything else
- * is not the boundary's and keeps the server's sentence.
- */
-function refusalSaid(code: string | undefined): string | undefined {
-  if (code === "laf:delegation_too_deep") {
-    return t("A Bot answering for another Bot cannot ask a third.");
-  }
-  if (code === "laf:ask_in_delegated_turn") {
-    return t(
-      "That needed your say-so, and a Bot answering for another cannot ask you. Ask the Bot directly.",
-    );
-  }
-  return undefined;
-}
 
 export function CoworkerTools() {
   const bot = useActiveBotHolder();
@@ -128,24 +115,23 @@ export function CoworkerTools() {
             body: JSON.stringify({ message: request, from: bot.current }),
           },
         );
-        const body = (await response.json().catch(() => null)) as {
-          answer?: string;
-          error?: string;
-          /** The boundary's fact, beside the sentence, where the refusal was the boundary's. */
-          code?: string;
-        } | null;
+        const body = (await response.json().catch(() => null)) as
+          | ({ answer?: string; code?: string } & Record<string, unknown>)
+          | null;
         if (!response.ok) {
+          const code = typeof body?.code === "string" ? body.code : undefined;
+          const known = code
+            ? (COWORKER_REFUSALS[code] ?? AGENT_REFUSALS[code])
+            : undefined;
           remember(call.toolCall?.id, {
             coworker: target.name,
             failed: true,
-            // The surface's own words where the refusal carries a code it knows; the server's
-            // sentence otherwise, as before.
-            answer:
-              refusalSaid(body?.code) ?? body?.error ?? response.statusText,
+            // The person's words for the code; never the server's sentence, which there is none of.
+            answer: known ? t(known) : t("The coworker could not answer."),
           });
           // The reason goes back to the model as text, so it can tell the person or try another way,
           // rather than as a thrown error the runtime would flatten into noise.
-          return `The coworker could not answer: ${body?.error ?? response.statusText}`;
+          return coworkerRefusalForModel(code, body ?? {});
         }
         const answer = body?.answer;
         // The transcript line is read by a person and the return is read by the model, so the

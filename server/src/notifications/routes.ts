@@ -63,7 +63,13 @@ export function createNotificationRoutes(
       context.req.param("id") ?? "",
     );
     if (!marked) {
-      return context.json({ error: "laf:notification_not_found" }, 404);
+      return context.json(
+        {
+          error: "laf:notification_not_found",
+          code: "laf:notification_not_found",
+        },
+        404,
+      );
     }
     return context.body(null, 204);
   });
@@ -78,7 +84,10 @@ export function createNotificationRoutes(
     const denied = requireAdmin(context);
     if (denied) return denied;
     if (!approvalMetrics) {
-      return context.json({ error: "laf:metrics_unavailable" }, 503);
+      return context.json(
+        { error: "laf:metrics_unavailable", code: "laf:metrics_unavailable" },
+        503,
+      );
     }
     return context.json(
       await approvalMetrics(metricDays(context.req.query("days"))),

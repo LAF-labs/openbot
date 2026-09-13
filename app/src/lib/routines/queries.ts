@@ -84,6 +84,19 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
   "laf:routine_needs_name": "Give the routine a name.",
   "laf:routine_needs_instruction": "Say what the routine should do each time.",
   "laf:routine_needs_schedule": "Say when it should run.",
+  /*
+   * The schedule refusals, which used to reach this form as the service's own English — "The daily
+   * time must be HH:MM.", "Pick at least one day." (audit A1-3).
+   */
+  "laf:routine_time_invalid": "Give a time as HH:MM.",
+  "laf:routine_zone_unknown": "That time zone is not one this server knows.",
+  "laf:routine_days_invalid": "Choose days from Sunday to Saturday.",
+  "laf:routine_days_empty": "Pick at least one day.",
+  "laf:routine_interval_too_short": "Choose a longer gap between runs.",
+  "laf:routine_schedule_invalid": "Choose how often it should run.",
+  "laf:routine_schedule_unreachable": "That schedule never comes round.",
+  "laf:routine_not_created": "The routine could not be made. Try again.",
+  "laf:routine_trigger_token_missing": "That link is missing its key.",
 };
 
 export async function routineRequest(path: string, init?: RequestInit) {
@@ -99,12 +112,10 @@ export async function routineRequest(path: string, init?: RequestInit) {
   if (!response.ok) {
     const known =
       typeof body?.code === "string" ? ROUTINE_REFUSALS[body.code] : undefined;
-    // The code first, the server's sentence only where there is no code for what happened.
-    // `statusText` is "Internal Server Error", which tells a person nothing they can act on.
+    // The code, and never the server's `error`, which is the code itself now — read as a fallback
+    // it would print `laf:…`. `statusText` is "Internal Server Error", which says nothing either.
     throw new Error(
-      known
-        ? t(known)
-        : String(body?.error ?? t("That did not go through. Try again.")),
+      known ? t(known) : t("That did not go through. Try again."),
     );
   }
   return body;

@@ -161,7 +161,12 @@ export class RoutineError extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409,
-    readonly code?: string,
+    /**
+     * Required, not optional. It used to be `code?`, and the route sent the sentence when it was
+     * absent — which is how "The daily time must be HH:MM." reached a Korean screen. Every
+     * construction names one now, so the boundary and the route always have a fact to answer with.
+     */
+    readonly code: `laf:${string}`,
   ) {
     super(message);
     this.name = "RoutineError";
@@ -222,7 +227,13 @@ export function nextRunAt(schedule: RoutineSchedule, from: Date): Date {
     return new Date(from.getTime() + schedule.minutes * 60_000);
   }
   const match = /^(\d{2}):(\d{2})$/.exec(schedule.time);
-  if (!match) throw new RoutineError("Time must be HH:MM.", 400);
+  if (!match) {
+    throw new RoutineError(
+      "Time must be HH:MM.",
+      400,
+      "laf:routine_time_invalid",
+    );
+  }
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   const timeZone = schedule.timeZone ?? "UTC";
@@ -249,7 +260,11 @@ export function nextRunAt(schedule: RoutineSchedule, from: Date): Date {
     return candidate;
   }
   // Only reachable if every weekday was excluded, which `parseSchedule` refuses.
-  throw new RoutineError("That schedule never comes round.", 400);
+  throw new RoutineError(
+    "That schedule never comes round.",
+    400,
+    "laf:routine_schedule_unreachable",
+  );
 }
 
 function parseSchedule(input: RoutineInput): RoutineSchedule {
@@ -262,6 +277,7 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
       throw new RoutineError(
         `The interval must be at least ${MIN_INTERVAL_MINUTES} minutes.`,
         400,
+        "laf:routine_interval_too_short",
       );
     }
     return schedule;
@@ -269,27 +285,44 @@ function parseSchedule(input: RoutineInput): RoutineSchedule {
   if (schedule.kind === "daily") {
     const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(schedule.time);
     if (!match) {
-      throw new RoutineError("The daily time must be HH:MM.", 400);
+      throw new RoutineError(
+        "The daily time must be HH:MM.",
+        400,
+        "laf:routine_time_invalid",
+      );
     }
     const timeZone = schedule.timeZone ?? "UTC";
     if (!isKnownTimeZone(timeZone)) {
       throw new RoutineError(
         `This machine does not know the zone "${timeZone}".`,
         400,
+        "laf:routine_zone_unknown",
       );
     }
     const days = [...new Set(schedule.days ?? [])].sort((a, b) => a - b);
     if (days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
-      throw new RoutineError("Days must be 0 (Sunday) to 6.", 400);
+      throw new RoutineError(
+        "Days must be 0 (Sunday) to 6.",
+        400,
+        "laf:routine_days_invalid",
+      );
     }
     // Every day and no days would be the same stored value; refusing the empty selection keeps
     // "runs every day" from being something a person can arrive at by unticking everything.
     if (schedule.days !== undefined && days.length === 0) {
-      throw new RoutineError("Pick at least one day.", 400);
+      throw new RoutineError(
+        "Pick at least one day.",
+        400,
+        "laf:routine_days_empty",
+      );
     }
     return { kind: "daily", time: schedule.time, timeZone, days };
   }
-  throw new RoutineError("The schedule must be interval or daily.", 400);
+  throw new RoutineError(
+    "The schedule must be interval or daily.",
+    400,
+    "laf:routine_schedule_invalid",
+  );
 }
 
 /**
@@ -943,8 +976,13 @@ export function createRoutineService(options: RoutineServiceOptions) {
             updatedAt: at,
           })
           .returning();
-        if (!row)
-          throw new RoutineError("The routine could not be created.", 409);
+        if (!row) {
+          throw new RoutineError(
+            "The routine could not be created.",
+            409,
+            "laf:routine_not_created",
+          );
+        }
         // The token, once. Never its hash, which is the one column this row does not publish.
         return { ...published(withoutTokenHash(row)), triggerToken };
       });

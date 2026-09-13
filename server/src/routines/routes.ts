@@ -20,18 +20,17 @@ export function createRoutineRoutes(
   const routes = new Hono<{ Variables: AppVariables }>();
 
   /**
-   * The refusal as the surface reads it: a fact code where there is one, the sentence beside it.
+   * The refusal as the surface reads it: the fact code, twice.
    *
-   * The code is what the app renders Korean from; `error` stays for operators, logs and anything
-   * that arrives before the surface knows the code. Server prose does not cross to the screen.
+   * The code is what the app renders Korean from (`ROUTINE_REFUSALS`). `error` used to carry the
+   * service's sentence "for operators", and the app read it as the fallback for any code it had no
+   * words for — which is how "The daily time must be HH:MM." reached a Korean screen. The
+   * sentence is on the thrown error for a stack trace; nothing on the wire is prose.
    */
   const mapError = (error: unknown) => {
     if (error instanceof RoutineError) {
       return {
-        body: {
-          error: error.message,
-          ...(error.code ? { code: error.code } : {}),
-        },
+        body: { error: error.code, code: error.code },
         status: error.status,
       };
     }
@@ -48,7 +47,7 @@ export function createRoutineRoutes(
       | null;
     if (!body?.agentId) {
       return context.json(
-        { error: "Name a Bot.", code: "laf:routine_incomplete" },
+        { error: "laf:routine_incomplete", code: "laf:routine_incomplete" },
         400,
       );
     }
@@ -62,7 +61,10 @@ export function createRoutineRoutes(
      */
     if (!body.schedule) {
       return context.json(
-        { error: "Name a schedule.", code: "laf:routine_needs_schedule" },
+        {
+          error: "laf:routine_needs_schedule",
+          code: "laf:routine_needs_schedule",
+        },
         400,
       );
     }
@@ -89,7 +91,13 @@ export function createRoutineRoutes(
   routes.post("/:id/trigger", async (context) => {
     const token = context.req.header("x-trigger-token") ?? "";
     if (!token) {
-      return context.json({ error: "The trigger token is missing." }, 401);
+      return context.json(
+        {
+          error: "laf:routine_trigger_token_missing",
+          code: "laf:routine_trigger_token_missing",
+        },
+        401,
+      );
     }
     const payload = await context.req.text().catch(() => "");
     try {

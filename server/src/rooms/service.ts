@@ -37,12 +37,23 @@ import type { ApprovalWaiter } from "./wait-for-approval";
 /** How long one member may take. Generous: it may open pages and read files before it answers. */
 export const MEMBER_TURN_TIMEOUT_MS = 300_000;
 
+/**
+ * A room refusing a turn, as a code and a status.
+ *
+ * The code and never a sentence: it used to carry "Say something first." and "This room has one
+ * Bot. It answers in the ordinary way." into a 400 and a 409 that the channel route passed to the
+ * screen as they were. The surface owns the words (`CHANNEL_REFUSALS`,
+ * app/src/lib/channels/mutations.ts); the boundary in `app.ts` reads the same two fields.
+ */
 export class RoomError extends Error {
   constructor(
-    message: string,
+    readonly code:
+      | "laf:channel_not_found"
+      | "laf:room_message_empty"
+      | "laf:room_needs_two_bots",
     readonly status: 400 | 404 | 409,
   ) {
-    super(message);
+    super(code);
     this.name = "RoomError";
   }
 }
@@ -122,7 +133,7 @@ export function createRoomService(options: RoomServiceOptions) {
       .where(eq(channels.id, channelId))
       .limit(1);
     // Not a member and no such room are the same answer, so belonging is not something to probe for.
-    if (!row) throw new RoomError("Channel not found.", 404);
+    if (!row) throw new RoomError("laf:channel_not_found", 404);
     return row;
   }
 
@@ -146,15 +157,13 @@ export function createRoomService(options: RoomServiceOptions) {
       personName: string;
     }): Promise<RoomTurnStart> {
       const text = input.text.trim();
-      if (!text) throw new RoomError("Say something first.", 400);
+      if (!text) throw new RoomError("laf:room_message_empty", 400);
 
       const room = await roomOf(input.actor, input.channelId);
       const members = await resolveRoomMembers(database, input.channelId);
+      // A room with one Bot answers in the ordinary way, through the Bot's own conversation.
       if (members.length < 2) {
-        throw new RoomError(
-          "This room has one Bot. It answers in the ordinary way.",
-          409,
-        );
+        throw new RoomError("laf:room_needs_two_bots", 409);
       }
 
       const turnId = randomUUID();

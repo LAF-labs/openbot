@@ -100,10 +100,9 @@ export async function suggestionRequest(path: string, init?: RequestInit) {
   if (!response.ok) {
     const code = typeof body?.code === "string" ? body.code : "";
     const known = SUGGESTION_REFUSALS[code] ?? ROUTINE_REFUSALS[code];
+    // Never `body.error`: it is the code itself now, and would print `laf:…` on the card.
     throw new Error(
-      known
-        ? t(known)
-        : String(body?.error ?? t("That did not go through. Try again.")),
+      known ? t(known) : t("That did not go through. Try again."),
     );
   }
   return body;

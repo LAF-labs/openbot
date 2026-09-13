@@ -163,6 +163,34 @@ describe("what a refused component says to each of its readers", () => {
 });
 
 /**
+ * A Bot's own tools — `manage_routine`, `update_profile`, `remember` — hand the route's refusal code
+ * to the model through this table, and a code with no sentence reaches the Bot as an identifier.
+ *
+ * The schedule refusals were English sentences with no code until 2026-09-11 (audit A1-3), so they
+ * all collapsed into "봇과 일정을 먼저 정해야 한다" whatever was actually wrong; the Bot could not
+ * tell a bad time from a missing day. Walked against the server's own source, like the tables above.
+ */
+describe("what a Bot's own tools are told when a route refuses them", () => {
+  test("every routine refusal the routes can send has words for the model", async () => {
+    const service = await Bun.file(
+      new URL("../../server/src/routines/service.ts", import.meta.url),
+    ).text();
+    const routes = await Bun.file(
+      new URL("../../server/src/routines/routes.ts", import.meta.url),
+    ).text();
+    const codes = new Set(
+      [...`${service}${routes}`.matchAll(/"(laf:routine_[a-z_]+)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    // A webhook's refusal, never a Bot tool's: the tool calls the session routes, not `/trigger`.
+    codes.delete("laf:routine_trigger_token_missing");
+    expect(codes.size).toBeGreaterThan(8);
+    expect([...codes].filter((code) => !(code in TOOL_RESULT_KO))).toEqual([]);
+  });
+});
+
+/**
  * A truncated or an empty answer is not an error, so it arrives as a CUSTOM event on the Bot's own
  * stream — the same channel the token counts use. Without words it would be a name on a screen.
  */

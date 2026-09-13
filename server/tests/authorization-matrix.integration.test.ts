@@ -256,7 +256,7 @@ function deployment() {
   });
   /** The real room service refuses a room the person is not in the same way; see `roomOf`. */
   const noSuchRoom = () => {
-    throw new RoomError("There is no such room.", 404);
+    throw new RoomError("laf:channel_not_found", 404);
   };
 
   const app = createApp(

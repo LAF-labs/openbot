@@ -1,5 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { toolResultText } from "@shared/prompt/tool-results.ko";
+import { TOOL_RESULT_KO, toolResultText } from "@shared/prompt/tool-results.ko";
 import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -46,12 +46,18 @@ function answer(code: string): string {
   return toolResultText(code);
 }
 
-/** A `laf:` code out of a route's reply, or a generic one when the reply carried no shape at all. */
+/**
+ * A `laf:` code out of a route's reply, or the generic one for this call.
+ *
+ * Only a code the model has words for. `toolResultText` hands an unknown code back as itself, and
+ * the routes answer with more codes than this tool's callers can meet — `laf:internal` from the
+ * error boundary among them — so a code with no sentence would reach the Bot as an identifier.
+ */
 async function codeOf(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as {
     code?: unknown;
   } | null;
-  return typeof body?.code === "string" && body.code.startsWith("laf:")
+  return typeof body?.code === "string" && body.code in TOOL_RESULT_KO
     ? body.code
     : fallback;
 }

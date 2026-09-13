@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
-import { describeFailure } from "../failure-text";
+import { describeFailure, NOT_FOUND } from "../failure-text";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
@@ -31,12 +31,11 @@ import {
 } from "./profile-types";
 
 /**
- * Which refusal it is, as a code rather than as a sentence.
+ * Which refusal it is, as a code and never as a sentence.
  *
- * The prose beside it is still English and still what the route answers with, because nothing on
- * the surface reads these yet. The code is what the surface will phrase in Korean and what a test
- * pins: an assertion on the sentence makes rewording it a test failure and translating it
- * impossible (docs/laf/redesign-2026-09.md §4-2).
+ * The parser carried an English sentence beside each of these until 2026-09-11, and the route
+ * answered with it; the surface phrases the code in Korean (`AGENT_REFUSALS`), so the sentences
+ * went, and a refusal that is only a code cannot leak one (audit A1-3).
  */
 export type AgentInputRefusal =
   | "laf:agent_input_not_object"
@@ -52,7 +51,7 @@ export type AgentInputRefusal =
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
-  | { ok: false; error: string; code: AgentInputRefusal };
+  | { ok: false; code: AgentInputRefusal };
 
 type AgentInputObject = {
   name?: unknown;
@@ -78,19 +77,10 @@ export function parseAgentInput(
   allowPrivateHosts = false,
 ): AgentInputParseResult {
   if (!isAgentInputObject(input)) {
-    return {
-      ok: false,
-      error: "Agent input must be a JSON object.",
-      code: "laf:agent_input_not_object",
-    };
+    return { ok: false, code: "laf:agent_input_not_object" };
   }
 
-  const name = boundedText(
-    input.name,
-    80,
-    "Name must be text between 1 and 80 characters.",
-    "laf:agent_name_invalid",
-  );
+  const name = boundedText(input.name, 80, "laf:agent_name_invalid");
   if (typeof name !== "string") return name;
 
   /*
@@ -102,7 +92,6 @@ export function parseAgentInput(
   const title = optionalBoundedText(
     input.title,
     120,
-    "Title must be text of at most 120 characters.",
     "laf:agent_title_too_long",
   );
   if (typeof title !== "string") return title;
@@ -110,25 +99,16 @@ export function parseAgentInput(
   const roleDescription = optionalBoundedText(
     input.roleDescription,
     1000,
-    "Role description must be text of at most 1000 characters.",
     "laf:agent_role_too_long",
   );
   if (typeof roleDescription !== "string") return roleDescription;
 
   if (typeof input.visibility !== "string") {
-    return {
-      ok: false,
-      error: "Visibility must be public or private.",
-      code: "laf:agent_visibility_invalid",
-    };
+    return { ok: false, code: "laf:agent_visibility_invalid" };
   }
   const visibility = input.visibility.trim();
   if (visibility !== "public" && visibility !== "private") {
-    return {
-      ok: false,
-      error: "Visibility must be public or private.",
-      code: "laf:agent_visibility_invalid",
-    };
+    return { ok: false, code: "laf:agent_visibility_invalid" };
   }
 
   // The endpoint is optional and checked. Absent means the Bot in the box, which is what most people
@@ -138,11 +118,7 @@ export function parseAgentInput(
   if (input.endpoint !== undefined && input.endpoint !== "") {
     const verdict = checkAgentEndpoint(input.endpoint, { allowPrivateHosts });
     if (!verdict.allowed) {
-      return {
-        ok: false,
-        error: verdict.reason,
-        code: "laf:agent_endpoint_refused",
-      };
+      return { ok: false, code: "laf:agent_endpoint_refused" };
     }
     endpoint = verdict.url;
   }
@@ -159,11 +135,7 @@ export function parseAgentInput(
       supplied.length > 64 ||
       !/^[A-Za-z0-9._:-]+$/.test(supplied)
     ) {
-      return {
-        ok: false,
-        error: "That is not a valid avatar.",
-        code: "laf:agent_avatar_invalid",
-      };
+      return { ok: false, code: "laf:agent_avatar_invalid" };
     }
     avatarSeed = supplied;
   }
@@ -176,11 +148,7 @@ export function parseAgentInput(
     const supplied =
       typeof input.effort === "string" ? input.effort.trim() : "";
     if (!AGENT_EFFORTS.includes(supplied as AgentEffort)) {
-      return {
-        ok: false,
-        error: "Effort must be quick, balanced or thorough.",
-        code: "laf:agent_effort_invalid",
-      };
+      return { ok: false, code: "laf:agent_effort_invalid" };
     }
     effort = supplied as AgentEffort;
   }
@@ -196,7 +164,6 @@ export function parseAgentInput(
   const autoReview = optionalBoundedText(
     input.autoReview,
     1000,
-    "The auto-review instruction must be text of at most 1000 characters.",
     "laf:agent_auto_review_too_long",
   );
   if (typeof autoReview !== "string") return autoReview;
@@ -214,11 +181,7 @@ export function parseAgentInput(
           ? supplied.header.trim()
           : "Authorization";
       if (!/^[A-Za-z0-9-]+$/.test(header)) {
-        return {
-          ok: false,
-          error: "That is not a valid header name.",
-          code: "laf:agent_auth_header_invalid",
-        };
+        return { ok: false, code: "laf:agent_auth_header_invalid" };
       }
       auth = { header, value };
     }
@@ -339,7 +302,10 @@ export function createAgentRoutes(
         context.req.param("agentId"),
       );
       if (!agent) {
-        return context.json({ error: "Agent not found." }, 404);
+        return context.json(
+          { error: "laf:agent_not_found", code: "laf:agent_not_found" },
+          404,
+        );
       }
       return context.json({ agent: agentDto(context.var.actor, agent) });
     } catch (error) {
@@ -380,7 +346,7 @@ export function createAgentRoutes(
       allowPrivateHosts,
     );
     if (!parsed.ok)
-      return context.json({ error: parsed.error, code: parsed.code }, 400);
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
 
     try {
       const agent = await store.create(context.var.actor, parsed.value);
@@ -409,7 +375,7 @@ export function createAgentRoutes(
       allowPrivateHosts,
     );
     if (!parsed.ok)
-      return context.json({ error: parsed.error, code: parsed.code }, 400);
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
 
     try {
       const agent = await store.update(
@@ -433,7 +399,10 @@ export function createAgentRoutes(
   routes.post("/:agentId/ask", requireUser, async (context) => {
     if (!coworkerCall) {
       return context.json(
-        { error: "This deployment cannot run coworkers server-side." },
+        {
+          error: "laf:coworker_unavailable",
+          code: "laf:coworker_unavailable",
+        },
         501,
       );
     }
@@ -445,7 +414,13 @@ export function createAgentRoutes(
     const message = typeof body?.message === "string" ? body.message : "";
     const from = typeof body?.from === "string" ? body.from : "";
     if (!from) {
-      return context.json({ error: "Say which Bot is asking." }, 400);
+      return context.json(
+        {
+          error: "laf:coworker_from_required",
+          code: "laf:coworker_from_required",
+        },
+        400,
+      );
     }
     /*
      * How deep the asker already is. The browser's tool never says, and is depth 0: a Bot a
@@ -467,9 +442,13 @@ export function createAgentRoutes(
       return context.json({ answer });
     } catch (error) {
       if (error instanceof CoworkerCallError) {
-        // The code beside the sentence, where there is one: the surface owns the Korean for it.
+        /*
+         * The code and its numbers, never the sentence. The sentence was written for the asking
+         * MODEL, and the browser's tool builds the model's text and the person's line from these
+         * (`app/src/lib/copilot/coworker-tools.tsx`); a 502's sentence was the provider's own.
+         */
         return context.json(
-          { error: error.message, ...(error.code ? { code: error.code } : {}) },
+          { ...error.facts, error: error.code, code: error.code },
           error.status,
         );
       }
@@ -508,7 +487,7 @@ export function createAgentRoutes(
     if (!patch || typeof patch !== "object") {
       return context.json(
         {
-          error: "Profile input must be a JSON object.",
+          error: "laf:profile_invalid",
           code: "laf:profile_invalid",
         },
         400,
@@ -516,7 +495,7 @@ export function createAgentRoutes(
     }
     if (Object.keys(patch).length === 0) {
       return context.json(
-        { error: "No fields were given.", code: "laf:profile_no_fields" },
+        { error: "laf:profile_no_fields", code: "laf:profile_no_fields" },
         400,
       );
     }
@@ -528,7 +507,7 @@ export function createAgentRoutes(
       );
       if (!current) {
         return context.json(
-          { error: "Agent not found.", code: "laf:profile_not_found" },
+          { error: "laf:profile_not_found", code: "laf:profile_not_found" },
           404,
         );
       }
@@ -560,7 +539,7 @@ export function createAgentRoutes(
       );
       if (!merged.ok) {
         return context.json(
-          { error: merged.error, code: "laf:profile_invalid" },
+          { error: "laf:profile_invalid", code: "laf:profile_invalid" },
           400,
         );
       }
@@ -604,10 +583,20 @@ export function createAgentRoutes(
   ): Promise<Response | null> =>
     (await store.get(context.var.actor, context.req.param("agentId") ?? ""))
       ? null
-      : context.json({ error: "Agent not found." }, 404);
+      : context.json(
+          { error: "laf:agent_not_found", code: "laf:agent_not_found" },
+          404,
+        );
+
+  /*
+   * A deployment without the memory store answers the way an unmounted route does: `laf:not_found`,
+   * the boundary's own code, rather than one of its own that would need words nobody ever reads.
+   */
+  const noMemoryStore = (context: Context<{ Variables: AppVariables }>) =>
+    context.json({ error: NOT_FOUND, code: NOT_FOUND }, 404);
 
   routes.get("/:agentId/memories", requireUser, async (context) => {
-    if (!memoryStore) return context.json({ error: "Not found." }, 404);
+    if (!memoryStore) return noMemoryStore(context);
     try {
       const hidden = await visibleOr404(context);
       if (hidden) return hidden;
@@ -635,7 +624,7 @@ export function createAgentRoutes(
    * and this is (see `looksLikeASecret`).
    */
   routes.post("/:agentId/memories", requireUser, async (context) => {
-    if (!memoryStore) return context.json({ error: "Not found." }, 404);
+    if (!memoryStore) return noMemoryStore(context);
     const body = (await context.req.json().catch(() => null)) as {
       content?: unknown;
     } | null;
@@ -648,7 +637,7 @@ export function createAgentRoutes(
        */
       return context.json(
         {
-          error: "That looks like a secret.",
+          error: "laf:memory_looks_like_a_secret",
           code: "laf:memory_looks_like_a_secret",
         },
         400,
@@ -663,7 +652,7 @@ export function createAgentRoutes(
     if (looksLikeAnInstruction(content)) {
       return context.json(
         {
-          error: "That reads like an instruction, not a fact.",
+          error: "laf:memory_looks_like_instruction",
           code: "laf:memory_looks_like_instruction",
         },
         400,
@@ -681,7 +670,10 @@ export function createAgentRoutes(
         ? context.json({ memory }, 201)
         : context.json(
             {
-              error: `A memory must be between 1 and ${MAX_MEMORY_LENGTH} characters.`,
+              error:
+                content.trim().length > MAX_MEMORY_LENGTH
+                  ? "laf:memory_too_long"
+                  : "laf:memory_empty",
               code:
                 content.trim().length > MAX_MEMORY_LENGTH
                   ? "laf:memory_too_long"
@@ -695,7 +687,7 @@ export function createAgentRoutes(
         // numbers travel so the surface can say how full; the sentence is the surface's.
         return context.json(
           {
-            error: error.message,
+            error: "laf:memory_full",
             code: "laf:memory_full",
             used: error.used,
             cap: error.cap,
@@ -711,7 +703,7 @@ export function createAgentRoutes(
     "/:agentId/memories/:memoryId",
     requireUser,
     async (context) => {
-      if (!memoryStore) return context.json({ error: "Not found." }, 404);
+      if (!memoryStore) return noMemoryStore(context);
       try {
         const hidden = await visibleOr404(context);
         if (hidden) return hidden;
@@ -723,7 +715,10 @@ export function createAgentRoutes(
         // ids which of them exist.
         return forgotten
           ? context.body(null, 204)
-          : context.json({ error: "Not found." }, 404);
+          : context.json(
+              { error: "laf:memory_not_found", code: "laf:memory_not_found" },
+              404,
+            );
       } catch (error) {
         return mapStoreError(context, error);
       }
@@ -782,7 +777,9 @@ export function createAgentRoutes(
   routes.post("/:agentId/preferences", requireUser, async (context) => {
     const body: unknown = await context.req.json().catch(() => null);
     const patch = parsePreferencePatch(body);
-    if (!patch.ok) return context.json({ error: patch.error }, 400);
+    if (!patch.ok) {
+      return context.json({ error: patch.code, code: patch.code }, 400);
+    }
 
     try {
       await store.setPreferences(
@@ -811,27 +808,25 @@ export function createAgentRoutes(
 function boundedText(
   value: unknown,
   maximumLength: number,
-  error: string,
   code: AgentInputRefusal,
-): string | { ok: false; error: string; code: AgentInputRefusal } {
-  if (typeof value !== "string") return { ok: false, error, code };
+): string | { ok: false; code: AgentInputRefusal } {
+  if (typeof value !== "string") return { ok: false, code };
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= maximumLength
     ? trimmed
-    : { ok: false, error, code };
+    : { ok: false, code };
 }
 
 /** The same, for a field a person may leave blank. Absent and empty both mean empty. */
 function optionalBoundedText(
   value: unknown,
   maximumLength: number,
-  error: string,
   code: AgentInputRefusal,
-): string | { ok: false; error: string; code: AgentInputRefusal } {
+): string | { ok: false; code: AgentInputRefusal } {
   if (value === undefined || value === null) return "";
-  if (typeof value !== "string") return { ok: false, error, code };
+  if (typeof value !== "string") return { ok: false, code };
   const trimmed = value.trim();
-  return trimmed.length <= maximumLength ? trimmed : { ok: false, error, code };
+  return trimmed.length <= maximumLength ? trimmed : { ok: false, code };
 }
 
 /**
@@ -843,9 +838,11 @@ function optionalBoundedText(
  */
 function parsePreferencePatch(
   body: unknown,
-): { ok: true; value: AgentPreferencePatch } | { ok: false; error: string } {
+):
+  | { ok: true; value: AgentPreferencePatch }
+  | { ok: false; code: "laf:preference_invalid" } {
   if (typeof body !== "object" || body === null) {
-    return { ok: false, error: "A preference patch is required." };
+    return { ok: false, code: "laf:preference_invalid" };
   }
   const object = body as Record<string, unknown>;
   const value: AgentPreferencePatch = {};
@@ -853,12 +850,12 @@ function parsePreferencePatch(
     const raw = object[key];
     if (raw === undefined) continue;
     if (typeof raw !== "boolean") {
-      return { ok: false, error: `\`${key}\` must be true or false.` };
+      return { ok: false, code: "laf:preference_invalid" };
     }
     value[key] = raw;
   }
   if (Object.keys(value).length === 0) {
-    return { ok: false, error: "No known preference was named." };
+    return { ok: false, code: "laf:preference_invalid" };
   }
   return { ok: true, value };
 }
@@ -890,28 +887,25 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
   };
 }
 
+/**
+ * A code and no sentence, whichever class refused — each class now carries its own code and
+ * status (`profile-store.ts`). Anything else is rethrown to the boundary in `app.ts`, which
+ * answers `laf:internal` and logs the route without the parameters.
+ */
 function mapStoreError(context: Context, error: unknown): Response {
-  if (error instanceof AgentNotFoundError) {
-    return context.json({ error: "Agent not found." }, 404);
-  }
-  if (error instanceof AgentNotManageableError) {
-    return context.json(
-      { error: "You do not have permission to manage this agent." },
-      403,
-    );
-  }
-  if (error instanceof ProtectedAgentError) {
-    return context.json({ error: "System-owned agents are protected." }, 403);
-  }
   if (error instanceof RosterFullError) {
-    // 409 rather than 400: the request was well-formed, the account is simply full.
-    //
-    // The code and the number are what the surface renders; `error` stays for a caller that is not
-    // this app — a log, a script — and is never the sentence a person reads.
+    // The seat count travels beside the code so the surface can say how full; the words are its.
     return context.json(
-      { error: error.message, code: error.code, seats: error.seats },
-      409,
+      { error: error.code, code: error.code, seats: error.seats },
+      error.status,
     );
+  }
+  if (
+    error instanceof AgentNotFoundError ||
+    error instanceof AgentNotManageableError ||
+    error instanceof ProtectedAgentError
+  ) {
+    return context.json({ error: error.code, code: error.code }, error.status);
   }
   throw error;
 }

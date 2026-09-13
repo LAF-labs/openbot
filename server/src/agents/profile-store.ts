@@ -62,7 +62,16 @@ export type AgentProfileStore = {
   softDelete(actor: AgentActor, id: string): Promise<void>;
 };
 
+/*
+ * Every refusal below carries a `laf:` code and the status it answers with — the shape
+ * `server/src/failure-text.ts` names — so a route's mapper and the boundary in `app.ts` answer
+ * the same fact, and the Korean for it lives in one table on the surface
+ * (`AGENT_REFUSALS`, app/src/lib/agents/mutations.ts). The sentence stays for a stack trace.
+ */
 export class AgentNotFoundError extends Error {
+  readonly code = "laf:agent_not_found";
+  readonly status = 404;
+
   constructor(id: string) {
     super(`Agent ${id} was not found.`);
     this.name = "AgentNotFoundError";
@@ -70,6 +79,9 @@ export class AgentNotFoundError extends Error {
 }
 
 export class AgentNotManageableError extends Error {
+  readonly code = "laf:agent_not_manageable";
+  readonly status = 403;
+
   constructor(id: string) {
     super(`Agent ${id} cannot be managed by this actor.`);
     this.name = "AgentNotManageableError";
@@ -92,14 +104,22 @@ export class AgentNotManageableError extends Error {
  */
 export class RosterFullError extends Error {
   readonly code = "laf:seats_full";
+  // 409 rather than 400: the request was well-formed, the account is simply full.
+  readonly status = 409;
+  /** The number, beside the code, so the surface can say how many. */
+  readonly facts: { seats: number };
 
   constructor(readonly seats: number) {
     super(`This account's computer seats ${seats} Bots, and all are taken.`);
     this.name = "RosterFullError";
+    this.facts = { seats };
   }
 }
 
 export class ProtectedAgentError extends Error {
+  readonly code = "laf:agent_protected";
+  readonly status = 403;
+
   constructor(id: string) {
     super(`Agent ${id} is protected.`);
     this.name = "ProtectedAgentError";

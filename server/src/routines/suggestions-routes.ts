@@ -10,8 +10,7 @@ import type { RoutineSuggestionService } from "./suggestions";
  * Mounted under `/api/routines/suggestions`, ahead of the routine routes, so `suggestions` can
  * never be read as a routine id. Thin like `routes.ts`: every rule — what is eligible, the cap,
  * the latch, which Bot — is the service's, and the refusal shape is the routine service's own
- * (`RoutineError`: a status, a `laf:` code the surface renders Korean from, and a sentence for
- * the log).
+ * (`RoutineError`: a status, and a `laf:` code the surface renders Korean from).
  */
 export function createRoutineSuggestionRoutes(
   service: RoutineSuggestionService,
@@ -19,13 +18,11 @@ export function createRoutineSuggestionRoutes(
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
+  // The code, twice, and never the service's sentence — the same body `routes.ts` answers with.
   const mapError = (error: unknown) => {
     if (error instanceof RoutineError) {
       return {
-        body: {
-          error: error.message,
-          ...(error.code ? { code: error.code } : {}),
-        },
+        body: { error: error.code, code: error.code },
         status: error.status,
       };
     }

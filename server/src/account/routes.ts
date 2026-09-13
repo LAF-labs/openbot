@@ -78,7 +78,7 @@ export function createAccountRoutes(
     if (!confirm) {
       return context.json(
         {
-          error: "Type your email address to confirm.",
+          error: "laf:account_confirmation_required",
           code: "laf:account_confirmation_required",
           expects: actor.email,
         },
@@ -88,7 +88,7 @@ export function createAccountRoutes(
     if (confirm.toLowerCase() !== actor.email.trim().toLowerCase()) {
       return context.json(
         {
-          error: "That is not the email address on this account.",
+          error: "laf:account_confirmation_mismatch",
           code: "laf:account_confirmation_mismatch",
           expects: actor.email,
         },
@@ -102,7 +102,7 @@ export function createAccountRoutes(
     });
     if (!result.deleted) {
       return context.json(
-        { error: "No such account.", code: "laf:account_not_found" },
+        { error: "laf:account_not_found", code: "laf:account_not_found" },
         404,
       );
     }
@@ -129,7 +129,7 @@ export function createAccountRoutes(
     if (target === actor.id) {
       return context.json(
         {
-          error: "Leave from your own account page instead.",
+          error: "laf:account_self_via_admin",
           code: "laf:account_self_via_admin",
         },
         400,
@@ -142,7 +142,7 @@ export function createAccountRoutes(
     });
     if (!result.deleted) {
       return context.json(
-        { error: "No such account.", code: "laf:account_not_found" },
+        { error: "laf:account_not_found", code: "laf:account_not_found" },
         404,
       );
     }
