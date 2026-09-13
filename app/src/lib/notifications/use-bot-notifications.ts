@@ -26,6 +26,7 @@ import {
 } from "@/lib/notifications/outbox";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import {
   canRaiseNotice,
   decideNotice,
@@ -38,6 +39,22 @@ import {
   throttleKey,
 } from "@/lib/notifications/bot-notifications";
 import { inShell } from "@/lib/notifications/shell";
+
+/**
+ * The title of the notice that a Bot is stopped and waiting, with the particle that fits its name.
+ *
+ * MEASURED 2026-09-10 (audit A4, finding 7): the lock screen said "닻이(가) 기다립니다" — the
+ * form-letter spelling, in the first sentence a person ever sees this product say outside the app.
+ * `lib/josa.ts` existed for exactly this and the entries that carry a Bot's name had been left out.
+ *
+ * ONE FUNCTION FOR EVERY PLACE THE SENTENCE IS SAID — both notice paths and the `/approve` page they
+ * land on. The dictionary entry now has a `{josa}` slot, and `t()` leaves a slot nobody filled as
+ * the literal text `{josa}`: a third caller spelling the call out by hand is how "닻{josa}
+ * 기다립니다" would reach a screen.
+ */
+export function needsYouTitle(name: string): string {
+  return t("{name} needs you", { name, josa: josa(name, "이/가") });
+}
 
 /**
  * The room on screen, from the path.
@@ -240,7 +257,7 @@ export function useBotNotifications(): void {
             now: Date.now(),
           },
           {
-            title: t("{name} needs you", { name: bot?.name ?? question.botId }),
+            title: needsYouTitle(bot?.name ?? question.botId),
             // Written here, from the facts, like the card the person will land on — a lock screen is
             // no place to discover that one surface says it differently.
             body: question.subject
@@ -333,7 +350,7 @@ export function useBotNotifications(): void {
         {
           title:
             kind === "needs-you"
-              ? t("{name} needs you", { name: bot?.name ?? frame.botId })
+              ? needsYouTitle(bot?.name ?? frame.botId)
               : (bot?.name ?? frame.botId),
           body: bodyFor(frame.event, subject ? describeSubject(subject) : null),
           tag: `laf-notification:${key}`,

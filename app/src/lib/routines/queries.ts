@@ -40,16 +40,20 @@ export type RoutineRun = {
  */
 export function runShape(
   steps: RoutineRun["steps"],
-  t: (text: string) => string,
+  t: (text: string, params?: Record<string, string | number>) => string,
 ): string | null {
   if (!steps?.length) return null;
   const tools = steps.reduce((total, step) => total + step.calls.length, 0);
   const seconds = Math.round(
     steps.reduce((total, step) => total + step.ms, 0) / 1000,
   );
+  // Whole sentences, not a number glued to a translated noun: Korean puts its counter after the
+  // number and English pluralises the noun, and "3 턴" was neither.
   const parts = [
-    steps.length === 1 ? t("1 turn") : `${steps.length} ${t("turns")}`,
-    tools === 1 ? t("1 tool") : `${tools} ${t("tools")}`,
+    steps.length === 1
+      ? t("1 turn")
+      : t("{count} turns", { count: steps.length }),
+    tools === 1 ? t("1 tool") : t("{count} tools", { count: tools }),
     `${seconds}s`,
   ];
   return parts.join(" · ");

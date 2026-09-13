@@ -15,6 +15,7 @@ import {
 } from "@/lib/approvals";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
+import { needsYouTitle } from "@/lib/notifications/use-bot-notifications";
 
 export const Route = createFileRoute("/_authed/_app/approve/$approvalId")({
   component: ApprovePage,
@@ -187,8 +188,9 @@ function ApprovePage() {
     void navigate({ replace: true, to: "/" });
   }, [channelId, isSettled, navigate]);
 
+  // The notice's own title, particle and all: this page is where that notice lands.
   const heading = botName
-    ? t("{name} needs you", { name: botName })
+    ? needsYouTitle(botName)
     : t("A Bot is waiting for you");
 
   if (approval.isPending) {

@@ -269,7 +269,7 @@ export const ko: Record<string, string> = {
   "{count} times within a few minutes": "몇 분 사이에 {count}회",
   "{minutes}m left": "{minutes}분 남음",
   "{name} is waiting for your answer: {question}":
-    "{name}이(가) 답을 기다리고 있어요: {question}",
+    "{name}{josa} 답을 기다리고 있어요: {question}",
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
     "다른 용도의 Enter도 함께 막힙니다. 폼은 어느 입력칸에서든 Enter로 제출되기 때문입니다.",
   Answered: "응답함",
@@ -822,9 +822,9 @@ export const ko: Record<string, string> = {
   "Every {minutes} minutes": "{minutes}분마다",
   Ran: "성공",
   "1 turn": "1턴",
-  turns: "턴",
+  "{count} turns": "{count}턴",
   "1 tool": "도구 1개",
-  tools: "도구",
+  "{count} tools": "도구 {count}개",
   Failed: "실패",
   "This routine has not run yet.": "아직 실행된 적이 없습니다.",
   // What the routines API refuses with. See ROUTINE_REFUSALS in lib/routines/queries.ts.
@@ -1108,7 +1108,8 @@ export const ko: Record<string, string> = {
     "이 환경에서는 알림을 켤 수 없습니다.",
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
-  "{name} needs you": "{name}이(가) 기다립니다",
+  "{name} needs you": "{name}{josa} 기다립니다",
+  "{count} things it can act on": "움직일 수 있는 것 {count}개",
   "The live picture was cut off. Reconnecting…":
     "실시간 화면이 끊겼습니다 — 다시 잇는 중",
   "It finished while you were away.": "자리를 비운 사이에 일을 마쳤습니다.",

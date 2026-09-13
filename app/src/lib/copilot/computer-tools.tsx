@@ -465,7 +465,7 @@ export function ComputerTools() {
           label={t("Read the page")}
           detail={
             elements.length
-              ? `${elements.length} thing${elements.length === 1 ? "" : "s"} it can act on`
+              ? t("{count} things it can act on", { count: elements.length })
               : undefined
           }
         />

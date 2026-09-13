@@ -11,6 +11,7 @@ import {
 } from "@/lib/approvals";
 import type { RoomApproval } from "@/lib/channels/room-events";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import { useCountdown } from "@/lib/use-countdown";
 
 /**
@@ -110,6 +111,7 @@ function RoomApprovalCard({
     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
       <p>
         {t("{name} is waiting for your answer: {question}", {
+          josa: josa(approval.memberName, "이/가"),
           name: approval.memberName,
           question,
         })}

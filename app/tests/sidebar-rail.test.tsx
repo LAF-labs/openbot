@@ -7,8 +7,6 @@ import {
   expect,
   test,
 } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { focusRing } from "../src/components/ui/focus";
 import { activeLocale } from "../src/lib/i18n";
 import { ko } from "../src/lib/i18n-ko";
@@ -505,31 +503,11 @@ describe("the roster's controls", () => {
 });
 
 describe("the roster speaks the app's language", () => {
-  test("every locale-sensitive format is handed activeLocale — a source walk, because the runner's locale is the app's", () => {
-    /*
-     * `toLocaleTimeString()` with no argument answers in the BROWSER's locale, so a Korean app on
-     * an en-US machine printed "Sat" and "9/6" down a column of Korean names. Under the runner the
-     * machine's locale and `activeLocale` are both English, so a render cannot tell the two apart;
-     * only the call sites can.
-     */
-    const sidebar = readFileSync(
-      join(
-        import.meta.dir,
-        "..",
-        "src",
-        "components",
-        "app-sidebar",
-        "bot-sidebar.tsx",
-      ),
-      "utf8",
-    );
-    const calls = sidebar.match(/\.toLocale\w+\([^)]*/g) ?? [];
-    expect(calls.length).toBeGreaterThanOrEqual(5);
-    for (const call of calls) {
-      expect(call).toContain("activeLocale");
-    }
-  });
-
+  /*
+   * Whether every time down the roster is written in the app's language rather than the machine's
+   * is rendered in Korean by `korean-render.test.ts`: this process's locale is English whichever way
+   * the call is written, so only a Korean process can tell the two apart.
+   */
   test("the footer's labels are all translated", async () => {
     // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
     const view = await roster();
