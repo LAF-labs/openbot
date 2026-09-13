@@ -88,29 +88,51 @@ export const refusalText = (thrown: Error): string => {
 };
 
 /**
- * Why a connection this deployment holds has stopped working, in the person's own terms.
+ * The facts a connection's health can carry, and what each one means to the person looking at it.
  *
- * A `needs_reconnect` row is the one place on this screen where nothing the person did is at fault
- * and something of theirs has nevertheless stopped: a grant withdrawn at the vendor, a password
- * changed, a refresh refused. The sentence has to end in the thing to do, because the switch is
- * already sitting on and "다시 연결 필요" alone reads as a fault report rather than an instruction.
+ * KEYED ON WHAT THE SERVER SENDS. This table used to answer `laf:refresh_refused`,
+ * `laf:credential_missing` and `laf:scope_missing` — codes no server in this repository has ever
+ * written — so every connection that stopped working drew the one generic sentence, and the
+ * specific ones were a table nobody could reach. The codes come from ONE judge on the server,
+ * `judgeHealth` in `server/src/plugins/connection-health.ts`, which reads the exchange and the
+ * vendor's status and nothing else; `knownFailureCode` there is the whole set that reaches a row.
+ *
+ * `connection-failure.test.tsx` walks that set against this table. The per-call refusals the plugin
+ * path also sends — `laf:mcp_timeout`, `laf:mcp_response_too_large`, `laf:needs_reconnect` and the
+ * rest — are said to the Bot, in `shared/prompt/tool-results.ko.ts`, and never stored on a
+ * connection, so they have no line here.
  */
+export const CONNECTION_FAILURE_SENTENCES = {
+  // The vendor refused the grant itself (`invalid_grant`): signed out, revoked, password changed.
+  revoked:
+    "Your account signed this out. Turn it off and on again to reconnect.",
+  /*
+   * The exchange refused for another reason, or the vendor answered 401 after a good exchange — a
+   * scope the grant does not carry, an administrator who blocked the app. Consenting again, to
+   * everything asked, is what fixes both.
+   */
+  refresh_failed:
+    "This connection is missing something it needs. Turn it off and on again, and say yes to everything the service asks.",
+  /*
+   * The vendor was down or refusing everybody (429, 5xx, a timeout). The connection is fine and comes
+   * back on its own, so the sentence must not send anybody through a consent screen to fix somebody
+   * else's afternoon — the server keeps the status `ok` for the same reason.
+   */
+  vendor_down:
+    "The service did not answer a moment ago. Nothing needs doing; the Bot tries again by itself.",
+} as const;
+
+export type ConnectionFailureCode = keyof typeof CONNECTION_FAILURE_SENTENCES;
+
+/** The sentence for a failure code, and a true one for a code this build does not know. */
 export const connectionFailureText = (code: string | null): string => {
-  const said: Record<string, string> = {
-    "laf:refresh_refused": t(
-      "Your account signed this out. Turn it off and on again to reconnect.",
-    ),
-    "laf:credential_missing": t(
-      "The connection is gone from this machine. Turn it off and on again to reconnect.",
-    ),
-    "laf:scope_missing": t(
-      "This connection is missing something it needs. Turn it off and on again, and say yes to everything the service asks.",
-    ),
-  };
-  return (
-    (code ? said[code] : undefined) ??
-    t("This connection has stopped working. Turn it off and on again.")
-  );
+  const known =
+    code !== null && Object.hasOwn(CONNECTION_FAILURE_SENTENCES, code)
+      ? CONNECTION_FAILURE_SENTENCES[code as ConnectionFailureCode]
+      : null;
+  return known
+    ? t(known)
+    : t("This connection has stopped working. Turn it off and on again.");
 };
 
 /**

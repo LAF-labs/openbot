@@ -1583,8 +1583,8 @@ export const ko: Record<string, string> = {
     "이 서비스는 아직 여기서 쓸 수 없습니다. 여기서 고칠 것은 없습니다 — 문의해 주시면 열어 드립니다.",
   "Your account signed this out. Turn it off and on again to reconnect.":
     "계정 쪽에서 연결이 해제되었습니다. 껐다 다시 켜서 연결해 주세요.",
-  "The connection is gone from this machine. Turn it off and on again to reconnect.":
-    "이 컴퓨터에 연결 정보가 남아 있지 않습니다. 껐다 다시 켜서 연결해 주세요.",
+  "The service did not answer a moment ago. Nothing needs doing; the Bot tries again by itself.":
+    "방금 서비스가 응답하지 않았습니다. 따로 하실 일은 없습니다 — 봇이 알아서 다시 시도합니다.",
   "This connection is missing something it needs. Turn it off and on again, and say yes to everything the service asks.":
     "연결에 필요한 권한이 빠져 있습니다. 껐다 다시 켜고, 서비스가 묻는 것에 모두 동의해 주세요.",
   "This connection has stopped working. Turn it off and on again.":

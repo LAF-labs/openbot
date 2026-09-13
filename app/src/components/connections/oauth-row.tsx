@@ -159,6 +159,21 @@ export const OauthRow = ({
         tone: "warn",
       };
     }
+    /*
+     * A VENDOR THAT DID NOT ANSWER, SAID WITHOUT ASKING ANYTHING OF ANYBODY. The server carries
+     * `vendor_down` on a connection whose status stays `connected`, precisely so a screen can say
+     * there was trouble without sending somebody through a consent screen. Only while it is the
+     * latest thing that happened: a call that worked since has already said more.
+     */
+    if (
+      account.status === "connected" &&
+      account.health.failureCode === "vendor_down" &&
+      account.health.lastFailureAt !== null &&
+      (account.health.lastOkAt === null ||
+        account.health.lastFailureAt > account.health.lastOkAt)
+    ) {
+      return { text: connectionFailureText("vendor_down"), tone: "muted" };
+    }
     if (account.status === "connected") {
       const since = asDate(account.health.lastOkAt ?? account.connectedAt);
       const who = account.account;
