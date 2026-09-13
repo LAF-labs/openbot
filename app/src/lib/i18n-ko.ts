@@ -1109,6 +1109,8 @@ export const ko: Record<string, string> = {
   "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
     "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
   "{name} needs you": "{name}이(가) 기다립니다",
+  "The live picture was cut off. Reconnecting…":
+    "실시간 화면이 끊겼습니다 — 다시 잇는 중",
   "It finished while you were away.": "자리를 비운 사이에 일을 마쳤습니다.",
   "It stopped before it finished.": "끝내지 못하고 멈췄습니다.",
   "It needs something only you can give.":

@@ -4,8 +4,12 @@ import {
   SCREEN_UNREACHABLE,
 } from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
+import { pokeControl } from "./control-poll";
 import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
+
+/** The reconnect schedule: the roster socket's, so the two come back at the same pace. */
+export const LIVE_SCREEN_RETRY = { firstMs: 500, maxMs: 30_000 } as const;
 
 /**
  * Low-latency screencast used while a human is driving the Bot's browser.
@@ -76,68 +80,106 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   /** The size of the frames Chrome is sending, which is what input coordinates are relative to. */
   const frameSize = useRef<{ width: number; height: number } | null>(null);
   const [connected, setConnected] = useState(false);
+  /** The stream had been showing a picture and then stopped. Drawn under the picture until it is back. */
+  const [lost, setLost] = useState(false);
 
   useEffect(() => {
     // Same origin, so the scheme follows the page: wss when the app is served over https.
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(
-      `${scheme}://${window.location.host}/api/computers/${encodeURIComponent(computerId)}/stream`,
-    );
-    socketRef.current = socket;
+    const url = `${scheme}://${window.location.host}/api/computers/${encodeURIComponent(computerId)}/stream`;
+    let socket: WebSocket | undefined;
     let closed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay: number = LIVE_SCREEN_RETRY.firstMs;
+    /** Whether a socket has ever opened: a close after that is a loss, before it a failure to start. */
+    let hadOpened = false;
 
-    socket.onopen = () => {
-      setConnected(true);
-      onProblem?.(null);
-    };
+    /*
+     * RECONNECTS, LIKE THE ROSTER'S SOCKET NEXT DOOR. Audit A4 (2026-09-10), finding 6: this used
+     * to be one socket and `onclose = () => setConnected(false)`, so the front door's three-second
+     * restart on every upgrade left a person who had taken the wheel with a frozen picture until
+     * they closed and reopened the pane. Same schedule as `use-channel-events.ts`: half a second,
+     * doubling, capped.
+     */
+    const connect = () => {
+      if (closed) return;
+      socket = new WebSocket(url);
+      socketRef.current = socket;
 
-    socket.onmessage = async (event) => {
-      let message: {
-        type: string;
-        data?: string;
-        width?: number;
-        height?: number;
-        /** The container's fact code. Its `error` sentence is for a log, never for this pane. */
-        code?: string;
-      };
-      try {
-        message = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      if (message.type === "error") {
-        onProblem?.(message.code ?? SCREEN_UNAVAILABLE);
-        return;
-      }
-      if (message.type !== "frame" || !message.data) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas || closed) return;
-
-      frameSize.current = {
-        width: message.width ?? 1280,
-        height: message.height ?? 800,
+      socket.onopen = () => {
+        retryDelay = LIVE_SCREEN_RETRY.firstMs;
+        setConnected(true);
+        setLost(false);
+        onProblem?.(null);
+        // The wheel may have changed hands while the stream was down — the Bot's tool call gave
+        // up waiting, say — so the shared control loop is asked to look again.
+        if (hadOpened) pokeControl(computerId);
+        hadOpened = true;
       };
 
-      // Drawn as a bitmap because input coordinates are measured against this canvas. The decode
-      // itself moved into `frame-bitmap.ts`, which is also where the timings live.
-      const bitmap = await decodeFrame(message.data, "image/jpeg");
-      // Ignore a single corrupt frame; the next frame replaces it.
-      if (!bitmap) return;
-      if (closed) {
+      socket.onmessage = async (event) => {
+        let message: {
+          type: string;
+          data?: string;
+          width?: number;
+          height?: number;
+          /** The container's fact code. Its `error` sentence is for a log, never for this pane. */
+          code?: string;
+        };
+        try {
+          message = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (message.type === "error") {
+          onProblem?.(message.code ?? SCREEN_UNAVAILABLE);
+          return;
+        }
+        if (message.type !== "frame" || !message.data) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas || closed) return;
+
+        frameSize.current = {
+          width: message.width ?? 1280,
+          height: message.height ?? 800,
+        };
+
+        // Drawn as a bitmap because input coordinates are measured against this canvas. The
+        // decode itself moved into `frame-bitmap.ts`, which is also where the timings live.
+        const bitmap = await decodeFrame(message.data, "image/jpeg");
+        // Ignore a single corrupt frame; the next frame replaces it.
+        if (!bitmap) return;
+        if (closed) {
+          bitmap.close();
+          return;
+        }
+        paintFrame(canvas, bitmap);
         bitmap.close();
-        return;
-      }
-      paintFrame(canvas, bitmap);
-      bitmap.close();
+      };
+
+      // Only a stream that never started is a problem for the pane's own line; a stream that
+      // dropped says so under the picture, and is about to be reopened.
+      socket.onerror = () => {
+        if (!hadOpened) onProblem?.(SCREEN_UNREACHABLE);
+      };
+      socket.onclose = () => {
+        if (closed) return;
+        setConnected(false);
+        if (hadOpened) setLost(true);
+        retryTimer = setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, LIVE_SCREEN_RETRY.maxMs);
+      };
     };
 
-    socket.onerror = () => onProblem?.(SCREEN_UNREACHABLE);
-    socket.onclose = () => setConnected(false);
+    connect();
 
     return () => {
       closed = true;
-      socket.close();
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      // Cleared first: the close below must not schedule a reconnect for a pane that is gone.
+      if (socket) socket.onclose = null;
+      socket?.close();
       socketRef.current = null;
     };
     // The socket is per Bot; switching Bot must close this stream and open the next one.
@@ -318,6 +360,14 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         aria-label={driving ? undefined : t("The assistant's screen, live")}
         data-connected={connected}
       />
+      {lost && !connected ? (
+        <p
+          className="-translate-x-1/2 pointer-events-none absolute bottom-2 left-1/2 rounded-full bg-background/90 px-3 py-1 text-foreground text-xs shadow"
+          role="status"
+        >
+          {t("The live picture was cut off. Reconnecting…")}
+        </p>
+      ) : null}
       {driving ? (
         <textarea
           ref={keyboardRef}
