@@ -136,7 +136,12 @@ async function recordTurn(
     status: outcome.status,
     origin: "chat",
     startedAt: new Date(),
-    finishedAt: new Date(),
+    /*
+     * A moment later for every later turn. The reader orders failures by when they finished, and
+     * two rows written back to back against a local database share a millisecond often enough that
+     * "keeps two failures apart" failed one run in two, on whichever order Postgres chose that time.
+     */
+    finishedAt: new Date(Date.now() + seq),
     ...(outcome.error === undefined ? {} : { error: outcome.error }),
   });
   await database.insert(lafThreadMessages).values({
