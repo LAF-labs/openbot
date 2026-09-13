@@ -8,6 +8,7 @@ import {
   agents,
   deploymentPackages,
 } from "../db/schema";
+import { log } from "../log";
 import { authFromConfiguration, storeAgentAuth } from "./auth-header";
 import { canManageAgent } from "./profile-policy";
 import type {
@@ -59,8 +60,24 @@ export type AgentProfileStore = {
     id: string,
     patch: AgentPreferencePatch,
   ): Promise<void>;
+  /**
+   * Retire a Bot: gone from the roster, its seat freed, and — through the hook the store was
+   * built with — its browser closed and its profile, logins included, deleted from the computer.
+   */
   softDelete(actor: AgentActor, id: string): Promise<void>;
 };
+
+/**
+ * What happens to a deleted Bot's computer. See `computer/release.ts` for the one this deployment uses.
+ *
+ * Never throws for the store's sake — whatever it cannot do it records itself — because the row is
+ * already committed by the time it runs and a delete that reported failure for a Bot that is gone
+ * would leave a person deleting it again.
+ */
+export type ComputerRelease = (
+  agentId: string,
+  actor: AgentActor,
+) => Promise<void>;
 
 /*
  * Every refusal below carries a `laf:` code and the status it answers with — the shape
@@ -330,6 +347,16 @@ export function createAgentProfileStore(
    * exist — without the test needing five real Bots to be absent from a shared database first.
    */
   seats: number = MAX_BOTS_PER_COMPUTER,
+  /**
+   * What is done with a deleted Bot's computer once its row is gone.
+   *
+   * MEASURED 2026-09-10 (audit A3): `DELETE /api/agents/:id` set `deleted_at` and nothing else.
+   * The Bot's Chromium stayed running, signed in, until the idle sweep found it, and its profile
+   * directory — 1.4MB of cookies for the person's bank and marketplace — stayed in the volume for
+   * ever. Deleting a Bot is, more often than not, how a person means to take those logins back.
+   * Absent on a deployment with no computer, where there is nothing to release.
+   */
+  released?: ComputerRelease,
 ): AgentProfileStore {
   const managedConfiguration = {
     endpoint: managedAgentAgUiUrl.toString(),
@@ -554,8 +581,8 @@ export function createAgentProfileStore(
       });
     },
 
-    softDelete(actor, id) {
-      return database.transaction(
+    async softDelete(actor, id) {
+      await database.transaction(
         async (transaction) => {
           await lockProfileMutationRows(transaction, id);
           const profile = await findAccessibleProfile(transaction, actor, id);
@@ -570,6 +597,24 @@ export function createAgentProfileStore(
         },
         { isolationLevel: "read committed" },
       );
+      /*
+       * THE BROWSER AND ITS LOGINS, AFTER THE ROW.
+       *
+       * After, so a computer that is down cannot keep a Bot on the roster: the seat is freed and
+       * the Bot is gone whatever happens next, and the hook records what it could not do. The
+       * store still catches, because the hook's promise not to throw is a promise, and a delete
+       * that answered 500 for a Bot that no longer exists would be answered by deleting it again.
+       */
+      if (released) {
+        try {
+          await released(id, actor);
+        } catch (error) {
+          log.error("agent_computer_release_failed", {
+            agent: id,
+            reason: error,
+          });
+        }
+      }
     },
   };
 }

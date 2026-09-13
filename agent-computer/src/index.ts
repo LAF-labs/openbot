@@ -1523,12 +1523,22 @@ const listener = serve<StreamData>({
      * to discard a login by mistyping a parameter.
      */
     if (url.pathname === "/computers/reset" && request.method === "POST") {
+      /*
+       * THE BOT'S STATE IN THIS PROCESS GOES WITH ITS PROFILE, AND BEFORE IT.
+       *
+       * Control used to be released AFTER the profile was deleted, and releasing writes
+       * `control.json` into the profile directory — which recreated the directory the line above had
+       * just removed. Measured 2026-09-13: after a reset `/computers` still listed the Bot, from a
+       * directory holding nothing but that file. It is the same Bot's answer to "which computers are
+       * there", after the one call that was supposed to end it. So the session is dropped first,
+       * without writing anything, and a Bot used again after a reset starts from a session of its own.
+       */
+      sessions.delete(botId);
+      forgetSecretFields(session);
+      await stopViewer(session).catch(() => undefined);
       // Always answers: a browser that will not close is killed (profiles.ts, closeAndWait), so a
       // reset cannot be the fourth thing queued behind a page that never loaded.
       await profiles.reset(botId);
-      // Reset releases control because any previous browser session and pending secret request are gone.
-      session.control.release();
-      forgetSecretFields(session);
       return json({ reset: true, botId });
     }
 

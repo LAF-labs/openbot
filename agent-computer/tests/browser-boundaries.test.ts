@@ -24,6 +24,7 @@ import {
  *    so the boundary policy judges where a navigation goes and not only where it starts.
  *  - A CONTROL IS HELD TO THE LABEL IT WAS JUDGED ON: "저장" renamed "결제하기" under the same ref is
  *    refused with the name it has now.
+ *  - A RESET TAKES THE BOT'S DIRECTORY WITH IT, and does not write it back.
  *
  * The computer runs with private hosts ALLOWED, because both servers are on this machine's loopback.
  * What stays refused under that opt-in is the metadata endpoint, by address and by name — so that is
@@ -420,5 +421,28 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
       snapshotId: shot.snapshotId,
     });
     expect(clicked.status).toBe(200);
+  });
+});
+
+describe.skipIf(!HAS_BROWSER)("a reset", () => {
+  test("closes the browser and takes the Bot's directory with it, for good", async () => {
+    const opened = await post("/navigate", {
+      url: onLoopback("/before-reset"),
+    });
+    expect(opened.status).toBe(200);
+    expect(existsSync(join(profilesDir, BOT))).toBe(true);
+
+    const reset = await post("/computers/reset", {});
+    expect(reset.body).toEqual({ reset: true, botId: BOT });
+
+    // Measured before the fix: `control.json` was written back into the deleted directory, and
+    // `/computers` went on listing the Bot.
+    expect(existsSync(join(profilesDir, BOT))).toBe(false);
+    const listed = (await (
+      await fetch(`${base}/computers`, {
+        headers: { "x-openbot-computer-token": TOKEN },
+      })
+    ).json()) as { computers: { botId: string }[] };
+    expect(listed.computers.map((entry) => entry.botId)).not.toContain(BOT);
   });
 });

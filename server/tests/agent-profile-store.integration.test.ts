@@ -709,6 +709,53 @@ describe("the seat cap", () => {
     expect(created.name).toBe(input.name);
   });
 
+  test("deleting a Bot releases its computer, with the Bot's id", async () => {
+    /*
+     * AUDIT A3 (2026-09-10): the delete route set `deleted_at` and touched the computer not at all,
+     * so a deleted Bot's browser stayed running and its profile — its logins — stayed on disk. The
+     * store now hands the deleted Bot to the release hook after the row is gone.
+     */
+    const released: Array<{ agentId: string; actorId: string }> = [];
+    const withRelease = createAgentProfileStore(
+      database,
+      managedAgentAgUiUrl,
+      undefined,
+      undefined,
+      async (agentId, actor) => {
+        released.push({ agentId, actorId: actor.id });
+      },
+    );
+    const owner = await createUser();
+    const { agentId } = await createProfileFixture({ owner });
+
+    await withRelease.softDelete(owner, agentId);
+
+    expect(released).toEqual([{ agentId, actorId: owner.id }]);
+    // And the row really is gone, so the release is not instead of the delete.
+    expect(await withRelease.get(owner, agentId)).toBeNull();
+  });
+
+  test("a release that throws does not fail the delete", async () => {
+    // The Bot is off the roster whichever way the computer answered; a reset that failed must not
+    // leave a person deleting a Bot that no longer exists. The hook records its own failure.
+    const withFailingRelease = createAgentProfileStore(
+      database,
+      managedAgentAgUiUrl,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("the computer is unreachable");
+      },
+    );
+    const owner = await createUser();
+    const { agentId } = await createProfileFixture({ owner });
+
+    await expect(
+      withFailingRelease.softDelete(owner, agentId),
+    ).resolves.toBeUndefined();
+    expect(await withFailingRelease.get(owner, agentId)).toBeNull();
+  });
+
   test("somebody else's Bots do not take your seats", async () => {
     /*
      * THE BUG THIS PAIR EXISTS FOR. The count had no owner filter, so every undeleted profile in

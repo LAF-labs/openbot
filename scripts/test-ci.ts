@@ -188,6 +188,13 @@ const projectRoot = resolve(import.meta.dir, "..");
  * agent-computer 147 / root 176; `root` had drifted to 14% under and `server` and `app` past 3%,
  * so those three are re-raised to 3% under, and `agent-computer`, which did not grow, keeps its floor.
  *
+ * RE-RAISED 2026-09-13, with the browser's sandbox, the navigation guard and the label hold (W1-d):
+ * the sandbox's static half (launch args, `chromiumSandbox`, the image user, the compose profile and
+ * volume hand-over), the per-hop floor and the name rules without a browser, and a real Chromium
+ * refusing hops before they are sent, holding hops at a new host, holding a click to its label and
+ * resetting a profile for good. Measured agent-computer 176, re-raised to 3% under; the other three
+ * carry more than this wave's tests and are left to the measurement that has all of them.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -195,7 +202,7 @@ const projectRoot = resolve(import.meta.dir, "..");
 const GROUPS = [
   { name: "server", floor: 1753, roots: ["server"] },
   { name: "app", floor: 673, roots: ["app"] },
-  { name: "agent-computer", floor: 142, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 170, roots: ["agent-computer"] },
   { name: "root", floor: 170, roots: ["tests", "agent-bot"] },
 ] as const;
 

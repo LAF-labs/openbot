@@ -50,6 +50,7 @@ import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "./computer/policy-store";
+import { releaseComputerFor } from "./computer/release";
 import { createRepeatDetector } from "./computer/repeat";
 import {
   botOwnerLookup,
@@ -234,10 +235,24 @@ const agentVault = {
 /** What each Bot has learned about each person, and the rows that let them undo it. */
 const agentMemoryStore = createAgentMemoryStore(database);
 
+// Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
+// (see computer/assignment.ts). Built before the Bot store, which hands a deleted Bot's computer
+// to it.
+const computerClient = config.computer
+  ? createComputerClient({
+      baseUrl: config.computer.baseUrl,
+      allowPrivateHosts: config.computer.allowPrivateHosts,
+      ...(config.computer.token ? { token: config.computer.token } : {}),
+    })
+  : undefined;
 const agentProfileStore = createAgentProfileStore(
   database,
   config.managedAgentAgUiUrl,
   agentVault,
+  undefined,
+  // A deleted Bot's browser is closed and its profile — its logins — deleted, and the trail says
+  // so or says why not. Until 2026-09-13 the row went and the logins stayed (computer/release.ts).
+  releaseComputerFor(computerClient, bootAuditStore),
 );
 // Read here rather than beside the row it writes below, because the package names the deployment
 // and the channel store needs that name before it can mint a thread id.
@@ -363,15 +378,6 @@ await recordTenantPackage(database, tenantPackage);
 await sealStoredTokens(database, config.tokenEncryptionKey);
 const auth = config.auth
   ? createAuth(config, database, fleetNotifier)
-  : undefined;
-// Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
-// (see computer/assignment.ts).
-const computerClient = config.computer
-  ? createComputerClient({
-      baseUrl: config.computer.baseUrl,
-      allowPrivateHosts: config.computer.allowPrivateHosts,
-      ...(config.computer.token ? { token: config.computer.token } : {}),
-    })
   : undefined;
 /*
  * Long tool results go on file on the Bot's computer and reach the model as a preview and a

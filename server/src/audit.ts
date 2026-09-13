@@ -178,6 +178,13 @@ export const auditEventTypes = [
   // when is exactly the sort of thing an investigator needs and nothing else records.
   "computer.stopped",
   "computer.reset",
+  /*
+   * A reset that was asked for and did not happen. Written by the hook that wipes a deleted Bot's
+   * computer (computer/release.ts): the Bot is gone from the roster either way, so a trail that
+   * showed only the `computer.reset` rows would read as though every deleted Bot's logins had been
+   * wiped, and the one that was not is the row an investigator needs.
+   */
+  "computer.reset_failed",
   /**
    * The boundary this deployment booted with.
    *

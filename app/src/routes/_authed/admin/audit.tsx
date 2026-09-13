@@ -256,6 +256,8 @@ function Row({
     event.eventType === "mcp.call_failed" ||
     event.eventType === "component.function_failed" ||
     event.eventType === "credential.rotation_refused" ||
+    // A deleted Bot whose browser could not be wiped: its logins are still on the volume.
+    event.eventType === "computer.reset_failed" ||
     stalled;
   const silence = stalled ? silenceOf(payload) : null;
 
@@ -530,6 +532,8 @@ export const DECISIONS: Record<string, string> = {
   "computer.secret_requested": "The Bot asked for a secret",
   "computer.secret_supplied": "A person supplied a secret",
   "computer.reset": "The computer was reset",
+  // Written when deleting a Bot could not wipe its browser: the logins are still on disk.
+  "computer.reset_failed": "The computer could not be reset",
   "computer.stopped": "A person pressed stop",
   // Not "Blocked". Nothing refused this; the Bot did the same thing again and the trail is saying so.
   "computer.action_repeated": "The Bot repeated itself",
@@ -805,6 +809,7 @@ export const EVENTS: Record<string, string> = {
   "approval.standing_revoked": "A standing allowance",
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
+  "computer.reset_failed": "The computer",
   "computer.policy_loaded": "The boundary",
   "computer.policy_changed": "The boundary",
   "computer.isolation_loaded": "Isolation",

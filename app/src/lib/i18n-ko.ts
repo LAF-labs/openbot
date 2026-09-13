@@ -666,6 +666,7 @@ export const ko: Record<string, string> = {
   "The browser could not be stopped.": "브라우저를 정지하지 못했습니다.",
   "The computer could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The computer could not be reset.": "컴퓨터를 초기화하지 못했습니다.",
+  "The computer could not be reset": "컴퓨터를 초기화하지 못함",
   "The computer was reset": "컴퓨터를 초기화함",
   "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했습니다.",
   "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
