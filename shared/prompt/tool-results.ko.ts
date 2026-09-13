@@ -252,6 +252,8 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "바꿀 것을 하나도 주지 않아서 아무것도 바뀌지 않았다.",
   "laf:profile_invalid":
     "그 프로필 값은 받아들여지지 않았다. 이름과 직함은 짧게, 설명은 한두 문장으로.",
+  "laf:profile_looks_like_prompt":
+    "그 값은 직무가 아니라 프롬프트처럼 읽혀서 받아들여지지 않았다. 역할 표시나 제목 줄이나 지시를 뒤집는 문장 없이, 맡은 일을 한두 문장으로 적어라.",
   "laf:profile_not_found": "그 봇을 찾을 수 없다.",
   "laf:routine_needs_name": "루틴에는 이름이 필요하다.",
   "laf:routine_needs_instruction":

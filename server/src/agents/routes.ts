@@ -14,6 +14,7 @@ import {
   MemoryFullError,
 } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
+import { profileTextOf } from "./profile-text";
 import {
   AgentNotFoundError,
   AgentNotManageableError,
@@ -512,12 +513,31 @@ export function createAgentRoutes(
         );
       }
 
+      /*
+       * ONE LINE EACH, AND NOT A PROMPT. These three become part of every later system message
+       * (`shared/prompt/index.ts`), and this endpoint is the one a page reaches by telling the Bot
+       * to call `update_profile`. See profile-text.ts.
+       */
+      const name = profileTextOf(patch.name);
+      const title = profileTextOf(patch.title);
+      const roleDescription = profileTextOf(patch.roleDescription);
+      if (!name.ok || !title.ok || !roleDescription.ok) {
+        // The code and not the text: echoing what was refused would deliver it after all.
+        return context.json(
+          {
+            error: "laf:profile_looks_like_prompt",
+            code: "laf:profile_looks_like_prompt",
+          },
+          400,
+        );
+      }
+
       // Merged before validation, so the same rules that guard the edit form guard this too.
       const merged = parseAgentInput(
         {
-          name: patch.name ?? current.name,
-          title: patch.title ?? current.title,
-          roleDescription: patch.roleDescription ?? current.roleDescription,
+          name: name.value ?? current.name,
+          title: title.value ?? current.title,
+          roleDescription: roleDescription.value ?? current.roleDescription,
           visibility: current.visibility,
           ...(patch.avatarSeed === undefined
             ? {}

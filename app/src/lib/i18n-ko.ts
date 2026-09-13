@@ -638,6 +638,8 @@ export const ko: Record<string, string> = {
     "직접 운영하는 곳에 이 봇을 연결할 때만 씁니다. 건드리지 않으면 이 서버에서 그대로 돕니다.",
   "That change could not be read. Try again.":
     "그 변경 내용을 읽지 못했습니다. 다시 시도하세요.",
+  "That reads like an instruction to the Bot rather than a description, so it was not saved.":
+    "설명이 아니라 봇에게 내리는 지시문처럼 읽혀서 저장하지 않았습니다.",
   "Nothing was changed.": "바뀐 것이 없습니다.",
   "That Bot is no longer there.": "그 봇은 더 이상 없습니다.",
   "That looks like a password, so it was not saved.":

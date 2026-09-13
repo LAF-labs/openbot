@@ -26,6 +26,8 @@ export const AGENT_REFUSALS: Record<string, string> = {
    * them, and a person reaching one must not be handed the server's English.
    */
   "laf:profile_invalid": "That change could not be read. Try again.",
+  "laf:profile_looks_like_prompt":
+    "That reads like an instruction to the Bot rather than a description, so it was not saved.",
   "laf:profile_no_fields": "Nothing was changed.",
   "laf:profile_not_found": "That Bot is no longer there.",
   "laf:memory_looks_like_a_secret":

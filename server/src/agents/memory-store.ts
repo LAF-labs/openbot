@@ -188,6 +188,24 @@ function endsInOrderParticiple(clause: string): boolean {
 }
 
 /**
+ * Whether text is shaped like a prompt rather than like prose: a role or a section opened at the
+ * start of a line, a chat template's markers, a sentence telling the assistant its rules have
+ * changed, or a tool call.
+ *
+ * The half of `looksLikeAnInstruction` that holds for any text a Bot writes into its own prompt.
+ * The other half — a second person, an order's ending — refuses imperatives, which is right for a
+ * fact about a person and wrong for a job, since "송장을 처리해라" is what a job IS
+ * (`agents/profile-text.ts`).
+ */
+export function looksLikePromptStructure(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return [...ROLE_MARKERS, ...OVERRIDES, ...TOOL_CALL_SYNTAX].some((shape) =>
+    shape.test(trimmed),
+  );
+}
+
+/**
  * Whether a fact a Bot is trying to remember is written as an instruction rather than as a fact.
  *
  * Deliberately not clever, for the same reason `looksLikeASecret` is not: a filter that ate
@@ -198,14 +216,10 @@ function endsInOrderParticiple(clause: string): boolean {
 export function looksLikeAnInstruction(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
-  const shapes = [
-    ...ROLE_MARKERS,
-    ...OVERRIDES,
-    ...SECOND_PERSON,
-    ...FETCH_URL,
-    ...TOOL_CALL_SYNTAX,
-  ];
-  if (shapes.some((shape) => shape.test(trimmed))) return true;
+  if (looksLikePromptStructure(trimmed)) return true;
+  if ([...SECOND_PERSON, ...FETCH_URL].some((shape) => shape.test(trimmed))) {
+    return true;
+  }
   return trimmed
     .split(/[.!?\n;]+/)
     .map((clause) => clause.trim())
