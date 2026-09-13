@@ -103,6 +103,12 @@ export const TOOL_RESULT_KO: Record<string, string> = {
 
   "laf:computer_unreachable": "봇의 컴퓨터에 닿지 못했다.",
 
+  // 서버의 문 앞에서 멈춘 것(middleware/security.ts). 같은 요청을 곧바로 되풀이하면 같은 답이 온다.
+  "laf:rate_limited":
+    "짧은 시간에 요청이 너무 많아 서버가 잠시 받지 않았다. 같은 요청을 곧바로 되풀이하지 말고, 조금 뒤에 한 번만 다시 해라.",
+  "laf:body_too_large":
+    "보내려던 내용이 너무 커서 서버가 받지 않았다. 같은 것을 다시 보내지 말고 더 작게 나눠라.",
+
   "laf:secret_entered":
     "사람이 그 값을 칸에 직접 입력했다. 값은 페이지로 바로 들어갔고 너는 무엇인지 듣지 못했다. 제출이 필요하면 네가 직접 눌러라.",
 

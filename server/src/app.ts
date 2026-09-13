@@ -61,6 +61,7 @@ import {
 } from "./failure-text";
 import { createHealthRoute, type HealthProbes } from "./health";
 import { log } from "./log";
+import { createSecurityMiddleware } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
@@ -342,6 +343,7 @@ export function createApp(
   support?: SupportService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", createSecurityMiddleware());
 
   /*
    * WHERE A THROWN ERROR ENDS UP.
