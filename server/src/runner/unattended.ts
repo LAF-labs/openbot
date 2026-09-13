@@ -61,8 +61,13 @@ export type ToolExecutor = (
    * the acting routes keep: the id alone proves nothing, it is the id together with the fingerprint
    * of the call actually being made. Without it a retry after an approval raises a SECOND question
    * — measured, 400 ms after the person pressed Allow — and the grant is spent on nothing.
+   *
+   * `signal` is aborted when the run's deadline passes. It reaches the computer (`computer/client.ts`):
+   * a call that has not left yet does not leave, and one in flight is abandoned at the socket. Without
+   * it the deadline only rejected and walked away, and the click it walked away from landed after the
+   * run had been marked failed and the person told (audit A2 §2, 2026-09-10).
    */
-  call?: { id: string; approvalId?: string },
+  call?: { id: string; approvalId?: string; signal?: AbortSignal },
 ) => Promise<ToolOutcome>;
 
 export type UnattendedToolkit = {
@@ -268,14 +273,23 @@ export async function runUnattended(
    * failed and its ledger row closed — cost and work continuing past the point anything reported
    * them. `abortRun` is AG-UI's own cancellation; the fake agent in tests has none, hence optional.
    *
+   * AND THE TOOL CALL, not only the model. The same race walked away from a gateway call too, and
+   * the call went on to completion: the click landed after the failure had been recorded and
+   * reported. On a slow site the last action of a run can be a payment or a send, and a side
+   * effect arriving after "failed" is the worst order there is short of acting unasked. The run
+   * holds one controller; every executor call is handed its signal, and the computer client
+   * honours it down to the socket.
+   *
    * Each timer is cleared once its wait settles. Left armed, every wait of the run would fire at
    * the deadline — after the run had finished — and abort whatever the agent was doing by then.
    */
+  const abort = new AbortController();
   const withDeadline = <T>(promise: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expiry = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => {
+          abort.abort();
           target.abortRun?.();
           reject(new RunDeadline(steps));
         },
@@ -414,9 +428,20 @@ export async function runUnattended(
           reason: toolResultText("laf:tool_arguments_invalid"),
         };
       } else {
+        /*
+         * Not started once the deadline has passed. Its timer lives only while something is being
+         * waited on, so a deadline that fell between two waits has aborted nothing yet — and a call
+         * started now would reach the computer before the timer below got the chance.
+         */
+        if (Date.now() >= deadline) {
+          abort.abort();
+          target.abortRun?.();
+          throw new RunDeadline(steps);
+        }
         outcome = await withDeadline(
           options.toolkit.execute(call.name, args, {
             id: call.id,
+            signal: abort.signal,
           }),
         );
       }
@@ -705,6 +730,8 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         }
         // The computer id is the Bot id, exactly as the acting routes pass it.
         const c = botId;
+        // The run's deadline, on its way to the computer. See `ToolExecutor`.
+        const signal = call?.signal;
         switch (name) {
           case "computer_navigate":
             return {
@@ -716,6 +743,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   actor,
                   String(args.url ?? ""),
                   approvalId,
+                  signal,
                 ),
               ),
             };
@@ -753,7 +781,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   botId,
                   actor,
                   { ...target, path: args.path.trim() },
-                  undefined,
+                  signal,
                   approvalId,
                 ),
               ),
@@ -770,7 +798,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   botId,
                   actor,
                   target,
-                  undefined,
+                  signal,
                   approvalId,
                 ),
               ),
@@ -793,7 +821,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                     text: args.text,
                     submit: args.submit === true,
                   },
-                  undefined,
+                  signal,
                   approvalId,
                 ),
               ),
@@ -811,7 +839,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   botId,
                   actor,
                   { key: args.key, ...(asRef(args) ?? {}) },
-                  undefined,
+                  signal,
                   approvalId,
                 ),
               ),

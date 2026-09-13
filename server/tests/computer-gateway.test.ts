@@ -1844,3 +1844,56 @@ describe("an answer bound to the control it was given for", () => {
     expect(calls).toEqual([]);
   });
 });
+
+/**
+ * A routine whose deadline passed, or a person who pressed Stop, has nobody left to act for.
+ *
+ * The client refuses to dispatch for a stopped caller, but by then the gateway had counted the
+ * attempt and could have opened a question about it — a question for a run already over and
+ * reported. The gateway is the one entry every acting call comes through, so it honours the signal
+ * first.
+ */
+describe("a caller that has already stopped", () => {
+  const stopped = () => {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  };
+
+  test("is not asked about, not written down and not carried out", async () => {
+    const { gateway, approvals, calls, rows } = await gatewayWith({
+      deny: [],
+      ask: ['contains(element.name, "submit")'],
+      allow: ["true"],
+    });
+
+    await expect(
+      gateway.click(
+        "default",
+        "bot-1",
+        ACTOR,
+        { ref: "e9", snapshotId: 7 },
+        stopped(),
+      ),
+    ).rejects.toThrow("The action was stopped.");
+
+    expect(calls).toEqual([]);
+    expect(rows).toEqual([]);
+    expect(await approvals.pending("bot-1")).toEqual([]);
+  });
+
+  test("is not counted as an attempt a repetition rule could hold against the next one", async () => {
+    const { gateway, calls } = await gatewayWith({
+      ...PERMISSIVE,
+      deny: ["repeat.count >= 2"],
+    });
+    const click = { ref: "e9", snapshotId: 7 };
+
+    await expect(
+      gateway.click("default", "bot-1", ACTOR, click, stopped()),
+    ).rejects.toThrow("The action was stopped.");
+    // Counted, this would be the second identical attempt and the rule would refuse it.
+    await gateway.click("default", "bot-1", ACTOR, click);
+    expect(calls).toEqual(["click"]);
+  });
+});

@@ -36,7 +36,11 @@ import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { normalizeHostname } from "../net/host-verdict";
-import { type ComputerClient, StaleSnapshotError } from "./client";
+import {
+  type ComputerClient,
+  ComputerUnavailableError,
+  StaleSnapshotError,
+} from "./client";
 import { isSecretFieldElement } from "./default-policy";
 import {
   type ActionPolicy,
@@ -455,6 +459,15 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     },
     run: () => Promise<T>,
   ): Promise<T> {
+    /*
+     * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
+     *
+     * A routine whose deadline passed, or a person who pressed Stop, has nobody left to act for:
+     * counting the attempt would feed the repeat rule a call that never happened, and opening a
+     * question would ask a person about an action for a run that is already over and reported.
+     */
+    if (subject.signal?.aborted) throw stopped();
+
     const { ref, filePath } = subject;
     const element = resolve(computerId, ref);
     const cached = snapshots.get(computerId);
@@ -758,6 +771,14 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
 
     let result: T;
     try {
+      /*
+       * AND NOT CARRIED OUT, if the caller stopped while this was being decided. Settling can wait
+       * on a model — the auto-review judge takes seconds — and a routine's deadline that passed in
+       * those seconds has already been recorded as a failure and told to a person. The click must
+       * not arrive after that. Checked here as well as in the client, because this is the one
+       * entry every acting call comes through and a client is only one of the things it runs.
+       */
+      if (subject.signal?.aborted) throw stopped();
       result = await run();
     } catch (error) {
       /**
@@ -814,6 +835,11 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     return element && result && typeof result === "object"
       ? { ...result, element: { role: element.role, name: element.name } }
       : result;
+  }
+
+  /** What a stopped caller is told: the same error the client throws for one. */
+  function stopped(): ComputerUnavailableError {
+    return new ComputerUnavailableError("The action was stopped.");
   }
 
   return {
@@ -1045,14 +1071,24 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        * than by acting unasked.
        */
       approvalId?: string,
+      /**
+       * A person's Stop, or a routine's deadline, on its way to the computer. After `approvalId`
+       * rather than before it, as the other acting methods have it, so the callers that already
+       * pass an approval id are untouched; nothing passed the signal here before.
+       */
+      signal?: AbortSignal,
     ) {
       const result = await govern(
         computerId,
         "computer_navigate",
         botId,
         actor,
-        { targetUrl: url, ...(approvalId ? { approvalId } : {}) },
-        () => as(botId).navigate(url),
+        {
+          targetUrl: url,
+          ...(signal ? { signal } : {}),
+          ...(approvalId ? { approvalId } : {}),
+        },
+        () => as(botId).navigate(url, signal),
       );
       /*
        * The page that actually loaded, not the one that was asked for. A login wall redirects, and

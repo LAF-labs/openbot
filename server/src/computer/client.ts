@@ -304,7 +304,10 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /** Open a page. Refuses before the request leaves if the target is not permitted. */
-      async navigate(url: string): Promise<NavigateResult> {
+      async navigate(
+        url: string,
+        caller?: AbortSignal,
+      ): Promise<NavigateResult> {
         const verdict = checkNavigationTarget(url, {
           allowPrivateHosts: options.allowPrivateHosts,
         });
@@ -312,11 +315,15 @@ export function createComputerClient(options: ComputerClientOptions) {
           throw new NavigationRefusedError(verdict.reason);
         }
 
-        return (await call("/navigate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ url: verdict.url }),
-        })) as NavigateResult;
+        return (await call(
+          "/navigate",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ url: verdict.url }),
+          },
+          caller,
+        )) as NavigateResult;
       },
 
       async screenshot(): Promise<ScreenshotResult> {

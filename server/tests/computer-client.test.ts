@@ -59,6 +59,26 @@ describe("computer client", () => {
     expect(seen).toEqual(["http://agent-computer:4100/navigate"]);
   });
 
+  /*
+   * A routine's deadline, or a person's Stop, reaches navigate as it reaches click: a caller that
+   * has already stopped is not dispatched at all. Navigate was the one acting call without the
+   * parameter, so a routine that ran out of time mid-navigation still opened the page.
+   */
+  test("navigate does not dispatch for a caller that has already stopped", async () => {
+    let dispatched = 0;
+    const client = clientWith(() => {
+      dispatched += 1;
+      return ok({ url: "https://example.com/", title: "", text: "" });
+    });
+    const stop = new AbortController();
+    stop.abort();
+
+    await expect(
+      client.navigate("https://example.com/", stop.signal),
+    ).rejects.toThrow("The action was stopped.");
+    expect(dispatched).toBe(0);
+  });
+
   // The refusal happens before anything leaves. A guard that only inspects the response has
   // already let the request reach the internal service it was meant to protect.
   test("refuses an internal address without calling the computer", async () => {

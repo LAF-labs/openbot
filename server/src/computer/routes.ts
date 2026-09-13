@@ -185,6 +185,9 @@ export function createComputerRoutes(
             },
             body.url.trim(),
             asApprovalId(body),
+            // The person's Stop, as the acting routes below pass it. Navigation was the one
+            // acting call that went on waiting for a page after the person had stopped it.
+            context.req.raw.signal,
           ),
         );
       } catch (error) {
