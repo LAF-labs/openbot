@@ -1,9 +1,13 @@
 import { serve } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Frame, Page } from "playwright";
+import type { ElementHandle, Frame, Page } from "playwright";
 import { buildOf } from "../../shared/log";
-import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
+import {
+  isTextEntryRole,
+  parseAriaSnapshot,
+  type SnapshotElement,
+} from "./aria-snapshot";
 import {
   BOT_ID_INVALID,
   isBotId,
@@ -153,6 +157,9 @@ export type ComputerNote = { code: string } & Record<string, unknown>;
  */
 const MAX_NOTES = 8;
 
+/** A field a person typed a secret into. See `BotSession.secretFields`. */
+type SecretField = { handle: ElementHandle; ref: string };
+
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
 type BotSession = {
   control: Control;
@@ -160,6 +167,14 @@ type BotSession = {
   snapshotId: number;
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
+  /**
+   * The fields a person typed a secret into: the node itself, and the ref it was last known by.
+   *
+   * Identity, not description: whatever the page calls the box and whatever its markup says, the
+   * value in THIS node is the one `computer_request_secret` promised the model would never see.
+   * Followed at every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
+   */
+  secretFields: SecretField[];
   /** The one live screen viewer for this Bot, if a person is watching. */
   viewer?: {
     socket: unknown;
@@ -190,6 +205,7 @@ function sessionFor(botId: string): BotSession {
     }),
     snapshotId: 0,
     notes: restored.secretLost ? [{ code: "laf:secret_request_lost" }] : [],
+    secretFields: [],
   };
   sessions.set(botId, created);
   return created;
@@ -541,12 +557,28 @@ async function snapshotPage(
   // A tab that opened a moment ago is still `about:blank`, and an aria snapshot of that is an empty
   // list — which reads as "there is nothing on this page you can act on".
   await settleIfLoading(target);
+  /*
+   * THE SECRET FIELDS FIRST, THE PAGE LAST. A ref is minted the first time an element is
+   * snapshotted and reused after, so either order names the same refs — but Playwright resolves
+   * `aria-ref=` only against the MOST RECENT snapshot, and the other way round left the page's refs
+   * dangling behind a snapshot of one input (measured: the person's value could not be typed into
+   * the box the Bot had just named, 502 after the action timeout). The page's has to be the one
+   * standing when the Bot acts.
+   */
+  const marked = await secretSignals(session, target);
   const yaml = await target.ariaSnapshot({ mode: "ai" });
+  // After the page's snapshot, not before: whether a ref still names a node is asked of the
+  // snapshot standing now, and a node renamed since the last one has only just been handed its ref.
+  const typedInto = await typedIntoRefs(session, target, yaml);
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await target.title(),
-    ...parseAriaSnapshot(yaml, await passwordLabels(target)),
+    ...parseAriaSnapshot(yaml, {
+      labels: marked.labels,
+      values: marked.values,
+      refs: [...marked.refs, ...typedInto],
+    }),
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.
      * A Bot that has to ask whether a second tab exists will not ask, and the tab a click just
@@ -557,40 +589,212 @@ async function snapshotPage(
 }
 
 /**
- * What the page's password boxes are called, so the snapshot can mark them.
+ * The inputs a page marks as taking a secret — in the markup, whatever the wording beside them.
  *
- * THE ACCESSIBLE TREE DOES NOT SAY. Playwright reports `<input type="password">` as a `textbox`, the
- * same as a name field, and the boundary's whole rule about secrets is that a Bot must not type into
- * one. So the type is read from the DOM in one call — `evaluateAll` on the whole set, not a
- * round trip per element — and joined to the tree by the label, which is the only thing both sides
- * have. See `parseAriaSnapshot` for what that join can and cannot do.
+ * `type="password"` is the obvious one. The `autocomplete` tokens are the page telling a browser's
+ * own password manager what goes in the box, which is as good a declaration as the type: a one-time
+ * code and a card number are `type="text"` and `type="tel"` on every Korean checkout, and their
+ * token is the only thing in the markup that says so. Matched as a token (`~=`), because the
+ * attribute is a list — `section-login current-password` is a current password.
+ */
+const SECRET_INPUT_SELECTOR = [
+  'input[type="password"]',
+  'input[autocomplete~="current-password"]',
+  'input[autocomplete~="new-password"]',
+  'input[autocomplete~="one-time-code"]',
+  'input[autocomplete~="cc-number"]',
+  'input[autocomplete~="cc-csc"]',
+].join(", ");
+
+/** How many marked inputs one snapshot joins, across every frame. A login form has one or two. */
+const SECRET_INPUT_LIMIT = 20;
+
+/** How many fields a session follows. Each is a live handle into the page. */
+const SECRET_FIELD_LIMIT = 8;
+
+/**
+ * How long a join may wait on one element. They answer in milliseconds or not at all — a hidden
+ * input snapshots to nothing and a vanished one is an error at once (measured) — and a snapshot is
+ * what the Bot is waiting on, so this is a bound on a mistake rather than a wait.
+ */
+const SECRET_JOIN_TIMEOUT_MS = 1_000;
+
+/**
+ * What the markup says about the page's secret fields, for the snapshot to mark and blank them.
  *
- * The name is computed the way a screen reader would resolve the common cases, in the order
- * Playwright itself prefers: an explicit label, then the wrapping one, then aria-label, then the
- * placeholder. Anything cleverer would drift from Playwright's own computation and stop matching,
- * which fails silently — so the field's own label is a second signal in the rule itself.
+ * THE ACCESSIBLE TREE DOES NOT SAY. Playwright reports `<input type="password">` as a `textbox`,
+ * the same as a name field, and the boundary's whole rule about secrets is that a Bot must never
+ * type into one nor read what is in it. So every frame is asked, and the answer is joined to the
+ * tree three ways — see `SecretSignals` in aria-snapshot.ts:
+ *
+ * 1. BY REF. Playwright keeps the ref it mints ON THE ELEMENT, so a snapshot of one input names the
+ *    ref the page's snapshot does — in a child frame too, prefix and all (measured: `f1e1` both
+ *    ways). Taken BEFORE the page's snapshot; see `snapshotPage` for why the order is not free.
+ * 2. BY VALUE. The tree read the value off the same node, so equality is identity, and it is what
+ *    holds when a ref could not be read.
+ * 3. BY LABEL. The join that used to be the whole rule, by `HTMLInputElement.labels` — blind to
+ *    `aria-labelledby`, so the auditor's box reached the tree named 패스워드 and arrived here named
+ *    nothing (measured 2026-09-10). Resolved now in the order Playwright resolves a name:
+ *    `aria-labelledby`, `aria-label`, the `<label>`, the placeholder, the title.
+ *
+ * The values of the fields a person typed a secret into are read here too, by their handles, and a
+ * handle whose node or document is gone is let go.
  *
  * Never throws. A page that is navigating under us costs the marking, not the snapshot.
  */
-async function passwordLabels(target: Page): Promise<string[]> {
-  try {
-    return await target
-      .locator('input[type="password"]')
-      .evaluateAll((nodes: Element[]) =>
-        nodes.map((node: Element) => {
-          const input = node as HTMLInputElement;
-          const labelled = input.labels?.[0]?.textContent ?? "";
-          return (
-            labelled ||
-            input.getAttribute("aria-label") ||
-            input.getAttribute("placeholder") ||
-            input.getAttribute("title") ||
-            ""
-          );
-        }),
+async function secretSignals(
+  session: BotSession,
+  target: Page,
+): Promise<{ labels: string[]; values: string[]; refs: string[] }> {
+  const labels: string[] = [];
+  const values: string[] = [];
+  const refs: string[] = [];
+
+  let budget = SECRET_INPUT_LIMIT;
+  for (const frame of target.frames()) {
+    if (budget <= 0) break;
+    try {
+      const inputs = frame.locator(SECRET_INPUT_SELECTOR);
+      const found = await inputs.evaluateAll(
+        (nodes: Element[], limit: number) =>
+          nodes.slice(0, limit).map((node: Element) => {
+            const input = node as HTMLInputElement;
+            const text = (element: Element | null): string =>
+              (element?.textContent ?? "").replace(/\s+/g, " ").trim();
+            const byIds = (ids: string | null): string =>
+              (ids ?? "")
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((id) => text(input.ownerDocument.getElementById(id)))
+                .filter(Boolean)
+                .join(" ");
+            const label =
+              byIds(input.getAttribute("aria-labelledby")) ||
+              (input.getAttribute("aria-label") ?? "").trim() ||
+              text(input.labels?.[0] ?? null) ||
+              (input.getAttribute("placeholder") ?? "").trim() ||
+              (input.getAttribute("title") ?? "").trim();
+            return { label, value: String(input.value ?? "") };
+          }),
+        budget,
       );
+      budget -= found.length;
+      for (const entry of found) {
+        if (entry.label) labels.push(entry.label);
+        if (entry.value) values.push(entry.value);
+      }
+      const lines = await Promise.all(
+        found.map((_, index) =>
+          inputs
+            .nth(index)
+            .ariaSnapshot({ mode: "ai", timeout: SECRET_JOIN_TIMEOUT_MS })
+            .catch(() => ""),
+        ),
+      );
+      for (const line of lines) {
+        const ref = /\[ref=([^\]\s]+)\]/.exec(line)?.[1];
+        if (ref) refs.push(ref);
+      }
+    } catch {
+      // A frame that is navigating or already detached. Its marking is lost, not the snapshot.
+    }
+  }
+
+  const kept: SecretField[] = [];
+  for (const field of session.secretFields) {
+    const value = await field.handle
+      .evaluate((node) =>
+        node.isConnected
+          ? String((node as HTMLInputElement).value ?? "")
+          : null,
+      )
+      .catch(() => null);
+    if (value === null) {
+      // The node left the page, or the page left the browser: the secret went with it.
+      await field.handle.dispose().catch(() => undefined);
+      continue;
+    }
+    kept.push(field);
+    if (value) values.push(value);
+  }
+  session.secretFields = kept;
+
+  return { labels, values, refs };
+}
+
+/**
+ * The refs, in the snapshot just taken, of the fields a person typed a secret into.
+ *
+ * BY NODE, WHATEVER THE PAGE HAS DONE TO IT SINCE. A ref outlives a snapshot only while the node
+ * keeps its role and name: rename the box — a validation message added to its label is enough —
+ * and Playwright mints it a new ref (measured: `e1` became `e5`, value and all). So the ref kept
+ * from the last time is asked first, and when it no longer names this node the page's text-entry
+ * controls are asked in turn until one does. Asked of the node itself, through `aria-ref=`, which
+ * resolves against the snapshot standing now; nothing about the label or the value is trusted.
+ */
+async function typedIntoRefs(
+  session: BotSession,
+  target: Page,
+  yaml: string,
+): Promise<string[]> {
+  const refs: string[] = [];
+  let candidates: string[] | undefined;
+  for (const field of session.secretFields) {
+    if (await refNamesNode(target, field.ref, field.handle)) {
+      refs.push(field.ref);
+      continue;
+    }
+    candidates ??= parseAriaSnapshot(yaml)
+      .elements.filter((element) => isTextEntryRole(element.role))
+      .map((element) => element.ref);
+    for (const ref of candidates) {
+      if (await refNamesNode(target, ref, field.handle)) {
+        field.ref = ref;
+        refs.push(ref);
+        break;
+      }
+    }
+  }
+  return refs;
+}
+
+/** Whether `ref`, in the current snapshot, is this very node. False for anything it cannot answer. */
+async function refNamesNode(
+  target: Page,
+  ref: string,
+  handle: ElementHandle,
+): Promise<boolean> {
+  try {
+    const located = target.locator(`aria-ref=${ref}`);
+    if ((await located.count()) !== 1) return false;
+    return await located.evaluate((node, other) => node === other, handle, {
+      timeout: SECRET_JOIN_TIMEOUT_MS,
+    });
   } catch {
-    return [];
+    return false;
+  }
+}
+
+/** Follow a field a person just typed a secret into, from the next snapshot on. */
+function rememberSecretField(
+  session: BotSession,
+  handle: ElementHandle | null,
+  ref: string,
+): void {
+  if (!handle) return;
+  session.secretFields.push({ handle, ref });
+  while (session.secretFields.length > SECRET_FIELD_LIMIT) {
+    void session.secretFields
+      .shift()
+      ?.handle.dispose()
+      .catch(() => undefined);
+  }
+}
+
+/** Let every followed field go: the browser they lived in is gone. */
+function forgetSecretFields(session: BotSession): void {
+  for (const field of session.secretFields.splice(0)) {
+    void field.handle.dispose().catch(() => undefined);
   }
 }
 
@@ -979,6 +1183,20 @@ const listener = serve<StreamData>({
         const field = locateRef(session, target, pending.ref, undefined);
         await field.click({ timeout: ACTION_TIMEOUT_MS });
         await field.fill(body.text, { timeout: ACTION_TIMEOUT_MS });
+        /*
+         * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
+         * whatever the page calls it, and a ref is re-minted the moment the page renames the box
+         * while the value is the one thing this process must not keep. The element itself is
+         * neither: it is where the secret is, until the page is gone. The short wait is for a page
+         * that left on the keystroke — the value left with it, and the person is waiting.
+         */
+        rememberSecretField(
+          session,
+          await field
+            .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
+            .catch(() => null),
+          pending.ref,
+        );
         const characters = body.text.length;
         // Cleared only after it actually landed, so a failure leaves the request open and the person
         // can try again rather than being told to start over.
@@ -1045,6 +1263,7 @@ const listener = serve<StreamData>({
       const wasRunning = await profiles.stop(botId);
       // The wheel goes back to the Bot because the controlled browser no longer exists.
       session.control.release();
+      forgetSecretFields(session);
       return json({ stopped: true, wasRunning });
     }
 
@@ -1061,6 +1280,7 @@ const listener = serve<StreamData>({
       await profiles.reset(botId);
       // Reset releases control because any previous browser session and pending secret request are gone.
       session.control.release();
+      forgetSecretFields(session);
       return json({ reset: true, botId });
     }
 

@@ -86,8 +86,64 @@ export type SnapshotElement = {
   checked?: boolean;
 };
 
-/** The roles a password box can arrive as, so the marking below does not go looking at buttons. */
-const TEXT_ENTRY_ROLES = new Set(["textbox", "searchbox", "combobox"]);
+/**
+ * The roles a secret can be typed into, so the marking below does not go looking at buttons.
+ *
+ * `spinbutton` is `<input type="number">`, which is what a card's CVC or a six-digit code is on a
+ * page that wants the numeric keyboard — a secret field by any other role.
+ */
+const TEXT_ENTRY_ROLES = new Set([
+  "textbox",
+  "searchbox",
+  "combobox",
+  "spinbutton",
+]);
+
+/** Whether an element of this role is one a value can be typed into. */
+export function isTextEntryRole(role: string): boolean {
+  return TEXT_ENTRY_ROLES.has(role);
+}
+
+/**
+ * What the caller read off the DOM about the page's secret fields, which the accessible tree does
+ * not say.
+ *
+ * THE TREE REPORTS A PASSWORD BOX AS A `textbox` with a name and a value, and nothing else, so which
+ * textboxes hold a secret has to be read off the DOM and joined back. The join used to be BY LABEL
+ * ALONE, and a label is the one thing a page decides: `<input type="password"
+ * aria-labelledby="패스워드">` reached the tree named 패스워드 while `HTMLInputElement.labels` —
+ * blind to `aria-labelledby` — reported it unlabelled, the two never met, and the value a person had
+ * just typed through `computer_request_secret` rode out on the next snapshot (measured 2026-09-10,
+ * in the published container and in main).
+ *
+ * - `refs`: IDENTITY. The refs Playwright minted for the DOM's own secret inputs, and for the nodes a
+ *   person typed a secret into — a ref names one element, whatever it is called.
+ * - `values`: the current contents of those same inputs. A tree value equal to one IS that input's
+ *   value, since the tree read it off the node; this is the net under a ref that could not be read.
+ * - `labels`: the accessible names of the DOM's secret inputs, the join that used to be the rule.
+ */
+export type SecretSignals = {
+  refs?: Iterable<string>;
+  values?: Iterable<string>;
+  labels?: Iterable<string>;
+};
+
+/**
+ * A value as the tree renders it, so the DOM's copy and the tree's can be compared.
+ *
+ * Playwright collapses an input's value the way it collapses a name before it writes it into the
+ * tree (measured: a textarea holding `"  multi\nline   value  "` arrives as `multi line value`), and
+ * `toElement` below trims and cuts it. An exact comparison missed every secret with a space at
+ * either end — which is the one a person is least likely to have noticed typing. The first 64
+ * characters: past that, two different values that agree are not a risk anybody runs.
+ */
+export function comparableValue(value: string): string {
+  return value
+    .replace(/[\u200b\u00ad]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 64);
+}
 
 /**
  * Labels that mean a field holds something the Bot must never be shown.
@@ -100,16 +156,23 @@ const TEXT_ENTRY_ROLES = new Set(["textbox", "searchbox", "combobox"]);
  * `computer_snapshot`, which the tool results tell the Bot to take. The value went into the tool
  * result, from there into the thread, and from there into every later turn.
  *
- * The DOM's own password inputs are the first signal (`passwordLabels`), and this list is the
- * second, for the fields the DOM cannot mark: a one-time code is `type="text"`, a card number is
- * `type="tel"`, and a password box inside a payment iframe is not in the caller's query at all.
+ * The DOM's own secret inputs and the fields a person typed a secret into are the first signal
+ * (`SecretSignals`, by identity), and this list is the last, for the fields nothing marks: a one-time
+ * code is `type="text"` and a card number `type="tel"` on a page that sets no `autocomplete` token.
  * The same words the server's boundary refuses typing into (`default-policy.ts`), plus the codes
  * and numbers a person is asked for at a checkout. Over-matching costs the Bot the sight of a
  * field's contents; under-matching costs the person their secret.
+ *
+ * 패스워드 is here because it was not: the word Korean sites write in place of 비밀번호 was in
+ * neither list, and the one page the auditor built used exactly that word. The word is not what
+ * fixes that page — identity is — it is what keeps the last net from missing the commonest case.
  */
 const SECRET_LABEL_WORDS = [
   "비밀번호",
   "비밀 번호",
+  "패스워드",
+  "패스 워드",
+  "비번",
   "암호",
   "password",
   "passcode",
@@ -117,6 +180,8 @@ const SECRET_LABEL_WORDS = [
   "인증 번호",
   "일회용",
   "otp",
+  "핀번호",
+  "핀 번호",
   "카드번호",
   "카드 번호",
   "cvc",
@@ -258,25 +323,28 @@ function toElement(
 /**
  * Turn an aria snapshot into the flat element list the tool contract publishes.
  *
- * `passwordLabels` are the accessible names of the page's own password inputs, read from the DOM by
- * the caller because the accessible tree does not carry the type. Matching by label is the join
- * available: the tree gives a name and a ref, the DOM gives a type and a name, and the name is what
- * both have. It is not exact — two fields can share a label, and a password box inside an iframe is
- * not in the caller's query at all — so it is one of two signals the boundary uses, beside the
- * field's own label (`default-policy.ts`). Over-marking costs a Bot the use of a text field it
- * should have been asking a person to fill anyway.
+ * `secrets` is what the caller read off the DOM about the page's secret fields, because the
+ * accessible tree does not carry the type — see {@link SecretSignals} for the three joins and why
+ * the label alone was not enough. Whatever a signal matches is marked `type: "password"` and loses
+ * its value; a field's own label (`isSecretLabel`) drops the value on its own as well. Over-marking
+ * costs a Bot the use of a text field it should have been asking a person to fill anyway.
  */
 export function parseAriaSnapshot(
   yaml: string,
-  passwordLabels: readonly string[] = [],
+  secrets: SecretSignals = {},
 ): {
   elements: SnapshotElement[];
   truncated: boolean;
 } {
-  const secret = new Set(
-    passwordLabels
+  const secretLabels = new Set(
+    [...(secrets.labels ?? [])]
       .map((label) => label.replace(/\s+/g, " ").trim())
       .filter(Boolean),
+  );
+  const secretRefs = new Set(secrets.refs ?? []);
+  // Empty is not a value: an empty box must not match an empty password box and be marked with it.
+  const secretValues = new Set(
+    [...(secrets.values ?? [])].map(comparableValue).filter(Boolean),
   );
   const elements: SnapshotElement[] = [];
   let truncated = false;
@@ -288,7 +356,14 @@ export function parseAriaSnapshot(
     }
     if (TEXT_ENTRY_ROLES.has(element.role)) {
       const label = element.name.replace(/\s+/g, " ").trim();
-      if (secret.has(label)) element.type = "password";
+      if (
+        secretRefs.has(element.ref) ||
+        secretLabels.has(label) ||
+        (element.value !== undefined &&
+          secretValues.has(comparableValue(element.value)))
+      ) {
+        element.type = "password";
+      }
       /*
        * THE VALUE OF A SECRET FIELD IS NOT THE BOT'S TO SEE, whether the page marked the box a
        * password or only labelled it one. What the Bot needs from a secret field is that it exists

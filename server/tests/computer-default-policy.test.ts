@@ -352,6 +352,10 @@ describe("which elements hold something the Bot must not be shown", () => {
   test("by label, whatever the type", () => {
     for (const name of [
       "비밀번호",
+      // Neither list had the word. The auditor's page did, and the typed value reached the model.
+      "패스워드",
+      "비번",
+      "핀번호",
       "인증번호 6자리",
       "일회용 비밀번호",
       "카드 번호",

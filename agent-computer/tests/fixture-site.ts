@@ -139,6 +139,55 @@ const OTHER_HTML = `<!doctype html>
 <body><h1>주문 상세 화면</h1></body></html>`;
 
 /**
+ * The fields of the auditor's login page, by the accessible name each reaches the tree with, and
+ * what — if anything — marks it as a secret in the markup.
+ */
+export const PW_FIELDS = {
+  /** `<input type="password" aria-labelledby="패스워드">` — the auditor's box, exactly. */
+  labelledby: "패스워드",
+  /** `type="text"`, named by `aria-label` with no secret word, marked only by `current-password`. */
+  currentPassword: "로그인 키",
+  /** `type="password"` named by nothing but its placeholder, a word no list carries. */
+  placeholder: "PIN4",
+  /** `type="text"`, a placeholder, and the `one-time-code` token as its only mark. */
+  oneTimeCode: "6자리",
+  /** An ordinary field: a `<label for>` and nothing else. */
+  plain: "아이디",
+  /** Unmarked and unnamed as a secret, and RENAMED the moment anything is typed into it. */
+  renames: "사번",
+  /** What `renames` is called once it has a value. */
+  renamed: "사번 (확인됨)",
+} as const;
+
+/**
+ * The auditor's page, served at `/pw`.
+ *
+ * A password box whose ONLY label is `aria-labelledby` — which `HTMLInputElement.labels` does not
+ * see — under a word (패스워드) that was in no secret-word list. Measured 2026-09-10 in the
+ * published container and in main: the value a person typed through the secret request rode out on
+ * the very next snapshot. Beside it, one field for every other way a page names or marks a secret
+ * box — `aria-label`, a placeholder, `autocomplete="current-password"`, the `one-time-code` token —
+ * and one it neither names nor marks, which renames itself on input the way a validating form does.
+ * None of them is exotic; this is what Korean login pages look like.
+ */
+const PW_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
+<body>
+  <h1>로그인</h1>
+  <form>
+    <label for="uid">${PW_FIELDS.plain}</label>
+    <input id="uid" type="text">
+    <span id="${PW_FIELDS.labelledby}">${PW_FIELDS.labelledby}</span>
+    <input type="password" aria-labelledby="${PW_FIELDS.labelledby}">
+    <input type="text" autocomplete="section-login current-password" aria-label="${PW_FIELDS.currentPassword}">
+    <input type="password" placeholder="${PW_FIELDS.placeholder}">
+    <input type="text" autocomplete="one-time-code" placeholder="${PW_FIELDS.oneTimeCode}">
+    <input type="text" aria-label="${PW_FIELDS.renames}" oninput="this.setAttribute('aria-label', '${PW_FIELDS.renamed}')">
+    <button type="button">로그인</button>
+  </form>
+</body></html>`;
+
+/**
  * Serve it, and say where.
  *
  * Port 0, so two of these can run at once — the gate is run concurrently from more than one
@@ -206,6 +255,11 @@ export function serveFixture(port = 0) {
       }
       if (path === "/other") {
         return new Response(OTHER_HTML, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (path === "/pw") {
+        return new Response(PW_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

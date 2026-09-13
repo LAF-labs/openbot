@@ -130,7 +130,10 @@ describe("parseAriaSnapshot, against captured output", () => {
     ].join("\n");
 
     const byRef = new Map(
-      parseAriaSnapshot(yaml, ["비밀번호"]).elements.map((e) => [e.ref, e]),
+      parseAriaSnapshot(yaml, { labels: ["비밀번호"] }).elements.map((e) => [
+        e.ref,
+        e,
+      ]),
     );
     expect(byRef.get("e2")?.type).toBe("password");
     // And nothing else is marked. Over-marking costs a Bot the use of an ordinary field.
@@ -151,7 +154,10 @@ describe("parseAriaSnapshot, against captured output", () => {
       '- textbox "비밀번호" [ref=e2]',
     ].join("\n");
     const byRef = new Map(
-      parseAriaSnapshot(yaml, ["비밀번호"]).elements.map((e) => [e.ref, e]),
+      parseAriaSnapshot(yaml, { labels: ["비밀번호"] }).elements.map((e) => [
+        e.ref,
+        e,
+      ]),
     );
     expect(byRef.get("e1")).not.toHaveProperty("type");
     expect(byRef.get("e2")?.type).toBe("password");
@@ -281,7 +287,7 @@ describe("what a secret field's value becomes", () => {
   - button "로그인" [ref=e7]`;
 
   test("a password box the DOM marked loses its value and keeps its place", () => {
-    const { elements } = parseAriaSnapshot(LOGIN, ["비밀번호"]);
+    const { elements } = parseAriaSnapshot(LOGIN, { labels: ["비밀번호"] });
     const marked = elements.find((element) => element.ref === "e3");
     expect(marked?.type).toBe("password");
     // Empty rather than absent: "there is a value here and it is not yours" is what the Bot needs to
@@ -293,7 +299,7 @@ describe("what a secret field's value becomes", () => {
   test("a field the DOM could not mark is judged by its label", () => {
     // A one-time code is `type="text"` and a card number is `type="tel"`, so no password label
     // arrives for either — and both used to be handed to the model verbatim.
-    const written = JSON.stringify(parseAriaSnapshot(LOGIN, []).elements);
+    const written = JSON.stringify(parseAriaSnapshot(LOGIN, {}).elements);
     expect(written).not.toContain(OTP);
     expect(written).not.toContain(CARD);
     expect(written).not.toContain(PASSWORD);
@@ -310,13 +316,18 @@ describe("what a secret field's value becomes", () => {
       (_, index) =>
         `- textbox "비밀번호 ${index}" [ref=e${index}]: ${PASSWORD}${index}`,
     ).join("\n");
-    expect(JSON.stringify(parseAriaSnapshot(many, []))).not.toContain(PASSWORD);
+    expect(JSON.stringify(parseAriaSnapshot(many, {}))).not.toContain(PASSWORD);
   });
 
   test("the labels that mean a secret, and the ones that do not", () => {
     for (const label of [
       "비밀번호",
       "비밀 번호 확인",
+      // The word the auditor's page used, and the word half of Korean retail writes. It was in
+      // neither list, and a person's typed value went to the model through both nets (2026-09-10).
+      "패스워드",
+      "패스 워드",
+      "비번",
       "암호",
       "Password",
       "PASSCODE",
@@ -324,6 +335,7 @@ describe("what a secret field's value becomes", () => {
       "인증 번호",
       "일회용 비밀번호",
       "OTP",
+      "핀번호",
       "카드번호",
       "카드 번호",
       "CVC",
@@ -342,5 +354,98 @@ describe("what a secret field's value becomes", () => {
     ]) {
       expect([label, isSecretLabel(label)]).toEqual([label, false]);
     }
+  });
+});
+
+/**
+ * A SECRET FIELD IS KNOWN BY WHAT IT IS, NOT ONLY BY WHAT IT IS CALLED.
+ *
+ * The join between the DOM and the tree used to be the label alone, and the label is the page's
+ * to choose. Measured 2026-09-10 on `<input type="password" aria-labelledby="패스워드">`: the tree
+ * named it 패스워드, `HTMLInputElement.labels` named it nothing, the word was in no list, and the
+ * value a person had just typed through `computer_request_secret` rode out on the next snapshot —
+ * in the published container and in main. These are the joins that do not need the page's
+ * cooperation: the ref Playwright minted for the node, and the value read off the node.
+ */
+describe("a secret field the DOM knows by identity", () => {
+  const SECRET = "PERSON-TYPED-SECRET-7788";
+  const CODE = "482913";
+  // The auditor's page, with a name no word list carries, so only identity can find it.
+  const PAGE = `- generic [ref=e1]:
+  - textbox "아이디" [ref=e2]: kim
+  - textbox "로그인 키" [ref=e3]: ${SECRET}
+  - textbox "6자리" [ref=e4]: "${CODE}"
+  - button "로그인" [ref=e5]`;
+
+  test("by ref: the node Playwright minted the ref for loses its value, whatever it is called", () => {
+    const { elements } = parseAriaSnapshot(PAGE, { refs: ["e3"] });
+    expect(elements.find((element) => element.ref === "e3")).toEqual({
+      ref: "e3",
+      role: "textbox",
+      name: "로그인 키",
+      type: "password",
+      value: "",
+    });
+    const written = JSON.stringify(elements);
+    expect(written).not.toContain(SECRET);
+    // The username is untouched: identity marks one node, not the form.
+    expect(written).toContain("kim");
+  });
+
+  test("by value: the box holding a secret is blanked by its contents, not its name", () => {
+    const { elements } = parseAriaSnapshot(PAGE, { values: [CODE] });
+    const code = elements.find((element) => element.ref === "e4");
+    expect(code?.type).toBe("password");
+    expect(code?.value).toBe("");
+    expect(JSON.stringify(elements)).not.toContain(CODE);
+  });
+
+  test("by value, as the tree writes it: collapsed, trimmed, cut", () => {
+    // Playwright collapses a value before writing it (measured on a textarea), and the parser trims
+    // it. The DOM's copy is neither, and an exact comparison let every one of these through.
+    const yaml = [
+      `- textbox "a" [ref=e1]: ${SECRET}`,
+      `- textbox "b" [ref=e2]: correct horse battery`,
+      `- textbox "c" [ref=e3]: ${"z".repeat(300)}`,
+    ].join("\n");
+    const { elements } = parseAriaSnapshot(yaml, {
+      values: [`  ${SECRET}  `, "correct\n  horse\tbattery", "z".repeat(300)],
+    });
+    expect(elements.map((element) => [element.type, element.value])).toEqual([
+      ["password", ""],
+      ["password", ""],
+      ["password", ""],
+    ]);
+  });
+
+  test("an empty value is not a value: every empty box is not a secret field", () => {
+    const { elements } = parseAriaSnapshot('- textbox "검색" [ref=e1]', {
+      values: ["", "   "],
+    });
+    expect(elements[0]).not.toHaveProperty("type");
+  });
+
+  test("a ref marks a field only: a button of that ref is not a place a secret is typed", () => {
+    const { elements } = parseAriaSnapshot('- button "로그인" [ref=e5]', {
+      refs: ["e5"],
+    });
+    expect(elements[0]).not.toHaveProperty("type");
+  });
+
+  test("a spinbutton — a numeric input — is a field a secret can be typed into", () => {
+    const { elements } = parseAriaSnapshot(
+      `- spinbutton "6자리" [ref=e1]: ${CODE}`,
+      { refs: ["e1"] },
+    );
+    expect(elements[0]?.type).toBe("password");
+    expect(elements[0]?.value).toBe("");
+  });
+
+  test("by word, 패스워드 is enough on its own now", () => {
+    expect(isSecretLabel("패스워드")).toBe(true);
+    const { elements } = parseAriaSnapshot(
+      `- textbox "패스워드" [ref=e1]: ${SECRET}`,
+    );
+    expect(JSON.stringify(elements)).not.toContain(SECRET);
   });
 });

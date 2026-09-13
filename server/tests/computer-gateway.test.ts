@@ -23,6 +23,7 @@ import {
   createRepeatDetector,
   type RepeatDetector,
 } from "../src/computer/repeat";
+import { SECRET_FIELD_RULE } from "../src/computer/default-policy";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import type { SnapshotResult } from "../src/computer/schema";
 import { A_CLICK } from "./support/subjects";
@@ -1485,6 +1486,10 @@ function scriptedClient(
       calls.push("supplySecret");
       return { characters: 7 } as never;
     },
+    stopComputer: async () => {
+      calls.push("stopComputer");
+      return { stopped: true, wasRunning: true } as never;
+    },
     control: async () => ({
       holder: "bot",
       since: "2026-09-06T00:00:00.000Z",
@@ -1791,6 +1796,146 @@ describe("what a snapshot carries into this process", () => {
       }),
     ).rejects.toThrow(StaleSnapshotError);
     expect(calls).toEqual([]);
+  });
+});
+
+/**
+ * THE FIELD A PERSON TYPED A SECRET INTO IS KNOWN BY IDENTITY, HERE AS WELL AS ON THE COMPUTER.
+ *
+ * The net above (`withoutSecretValue`) judges an element by its type and its words, and the words
+ * are the page's to choose: the auditor's box was labelled 패스워드 through `aria-labelledby`, a
+ * word neither list had, and the value a person typed through `computer_request_secret` came back
+ * on the next snapshot through this process (measured 2026-09-10, in main). This server resolved
+ * that request to one element of its own snapshot; the element's ref is Playwright's name for it
+ * for as long as it keeps its role and name, and that is enough to blank it without knowing what
+ * any word means.
+ */
+describe("a field a person typed a secret into", () => {
+  const TYPED = "PERSON-TYPED-SECRET-7788";
+  const CODE = "482913";
+  const url = "https://shop.example/login";
+  const before = (): SnapshotResult => ({
+    snapshotId: 3,
+    url,
+    title: "로그인",
+    truncated: false,
+    elements: [
+      { ref: "e1", role: "textbox", name: "아이디", value: "sajang" },
+      // A box with no secret word on it at all, and no mark.
+      { ref: "e3", role: "textbox", name: "로그인 키" },
+      { ref: "e4", role: "button", name: "로그인" },
+    ],
+  });
+  const asked = { label: "인증번호", ref: "e3", snapshotId: 3 };
+
+  test("a box called 패스워드 is a secret field here too", async () => {
+    const live = before();
+    live.elements[1] = {
+      ref: "e2",
+      role: "textbox",
+      name: "패스워드",
+      value: TYPED,
+    };
+    const { gateway } = scripted(PERMISSIVE, live);
+
+    const seen = await gateway.snapshot("default");
+
+    expect(JSON.stringify(seen)).not.toContain(TYPED);
+    expect(seen.elements.find((element) => element.ref === "e2")?.value).toBe(
+      "",
+    );
+  });
+
+  test("is blanked on every later snapshot by its ref, whatever it is called, and the Bot may not type into it", async () => {
+    const live = before();
+    const { gateway, calls } = scripted(
+      { ...PERMISSIVE, deny: [SECRET_FIELD_RULE] },
+      live,
+    );
+    await gateway.snapshot("default");
+    await gateway.requestSecret("default", "bot-1", ACTOR, asked);
+    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+
+    // The same document, moved on by a single-page app: the box is still there, still holding it.
+    live.url = "https://shop.example/login/verify?step=2";
+    live.snapshotId = 4;
+    live.elements = before().elements.map((element) =>
+      element.ref === "e3" ? { ...element, value: CODE } : element,
+    );
+
+    for (const snapshotId of [4, 5]) {
+      live.snapshotId = snapshotId;
+      const seen = await gateway.snapshot("default");
+      expect(JSON.stringify(seen)).not.toContain(CODE);
+      expect(
+        seen.elements.find((element) => element.ref === "e3"),
+      ).toMatchObject({ type: "password", value: "" });
+      // Identity marks one box, not the form.
+      expect(seen.elements.find((element) => element.ref === "e1")?.value).toBe(
+        "sajang",
+      );
+    }
+
+    // The same mark is what the shipped deny rule reads: typing into it is a refusal.
+    await expect(
+      gateway.type("default", "bot-1", ACTOR, {
+        ref: "e3",
+        text: "123456",
+        snapshotId: 5,
+      }),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(calls.filter((call) => call === "type")).toEqual([]);
+  });
+
+  test("the same ref on another site, or under another name, is somebody else's box and keeps its value", async () => {
+    const live = before();
+    const { gateway } = scripted(PERMISSIVE, live);
+    await gateway.snapshot("default");
+    await gateway.requestSecret("default", "bot-1", ACTOR, asked);
+    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+
+    // A browser that closed while idle counts its refs from `e1` again.
+    live.url = "https://market.example/search";
+    live.snapshotId = 4;
+    live.elements = [
+      { ref: "e3", role: "textbox", name: "로그인 키", value: "운동화" },
+    ];
+    expect((await gateway.snapshot("default")).elements[0]).toEqual(
+      live.elements[0] as never,
+    );
+
+    live.url = url;
+    live.snapshotId = 5;
+    live.elements = [
+      { ref: "e3", role: "searchbox", name: "검색", value: "운동화" },
+    ];
+    expect((await gateway.snapshot("default")).elements[0]).toEqual(
+      live.elements[0] as never,
+    );
+  });
+
+  test("a stopped computer lets its fields go", async () => {
+    const live = before();
+    const { gateway } = scripted(PERMISSIVE, live);
+    await gateway.snapshot("default");
+    await gateway.requestSecret("default", "bot-1", ACTOR, asked);
+    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+    await gateway.stopComputer("default", "bot-1", ACTOR);
+
+    live.snapshotId = 4;
+    live.elements = before().elements.map((element) =>
+      element.ref === "e3" ? { ...element, value: "다른 값" } : element,
+    );
+    expect(
+      (await gateway.snapshot("default")).elements.find(
+        (element) => element.ref === "e3",
+      ),
+    ).toEqual({
+      ref: "e3",
+      role: "textbox",
+      name: "로그인 키",
+      value: "다른 값",
+    });
   });
 });
 

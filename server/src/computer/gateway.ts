@@ -269,6 +269,12 @@ type CachedSnapshot = {
   stale: boolean;
 };
 
+/** A field a person typed a secret into, as this server can know it: its ref, on an origin. */
+type TypedInto = { ref: string; origin: string; role: string; name: string };
+
+/** How many such fields one computer's snapshots are masked against. */
+const TYPED_INTO_LIMIT = 8;
+
 /** The roles a value can be typed into. What `computer_request_secret` may name. */
 const SECRET_ENTRY_ROLES = new Set([
   "textbox",
@@ -334,6 +340,23 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     string,
     { host: string; element: { role: string; name: string } }
   >();
+  /**
+   * The field the open secret request names, and the fields a person has already typed one into —
+   * the second is what every later snapshot is masked against.
+   *
+   * IDENTITY, NOT WORDING. The auditor's box was called 패스워드, a word neither list had, and it
+   * was marked by nothing the tree carries (2026-09-10). The computer follows the node itself; this
+   * is the same rule where the snapshot enters this process, for a computer image that predates it.
+   * A ref is Playwright's name for one element for as long as the element keeps its role and name,
+   * and a new document never reuses one (every navigation prefixes them afresh, measured `e5` →
+   * `f2e5`) — so the ref is the identity. The origin, role and name are held beside it against a
+   * browser that closed while idle and began counting from `e1` again, where the same ref is
+   * somebody else's box: they cost nothing, because a box renamed under the same browser is handed
+   * a new ref anyway. Not the path: a single-page app moves its path under a box still holding the
+   * value.
+   */
+  const secretRequests = new Map<string, TypedInto>();
+  const typedInto = new Map<string, TypedInto[]>();
   const approvals = options.approvals ?? createApprovalRegistry();
   const repeat = options.repeat ?? createRepeatDetector();
   const standing = options.standing ?? createStandingApprovalStore();
@@ -355,6 +378,11 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     });
   }
 
+  function forgetTypedInto(computerId: string): void {
+    typedInto.delete(computerId);
+    secretRequests.delete(computerId);
+  }
+
   /**
    * The computer, addressed as the Bot that is asking.
    *
@@ -367,7 +395,25 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   /** Read-only, so it passes straight through. Nothing has changed and there is nothing to decide. */
   async function snapshot(computerId: string): Promise<SnapshotResult> {
     const result = await as(computerId).snapshot();
-    const elements = result.elements.map(withoutSecretValue);
+    const origin = originOf(result.url);
+    const fields = (typedInto.get(computerId) ?? []).filter(
+      (field) => field.origin === origin,
+    );
+    const elements = result.elements.map((element) => {
+      const typed = fields.some(
+        (field) =>
+          field.ref === element.ref &&
+          field.role === element.role &&
+          field.name === element.name,
+      );
+      if (!typed) return withoutSecretValue(element);
+      // A person put a secret in this box. It is a password field from here on, whatever it says.
+      return {
+        ...element,
+        type: "password",
+        ...(element.value === undefined ? {} : { value: "" }),
+      };
+    });
     snapshots.set(computerId, {
       snapshotId: result.snapshotId,
       url: result.url,
@@ -929,6 +975,8 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      */
     async stopComputer(computerId: string, botId: string, actor: ActionActor) {
       const result = await as(botId).stopComputer();
+      // The pages those refs named are gone, and a restarted browser counts its refs from `e1` again.
+      forgetTypedInto(computerId);
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
         actor,
@@ -948,6 +996,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      */
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
       const result = await as(botId).resetComputer();
+      forgetTypedInto(computerId);
       await writeControlEvent(auditStore, "computer.reset", {
         botId,
         actor,
@@ -1017,6 +1066,12 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       const label = input.label.replace(/\s+/g, " ").trim().slice(0, 120);
       const state = await as(botId).requestSecret({ ...input, label });
       secretTargets.set(computerId, into);
+      secretRequests.set(computerId, {
+        ref: input.ref,
+        origin: originOf(cached.url),
+        role: element.role,
+        name: element.name,
+      });
       await writeControlEvent(auditStore, "computer.secret_requested", {
         botId,
         actor,
@@ -1034,6 +1089,13 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     ) {
       const result = await as(botId).supplySecret(text);
       secretTargets.delete(computerId);
+      const request = secretRequests.get(computerId);
+      secretRequests.delete(computerId);
+      if (request) {
+        // Bounded: a session that asks for a hundred secrets is not one this should remember.
+        const known = typedInto.get(computerId) ?? [];
+        typedInto.set(computerId, [...known, request].slice(-TYPED_INTO_LIMIT));
+      }
       await writeControlEvent(auditStore, "computer.secret_supplied", {
         botId,
         actor,
@@ -1706,6 +1768,15 @@ async function writeApprovalEvent(
 function hostOf(url: string): string {
   try {
     return normalizeHostname(new URL(url).hostname);
+  } catch {
+    return "";
+  }
+}
+
+/** Where a ref was typed into, as far as a restarted browser could be told apart from it. */
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
   } catch {
     return "";
   }

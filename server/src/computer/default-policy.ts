@@ -108,6 +108,14 @@ export const MONEY_HOSTS: readonly string[] = [
 export const SECRET_FIELD_WORDS: readonly string[] = [
   "비밀번호",
   "비밀 번호",
+  /*
+   * 패스워드 was in neither this list nor the computer's, and it is the word a good share of
+   * Korean sites write in place of 비밀번호. The auditor's one fixture page used it, and the value
+   * a person typed rode out on the next snapshot through both nets (2026-09-10).
+   */
+  "패스워드",
+  "패스 워드",
+  "비번",
   "암호",
   "password",
   "passcode",
@@ -121,6 +129,8 @@ export const SECRET_FIELD_WORDS: readonly string[] = [
   "인증 번호",
   "일회용",
   "otp",
+  "핀번호",
+  "핀 번호",
   "카드번호",
   "카드 번호",
   "cvc",
