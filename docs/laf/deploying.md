@@ -557,10 +557,11 @@ A backup is **the database and nothing else**. Said plainly because
 document promised is discovered on the day it matters.
 
 - **In it:** every table — the trail, conversations, Bot profiles and
-  memories, routines, the encrypted credential vault, and (measured
-  2026-09-10, audit A5 §5) better-auth's `sessions.token` and the sign-in
-  providers' `accounts.access_token` **in plaintext**. A dump is a credential
-  file and is handled as one: `umask 077` on disk, a write-only door to the
+  memories, routines, the encrypted credential vault, the sign-in providers'
+  `accounts` tokens sealed with `LAF_TOKEN_ENCRYPTION_KEY` (since 2026-09-13;
+  dumps taken before that carry them in the clear — measured 2026-09-10, audit
+  A5 §5), and better-auth's `sessions.token`, which is still **in plaintext**.
+  A dump is a credential file and is handled as one: `umask 077` on disk, a write-only door to the
   bucket, thirty days and gone.
 - **Not in it — the Bot's browser profiles** (`agent-profiles`, one Chromium
   directory per Bot; 67MB for three Bots on the development machine). This is
