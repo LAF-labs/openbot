@@ -38,6 +38,9 @@ const production = (overrides: Record<string, string> = {}) =>
   testEnvironment({
     NODE_ENV: "production",
     KEY_ENCRYPTION_KEY: "DRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+Y=",
+    // Every deployment carries one now, and production has no test key to fall back on.
+    LAF_TOKEN_ENCRYPTION_KEY:
+      "5c1e8a3f7b2d4e6a9c0b1d3f5e7a9c2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c",
     ...overrides,
   });
 

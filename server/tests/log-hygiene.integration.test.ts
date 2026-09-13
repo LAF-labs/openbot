@@ -347,6 +347,9 @@ describe("a running deployment's log", () => {
       PORT: "0",
       DATABASE_URL,
       KEY_ENCRYPTION_KEY: EXAMPLE_ENCRYPTION_KEY,
+      // Required on every boot; the process gets nothing of this shell, `NODE_ENV=test` included.
+      LAF_TOKEN_ENCRYPTION_KEY:
+        "3b7f1d9c5a2e8b4f6d0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d",
       TENANT_PACKAGE_DIR: "../tenant/laf",
       LAF_DEV_NO_AUTH: "true",
       TRUSTED_ORIGINS: "http://localhost:3010",

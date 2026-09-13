@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadConfig } from "../src/config";
+import { loadConfig, TEST_TOKEN_ENCRYPTION_KEY } from "../src/config";
 
 /**
  * The whole minimum contract, and nothing that used to be part of it.
@@ -102,6 +102,63 @@ describe("deployment configuration", () => {
         KEY_ENCRYPTION_KEY: "local-development-key",
       }),
     ).toThrow("KEY_ENCRYPTION_KEY must be a base64-encoded 32-byte key");
+  });
+
+  /*
+   * The tokens a sign-in stores are sealed under a key of their own, and every deployment carries
+   * it — the fleet mints it at provision whether or not the machine has a domain yet, and one that
+   * gains sign-in later must not first write a token in the clear. The only escape is a test run,
+   * by NODE_ENV: an environment that says anything else gets the refusal whatever the process says.
+   */
+  test("refuses to start without LAF_TOKEN_ENCRYPTION_KEY, with sign-in or without, outside a test run", () => {
+    // Not the example vault key, which production refuses first and for its own reason.
+    const vaultKey = `B${"A".repeat(42)}=`;
+    const noSignIn = {
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: vaultKey,
+      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+    };
+    for (const environment of [
+      { ...baseEnvironment, KEY_ENCRYPTION_KEY: vaultKey },
+      noSignIn,
+    ]) {
+      for (const nodeEnv of ["production", "development"]) {
+        expect(() => loadConfig({ ...environment, NODE_ENV: nodeEnv })).toThrow(
+          "LAF_TOKEN_ENCRYPTION_KEY is required",
+        );
+      }
+    }
+    for (const wrong of ["short", "g".repeat(64), "a".repeat(63), "AAAA="]) {
+      expect(() =>
+        loadConfig({
+          ...noSignIn,
+          NODE_ENV: "production",
+          LAF_TOKEN_ENCRYPTION_KEY: wrong,
+        }),
+      ).toThrow("64 hex characters");
+    }
+    // The example in .env.example is public: production refuses it, as it refuses the vault's.
+    expect(() =>
+      loadConfig({
+        ...noSignIn,
+        NODE_ENV: "production",
+        LAF_TOKEN_ENCRYPTION_KEY: "0".repeat(64),
+      }),
+    ).toThrow("example key");
+    // What the fleet writes — `openssl rand -hex 32` — in either case, is carried lower-cased.
+    const minted = "9F2C4A7E1B3D5C8A".repeat(4);
+    expect(
+      loadConfig({
+        ...noSignIn,
+        NODE_ENV: "production",
+        LAF_TOKEN_ENCRYPTION_KEY: minted,
+      }).tokenEncryptionKey,
+    ).toBe(minted.toLowerCase());
+    // And under `bun test`, which sets NODE_ENV on the process, the fixed key stands in.
+    expect(process.env.NODE_ENV).toBe("test");
+    expect(loadConfig(noSignIn).tokenEncryptionKey).toBe(
+      TEST_TOKEN_ENCRYPTION_KEY,
+    );
   });
 
   test("enables Google authentication when its complete deployment contract is present", () => {

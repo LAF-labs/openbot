@@ -16,6 +16,7 @@ import { countAccounts, type FleetNotifier } from "../fleet/notify";
 import { log } from "../log";
 import { createSignInAllowlist } from "./allowlist";
 import { roleForEmail } from "./roles";
+import { tokenSealingHooks } from "./token-encryption";
 
 /**
  * The fleet learns that this machine now has somebody on it.
@@ -146,6 +147,12 @@ export function createAuth(
         ]
       : [],
     databaseHooks: {
+      /*
+       * Every token a provider answers with is sealed before it is written — see
+       * auth/token-encryption.ts for why this deployment's envelope rather than better-auth's
+       * `encryptOAuthTokens`, whose key is the cookie secret above.
+       */
+      account: tokenSealingHooks(config.tokenEncryptionKey),
       user: {
         create: {
           // The lock on the first visit: an unlisted email never becomes an account.

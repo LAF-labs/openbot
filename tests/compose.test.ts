@@ -101,6 +101,24 @@ test("draws the sign-in button exactly when the API can answer it", () => {
 });
 
 /**
+ * The key the stored sign-in tokens are sealed under reaches the server on every deployment.
+ *
+ * NOT behind `AUTH_PROVIDERS` like the sign-in pair above: the server refuses to start without it
+ * whether or not a provider is declared (config.ts), so a compose file that passed it only with a
+ * provider would be a deployment without sign-in that never comes up.
+ */
+test("passes LAF_TOKEN_ENCRYPTION_KEY to the server unconditionally", () => {
+  const compose = readFileSync(
+    join(import.meta.dir, "..", "docker-compose.yml"),
+    "utf8",
+  );
+  expect(compose).toContain(
+    "LAF_TOKEN_ENCRYPTION_KEY: ${LAF_TOKEN_ENCRYPTION_KEY:-}",
+  );
+  expect(compose).not.toMatch(/LAF_TOKEN_ENCRYPTION_KEY: \$\{AUTH_PROVIDERS/);
+});
+
+/**
  * The www name redirects to the apex instead of serving a second copy of the app.
  *
  * Found live: www resolved (a CNAME existed) but Caddy held no certificate for it, so the first

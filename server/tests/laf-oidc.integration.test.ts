@@ -6,9 +6,10 @@ import {
   randomUUID,
   sign as signRS,
 } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { createAuth } from "../src/auth";
-import { loadConfig } from "../src/config";
+import { isSealedToken, openToken } from "../src/auth/token-encryption";
+import { loadConfig, TEST_TOKEN_ENCRYPTION_KEY } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { accounts, sessions, userRoles, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -39,6 +40,8 @@ type Issued = { challenge: string; email: string; nonce: string | null };
 const issued = new Map<string, Issued>();
 let emailToIssue = ALLOWED;
 let lastAuthorizeUrl: URL | null = null;
+/** Every token the stub handed over, byte for byte, so a dump can be searched for them. */
+const tokensHandedOver: string[] = [];
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -126,24 +129,29 @@ function startStub(): Promise<void> {
           return;
         }
         const now = Math.floor(Date.now() / 1000);
+        const accessToken = `at-${form.get("code")}`;
+        const refreshToken = `rt-${randomUUID()}`;
+        const idToken = signedIdToken({
+          iss: issuer,
+          aud: CLIENT_ID,
+          sub: `stub:${grant.email}`,
+          email: grant.email,
+          email_verified: true,
+          name: "사장님",
+          iat: now,
+          exp: now + 300,
+          ...(grant.nonce ? { nonce: grant.nonce } : {}),
+        });
+        tokensHandedOver.push(accessToken, refreshToken, idToken);
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
-            access_token: `at-${form.get("code")}`,
+            access_token: accessToken,
+            refresh_token: refreshToken,
             token_type: "bearer",
             expires_in: 300,
             scope: "openid email",
-            id_token: signedIdToken({
-              iss: issuer,
-              aud: CLIENT_ID,
-              sub: `stub:${grant.email}`,
-              email: grant.email,
-              email_verified: true,
-              name: "사장님",
-              iat: now,
-              exp: now + 300,
-              ...(grant.nonce ? { nonce: grant.nonce } : {}),
-            }),
+            id_token: idToken,
           }),
         );
       });
@@ -274,10 +282,37 @@ describe("signing in through the fleet broker", () => {
       }),
     );
     const body = (await session.json()) as {
-      user?: { email?: string; name?: string };
+      user?: { email?: string; name?: string; id?: string };
     };
     expect(body.user?.email).toBe(ALLOWED);
     expect(body.user?.name).toBe("사장님");
+
+    /*
+     * AND THE TOKENS THE PROVIDER HANDED OVER ARE NOT IN THE TABLE (A8 S1, A5 §5). Dumped the way
+     * `pg_dump` writes a row — the whole row as text — and searched for every token the stub issued,
+     * byte for byte. Before the envelope, `access_token` and `id_token` held exactly those strings.
+     */
+    expect(tokensHandedOver.length).toBeGreaterThanOrEqual(3);
+    const dumped = JSON.stringify(
+      await database.execute(
+        sql`select a::text as line from accounts a where a.user_id = ${body.user?.id as string}`,
+      ),
+    );
+    expect(dumped).toContain("laf1:");
+    for (const token of tokensHandedOver) {
+      expect(dumped).not.toContain(token);
+    }
+    const [row] = await database
+      .select()
+      .from(accounts)
+      .where(eq(accounts.userId, body.user?.id as string));
+    for (const stored of [row?.accessToken, row?.refreshToken, row?.idToken]) {
+      expect(isSealedToken(stored ?? "")).toBe(true);
+    }
+    // They are the stub's tokens, sealed under the key the run stands in with — not lost.
+    expect(
+      openToken(TEST_TOKEN_ENCRYPTION_KEY, row?.accessToken as string),
+    ).toBe(tokensHandedOver[0] as string);
   });
 
   test("명단 밖의 이메일은 계정도 세션도 되지 않는다", async () => {

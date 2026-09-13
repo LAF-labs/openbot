@@ -25,6 +25,11 @@ import {
 export type DeploymentConfig = {
   databaseUrl: string;
   keyEncryptionKey: string;
+  /**
+   * What the provider tokens a sign-in stores in `accounts` are sealed under. Its own key, 32 bytes
+   * as hex — see auth/token-encryption.ts.
+   */
+  tokenEncryptionKey: string;
   managedAgentAgUiUrl: URL;
   tenantPackageDirectory: string;
   /**
@@ -214,6 +219,51 @@ function keyEncryptionKey(environment: Environment): string {
   }
 
   return value;
+}
+
+/** What stands in for `LAF_TOKEN_ENCRYPTION_KEY` under `bun test`, which sets `NODE_ENV=test` itself. */
+export const TEST_TOKEN_ENCRYPTION_KEY = "7e57".repeat(16);
+
+/** The token key in `.env.example`: public, like the vault key's, and refused where that one is. */
+const EXAMPLE_TOKEN_ENCRYPTION_KEY = "0".repeat(64);
+
+/**
+ * The key the stored sign-in tokens are sealed under, or a refusal to start.
+ *
+ * REQUIRED ON EVERY DEPLOYMENT, whether or not it has sign-in yet. The fleet mints it at provision
+ * beside `BETTER_AUTH_SECRET` and with no domain at all (laf-control `c2483e0`), and a deployment
+ * that gains sign-in later must not first write a token in the clear — the state this key exists
+ * to end (A8 S1, 2026-09-10: `ya29.…` in a `pg_dump`). The one escape is a test run: `loadConfig`
+ * is handed environments the tests build, which carry no `NODE_ENV`, while `bun test` sets it on
+ * the process — so the environment is asked first and the process second, and a test that wants
+ * the refusal says `NODE_ENV: "production"`.
+ */
+function tokenEncryptionKey(environment: Environment): string {
+  const value = optional(environment, "LAF_TOKEN_ENCRYPTION_KEY");
+  if (!value) {
+    if ((environment.NODE_ENV ?? process.env.NODE_ENV) === "test") {
+      return TEST_TOKEN_ENCRYPTION_KEY;
+    }
+    throw new Error(
+      "LAF_TOKEN_ENCRYPTION_KEY is required: the tokens a sign-in stores are sealed under it. Generate one with: openssl rand -hex 32",
+    );
+  }
+  if (!/^[0-9a-f]{64}$/i.test(value)) {
+    throw new Error(
+      "LAF_TOKEN_ENCRYPTION_KEY must be 32 bytes written as 64 hex characters (openssl rand -hex 32)",
+    );
+  }
+  if (value === EXAMPLE_TOKEN_ENCRYPTION_KEY) {
+    if (environment.NODE_ENV === "production") {
+      throw new Error(
+        "LAF_TOKEN_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -hex 32",
+      );
+    }
+    log.warn("token_encryption_key_is_example", {
+      note: "LAF_TOKEN_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -hex 32",
+    });
+  }
+  return value.toLowerCase();
 }
 
 function url(environment: Environment, name: string): string | undefined {
@@ -692,6 +742,7 @@ export function loadConfig(
   return {
     databaseUrl: required(environment, "DATABASE_URL"),
     keyEncryptionKey: keyEncryptionKey(environment),
+    tokenEncryptionKey: tokenEncryptionKey(environment),
     managedAgentAgUiUrl: requiredHttpUrl(
       environment,
       "MANAGED_AGENT_AG_UI_URL",

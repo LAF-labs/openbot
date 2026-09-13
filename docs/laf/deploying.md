@@ -272,6 +272,7 @@ Then edit `.env` by hand. The values that have no usable default:
 |---|---|
 | `PUBLIC_ORIGIN` | the deployed address, with scheme |
 | `KEY_ENCRYPTION_KEY` | `openssl rand -base64 32` — the example value is public and refused here |
+| `LAF_TOKEN_ENCRYPTION_KEY` | `openssl rand -hex 32` — seals the provider tokens sign-in stores in `accounts`. Required with sign-in or without: the server refuses to start without it, and refuses the example value. Rows written before it existed are sealed on the next start. Carry it with `KEY_ENCRYPTION_KEY` when a deployment moves; a different key leaves those tokens unreadable, which costs nothing today (nothing spends them) and is replaced at the next sign-in |
 | `COMPUTER_TOKEN` | any high-entropy string; the Bot's browser refuses to start without one |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`, at least 32 characters |
 | `AUTH_PROVIDERS` | which sign-ins this deployment offers, comma separated: `google`, `kakao`, `naver`, `laf` — see below |
@@ -551,10 +552,13 @@ document promised is discovered on the day it matters.
   routine runs on that claim and comes back empty in the morning; the first
   visit that finds the login still there clears the mark.
 - **Never in it — `.env`.** `KEY_ENCRYPTION_KEY` is what opens the credential
-  vault the dump carries; a backup holding both is the vault in plaintext. The
-  key is the operator's to keep (the fleet holds each deployment's `.env`), and
-  a dump restored onto a VM with a different key reads every credential as
-  unreadable bytes — that is the design, not a fault. Neither `upgrade.sh` nor
+  vault the dump carries, and `LAF_TOKEN_ENCRYPTION_KEY` what opens the provider
+  tokens sign-in left in `accounts` (sealed since 2026-09-13; a dump used to
+  carry them in the clear); a backup holding either key beside the dump is those
+  secrets in plaintext. The keys are the operator's to keep (the fleet holds each
+  deployment's `.env`), and a dump restored onto a VM with different keys reads
+  every credential and token as unreadable bytes — that is the design, not a
+  fault. Neither `upgrade.sh` nor
   `restore.sh` reads `.env` for anything but the channel name, and
   `tests/upgrade-script.test.ts` compares its bytes before and after.
 - **Not in it — `caddy-data`** (certificates). A new VM asks Let's Encrypt

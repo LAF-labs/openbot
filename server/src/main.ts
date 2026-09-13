@@ -29,6 +29,7 @@ import { createOnboardingStore } from "./auth/onboarding";
 import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
 import { streamBotAccess } from "./auth/stream-access";
+import { sealStoredTokens } from "./auth/token-encryption";
 import { createChannelEventHub } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
@@ -358,6 +359,8 @@ const loadAgentsForActor = withGrantedSkills(
   database,
 );
 await recordTenantPackage(database, tenantPackage);
+// The rows that predate the envelope, sealed before anybody can sign in. See auth/token-encryption.ts.
+await sealStoredTokens(database, config.tokenEncryptionKey);
 const auth = config.auth
   ? createAuth(config, database, fleetNotifier)
   : undefined;
