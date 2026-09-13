@@ -344,6 +344,15 @@ export type ProfileOptions = {
    * behaviour.
    */
   onPage?: (botId: string, page: Page) => void;
+  /**
+   * The browser, the moment it exists and before its first page is handed out.
+   *
+   * What goes here has to cover EVERY page a Bot will ever have, including the ones a site opens by
+   * itself: something attached to a page misses the popup the next click opens. Awaited, so nothing
+   * is navigated before it is in place, and a hook that throws fails the launch — the browser is
+   * closed rather than handed out without it.
+   */
+  onContext?: (botId: string, context: BrowserContext) => Promise<void> | void;
   /** Overridable so a test does not have to wait ten minutes to watch a browser close. */
   idleCloseMs?: number;
   now?: () => number;
@@ -488,6 +497,13 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
             note: "the user agent this container claims is now the browser's own version",
           });
           chromiumVersion = reported;
+        }
+        // Before any page is handed out, because the first thing done with a page is a navigation.
+        try {
+          await options.onContext?.(botId, context);
+        } catch (error) {
+          await closeAndWait(context).catch(() => undefined);
+          throw error;
         }
         // Persistent contexts open with a page already; reuse it rather than leaving an extra blank tab.
         const page = context.pages()[0] ?? (await context.newPage());

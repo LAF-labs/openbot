@@ -49,6 +49,13 @@ export type NavigateResult = {
   /** Wall-clock ms the navigation took, for the progress line in the transcript. */
   elapsedMs: number;
   notes?: ComputerNote[];
+  /**
+   * Where the navigation was going when the computer stopped it, asked to by `holdAtNewHost`: a hop
+   * to a host nobody has judged yet, stopped before that host was contacted. Nothing loaded — `text`
+   * is empty and the tab is blank — and the gateway judges `to` before anything asks for it.
+   * Absent on every navigation that arrived.
+   */
+  redirect?: { to: string; from: string; referer?: string };
 };
 
 export type ScreenshotResult = {

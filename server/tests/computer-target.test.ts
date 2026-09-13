@@ -131,4 +131,45 @@ describe("navigation targets", () => {
     expect(checkNavigationTarget("http://172.32.0.1/").allowed).toBe(true);
     expect(checkNavigationTarget("http://172.31.255.255/").allowed).toBe(false);
   });
+
+  /*
+   * THE AUDITOR'S TEN, as one table (audit A3, 2026-09-10).
+   *
+   * Every row is a verdict on the address a browser is about to request — which, since the computer
+   * judges every hop (agent-computer/src/navigation-guard.ts), is every address a navigation
+   * reaches and not only the one a Bot named. That is how the redirect row belongs here: its start
+   * is allowed, exactly as measured ("ALLOW https://httpbin.org/redirect-to?url=http://127.0.0.1…"),
+   * and its hop is refused. That the hop is stopped before it is sent is proven where a redirect is
+   * actually followed: `agent-computer/tests/browser-boundaries.test.ts` against a real Chromium, and
+   * a Docker network measured 2026-09-13. The last three are the legitimate places in the list, and
+   * pin that the floor is not a wall.
+   */
+  const REDIRECTOR =
+    "https://httpbin.org/redirect-to?url=http://127.0.0.1:4100/health";
+  test.each([
+    ["localhost", "http://localhost:4100/health", false],
+    [
+      "the metadata endpoint",
+      "http://169.254.169.254/latest/meta-data/",
+      false,
+    ],
+    ["an IPv6 loopback literal", "http://[::1]:4100/health", false],
+    ["an IPv6 private literal", "http://[fd00::1]/", false],
+    ["an IPv4-mapped IPv6 literal", "http://[::ffff:127.0.0.1]/", false],
+    ["an allowed public redirector, where it starts", REDIRECTOR, true],
+    [
+      "that redirector's hop",
+      new URL(REDIRECTOR).searchParams.get("url") ?? "",
+      false,
+    ],
+    ["a file: URL", "file:///etc/passwd", false],
+    ["a data: URL", "data:text/html,<script>alert(1)</script>", false],
+    ["an internal Docker name", "http://agent-computer:4100/computers", false],
+    ["another internal Docker name", "http://postgres:5432/", false],
+    ["a bank host", "https://obank.kbstar.com/quics?page=C025255", true],
+    ["a link shortener", "https://bit.ly/3xYzAbC", true],
+    ["a Korean IDN", "https://한국은행.한국/", true],
+  ] as const)("%s: %s → allowed=%p", (_what, url, allowed) => {
+    expect(checkNavigationTarget(url).allowed).toBe(allowed);
+  });
 });

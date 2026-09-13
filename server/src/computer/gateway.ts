@@ -39,6 +39,7 @@ import { normalizeHostname } from "../net/host-verdict";
 import {
   type ComputerClient,
   ComputerUnavailableError,
+  NavigationRefusedError,
   StaleSnapshotError,
 } from "./client";
 import { isSecretFieldElement } from "./default-policy";
@@ -55,6 +56,7 @@ import type {
   ClickInput,
   KeyInput,
   ListFilesInput,
+  NavigateResult,
   ReadFileInput,
   ReadResult,
   ScrollInput,
@@ -888,6 +890,42 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     return new ComputerUnavailableError("The action was stopped.");
   }
 
+  /**
+   * A navigation that arrived on a host nobody judged, without being stopped on the way.
+   *
+   * Two ways that happens: a page's own POST took it there while it loaded — a POST is not stopped,
+   * because asking for it again would send its body twice — or the computer is an older image that
+   * follows every redirect. The page is already open, so this cannot keep the host from being
+   * contacted; it keeps a refused or questioned page from being read, and closes the browser on it.
+   */
+  async function judgeLanding(
+    computerId: string,
+    botId: string,
+    actor: ActionActor,
+    judged: string,
+    result: NavigateResult,
+    presented: { signal?: AbortSignal; approvalId?: string },
+  ): Promise<void> {
+    if (!/^https?:/i.test(result.url)) return;
+    const landedOn = hostOf(result.url);
+    if (!landedOn || landedOn === hostOf(judged)) return;
+    try {
+      await govern(
+        computerId,
+        "computer_navigate",
+        botId,
+        actor,
+        { targetUrl: result.url, ...presented },
+        async () => result,
+      );
+    } catch (error) {
+      await as(botId)
+        .stopComputer()
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
   return {
     snapshot,
     read,
@@ -1119,6 +1157,17 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
      * The client still applies its target guard, which is the floor that holds under every policy,
      * including one that permits everything. This adds the record and the per-Bot decision on top: a
      * refusal by either produces a row, so navigation denials are visible in the audit trail.
+     *
+     * THE POLICY JUDGES EVERY HOST THE NAVIGATION REACHES, NOT ONLY THE ONE IT STARTS AT. It used to
+     * judge the address the Bot named and follow wherever that went: a rule keeping a Bot off
+     * facebook.com was one link shortener away from facebook.com, and the Boundaries page had to say
+     * so beside the rule ("A link that redirects there from somewhere else is allowed"). Now the
+     * computer stops the first hop to a host this call has not judged — before that host is
+     * contacted — and hands it back; it is judged here like the address that started it, with its
+     * own row, and asked for only if the policy allows it. A question about the hop is asked about
+     * the hop, and a person's answer is spent on the hop it was given for when the same call is sent
+     * again. Same-host redirects are followed without a second look: every shipped rule about where
+     * a Bot may go is a rule about hosts.
      */
     async navigate(
       computerId: string,
@@ -1140,25 +1189,56 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        */
       signal?: AbortSignal,
     ) {
-      const result = await govern(
-        computerId,
-        "computer_navigate",
-        botId,
-        actor,
-        {
-          targetUrl: url,
-          ...(signal ? { signal } : {}),
-          ...(approvalId ? { approvalId } : {}),
-        },
-        () => as(botId).navigate(url, signal),
-      );
-      /*
-       * The page that actually loaded, not the one that was asked for. A login wall redirects, and
-       * the redirect is precisely the information worth having: `nid.naver.com` is not one of
-       * 스마트스토어's hosts, so it reads as "not signed in" without any special case.
-       */
-      noteSiteVisit(botId, actor, result.url, result.text);
-      return result;
+      // The person's Stop travels with every hop, like the answer they gave.
+      const presented = {
+        ...(signal ? { signal } : {}),
+        ...(approvalId ? { approvalId } : {}),
+      };
+      const asked = new Set<string>();
+      let destination = url;
+      let referer: string | undefined;
+      for (;;) {
+        const target = destination;
+        const sentReferer = referer;
+        const result = await govern(
+          computerId,
+          "computer_navigate",
+          botId,
+          actor,
+          { targetUrl: target, ...presented },
+          () =>
+            as(botId).navigate(target, signal, {
+              holdAtNewHost: true,
+              ...(sentReferer ? { referer: sentReferer } : {}),
+            }),
+        );
+        const onward = result.redirect;
+        if (!onward) {
+          await judgeLanding(
+            computerId,
+            botId,
+            actor,
+            target,
+            result,
+            presented,
+          );
+          /*
+           * The page that actually loaded, not the one that was asked for. A login wall redirects, and
+           * the redirect is precisely the information worth having: `nid.naver.com` is not one of
+           * 스마트스토어's hosts, so it reads as "not signed in" without any special case.
+           */
+          noteSiteVisit(botId, actor, result.url, result.text);
+          return result;
+        }
+        asked.add(target);
+        // A chain that comes back to an address it already asked for, or will not end, is refused
+        // rather than followed round: the browser's own limit is twenty, and every hop here is a row.
+        if (asked.has(onward.to) || asked.size >= MAX_JUDGED_HOSTS) {
+          throw new NavigationRefusedError(REDIRECT_LOOP);
+        }
+        destination = onward.to;
+        referer = onward.referer;
+      }
     },
 
     click(
@@ -1397,6 +1477,17 @@ function describeFile(path: string): {
     extension: dot > 0 ? name.slice(dot + 1).toLowerCase() : "",
   };
 }
+
+/**
+ * How many hosts one navigation may be judged on before it is refused as a loop.
+ *
+ * A sign-in that goes shop → portal → identity provider → shop is four; ten is room for the longest
+ * real chain and short of the browser's own twenty, which exists for the same reason.
+ */
+const MAX_JUDGED_HOSTS = 10;
+
+/** A redirect chain that returned to itself or would not end. A fact code; the words are the prompt's. */
+const REDIRECT_LOOP = "laf:redirect_loop";
 
 export type ComputerGateway = ReturnType<typeof createComputerGateway>;
 

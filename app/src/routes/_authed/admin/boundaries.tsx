@@ -104,7 +104,9 @@ const PRESETS: Preset[] = [
   {
     label: "Stay off social media",
     rule: 'intent == "navigate" && (contains(page.host, "facebook.com") || contains(page.host, "x.com"))',
-    cost: "Only the two hosts named. A link that redirects there from somewhere else is allowed.",
+    // It used to end "A link that redirects there from somewhere else is allowed", which was true
+    // until the gateway judged every host a navigation reaches (computer/gateway.ts, `navigate`).
+    cost: "Only the two hosts named. An address that redirects there is stopped before the site opens, but a link the Bot clicks on another page is not.",
   },
 ];
 

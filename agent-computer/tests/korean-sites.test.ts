@@ -154,6 +154,9 @@ async function startComputer(port: number) {
       PORT: String(port),
       PROFILES_DIR: profilesDir,
       WORKSPACE_DIR: workspaceDir,
+      // The fixture is served on 127.0.0.1, which the navigation guard refuses without this — the
+      // same opt-in a laptop deployment sets to browse its own services (navigation-guard.ts).
+      AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
     },
     stdout: "pipe",
     stderr: "pipe",

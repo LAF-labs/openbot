@@ -364,6 +364,11 @@ services:
       # Chromium ran on UTC and every Korean site the Bot opened rendered yesterday's date after
       # 09:00 KST. Empty falls back to Asia/Seoul in the code, so the default lives in one place.
       BOT_TIME_ZONE: ${BOT_TIME_ZONE:-}
+      # The browser judges every navigation hop itself — a public redirector used to be one 302
+      # away from 127.0.0.1 (audit A3, 2026-09-10) — with the same floor and the same opt-in the
+      # API server applies to the address a Bot asks for. Empty is off, which is what a hosted
+      # deployment wants; a laptop that sets it for the server sets it here with the same word.
+      AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: ${AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS:-}
     volumes:
       - agent-workspace:/workspace
       # Chromium's user-data directory is volume-backed so logins survive container restarts.

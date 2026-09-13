@@ -234,6 +234,20 @@ export function createComputerClient(options: ComputerClientOptions) {
           typeof body?.error === "string"
             ? body.error
             : `HTTP ${response.status}`;
+        /*
+         * The computer stopped a navigation itself — a redirect hop into the deployment's own
+         * network, judged where the browser follows it. Asked before the 403 branch, which would
+         * otherwise read it as the workspace refusing a path. The computer sends the origin it
+         * refused and the policy's reason; the sentence is the policy's, the same one this module
+         * uses when it refuses the address up front.
+         */
+        if (body?.code === "laf:navigation_refused") {
+          throw new NavigationRefusedError(
+            typeof body.reason === "string" && body.reason
+              ? body.reason
+              : "That address redirected somewhere inside this deployment's own network, so the assistant is not allowed to open it.",
+          );
+        }
         // A stale ref is fixed by taking a new snapshot, so it is not reported as the computer being
         // unavailable.
         if (response.status === 409) {
@@ -287,7 +301,9 @@ export function createComputerClient(options: ComputerClientOptions) {
       );
     }
 
-    return {
+    // Named, so a method can reach a sibling without `this` — which a caller that detaches a
+    // method (`const { navigate } = client`) would leave pointing at nothing.
+    const computer = {
       async status(botId: string): Promise<ComputerStatus> {
         try {
           await call("/health");
@@ -303,10 +319,19 @@ export function createComputerClient(options: ComputerClientOptions) {
         }
       },
 
-      /** Open a page. Refuses before the request leaves if the target is not permitted. */
+      /**
+       * Open a page. Refuses before the request leaves if the target is not permitted.
+       *
+       * `holdAtNewHost` asks the computer to stop, rather than follow, the first hop that reaches a
+       * host other than this one — before that host is contacted — and to hand it back as
+       * `redirect`. The gateway uses it so a redirect is judged by the policy like the address that
+       * started it; a caller that does not pass it gets redirects followed under the floor alone.
+       * After `caller`, so the callers that pass only a signal are untouched.
+       */
       async navigate(
         url: string,
         caller?: AbortSignal,
+        navigation: NavigateOptions = {},
       ): Promise<NavigateResult> {
         const verdict = checkNavigationTarget(url, {
           allowPrivateHosts: options.allowPrivateHosts,
@@ -315,15 +340,42 @@ export function createComputerClient(options: ComputerClientOptions) {
           throw new NavigationRefusedError(verdict.reason);
         }
 
-        return (await call(
+        const result = (await call(
           "/navigate",
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ url: verdict.url }),
+            body: JSON.stringify({
+              url: verdict.url,
+              ...(navigation.holdAtNewHost ? { holdAtNewHost: true } : {}),
+              ...(navigation.referer ? { referer: navigation.referer } : {}),
+            }),
           },
           caller,
         )) as NavigateResult;
+
+        /*
+         * WHERE IT LANDED, judged as well as where it was asked to go.
+         *
+         * The check above is on the address the Bot named, before the request. Measured 2026-09-10
+         * (audit A3): a public redirector that 302s to 127.0.0.1 passed it, and the browser followed
+         * the redirect and handed back the page. The computer now stops every such hop before the
+         * host is contacted (agent-computer/src/navigation-guard.ts), so this is the net under an
+         * OLDER computer image, the one a deployment runs until it pulls: it cannot stop the request,
+         * but it keeps the answer out of the model's context, and it closes the browser so the page
+         * is not there for the next `computer_read` to fetch. Only web addresses are judged:
+         * `about:blank` after a refusal is not a host that was reached.
+         */
+        if (/^https?:/i.test(result.url)) {
+          const landed = checkNavigationTarget(result.url, {
+            allowPrivateHosts: options.allowPrivateHosts,
+          });
+          if (!landed.allowed) {
+            await computer.stopComputer().catch(() => undefined);
+            throw new NavigationRefusedError(landed.reason);
+          }
+        }
+        return result;
       },
 
       async screenshot(): Promise<ScreenshotResult> {
@@ -479,9 +531,17 @@ export function createComputerClient(options: ComputerClientOptions) {
         return build(id);
       },
     };
+    return computer;
   }
 
   return build();
 }
 
 export type ComputerClient = ReturnType<typeof createComputerClient>;
+
+/** How a navigation is asked for. See `navigate`. */
+export type NavigateOptions = {
+  holdAtNewHost?: boolean;
+  /** The `Referer` a held hop was carrying, sent again when that hop is asked for. */
+  referer?: string;
+};

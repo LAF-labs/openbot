@@ -515,8 +515,8 @@ export const ko: Record<string, string> = {
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
   Notifications: "알림",
   Octopus: "문어",
-  "Only the two hosts named. A link that redirects there from somewhere else is allowed.":
-    "명시한 두 호스트만 해당합니다. 다른 곳에서 리다이렉트로 도착하는 링크는 허용됩니다.",
+  "Only the two hosts named. An address that redirects there is stopped before the site opens, but a link the Bot clicks on another page is not.":
+    "명시한 두 호스트만 해당합니다. 다른 주소에서 리다이렉트로 넘어가는 것은 사이트가 열리기 전에 멈추지만, 다른 페이지에서 봇이 링크를 눌러 가는 것은 막지 않습니다.",
   "Open the audit trail": "감사 기록 열기",
   "Opening Google…": "Google 여는 중…",
   "Opening Kakao…": "카카오 여는 중…",

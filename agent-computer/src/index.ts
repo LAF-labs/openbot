@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ElementHandle, Frame, Page } from "playwright";
 import { buildOf } from "../../shared/log";
+import { checkNavigationTarget } from "../../shared/net/navigation-target";
 import {
   isTextEntryRole,
   parseAriaSnapshot,
@@ -26,6 +27,13 @@ import {
   TAKE_CONTROL_FIRST,
 } from "./control";
 import { log } from "./log";
+import {
+  guardNavigations,
+  hopVerdict,
+  hostnameOf,
+  mainFrameIdOf,
+  type NavigationHop,
+} from "./navigation-guard";
 import {
   createProfiles,
   TabError,
@@ -94,6 +102,19 @@ const NAVIGATION_TIMEOUT_MS = Number.parseInt(
   process.env.NAVIGATION_TIMEOUT_MS ?? "30000",
   10,
 );
+
+/**
+ * Whether this browser may open the deployment's own network.
+ *
+ * THE SAME VARIABLE THE SERVER READS, because the two halves of one floor must agree. The server
+ * judges the address a Bot asks for before the request leaves (`computer/client.ts`); this process
+ * judges every hop the browser then actually follows (`navigation-guard.ts`), and a laptop that has
+ * opted the server into browsing `localhost` has to opt the browser in with the same word or every
+ * local navigation is refused one hop later with no way to see why. Off unless it says `true`,
+ * exactly as the server does, so a hosted deployment cannot reach its own network by forgetting.
+ */
+const ALLOW_PRIVATE_HOSTS =
+  process.env.AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS?.trim() === "true";
 
 /**
  * Whether `goto` gave up on the deadline rather than on the page.
@@ -175,6 +196,15 @@ type BotSession = {
    * Followed at every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
    */
   secretFields: SecretField[];
+  /**
+   * The `/navigate` in flight, while it is: which tab's frame it drives, which host it was judged
+   * for, and what the guard stopped on its way.
+   *
+   * Playwright reports a stopped navigation as `net::ERR_BLOCKED_BY_CLIENT`, which names neither the
+   * address nor the reason; this does. Scoped to one call and to that tab's main frame, so a refused
+   * iframe, or a click three turns ago, is never blamed on the page being opened now.
+   */
+  navigating?: Navigating;
   /** The one live screen viewer for this Bot, if a person is watching. */
   viewer?: {
     socket: unknown;
@@ -303,11 +333,228 @@ const workspace = createWorkspace(process.env.WORKSPACE_DIR ?? "/workspace");
  */
 const profiles = createProfiles(process.env.PROFILES_DIR ?? "/profiles", {
   onPage: (botId, page) => watchPage(botId, page),
+  // Before the first page is handed out, so no request this browser ever makes goes unjudged.
+  onContext: async (botId, context) => {
+    await guardNavigations(context, {
+      allowPrivateHosts: ALLOW_PRIVATE_HOSTS,
+      onRefused: (hop, reason) => navigationRefused(botId, hop, reason),
+      holds: (hop) => heldForJudgement(botId, hop),
+    });
+  },
 });
 
 async function currentPage(botId: string): Promise<Page> {
   return profiles.page(botId);
 }
+
+/** A navigation this process stopped: where it was going, where it was sent from, and why. */
+type RefusedHop = {
+  url: string;
+  /** The address that redirected here, when the refused hop was a redirect rather than the request. */
+  redirectedFrom: string | null;
+  /** The policy's own words, for the server to relay. Facts about a URL, never page content. */
+  reason: string;
+};
+
+/**
+ * One `/navigate`, while it runs. See `BotSession.navigating`.
+ *
+ * `holding` is the caller's request that a hop to another host be stopped and handed back rather
+ * than followed: the gateway judged one host, and it is the gateway that judges the next one. An
+ * older server does not ask, and gets the browser following redirects as it always did — every hop
+ * still under the floor.
+ */
+type Navigating = {
+  page: Page;
+  frameId: string | null;
+  judgedHost: string;
+  holding: boolean;
+  held?: HeldHop;
+  refused?: RefusedHop;
+  /** Every address the tab's main frame committed during this call, in order. See `leavePage`. */
+  commits: string[];
+};
+
+/** A hop stopped for the gateway: where to, which page sent it, and the `Referer` it was carrying. */
+type HeldHop = { to: string; from: string; referer?: string };
+
+/**
+ * A destination as the trail and the Bot may see it: the origin, never the path or the query. An
+ * address with no origin (`file:`, `data:`) is named by its scheme, which is the fact that refused it.
+ */
+function originOf(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === "null" ? parsed.protocol : parsed.origin;
+  } catch {
+    return url.slice(0, 80);
+  }
+}
+
+/**
+ * A hop the floor refused, reported where it will be read.
+ *
+ * The tab `/navigate` is driving gets its answer from that call, directly. Anything else — a click
+ * that followed a link, a redirect inside an iframe, a popup — becomes a note on the next result, so
+ * a page that went blank is not reported as a page that loaded. Origins only: the path of a refused
+ * URL carries whatever the page that sent the Bot there put in it.
+ */
+function navigationRefused(
+  botId: string,
+  hop: NavigationHop,
+  reason: string,
+): void {
+  const session = sessionFor(botId);
+  const navigating = session.navigating;
+  const ours = navigating !== undefined && hop.frameId === navigating.frameId;
+  if (ours && !navigating.refused) {
+    navigating.refused = {
+      url: hop.url,
+      redirectedFrom: hop.redirectedFrom,
+      reason,
+    };
+  } else if (!ours) {
+    note(session, {
+      code: "laf:navigation_refused",
+      origin: originOf(hop.url),
+      ...(hop.redirectedFrom
+        ? { redirectedFrom: originOf(hop.redirectedFrom) }
+        : {}),
+    });
+  }
+  log.warn("navigation_refused", {
+    bot: botId,
+    origin: originOf(hop.url),
+    redirected: hop.redirectedFrom !== null,
+    frame: ours ? "navigating" : "other",
+  });
+}
+
+/**
+ * Whether a hop of the tab `/navigate` is driving goes to a host the gateway has not judged.
+ *
+ * GET only. A hop that is stopped here is requested again by the gateway, from scratch, once it has
+ * judged it — which is what a redirect is anyway, and what a form's POST is not: its body cannot be
+ * sent twice. A POST that lands somewhere new is judged where it lands instead (gateway.ts).
+ */
+function heldForJudgement(botId: string, hop: NavigationHop): boolean {
+  const navigating = sessions.get(botId)?.navigating;
+  if (!navigating?.holding || hop.frameId !== navigating.frameId) return false;
+  if (hop.method !== "GET") return false;
+  if (hostnameOf(hop.url) === navigating.judgedHost) return false;
+  navigating.held ??= {
+    to: hop.url,
+    // A redirect names the response it came from; a script's own navigation came from the page on
+    // screen when it ran, which by then is the one this call opened.
+    from: hop.redirectedFrom ?? navigating.page.url(),
+    ...(hop.referer ? { referer: hop.referer } : {}),
+  };
+  return true;
+}
+
+/** The answer to a navigation this process refused, as facts: which origin, sent from where, why. */
+function refusedNavigation(
+  session: BotSession,
+  hop: RefusedHop,
+  startedAt: number,
+): Response {
+  return json(
+    withNotes(session, {
+      error: "laf:navigation_refused",
+      code: "laf:navigation_refused",
+      refused: {
+        origin: originOf(hop.url),
+        ...(hop.redirectedFrom
+          ? { redirectedFrom: originOf(hop.redirectedFrom) }
+          : {}),
+      },
+      reason: hop.reason,
+      elapsedMs: Date.now() - startedAt,
+    }),
+    403,
+  );
+}
+
+/**
+ * The answer to a navigation stopped at a host the caller has not judged: where it was going and
+ * where from, and that nothing loaded. Not an error — the gateway judges `to` and, if it may, asks
+ * for it next, with the `Referer` the stopped request was carrying.
+ */
+function heldNavigation(
+  session: BotSession,
+  target: Page,
+  held: HeldHop,
+  startedAt: number,
+): Response {
+  return json(
+    withNotes(session, {
+      url: target.url(),
+      title: "",
+      text: "",
+      truncated: false,
+      redirect: held,
+      elapsedMs: Date.now() - startedAt,
+    }),
+  );
+}
+
+/**
+ * The answer to a `/navigate` the guard stopped part of the way: refused, or held for the gateway.
+ *
+ * The tab is put on `about:blank` either way rather than left on Chromium's error page for an
+ * address the Bot was not allowed to open, so the next snapshot is of nothing rather than of a
+ * refusal notice — and a refusal outranks a hold, because nothing about a refused hop is the
+ * gateway's to reconsider.
+ */
+async function stoppedNavigation(
+  session: BotSession,
+  target: Page,
+  navigating: Navigating,
+  startedAt: number,
+): Promise<Response> {
+  await leavePage(target, navigating.commits);
+  session.snapshotId += 1;
+  if (navigating.refused) {
+    return refusedNavigation(session, navigating.refused, startedAt);
+  }
+  if (navigating.held) {
+    return heldNavigation(session, target, navigating.held, startedAt);
+  }
+  return json({ error: "Navigation failed." }, 502);
+}
+
+/**
+ * Put the tab on nothing. Bounded and never fatal: a page that will not leave is the next call's problem.
+ *
+ * AFTER THE ERROR PAGE, NOT BEFORE IT. A navigation the guard stopped makes `goto` reject at once,
+ * and Chromium commits its error page for that navigation a moment later. Measured 2026-09-13:
+ * leaving in that moment had the error page overtake `about:blank`, so the tab stayed on
+ * `chrome-error://`, and the `about:blank` landed during the NEXT `/navigate` — which then failed as
+ * "interrupted by another navigation to about:blank", while the page's own redirect went ahead with
+ * nothing holding it.
+ *
+ * And the error page is THIS call's, which is why the commits are counted rather than the address
+ * read: a tab already showing an error page — a popup whose first request was refused, adopted as the
+ * Bot's tab — satisfied a wait for `chrome-error:` before the new one had landed, and the race was back
+ * (measured the same day, a hold that ended on `chrome-error://`).
+ */
+async function leavePage(target: Page, commits: string[]): Promise<void> {
+  const deadline = Date.now() + ERROR_PAGE_MS;
+  while (
+    !commits.some((address) => address.startsWith("chrome-error:")) &&
+    Date.now() < deadline
+  ) {
+    await Bun.sleep(ERROR_PAGE_POLL_MS);
+  }
+  await target
+    .goto("about:blank", { timeout: LEAVE_PAGE_MS })
+    .catch(() => undefined);
+}
+
+const LEAVE_PAGE_MS = 2_000;
+/** How long a stopped navigation is given to show its error page. A landing the guard missed has none. */
+const ERROR_PAGE_MS = 1_000;
+const ERROR_PAGE_POLL_MS = 20;
 
 /**
  * Everything a page can tell us that no tool call would ever return.
@@ -1287,40 +1534,124 @@ const listener = serve<StreamData>({
     if (url.pathname === "/navigate" && request.method === "POST") {
       const body = (await request.json().catch(() => null)) as {
         url?: unknown;
+        holdAtNewHost?: unknown;
+        referer?: unknown;
       } | null;
       if (typeof body?.url !== "string") {
         return json({ error: "A url is required." }, 400);
       }
 
       const startedAt = Date.now();
+      /*
+       * The address itself, before the browser is asked. The guard would refuse it a moment later
+       * anyway, but a `javascript:` URL never becomes a request the guard sees — and the server's own
+       * check is one process away, on a caller this container cannot assume was the server.
+       */
+      const asked = checkNavigationTarget(body.url, {
+        allowPrivateHosts: ALLOW_PRIVATE_HOSTS,
+      });
+      if (!asked.allowed) {
+        return refusedNavigation(
+          session,
+          { url: body.url, redirectedFrom: null, reason: asked.reason },
+          startedAt,
+        );
+      }
+      // The `Referer` a hop stopped last time was carrying, when the gateway asks for that hop now.
+      // Only a web address the floor allows; anything else is dropped rather than sent.
+      const referer =
+        typeof body.referer === "string" &&
+        checkNavigationTarget(body.referer, {
+          allowPrivateHosts: ALLOW_PRIVATE_HOSTS,
+        }).allowed
+          ? body.referer
+          : undefined;
+      let target: Page | undefined;
+      let navigating: Navigating | undefined;
+      let recordCommits: ((frame: Frame) => void) | undefined;
       try {
         session.control.assertBotMayAct();
-        const target = await currentPage(botId);
-        await target.goto(body.url, {
+        target = await currentPage(botId);
+        const commits: string[] = [];
+        navigating = {
+          page: target,
+          frameId: await mainFrameIdOf(target),
+          judgedHost: hostnameOf(asked.url),
+          holding: body.holdAtNewHost === true,
+          commits,
+        };
+        const tab = target;
+        recordCommits = (frame: Frame) => {
+          if (frame === tab.mainFrame()) commits.push(frame.url());
+        };
+        tab.on("framenavigated", recordCommits);
+        session.navigating = navigating;
+        const response = await target.goto(asked.url, {
           waitUntil: "domcontentloaded",
           timeout: NAVIGATION_TIMEOUT_MS,
+          ...(referer ? { referer } : {}),
         });
         // A new document wipes every stamp, so every ref handed out before now is meaningless.
         // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
         // than fall through to a selector that matches nothing and read as a missing element.
         session.snapshotId += 1;
-        const extract = await readSettledPageText(target, {
-          settleFirst: true,
-        });
-        return json(
-          withNotes(session, {
-            url: target.url(),
-            title: await target.title().catch(() => ""),
-            text: extract.text,
-            truncated: extract.truncated,
-            ...(extract.frames ? { frames: extract.frames } : {}),
-            elapsedMs: Date.now() - startedAt,
-          }),
-        );
+        /*
+         * WHERE IT LANDED, judged once more: the response the document came from and the address the
+         * tab shows. The guard judged every hop before it was requested, so this is the second net,
+         * for the day a request reaches the page some way the guard does not see. Its cost is two
+         * string checks; the cost of that day is the metadata endpoint's answer in a model's context.
+         */
+        const landed = [response?.url(), target.url()]
+          .filter((address): address is string => Boolean(address))
+          .map((address) => ({
+            address,
+            verdict: hopVerdict(address, ALLOW_PRIVATE_HOSTS),
+          }))
+          .find(({ verdict }) => !verdict.allowed);
+        if (landed && !landed.verdict.allowed) {
+          navigating.refused ??= {
+            url: landed.address,
+            redirectedFrom: asked.url,
+            reason: landed.verdict.reason,
+          };
+        }
+        if (!navigating.refused && !navigating.held) {
+          const extract = await readSettledPageText(target, {
+            settleFirst: true,
+          });
+          // A page's own script can leave for another host while it settles; the guard stopped that
+          // too, and what was read is the error page it left behind, not an answer.
+          if (!navigating.refused && !navigating.held) {
+            return json(
+              withNotes(session, {
+                url: target.url(),
+                title: await target.title().catch(() => ""),
+                text: extract.text,
+                truncated: extract.truncated,
+                ...(extract.frames ? { frames: extract.frames } : {}),
+                elapsedMs: Date.now() - startedAt,
+              }),
+            );
+          }
+        }
+        return await stoppedNavigation(session, target, navigating, startedAt);
       } catch (error) {
         // A person holding the wheel is not a failed navigation; the Bot should wait.
         if (error instanceof ControlError) {
           return json({ error: error.message, humanHasControl: true }, 409);
+        }
+        /*
+         * A hop the guard stopped. Playwright's words for it are `net::ERR_BLOCKED_BY_CLIENT`, which
+         * are true and name nothing; the call recorded which address, and whether it was refused or
+         * held for the gateway to judge.
+         */
+        if (target && (navigating?.refused || navigating?.held)) {
+          return await stoppedNavigation(
+            session,
+            target,
+            navigating,
+            startedAt,
+          );
         }
         /*
          * A PAGE THAT NEVER ARRIVED IS ABANDONED, NOT KEPT.
@@ -1356,6 +1687,10 @@ const listener = serve<StreamData>({
           },
           502,
         );
+      } finally {
+        if (session.navigating === navigating) session.navigating = undefined;
+        if (target && recordCommits)
+          target.off("framenavigated", recordCommits);
       }
     }
 
@@ -1970,6 +2305,10 @@ log.info("boot", {
   profilesDir: process.env.PROFILES_DIR ?? "/profiles",
   navigationTimeoutMs: NAVIGATION_TIMEOUT_MS,
   actionTimeoutMs: ACTION_TIMEOUT_MS,
+  // A boundary a deployment can move, so the boot line is where an operator checks it.
+  allowPrivateHosts: ALLOW_PRIVATE_HOSTS,
+  // Which user the browser runs as. `0` here is the finding this image was rebuilt to close.
+  uid: typeof process.getuid === "function" ? process.getuid() : null,
 });
 
 /**

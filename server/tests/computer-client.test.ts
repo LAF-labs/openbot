@@ -125,6 +125,93 @@ describe("computer client", () => {
     ).resolves.toMatchObject({ title: "Local" });
   });
 
+  /*
+   * WHERE IT LANDED, not only where it was asked to go (audit A3, 2026-09-10).
+   *
+   * The check above judges the address the Bot named, before the request. A public host that 302s
+   * to `127.0.0.1` passes it — the host asked for is public — and the browser then follows the
+   * redirect. The computer image every deployment runs until it pulls does not yet stop the hop, so
+   * the server judges the URL the navigation reports having landed on, and stops the computer so the
+   * page is not left open for the next `computer_read` to fetch.
+   */
+  test("refuses a navigation that landed on an internal address after a redirect", async () => {
+    const paths: string[] = [];
+    const client = clientWith((url) => {
+      paths.push(new URL(url).pathname);
+      if (url.endsWith("/navigate")) {
+        // The public redirector was allowed; the browser followed it here.
+        return ok({
+          url: "http://169.254.169.254/latest/meta-data/",
+          title: "",
+          text: "ami-id\ninstance-id",
+          truncated: false,
+          elapsedMs: 20,
+        });
+      }
+      return ok({ stopped: true, wasRunning: true });
+    });
+
+    await expect(
+      client.navigate(
+        "https://httpbin.org/redirect-to?url=http://169.254.169.254/",
+      ),
+    ).rejects.toThrow(NavigationRefusedError);
+    // It stopped the browser after refusing, so the page it landed on is not left open.
+    expect(paths).toEqual(["/navigate", "/computers/stop"]);
+  });
+
+  // The gateway's two asks of a navigation: stop at a host it has not judged, and send the Referer a
+  // stopped hop was carrying. Neither is sent when not asked for, so a caller that is not the gateway
+  // gets a browser that follows redirects under the floor, as it always did.
+  test("asks the computer to hold at a new host, with the Referer, only when told to", async () => {
+    const bodies: unknown[] = [];
+    const client = clientWith((_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return ok({
+        url: "https://www.coupang.com/",
+        title: "",
+        text: "",
+        truncated: false,
+        elapsedMs: 1,
+      });
+    });
+
+    await client.navigate("https://www.coupang.com/", undefined, {
+      holdAtNewHost: true,
+      referer: "https://bit.ly/",
+    });
+    await client.navigate("https://www.coupang.com/");
+    expect(bodies).toEqual([
+      {
+        url: "https://www.coupang.com/",
+        holdAtNewHost: true,
+        referer: "https://bit.ly/",
+      },
+      { url: "https://www.coupang.com/" },
+    ]);
+  });
+
+  // The computer refusing the hop itself (the newer image) reaches the server as its own code, and
+  // must read as a refusal a person can act on rather than as the computer being broken.
+  test("relays the computer's own redirect refusal as a refusal", async () => {
+    const client = clientWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: "laf:navigation_refused",
+            code: "laf:navigation_refused",
+            reason:
+              "That address is inside this deployment's own network, so the assistant is not allowed to open it.",
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+    );
+
+    await expect(
+      client.navigate("https://httpbin.org/redirect-to?url=http://10.0.0.5/"),
+    ).rejects.toThrow(NavigationRefusedError);
+  });
+
   // Two different failures that read identically to a person unless we separate them: the computer
   // being absent is an operator problem, a page failing to load is not.
   test("reports an absent computer distinctly from a failed page", async () => {

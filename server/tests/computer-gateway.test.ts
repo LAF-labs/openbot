@@ -2042,3 +2042,218 @@ describe("a caller that has already stopped", () => {
     expect(calls).toEqual(["click"]);
   });
 });
+
+/**
+ * Where a navigation goes, not only where it starts (audit A3, 2026-09-10).
+ *
+ * The policy used to judge the address the Bot named and follow wherever that led, and the
+ * Boundaries page said so beside its own preset: "A link that redirects there from somewhere else is
+ * allowed." The computer now stops the first hop to a host this call has not judged and hands it
+ * back (`redirect`), before that host is contacted; the gateway judges it and asks for it only if the
+ * policy allows.
+ */
+describe("a navigation that is sent somewhere else", () => {
+  type Asked = { url: string; holdAtNewHost?: boolean; referer?: string };
+
+  /** A computer whose pages redirect as `hops` says, recording every navigation it was asked for. */
+  function redirectingComputer(hops: Record<string, string>, landed?: string) {
+    const asked: Asked[] = [];
+    const stopped: string[] = [];
+    const client = {
+      navigate: async (
+        url: string,
+        _signal: AbortSignal | undefined,
+        options: { holdAtNewHost?: boolean; referer?: string } = {},
+      ) => {
+        asked.push({ url, ...options });
+        const to = hops[url];
+        if (to) {
+          return {
+            url: "about:blank",
+            title: "",
+            text: "",
+            truncated: false,
+            elapsedMs: 1,
+            redirect: { to, from: url },
+          } as never;
+        }
+        return {
+          url: landed ?? url,
+          title: "",
+          text: "도착",
+          truncated: false,
+          elapsedMs: 1,
+        } as never;
+      },
+      stopComputer: async () => {
+        stopped.push("stop");
+        return { stopped: true, wasRunning: true } as never;
+      },
+      forBot() {
+        return client;
+      },
+    } as unknown as ComputerClient;
+    return { client, asked, stopped };
+  }
+
+  function gatewayFor(client: ComputerClient, policy: ActionPolicy) {
+    const { store, rows } = fakeAudit();
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => policy,
+      approvals,
+      standing: createStandingApprovalStore(),
+    });
+    return { gateway, rows, approvals };
+  }
+
+  const SHORT = "https://bit.ly/3xYz";
+  const SHOP = "https://www.coupang.com/vp/products/1?itemId=2";
+
+  test("a hop to another host is judged before it is asked for, and followed when allowed", async () => {
+    const { client, asked } = redirectingComputer({ [SHORT]: SHOP });
+    const { gateway, rows } = gatewayFor(client, PERMISSIVE);
+
+    const result = await gateway.navigate("default", "bot-1", ACTOR, SHORT);
+
+    expect(result.url).toBe(SHOP);
+    expect(asked).toEqual([
+      { url: SHORT, holdAtNewHost: true },
+      { url: SHOP, holdAtNewHost: true },
+    ]);
+    // One decision per host reached, each naming where it was.
+    expect(
+      rows
+        .filter((row) => row.eventType === "computer.action_allowed")
+        .map((row) => row.payload.page),
+    ).toEqual(["https://bit.ly/3xYz", "https://www.coupang.com/vp/products/1"]);
+  });
+
+  test("a hop the policy refuses is never asked for", async () => {
+    const { client, asked } = redirectingComputer({
+      [SHORT]: "https://www.facebook.com/somebody",
+    });
+    // The Boundaries page's own preset.
+    const { gateway, rows } = gatewayFor(client, {
+      deny: [
+        'intent == "navigate" && (contains(page.host, "facebook.com") || contains(page.host, "x.com"))',
+      ],
+      ask: [],
+      allow: ["true"],
+    });
+
+    await expect(
+      gateway.navigate("default", "bot-1", ACTOR, SHORT),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(asked.map((entry) => entry.url)).toEqual([SHORT]);
+    const refused = rows.find(
+      (row) => row.eventType === "computer.action_refused",
+    );
+    expect(refused?.payload.page).toBe("https://www.facebook.com/somebody");
+  });
+
+  test("a hop the policy asks about is asked about, and the same call spends the answer on that hop", async () => {
+    const { client, asked } = redirectingComputer({ [SHORT]: SHOP });
+    const { gateway, approvals } = gatewayFor(client, {
+      deny: [],
+      ask: ['intent == "navigate" && page.host == "www.coupang.com"'],
+      allow: ["true"],
+    });
+
+    const question = (await gateway
+      .navigate("default", "bot-1", ACTOR, SHORT)
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(question).toBeInstanceOf(ActionNeedsApprovalError);
+    // The person is asked about where the Bot would actually go.
+    expect(question.subject.host).toBe("www.coupang.com");
+    expect(asked.map((entry) => entry.url)).toEqual([SHORT]);
+
+    await approvals.answer(question.approvalId, "bot-1", MANAGER.id, true);
+    // The surface sends the identical call again, answer attached.
+    const result = await gateway.navigate(
+      "default",
+      "bot-1",
+      ACTOR,
+      SHORT,
+      question.approvalId,
+    );
+    expect(result.url).toBe(SHOP);
+    expect(asked.map((entry) => entry.url)).toEqual([SHORT, SHORT, SHOP]);
+  });
+
+  test("the hop is asked for with the Referer the stopped request was carrying", async () => {
+    const asked: Asked[] = [];
+    const client = {
+      navigate: async (
+        url: string,
+        _signal: AbortSignal | undefined,
+        options: { holdAtNewHost?: boolean; referer?: string } = {},
+      ) => {
+        asked.push({ url, ...options });
+        return (
+          url === SHORT
+            ? {
+                url: "about:blank",
+                title: "",
+                text: "",
+                truncated: false,
+                elapsedMs: 1,
+                redirect: {
+                  to: SHOP,
+                  from: SHORT,
+                  referer: "https://bit.ly/",
+                },
+              }
+            : { url, title: "", text: "", truncated: false, elapsedMs: 1 }
+        ) as never;
+      },
+      forBot() {
+        return client;
+      },
+    } as unknown as ComputerClient;
+    const { gateway } = gatewayFor(client, PERMISSIVE);
+
+    await gateway.navigate("default", "bot-1", ACTOR, SHORT);
+    expect(asked[1]).toEqual({
+      url: SHOP,
+      holdAtNewHost: true,
+      referer: "https://bit.ly/",
+    });
+  });
+
+  test("a chain that comes back on itself is refused rather than followed round", async () => {
+    const { client, asked } = redirectingComputer({
+      "https://a.example/": "https://b.example/",
+      "https://b.example/": "https://a.example/",
+    });
+    const { gateway } = gatewayFor(client, PERMISSIVE);
+
+    await expect(
+      gateway.navigate("default", "bot-1", ACTOR, "https://a.example/"),
+    ).rejects.toThrow("laf:redirect_loop");
+    expect(asked.map((entry) => entry.url)).toEqual([
+      "https://a.example/",
+      "https://b.example/",
+    ]);
+  });
+
+  test("a landing on a host the computer did not stop is judged where it landed, and closed if refused", async () => {
+    // An older computer image follows every redirect, and a page's own POST is never held.
+    const { client, stopped } = redirectingComputer(
+      {},
+      "https://www.facebook.com/somebody",
+    );
+    const { gateway } = gatewayFor(client, {
+      deny: ['intent == "navigate" && contains(page.host, "facebook.com")'],
+      ask: [],
+      allow: ["true"],
+    });
+
+    await expect(
+      gateway.navigate("default", "bot-1", ACTOR, SHORT),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(stopped).toEqual(["stop"]);
+  });
+});
