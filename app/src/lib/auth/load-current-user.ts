@@ -3,6 +3,7 @@ import { redirect } from "@tanstack/react-router";
 import {
   type CurrentUser,
   currentUserQueryOptions,
+  FORBIDDEN,
   UNREACHABLE,
 } from "./queries";
 
@@ -29,6 +30,10 @@ export async function loadCurrentUser(
   const result = await queryClient.ensureQueryData(currentUserQueryOptions());
   if (result === UNREACHABLE) {
     throw redirect({ to: "/unreachable" });
+  }
+  // A different fact from the one above, and it used to be shown as it: the server is fine.
+  if (result === FORBIDDEN) {
+    throw redirect({ to: "/no-access" });
   }
   return result;
 }

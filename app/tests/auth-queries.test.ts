@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
+import { QueryClient } from "@tanstack/react-query";
+import { isRedirect } from "@tanstack/react-router";
+import { loadCurrentUser } from "../src/lib/auth/load-current-user";
 import {
   authKeys,
   currentUserQueryOptions,
+  FORBIDDEN,
   UNREACHABLE,
 } from "../src/lib/auth/queries";
 import { stubFetch } from "./support/fetch";
@@ -61,12 +65,45 @@ test("answers, rather than rejecting, however the request fails", async () => {
   }
 });
 
+/**
+ * 403 IS AN ANSWER, NOT AN OUTAGE.
+ *
+ * `guards.ts` answers it for a session that is good and a person the deployment no longer admits —
+ * somebody removed as a member after they signed in. Measured 2026-09-10: it landed on the
+ * "cannot reach the server, this usually clears on its own" screen. The server had reached them
+ * perfectly well, and nothing was going to clear.
+ */
+test("keeps a refusal apart from an outage, and sends it to its own screen", async () => {
+  const original = globalThis.fetch;
+  const run = currentUserQueryOptions().queryFn as () => Promise<unknown>;
+  try {
+    globalThis.fetch = stubFetch(
+      async () =>
+        new Response(JSON.stringify({ error: "no role" }), { status: 403 }),
+    );
+    expect(await run()).toBe(FORBIDDEN);
+
+    const client = new QueryClient();
+    const thrown = await loadCurrentUser(client).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(isRedirect(thrown)).toBe(true);
+    expect((thrown as { options: { to?: string } }).options.to).toBe(
+      "/no-access",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 /** Screens never see it: they only render once a route decided there is somebody to show them to. */
-test("hides the unreachable answer from screens", () => {
+test("hides the unreachable and refused answers from screens", () => {
   const select = currentUserQueryOptions().select as (
     result: unknown,
   ) => unknown;
   expect(select(UNREACHABLE)).toBeNull();
+  expect(select(FORBIDDEN)).toBeNull();
   expect(select(null)).toBeNull();
   const person = { id: "u1", email: "a@b.c", role: "user", onboarded: true };
   expect(select(person)).toBe(person);

@@ -69,7 +69,21 @@ export const authKeys = {
  */
 export const UNREACHABLE = "unreachable";
 
-export type CurrentUserResult = CurrentUser | null | typeof UNREACHABLE;
+/**
+ * The server answered, and said no.
+ *
+ * A session that is valid and a person the deployment no longer admits — removed as a member after
+ * signing in (`server/src/auth/guards.ts`, the role check). MEASURED 2026-09-10: this landed on the
+ * "cannot reach the server" screen, which told somebody whose access had been taken away that the
+ * server was down and it would clear on its own. It will not. Its own answer, its own screen.
+ */
+export const FORBIDDEN = "forbidden";
+
+export type CurrentUserResult =
+  | CurrentUser
+  | null
+  | typeof UNREACHABLE
+  | typeof FORBIDDEN;
 
 async function currentUser(): Promise<CurrentUserResult> {
   let response: Response;
@@ -93,6 +107,9 @@ async function currentUser(): Promise<CurrentUserResult> {
    */
   if (response.status === 503) {
     return null;
+  }
+  if (response.status === 403) {
+    return FORBIDDEN;
   }
   if (!response.ok) {
     return UNREACHABLE;
@@ -137,6 +154,6 @@ export function currentUserQueryOptions() {
      * exists exactly where the decision is made.
      */
     select: (result: CurrentUserResult): CurrentUser | null =>
-      result === UNREACHABLE ? null : result,
+      result === UNREACHABLE || result === FORBIDDEN ? null : result,
   });
 }

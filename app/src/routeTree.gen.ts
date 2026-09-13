@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as NoAccessRouteImport } from './routes/no-access'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SignRouteImport } from './routes/sign'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -44,6 +45,11 @@ import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/c
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoAccessRoute = NoAccessRouteImport.update({
+  id: '/no-access',
+  path: '/no-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -206,6 +212,7 @@ const AuthedAppChannelNewRoute = AuthedAppChannelNewRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
+  '/no-access': typeof NoAccessRoute
   '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
   '/terms': typeof TermsRoute
@@ -238,6 +245,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
+  '/no-access': typeof NoAccessRoute
   '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
   '/terms': typeof TermsRoute
@@ -269,6 +277,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
+  '/no-access': typeof NoAccessRoute
   '/privacy': typeof PrivacyRoute
   '/sign': typeof SignRoute
   '/terms': typeof TermsRoute
@@ -305,6 +314,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/no-access'
     | '/privacy'
     | '/sign'
     | '/terms'
@@ -337,6 +347,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/no-access'
     | '/privacy'
     | '/sign'
     | '/terms'
@@ -367,6 +378,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
+    | '/no-access'
     | '/privacy'
     | '/sign'
     | '/terms'
@@ -402,6 +414,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
+  NoAccessRoute: typeof NoAccessRoute
   PrivacyRoute: typeof PrivacyRoute
   SignRoute: typeof SignRoute
   TermsRoute: typeof TermsRoute
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/no-access': {
+      id: '/no-access'
+      path: '/no-access'
+      fullPath: '/no-access'
+      preLoaderRoute: typeof NoAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -728,6 +748,7 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
+  NoAccessRoute: NoAccessRoute,
   PrivacyRoute: PrivacyRoute,
   SignRoute: SignRoute,
   TermsRoute: TermsRoute,

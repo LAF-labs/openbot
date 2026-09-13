@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
+import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { handleShellLinks } from "../lib/notifications/shell-links";
@@ -62,6 +63,7 @@ export const Route = createFileRoute("/_authed")({
 function AuthedShell() {
   useChannelEvents();
   useBotNotifications();
+  useSessionGate();
   // In the desktop shell, a `target="_blank"` link has nowhere to go; hand it to the browser.
   useEffect(handleShellLinks, []);
 

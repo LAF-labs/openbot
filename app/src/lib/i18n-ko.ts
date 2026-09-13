@@ -569,6 +569,11 @@ export const ko: Record<string, string> = {
   "Skip to the conversation": "대화로 건너뛰기",
   Snail: "달팽이",
   "Cannot reach the server.": "서버에 닿지 못했습니다.",
+  // /no-access: the server answered /api/me with 403. Not an outage, and it will not clear by itself.
+  "This account no longer has access here.":
+    "이 계정은 더 이상 여기에 들어올 수 없습니다.",
+  "The server is working. This account's access was taken away, and whoever manages this place can give it back.":
+    "서버는 정상입니다. 이 계정의 권한이 회수되었고, 관리하는 분이 다시 열어 줄 수 있습니다.",
   "This usually clears on its own. Nothing your Bots are doing has stopped.":
     "대개 저절로 풀립니다. 봇이 하던 일은 멈추지 않았습니다.",
   "Remembered something": "기억해 두었습니다",
