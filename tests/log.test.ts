@@ -126,9 +126,178 @@ describe("what a line scrubs", () => {
   });
 
   test("a string that is nothing of the kind, untouched", () => {
-    expect(scrubString("run r1 for bot agent_shop took 1234ms")).toBe(
+    for (const ordinary of [
       "run r1 for bot agent_shop took 1234ms",
-    );
+      // The short names only as a parameter's whole name: a sort key is not a key, an exit code
+      // is not an OAuth grant, and a monkey is not anything.
+      "sorted by monkey=name and hotkey=ctrl; exit code=1",
+      "https://shop.example/orders?page=2&sort=recent#top",
+      // A Korean sentence ABOUT a password is the site's message, not the password.
+      "비밀번호가 일치하지 않습니다",
+    ]) {
+      expect(scrubString(ordinary)).toBe(ordinary);
+    }
+  });
+
+  /*
+   * THE AUDITOR'S TABLE (A5 §6, 2026-09-10). Twenty-six values went into `scrubString` and twelve
+   * came back whole, against a document that promised "a URL with a password in it is cut where
+   * the secret starts". The audit names the twelve kinds that got through and the six that were
+   * caught, and gives one of them byte for byte (the first row); the rest are those kinds written
+   * out. Every row is a value, the secret in it that must be gone, and — where there is one — an
+   * ordinary neighbour that must survive, because a scrubber that eats the whole line is a log
+   * nobody can read either.
+   */
+  const PEM = [
+    "-----BEGIN PRIVATE KEY-----",
+    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7pemcanary",
+    "-----END PRIVATE KEY-----",
+  ].join("\n");
+  const JWT = `eyJhbGciOiJIUzI1NiJ9.${"c".repeat(24)}.${"d".repeat(16)}`;
+  const MISSED: Array<[value: string, gone: string, kept?: string]> = [
+    [
+      "https://shop.example/login?user=kim&password=Hunter2!",
+      "Hunter2",
+      "user=kim",
+    ],
+    [
+      "https://admin.example/login.php?id=kim&pwd=Hunter2&menu=orders",
+      "Hunter2",
+      "menu=orders",
+    ],
+    [
+      "https://api.example/v1/stores?api_key=AKX-canary-123&page=2",
+      "AKX-canary-123",
+      "page=2",
+    ],
+    [
+      "https://maps.example/js?key=KEYCANARY99&callback=init",
+      "KEYCANARY99",
+      "callback=init",
+    ],
+    ["PHPSESSID=9f8e7d6c5b4a3f2e; lang=ko", "9f8e7d6c5b4a3f2e", "lang=ko"],
+    [
+      "aws_secret_access_key = wJalrXUtnFEMIcanaryK7MDENG",
+      "wJalrXUtnFEMIcanary",
+    ],
+    [`boot with ${PEM} loaded`, "MIIEvQIBADAN", "boot with"],
+    ["token ghp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f", "1a2b3c4d5e6f", "token"],
+    [
+      "slack xoxb-123456789012-1234567890123-AbCdEfGhIjKl",
+      "123456789012",
+      "slack",
+    ],
+    ["KakaoAK 0123456789abcdef0123456789abcdef", "0123456789abcdef"],
+    [
+      "LAF_ALIMTALK_API_KEY=NCSCANARYKEY0001:SOLAPICANARYSECRET0123456789ABCD",
+      "SOLAPICANARYSECRET",
+    ],
+    ["사장님 비밀번호는 Hunter2!입니다", "Hunter2"],
+  ];
+  const CAUGHT: Array<[value: string, gone: string, kept?: string]> = [
+    ["key sk-canary-0f3c9a7e2b1d4c6e8a0b in use", "canary-0f3c9a7e", "in use"],
+    ["키는sk-or-v1-abcdef1234567890입니다", "abcdef1234567890"],
+    [`cookie ${JWT}`, JWT.slice(0, 30), "cookie"],
+    [
+      `https://app.example/callback#id_token=${JWT}&state=s1`,
+      JWT.slice(0, 30),
+      "state=s1",
+    ],
+    [
+      "postgres://openbot:hunter2@localhost:5432/openbot",
+      "hunter2",
+      "@localhost:5432/openbot",
+    ],
+    ["header Bearer abc.def-ghi_canary", "abc.def-ghi_canary", "header"],
+    ["?session_token=abc123canary&x=1", "abc123canary", "x=1"],
+    [
+      "https://oauth2.example/token?refresh_token=1//0gcanary&grant_type=refresh_token",
+      "1//0gcanary",
+      "grant_type=",
+    ],
+  ];
+  // What an Authorization looks like when it is not in a header object: written into a string.
+  const AUTHORIZATION: Array<[value: string, gone: string, kept?: string]> = [
+    ["Authorization: Basic dXNlcjpwYXNzY2FuYXJ5", "dXNlcjpwYXNz"],
+    [
+      "authorization: HMAC-SHA256 apiKey=NCSCANARY, date=2026-09-10, salt=s, signature=deadbeefcanary",
+      "deadbeefcanary",
+    ],
+    ["X-API-Key: k-canary-777", "k-canary-777"],
+    ["x-openbot-computer-token: laf-local-dev-canary", "laf-local-dev-canary"],
+    ["x-trigger-token: trg_canary_9", "trg_canary_9"],
+    [
+      'provider said {"error":"bad","access_token":"ya29.canary","token_type":"Bearer"}',
+      "ya29.canary",
+      '"error":"bad"',
+    ],
+    [
+      "https://bucket.example/o?X-Amz-Credential=AKIDcanary&X-Amz-Signature=5ig5canary&x=1",
+      "5ig5canary",
+      "x=1",
+    ],
+    [
+      "https://app.example/callback?code=4/0AX4XfWh-canary&state=abc",
+      "4/0AX4XfWh",
+      "state=abc",
+    ],
+    ["password: Hunter2! was rejected", "Hunter2", "was rejected"],
+    ["인증번호=482913 발송", "482913", "발송"],
+  ];
+
+  // Three columns always: bun hands a `done` callback where a shorter row leaves a parameter empty.
+  const rows = (table: Array<[string, string, string?]>) =>
+    table.map(([value, gone, kept]) => [value, gone, kept ?? ""]);
+
+  test.each(rows(MISSED))(
+    "cuts what the first shapes let through: %j",
+    (value, gone, kept) => {
+      const said = scrubString(value);
+      expect(said).not.toContain(gone);
+      expect(said).toContain(REDACTED);
+      if (kept) expect(said).toContain(kept);
+    },
+  );
+
+  test.each(rows(CAUGHT))(
+    "still cuts what they caught: %j",
+    (value, gone, kept) => {
+      const said = scrubString(value);
+      expect(said).not.toContain(gone);
+      if (kept) expect(said).toContain(kept);
+    },
+  );
+
+  test.each(rows(AUTHORIZATION))(
+    "cuts a credential written into a string or a URL: %j",
+    (value, gone, kept) => {
+      const said = scrubString(value);
+      expect(said).not.toContain(gone);
+      expect(said).toContain(REDACTED);
+      if (kept) expect(said).toContain(kept);
+    },
+  );
+
+  test("every row at once, through a whole line, leaves nothing behind", () => {
+    const table = [...MISSED, ...CAUGHT, ...AUTHORIZATION];
+    const line = logLine("warn", "server", "scrub_table", {
+      said: table.map(([value]) => value).join(" | "),
+    });
+    for (const [, gone] of table) {
+      expect(line).not.toContain(gone);
+    }
+  });
+
+  test("a long string costs a bounded amount of work, and is still scrubbed at its start", () => {
+    // A hundred thousand dots took one shape five seconds, and the first shapes twenty.
+    for (const long of ["a.".repeat(50_000), `"${"a-".repeat(50_000)}`]) {
+      const started = performance.now();
+      scrubString(long);
+      expect(performance.now() - started).toBeLessThan(250);
+    }
+    const said = scrubString(`?password=Hunter2&x=1 ${"a.".repeat(50_000)}`);
+    expect(said).not.toContain("Hunter2");
+    expect(said.length).toBeLessThanOrEqual(2_001);
   });
 
   test("nested fields, to a depth, and long strings, to a length", () => {

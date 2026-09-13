@@ -63,24 +63,110 @@ const MAX_STRING = 2_000;
 const SECRET_KEY =
   /(^|[^a-z])(token|secret|password|passwd|cookie|authorization|api[_-]?key|credential|bearer)([^a-z]|$)/i;
 
-/** Patterns a secret takes when it turns up inside an ordinary string. Cut where the secret starts. */
+/**
+ * The names a `name=value` pair carries a secret under, as any part of the name: `access_token`,
+ * `X-Amz-Signature`, `aws_secret_access_key`, `JSESSIONID`. Long enough that a word containing one
+ * by accident is not a thing a log line says.
+ */
+const SECRET_NAME_PARTS =
+  "token|session|sessid|secret|password|passwd|pwd|passcode|api[_-]?key|credential|signature|authorization|private[_-]?key|access[_-]?key";
+
+/**
+ * The names too short to look for inside other words — `key` is in `monkey`, `sid` in `consider` —
+ * so only as the whole name of a query or cookie parameter, where `?key=` and `connect.sid=` are
+ * exactly what they look like. `code` is the OAuth callback's one-time grant.
+ */
+const SHORT_SECRET_NAMES = "key|pw|pass|pin|otp|sig|sid|auth|code";
+
+/** The headers a credential travels in, written into a string as `Name: value`. */
+const CREDENTIAL_HEADERS =
+  "authorization|proxy-authorization|x-api-key|api-key|apikey|x-auth-token|x-openbot-computer-token|x-trigger-token|x-laf-signature|cookie|set-cookie";
+
+/**
+ * Patterns a secret takes when it turns up inside an ordinary string. Cut where the secret starts.
+ *
+ * WHAT THE FIRST FIVE MISSED (A5 §6, 2026-09-10): twenty-six values handed to `scrubString`, and
+ * twelve came back whole — `?password=`, `?pwd=`, `?api_key=` and `?key=`, the query strings Korean
+ * admin pages actually use, because the one `name=value` shape knew only `token`, `session` and
+ * `secret`; `PHPSESSID=` and `aws_secret_access_key =` for the same reason; a PEM private key,
+ * `ghp_`, `xoxb-`, `KakaoAK` and 솔라피's `key:secret`, whose shapes nothing knew; and a password
+ * in a Korean sentence. `operating.md` had promised a URL with a password in it was cut; only
+ * `scheme://user:pass@host` was. Every one is a row in `tests/log.test.ts`.
+ *
+ * Order matters where one shape's output could feed another: the block and the prefixed keys first,
+ * then the header lines, then the name-shaped pairs.
+ *
+ * What no shape here catches is a secret with nothing beside it to say so — `it's Hunter2` — and a
+ * Korean sentence that names one only through a subject particle (`비밀번호가 …`), which is far more
+ * often the site's error message than the password. Neither belongs in a log line in the first
+ * place; keeping them out is the discipline's job (`tests/log-discipline.test.ts`), and this is the
+ * net under it.
+ */
 const SECRET_SHAPES: ReadonlyArray<[RegExp, string]> = [
+  // A PEM private key, whole — or to the end of the string, when the END line was cut off.
+  [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+    REDACTED,
+  ],
   // Every `sk-…` key OpenAI-compatible endpoints issue, including OpenRouter's `sk-or-…`.
   [/\bsk-[A-Za-z0-9_-]{6,}/g, `sk-${REDACTED}`],
+  // Keys recognisable by their vendor's prefix: GitHub, Slack, AWS, Google.
+  [/\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{10,}/g, REDACTED],
+  [/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, REDACTED],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, REDACTED],
+  // A credential header written into a string, whatever its scheme — Basic, KakaoAK, 솔라피's
+  // HMAC-SHA256 — to the end of its line.
+  [
+    new RegExp(`\\b(${CREDENTIAL_HEADERS})\\s*:\\s*[^\\r\\n"']+`, "gi"),
+    `$1: ${REDACTED}`,
+  ],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${REDACTED}`],
+  [/\bKakaoAK\s+[A-Za-z0-9]{16,}/g, `KakaoAK ${REDACTED}`],
   // A JWT: three base64url parts. A session cookie and an OIDC id_token both look like this.
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, REDACTED],
   // `scheme://user:password@host` — a connection string or a proxy URL with its credentials in it.
-  [/\b([a-z][a-z0-9+.-]*):\/\/[^:/\s@]+:[^@/\s]+@/gi, `$1://${REDACTED}@`],
-  // `name=value` cookies and query strings that name a token.
+  [/\b([a-z][a-z0-9+.-]{0,30}):\/\/[^:/\s@]+:[^@/\s]+@/gi, `$1://${REDACTED}@`],
+  // A quoted JSON member whose name says it is a secret, inside a body written as a string.
   [
-    /\b([a-z0-9_.-]*(?:token|session|secret)[a-z0-9_.-]*)=[^;&\s]+/gi,
+    new RegExp(
+      `"([a-z0-9_.-]{0,40}(?:${SECRET_NAME_PARTS})[a-z0-9_.-]{0,40})"\\s*:\\s*"(?:[^"\\\\]|\\\\.)*"`,
+      "gi",
+    ),
+    `"$1":"${REDACTED}"`,
+  ],
+  // `name=value` — a query string, a cookie, an environment line — whose NAME says it is a secret.
+  // The name's length is bounded: unbounded on both sides of an alternation, a long run of letters
+  // with no `=` in it is quadratic work for every string a line carries.
+  [
+    new RegExp(
+      `\\b([a-z0-9_.-]{0,40}(?:${SECRET_NAME_PARTS})[a-z0-9_.-]{0,40})[ \\t]*=[ \\t]*[^;&\\s"']+`,
+      "gi",
+    ),
     `$1=${REDACTED}`,
+  ],
+  [
+    new RegExp(`(^|[?&#;.])(${SHORT_SECRET_NAMES})=[^;&\\s"']+`, "gi"),
+    `$1$2=${REDACTED}`,
+  ],
+  // A value stated after its name: `password: Hunter2`, `비밀번호는 Hunter2!입니다`, `인증번호=482913`.
+  [/\b(password|passwd|passcode|otp)\s*:\s*[^\s"']+/gi, `$1: ${REDACTED}`],
+  [
+    /(비밀번호|비번|패스워드|암호|인증번호|보안코드)\s*(?:[:=]|은|는)\s*\S+/g,
+    `$1 ${REDACTED}`,
   ],
 ];
 
 export function scrubString(value: string): string {
-  let out = value;
+  /*
+   * CUT TWICE: loosely before, exactly after. The shapes run over the whole string, and a string
+   * of a hundred thousand dots took the `user:pass@host` shape five seconds on its own (measured
+   * 2026-09-13; twenty on the shapes before). Nothing past twice the ceiling can survive into the
+   * line, and a secret that starts inside the ceiling and runs past twice it is a PEM block, which
+   * its shape takes to the end of what is there.
+   */
+  let out =
+    value.length > MAX_STRING * 2 ? value.slice(0, MAX_STRING * 2) : value;
   for (const [shape, replacement] of SECRET_SHAPES) {
     out = out.replace(shape, replacement);
   }
