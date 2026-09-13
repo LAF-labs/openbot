@@ -144,12 +144,15 @@ describe("a fleet that cannot be reached", () => {
   test("tries three times, backs off, and does not throw", async () => {
     const { notifier, sent, rows, waits } = notifierOn([failing(503)()]);
 
-    // The assertion is the absence of a rejection: the rows are already gone by the time this runs.
-    await notifier.notify({
-      event: "account.deleted",
-      actor: PSEUDONYM,
-      remainingAccounts: 0,
-    });
+    // No rejection — the rows are already gone by the time this runs — and an answer of false, which
+    // is what leaves the outbox row undelivered for the next try.
+    await expect(
+      notifier.notify({
+        event: "account.deleted",
+        actor: PSEUDONYM,
+        remainingAccounts: 0,
+      }),
+    ).resolves.toBe(false);
 
     expect(sent).toHaveLength(3);
     expect(waits).toEqual([250, 1_000]);
@@ -179,11 +182,13 @@ describe("a fleet that cannot be reached", () => {
      * who pressed delete is waiting on this, so the row is written on the first answer.
      */
     const { notifier, sent, rows, waits } = notifierOn([failing(401)()]);
-    await notifier.notify({
-      event: "account.deleted",
-      actor: PSEUDONYM,
-      remainingAccounts: 0,
-    });
+    await expect(
+      notifier.notify({
+        event: "account.deleted",
+        actor: PSEUDONYM,
+        remainingAccounts: 0,
+      }),
+    ).resolves.toBe(false);
 
     expect(sent).toHaveLength(1);
     expect(waits).toEqual([]);
@@ -193,11 +198,13 @@ describe("a fleet that cannot be reached", () => {
 
   test("succeeds on a retry and records the attempt it took", async () => {
     const { notifier, sent, rows } = notifierOn([failing(500)(), ok()]);
-    await notifier.notify({
-      event: "account.deleted",
-      actor: PSEUDONYM,
-      remainingAccounts: 0,
-    });
+    await expect(
+      notifier.notify({
+        event: "account.deleted",
+        actor: PSEUDONYM,
+        remainingAccounts: 0,
+      }),
+    ).resolves.toBe(true);
 
     expect(sent).toHaveLength(2);
     expect(rows[0]?.eventType).toBe("fleet.notified");
@@ -225,6 +232,7 @@ describe("a fleet that cannot be reached", () => {
         actor: PSEUDONYM,
         remainingAccounts: 0,
       }),
-    ).resolves.toBeUndefined();
+      // Delivered is delivered, whatever the trail managed: the outbox marks the row on this.
+    ).resolves.toBe(true);
   });
 });

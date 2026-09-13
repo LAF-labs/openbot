@@ -56,6 +56,8 @@ function surface(options: { outbox?: boolean; told?: string[] } = {}) {
         deliveredVia: options.told ?? [],
       } satisfies NotificationRecord;
     },
+    recordFleetNotice: async () => {},
+    redeliver: async () => 0,
     list: async () => [],
     markSeen: async () => true,
     markSeenForApproval: async () => 0,

@@ -44,6 +44,8 @@ function spyOutbox(): NotificationOutbox & { written: EnqueueInput[] } {
       written.push(input);
       return { ...RECORD, ...input, deliveredVia: [] };
     },
+    recordFleetNotice: async () => {},
+    redeliver: async () => 0,
     list: async () => [],
     markSeen: async () => true,
     markSeenForApproval: async () => 0,

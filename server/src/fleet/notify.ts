@@ -35,6 +35,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
 import { log } from "../log";
+import { isFleetKind, type NotificationAdapter } from "../notifications/outbox";
 
 /** What the fleet is told about. Both carry the same envelope. */
 export type FleetEvent = "account.created" | "account.deleted";
@@ -48,7 +49,15 @@ export type FleetNotice = {
 };
 
 export type FleetNotifier = {
-  notify: (notice: FleetNotice) => Promise<void>;
+  /**
+   * Send one notice, answering whether the fleet actually took it.
+   *
+   * The boolean is what the outbox retries on (`createFleetDoor`): a withdrawal the fleet did not
+   * take stays an undelivered row and is offered again. `notify` still never throws — a fleet that
+   * cannot be told must never undo a withdrawal that has already committed — so `false` is how "not
+   * delivered" reaches a caller, never an exception.
+   */
+  notify: (notice: FleetNotice) => Promise<boolean>;
 };
 
 /**
@@ -82,7 +91,9 @@ export function signFleetBody(body: string, secret: string): string {
  * before the row it just created, would each hand the fleet a number that is off by exactly one —
  * and the one that matters is one versus zero.
  */
-export async function countAccounts(database: Database): Promise<number> {
+export async function countAccounts(
+  database: Pick<Database, "select">,
+): Promise<number> {
   const [row] = await database
     .select({ count: sql<number>`count(*)::int` })
     .from(users);
@@ -192,6 +203,25 @@ export function createFleetNotifier(
           status,
         });
       }
+      return delivered;
     },
+  };
+}
+
+/**
+ * The fleet webhook as a door of the notification outbox — the one door a `fleet.*` row goes through.
+ *
+ * A withdrawal's notice used to be a single `notify` after the deletion committed, and nothing
+ * anywhere remembered whether it landed (audit A1-4). It is a row in the outbox now, written inside
+ * the deletion's transaction, and this is how the outbox delivers it: the same `notify`, answering
+ * whether the fleet took it, so a row it did not take stays undelivered for `redeliver` to offer
+ * again. Nothing else is offered to this door, and this door is offered nothing else.
+ */
+export function createFleetDoor(notifier: FleetNotifier): NotificationAdapter {
+  return {
+    name: "fleet",
+    accepts: isFleetKind,
+    deliver: async (record) =>
+      record.fleet ? notifier.notify(record.fleet) : false,
   };
 }

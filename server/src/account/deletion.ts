@@ -88,8 +88,8 @@ import {
   userRoles,
   users,
 } from "../db/schema";
-import { describeFailure } from "../failure-text";
-import { countAccounts, type FleetNotifier } from "../fleet/notify";
+import { countAccounts } from "../fleet/notify";
+import type { NotificationOutbox } from "../notifications/outbox";
 import { pseudonymFor } from "./pseudonym";
 
 /** How many rows each part of the deletion actually removed. Written into the trail as it stands. */
@@ -133,13 +133,15 @@ export type AccountDeletionDependencies = {
    */
   computerClient?: ComputerClient;
   /**
-   * The fleet tool, which is the only thing that can destroy the machine this runs on.
+   * Where the fleet tool — the only thing that can destroy the machine this runs on — is told.
    *
-   * Absent on a deployment that was never told where the fleet is — a laptop, or a VM whose `.env`
-   * has no `LAF_FLEET_WEBHOOK_URL`. There the withdrawal is complete here and nowhere else, which
-   * is why the absence gets a line at boot instead of being silent (see `fleet/notify.ts`).
+   * The notification outbox, whose fleet door is the webhook (`fleet/notify.ts`): the notice is a
+   * row written in this deletion's own transaction and delivered from there, retried until the
+   * fleet takes it. Absent on a deployment that was never told where the fleet is — a laptop, or a
+   * VM whose `.env` has no `LAF_FLEET_WEBHOOK_URL`. There the withdrawal is complete here and
+   * nowhere else, which is why the absence gets a line at boot instead of being silent.
    */
-  fleet?: FleetNotifier;
+  fleetNotices?: Pick<NotificationOutbox, "recordFleetNotice" | "redeliver">;
 };
 
 export type AccountDeletion = {
@@ -158,7 +160,7 @@ export function createAccountDeletion(
     retireConnectionsFor,
     retirePartnersFor,
     computerClient,
-    fleet,
+    fleetNotices,
   } = dependencies;
 
   return {
@@ -596,36 +598,41 @@ export function createAccountDeletion(
             .returning({ id: users.id }),
         );
 
+        /*
+         * THE FLEET NOTICE, WRITTEN IN THIS TRANSACTION.
+         *
+         * A VM is destroyed when the last person on it withdraws, and the thing that destroys it is
+         * somewhere else. `remainingAccounts` is counted HERE, after the `users` delete above and
+         * inside this transaction, so it sees the row that just went — zero is what tells the fleet
+         * this machine has nobody left, and a count taken a moment earlier says one.
+         *
+         * It used to be a single `notify` after the commit. A process that died in the gap, or a
+         * fleet down for the ten seconds that call waits, lost the notice for good: the person was
+         * gone and their VM billed on, invisible everywhere (audit A1-4). The row commits WITH the
+         * deletion, so no crash can separate them, and the outbox offers it to the fleet after this
+         * commit, on its tick and at the next boot until the fleet takes it.
+         *
+         * Only when a fleet is configured. On a laptop there is nothing to tell and nothing to
+         * bill, so there is no row to retry forever.
+         */
+        if (fleetNotices) {
+          await fleetNotices.recordFleetNotice(transaction, {
+            event: "account.deleted",
+            actor: pseudonym,
+            remainingAccounts: await countAccounts(transaction),
+          });
+        }
+
         return tally;
       });
 
       /*
-       * THE FLEET, TOLD AFTER THE COMMIT AND NEVER BEFORE.
-       *
-       * A VM is destroyed when the last person on it withdraws, and the thing that destroys it is
-       * somewhere else. `remainingAccounts` is counted here — after the transaction, so the row
-       * just deleted is genuinely gone from the count — because zero is what tells the fleet this
-       * machine has nobody left, and a count taken a moment earlier says one.
-       *
-       * Wrapped even though the notifier's own contract is never to throw. What is being protected
-       * is the person, not the notifier: everything above has already committed, so an exception
-       * raised from here would answer a completed withdrawal with a 500 and leave somebody
-       * believing their account is still there.
+       * Offered now, and awaited, because the common case is a fleet that answers at once and the
+       * person is still on the page that pressed the button. `redeliver` never throws — everything
+       * above has committed, so nothing here may answer a completed withdrawal with a 500 — and a
+       * notice the fleet did not take stays a row for the next tick and the next boot.
        */
-      if (fleet) {
-        try {
-          await fleet.notify({
-            event: "account.deleted",
-            actor: pseudonym,
-            remainingAccounts: await countAccounts(database),
-          });
-        } catch (error) {
-          console.error(
-            "[fleet] a withdrawal could not be reported:",
-            describeFailure(error),
-          );
-        }
-      }
+      await fleetNotices?.redeliver();
 
       return {
         deleted: true,

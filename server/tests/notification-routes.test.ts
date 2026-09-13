@@ -60,6 +60,8 @@ function surface(
   const windows: number[] = [];
   const outbox: NotificationOutbox = {
     enqueue: async () => null,
+    recordFleetNotice: async () => {},
+    redeliver: async () => 0,
     list: async (userId, listOptions) => {
       asked.push({
         userId,

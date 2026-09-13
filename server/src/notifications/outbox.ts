@@ -26,7 +26,7 @@
  * null, and every caller spells that out with `void`.
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, like, sql } from "drizzle-orm";
 import type { TurnFailureCode } from "../channels/turn-failures";
 import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
@@ -65,6 +65,19 @@ export const NOTIFICATION_KINDS = [
    * "you wrote to us" is not a thing anybody needs interrupting about.
    */
   "support.feedback",
+  /**
+   * A person withdrew, and the fleet tool that destroys this VM when nobody is left must hear it.
+   *
+   * The other odd one out, and odder: it is addressed to NO person here — the person it is about
+   * is deleted in the same transaction that writes it, which is why `user_id` may be null (migration
+   * 0038) — and it is the one kind the outbox retries (`redeliver`). It is written INSIDE the
+   * deletion's transaction, so no crash can separate the withdrawal from its notice, and it goes
+   * through exactly one door, the fleet webhook's (`fleet/notify.ts`). It used to be one `fetch`
+   * after the commit: a process that died in between, or a fleet down for the ten seconds that call
+   * waited, lost the notice for good, and the VM of somebody who had left went on being billed
+   * (audit A1-4).
+   */
+  "fleet.account_deleted",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -77,6 +90,24 @@ export function isNotificationKind(value: unknown): value is NotificationKind {
 export function isSupportKind(kind: string): boolean {
   return kind.startsWith("support.");
 }
+
+/** Rows addressed to the fleet tool. Retried until a door takes them; see `redeliver`. */
+export function isFleetKind(kind: string): boolean {
+  return kind.startsWith("fleet.");
+}
+
+/**
+ * What a `fleet.account_deleted` row carries: the envelope `fleet/notify.ts` signs and sends.
+ *
+ * Counted inside the deletion's transaction, after the person's row went, so `remainingAccounts` is
+ * the number the fleet acts on — zero destroys the machine — and never an address: `actor` is the
+ * pseudonym the trail carries.
+ */
+export type FleetFacts = {
+  event: "account.deleted";
+  actor: string;
+  remainingAccounts: number;
+};
 
 /**
  * What a `support.feedback` row carries, in facts — and, this once, the words too.
@@ -132,6 +163,8 @@ export type NotificationRecord = {
   run?: RunFailureFacts;
   /** What the person wrote and where they were, for a `support.feedback` row. */
   support?: SupportFacts;
+  /** The withdrawal the fleet is told about, for a `fleet.*` row. See {@link FleetFacts}. */
+  fleet?: FleetFacts;
   createdAt: string;
   deliveredVia: string[];
   deliveredAt?: string;
@@ -149,8 +182,9 @@ export type NotificationRecord = {
  *
  * `accepts` says which kinds this door is for. A door that does not say is a door to a PERSON —
  * the socket, the phone, the buzz webhook — and is offered everything except the support rows,
- * which are addressed to the operator. The default is written that way round so that the three
- * doors that existed before there were support rows did not each need a line saying "not those".
+ * which are addressed to the operator, and the fleet rows, which are addressed to nobody here. The
+ * default is written that way round so that the three doors that existed before there were support
+ * rows did not each need a line saying "not those".
  */
 export type NotificationAdapter = {
   name: string;
@@ -178,6 +212,29 @@ export type NotificationOutbox = {
    * took it without a second read.
    */
   enqueue: (input: EnqueueInput) => Promise<NotificationRecord | null>;
+  /**
+   * Write a fleet notice inside a transaction the caller owns, and offer it to nobody yet.
+   *
+   * THROWS, unlike `enqueue`, and that is the point: the caller is deleting a person, and a
+   * withdrawal whose notice could not be written must roll back with it rather than commit into the
+   * silence this row exists to end. Offered to its door by `redeliver`, once the caller has
+   * committed — a notice for a deletion that then rolled back would destroy a VM somebody is on.
+   */
+  recordFleetNotice: (
+    executor: Pick<Database, "insert">,
+    facts: FleetFacts,
+  ) => Promise<void>;
+  /**
+   * Offer every fleet row no door has taken yet to the doors that take it, and record who did.
+   *
+   * Called right after the transaction that wrote one, on a tick, and at boot — the last for a row a
+   * process wrote and died before delivering. One at a time within the process (one API process per
+   * VM, `docs/laf/deployment-model.md`), so two callers never send the same row twice. Person rows
+   * are not retried: their retry is the in-app list, and a buzz hours late is noise.
+   *
+   * Never throws. Answers how many rows were taken this time.
+   */
+  redeliver: () => Promise<number>;
   /**
    * This person's unseen rows, newest first, capped.
    *
@@ -248,12 +305,12 @@ export function createNotificationOutbox(input: {
   const deliver = async (
     record: NotificationRecord,
   ): Promise<NotificationRecord> => {
-    // A support row goes only to a door that asked for it; every other row goes to every door
-    // that did not ask for anything. See `NotificationAdapter.accepts`.
+    // A support or fleet row goes only to a door that asked for it; every other row goes to every
+    // door that did not ask for anything. See `NotificationAdapter.accepts`.
     const doors = adapters.filter((adapter) =>
       adapter.accepts
         ? adapter.accepts(record.kind)
-        : !isSupportKind(record.kind),
+        : !isSupportKind(record.kind) && !isFleetKind(record.kind),
     );
     if (doors.length === 0) return record;
     const outcomes = await Promise.allSettled(
@@ -279,8 +336,9 @@ export function createNotificationOutbox(input: {
     try {
       /*
        * Read-modify-write rather than `array_cat`, and safe because of who writes this column:
-       * nothing but this function, once, in the same call that inserted the row. There is no second
-       * writer to lose an update to.
+       * nothing but this function — once, in the same call that inserted the row, or for a fleet
+       * row from `redeliver`, which reaches only rows no door has taken and runs one at a time.
+       * There is no second writer to lose an update to.
        */
       await database
         .update(lafNotifications)
@@ -295,7 +353,49 @@ export function createNotificationOutbox(input: {
     return { ...record, deliveredVia, deliveredAt };
   };
 
+  /** The in-process queue `redeliver` runs on. See its note on why one at a time. */
+  let redelivering: Promise<number> = Promise.resolve(0);
+
+  const redeliverOnce = async (): Promise<number> => {
+    const pending = await database
+      .select()
+      .from(lafNotifications)
+      .where(
+        and(
+          like(lafNotifications.kind, "fleet.%"),
+          isNull(lafNotifications.deliveredAt),
+        ),
+      )
+      .orderBy(asc(lafNotifications.createdAt));
+    let taken = 0;
+    for (const row of pending) {
+      const record = await deliver(rowToRecord(row));
+      if (record.deliveredAt) taken += 1;
+    }
+    return taken;
+  };
+
   return {
+    recordFleetNotice: async (executor, facts) => {
+      await executor.insert(lafNotifications).values({
+        id: randomUUID(),
+        kind: "fleet.account_deleted",
+        // About no Bot and addressed to no person here; see the kind's note.
+        botId: "",
+        userId: null,
+        subject: { kind: "fleet", ...facts },
+        createdAt: now(),
+      });
+    },
+
+    redeliver: () => {
+      redelivering = redelivering.then(redeliverOnce).catch((error) => {
+        log(`[outbox] fleet redelivery failed: ${message(error)}`);
+        return 0;
+      });
+      return redelivering;
+    },
+
     enqueue: async (enqueueInput) => {
       let record: NotificationRecord;
       try {
@@ -412,15 +512,19 @@ export async function purgeNotificationsBefore(
 ): Promise<number> {
   const removed = await database
     .delete(lafNotifications)
-    .where(sql`${lafNotifications.createdAt} < ${cutoff}`)
+    .where(
+      // Except a fleet notice no door has taken yet: it is retried until one does, and dropping it
+      // after thirty days of an unreachable fleet would be the lost withdrawal it exists to prevent.
+      sql`${lafNotifications.createdAt} < ${cutoff} and not (${lafNotifications.kind} like 'fleet.%' and ${lafNotifications.deliveredAt} is null)`,
+    )
     .returning({ id: lafNotifications.id });
   return removed.length;
 }
 
-/** The `subject` column, read back as whichever of the two facts it holds. See `RunFailureFacts`. */
+/** The `subject` column, read back as whichever fact it holds. See `RunFailureFacts`. */
 function factsOf(
   stored: unknown,
-): Pick<NotificationRecord, "subject" | "run" | "support"> {
+): Pick<NotificationRecord, "subject" | "run" | "support" | "fleet"> {
   if (!stored || typeof stored !== "object") return {};
   const held = stored as Record<string, unknown>;
   if (held.kind === "run") {
@@ -430,6 +534,10 @@ function factsOf(
   if (held.kind === "support") {
     const { kind: _kind, ...facts } = held;
     return { support: facts as SupportFacts };
+  }
+  if (held.kind === "fleet") {
+    const { kind: _kind, ...facts } = held;
+    return { fleet: facts as FleetFacts };
   }
   return { subject: stored as AskSubject };
 }

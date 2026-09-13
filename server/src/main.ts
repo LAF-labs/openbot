@@ -74,7 +74,7 @@ import {
 import { createDatabase } from "./db/client";
 import { agentProfiles, users } from "./db/schema";
 import { describeFailure } from "./failure-text";
-import { createFleetNotifier } from "./fleet/notify";
+import { createFleetDoor, createFleetNotifier } from "./fleet/notify";
 import { log } from "./log";
 import { createAlimtalkAdapter } from "./notifications/alimtalk";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -326,6 +326,8 @@ const notificationOutbox = createNotificationOutbox({
           }),
         ]
       : []),
+    // The fleet tool, told about a withdrawal. The one door a `fleet.*` row goes through.
+    ...(fleetNotifier ? [createFleetDoor(fleetNotifier)] : []),
   ],
   // The outbox and the adapter each take a line-writer so their tests can read them; here the
   // writer is the process log, so their one-line reports come out in the same shape as everything
@@ -1129,7 +1131,7 @@ const app = createApp(
       // The 발신프로필, before the row it hangs off goes. See the field's note.
       retirePartnersFor: partnerRuntime.connections.retireFor,
       ...(computerClient ? { computerClient } : {}),
-      ...(fleetNotifier ? { fleet: fleetNotifier } : {}),
+      ...(fleetNotifier ? { fleetNotices: notificationOutbox } : {}),
     }),
     auditStore: bootAuditStore,
   },
@@ -1466,6 +1468,20 @@ void retention.runOnce().catch((error) => {
   log.warn("retention_first_sweep_failed", { reason: describeFailure(error) });
 });
 retention.start(6 * 60 * 60_000);
+
+/*
+ * Withdrawals the fleet has not taken yet, offered again.
+ *
+ * A withdrawal writes its notice into the outbox inside its own transaction and offers it at once
+ * (account/deletion.ts); this is the rest of the retry. At boot, because a process that died between
+ * a deletion's commit and its delivery left the row undelivered, and the point of the row is that a
+ * restart picks it up. On a tick, because a fleet that was down should be caught up without waiting
+ * for the next person to leave. Only with a fleet; on a laptop there is nothing to tell.
+ */
+if (fleetNotifier) {
+  void notificationOutbox.redeliver();
+  setInterval(() => void notificationOutbox.redeliver(), 5 * 60_000).unref();
+}
 
 /*
  * The public-data entry, reconciled to the key this boot was given: the row, its two tools and a
