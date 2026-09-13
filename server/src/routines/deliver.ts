@@ -10,6 +10,15 @@
  * Written straight into the store rather than through a run of the conversation's agent. The
  * routine already ran — this is recording what was said, not saying it again, and re-running it
  * against the chat thread would double the cost and could answer differently the second time.
+ *
+ * ON THE CALLER'S EXECUTOR, WHICH IS USUALLY A TRANSACTION. The service that runs a routine
+ * settles the run in one transaction — the answer, the roster row, the ledger's ending and the
+ * receipt — because a delivery that had committed on its own beside a ledger row still saying
+ * `running` was what a restart then reported as interrupted (`routines/service.ts`). So nothing
+ * here announces from inside a write: each delivery returns `announce`, and whoever owns the
+ * transaction calls it once that has committed (the rule in `channels/events.ts`). Run on the
+ * pool, with no transaction around it, the write has committed by the time the function returns
+ * and the announcement goes out at once; `announce` is then a no-op.
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
@@ -20,8 +29,12 @@ import type {
 import { previewOf } from "../channels/preview";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { Database } from "../db/client";
-import { channelMemberships, channels } from "../db/schema";
-import { appendMessages, type StoredMessage } from "../runner/thread-store";
+import { channels, channelThreads } from "../db/schema";
+import {
+  appendMessages,
+  type Executor,
+  type StoredMessage,
+} from "../runner/thread-store";
 
 export type RoutineDelivery = {
   agentId: string;
@@ -30,6 +43,28 @@ export type RoutineDelivery = {
   routineName: string;
   answer: string;
   at: Date;
+  /**
+   * The ledger run that produced the answer, when there is one.
+   *
+   * Stamped on the message so the transcript and the ledger agree about which run wrote what —
+   * and it is safe to stamp only because the two are written in one transaction: a message keyed
+   * to a run the ledger still called `running` is exactly what the failure reader would draw a red
+   * line under after a restart.
+   */
+  runId?: string;
+};
+
+export type DeliveryOptions = {
+  /** The transaction to write within. Absent writes on the pool and announces at once. */
+  within?: Executor;
+};
+
+/** What a delivery wrote, and the announcement it earned — to be made once the write is visible. */
+export type Delivered = {
+  channelId: string;
+  threadId: string;
+  /** Tells every open tab, once. Safe to call more than once and after a delivery on the pool. */
+  announce: () => void;
 };
 
 /**
@@ -97,8 +132,8 @@ export type SoloAppend = {
    *
    * A routine's failure mark carries one so `GET /api/channels/:id/failures` can key the red line
    * to it — the reader joins the ledger to the transcript by `run_id`, and a message without one is
-   * a message no failure can be drawn under. An answer carries none: nothing is drawn under an
-   * answer.
+   * a message no failure can be drawn under. A routine's answer carries one too, since the
+   * settlement transaction: the run it names is `done` in the same commit.
    */
   runId?: string;
 };
@@ -119,10 +154,10 @@ export type SoloAppend = {
  * creating one as a side effect of a schedule or a handoff is a surprise, not a feature.
  */
 export async function appendToSoloConversation(
-  database: Database,
+  executor: Executor,
   append: SoloAppend,
 ): Promise<{ channelId: string; threadId: string } | null> {
-  const target = await soloChannelFor(database, append.userId, append.agentId);
+  const target = await soloChannelFor(executor, append.userId, append.agentId);
   if (!target) return null;
 
   /*
@@ -153,7 +188,7 @@ export async function appendToSoloConversation(
    * `appendMessages` takes a per-thread lock and adds a row, so neither side can lose the other's
    * and neither has to know the other exists.
    */
-  await appendMessages(database, target.threadId, [message], {
+  await appendMessages(executor, target.threadId, [message], {
     at: append.at,
     ...(append.runId ? { runId: append.runId } : {}),
   });
@@ -162,30 +197,36 @@ export async function appendToSoloConversation(
 }
 
 /**
- * Move the roster row for a message just appended, and announce it.
+ * Move the roster row for a message just appended, and say what to announce.
  *
  * The half a person actually notices. `lastMessageAgentId` being set is what makes the room count
  * as unread — an answer nobody has read yet is exactly the state the unread dot exists for, and so
  * is a routine that did not finish. Shared by the answer and the failure mark so the two cannot
  * disagree about what "unread" means.
  *
- * POSTGRES' CLOCK AND THE SAME FORWARD-ONLY GUARD THE OTHER WRITER USES.
+ * THE ROW IS THE PERSON'S THREAD, NOT THE CHANNEL. A channel two people share holds two
+ * conversations (`channel_threads` is keyed on person and channel), and a preview stored once per
+ * channel put one person's last sentence on the other's roster — audit A5-7, 2026-09-10. The
+ * thread this delivery wrote into is the row that moves, and the announcement goes to its owner
+ * alone.
  *
- * This is the second thing that writes `last_message_at`, and it was writing Bun's clock —
- * measured ~66 ms behind Postgres on this machine — with no ordering guard at all. A message a
- * person sent (stamped by `recordActivity` with Postgres `now()`) followed 50 ms later by a
- * delivery would be overwritten by a time EARLIER than itself, and `unread` is
- * `last_message_at > last_read_at`: the room could fail to go unread for the delivery and sort
- * below where it belongs. Same clock, same `lt` guard, so the two writers cannot disagree.
+ * POSTGRES' CLOCK AND THE SAME FORWARD-ONLY GUARD THE OTHER WRITERS USE.
+ *
+ * This process runs ~66 ms behind the database on the machine it was measured on, and `unread` is
+ * `last_message_at > last_read_at`: a delivery stamped with Bun's clock could land EARLIER than a
+ * message the person had just sent, fail to go unread, and sort below where it belongs. Same clock,
+ * same `lt` guard, so the writers cannot disagree.
+ *
+ * Null when nothing moved: something newer is already there. The message itself is in the thread,
+ * and announcing a stale preview would be the news going backwards on every open tab.
  */
 async function moveRosterRow(
-  database: Database,
-  target: { channelId: string },
+  executor: Executor,
+  target: { channelId: string; threadId: string },
   moved: { agentId: string; preview: string; at: Date },
-  announce?: AnnounceChannelActivity,
-): Promise<void> {
-  const [row] = await database
-    .update(channels)
+): Promise<ChannelActivityEvent | null> {
+  const [row] = await executor
+    .update(channelThreads)
     .set({
       lastMessage: moved.preview,
       lastMessageAt: sql`now()`,
@@ -194,49 +235,55 @@ async function moveRosterRow(
     })
     .where(
       and(
-        eq(channels.id, target.channelId),
+        eq(channelThreads.threadId, target.threadId),
         or(
-          isNull(channels.lastMessageAt),
-          lt(channels.lastMessageAt, sql`now()`),
+          isNull(channelThreads.lastMessageAt),
+          lt(channelThreads.lastMessageAt, sql`now()`),
         ),
       ),
     )
     .returning({
-      name: channels.name,
-      lastMessage: channels.lastMessage,
-      lastMessageAt: channels.lastMessageAt,
+      userId: channelThreads.userId,
+      lastMessage: channelThreads.lastMessage,
+      lastMessageAt: channelThreads.lastMessageAt,
     });
-  /*
-   * Nothing moved, which means something newer is already there. The message itself is in the
-   * thread — it was appended before this, atomically — so the transcript has it and the roster row
-   * is already showing something more recent. Announcing a stale preview would be the news going
-   * backwards on every open tab.
-   */
-  if (!row) return;
+  if (!row) return null;
 
-  /*
-   * And announced, the way a message typed into the room is (channels/routes.ts,
-   * recordActivity): the same event to the same hub, so the roster row moves and the open
-   * transcript picks the message up without anybody reloading. Without this the delivery was a
-   * row in Postgres that the screen learned about from a four-second poll, or not at all.
-   *
-   * Nothing here is inside a transaction — the append and the roster update are each their own —
-   * so the write above has committed by the time this line runs. See `channels/events.ts`.
-   */
-  const members = await database
-    .select({ userId: channelMemberships.userId })
-    .from(channelMemberships)
-    .where(eq(channelMemberships.channelId, target.channelId));
-  const event: ChannelActivityEvent = {
+  const [named] = await executor
+    .select({ name: channels.name })
+    .from(channels)
+    .where(eq(channels.id, target.channelId))
+    .limit(1);
+
+  return {
     channelId: target.channelId,
-    memberIds: members.map((member) => member.userId),
-    name: row.name,
+    // The thread's owner, and nobody else: the row that moved is theirs alone.
+    memberIds: [row.userId],
+    name: named?.name ?? "",
     lastMessage: row.lastMessage,
     // The time that was WRITTEN, on the database's clock, not the one this process guessed.
     lastMessageAt: (row.lastMessageAt ?? moved.at).toISOString(),
     lastMessageAgentId: moved.agentId,
   };
-  announce?.(event);
+}
+
+/**
+ * The announcement as a thunk the transaction's owner calls after commit — or that fires at once
+ * when there was no transaction to wait for.
+ */
+function announcementOf(
+  event: ChannelActivityEvent | null,
+  announce: AnnounceChannelActivity | undefined,
+  deferred: boolean,
+): () => void {
+  let told = false;
+  const tell = () => {
+    if (told || !event) return;
+    told = true;
+    announce?.(event);
+  };
+  if (!deferred) tell();
+  return tell;
 }
 
 export function createRoutineDelivery(
@@ -244,29 +291,33 @@ export function createRoutineDelivery(
   /** Moves the roster row on every open tab. Absent in tests; the row is still written. */
   announce?: AnnounceChannelActivity,
 ) {
-  return async (delivery: RoutineDelivery): Promise<void> => {
+  return async (
+    delivery: RoutineDelivery,
+    options: DeliveryOptions = {},
+  ): Promise<Delivered | null> => {
     // Nothing to report is nothing to deliver: no message, no preview, no bell. The run itself is
     // still recorded, and the audit row says it was silent — see `routines/service.ts`.
-    if (isSilentAnswer(delivery.answer)) return;
-    const target = await appendToSoloConversation(database, {
+    if (isSilentAnswer(delivery.answer)) return null;
+    const executor = options.within ?? database;
+    const target = await appendToSoloConversation(executor, {
       agentId: delivery.agentId,
       userId: delivery.userId,
       // The routine's name, which is the "why is this here" the instruction would have carried.
       heading: delivery.routineName,
       body: delivery.answer,
       at: delivery.at,
+      ...(delivery.runId ? { runId: delivery.runId } : {}),
     });
-    if (!target) return;
-    await moveRosterRow(
-      database,
-      target,
-      {
-        agentId: delivery.agentId,
-        preview: previewOf(delivery.answer),
-        at: delivery.at,
-      },
-      announce,
-    );
+    if (!target) return null;
+    const event = await moveRosterRow(executor, target, {
+      agentId: delivery.agentId,
+      preview: previewOf(delivery.answer),
+      at: delivery.at,
+    });
+    return {
+      ...target,
+      announce: announcementOf(event, announce, Boolean(options.within)),
+    };
   };
 }
 
@@ -312,8 +363,10 @@ export function createRoutineFailureDelivery(
 ) {
   return async (
     failure: RoutineFailure,
-  ): Promise<{ channelId: string; threadId: string } | null> => {
-    const target = await appendToSoloConversation(database, {
+    options: DeliveryOptions = {},
+  ): Promise<Delivered | null> => {
+    const executor = options.within ?? database;
+    const target = await appendToSoloConversation(executor, {
       agentId: failure.agentId,
       userId: failure.userId,
       heading: failure.routineName,
@@ -322,18 +375,16 @@ export function createRoutineFailureDelivery(
       runId: failure.runId,
     });
     if (!target) return null;
-    await moveRosterRow(
-      database,
-      target,
+    const event = await moveRosterRow(executor, target, {
       // The roster shows the routine's name; the red line is the transcript's to draw.
-      {
-        agentId: failure.agentId,
-        preview: failure.routineName,
-        at: failure.at,
-      },
-      announce,
-    );
-    return target;
+      agentId: failure.agentId,
+      preview: failure.routineName,
+      at: failure.at,
+    });
+    return {
+      ...target,
+      announce: announcementOf(event, announce, Boolean(options.within)),
+    };
   };
 }
 

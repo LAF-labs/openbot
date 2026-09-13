@@ -487,9 +487,12 @@ export function createChannelStore(
           agentId: channelAgents.agentId,
           threadId: channelThreads.threadId,
           deletedAt: agentProfiles.deletedAt,
-          lastMessage: channels.lastMessage,
-          lastMessageAt: channels.lastMessageAt,
-          lastMessageAgentId: channels.lastMessageAgentId,
+          // THIS PERSON'S last message, from the row that is their conversation. The columns sat
+          // on `channels` until migration 0038, which put the owner's last sentence on a member
+          // of staff's roster — the join on `channelThreads` above is the scope.
+          lastMessage: channelThreads.lastMessage,
+          lastMessageAt: channelThreads.lastMessageAt,
+          lastMessageAgentId: channelThreads.lastMessageAgentId,
           lastReadAt: channelMemberships.lastReadAt,
           createdAt: channels.createdAt,
         })
@@ -519,7 +522,7 @@ export function createChannelStore(
         // The browser repeats this when the socket patches a row. Both must agree, or the list
         // reorders itself on the next event; see `byRecency` in use-channel-events.ts.
         .orderBy(
-          sql`coalesce(${channels.lastMessageAt}, ${channels.createdAt}) desc`,
+          sql`coalesce(${channelThreads.lastMessageAt}, ${channels.createdAt}) desc`,
           asc(channels.id),
           asc(channelAgents.agentId),
         );
@@ -669,9 +672,15 @@ export function createChannelStore(
 
           // A person's message and the agent's reply are reported separately, so they can arrive out
           // of order. Only ever move forwards.
+          /*
+           * THE REPORTER'S OWN ROW. The browser reports what it saw in ITS conversation with the
+           * channel — `channel_threads` keyed on this person and this channel — and that is the
+           * row that moves. It moved `channels` until migration 0038, and in a channel two people
+           * share that put one person's last sentence on the other's roster (audit A5-7).
+           */
           const lastMessage = previewOf(activity.text);
           const applied = await transaction
-            .update(channels)
+            .update(channelThreads)
             .set({
               lastMessage,
               lastMessageAt: at,
@@ -680,31 +689,31 @@ export function createChannelStore(
             })
             .where(
               and(
-                eq(channels.id, channelId),
+                eq(channelThreads.channelId, channelId),
+                eq(channelThreads.userId, actor.id),
                 or(
-                  isNull(channels.lastMessageAt),
-                  lt(channels.lastMessageAt, at),
+                  isNull(channelThreads.lastMessageAt),
+                  lt(channelThreads.lastMessageAt, at),
                 ),
               ),
             )
-            .returning({ id: channels.id, name: channels.name });
+            .returning({ threadId: channelThreads.threadId });
           // Nothing changed, so there is nothing to announce: a stale report is not news.
           const [appliedRow] = applied;
           if (!appliedRow) return;
 
-          const members = await transaction
-            .select({ userId: channelMemberships.userId })
-            .from(channelMemberships)
-            .where(eq(channelMemberships.channelId, channelId));
+          const [named] = await transaction
+            .select({ name: channels.name })
+            .from(channels)
+            .where(eq(channels.id, channelId))
+            .limit(1);
 
-          // The payload carries the members because the writer has already resolved them, and the
-          // reader of this event is a socket map that knows nothing about who is in what.
+          // To the reporter alone: the row that moved is theirs, and a member of the same
+          // channel has a conversation — and a roster row — of their own.
           announcement = {
             channelId,
-            memberIds: members.map((member) => member.userId),
-            // The post-rename name, so a first message retitles every member's roster in the same
-            // event that carries it.
-            name: appliedRow.name,
+            memberIds: [actor.id],
+            name: named?.name ?? "",
             lastMessage,
             // The clamped time — what was WRITTEN. The event carrying the browser's own reading
             // would have every other tab patch its roster with a time the database does not hold.

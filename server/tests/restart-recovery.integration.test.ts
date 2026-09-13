@@ -449,14 +449,15 @@ describe("a routine that does not finish", () => {
       }),
     ]);
 
-    // The unread dot: the roster row moved to the Bot.
+    // The unread dot: the roster row moved to the Bot, on THIS person's thread (the preview lives
+    // on `channel_threads` since migration 0038, not on the shared channel row).
     const [room] = await database
       .select({
-        lastMessage: channels.lastMessage,
-        lastMessageAgentId: channels.lastMessageAgentId,
+        lastMessage: channelThreads.lastMessage,
+        lastMessageAgentId: channelThreads.lastMessageAgentId,
       })
-      .from(channels)
-      .where(eq(channels.id, channelId));
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     expect(room).toEqual({
       lastMessage: "아침 브리핑",
       lastMessageAgentId: botId,

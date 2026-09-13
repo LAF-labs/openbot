@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { ChannelActivityEvent } from "../channels/events";
 import { previewOf } from "../channels/preview";
-import { channelMemberships, channels } from "../db/schema";
+import { channels, channelThreads } from "../db/schema";
 import {
   appendMessages,
   type Executor,
@@ -134,8 +134,15 @@ export async function appendRoomMessage(
     ...(append.runId ? { runId: append.runId } : {}),
   });
 
+  /*
+   * THE ROSTER ROW IS THE THREAD'S, NOT THE CHANNEL'S. A room two people share holds two threads
+   * (`channel_threads` is keyed on person and channel), and the preview used to sit on the channel
+   * — so a member of staff's roster showed the owner's last sentence, and a leaver's last words
+   * stayed on the survivor's row (audit A5-7). The row that moves is the one the message went
+   * into, and the announcement goes to its owner alone.
+   */
   const [row] = await executor
-    .update(channels)
+    .update(channelThreads)
     .set({
       lastMessage: previewOf(append.text),
       lastMessageAt: sql`now()`,
@@ -144,17 +151,17 @@ export async function appendRoomMessage(
     })
     .where(
       and(
-        eq(channels.id, append.channelId),
+        eq(channelThreads.threadId, append.threadId),
         or(
-          isNull(channels.lastMessageAt),
-          lt(channels.lastMessageAt, sql`now()`),
+          isNull(channelThreads.lastMessageAt),
+          lt(channelThreads.lastMessageAt, sql`now()`),
         ),
       ),
     )
     .returning({
-      name: channels.name,
-      lastMessage: channels.lastMessage,
-      lastMessageAt: channels.lastMessageAt,
+      userId: channelThreads.userId,
+      lastMessage: channelThreads.lastMessage,
+      lastMessageAt: channelThreads.lastMessageAt,
     });
   /*
    * Nothing moved, so something newer is already there. The message is in the thread — it was
@@ -168,18 +175,19 @@ export async function appendRoomMessage(
       activity: null,
     };
 
-  const members = await executor
-    .select({ userId: channelMemberships.userId })
-    .from(channelMemberships)
-    .where(eq(channelMemberships.channelId, append.channelId));
+  const [named] = await executor
+    .select({ name: channels.name })
+    .from(channels)
+    .where(eq(channels.id, append.channelId))
+    .limit(1);
 
   return {
     messageId: message.id,
     at: message.lafAt ?? at.toISOString(),
     activity: {
       channelId: append.channelId,
-      memberIds: members.map((member) => member.userId),
-      name: row.name,
+      memberIds: [row.userId],
+      name: named?.name ?? "",
       lastMessage: row.lastMessage,
       // The time that was WRITTEN, on the database's clock, not the one this process guessed.
       lastMessageAt: (row.lastMessageAt ?? at).toISOString(),

@@ -223,7 +223,9 @@ export function createNotificationOutbox(input: {
       // the surface ignores what it cannot draw rather than the read failing.
       kind: row.kind as NotificationKind,
       botId: row.botId,
-      userId: row.userId,
+      // Empty for a `fleet.*` row, which is addressed to nobody here: no person door is ever offered
+      // one (`accepts`), and `list` and `markSeen` match a real id, never this.
+      userId: row.userId ?? "",
       ...(row.approvalId ? { approvalId: row.approvalId } : {}),
       ...(row.channelId ? { channelId: row.channelId } : {}),
       ...factsOf(row.subject),

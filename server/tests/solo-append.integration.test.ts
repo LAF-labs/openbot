@@ -145,11 +145,11 @@ describe("writing into a Bot's own conversation", () => {
     // The bell was NOT rung: no preview, nothing to make the room unread.
     const [row] = await database
       .select({
-        lastMessage: channels.lastMessage,
-        lastMessageAt: channels.lastMessageAt,
+        lastMessage: channelThreads.lastMessage,
+        lastMessageAt: channelThreads.lastMessageAt,
       })
-      .from(channels)
-      .where(eq(channels.id, channel.id));
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, channel.id));
     expect(row?.lastMessage ?? null).toBeNull();
     expect(row?.lastMessageAt ?? null).toBeNull();
   });
@@ -169,11 +169,11 @@ describe("writing into a Bot's own conversation", () => {
 
     const [row] = await database
       .select({
-        lastMessage: channels.lastMessage,
-        lastMessageAgentId: channels.lastMessageAgentId,
+        lastMessage: channelThreads.lastMessage,
+        lastMessageAgentId: channelThreads.lastMessageAgentId,
       })
-      .from(channels)
-      .where(eq(channels.id, channel.id));
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, channel.id));
     expect(row?.lastMessage).toContain("Two reviews came in overnight.");
     expect(row?.lastMessageAgentId).toBe(botId);
   });
@@ -201,11 +201,11 @@ describe("writing into a Bot's own conversation", () => {
     expect(await messagesIn(threadId)).toHaveLength(0);
     const [row] = await database
       .select({
-        lastMessage: channels.lastMessage,
-        lastMessageAt: channels.lastMessageAt,
+        lastMessage: channelThreads.lastMessage,
+        lastMessageAt: channelThreads.lastMessageAt,
       })
-      .from(channels)
-      .where(eq(channels.id, channel.id));
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, channel.id));
     expect(row?.lastMessage ?? null).toBeNull();
     expect(row?.lastMessageAt ?? null).toBeNull();
     expect(announced).toEqual([]);

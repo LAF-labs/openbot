@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import {
@@ -180,9 +180,14 @@ describe("channel activity delivery", () => {
     const detach = hub.register(owner.id, (payload) => {
       delivered.push(JSON.parse(payload));
       readOnDelivery = database
-        .select({ lastMessage: channels.lastMessage })
-        .from(channels)
-        .where(eq(channels.id, channel.id))
+        .select({ lastMessage: channelThreads.lastMessage })
+        .from(channelThreads)
+        .where(
+          and(
+            eq(channelThreads.channelId, channel.id),
+            eq(channelThreads.userId, owner.id),
+          ),
+        )
         .then(([row]) => row?.lastMessage);
     });
 

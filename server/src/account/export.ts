@@ -203,7 +203,9 @@ export function createAccountExport(database: Database): AccountExport {
         id: channels.id,
         name: channels.name,
         description: channels.description,
-        lastMessageAt: channels.lastMessageAt,
+        // The last thing said in THEIR conversation with the channel, which is the row their
+        // roster reads (`channel_threads`, since migration 0038) — not a channel-wide one.
+        lastMessageAt: channelThreads.lastMessageAt,
         lastReadAt: channelMemberships.lastReadAt,
         createdAt: channels.createdAt,
       })
@@ -213,6 +215,13 @@ export function createAccountExport(database: Database): AccountExport {
         and(
           eq(channelMemberships.channelId, channels.id),
           eq(channelMemberships.userId, userId),
+        ),
+      )
+      .leftJoin(
+        channelThreads,
+        and(
+          eq(channelThreads.channelId, channels.id),
+          eq(channelThreads.userId, userId),
         ),
       )
       .orderBy(asc(channels.createdAt));

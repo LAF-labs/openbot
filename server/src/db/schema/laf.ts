@@ -389,9 +389,13 @@ export const lafNotifications = pgTable(
     /** One of `NotificationKind`. See the note above on why this is not an enum. */
     kind: text("kind").notNull(),
     botId: text("bot_id").notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * Who is being told. Null for the one kind that is addressed to nobody here: a `fleet.*` row,
+     * written inside the transaction that deletes the person it is about, so the person the FK
+     * would name no longer exists by the time the row does (migration 0038). Every door that
+     * reaches a person is offered rows with a person only; see `NotificationAdapter.accepts`.
+     */
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     /** The question this is about, for the rows that are about one. */
     approvalId: text("approval_id"),
     /** The room it happened in, for the rows that happened in one. */

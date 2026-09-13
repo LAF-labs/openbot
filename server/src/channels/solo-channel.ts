@@ -16,8 +16,12 @@ import {
   channelThreads,
 } from "../db/schema";
 
+/**
+ * The pool, or a transaction already open around the caller: a routine settling its run reads
+ * the conversation inside the same transaction it writes the answer into.
+ */
 export async function soloChannelFor(
-  database: Database,
+  database: Pick<Database, "select">,
   userId: string,
   agentId: string,
 ): Promise<{ channelId: string; threadId: string } | null> {

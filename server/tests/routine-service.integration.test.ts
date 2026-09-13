@@ -142,6 +142,9 @@ function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
     },
     deliver: async (delivery) => {
       delivered.push(delivery.answer);
+      // The service settles inside a transaction and announces after commit; this fake keeps no
+      // roster row, so there is nothing to move and nothing to announce.
+      return null;
     },
     now: clock,
   });

@@ -169,70 +169,41 @@ export const agents = pgTable("agents", {
   updatedAt: updatedAt(),
 });
 
-export const channels = pgTable(
-  "channels",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description").notNull(),
-    suggestedPrompts: text("suggested_prompts").array().notNull().default([]),
-    allowedGroups: text("allowed_groups").array().notNull().default([]),
-    packageId: uuid("package_id").references(() => deploymentPackages.id, {
-      onDelete: "set null",
-    }),
-    override: jsonb("override"),
-    /**
-     * The last thing said in this channel, denormalised so a roster is one indexed read.
-     *
-     * Channel grain, not per-member: what was said last is a property of the conversation, and a copy
-     * per member is the same fact stored N times, drifting. Per-member state, what somebody has read
-     *, belongs on the membership instead.
-     *
-     * Written by whoever ran the agent, from the client that already received the reply, so it is a
-     * cache of what a client observed rather than an authoritative mirror of the thread.
-     */
-    lastMessage: text("last_message"),
-    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
-    /** Which agent spoke, so a channel with several can show the right one. Null for a person. */
-    /**
-     * Which room turn is current, counted up by every message a person posts into the room.
-     *
-     * A ROOM TURN CAN OUTLIVE ITS QUESTION. Several Bots answering in rounds takes a minute, and in
-     * that minute the person can say something else — at which point everything still running is
-     * answering a question that has been superseded. Every checkpoint in the turn compares this
-     * number against the one it started with, so a newer message ends the older turn wherever it had
-     * got to. A column rather than a counter in memory because two server processes must not each
-     * believe their own turn is the current one.
-     */
-    roomTurnEpoch: bigint("room_turn_epoch", { mode: "number" })
-      .notNull()
-      .default(0),
-    lastMessageAgentId: text("last_message_agent_id").references(
-      () => agents.id,
-      {
-        onDelete: "set null",
-      },
-    ),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    /**
-     * The order the channel list is drawn in.
-     *
-     * On the expression, not on the column, because the list sorts by the last thing said and falls
-     * back to when the channel was made. An index on `last_message_at` alone does not serve that
-     * ordering, so the sort would fall back to a scan on exactly the query drawn on every page.
-     *
-     * Declared here rather than only in a migration. An index that exists in the database and not in
-     * the schema is invisible to `generate`, so the next generated migration proposes a schema
-     * without it and it is silently dropped.
-     */
-    index("channels_recent_activity_idx").on(
-      sql`COALESCE(${table.lastMessageAt}, ${table.createdAt}) DESC`,
-    ),
-  ],
-);
+export const channels = pgTable("channels", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  suggestedPrompts: text("suggested_prompts").array().notNull().default([]),
+  allowedGroups: text("allowed_groups").array().notNull().default([]),
+  packageId: uuid("package_id").references(() => deploymentPackages.id, {
+    onDelete: "set null",
+  }),
+  override: jsonb("override"),
+  /*
+   * `last_message`, `last_message_at` and `last_message_agent_id` USED TO BE HERE, at channel
+   * grain, on the reasoning that what was said last is a property of the conversation. It is
+   * not: every person in a channel has a thread of their own (`channel_threads`, keyed on
+   * person and channel), so two people in one channel hold two conversations, and one preview
+   * shared between them was the owner's last sentence on a member of staff's roster — measured
+   * on the audit of 2026-09-10, where a leaver's last words stayed on the survivor's row. The
+   * preview lives on `channel_threads` since migration 0038, beside the thread it previews.
+   */
+  /**
+   * Which room turn is current, counted up by every message a person posts into the room.
+   *
+   * A ROOM TURN CAN OUTLIVE ITS QUESTION. Several Bots answering in rounds takes a minute, and in
+   * that minute the person can say something else — at which point everything still running is
+   * answering a question that has been superseded. Every checkpoint in the turn compares this
+   * number against the one it started with, so a newer message ends the older turn wherever it had
+   * got to. A column rather than a counter in memory because two server processes must not each
+   * believe their own turn is the current one.
+   */
+  roomTurnEpoch: bigint("room_turn_epoch", { mode: "number" })
+    .notNull()
+    .default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
 
 export const channelMemberships = pgTable(
   "channel_memberships",
@@ -349,11 +320,35 @@ export const channelThreads = pgTable(
       .notNull()
       .references(() => channels.id, { onDelete: "cascade" }),
     threadId: text("thread_id").notNull(),
+    /**
+     * The last thing said in THIS person's conversation with the channel, for their roster.
+     *
+     * Here and not on `channels`, because this row is the conversation: a channel with two people
+     * in it holds two threads, and a preview stored once per channel showed each of them the
+     * other's last sentence. Written by the three things that append a message — the browser's
+     * report of a chat turn, a room turn, a routine's delivery — always for the thread the message
+     * went into, and read by the roster through the same join it already makes on this table.
+     * What has been SEEN stays on the membership, beside it.
+     */
+    lastMessage: text("last_message"),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    /** Which Bot spoke, so a room with several can show the right one. Null for a person. */
+    lastMessageAgentId: text("last_message_agent_id").references(
+      () => agents.id,
+      { onDelete: "set null" },
+    ),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.channelId] }),
     uniqueIndex("channel_threads_thread_idx").on(table.threadId),
+    /**
+     * The order one person's roster is drawn in: their threads, newest activity first.
+     *
+     * Declared here rather than only in a migration, because an index the schema does not know
+     * about is one the next generated migration silently drops.
+     */
+    index("channel_threads_recent_idx").on(table.userId, table.lastMessageAt),
   ],
 );

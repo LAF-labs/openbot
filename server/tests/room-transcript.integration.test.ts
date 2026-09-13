@@ -9,7 +9,13 @@ import {
 } from "bun:test";
 import { eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, channels, lafThreadMessages } from "../src/db/schema";
+import {
+  agents,
+  channels,
+  channelThreads,
+  lafThreadMessages,
+  users,
+} from "../src/db/schema";
 import { appendRoomMessage, readRoomLines } from "../src/rooms/transcript";
 import {
   appendMessages,
@@ -29,10 +35,16 @@ const database = createDatabase(
   TEST_POOL,
 );
 
-const made: { agents: string[]; channels: string[]; threads: string[] } = {
+const made: {
+  agents: string[];
+  channels: string[];
+  threads: string[];
+  users: string[];
+} = {
   agents: [],
   channels: [],
   threads: [],
+  users: [],
 };
 
 /*
@@ -72,21 +84,39 @@ afterEach(async () => {
   if (made.channels.length > 0) {
     await database.delete(channels).where(inArray(channels.id, made.channels));
   }
+  if (made.users.length > 0) {
+    await database.delete(users).where(inArray(users.id, made.users));
+  }
   made.threads = [];
   made.channels = [];
+  made.users = [];
 });
 
+/**
+ * A room, and the person whose thread it is.
+ *
+ * The `channel_threads` row is what the roster preview moves now — it is keyed on person and
+ * channel (migration 0038), so a room with no such row has no roster row to move. Production makes
+ * one in the same transaction as the channel; this file made only the channel, which is why the
+ * roster read below had nothing to find until this was added.
+ */
 async function makeRoom() {
   const channelId = `channel_room-test-${randomUUID()}`;
   const threadId = randomUUID();
+  const userId = `room-transcript-user-${randomUUID()}`;
   made.channels.push(channelId);
   made.threads.push(threadId);
+  made.users.push(userId);
   await database.insert(channels).values({
     id: channelId,
     name: "리스크 분석가, 일상 비서",
     description: "Private agent channel.",
   });
-  return { channelId, threadId };
+  await database
+    .insert(users)
+    .values({ id: userId, email: `${userId}@laf.test`, name: "Room" });
+  await database.insert(channelThreads).values({ userId, channelId, threadId });
+  return { channelId, threadId, userId };
 }
 
 const names = new Map([
@@ -136,9 +166,9 @@ describe("writing into a room", () => {
     });
 
     const [row] = await database
-      .select({ agentId: channels.lastMessageAgentId })
-      .from(channels)
-      .where(eq(channels.id, channelId));
+      .select({ agentId: channelThreads.lastMessageAgentId })
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, channelId));
     expect(row?.agentId).toBeNull();
 
     const lines = await readRoomLines(database, threadId, names, "김기범");
