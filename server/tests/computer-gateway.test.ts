@@ -2044,6 +2044,133 @@ describe("a caller that has already stopped", () => {
 });
 
 /**
+ * A label that changes between the snapshot and the click (audit A3, 2026-09-10).
+ *
+ * The policy judges the name the snapshot gave; the click lands on the node. Measured: "저장" renamed
+ * "결제하기" under the same ref was clicked with no approval card. The gateway now tells the computer
+ * which role and name it judged, and the computer refuses (`laf:label_changed`) when the control is
+ * called something else by then. These prove the half that lives here: what is sent is this
+ * server's judgement, and an answer given about one label is never spent on another.
+ */
+describe("a control renamed after the snapshot", () => {
+  const SAVE: SnapshotResult = {
+    snapshotId: 3,
+    url: "https://shop.example/cart",
+    title: "장바구니",
+    truncated: false,
+    elements: [{ ref: "e2", role: "button", name: "저장" }],
+  };
+
+  /**
+   * A computer whose page renamed the button: it refuses any click held to a label other than the
+   * one the control has now, as agent-computer/src/label-hold.ts does, and records what it was sent.
+   */
+  function renamingComputer(labelNow: string, snapshots: SnapshotResult[]) {
+    const sent: unknown[] = [];
+    let taken = 0;
+    const client = {
+      snapshot: async () => snapshots[Math.min(taken++, snapshots.length - 1)],
+      click: async (input: { element?: { name?: string } }) => {
+        sent.push(input.element);
+        if (input.element?.name !== labelNow) {
+          throw new StaleSnapshotError("laf:label_changed");
+        }
+        return { action: "click", url: SAVE.url, elapsedMs: 1 } as never;
+      },
+      forBot() {
+        return client;
+      },
+    } as unknown as ComputerClient;
+    return { client, sent };
+  }
+
+  test("the computer is told the label this server judged, never one the caller wrote", async () => {
+    const { client, sent } = renamingComputer("저장", [SAVE]);
+    const { store } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+      approvals: createApprovalRegistry(),
+      standing: createStandingApprovalStore(),
+    });
+    await gateway.snapshot("default");
+
+    // The input type is the wire type, so a caller could try to hold the click to a name of its own.
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e2",
+      snapshotId: 3,
+      element: { role: "button", name: "아무거나" },
+    });
+    expect(sent).toEqual([{ role: "button", name: "저장" }]);
+  });
+
+  test("an answer given about 저장 is not spent on the 결제하기 the page swapped in", async () => {
+    const CHECKOUT: SnapshotResult = {
+      ...SAVE,
+      snapshotId: 4,
+      elements: [{ ref: "e7", role: "button", name: "결제하기" }],
+    };
+    const { client, sent } = renamingComputer("결제하기", [SAVE, CHECKOUT]);
+    const { store, rows } = fakeAudit();
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      // Both words ask, so there is an answer to spend on the first and a question due on the second.
+      policy: () => ({
+        ...PERMISSIVE,
+        ask: ['intent == "activate" && matches(element.name, "저장|결제")'],
+      }),
+      approvals,
+      standing: createStandingApprovalStore(),
+    });
+    await gateway.snapshot("default");
+
+    const asked = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e2", snapshotId: 3 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(asked.subject.element?.name).toBe("저장");
+    await approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+
+    // The same call again, with the answer — as the surface sends it. The page renamed the button in
+    // the meantime, so the computer refuses the click it was told to hold to 저장.
+    await expect(
+      gateway.click(
+        "default",
+        "bot-1",
+        ACTOR,
+        { ref: "e2", snapshotId: 3 },
+        undefined,
+        asked.approvalId,
+      ),
+    ).rejects.toThrow("laf:label_changed");
+    expect(
+      rows
+        .filter((row) => row.eventType === "computer.action_failed")
+        .map((row) => row.payload.failure),
+    ).toEqual(["laf:label_changed"]);
+
+    // The Bot looks again and acts on what is there now. The answer it holds was about 저장.
+    await gateway.snapshot("default");
+    const askedAgain = (await gateway
+      .click(
+        "default",
+        "bot-1",
+        ACTOR,
+        { ref: "e7", snapshotId: 4 },
+        undefined,
+        asked.approvalId,
+      )
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(askedAgain).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(askedAgain.subject.element?.name).toBe("결제하기");
+    // 결제하기 was never pressed: the only click the computer let through is none.
+    expect(sent).toEqual([{ role: "button", name: "저장" }]);
+  });
+});
+
+/**
  * Where a navigation goes, not only where it starts (audit A3, 2026-09-10).
  *
  * The policy used to judge the address the Bot named and follow wherever that led, and the

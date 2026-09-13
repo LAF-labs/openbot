@@ -505,7 +505,12 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        */
       approvalId?: string;
     },
-    run: () => Promise<T>,
+    /**
+     * The action itself, handed the role and name the policy judged the ref as — from this server's
+     * snapshot, never from the request — so the computer can refuse if the control is called
+     * something else by the time it acts. Undefined where no ref resolved.
+     */
+    run: (judged: JudgedElement | undefined) => Promise<T>,
   ): Promise<T> {
     /*
      * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
@@ -827,7 +832,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
        * entry every acting call comes through and a client is only one of the things it runs.
        */
       if (subject.signal?.aborted) throw stopped();
-      result = await run();
+      result = await run(
+        element ? { role: element.role, name: element.name } : undefined,
+      );
     } catch (error) {
       /**
        * A permitted action that did not happen gets its own row.
@@ -1259,7 +1266,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).click(input, signal),
+        (judged) => as(botId).click(heldTo(input, judged), signal),
       );
     },
 
@@ -1285,7 +1292,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).type(input, signal),
+        (judged) => as(botId).type(heldTo(input, judged), signal),
       );
     },
 
@@ -1310,7 +1317,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).key(input, signal),
+        // A keypress on a control is held to that control's label like a click; one on the page
+        // itself resolves no ref, so there is nothing to hold it to.
+        (judged) => as(botId).key(heldTo(input, judged), signal),
       );
     },
 
@@ -1384,7 +1393,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).uploadFile(input, signal),
+        (judged) => as(botId).uploadFile(heldTo(input, judged), signal),
       );
     },
 
@@ -1490,6 +1499,32 @@ const MAX_JUDGED_HOSTS = 10;
 const REDIRECT_LOOP = "laf:redirect_loop";
 
 export type ComputerGateway = ReturnType<typeof createComputerGateway>;
+
+/** A control as the policy judged it: its role and accessible name from this server's snapshot. */
+type JudgedElement = { role: string; name: string };
+
+/**
+ * An acting input as the computer must receive it: holding the action to the control THIS server
+ * judged, and never to one the caller named.
+ *
+ * AUDIT A3, 2026-09-10: a button the snapshot called "저장" was renamed "결제하기" by the page after the
+ * snapshot; the policy judged "저장", the click landed on 결제하기, and no approval card was shown. The
+ * approval fingerprint already carried the element's name — what was missing was anything holding
+ * the click to it. With `element` the computer refuses (`laf:label_changed`) when the control is
+ * called something else by the time it acts, so a Bot has to look again and is judged, and asked, on
+ * the name the control really has. An answer given for "저장" is never spent on "결제하기".
+ *
+ * The request shape and the wire shape are one type, so a caller could put an `element` on its own
+ * call and have the click held to a label of its choosing. Whatever arrived is dropped; the
+ * snapshot's answer, or nothing, goes out.
+ */
+function heldTo<I extends { element?: JudgedElement }>(
+  input: I,
+  judged: JudgedElement | undefined,
+): I {
+  const { element: _fromCaller, ...rest } = input;
+  return (judged ? { ...rest, element: judged } : rest) as I;
+}
 
 /**
  * One audit row for one decision.

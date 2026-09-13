@@ -249,7 +249,7 @@ export function createComputerClient(options: ComputerClientOptions) {
           );
         }
         // A stale ref is fixed by taking a new snapshot, so it is not reported as the computer being
-        // unavailable.
+        // unavailable. A control renamed under its ref (`laf:label_changed`) is fixed the same way.
         if (response.status === 409) {
           throw new StaleSnapshotError(detail);
         }

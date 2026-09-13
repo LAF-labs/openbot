@@ -26,6 +26,7 @@ import {
   restoredControl,
   TAKE_CONTROL_FIRST,
 } from "./control";
+import { holdToLabel, LabelChangedError } from "./label-hold";
 import { log } from "./log";
 import {
   guardNavigations,
@@ -1992,6 +1993,7 @@ const listener = serve<StreamData>({
         ref?: unknown;
         snapshotId?: unknown;
         path?: unknown;
+        element?: unknown;
       } | null;
       if (typeof body?.ref !== "string" || !body.ref) {
         return json({ error: "The ref of a file input is required." }, 400);
@@ -2009,6 +2011,7 @@ const listener = serve<StreamData>({
           body.ref,
           typeof body.snapshotId === "number" ? body.snapshotId : undefined,
         );
+        await holdToLabel(field, body.element);
         await field.setInputFiles(full, { timeout: ACTION_TIMEOUT_MS });
         return json(
           withNotes(session, {
@@ -2023,6 +2026,18 @@ const listener = serve<StreamData>({
       } catch (error) {
         if (error instanceof StaleSnapshotError) {
           return json({ error: error.message, stale: true }, 409);
+        }
+        // Same status, because the instruction is the same — take a new snapshot — but its own code:
+        // the control is still there under another name, and the Bot must look before it acts on it.
+        if (error instanceof LabelChangedError) {
+          return json(
+            {
+              error: "laf:label_changed",
+              code: "laf:label_changed",
+              stale: true,
+            },
+            409,
+          );
         }
         if (error instanceof ControlError) {
           return json({ error: error.message, humanHasControl: true }, 409);
@@ -2091,6 +2106,18 @@ const listener = serve<StreamData>({
         if (error instanceof StaleSnapshotError) {
           return json({ error: error.message, stale: true }, 409);
         }
+        // Same status, because the instruction is the same — take a new snapshot — but its own code:
+        // the control is still there under another name, and the Bot must look before it acts on it.
+        if (error instanceof LabelChangedError) {
+          return json(
+            {
+              error: "laf:label_changed",
+              code: "laf:label_changed",
+              stale: true,
+            },
+            409,
+          );
+        }
         // 409 as well, and for the same reason: nothing is broken, the caller simply has to wait.
         if (error instanceof ControlError) {
           return json({ error: error.message, humanHasControl: true }, 409);
@@ -2110,6 +2137,8 @@ type ActionBody = {
   key?: unknown;
   deltaY?: unknown;
   submit?: unknown;
+  /** What the server judged the ref to be — role and name — and so what it must still be. See label-hold.ts. */
+  element?: unknown;
 };
 
 const ACTIONS = new Set(["/click", "/type", "/key", "/scroll"]);
@@ -2214,8 +2243,10 @@ async function performAction(
 
   if (action === "/click") {
     if (!ref) throw new Error("A click needs the ref of an element to click.");
+    const control = await resolveRef(session, target, ref, expected);
+    await holdToLabel(control, body.element);
     const opening = watchForTab(target);
-    await (await resolveRef(session, target, ref, expected)).click(acting);
+    await control.click(acting);
     await opening();
     return { action: "click", ref, url: target.url() };
   }
@@ -2226,6 +2257,7 @@ async function performAction(
       throw new Error("Typing needs the text to enter.");
     }
     const field = await resolveRef(session, target, ref, expected);
+    await holdToLabel(field, body.element);
     // `fill` rather than keystrokes: it clears the field first, which is what "put this value in
     // this box" means. Typing into a field a previous attempt half-filled otherwise appends, and the
     // form ends up with "AlicAlice" in it.
@@ -2259,11 +2291,10 @@ async function performAction(
        * call that omits it is the same as the answer to an old one: take a new snapshot.
        */
       if (expected === undefined) throw new StaleSnapshotError(STALE_REFS);
+      const control = await resolveRef(session, target, ref, expected);
+      await holdToLabel(control, body.element);
       const opening = watchForTab(target);
-      await (await resolveRef(session, target, ref, expected)).press(
-        body.key,
-        acting,
-      );
+      await control.press(body.key, acting);
       await opening();
     } else {
       const opening = watchForTab(target);

@@ -4,7 +4,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { VISIBLE_TEXT } from "./fixture-site";
+import {
+  FRAME_BUTTON,
+  RELABEL_AFTER,
+  RELABEL_BEFORE,
+  serveFixture,
+  VISIBLE_TEXT,
+} from "./fixture-site";
 
 /**
  * The boundaries the browser holds itself, driven against a real Chromium (audit A3, 2026-09-10).
@@ -16,6 +22,8 @@ import { VISIBLE_TEXT } from "./fixture-site";
  *    page it returned and then hiding it.
  *  - A HOP TO A HOST NOBODY JUDGED IS HANDED BACK when the gateway asks for that (`holdAtNewHost`),
  *    so the boundary policy judges where a navigation goes and not only where it starts.
+ *  - A CONTROL IS HELD TO THE LABEL IT WAS JUDGED ON: "저장" renamed "결제하기" under the same ref is
+ *    refused with the name it has now.
  *
  * The computer runs with private hosts ALLOWED, because both servers are on this machine's loopback.
  * What stays refused under that opt-in is the metadata endpoint, by address and by name — so that is
@@ -37,7 +45,14 @@ const HAS_BROWSER = (() => {
 
 const BOT = "boundaries-bot";
 const TOKEN = "test-computer-token";
+/**
+ * Long enough to snapshot the old label before it changes: `/navigate` waits for the page to settle
+ * (load, then network idle), and a 400ms swap had happened before the snapshot was taken.
+ */
+const RELABEL_AFTER_MS = 2_000;
+
 let base = "";
+let fixture: ReturnType<typeof serveFixture> | null = null;
 let child: ReturnType<typeof Bun.spawn> | null = null;
 let profilesDir = "";
 let workspaceDir = "";
@@ -108,6 +123,16 @@ async function post(
   };
 }
 
+type SnapshotElement = { ref: string; role: string; name: string };
+
+async function snapshot(): Promise<{
+  snapshotId: number;
+  elements: SnapshotElement[];
+}> {
+  const result = await post("/snapshot", {});
+  return result.body as { snapshotId: number; elements: SnapshotElement[] };
+}
+
 const noteCodes = (body: Record<string, unknown>) =>
   ((body.notes as { code: string }[] | undefined) ?? []).map(
     (entry) => entry.code,
@@ -115,6 +140,7 @@ const noteCodes = (body: Record<string, unknown>) =>
 
 beforeAll(async () => {
   if (!HAS_BROWSER) return;
+  fixture = serveFixture();
   site = serveCountingSite();
   profilesDir = await mkdtemp(join(tmpdir(), "laf-bound-profiles-"));
   workspaceDir = await mkdtemp(join(tmpdir(), "laf-bound-workspace-"));
@@ -142,6 +168,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   child?.kill();
+  fixture?.stop();
   await site?.stop(true);
   if (profilesDir) await rm(profilesDir, { recursive: true, force: true });
   if (workspaceDir) await rm(workspaceDir, { recursive: true, force: true });
@@ -294,5 +321,104 @@ describe.skipIf(!HAS_BROWSER)("a hop to a host nobody judged", () => {
     expect(followed.status).toBe(200);
     expect(followed.body.url).toBe(onLocalhost("/followed"));
     expect(received).toContain("localhost/followed");
+  });
+});
+
+describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
+  test("a control the page renamed after the snapshot is refused", async () => {
+    const opened = await post("/navigate", {
+      url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}`,
+    });
+    expect(opened.status).toBe(200);
+
+    const shot = await snapshot();
+    const button = shot.elements.find(
+      (element) => element.name === RELABEL_BEFORE,
+    );
+    if (!button) {
+      throw new Error(
+        `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
+          .map((element) => element.name)
+          .join(" | ")}`,
+      );
+    }
+
+    // Let the page swap the label under the ref.
+    await Bun.sleep(RELABEL_AFTER_MS + 300);
+
+    // The gateway sends `element` as the name it judged; here that is the OLD name.
+    const refused = await post("/click", {
+      ref: button.ref,
+      snapshotId: shot.snapshotId,
+      element: { role: button.role, name: RELABEL_BEFORE },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("laf:label_changed");
+
+    // And asking did not spend the ref: held to the name the control has now, the same ref lands.
+    // (The first attempt at this read the name with an aria snapshot, which replaced the snapshot the
+    // ref resolves against — this click then answered `laf:stale_refs`.)
+    const clicked = await post("/click", {
+      ref: button.ref,
+      snapshotId: shot.snapshotId,
+      element: { role: button.role, name: RELABEL_AFTER },
+    });
+    expect(clicked.status).toBe(200);
+  });
+
+  test("a control that kept its label is acted on, on the page and inside a frame", async () => {
+    const opened = await post("/navigate", { url: fixture?.url });
+    expect(opened.status).toBe(200);
+    const shot = await snapshot();
+    // By name, not by ref shape: every ref carries a frame prefix, the page's own as well.
+    const inFrame = shot.elements.find(
+      (element) => element.name === FRAME_BUTTON,
+    );
+    const onPage = shot.elements.find(
+      (element) => element.role === "textbox" && element.name !== "",
+    );
+    if (!inFrame || !onPage) {
+      throw new Error(
+        `the fixture should expose a button on the page and a control in its frame: ${shot.elements
+          .map((element) => `${element.ref}:${element.role}:${element.name}`)
+          .join(" | ")}`,
+      );
+    }
+    // A text field, so the value typed into it is not mistaken for its name.
+    const typed = await post("/type", {
+      ref: onPage.ref,
+      snapshotId: shot.snapshotId,
+      text: '따옴표 " 가 든 값',
+      element: { role: onPage.role, name: onPage.name },
+    });
+    expect([onPage.name, typed.status, typed.body.error]).toEqual([
+      onPage.name,
+      200,
+      undefined,
+    ]);
+    const clicked = await post("/click", {
+      ref: inFrame.ref,
+      snapshotId: shot.snapshotId,
+      element: { role: inFrame.role, name: inFrame.name },
+    });
+    expect([inFrame.ref, clicked.status, clicked.body.error]).toEqual([
+      inFrame.ref,
+      200,
+      undefined,
+    ]);
+  });
+
+  test("a click with no judged label is not held to one (an older gateway)", async () => {
+    const opened = await post("/navigate", { url: fixture?.url });
+    expect(opened.status).toBe(200);
+    const shot = await snapshot();
+    const first = shot.elements[0];
+    if (!first) throw new Error("the fixture page exposed no elements");
+
+    const clicked = await post("/click", {
+      ref: first.ref,
+      snapshotId: shot.snapshotId,
+    });
+    expect(clicked.status).toBe(200);
   });
 });

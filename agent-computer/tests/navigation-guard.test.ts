@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { judgedLabelOf, nameToMatch } from "../src/label-hold";
 import { hopVerdict, hostnameOf } from "../src/navigation-guard";
 
 /**
- * The decisions under the navigation guard, without a browser.
+ * The decisions under the two browser boundaries, without a browser.
  *
- * `browser-boundaries.test.ts` drives it through Chromium; these pin the rules those runs depend on
- * and that a browser run would only show as a flaky miss: which documents the floor judges at all.
+ * `browser-boundaries.test.ts` drives them through Chromium; these pin the rules those runs depend on
+ * and that a browser run would only show as a flaky miss: which documents the floor judges at all,
+ * and which name the role engine is asked for.
  */
 
 describe("the floor, per hop", () => {
@@ -46,5 +48,41 @@ describe("the floor, per hop", () => {
   test("hosts compare the way the floor normalises them", () => {
     expect(hostnameOf("https://WWW.Coupang.com./x")).toBe("www.coupang.com");
     expect(hostnameOf("not a url")).toBe("");
+  });
+});
+
+describe("the name a control is held to", () => {
+  test("is the judged name exactly, in the ordinary case", () => {
+    expect(nameToMatch("결제하기")).toBe("결제하기");
+    expect(nameToMatch('say "hi"')).toBe('say "hi"');
+  });
+
+  test("is a prefix when the server may have cut it", () => {
+    const judged = `${"가".repeat(190)}(1+1)[a]?.`;
+    expect(judged.length).toBe(200);
+    const pattern = nameToMatch(judged);
+    expect(pattern).toBeInstanceOf(RegExp);
+    expect((pattern as RegExp).test(`${judged} 그리고 더 긴 이름`)).toBe(true);
+    // Regex characters in a label are the label's, not the pattern's.
+    expect((pattern as RegExp).test(`${"가".repeat(190)}11a.`)).toBe(false);
+  });
+
+  test("covers only the names a snapshot renders as none, when none was judged", () => {
+    const pattern = nameToMatch("") as RegExp;
+    expect(pattern.test("")).toBe(true);
+    expect(pattern.test("/api/")).toBe(true);
+    expect(pattern.test("x".repeat(901))).toBe(true);
+    // An unnamed icon that grew a money word is not the control that was judged.
+    expect(pattern.test("결제하기")).toBe(false);
+  });
+
+  test("is nothing at all when the caller judged nothing usable", () => {
+    expect(judgedLabelOf(undefined)).toBeNull();
+    expect(judgedLabelOf({ role: "", name: "저장" })).toBeNull();
+    expect(judgedLabelOf({ role: "button", name: 3 })).toBeNull();
+    expect(judgedLabelOf({ role: "button", name: "" })).toEqual({
+      role: "button",
+      name: "",
+    });
   });
 });

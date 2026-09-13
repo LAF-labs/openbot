@@ -169,8 +169,21 @@ export type UploadFileResult = {
   notes?: ComputerNote[];
 };
 
-/** Common to every acting call: which element, and which snapshot the ref came from. */
-export type ActionTarget = { ref: string; snapshotId: number };
+/**
+ * Common to every acting call: which element, which snapshot the ref came from, and what the
+ * gateway judged that ref to be.
+ *
+ * `element` is the gateway's promise to the computer: this is the role and accessible name the
+ * policy decided on, and the computer refuses to act if the control is called something else by the
+ * time it looks (`laf:label_changed`). Set by the gateway from its own snapshot cache and never
+ * copied from the request — a Bot that could name the element would be naming the thing the rule
+ * is about. Optional on the wire because an older gateway makes no such promise.
+ */
+export type ActionTarget = {
+  ref: string;
+  snapshotId: number;
+  element?: { role: string; name: string };
+};
 
 export type ClickInput = ActionTarget;
 export type TypeInput = ActionTarget & {

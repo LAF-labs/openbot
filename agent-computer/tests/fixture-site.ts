@@ -138,6 +138,29 @@ const OTHER_HTML = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>주문 상세</title></head>
 <body><h1>주문 상세 화면</h1></body></html>`;
 
+/** The label the relabel button starts with, and the money word it becomes. See `/relabel`. */
+export const RELABEL_BEFORE = "저장";
+export const RELABEL_AFTER = "결제하기";
+
+/**
+ * A button that keeps its node and its ref but swaps its own text after `after` ms, and records
+ * which label was showing when it was pressed. The TOCTOU the money-word rule has to survive: the
+ * snapshot sees 저장, the click lands on 결제하기, the same ref throughout.
+ */
+function relabelHtml(after: number): string {
+  return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>재라벨</title></head>
+<body>
+  <h1>${VISIBLE_TEXT}</h1>
+  <button id="act" type="button" onclick="document.title = '눌림:' + this.textContent">${RELABEL_BEFORE}</button>
+  <script>
+    setTimeout(function () {
+      document.getElementById('act').textContent = ${JSON.stringify(RELABEL_AFTER)};
+    }, ${after});
+  </script>
+</body></html>`;
+}
+
 /**
  * The fields of the auditor's login page, by the accessible name each reaches the tree with, and
  * what — if anything — marks it as a secret in the markup.
@@ -260,6 +283,20 @@ export function serveFixture(port = 0) {
       }
       if (path === "/pw") {
         return new Response(PW_HTML, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      /*
+       * A button that changes its own label after a while — "저장" becomes "결제하기" — and reports
+       * which label was showing when it was pressed. `after` is the delay in milliseconds, so a
+       * test can snapshot the old name, wait, and act on the new one with the old ref.
+       */
+      if (path === "/relabel") {
+        const after = Number.parseInt(
+          url.searchParams.get("after") ?? "300",
+          10,
+        );
+        return new Response(relabelHtml(after), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
