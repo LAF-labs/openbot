@@ -36,6 +36,29 @@ describe("what a run's events say it came to", () => {
     );
   });
 
+  /**
+   * A stream cut mid-answer used to complete like a finished one: TEXT_MESSAGE_END, RUN_FINISHED,
+   * `done` in the ledger, and half a sentence delivered as the whole (audit A2 row 8). agent-bot
+   * ends such a run with RUN_ERROR and its own fact, and the ledger counts it as what it was.
+   */
+  test("a stream cut mid-answer is an error with the Bot's own fact, whatever text arrived", () => {
+    expect(
+      runOutcome(
+        [
+          event("RUN_STARTED"),
+          event("TEXT_MESSAGE_START", { messageId: "m1" }),
+          event("TEXT_MESSAGE_CONTENT", {
+            messageId: "m1",
+            delta: "주문이 세 건 ",
+          }),
+          event("TEXT_MESSAGE_END", { messageId: "m1" }),
+          event("RUN_ERROR", { message: "laf:provider_stream_cut" }),
+        ],
+        null,
+      ),
+    ).toEqual({ status: "error", error: "laf:provider_stream_cut" });
+  });
+
   test("a person's Stop arrives as an abort, and is not an error", () => {
     // As the runtime delivers it: a RUN_ERROR event with the transport's wording.
     expect(

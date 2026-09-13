@@ -300,6 +300,36 @@ describe("a turn that did not come back whole", () => {
     expect(requests[1]?.messages).toBe(requests[0]?.messages);
   });
 
+  /**
+   * Both attempts were paid for. The first used to be overwritten by the retry, and the monthly cost
+   * KPI — a sum of these events — missed exactly the days a reasoning model spent its budget on
+   * nothing (audit A2: two requests, one usage event).
+   */
+  test("counts what the empty first attempt cost, as well as the retry", async () => {
+    const usage = (prompt: number): Chunk => ({
+      choices: [],
+      usage: {
+        prompt_tokens: prompt,
+        completion_tokens: 900,
+        total_tokens: prompt + 900,
+      },
+    });
+    const { requests, events } = await turnFor(
+      [{ id: "u1", role: "user", content: "안녕" }],
+      [[usage(120)], [...said("안녕하세요."), usage(120)]],
+      { effort: "balanced" },
+    );
+
+    expect(requests).toHaveLength(2);
+    const counted = events.filter((event) => event.name === "laf.model.usage");
+    expect(counted).toHaveLength(2);
+    expect(
+      counted.map(
+        (event) => (event.value as { totalTokens: number }).totalTokens,
+      ),
+    ).toEqual([1_020, 1_020]);
+  });
+
   test("reports an empty answer when the second try is empty too", async () => {
     const { requests, events } = await turnFor(
       [{ id: "u1", role: "user", content: "안녕" }],
@@ -370,6 +400,7 @@ describe("a turn that did not come back whole", () => {
               },
             ],
           },
+          { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
         ],
       ],
       { effort: "thorough" },

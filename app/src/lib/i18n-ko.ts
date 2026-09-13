@@ -171,6 +171,8 @@ export const ko: Record<string, string> = {
     "봇의 모델이 요청을 받지 않았습니다. 계속 반복되면 배포 점검이 필요합니다.",
   "The answer was cut off before it finished. Ask the Bot to carry on.":
     "답이 잘렸습니다. 이어서 말해 달라고 해 보세요.",
+  "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.":
+    "답하는 도중 모델과의 연결이 끊겼습니다. 여기까지 온 답은 위에 있으니, 나머지는 다시 물어봐 주세요.",
   "The model took too long and the turn was ended. Ask again, or ask for less at once.":
     "모델이 너무 오래 걸려 이번 차례를 끝냈습니다. 다시 물어보거나, 한 번에 조금만 시켜 보세요.",
   "The request was cancelled": "요청이 취소됨",

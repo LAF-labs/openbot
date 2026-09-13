@@ -89,6 +89,16 @@ describe("liveTurnFailureCode", () => {
     );
   });
 
+  it("reads a stream agent-bot saw cut before the model finished", () => {
+    // The half that arrived stays on screen, and this line says why it is half.
+    expect(liveTurnFailureCode("laf:provider_stream_cut")).toBe(
+      "laf:turn_stream_cut",
+    );
+    expect(turnFailureSentence("laf:turn_stream_cut")).not.toBe(
+      turnFailureSentence("laf:turn_failed"),
+    );
+  });
+
   it("separates a refusal from a rate limit from a server fault", () => {
     expect(liveTurnFailureCode("HTTP 429 Too Many Requests")).toBe(
       "laf:turn_rate_limited",

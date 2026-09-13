@@ -12,7 +12,7 @@ import { describe, expect, test } from "bun:test";
  */
 
 type Chunk = {
-  choices: Array<{ delta: Record<string, unknown> }>;
+  choices: Array<{ delta: Record<string, unknown>; finish_reason?: string }>;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -30,6 +30,10 @@ function fakeCompletion(chunks: Chunk[]) {
   };
 }
 
+/*
+ * With a finish reason on the end, as every provider sends one. A fixture without it used to pass
+ * because the loop never read it; a stream that ends without one is a cut now (stream-cut.test.ts).
+ */
 const SPEECH: Chunk[] = [
   {
     choices: [
@@ -60,6 +64,7 @@ const SPEECH: Chunk[] = [
       },
     ],
   },
+  { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
 ];
 
 async function eventsFor(chunks: Chunk[]): Promise<string[]> {
@@ -276,7 +281,10 @@ describe("what a turn cost", () => {
 
   test("a provider that reports no usage produces no usage event", async () => {
     const kinds = (
-      await eventsFor([{ choices: [{ delta: { content: "네" } }] }])
+      await eventsFor([
+        { choices: [{ delta: { content: "네" } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ])
     ).map((line) => (JSON.parse(line) as { type: string }).type);
     expect(kinds).not.toContain("CUSTOM");
     expect(kinds.at(-1)).toBe("RUN_FINISHED");

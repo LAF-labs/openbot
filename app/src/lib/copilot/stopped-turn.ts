@@ -37,6 +37,13 @@ export const MODEL_FAILURES: Record<string, string> = {
   "laf:model_failed": "The Bot could not reach its model. Ask again.",
   "laf:model_timed_out":
     "The model took too long and the turn was ended. Ask again, or ask for less at once.",
+  /*
+   * A stream `agent-bot` saw cut before the model finished (audit A2). The half that arrived stays
+   * on screen, and this says why it is half — in the words `turn-failure.ts` gives the same fact, so
+   * it reads the same live and after a reload.
+   */
+  "laf:provider_stream_cut":
+    "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.",
 };
 
 /**

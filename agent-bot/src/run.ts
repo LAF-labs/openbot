@@ -1,5 +1,6 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   answerBridgeCall,
   exposeTools,
@@ -21,7 +22,13 @@ import {
   toProviderMessages,
   type TranscriptMessage,
 } from "./transcript";
-import { isEmptyTurn, RequestTimedOut, runTurn, type Turn } from "./turn";
+import {
+  ConsumerGone,
+  isEmptyTurn,
+  RequestTimedOut,
+  runTurn,
+  type Turn,
+} from "./turn";
 
 /**
  * The loop: one run of one Bot, as an AG-UI event stream.
@@ -39,6 +46,10 @@ import { isEmptyTurn, RequestTimedOut, runTurn, type Turn } from "./turn";
  * The loop runs on the client. When this emits a tool call it ends the run; the surface executes the
  * tool, appends the result, and starts a new run with the fuller conversation. That keeps the tool
  * running where its effects are visible to the person watching.
+ *
+ * A RUN THAT DID NOT FINISH NEVER ENDS IN RUN_FINISHED, because RUN_FINISHED is filed as `done` and
+ * shown as an answer. A provider failure ends in RUN_ERROR with its code (`./log`), and so does a
+ * stream cut before the model finished (`laf:provider_stream_cut`).
  */
 
 /** Often enough that no sane stall timeout fires between two; rare enough to be nothing on the wire. */
@@ -80,14 +91,18 @@ export async function runAgent(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const utf8 = new TextEncoder();
-      const emit = (event: BaseEvent) =>
-        controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
-
-      emit({
-        type: "RUN_STARTED",
-        threadId: input.threadId,
-        runId: input.runId,
-      } as BaseEvent);
+      /*
+       * The one way anything leaves this run. An enqueue that throws means the reader has gone —
+       * the runtime cancelled the request because a person pressed Stop — and that is said as
+       * such, so neither the cut detection nor the failure report below mistakes it for the model.
+       */
+      const emit = (event: BaseEvent) => {
+        try {
+          controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
+        } catch {
+          throw new ConsumerGone();
+        }
+      };
 
       /*
        * A heartbeat while the model is quiet.
@@ -118,8 +133,25 @@ export async function runAgent(
       };
 
       try {
+        emit({
+          type: "RUN_STARTED",
+          threadId: input.threadId,
+          runId: input.runId,
+        } as BaseEvent);
         await runRounds(context);
       } catch (error) {
+        /*
+         * A consumer that left is not a failure of anything. Leaving the `for await` by this throw
+         * is also what makes the SDK abort the provider's request, so nothing more is paid for.
+         */
+        if (error instanceof ConsumerGone) {
+          log.info("consumer_gone", {
+            bot: context.botId,
+            run: input.runId,
+            ms: Date.now() - context.startedAt,
+          });
+          return;
+        }
         /*
          * Reported as a run error rather than a dropped connection, so the transcript can say what
          * went wrong — but as a FACT CODE, never the provider's sentence. The provider's error body
@@ -152,10 +184,18 @@ export async function runAgent(
           reason: runFailureOf(error),
           ms: Date.now() - context.startedAt,
         });
-        emit({ type: "RUN_ERROR", message: code } as BaseEvent);
+        try {
+          emit({ type: "RUN_ERROR", message: code } as BaseEvent);
+        } catch {
+          // The reader left while the provider was failing. There is nobody left to tell.
+        }
       } finally {
         clearInterval(heartbeat);
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed from the reader's side.
+        }
       }
     },
   });
@@ -171,6 +211,11 @@ export async function runAgent(
 
 /** A bridge lookup answered here, to be put in front of the model on the next round. */
 type Answered = { id: string; name: string; arguments: string; text: string };
+
+/** The envelope every tool result has, carrying a fact the model reads in Korean. */
+function factResult(code: string): string {
+  return JSON.stringify({ ok: false, code, reason: toolResultText(code) });
+}
 
 /**
  * ONE RUN, POSSIBLY SEVERAL REQUESTS. A turn that only asked the bridge where a tool is gets its
@@ -250,6 +295,9 @@ async function runRounds(context: RunContext): Promise<void> {
           effort,
           retryingAt: lowered,
         });
+        // The first attempt was paid for too. Overwriting it here is how the monthly cost KPI
+        // missed exactly the days a reasoning model spent its budget on nothing (audit A2, S3-5).
+        emitUsage(context, turn);
         turn = await request(lowered);
       }
       if (isEmptyTurn(turn)) {
@@ -266,6 +314,43 @@ async function runRounds(context: RunContext): Promise<void> {
 
     if (textOpen) {
       emit({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+    }
+
+    /*
+     * THE STREAM WAS CUT, with some of the answer already on the wire.
+     *
+     * The half that arrived is real and stays — its message is closed properly above, so it is
+     * kept on screen and in the thread — but the run FAILS: RUN_ERROR is what the ledger files as
+     * `error`, what `/failures` lists and what puts the sentence under the half on the person's
+     * screen, where RUN_FINISHED would have delivered it as the whole. A call caught partway
+     * through its arguments is closed and answered with the same fact, so the thread holds no
+     * open call and no surface executes half an argument list.
+     */
+    if (turn.cut) {
+      for (const call of toolCalls.values()) {
+        if (!call.started || call.held || !call.id) continue;
+        emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+        emit({
+          type: "TOOL_CALL_RESULT",
+          messageId: `tool_${call.id}`,
+          toolCallId: call.id,
+          content: factResult("laf:provider_stream_cut"),
+          role: "tool",
+        } as BaseEvent);
+      }
+      log.error("reply_cut", {
+        bot: botId,
+        run: input.runId,
+        ...turn.cut,
+        // How much arrived, in characters: enough to tell half a sentence from nearly all of one.
+        chars: text.length,
+        ms: Date.now() - context.startedAt,
+      });
+      emit({
+        type: "RUN_ERROR",
+        message: "laf:provider_stream_cut",
+      } as BaseEvent);
+      return;
     }
 
     /** Calls the surface has to execute this run — real ones, and bridged ones in real names. */
@@ -445,7 +530,7 @@ async function runRounds(context: RunContext): Promise<void> {
  * What this turn cost, said inside the stream because that is the only channel this service
  * has: it holds no server URL and no database, on purpose. The runner tees every run's events
  * and writes this one to the audit trail — the number the per-Bot monthly cost KPI is computed
- * from. Counts only, never content. One per round: a run that looked twice paid three times,
+ * from. Counts only, never content. One per request: a run that looked twice paid three times,
  * and the audit row says so.
  */
 function emitUsage(context: RunContext, turn: Turn): void {

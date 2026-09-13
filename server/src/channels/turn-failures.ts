@@ -50,6 +50,12 @@ export const TURN_FAILURE_CODES = {
   interrupted: "laf:turn_interrupted",
   unknown: "laf:turn_failed",
   unreachable: "laf:turn_unreachable",
+  /**
+   * The model's stream stopped partway, with some of the answer already delivered
+   * (`laf:provider_stream_cut` from agent-bot). The half stays in the transcript; this says why it
+   * is only half.
+   */
+  streamCut: "laf:turn_stream_cut",
 } as const;
 
 export type TurnFailureCode =
@@ -85,6 +91,9 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
     return TURN_FAILURE_CODES.modelFailed;
   }
   if (said.includes("laf:model_failed")) return TURN_FAILURE_CODES.modelFailed;
+  if (said.includes("laf:provider_stream_cut")) {
+    return TURN_FAILURE_CODES.streamCut;
+  }
 
   /*
    * The stall guard writes an English sentence into RUN_ERROR and carries

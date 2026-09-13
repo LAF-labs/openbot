@@ -187,6 +187,18 @@ describe("classifyTurnFailure", () => {
     ).toBe(TURN_FAILURE_CODES.stalled);
   });
 
+  test("places a stream agent-bot saw cut, however it was wrapped", () => {
+    expect(classifyTurnFailure("laf:provider_stream_cut")).toBe(
+      TURN_FAILURE_CODES.streamCut,
+    );
+    // As a routine records it: the loop's own wrapper around the Bot's fact.
+    expect(
+      classifyTurnFailure(
+        "The Bot stopped before it finished: laf:provider_stream_cut",
+      ),
+    ).toBe(TURN_FAILURE_CODES.streamCut);
+  });
+
   test("falls back rather than guessing, and takes a null", () => {
     expect(classifyTurnFailure(null)).toBe(TURN_FAILURE_CODES.unknown);
     expect(classifyTurnFailure("   ")).toBe(TURN_FAILURE_CODES.unknown);

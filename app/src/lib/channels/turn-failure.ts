@@ -23,6 +23,7 @@ export const TURN_FAILURE_CODES = [
   "laf:turn_rate_limited",
   "laf:turn_refused",
   "laf:turn_stalled",
+  "laf:turn_stream_cut",
   "laf:turn_timed_out",
   "laf:turn_unreachable",
 ] as const;
@@ -63,6 +64,12 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
     "The Bot's address refused the request. Its connection needs a look.",
   "laf:turn_stalled":
     "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.",
+  /*
+   * The model's stream stopped partway. The half that arrived stays in the transcript, above this
+   * line — which is why the line is keyed to the run's last message — and this says why it is half.
+   */
+  "laf:turn_stream_cut":
+    "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.",
   "laf:turn_timed_out":
     "The model took too long and the turn was ended. Ask again, or ask for less at once.",
   "laf:turn_unreachable":
@@ -108,6 +115,7 @@ export function liveTurnFailureCode(reported: unknown): TurnFailureCode {
   ) {
     return "laf:turn_model_failed";
   }
+  if (said.includes("laf:provider_stream_cut")) return "laf:turn_stream_cut";
   if (
     said.includes("agent_stream_stalled") ||
     said.includes("stopped responding")
