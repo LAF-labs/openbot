@@ -43,12 +43,23 @@ export function previewOf(text: string, path: string): string {
   return `${text.slice(0, TOOL_RESULT_PREVIEW)}\n${spillLine(path)}`;
 }
 
-/** The line as it appears at the end of a result, wherever the table's words around it may move. */
-const SPILL_LINE_AT_END = new RegExp(
-  `\\n?([^\\n]*computer_read_file\\("${RESULTS_DIRECTORY.replace(".", "\\.")}/[^"\\n]+"\\)[^\\n]*)$`,
+/** The call that names the file, wherever the table's words around it may move. */
+const SPILL_CALL = new RegExp(
+  `computer_read_file\\("${RESULTS_DIRECTORY.replace(".", "\\.")}/[^"\\n]+"\\)`,
 );
 
-/** The spill line at the end of a tool result, if it carries one — so a later trim can keep it. */
+/**
+ * The spill line at the end of a tool result, if it carries one — so a later trim can keep it.
+ *
+ * The last line, tested on its own. This used to be one regex over the whole result —
+ * `\n?([^\n]*computer_read_file…[^\n]*)$` — and a tool result is JSON, whose newlines are
+ * escaped, so the whole result is one line and the regex retried it from every position: measured
+ * at 19 ms for a 6,000-character page and 200 ms for a 20,000-character file, per older result,
+ * per request. A long browsing transcript spent seconds on that before the model saw a byte, and
+ * `agent-bot` now also rebuilds the requests a question has already made to count what it cost.
+ * The same answer in 0.05 ms.
+ */
 export function spillLineOf(text: string): string | null {
-  return text.match(SPILL_LINE_AT_END)?.[1] ?? null;
+  const last = text.slice(text.lastIndexOf("\n") + 1);
+  return SPILL_CALL.test(last) ? last : null;
 }

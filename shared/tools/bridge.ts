@@ -585,9 +585,20 @@ export function unwrapToolCall(
   }
   const tool = resolveDeferred(deferred, name);
   if (!tool) return { ok: false, text: unknownToolText(deferred, name) };
-  const forwarded =
-    inner && typeof inner === "object" && !Array.isArray(inner)
-      ? (inner as Record<string, unknown>)
-      : {};
+  /*
+   * 객체가 아닌 args는 거절한다. 조용히 `{}`로 바꿔 넘기던 것을 고쳤다(감사 2026-09-10): 모델이
+   * args를 JSON 문자열로 보내는 흔한 실수가 서버에서 "X가 빠졌다"로 돌아와서, 모델은 args가
+   * 객체여야 한다는 것을 끝내 읽지 못하고 같은 실수를 반복했다. 없는 것은 `{}` — 인자가 없는
+   * 툴이 있다 — 이고, 있는데 객체가 아닌 것은 잘못이다.
+   */
+  if (inner !== undefined && inner !== null) {
+    if (typeof inner !== "object" || Array.isArray(inner)) {
+      return {
+        ok: false,
+        text: 'tool_call의 args는 JSON 객체여야 한다 — 문자열이나 배열이 아니라 {"필드": 값} 꼴로.',
+      };
+    }
+  }
+  const forwarded = (inner ?? {}) as Record<string, unknown>;
   return { ok: true, name: tool.name, args: forwarded };
 }

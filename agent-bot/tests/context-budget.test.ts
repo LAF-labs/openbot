@@ -58,6 +58,8 @@ async function turnFor(
   messages: unknown[],
   scripts: Chunk[][],
   forwardedProps: Record<string, unknown> = {},
+  /** The tools the run is handed. A call to a name not in here is answered, not forwarded. */
+  tools: unknown[] = [],
 ) {
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
@@ -70,7 +72,7 @@ async function turnFor(
       threadId: "t1",
       runId: "r1",
       messages,
-      tools: [],
+      tools,
       context: [],
       forwardedProps,
       state: {},
@@ -404,6 +406,14 @@ describe("a turn that did not come back whole", () => {
         ],
       ],
       { effort: "thorough" },
+      // Handed the tool it calls, as a real run is; an unknown name would be answered in-run.
+      [
+        {
+          name: "computer_navigate",
+          description: "연다",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
     );
     expect(requests).toHaveLength(1);
   });

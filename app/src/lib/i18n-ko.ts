@@ -162,6 +162,8 @@ export const ko: Record<string, string> = {
   Stopped: "중단됨",
   "The Bot could not reach its model. Ask again.":
     "봇이 모델에 닿지 못했습니다. 다시 물어봐 주세요.",
+  "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.":
+    "봇이 도구를 제대로 쓰지 못해 이번 차례를 끝냈습니다. 다시 물어보거나, 다르게 말해 보세요.",
   "The Bot stopped without saying why.": "봇이 이유를 말하지 않고 멈췄습니다.",
   "The Bot thought about it and answered with nothing. Ask again.":
     "봇이 생각만 하고 아무 말도 하지 않았습니다. 다시 물어보세요.",
@@ -192,6 +194,8 @@ export const ko: Record<string, string> = {
   "They were removed from this deployment": "이 배포에서 제외된 사람입니다",
   "They work on one real browser between them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.":
     "봇들은 진짜 브라우저 하나를 함께 씁니다. 한 봇이 로그인한 사이트는 다른 봇도 로그인된 상태입니다. 팀 전체에 맡겨도 되는 것만 맡겨 주세요.",
+  "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.":
+    "질문 하나에 쓸 수 있는 만큼을 다 써서 봇이 멈췄습니다. 이어서 해 달라고 하거나, 한 번에 조금씩 시켜 보세요.",
   "This deployment registered itself": "이 배포가 스스로 등록함",
   "Time is up": "시간이 다 됐습니다",
   "Updating its own profile": "자기 프로필을 바꾸는 중",

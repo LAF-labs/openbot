@@ -56,6 +56,14 @@ export const TURN_FAILURE_CODES = {
    * is only half.
    */
   streamCut: "laf:turn_stream_cut",
+  /**
+   * The Bot could not use its tools — a name that does not exist, arguments that are not an object,
+   * the same call over and over — and did not recover when agent-bot told it so inside the run.
+   * Nothing is broken; asking again, or differently, is the next step.
+   */
+  toolFailed: "laf:turn_tool_failed",
+  /** The question cost what one question may (agent-bot's token budget). Carrying on is a new one. */
+  budgetSpent: "laf:turn_budget_spent",
 } as const;
 
 export type TurnFailureCode =
@@ -93,6 +101,16 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   if (said.includes("laf:model_failed")) return TURN_FAILURE_CODES.modelFailed;
   if (said.includes("laf:provider_stream_cut")) {
     return TURN_FAILURE_CODES.streamCut;
+  }
+  if (
+    said.includes("laf:tool_unknown") ||
+    said.includes("laf:tool_arguments_invalid") ||
+    said.includes("laf:tool_loop")
+  ) {
+    return TURN_FAILURE_CODES.toolFailed;
+  }
+  if (said.includes("laf:tool_budget_spent")) {
+    return TURN_FAILURE_CODES.budgetSpent;
   }
 
   /*

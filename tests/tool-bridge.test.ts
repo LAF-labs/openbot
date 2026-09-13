@@ -241,6 +241,22 @@ describe("tool_call", () => {
       args: {},
     });
   });
+
+  /*
+   * A string where the object should be — the common mistake — used to become `{}` silently, and
+   * the server then said "X is missing". The model read that, never "args must be an object", and
+   * made the same mistake again (audit A2 §4). Refused here, in words about the shape.
+   */
+  test("arguments that are not an object are refused, and told what shape they should be", () => {
+    for (const bad of ['{"to":"a@b.c"}', ["a@b.c"], 7]) {
+      const result = unwrapToolCall(CONNECTED, {
+        name: "mcp__gmail__send_message",
+        args: bad,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.text).toContain("JSON 객체");
+    }
+  });
 });
 
 describe("the words around the bridge", () => {

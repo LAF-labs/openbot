@@ -187,9 +187,19 @@ describe("classifyTurnFailure", () => {
     ).toBe(TURN_FAILURE_CODES.stalled);
   });
 
-  test("places a stream agent-bot saw cut, however it was wrapped", () => {
+  test("places the facts agent-bot ends a run on for its own reasons", () => {
     expect(classifyTurnFailure("laf:provider_stream_cut")).toBe(
       TURN_FAILURE_CODES.streamCut,
+    );
+    for (const code of [
+      "laf:tool_unknown",
+      "laf:tool_arguments_invalid",
+      "laf:tool_loop",
+    ]) {
+      expect(classifyTurnFailure(code)).toBe(TURN_FAILURE_CODES.toolFailed);
+    }
+    expect(classifyTurnFailure("laf:tool_budget_spent")).toBe(
+      TURN_FAILURE_CODES.budgetSpent,
     );
     // As a routine records it: the loop's own wrapper around the Bot's fact.
     expect(

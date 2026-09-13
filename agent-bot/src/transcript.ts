@@ -137,7 +137,7 @@ export function toProviderMessages(transcript: readonly TranscriptMessage[]) {
         type: "function" as const,
         function: {
           name: call.function.name,
-          arguments: call.function.arguments,
+          arguments: readableArguments(call.function.arguments),
         },
       }));
       messages.push({
@@ -149,6 +149,42 @@ export function toProviderMessages(transcript: readonly TranscriptMessage[]) {
   }
 
   return messages;
+}
+
+/**
+ * A call's arguments, if they are what a surface can execute: a JSON object.
+ *
+ * An empty string is `{}`, because that is what providers send for a call with no arguments.
+ * Anything else that is not an object — broken JSON, an array, a bare string — is null.
+ */
+export function parseToolArguments(
+  raw: string,
+): Record<string, unknown> | null {
+  const text = raw.trim();
+  if (text === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An earlier call's arguments as they go back to the provider: as the model wrote them, unless
+ * that was not an object.
+ *
+ * A call with broken arguments is answered with a fact rather than run (`./guards`), and the next
+ * request carries the call so the model can see what it is recovering from. The broken string
+ * cannot go back as it was: an endpoint that turns the call into its own model's shape parses those
+ * arguments, and a parse error there is a 400 on the recovery request — and on every later request
+ * in the thread, since the call stays in it. `{}` beside the fact that says the arguments were not
+ * an object is what the model needs to try again.
+ */
+function readableArguments(raw: string): string {
+  return parseToolArguments(raw) === null ? "{}" : raw;
 }
 
 /**

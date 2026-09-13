@@ -16,15 +16,21 @@ import type { CompletionProvider } from "./provider";
 export type ToolCallRecord = {
   id: string | null;
   name: string | null;
+  /**
+   * Every fragment that arrived, whole: the arguments exactly as the model sent them. `pending`
+   * is emptied as fragments go out, so this is the copy the loop parses once the turn is over.
+   */
+  arguments: string;
   /** Fragments that arrived and have not gone out yet. Emptied as they are forwarded. */
   pending: string;
   /** Whether TOOL_CALL_START went out. A held call never opens while it streams. */
   started: boolean;
   /**
    * Why nothing of this call goes on the wire as it streams. `bridge`: its arguments name the
-   * REAL tool, and that is only known once they are complete.
+   * REAL tool, and that is only known once they are complete. `unknown`: a name the run was never
+   * handed, which no surface can execute and which the loop answers itself.
    */
-  held: "bridge" | null;
+  held: "bridge" | "unknown" | null;
 };
 
 /**
@@ -208,6 +214,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
         const existing = toolCalls.get(call.index) ?? {
           id: null as string | null,
           name: null as string | null,
+          arguments: "",
           pending: "",
           started: false,
           held: null as ToolCallRecord["held"],
@@ -226,6 +233,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
          * property while still forwarding as soon as forwarding is legal.
          */
         if (call.function?.arguments) {
+          existing.arguments += call.function.arguments;
           existing.pending += call.function.arguments;
         }
         if (!existing.started && existing.id && existing.name) {

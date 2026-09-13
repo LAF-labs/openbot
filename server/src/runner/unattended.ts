@@ -205,14 +205,43 @@ function unanswered(messages: Message[]) {
   return pending;
 }
 
-function parseArgs(raw: string): Record<string, unknown> {
+/**
+ * A call's arguments, or null when they are not a JSON object.
+ *
+ * Null rather than `{}`. Broken arguments used to become an empty object and the tool ran with
+ * nothing, so the model read "the field is missing" about a field it had sent, and sent it the same
+ * broken way again (audit A2, row 5). `agent-bot` answers these inside the run before they get here;
+ * this is the same answer for anything that does not.
+ */
+function parseArgs(raw: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(raw || "{}");
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
-      : {};
+      : null;
   } catch {
-    return {};
+    return null;
+  }
+}
+
+/**
+ * Whether a call the Bot service answered itself went through, read off the answer it filed.
+ *
+ * A lookup's answer is prose and went through by definition. A guard's answer is the same envelope
+ * every refusal has — `{"ok": false, "code": …}` — and recording it as done would put a tool that
+ * was never run into the run history as a success.
+ */
+function answeredOk(content: unknown): boolean {
+  if (typeof content !== "string") return true;
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return !(
+      parsed &&
+      typeof parsed === "object" &&
+      (parsed as { ok?: unknown }).ok === false
+    );
+  } catch {
+    return true;
   }
 }
 
@@ -304,10 +333,13 @@ export async function runUnattended(
      * calls after them sit at exactly the indexes `pending` will use. Without that split, the
      * send a Bot found through a lookup was marked against the lookup's slot.
      */
-    const answeredInRun = new Set(
+    const answeredInRun = new Map(
       added
         .filter((message) => message.role === "tool")
-        .map((message) => (message as { toolCallId: string }).toolCallId),
+        .map((message) => [
+          (message as { toolCallId: string }).toolCallId,
+          answeredOk(message.content),
+        ]),
     );
     const asked = added.flatMap((message) =>
       message.role === "assistant" ? (message.toolCalls ?? []) : [],
@@ -328,7 +360,7 @@ export async function runUnattended(
       calls: [
         ...settled.map((call) => ({
           name: call.function?.name ?? "",
-          ok: true,
+          ok: answeredInRun.get(call.id) === true,
         })),
         ...open.map((call) => ({
           name: call.function?.name ?? "",
@@ -368,15 +400,22 @@ export async function runUnattended(
 
     for (const [index, call] of pending.entries()) {
       let outcome: ToolOutcome;
+      const args = parseArgs(call.args);
       if (outOfSteps) {
         outcome = {
           ok: false,
           code: "laf:tool_budget_spent",
           reason: toolResultText("laf:tool_budget_spent"),
         };
+      } else if (args === null) {
+        outcome = {
+          ok: false,
+          code: "laf:tool_arguments_invalid",
+          reason: toolResultText("laf:tool_arguments_invalid"),
+        };
       } else {
         outcome = await withDeadline(
-          options.toolkit.execute(call.name, parseArgs(call.args), {
+          options.toolkit.execute(call.name, args, {
             id: call.id,
           }),
         );
@@ -542,6 +581,25 @@ const asRef = (args: Record<string, unknown>) =>
     ? { ref: args.ref, snapshotId: args.snapshotId }
     : null;
 
+/*
+ * The two refusals this executor makes on its own, as facts the model reads in Korean.
+ *
+ * They were English sentences — "A ref and its snapshotId are required.", "There is no tool
+ * called X." — written here and read by a model whose prompt tells it to answer in Korean. The
+ * words come from the one table every other refusal uses (`shared/prompt/tool-results.ko.ts`), and
+ * the tool definition says what the arguments are; repeating that here would be a second author.
+ */
+const invalidArguments = (): ToolOutcome => ({
+  ok: false,
+  code: "laf:tool_arguments_invalid",
+  reason: toolResultText("laf:tool_arguments_invalid"),
+});
+const unknownTool = (): ToolOutcome => ({
+  ok: false,
+  code: "laf:tool_unknown",
+  reason: toolResultText("laf:tool_unknown"),
+});
+
 /**
  * A computer result, with the facts the browser noticed put into words.
  *
@@ -643,7 +701,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           return { ok: true, ...viewed.skill };
         }
         if (!gateway) {
-          return { ok: false, reason: `There is no tool called ${name}.` };
+          return unknownTool();
         }
         // The computer id is the Bot id, exactly as the acting routes pass it.
         const c = botId;
@@ -667,7 +725,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             return { ok: true, ...withNotes(await gateway.snapshot(botId)) };
           case "computer_switch_tab": {
             if (typeof args.index !== "number") {
-              return { ok: false, reason: "A tab index is required." };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -685,10 +743,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           case "computer_upload_file": {
             const target = asRef(args);
             if (!target || typeof args.path !== "string" || !args.path.trim()) {
-              return {
-                ok: false,
-                reason: "A ref, its snapshotId and a file path are required.",
-              };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -706,11 +761,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           }
           case "computer_click": {
             const target = asRef(args);
-            if (!target)
-              return {
-                ok: false,
-                reason: "A ref and its snapshotId are required.",
-              };
+            if (!target) return invalidArguments();
             return {
               ok: true,
               ...withNotes(
@@ -728,10 +779,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           case "computer_type": {
             const target = asRef(args);
             if (!target || typeof args.text !== "string") {
-              return {
-                ok: false,
-                reason: "A ref, its snapshotId and the text are required.",
-              };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -753,10 +801,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           }
           case "computer_key": {
             if (typeof args.key !== "string" || !args.key) {
-              return {
-                ok: false,
-                reason: "A key name is required, such as Enter or Tab.",
-              };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -804,7 +849,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             };
           case "computer_read_file":
             if (typeof args.path !== "string") {
-              return { ok: false, reason: "A path is required." };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -821,10 +866,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               typeof args.path !== "string" ||
               typeof args.contents !== "string"
             ) {
-              return {
-                ok: false,
-                reason: "A path and the contents are required.",
-              };
+              return invalidArguments();
             }
             return {
               ok: true,
@@ -841,7 +883,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               )),
             };
           default:
-            return { ok: false, reason: `There is no tool called ${name}.` };
+            return unknownTool();
         }
       } catch (error) {
         return outcomeOfError(error);

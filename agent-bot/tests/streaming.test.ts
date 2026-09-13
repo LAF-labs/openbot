@@ -31,8 +31,11 @@ function fakeCompletion(chunks: Chunk[]) {
 }
 
 /*
- * With a finish reason on the end, as every provider sends one. A fixture without it used to pass
- * because the loop never read it; a stream that ends without one is a cut now (stream-cut.test.ts).
+ * A finish reason on the end, and the tool declared on the run. A real provider always sends
+ * the one and a real run always hands the other; a fixture with neither used to pass because
+ * the loop read neither, and now reads both — a stream that ends without a finish reason is a
+ * cut (stream-cut.test.ts), and a name the run was never handed is answered instead of
+ * forwarded (tool-calls.test.ts).
  */
 const SPEECH: Chunk[] = [
   {
@@ -67,6 +70,12 @@ const SPEECH: Chunk[] = [
   { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
 ];
 
+const SEND_MESSAGE = {
+  name: "send_message",
+  description: "방에 말한다.",
+  parameters: { type: "object", properties: { text: { type: "string" } } },
+};
+
 async function eventsFor(chunks: Chunk[]): Promise<string[]> {
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
@@ -75,7 +84,7 @@ async function eventsFor(chunks: Chunk[]): Promise<string[]> {
       threadId: "t1",
       runId: "r1",
       messages: [{ id: "m1", role: "user", content: "인사해줘" }],
-      tools: [],
+      tools: [SEND_MESSAGE],
       context: [],
       forwardedProps: {},
       state: {},

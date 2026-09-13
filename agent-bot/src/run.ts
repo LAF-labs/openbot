@@ -9,6 +9,16 @@ import {
   toolDeferralOf,
   toProviderTools,
 } from "./deferral";
+import {
+  ASK_TOKEN_BUDGET,
+  canonicalArguments,
+  charsOf,
+  knownToolNames,
+  MAX_TOOL_RECOVERIES,
+  repeatsOf,
+  spentSinceLastAsk,
+  TOOL_LOOP_LIMIT,
+} from "./guards";
 import { log, runErrorCodeOf, runFailureOf } from "./log";
 import {
   type CompletionProvider,
@@ -18,6 +28,7 @@ import {
 } from "./provider";
 import {
   botIdOf,
+  parseToolArguments,
   reasoningEffortOf,
   toProviderMessages,
   type TranscriptMessage,
@@ -27,6 +38,7 @@ import {
   isEmptyTurn,
   RequestTimedOut,
   runTurn,
+  type ToolCallRecord,
   type Turn,
 } from "./turn";
 
@@ -47,9 +59,13 @@ import {
  * tool, appends the result, and starts a new run with the fuller conversation. That keeps the tool
  * running where its effects are visible to the person watching.
  *
- * A RUN THAT DID NOT FINISH NEVER ENDS IN RUN_FINISHED, because RUN_FINISHED is filed as `done` and
- * shown as an answer. A provider failure ends in RUN_ERROR with its code (`./log`), and so does a
- * stream cut before the model finished (`laf:provider_stream_cut`).
+ * WHAT ELSE A RUN MAY END ON, besides the model finishing or asking for a real tool: a provider
+ * failure (`./log`), a stream that was cut before the model finished (`laf:provider_stream_cut`),
+ * and the guards in `./guards` — a name the run was never handed, arguments that are not an object,
+ * the same call over and over, a question that has cost what one question may. Each guard is first
+ * answered INSIDE the run with its fact, the way a bridge lookup is, so the model can recover; the
+ * run ends on the fact only when it will not. None of them ends in RUN_FINISHED, because a run that
+ * ends in RUN_FINISHED is filed as `done` and shown as an answer.
  */
 
 /** Often enough that no sane stall timeout fires between two; rare enough to be nothing on the wire. */
@@ -60,6 +76,17 @@ const LOWER_EFFORT: Record<string, "low" | "medium"> = {
   high: "medium",
   medium: "low",
 };
+
+/**
+ * The backstop on requests per run.
+ *
+ * Every way back to the model inside a run is bounded on its own — four lookup rounds
+ * (`MAX_BRIDGE_ROUNDS`), two recoveries (`MAX_TOOL_RECOVERIES`), one loop warning, one round with no
+ * tools once the budget is spent — so a run makes nine requests at the very most, not counting the
+ * one retry an empty answer gets. This is the number a later change that adds another way back
+ * cannot run past, and a run that reaches it ends as the loop it is.
+ */
+const MAX_ROUNDS = 16;
 
 export type RunOptions = {
   /**
@@ -209,8 +236,16 @@ export async function runAgent(
   });
 }
 
-/** A bridge lookup answered here, to be put in front of the model on the next round. */
-type Answered = { id: string; name: string; arguments: string; text: string };
+/** A call answered here rather than forwarded, to be put in front of the model on the next round. */
+type Answered = {
+  id: string;
+  /** The name the model called it by, which for a bridge call is the bridge's. */
+  name: string;
+  arguments: string;
+  text: string;
+  /** A bridge lookup, or one of the guards' facts. Only lookups are bounded by the bridge rounds. */
+  kind: "lookup" | "fact";
+};
 
 /** The envelope every tool result has, carrying a fact the model reads in Korean. */
 function factResult(code: string): string {
@@ -222,6 +257,7 @@ function factResult(code: string): string {
  * answer here and goes straight back to the model, inside the same run — a lookup is not something
  * the surface has to execute, and a round trip through it would cost a whole run per question. The
  * moment the model asks for a REAL tool, the run ends as it always did, and the surface executes it.
+ * A call the guards stop is answered the same way a lookup is.
  */
 async function runRounds(context: RunContext): Promise<void> {
   const { input, emit, botId } = context;
@@ -233,8 +269,9 @@ async function runRounds(context: RunContext): Promise<void> {
    * The whole list is kept, because a lookup is answered from it.
    */
   const exposed = exposeTools(input.tools, toolDeferralOf(input));
+  const known = knownToolNames(input.tools, exposed);
   /**
-   * What this run added on its own — bridge lookups and their answers — after the
+   * What this run added on its own — lookups, facts, and the calls they answer — after the
    * conversation as it arrived. In the transcript's own shape rather than the provider's, so
    * each round converts them WITH the rest (see `toProviderMessages`): a lookup's answer is a
    * tool result like any other, weighed against the same turn budget and cut by the same rule
@@ -244,7 +281,26 @@ async function runRounds(context: RunContext): Promise<void> {
   const inRun: TranscriptMessage[] = [];
   const effort = reasoningEffortOf(input);
 
-  for (let round = 0; ; round += 1) {
+  /** Calls this run answered with `laf:tool_unknown` or `laf:tool_arguments_invalid`. */
+  let recoveries = 0;
+  /** Calls this run answered with `laf:tool_loop`. One warning; a second is the run's end. */
+  let loopAnswers = 0;
+  /**
+   * The question has cost what it may, and the model has been told. Its next request is offered
+   * no tools at all, so it can only speak — the same last turn a routine gets when its steps run
+   * out — and a call it makes anyway ends the run.
+   */
+  let mustSpeak = false;
+  /**
+   * What this question cost before this run, read off the transcript once; the rounds of this
+   * run add what they send. See `ASK_TOKEN_BUDGET` for what the number is and is not.
+   */
+  const spentBefore = spentSinceLastAsk(input.messages);
+  let spentInRun = 0;
+  /** How the run ends when a guard has had the last word. Null while the model still may. */
+  let endsOn: string | null = null;
+
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
     /*
      * THE TRANSCRIPT IS CONVERTED ONCE PER ROUND, NOT ONCE PER TURN.
      *
@@ -255,10 +311,16 @@ async function runRounds(context: RunContext): Promise<void> {
      * about what was cut. A new round IS a different transcript: the lookups the last one
      * answered are in it now, counted against the budget and cut like every other result.
      */
-    const messages = toProviderMessages([...input.messages, ...inRun]);
-    const tools = toProviderTools(
-      round < MAX_BRIDGE_ROUNDS ? exposed.provider : exposed.withoutBridge,
-    );
+    const transcript = [...input.messages, ...inRun];
+    const messages = toProviderMessages(transcript);
+    const tools = mustSpeak
+      ? undefined
+      : toProviderTools(
+          round < MAX_BRIDGE_ROUNDS ? exposed.provider : exposed.withoutBridge,
+        );
+    /** Whether the question had already cost what it may before this request was made. */
+    const overBudget = spentBefore + spentInRun >= ASK_TOKEN_BUDGET;
+    spentInRun += charsOf(messages);
     const request = (attemptEffort: typeof effort) =>
       runTurn({
         provider: context.provider,
@@ -270,10 +332,19 @@ async function runRounds(context: RunContext): Promise<void> {
         tools,
         timeoutMs: context.timeoutMs,
         emit,
-        // A bridge call is held back whole: its fragments are the arguments of a call whose
-        // real name is inside those arguments, so nothing can be forwarded until the turn ends
-        // and `answerBridgeCall` has read them.
-        holdOf: (name) => (isBridgeCall(name, exposed) ? "bridge" : null),
+        /*
+         * A bridge call is held back whole: its fragments are the arguments of a call whose
+         * real name is inside those arguments, so nothing can be forwarded until the turn ends
+         * and `answerBridgeCall` has read them. A name the run was never handed is held too —
+         * no surface has a handler for it, and forwarding it is how a Bot's turn ended in
+         * silence (audit A2, row 6).
+         */
+        holdOf: (name) =>
+          isBridgeCall(name, exposed)
+            ? "bridge"
+            : known.has(name)
+              ? null
+              : "unknown",
       });
     let turn = await request(effort);
 
@@ -357,104 +428,218 @@ async function runRounds(context: RunContext): Promise<void> {
     let forwarded = 0;
     const answered: Answered[] = [];
 
-    /*
-     * Only the ends, after the stream. A call whose name never arrived was never opened and is
-     * not closed either: closing one the surface never saw would be reporting a call nobody
-     * made.
+    /**
+     * A call answered here instead of forwarded. `opened` says whether its START is already on the
+     * wire — a real call streams as it arrives; a held one has shown nothing yet.
      */
-    for (const call of toolCalls.values()) {
-      if (!call.name) continue;
-      /*
-       * A call the provider named but never gave an id gets a minted one now, so its
-       * fragments are not lost — the open and the args go out together, then the end.
-       */
-      call.id ??= `call_${input.runId}_${[...toolCalls.values()].indexOf(call)}`;
-
-      if (!call.held) {
-        if (!call.started) {
-          emit({
-            type: "TOOL_CALL_START",
-            toolCallId: call.id,
-            toolCallName: call.name,
-            parentMessageId: messageId,
-          } as BaseEvent);
-          if (call.pending) {
-            emit({
-              type: "TOOL_CALL_ARGS",
-              toolCallId: call.id,
-              delta: call.pending,
-            } as BaseEvent);
-          }
-        }
-        emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
-        forwarded += 1;
-        continue;
-      }
-
-      /*
-       * A BRIDGE CALL, held back whole until now. `isBridgeCall` only said yes to a name a
-       * bridge was offered under, so the narrowing here is the same fact read twice.
-       */
-      const answer = answerBridgeCall(
-        call.name as Parameters<typeof answerBridgeCall>[0],
-        call.pending,
-        exposed.deferred,
-      );
-
-      if (answer.kind === "forward") {
-        /*
-         * `tool_call` BECOMES THE REAL CALL, in the real tool's name, under the same id. The
-         * surface cannot tell it from a direct call: same handler, same boundary, same audit
-         * row with the real name on it. The bridge hides nothing on the way through.
-         */
+    const answer = (
+      call: ToolCallRecord & { id: string; name: string },
+      code: string,
+      opened: boolean,
+    ) => {
+      const rawArguments = call.arguments || "{}";
+      if (!opened) {
         emit({
           type: "TOOL_CALL_START",
           toolCallId: call.id,
-          toolCallName: answer.name,
+          toolCallName: call.name,
           parentMessageId: messageId,
         } as BaseEvent);
         emit({
           type: "TOOL_CALL_ARGS",
           toolCallId: call.id,
-          delta: JSON.stringify(answer.args),
+          delta: rawArguments,
         } as BaseEvent);
-        emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
-        forwarded += 1;
-        continue;
       }
-
-      /*
-       * A lookup, answered from the list this service was handed. On the wire in full — the
-       * call and its result — so the transcript says the Bot looked, rather than the Bot
-       * appearing to know a tool it was never shown. AG-UI's TOOL_CALL_RESULT is what an agent
-       * that executed its own tool sends; the client files it as an ordinary tool message.
-       */
-      const rawArguments = call.pending || "{}";
-      emit({
-        type: "TOOL_CALL_START",
-        toolCallId: call.id,
-        toolCallName: call.name,
-        parentMessageId: messageId,
-      } as BaseEvent);
-      emit({
-        type: "TOOL_CALL_ARGS",
-        toolCallId: call.id,
-        delta: rawArguments,
-      } as BaseEvent);
       emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+      const result = factResult(code);
       emit({
         type: "TOOL_CALL_RESULT",
         messageId: `tool_${call.id}`,
         toolCallId: call.id,
-        content: answer.text,
+        content: result,
         role: "tool",
       } as BaseEvent);
       answered.push({
         id: call.id,
         name: call.name,
         arguments: rawArguments,
-        text: answer.text,
+        text: result,
+        kind: "fact",
       });
+      // The code and nothing of the call: its name may be one the model made up out of the
+      // person's own words, and its arguments are theirs.
+      log.warn("tool_call_answered", { bot: botId, run: input.runId, code });
+    };
+
+    /**
+     * The checks every call about to reach a surface passes, direct or through the bridge: the
+     * question's budget, then the loop. True when the call was answered instead.
+     */
+    const stopped = (
+      call: ToolCallRecord & { id: string; name: string },
+      target: { name: string; args: Record<string, unknown> },
+      opened: boolean,
+    ): boolean => {
+      if (overBudget) {
+        answer(call, "laf:tool_budget_spent", opened);
+        mustSpeak = true;
+        return true;
+      }
+      const repeats = repeatsOf(
+        transcript,
+        target.name,
+        canonicalArguments(target.args),
+      );
+      if (repeats + 1 >= TOOL_LOOP_LIMIT) {
+        answer(call, "laf:tool_loop", opened);
+        loopAnswers += 1;
+        if (loopAnswers > 1) endsOn = "laf:tool_loop";
+        return true;
+      }
+      return false;
+    };
+
+    /*
+     * Only the ends, after the stream. A call whose name never arrived was never opened and is
+     * not closed either: closing one the surface never saw would be reporting a call nobody
+     * made.
+     */
+    for (const record of toolCalls.values()) {
+      if (!record.name) continue;
+      /*
+       * A call the provider named but never gave an id gets a minted one now, so its
+       * fragments are not lost — the open and the args go out together, then the end.
+       */
+      record.id ??= `call_${input.runId}_${[...toolCalls.values()].indexOf(record)}`;
+      const call = record as ToolCallRecord & { id: string; name: string };
+
+      /*
+       * OFFERED NO TOOLS, AND ASKED FOR ONE ANYWAY. The model was told the question had cost what
+       * it may and given a request with no tools to answer in; some models call one out of habit.
+       * It gets the same fact, nothing runs, and the run is over — a second round with no tools
+       * would say what this one did.
+       */
+      if (mustSpeak && tools === undefined) {
+        answer(call, "laf:tool_budget_spent", call.started && !call.held);
+        endsOn = "laf:tool_budget_spent";
+        continue;
+      }
+
+      if (call.held === "unknown") {
+        recoveries += 1;
+        answer(call, "laf:tool_unknown", false);
+        if (recoveries > MAX_TOOL_RECOVERIES) endsOn = "laf:tool_unknown";
+        continue;
+      }
+
+      if (call.held === "bridge") {
+        /*
+         * A BRIDGE CALL, held back whole until now. `isBridgeCall` only said yes to a name a
+         * bridge was offered under, so the narrowing here is the same fact read twice.
+         */
+        const bridged = answerBridgeCall(
+          call.name as Parameters<typeof answerBridgeCall>[0],
+          call.arguments,
+          exposed.deferred,
+        );
+
+        if (bridged.kind === "forward") {
+          // The real call is what the budget and the loop are about, whichever way it was asked.
+          if (stopped(call, bridged, false)) continue;
+          /*
+           * `tool_call` BECOMES THE REAL CALL, in the real tool's name, under the same id. The
+           * surface cannot tell it from a direct call: same handler, same boundary, same audit
+           * row with the real name on it. The bridge hides nothing on the way through.
+           */
+          emit({
+            type: "TOOL_CALL_START",
+            toolCallId: call.id,
+            toolCallName: bridged.name,
+            parentMessageId: messageId,
+          } as BaseEvent);
+          emit({
+            type: "TOOL_CALL_ARGS",
+            toolCallId: call.id,
+            delta: JSON.stringify(bridged.args),
+          } as BaseEvent);
+          emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+          forwarded += 1;
+          continue;
+        }
+
+        /*
+         * A lookup, answered from the list this service was handed. On the wire in full — the
+         * call and its result — so the transcript says the Bot looked, rather than the Bot
+         * appearing to know a tool it was never shown. AG-UI's TOOL_CALL_RESULT is what an agent
+         * that executed its own tool sends; the client files it as an ordinary tool message.
+         */
+        const rawArguments = call.arguments || "{}";
+        emit({
+          type: "TOOL_CALL_START",
+          toolCallId: call.id,
+          toolCallName: call.name,
+          parentMessageId: messageId,
+        } as BaseEvent);
+        emit({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: call.id,
+          delta: rawArguments,
+        } as BaseEvent);
+        emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+        emit({
+          type: "TOOL_CALL_RESULT",
+          messageId: `tool_${call.id}`,
+          toolCallId: call.id,
+          content: bridged.text,
+          role: "tool",
+        } as BaseEvent);
+        answered.push({
+          id: call.id,
+          name: call.name,
+          arguments: rawArguments,
+          text: bridged.text,
+          kind: "lookup",
+        });
+        continue;
+      }
+
+      // A real call: forwarded as it streamed, or not opened yet when its name came last.
+      if (!call.started) {
+        emit({
+          type: "TOOL_CALL_START",
+          toolCallId: call.id,
+          toolCallName: call.name,
+          parentMessageId: messageId,
+        } as BaseEvent);
+        if (call.pending) {
+          emit({
+            type: "TOOL_CALL_ARGS",
+            toolCallId: call.id,
+            delta: call.pending,
+          } as BaseEvent);
+        }
+      }
+
+      /*
+       * ARGUMENTS THAT ARE NOT AN OBJECT never reach a surface. The browser would parse them, fail,
+       * and put its parser's English into the transcript as the tool's result with no follow-up
+       * run (audit A2, row 5); a routine turned them into `{}` and ran the tool with nothing.
+       */
+      const args = parseToolArguments(call.arguments);
+      if (args === null) {
+        recoveries += 1;
+        answer(call, "laf:tool_arguments_invalid", true);
+        if (recoveries > MAX_TOOL_RECOVERIES) {
+          endsOn = "laf:tool_arguments_invalid";
+        }
+        continue;
+      }
+
+      if (stopped(call, { name: call.name, args }, true)) continue;
+
+      emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+      forwarded += 1;
     }
 
     /*
@@ -477,31 +662,63 @@ async function runRounds(context: RunContext): Promise<void> {
     emitUsage(context, turn);
 
     /*
-     * The run is over when the model spoke without looking anything up, when it asked for a
-     * real tool (the surface must run it), or when the lookup budget is spent. Otherwise the
-     * lookups and their answers join the transcript — in its own shape, with the ids the
-     * wire carried, so the next round's conversion counts and cuts them like any result —
-     * and the model is asked again, here.
+     * A guard has had the last word. Its answer is on the wire, so the thread holds no open call,
+     * and the run ends on the same fact — into the ledger and onto the person's screen, rather
+     * than into another request that would say what this one did.
      */
-    if (answered.length === 0 || forwarded > 0 || round >= MAX_BRIDGE_ROUNDS) {
+    if (endsOn) {
+      log.error("run_failed", {
+        bot: botId,
+        run: input.runId,
+        code: endsOn,
+        reason: "guard",
+        ms: Date.now() - context.startedAt,
+      });
+      emit({ type: "RUN_ERROR", message: endsOn } as BaseEvent);
+      return;
+    }
+
+    /*
+     * The run is over when the model spoke without a call answered here, when it asked for a real
+     * tool (the surface must run it), or when a run that only looks things up has used its lookup
+     * rounds. Otherwise the calls and their answers join the transcript — in its own shape, with
+     * the ids the wire carried, so the next round's conversion counts and cuts them like any
+     * result — and the model is asked again, here.
+     */
+    if (answered.length === 0 || forwarded > 0) break;
+    if (
+      round >= MAX_BRIDGE_ROUNDS &&
+      answered.every((entry) => entry.kind === "lookup")
+    ) {
       break;
+    }
+    if (round + 1 >= MAX_ROUNDS) {
+      log.error("run_failed", {
+        bot: botId,
+        run: input.runId,
+        code: "laf:tool_loop",
+        reason: "rounds",
+        ms: Date.now() - context.startedAt,
+      });
+      emit({ type: "RUN_ERROR", message: "laf:tool_loop" } as BaseEvent);
+      return;
     }
     inRun.push({
       id: messageId,
       role: "assistant",
       ...(text ? { content: text } : {}),
-      toolCalls: answered.map((lookup) => ({
-        id: lookup.id,
+      toolCalls: answered.map((entry) => ({
+        id: entry.id,
         type: "function" as const,
-        function: { name: lookup.name, arguments: lookup.arguments },
+        function: { name: entry.name, arguments: entry.arguments },
       })),
     });
-    for (const lookup of answered) {
+    for (const entry of answered) {
       inRun.push({
-        id: `tool_${lookup.id}`,
+        id: `tool_${entry.id}`,
         role: "tool",
-        toolCallId: lookup.id,
-        content: lookup.text,
+        toolCallId: entry.id,
+        content: entry.text,
       });
     }
   }

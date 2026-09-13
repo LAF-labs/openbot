@@ -89,14 +89,35 @@ describe("liveTurnFailureCode", () => {
     );
   });
 
-  it("reads a stream agent-bot saw cut before the model finished", () => {
-    // The half that arrived stays on screen, and this line says why it is half.
+  it("reads the facts agent-bot ends a run on for its own reasons", () => {
+    // A cut stream: the half that arrived stays on screen, and this line says why it is half.
     expect(liveTurnFailureCode("laf:provider_stream_cut")).toBe(
       "laf:turn_stream_cut",
     );
-    expect(turnFailureSentence("laf:turn_stream_cut")).not.toBe(
-      turnFailureSentence("laf:turn_failed"),
+    // A Bot that did not recover from its own tool mistakes after being told inside the run.
+    for (const code of [
+      "laf:tool_unknown",
+      "laf:tool_arguments_invalid",
+      "laf:tool_loop",
+    ]) {
+      expect(liveTurnFailureCode(code)).toBe("laf:turn_tool_failed");
+    }
+    expect(liveTurnFailureCode("laf:tool_budget_spent")).toBe(
+      "laf:turn_budget_spent",
     );
+  });
+
+  it("gives a cut, a tool failure and a spent budget three different next steps", () => {
+    const sentences = [
+      "laf:turn_stream_cut",
+      "laf:turn_tool_failed",
+      "laf:turn_budget_spent",
+    ].map((code) => turnFailureSentence(code));
+    expect(new Set(sentences).size).toBe(3);
+    // Each in Korean, not the generic line.
+    for (const sentence of sentences) {
+      expect(sentence).not.toBe(turnFailureSentence("laf:turn_failed"));
+    }
   });
 
   it("separates a refusal from a rate limit from a server fault", () => {

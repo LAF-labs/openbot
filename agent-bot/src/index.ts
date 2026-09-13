@@ -11,6 +11,7 @@
  * - `transcript.ts` AG-UI messages → the provider's shape, with the context budget
  * - `turn.ts`       one request, streamed out as AG-UI events as it arrives
  * - `run.ts`        the loop: rounds, retries, the bridge's answers, what a run ends on
+ * - `guards.ts`     what the loop answers instead of forwarding, and the bounds on one question
  * - `log.ts`        this service's log and the closed set of codes a failed run may report
  * - `server.ts`     the HTTP service, the boot refusal, the shutdown line
  *

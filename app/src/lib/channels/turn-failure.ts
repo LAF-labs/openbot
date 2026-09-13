@@ -17,6 +17,7 @@ import { t } from "@/lib/i18n";
 
 /** The codes `GET /api/channels/:id/failures` can send. Keep in step with the server's table. */
 export const TURN_FAILURE_CODES = [
+  "laf:turn_budget_spent",
   "laf:turn_failed",
   "laf:turn_interrupted",
   "laf:turn_model_failed",
@@ -25,6 +26,7 @@ export const TURN_FAILURE_CODES = [
   "laf:turn_stalled",
   "laf:turn_stream_cut",
   "laf:turn_timed_out",
+  "laf:turn_tool_failed",
   "laf:turn_unreachable",
 ] as const;
 
@@ -49,6 +51,12 @@ export type TurnFailure = {
  * table the way `agent-presets.test.ts` walks its own.
  */
 export const TURN_FAILURE_SENTENCES: Record<string, string> = {
+  /*
+   * Not a fault: the Bot kept working and the question reached what one question may cost
+   * (agent-bot's `ASK_TOKEN_BUDGET`). Carrying on is a new question with a budget of its own.
+   */
+  "laf:turn_budget_spent":
+    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
   "laf:turn_failed": "No answer came back.",
   /*
    * The server restarted while this ran. Not a fault of the model's and not the person's: the run
@@ -72,6 +80,13 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
     "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.",
   "laf:turn_timed_out":
     "The model took too long and the turn was ended. Ask again, or ask for less at once.",
+  /*
+   * A name that does not exist, arguments that are not an object, or the same call over and over:
+   * agent-bot answered the Bot inside the run and it did not recover. Nothing is broken; asking
+   * again, or differently, is the whole of what there is to do.
+   */
+  "laf:turn_tool_failed":
+    "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
   "laf:turn_unreachable":
     "The Bot did not answer. It may not be running right now.",
 };
@@ -116,6 +131,14 @@ export function liveTurnFailureCode(reported: unknown): TurnFailureCode {
     return "laf:turn_model_failed";
   }
   if (said.includes("laf:provider_stream_cut")) return "laf:turn_stream_cut";
+  if (
+    said.includes("laf:tool_unknown") ||
+    said.includes("laf:tool_arguments_invalid") ||
+    said.includes("laf:tool_loop")
+  ) {
+    return "laf:turn_tool_failed";
+  }
+  if (said.includes("laf:tool_budget_spent")) return "laf:turn_budget_spent";
   if (
     said.includes("agent_stream_stalled") ||
     said.includes("stopped responding")
