@@ -39,6 +39,7 @@ import {
 import {
   type DeliverRoutineAnswer,
   type DeliverRoutineFailure,
+  type Delivered,
   isSilentAnswer,
 } from "./deliver";
 import {
@@ -674,82 +675,129 @@ export function createRoutineService(options: RoutineServiceOptions) {
      */
     const silent = ok && !awaiting && isSilentAnswer(answer);
 
-    if (ok && author && !silent && answer.trim().length > 0) {
-      try {
-        await options.deliver?.({
-          agentId: row.agentId,
-          userId: author,
-          routineName: row.name,
-          answer,
-          at: now(),
-        });
-      } catch (error) {
-        console.error(
-          "[routines] delivering the answer failed:",
-          describeFailure(error),
-        );
-      }
-    }
-
     /*
-     * A run that did not finish is marked where its answer would have gone, keyed to the ledger
-     * run so the transcript can say what kind of failure it was — the same line a failed chat turn
-     * gets, drawn from the same reader. Only with a ledger run to key it to: a heading with no line
-     * under it would read as a routine that spoke and said nothing, which is a different fact.
+     * ONE RECORD OF THIS RUN, IN ONE TRANSACTION.
+     *
+     * The writes below used to commit one at a time. `deliver` committed the answer, and a kill in
+     * the moment before `ledger.finish` left the answer in the conversation beside a ledger row
+     * still saying `running` — so boot reconciled it to `unknown`, marked it interrupted under the
+     * finished answer and sent `run.failed` for a 07:30 briefing that had arrived (audit A1-1,
+     * reproduced by SIGKILL; `laf upgrade` restarts the server every time).
+     *
+     * The answer or the failure mark, the ledger's ending and the receipt now commit together, so a
+     * restart finds one of two states and both are true: nothing delivered and the ledger still
+     * `running`, which boot reports as the interruption it is; or the answer beside a settled
+     * ledger row, which boot leaves alone. `rooms/service.ts` is the model: the writes inside the
+     * transaction, the announcement after it commits (`channels/events.ts` on why a socket frame
+     * must never precede a commit), which is why a delivery returns its announcement instead of
+     * making it.
+     *
+     * The `routine.ran` trail row stays after the commit, because the outbox watch that tells the
+     * person about a failed run fires off that insert (`notifications/from-audit.ts`) and a
+     * notification must not go out for a record that could still roll back. A kill between the two
+     * loses that row and its bell — never the truth of the conversation.
      */
-    let failedIn: { channelId: string } | null = null;
-    if (!ok && author && ledgerRunId) {
-      try {
-        failedIn =
-          (await options.deliverFailure?.({
-            agentId: row.agentId,
-            userId: author,
-            routineName: row.name,
-            runId: ledgerRunId,
-            at: now(),
-          })) ?? null;
-      } catch (error) {
-        log.error("routine_failure_not_marked", {
-          routine: row.id,
-          run: ledgerRunId,
-          reason: describeFailure(error),
+    let settled: { delivered: Delivered | null; failedIn: Delivered | null } = {
+      delivered: null,
+      failedIn: null,
+    };
+    try {
+      settled = await database.transaction(async (transaction) => {
+        const delivered =
+          ok && author && !silent && answer.trim().length > 0
+            ? ((await options.deliver?.(
+                {
+                  agentId: row.agentId,
+                  userId: author,
+                  routineName: row.name,
+                  answer,
+                  at: now(),
+                  // Which run said it, so the transcript and the ledger agree — true only because
+                  // the ledger row is settled in this same transaction.
+                  ...(ledgerRunId ? { runId: ledgerRunId } : {}),
+                },
+                { within: transaction },
+              )) ?? null)
+            : null;
+
+        /*
+         * A run that did not finish is marked where its answer would have gone, keyed to the ledger
+         * run so the transcript can say what kind of failure it was — the same line a failed chat
+         * turn gets. Only with a ledger run to key it to: a heading with no line under it would
+         * read as a routine that spoke and said nothing, which is a different fact.
+         */
+        const failedIn =
+          !ok && author && ledgerRunId
+            ? ((await options.deliverFailure?.(
+                {
+                  agentId: row.agentId,
+                  userId: author,
+                  routineName: row.name,
+                  runId: ledgerRunId,
+                  at: now(),
+                },
+                { within: transaction },
+              )) ?? null)
+            : null;
+
+        if (ledgerRunId) {
+          await options.ledger?.settle(
+            ledgerRunId,
+            { status: ok ? "done" : "error", error: ok ? null : failure },
+            transaction,
+          );
+        }
+
+        await transaction.insert(lafRoutineRuns).values({
+          id: runId,
+          routineId: row.id,
+          startedAt,
+          finishedAt: now(),
+          ok,
+          answer: ok ? answer : null,
+          error: ok ? null : failure,
+          steps,
         });
+        // Keep the newest KEPT_RUNS; the audit row below is the durable record.
+        const keep = transaction
+          .select({ id: lafRoutineRuns.id })
+          .from(lafRoutineRuns)
+          .where(eq(lafRoutineRuns.routineId, row.id))
+          .orderBy(desc(lafRoutineRuns.startedAt))
+          .limit(KEPT_RUNS);
+        await transaction
+          .delete(lafRoutineRuns)
+          .where(
+            and(
+              eq(lafRoutineRuns.routineId, row.id),
+              notInArray(lafRoutineRuns.id, keep),
+            ),
+          );
+        return { delivered, failedIn };
+      });
+    } catch (error) {
+      /*
+       * The record rolled back whole: nothing was delivered, no receipt was written, and the ledger
+       * row is still `running`. What happened to the RUN is no longer what the person will read —
+       * whatever the Bot said, it did not reach them — so it is reported as the failure it now is,
+       * and the ledger is closed on the pool so the roster does not show the Bot busy until boot.
+       */
+      ok = false;
+      failure = `The run's record could not be written: ${describeFailure(error)}`;
+      log.error("routine_run_not_recorded", {
+        routine: row.id,
+        ...(ledgerRunId ? { run: ledgerRunId } : {}),
+        reason: describeFailure(error),
+      });
+      if (ledgerRunId) {
+        await options.ledger?.finish(ledgerRunId, failure).catch(() => {});
       }
     }
 
-    if (ledgerRunId) {
-      // Closed before anything else, so a failure writing the routine's own history cannot leave
-      // the Bot looking busy forever.
-      await options.ledger
-        ?.finish(ledgerRunId, ok ? null : failure)
-        .catch(() => {});
-    }
+    // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
+    settled.delivered?.announce();
+    settled.failedIn?.announce();
 
-    await database.insert(lafRoutineRuns).values({
-      id: runId,
-      routineId: row.id,
-      startedAt,
-      finishedAt: now(),
-      ok,
-      answer: ok ? answer : null,
-      error: ok ? null : failure,
-      steps,
-    });
-    // Keep the newest KEPT_RUNS; the audit row below is the durable record.
-    const keep = database
-      .select({ id: lafRoutineRuns.id })
-      .from(lafRoutineRuns)
-      .where(eq(lafRoutineRuns.routineId, row.id))
-      .orderBy(desc(lafRoutineRuns.startedAt))
-      .limit(KEPT_RUNS);
-    await database
-      .delete(lafRoutineRuns)
-      .where(
-        and(
-          eq(lafRoutineRuns.routineId, row.id),
-          notInArray(lafRoutineRuns.id, keep),
-        ),
-      );
     try {
       await options.auditStore?.insert({
         eventType: "routine.ran",
@@ -768,14 +816,16 @@ export function createRoutineService(options: RoutineServiceOptions) {
           ...(author ? { actor: author } : {}),
           ...(ledgerRunId ? { runId: ledgerRunId } : {}),
           // Only when true: a row that ran and reported reads exactly as it always did.
-          ...(silent ? { silent: true } : {}),
+          ...(silent && ok ? { silent: true } : {}),
           /*
            * The failure as a fact code, never the sentence that threw — the same table the
            * transcript reads, so the notification and the red line agree — and the conversation
            * it was marked in, so the notification can point there.
            */
           ...(ok ? {} : { failure: classifyTurnFailure(failure) }),
-          ...(failedIn ? { channelId: failedIn.channelId } : {}),
+          ...(settled.failedIn
+            ? { channelId: settled.failedIn.channelId }
+            : {}),
         },
       });
     } catch {

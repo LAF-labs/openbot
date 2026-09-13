@@ -69,17 +69,41 @@ export type RunOutcome = {
   eventCount?: number;
 };
 
+/**
+ * Anything an ending can be written on: the pool, or a transaction already open around the
+ * caller.
+ *
+ * A routine settles its run in ONE transaction with the answer it delivered and the receipt it
+ * writes (`routines/service.ts`), because a run row that said `running` beside an answer that had
+ * already landed was what a restart then reported as interrupted — measured on 2026-09-10. An
+ * ending written on the pool would commit on its own, before or after that transaction, and could
+ * disagree with it either way.
+ */
+export type LedgerExecutor = Pick<Database, "update">;
+
 export type RunLedger = {
   begin(start: RunStart): Promise<string>;
   /** The full ending, for a caller that watched the events and knows how it really finished. */
-  settle(runId: string, outcome: RunOutcome): Promise<void>;
+  settle(
+    runId: string,
+    outcome: RunOutcome,
+    executor?: LedgerExecutor,
+  ): Promise<void>;
   /** The short ending, for a caller that only knows whether it threw. */
-  finish(runId: string, error?: string | null): Promise<void>;
+  finish(
+    runId: string,
+    error?: string | null,
+    executor?: LedgerExecutor,
+  ): Promise<void>;
 };
 
 export function createRunLedger(database: Database): RunLedger {
-  const settle: RunLedger["settle"] = async (runId, outcome) => {
-    await database
+  const settle: RunLedger["settle"] = async (
+    runId,
+    outcome,
+    executor = database,
+  ) => {
+    await executor
       .update(lafThreadRuns)
       .set({
         status: outcome.status,
@@ -110,11 +134,15 @@ export function createRunLedger(database: Database): RunLedger {
 
     settle,
 
-    async finish(runId, error) {
-      await settle(runId, {
-        status: error ? "error" : "done",
-        error: error ?? null,
-      });
+    async finish(runId, error, executor) {
+      await settle(
+        runId,
+        {
+          status: error ? "error" : "done",
+          error: error ?? null,
+        },
+        executor,
+      );
     },
   };
 }
