@@ -611,16 +611,14 @@ const UNAVAILABLE: Record<string, string> = {
 };
 
 /**
- * THE ONE 500 LEFT, named so it is a decision and not a blind spot.
+ * NO 500 IS LEFT, and the list stays so the next one is a decision and not a blind spot.
  *
- * An administrator revoking a credential id that is not there: `credentialService.revoke` throws
- * `CredentialUnavailableError` (`missing_or_revoked`) and the inline route in `app.ts` does not
- * map it, so Hono answers 500. Administrator-only — A and B get 403 in front of it — so it is a
- * robustness fault and not an authorization one, and it lives in a file the change that wrote this
- * matrix was told to leave to another. The fix is a 404 for that error in the route (or in the
- * service), and then removing this entry.
+ * There was one: an administrator revoking a credential id that is not there, where
+ * `credentialService.revoke` throws `CredentialUnavailableError` and the inline route in `app.ts`
+ * did not map it. The error boundary (`app.onError`) answers it with 404
+ * `laf:credential_not_found` now — see `route-error-boundary.integration.test.ts`.
  */
-const KNOWN_500 = ["admin POST /api/admin/credentials/:credentialId/revoke"];
+const KNOWN_500: string[] = [];
 
 /**
  * STILL OPEN: the cells a colleague reaches on the owner's Bot, each one a decision written down.

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  databaseCodeOf,
   describeFailure,
+  isBadValue,
   noAnswerFact,
   providerStatusFact,
 } from "../src/failure-text";
@@ -34,6 +36,41 @@ describe("describeFailure", () => {
   test("a query error without a code still says nothing about the statement", () => {
     const error = new DrizzleQueryError("select 1", ["p"]);
     expect(describeFailure(error)).toBe("database error");
+  });
+
+  /*
+   * Bun's SQL client files the SQLSTATE under `errno` and its own `ERR_POSTGRES_SERVER_ERROR` under
+   * `code`, so reading `code` alone made every failure on this deployment a bare "database error"
+   * — measured by audit A5 §9 against 42703, 42P01 and 23505 — while operating.md promised the code.
+   */
+  test("a query error from Bun's own client keeps the SQLSTATE it files under errno", () => {
+    const error = new DrizzleQueryError(
+      'insert into "laf_routines" ("instruction") values ($1)',
+      ["로그인 비번은 1234"],
+      Object.assign(new Error("violates foreign key constraint"), {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "23503",
+      }),
+    );
+    expect(describeFailure(error)).toBe("database error (23503)");
+    expect(databaseCodeOf(error)).toBe("23503");
+    expect(isBadValue(error)).toBe(false);
+  });
+
+  test("only a data exception is a bad value, and only on a query", () => {
+    const bad = new DrizzleQueryError(
+      "select 1",
+      ["not-a-uuid"],
+      Object.assign(new Error("invalid input syntax for type uuid"), {
+        errno: "22P02",
+      }),
+    );
+    expect(isBadValue(bad)).toBe(true);
+    // The same code on an error that did not come from a query is not the database talking.
+    expect(
+      isBadValue(Object.assign(new Error("22P02"), { code: "22P02" })),
+    ).toBe(false);
+    expect(databaseCodeOf("22P02")).toBeNull();
   });
 
   test("an ordinary error keeps its message, on one line and bounded", () => {

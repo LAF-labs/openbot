@@ -892,10 +892,14 @@ export function createRoutineService(options: RoutineServiceOptions) {
        * grants. The rule is the one every other door a Bot id opens uses (`actorMayDriveBot`), and
        * the refusal is the same 404 the rest of the product gives for a Bot that is not yours,
        * which a Bot that does not exist — a foreign-key failure and a 500, before — now shares.
+       *
+       * NOT THERE IS NOT THERE FOR AN ADMINISTRATOR EITHER. `actorMayDriveBot` lets an administrator
+       * through to any id, which is right for a Bot that exists; for one that does not it let the
+       * insert reach the foreign key, and audit A1-2 measured exactly that as the local
+       * administrator — a 500, and the instruction's text in the operator log.
        */
-      if (
-        !actorMayDriveBot(actor, await lookupBotOwner(database, input.agentId))
-      ) {
+      const owner = await lookupBotOwner(database, input.agentId);
+      if (owner === undefined || !actorMayDriveBot(actor, owner)) {
         throw new RoutineError("There is no such Bot.", 404, BOT_NOT_FOUND);
       }
 

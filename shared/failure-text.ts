@@ -35,16 +35,38 @@ function isQueryError(error: Error): boolean {
   );
 }
 
-/** The `code` PostgreSQL attached, if the driver kept it. `23505` says more than "insert failed". */
+/**
+ * The SQLSTATE PostgreSQL attached, if the driver kept it. `23505` says more than "insert failed".
+ *
+ * `code` for the drivers that put it there, and `errno` for the one this deployment runs: Bun's SQL
+ * client puts the SQLSTATE in `errno` and its own `ERR_POSTGRES_SERVER_ERROR` in `code`, so reading
+ * `code` alone turned every query failure into a bare "database error" — measured by audit A5 §9
+ * against 42703, 42P01 and 23505, while `docs/laf/operating.md` promised the code in brackets.
+ */
 function postgresCode(error: Error & QueryShaped): string | null {
   const candidates = [error, error.cause];
   for (const candidate of candidates) {
-    if (candidate && typeof candidate === "object" && "code" in candidate) {
-      const code = (candidate as { code: unknown }).code;
-      if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+    if (!candidate || typeof candidate !== "object") continue;
+    for (const field of ["code", "errno"] as const) {
+      const value = (candidate as Record<string, unknown>)[field];
+      if (typeof value === "string" && /^[0-9A-Z]{5}$/.test(value)) {
+        return value;
+      }
     }
   }
   return null;
+}
+
+/**
+ * The SQLSTATE of a failed query, or null for anything that is not one.
+ *
+ * For a caller that has to decide what a failure MEANS — the HTTP boundary answering a value
+ * Postgres could not read as a 400 rather than a 500 — without reading the message, which carries
+ * the statement and its parameters.
+ */
+export function databaseCodeOf(error: unknown): string | null {
+  if (!(error instanceof Error) || !isQueryError(error)) return null;
+  return postgresCode(error);
 }
 
 /**

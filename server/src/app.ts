@@ -44,8 +44,23 @@ import { createSiteRoutes } from "./computer/site-routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
-import type { CredentialAdminService, CredentialInput } from "./credentials";
+import {
+  type CredentialAdminService,
+  type CredentialInput,
+  CredentialUnavailableError,
+} from "./credentials";
+import {
+  BAD_VALUE,
+  describeFailure,
+  type HttpRefusal,
+  httpRefusalOf,
+  INTERNAL_FAILURE,
+  isBadValue,
+  NOT_FOUND,
+  refusalBody,
+} from "./failure-text";
 import { createHealthRoute, type HealthProbes } from "./health";
+import { log } from "./log";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
@@ -327,6 +342,51 @@ export function createApp(
   support?: SupportService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+
+  /*
+   * WHERE A THROWN ERROR ENDS UP.
+   *
+   * There was no handler, so a route that threw fell through to Hono's default: `500 Internal Server
+   * Error` as text/plain, and `console.error(err)` — the whole error object, which for a Drizzle
+   * failure is the statement and every bound parameter. Measured by audit A1 (2026-09-10) with one
+   * request naming a Bot that does not exist: the operator log carried the routine's instruction
+   * and the trigger token's hash, thirty frames deep, in the one place the log discipline
+   * (`shared/log.ts`) could not reach because Hono wrote the line and not the logger.
+   *
+   * Every answer is JSON — `{ code, …facts }`, see `refusalBody` on why there is no `error` beside
+   * it — and only the failures that are the server's are logged:
+   *   - a thrown error that IS a refusal — a `laf:` code and a status — answers with them, whichever
+   *     module's class it is; the route's own mapper usually caught it first, and this is for the
+   *     one that forgot;
+   *   - a credential that is not there, or no longer live, is the admin routes' unknown id: 404;
+   *   - a value Postgres could not read as its column's type is the request's doing: 400, with a
+   *     warning, because a server that computed the bad value itself should still be findable;
+   *   - everything else is `laf:internal`, and the line names the route PATTERN — never the path
+   *     with its ids — and `describeFailure`, never the message.
+   */
+  app.onError((error, context) => {
+    const refusal: HttpRefusal | null =
+      httpRefusalOf(error) ??
+      (error instanceof CredentialUnavailableError
+        ? { status: 404, code: "laf:credential_not_found", facts: {} }
+        : null);
+    if (refusal) {
+      return context.json(refusalBody(refusal), refusal.status);
+    }
+    const where = {
+      method: context.req.method,
+      route: context.req.routePath,
+      reason: describeFailure(error),
+    };
+    if (isBadValue(error)) {
+      log.warn("route_refused_value", where);
+      return context.json({ code: BAD_VALUE }, 400);
+    }
+    log.error("route_failed", where);
+    return context.json({ code: INTERNAL_FAILURE }, 500);
+  });
+  // A path nothing is mounted on, as a fact. Not logged: a probe for one is not an operator's news.
+  app.notFound((context) => context.json({ code: NOT_FOUND }, 404));
 
   /**
    * What the deployment can do, asked per request and answered from a cache.
