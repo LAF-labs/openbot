@@ -1,7 +1,12 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
-import { requireAdmin } from "../auth/guards";
+import {
+  BOT_NOT_FOUND,
+  mayDriveBot,
+  requireAdmin,
+  requireBotAccess,
+} from "../auth/guards";
 import { THREAD_HEADER } from "../computer/gateway";
 import {
   authEndpointsFor,
@@ -92,8 +97,13 @@ export type ConnectConfig = {
  * already holds, and every one of those calls is still decided, policy-checked and audited, so
  * anybody may write one for themselves and put it on a Bot they own.
  *
- * Reading is open to any signed-in person either way: what a Bot can reach is not a secret from the
- * person talking to it.
+ * Reading the catalogue is open to any signed-in person either way. Reading what one BOT holds is
+ * not. It was, on the reasoning that what a Bot can reach is no secret from the person talking to
+ * it, and audit A8 (2026-09-10) measured the gap in that: the person talking to a Bot and the person
+ * typing its id into a URL are not the same person. Every door here that takes a Bot id asks the
+ * question the rest of the server asks — `requireBotAccess` where the id is in the path,
+ * `mayDriveBot` where it is in a body or a query, the store itself for `/call`, which the unattended
+ * runner shares — and a Bot that is not yours is answered 404 `laf:bot_not_found`.
  *
  * The call endpoint asks again. The list of tools a run was offered is a snapshot taken when the run
  * started, so a grant revoked a second later is still in the model's hands. Deciding at call time is
@@ -961,12 +971,24 @@ export function createPluginRoutes(
    */
 
   /**
+   * The Bot named in a body or a query, refused the way the path-borne one is: 404 with the code,
+   * for a Bot that is not this person's and for one that is not there, indistinguishably.
+   */
+  const notYourBot = (context: Parameters<typeof mayDriveBot>[0]) =>
+    context.json({ error: BOT_NOT_FOUND, code: BOT_NOT_FOUND }, 404);
+
+  /**
    * May this person put this on that Bot?
    *
    * MCP is an administrator's, always: it reaches another company's system with a stored credential.
    * A skill is an instruction, so somebody may put their own skill on a Bot they own, and neither
    * half alone is enough. Both are checked here rather than in the store, because this is the only
    * place that knows who is asking.
+   *
+   * ASKED AFTER `mayDriveBot`, never instead of it. Both verbs below refuse a Bot that is not this
+   * person's first, so a non-administrator reaching here names a Bot that is theirs or nobody's.
+   * This used to answer the Bot in two sentences — "There is no such Bot." and "You can only put
+   * your own skills on Bots you own." — which between them told a colleague whether an id was real.
    */
   async function enablementRefusal(
     context: { var: AppVariables },
@@ -988,11 +1010,9 @@ export function createPluginRoutes(
         : `${ref} is somebody else's skill.`;
     }
 
-    const botOwner = await store.agentOwner(agentId);
-    if (botOwner === undefined) return "There is no such Bot.";
-    if (botOwner !== actor.id) {
-      // Including the shared Bots this deployment publishes, which have no owner at all: a skill
-      // one person wrote would otherwise change how a Bot answers everybody.
+    // The shared Bots this deployment publishes have no owner at all, and driving one is not
+    // owning it: a skill one person wrote would otherwise change how a Bot answers everybody.
+    if ((await store.agentOwner(agentId)) !== actor.id) {
       return "You can only put your own skills on Bots you own.";
     }
     return null;
@@ -1010,6 +1030,7 @@ export function createPluginRoutes(
         400,
       );
     }
+    if (!(await mayDriveBot(context, body.agentId))) return notYourBot(context);
     const refusal = await enablementRefusal(
       context,
       body.kind,
@@ -1032,6 +1053,7 @@ export function createPluginRoutes(
         400,
       );
     }
+    if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
     const refusal = await enablementRefusal(context, kind, ref, agentId);
     if (refusal) return context.json({ error: refusal }, 403);
 
@@ -1039,9 +1061,21 @@ export function createPluginRoutes(
     return context.json({ ok: true });
   });
 
-  /** What one Bot holds. The runtime reads this to decide what to offer a model. */
-  routes.get("/for/:agentId", requireUser, async (context) =>
-    context.json(await store.listForAgent(context.req.param("agentId"))),
+  /**
+   * What one Bot holds: every tool it was granted and every skill, instructions included. The app
+   * polls it for the Bot in front of the person to decide what that Bot is offered; an unattended
+   * run asks the store directly.
+   *
+   * YOUR BOT, not any Bot. Audit A8's last open cell: it answered a colleague naming the owner's Bot
+   * with all of that, because "no secret from the person talking to it" had been read as "no secret
+   * from anybody". Same guard and same 404 as every other door whose path names a Bot.
+   */
+  routes.get(
+    "/for/:agentId",
+    requireUser,
+    requireBotAccess("agentId"),
+    async (context) =>
+      context.json(await store.listForAgent(context.req.param("agentId"))),
   );
 
   /**
@@ -1049,11 +1083,13 @@ export function createPluginRoutes(
    *
    * The grant is checked and the `skill.viewed` row written inside the store, so this route cannot
    * satisfy one and skip the other. A refusal is 403 with the code the model reads and the surface
-   * translates — never a sentence.
+   * translates — never a sentence. Whose Bot it is comes first, as above: a colleague who could
+   * not list the skills must not be able to read one by guessing its name.
    */
   routes.post(
     "/for/:agentId/skills/:slug/view",
     requireUser,
+    requireBotAccess("agentId"),
     async (context) => {
       const viewed = await store.viewSkill({
         slug: context.req.param("slug"),

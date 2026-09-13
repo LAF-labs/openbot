@@ -11,6 +11,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
 import type { AuditEventInput, AuditStore } from "../src/audit";
+import { lookupBotOwner } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import { loadConfig } from "../src/config";
 import { createCredentialStore } from "../src/credentials";
@@ -172,7 +173,12 @@ function deployment() {
       handler: () => new Response(null, { status: 204 }),
       api: { getSession: async () => session },
     },
-    { rolesForUser: async () => ["user"] },
+    {
+      rolesForUser: async () => ["user"],
+      // Whose Bot is whose, from the real tables: `GET /api/plugins/for/:id` is behind the
+      // ownership guard, and a repository without this lookup admits nobody to any Bot.
+      botOwner: (botId) => lookupBotOwner(database, botId),
+    },
     // Positions 4-11: auditReader, credentialService, packageStatusReader, onboarding,
     // copilotHandler, computerClient, computerGateway, computerPolicy.
     undefined,

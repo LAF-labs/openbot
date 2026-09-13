@@ -27,10 +27,12 @@
  * (`copilot-guard.test.ts`).
  *
  * Bodies name A's Bot wherever a body names a Bot, so the colleague column presses on the
- * body-borne doors (`routines`, `components/:name/decision|call`, `plugins/call`, `channels`) as
- * well as the path-borne ones. Everything else is sent an empty object, which every route refuses
- * without writing anything — and the routes that destroy something are pointed at a throwaway Bot,
- * at A's routine, or at nobody, run last, and the fixture is put back before the next person.
+ * body-borne doors (`routines`, `components/:name/decision|call`, `plugins/call`, `plugins/grants`,
+ * `channels`) as well as the path-borne ones, and the one query-borne door (`DELETE
+ * plugins/grants`) is sent its Bot in the query. Everything else is sent an empty object, which
+ * every route refuses without writing anything — and the routes that destroy something are pointed
+ * at a throwaway Bot, at A's routine, or at nobody, run last, and the fixture is put back before
+ * the next person.
  *
  * `LAF_MATRIX_DUMP=1` prints every cell, which is how the lists below were written and how the
  * next one gets updated.
@@ -364,21 +366,32 @@ const DESTRUCTIVE = new Set([
   "POST /api/admin/users/:id/delete",
 ]);
 
+/**
+ * The one door whose Bot travels in the query string, named there so the colleague column presses
+ * on it. A skill nobody wrote, so the owner is refused it and the administrator's revoke removes
+ * nothing.
+ */
+const QUERY: Record<string, string> = {
+  "DELETE /api/plugins/grants": `?kind=skill&ref=nothing-${run}&agentId=${BOT_A}`,
+};
+
 /** What each placeholder in a path becomes. A Bot is always A's; everything else is nobody's. */
 function concrete(method: string, template: string): string {
   const bot =
     `${method} ${template}` === "DELETE /api/agents/:agentId"
       ? BOT_A_DOOMED
       : BOT_A;
-  return template
-    .replace(/:botId|:agentId/g, bot)
-    .replace(/:credentialId/g, NO_SUCH_UUID)
-    .replace(/:id(?=\/|$)/g, () =>
-      template.startsWith("/api/routines/:id") ? routineOfA : NOBODY,
-    )
-    .replace(/:kind/g, "click")
-    .replace(/:[A-Za-z]+/g, NOBODY)
-    .replace(/\*$/, "whatever");
+  return (
+    template
+      .replace(/:botId|:agentId/g, bot)
+      .replace(/:credentialId/g, NO_SUCH_UUID)
+      .replace(/:id(?=\/|$)/g, () =>
+        template.startsWith("/api/routines/:id") ? routineOfA : NOBODY,
+      )
+      .replace(/:kind/g, "click")
+      .replace(/:[A-Za-z]+/g, NOBODY)
+      .replace(/\*$/, "whatever") + (QUERY[`${method} ${template}`] ?? "")
+  );
 }
 
 /** The bodies that name a Bot. Anything else is refused on shape before it reaches a store. */
@@ -396,7 +409,14 @@ function bodyFor(method: string, template: string): unknown {
     case "POST /api/components/:name/call":
       return { agentId: BOT_A, function: "botActivity" };
     case "POST /api/plugins/call":
-      return { ref: "x", agentId: BOT_A };
+      // A well-formed ref (`server/tool`) so the call gets as far as asking whose Bot this is; a
+      // bare word was refused on shape first, and that refusal carries no code.
+      return { ref: `nobody-${run}/nothing`, agentId: BOT_A };
+    case "POST /api/plugins/grants":
+      // A skill nobody wrote: the owner is told there is no such skill, the administrator grants
+      // a name that resolves to nothing, and the colleague must be told the Bot is not there. The
+      // one row this writes is on A's Bot and goes with it in `afterAll`.
+      return { kind: "skill", ref: `nothing-${run}`, agentId: BOT_A };
     case "POST /api/channels":
       return { agentIds: [BOT_A] };
     default:
@@ -603,16 +623,26 @@ const UNAVAILABLE: Record<string, string> = {
 const KNOWN_500 = ["admin POST /api/admin/credentials/:credentialId/revoke"];
 
 /**
- * STILL OPEN: `GET /api/plugins/for/:agentId` answers a colleague about the owner's Bot.
+ * STILL OPEN: the cells a colleague reaches on the owner's Bot, each one a decision written down.
  *
- * Audit A8's last S2. It lives in `plugins/routes.ts`, which the change that closed every other
- * door was told not to touch (another change was in that tree at the same time), and the store's
- * own `actorMayDriveBot` sits one call away. Listed here so the cell is a decision and not an
- * oversight: closing it is `requireBotAccess("agentId")` on that route and on
- * `for/:agentId/skills/:slug/view` beside it, and then removing this entry — at which point B's
- * list below shrinks by one and this file says so.
+ * NONE. Audit A8's last S2 was `GET /api/plugins/for/:agentId`, which answered a colleague naming
+ * the owner's Bot with every tool and skill it held; it lived in a tree another change was in at
+ * the time, so it was listed here rather than closed. It is closed now — `requireBotAccess` on it
+ * and on `for/:agentId/skills/:slug/view` beside it, `mayDriveBot` on the two grant verbs — and B's
+ * list below shrank by one.
+ *
+ * Kept, empty, as the one place an open cell would have to be written down. The colleague test
+ * counts open cells from the measurement, not from the lists, and asserts the count is zero: a cell
+ * that opens by accident fails there, and leaving one open on purpose means changing that line in
+ * review, with the reason written here.
  */
-const STILL_OPEN = new Set(["GET /api/plugins/for/:agentId"]);
+const STILL_OPEN = new Set<string>();
+
+/** Whether this file names A's Bot to the route: in its path, its body or its query string. */
+const namesABot = (cell: Cell) =>
+  /:botId|:agentId/.test(cell.template) ||
+  JSON.stringify(bodyFor(cell.method, cell.template)).includes(BOT_A) ||
+  (QUERY[keyOf(cell)] ?? "").includes(BOT_A);
 
 /**
  * Every route whose path names a Bot and whose door the ownership guard now stands in front of.
@@ -621,12 +651,13 @@ const STILL_OPEN = new Set(["GET /api/plugins/for/:agentId"]);
 const BOT_DOORS = (template: string) =>
   template.startsWith("/api/computers/:botId/") ||
   template.startsWith("/api/approvals/:botId") ||
+  template.startsWith("/api/plugins/for/:agentId") ||
   template === "/api/components/for-agent/:agentId";
 
 /**
  * What a signed-in colleague reaches: their own things, the deployment's catalogues, and the
  * reads that are open to any signed-in person by design (`components`, `sandboxed/published`).
- * Nothing here names A's Bot except the one cell `STILL_OPEN` explains.
+ * Nothing here names A's Bot.
  */
 const B_ALLOWED = [
   "DELETE /api/plugins/skills/:slug",
@@ -646,7 +677,6 @@ const B_ALLOWED = [
   "GET /api/partners",
   "GET /api/plugins",
   "GET /api/plugins/connections",
-  "GET /api/plugins/for/:agentId",
   "GET /api/routines",
   "GET /api/routines/suggestions",
   "GET /api/sandboxed/published",
@@ -677,6 +707,7 @@ const A_ALLOWED = [
   "GET /api/computers/:botId/read",
   "GET /api/computers/:botId/screenshot",
   "GET /api/computers/:botId/status",
+  "GET /api/plugins/for/:agentId",
   "GET /api/routines/:id/runs",
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
@@ -701,6 +732,12 @@ const A_ALLOWED = [
 const ADMIN_ALLOWED = [
   ...A_ALLOWED,
   "DELETE /api/components/:name/functions/:function",
+  // Grant and revoke on A's Bot, of a skill nobody wrote: an administrator may put anything on
+  // any Bot, so the name is accepted and resolves to nothing. The owner is refused the skill (403,
+  // which is why neither is on A's list) and the colleague the Bot (404, asserted with the other
+  // doors a body opens).
+  "DELETE /api/plugins/grants",
+  "POST /api/plugins/grants",
   "DELETE /api/plugins/servers/:id",
   "DELETE /api/sandboxed/:name",
   "GET /api/admin/audit-events",
@@ -785,11 +822,14 @@ describe("the matrix", () => {
         "laf:bot_not_found",
       ]);
     }
-    // The doors a body opens.
+    // The doors a body — or, for the grant revoke, a query — opens.
     for (const template of [
       "POST /api/routines",
       "POST /api/components/:name/decision",
       "POST /api/components/:name/call",
+      "POST /api/plugins/call",
+      "POST /api/plugins/grants",
+      "DELETE /api/plugins/grants",
     ]) {
       const cell = cellsOf("B").find(
         (candidate) => keyOf(candidate) === template,
@@ -802,16 +842,16 @@ describe("the matrix", () => {
     }
   });
 
-  test("a colleague reaches exactly these", () => {
+  test("a colleague reaches exactly these, and none of them names the owner's Bot", () => {
     expect(okCells("B")).toEqual(B_ALLOWED);
-    // And, structurally: nothing that names a Bot, save what STILL_OPEN explains.
-    expect(
-      B_ALLOWED.filter(
-        (cell) =>
-          (cell.includes(":botId") || cell.includes(":agentId")) &&
-          !STILL_OPEN.has(cell),
-      ),
-    ).toEqual([]);
+    // Counted from the measurement rather than read off the list above, and counting the Bots a
+    // body or a query names as well as a path: every cell B reached with A's Bot in the request.
+    const open = cellsOf("B")
+      .filter((cell) => cell.status < 300 && namesABot(cell))
+      .map(keyOf)
+      .sort();
+    expect(open).toEqual([...STILL_OPEN].sort());
+    expect(open).toHaveLength(0);
   });
 
   test("the owner reaches exactly these", () => {

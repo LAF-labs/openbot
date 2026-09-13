@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
+import { actorMayDriveBot, lookupBotOwner } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
@@ -187,6 +188,12 @@ function routesAs(actor: {
 }) {
   return createPluginRoutes(store as never, async (context, next) => {
     context.set("actor", actor as never);
+    // What the real guard puts beside the actor, answered from the real tables: the routes that
+    // take a Bot from the path or the body ask this, and a stub that only set the actor is read as
+    // "may drive nothing" — which would refuse Alice her own Bot and prove nothing about Bob.
+    context.set("mayDriveBot", async (botId) =>
+      actorMayDriveBot(actor, await lookupBotOwner(database, botId)),
+    );
     await next();
   });
 }
@@ -330,11 +337,132 @@ describe("what a person may do over HTTP", () => {
       { method: "DELETE" },
     );
 
-    expect(response.status).toBe(403);
+    // 404 with the code, not the 403 it used to be: the Bot is Alice's, and whose Bot it is comes
+    // before whose skill it is — a 403 here would confirm to Bob that the id he named is real.
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
     // Still held: a refusal that leaves the row deleted anyway is the worst of both.
     expect(
       (await store.listForAgent(aliceBot)).skills.map((skill) => skill.slug),
     ).toContain(aliceSkill);
+  });
+
+  /*
+   * THE DOORS A BOT ID OPENS IN THIS FILE, WHICH AUDIT A8 FOUND STANDING OPEN.
+   *
+   * `GET /for/:agentId` answered a colleague with every tool the owner's Bot held, by name, and
+   * the view route beside it would hand over a skill's instructions to anybody who could guess
+   * its slug; `POST /grants` took the Bot from the body and told a colleague, in two different
+   * sentences, whether the owner's Bot id was real. All four now answer a Bot that is not yours
+   * the way every other door does — 404, with the code, the same for one that is not there.
+   */
+  test("cannot read what somebody else's Bot holds", async () => {
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request(`/for/${aliceBot}`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+  });
+
+  test("the owner reads what their own Bot holds", async () => {
+    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
+
+    const response = await asAlice().request(`/for/${aliceBot}`);
+
+    expect(response.status).toBe(200);
+    const held = (await response.json()) as { skills: { slug: string }[] };
+    expect(held.skills.map((skill) => skill.slug)).toContain(aliceSkill);
+  });
+
+  test("cannot view a skill through somebody else's Bot, even one that Bot holds", async () => {
+    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request(
+      `/for/${aliceBot}/skills/${aliceSkill}/view`,
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+  });
+
+  test("the owner's Bot views the skill it holds", async () => {
+    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
+
+    const response = await asAlice().request(
+      `/for/${aliceBot}/skills/${aliceSkill}/view`,
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { slug: string }).slug).toBe(aliceSkill);
+  });
+
+  test("cannot put a skill on somebody else's Bot, and is not told the Bot exists", async () => {
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const response = await asBob.request(
+      "/grants",
+      grantBody(bobSkill, aliceBot),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "laf:bot_not_found",
+      code: "laf:bot_not_found",
+    });
+    expect((await store.listForAgent(aliceBot)).skills).not.toContainEqual(
+      expect.objectContaining({ slug: bobSkill }),
+    );
+  });
+
+  test("is told the same about a Bot that is not there as about somebody else's", async () => {
+    // The two sentences this replaced ("There is no such Bot." against "You can only put your own
+    // skills on Bots you own.") were a way to test ids: Bob writes a skill of his own, names an id,
+    // and reads which sentence comes back. One answer now, status and body alike.
+    const asBob = routesAs({
+      id: bob,
+      email: "bob@example.test",
+      role: "user",
+    });
+
+    const somebodyElses = await asBob.request(
+      "/grants",
+      grantBody(bobSkill, aliceBot),
+    );
+    const notThere = await asBob.request(
+      "/grants",
+      grantBody(bobSkill, `agent_ghost_${suite}`),
+    );
+
+    expect(notThere.status).toBe(404);
+    expect([notThere.status, await notThere.json()]).toEqual([
+      somebodyElses.status,
+      await somebodyElses.json(),
+    ]);
   });
 
   /*
