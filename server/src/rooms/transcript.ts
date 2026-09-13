@@ -28,6 +28,16 @@ import type { RoomLine } from "./prompt";
 
 export type { Executor, StoredMessage } from "../runner/thread-store";
 
+/**
+ * How many rows a room turn reads back for its prompt.
+ *
+ * The prompt keeps the last `ROOM_LINES` things somebody SAID (`prompt.ts`), and a said line is
+ * at most one row — so a window of rows this size holds them with room for the tool calls and
+ * results between them, which are rows too and are not lines. A room's thread was read whole on
+ * every member of every round; audit A5-2 puts a six-month thread at tens of thousands of rows.
+ */
+export const ROOM_READ_ROWS = 200;
+
 /** The words of a stored message. Parts that are not text — an image, a file — are not words. */
 export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
@@ -64,7 +74,9 @@ export async function readRoomLines(
   names: ReadonlyMap<string, string>,
   personName: string,
 ): Promise<RoomLine[]> {
-  const stored = await messagesFor(executor, threadId);
+  const stored = await messagesFor(executor, threadId, {
+    last: ROOM_READ_ROWS,
+  });
 
   const lines: RoomLine[] = [];
   for (const entry of stored) {

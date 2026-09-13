@@ -26,6 +26,17 @@ export const HISTORY_MESSAGES = 12;
 export const HISTORY_MESSAGE_CHARS = 1500;
 
 /**
+ * How many of the thread's newest rows are read to find those twelve.
+ *
+ * The thread was read whole — a year of somebody's conversation with this Bot, tool results and
+ * all — on every member of every round of a room, to keep its last dozen lines (audit A5-2). The
+ * dozen are near the tail by definition; what sits between them is the Bot's working, two rows a
+ * tool call, so this is room for a dozen exchanges that each used many tools. A tail that holds
+ * fewer than twelve things said carries fewer, which is the bound doing its job.
+ */
+export const HISTORY_ROWS = 200;
+
+/**
  * The tail of a stored thread, as messages a Bot can answer from.
  *
  * Fresh ids: these messages live for one run of the loop, and an id the snapshot minted is not
@@ -66,5 +77,7 @@ export async function readPrivateHistory(
 ): Promise<Message[]> {
   const solo = await soloChannelFor(database, userId, agentId);
   if (!solo) return [];
-  return historyOf(await messagesFor(database, solo.threadId));
+  return historyOf(
+    await messagesFor(database, solo.threadId, { last: HISTORY_ROWS }),
+  );
 }

@@ -22,7 +22,7 @@
  * mechanism the seat count uses for the same reason.
  */
 import type { Message } from "@ag-ui/client";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadMessages } from "../db/schema";
 import { redactSecretTyping } from "./secret-redaction";
@@ -191,6 +191,53 @@ function canonical(value: unknown): string {
 const LOCK_CLASS = 0x1af7;
 
 /**
+ * How many of a thread's newest rows one append reads back.
+ *
+ * The append used to read the WHOLE thread under the lock, twice a turn, because every run hands
+ * the entire history back as its input and each message has to be recognised as already stored.
+ * Audit A5-2 (2026-09-10) put a six-month thread at tens of thousands of rows and 10–30 MB of
+ * jsonb, read and re-parsed on every message a Bot answered — the first symptom of which is "the
+ * Bot got slow", months in, on one OCPU.
+ *
+ * The window is safe because of what actually changes. A message a run edits in place — an
+ * assistant turn whose tool calls only land with the NEXT run's input — is within a run or two of
+ * the tail, never deep in history, and an old message never changes. So the newest rows hold the
+ * highest `seq` and every row a live run could still be editing. What they cannot settle is an
+ * incoming id older than the window, and those are asked about by id (`unstoredOf`), through the
+ * unique index, which answers with the ids that are NOT stored — so what comes back is bounded by
+ * what is genuinely new, not by the length of the conversation. The transcript itself is untouched;
+ * the screen and the export still read all of it, once, when somebody opens it.
+ *
+ * 500 rows is hundreds of turns of headroom over the couple a live edit spans.
+ */
+export const THREAD_READ_WINDOW = 500;
+
+/**
+ * Which of these ids the thread does not hold, asked of the unique index rather than of the rows.
+ *
+ * One parameter, a JSON array, rather than one bind parameter per id: the ids are the client's
+ * whole history, and Postgres refuses a statement with more than 65,535 parameters — a limit a
+ * year-long conversation would reach on an ordinary turn. Cast through `text` because the driver
+ * sends a string bound straight to `jsonb` as a JSON string scalar, which has no elements.
+ */
+async function unstoredOf(
+  executor: Executor,
+  threadId: string,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await executor.execute<{ id: string }>(sql`
+    select candidate.id
+    from jsonb_array_elements_text(${JSON.stringify(ids)}::text::jsonb) as candidate(id)
+    where not exists (
+      select 1 from ${lafThreadMessages}
+      where ${lafThreadMessages.threadId} = ${threadId}
+        and (${lafThreadMessages.message} ->> 'id') = candidate.id
+    )`);
+  return new Set([...rows].map((row) => row.id));
+}
+
+/**
  * Write messages into a thread. The one writer — runner, room and routine delivery alike.
  *
  * A message the thread already holds is NOT appended again: every run hands the whole history back
@@ -205,7 +252,8 @@ const LOCK_CLASS = 0x1af7;
  * because "updated in place when the incoming copy differs" is exactly the path an unredacted copy
  * would come back on.
  *
- * Returns the thread as it now stands, in order.
+ * Returns the tail of the thread as it now stands, in order: the window this append read, with what
+ * it wrote. Never the whole conversation — see THREAD_READ_WINDOW.
  */
 export async function appendMessages(
   executor: Executor,
@@ -213,7 +261,9 @@ export async function appendMessages(
   incoming: readonly Message[],
   options: AppendOptions = {},
 ): Promise<StoredMessage[]> {
-  if (incoming.length === 0) return messagesFor(executor, threadId);
+  if (incoming.length === 0) {
+    return messagesFor(executor, threadId, { last: THREAD_READ_WINDOW });
+  }
   const at = options.at ?? new Date();
   const runId = options.runId ?? null;
 
@@ -227,20 +277,39 @@ export async function appendMessages(
       sql`select pg_advisory_xact_lock(${LOCK_CLASS}, hashtext(${threadId}))`,
     );
 
-    const held = await transaction
-      .select({
-        seq: lafThreadMessages.seq,
-        message: lafThreadMessages.message,
-      })
-      .from(lafThreadMessages)
-      .where(eq(lafThreadMessages.threadId, threadId))
-      .orderBy(asc(lafThreadMessages.seq));
+    // The newest rows only. They carry the max seq and every row a live run can still be editing;
+    // see THREAD_READ_WINDOW. Read descending and flipped to ascending so `next` and the merge
+    // below read exactly as they did when this was the whole thread.
+    const held = (
+      await transaction
+        .select({
+          seq: lafThreadMessages.seq,
+          message: lafThreadMessages.message,
+        })
+        .from(lafThreadMessages)
+        .where(eq(lafThreadMessages.threadId, threadId))
+        .orderBy(desc(lafThreadMessages.seq))
+        .limit(THREAD_READ_WINDOW)
+    ).reverse();
 
     const stored = new Map<string, { seq: number; message: StoredMessage }>();
     for (const row of held) {
       const message = parseMessage(row.message);
       if (message) stored.set(message.id, { seq: row.seq, message });
     }
+
+    /*
+     * An incoming id the window did not hold is either new or older than the window — every run
+     * hands the whole history back, so most of a long conversation arrives on every turn. Inserting
+     * an old one again would collide on the unique `(thread_id, id)` index and take the whole
+     * append down, so the index is asked which of them are genuinely new; the rest are stored
+     * already and are left exactly where they are, because an old message does not change.
+     */
+    const unstored = await unstoredOf(transaction, threadId, [
+      ...new Set(
+        incoming.map((message) => message.id).filter((id) => !stored.has(id)),
+      ),
+    ]);
 
     const heldMessages = [...stored.values()].map((row) => row.message);
     const known = stampsOf(heldMessages);
@@ -274,6 +343,8 @@ export async function appendMessages(
         continue;
       }
       const previous = stored.get(message.id);
+      // Stored already, just older than the window this append read: leave it where it is.
+      if (!previous && !unstored.has(message.id)) continue;
       if (!previous) {
         next += 1;
         fresh.set(message.id, {
@@ -313,16 +384,30 @@ export async function appendMessages(
   });
 }
 
-/** Every message in a thread, in order. Empty for a thread nothing has been written to. */
+/**
+ * Every message in a thread, in order — or, with `last`, only its newest `last` rows, still in
+ * order. Empty for a thread nothing has been written to.
+ *
+ * `last` is for a PER-TURN reader: a room's prompt keeps a couple of dozen lines and never wants
+ * the whole thread, and a Bot's context budget uses a bounded tail. The screen and the export pass
+ * nothing and read it all (paginated on the screen), because a person scrolling back is not a hot
+ * path. See THREAD_READ_WINDOW.
+ */
 export async function messagesFor(
   executor: Executor,
   threadId: string,
+  options: { last?: number } = {},
 ): Promise<StoredMessage[]> {
-  const rows = await executor
+  const base = executor
     .select({ message: lafThreadMessages.message })
     .from(lafThreadMessages)
-    .where(eq(lafThreadMessages.threadId, threadId))
-    .orderBy(asc(lafThreadMessages.seq));
+    .where(eq(lafThreadMessages.threadId, threadId));
+  const rows =
+    options.last === undefined
+      ? await base.orderBy(asc(lafThreadMessages.seq))
+      : (
+          await base.orderBy(desc(lafThreadMessages.seq)).limit(options.last)
+        ).reverse();
   return rows.flatMap((row) => {
     const message = parseMessage(row.message);
     return message ? [message] : [];
