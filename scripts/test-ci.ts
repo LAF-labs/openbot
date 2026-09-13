@@ -24,10 +24,43 @@
  * be edited for every new test is a check people learn to edit without thinking.
  */
 
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Glob, SQL } from "bun";
 
 const projectRoot = resolve(import.meta.dir, "..");
+
+/**
+ * THE FILES ARE COUNTED, NOT ONLY THE TESTS.
+ *
+ * MEASURED 2026-09-10 (audit A6, finding 4): `standing-approvals.integration.test.ts` — forty-one
+ * tests, the largest integration file — was moved out of the tree and the gate passed, `server
+ * 1770 / floor 1725`. The floors are 3% under what the tree measures, and 3% of the server suite is
+ * more than any one of 141 of its 142 files. A floor catches a suite shrinking; it cannot see one
+ * file going.
+ *
+ * So the files are listed. `scripts/test-manifest.json` is the committed list of every test file
+ * the gate runs, and the two directions of disagreement are treated as the different things they are:
+ *
+ *  - A file in the list and not in the tree REFUSES THE RUN, before a database is touched. It was
+ *    deleted or moved without anybody saying so — a rebase dropping it, most likely, since this
+ *    repository stacks branches. Removing its line from the manifest, in the commit that removes the
+ *    file, is how somebody says so; that line in the diff is the whole point.
+ *  - A file in the tree and not in the list is a new test, and is ADDED to the manifest by the run,
+ *    with a line saying to commit it. Adding a test is the common case, and a check that fails on the
+ *    common case teaches everybody the command that makes it pass — which would be the same command
+ *    that forgets a vanished file. Under CI the addition cannot be committed, so there it refuses.
+ *
+ * `bun scripts/test-ci.ts --update-manifest` rewrites the list from the tree in both directions, for
+ * a deliberate rename of many files at once; it is the one command that forgets files, and it says so.
+ *
+ * And each file is checked to have run at least one test, off bun's own JUnit report: a file whose
+ * tests were all removed, or that threw before registering any, is gone in every way that matters
+ * and still present in every way the list can see. (A skipped test still counts as run: whether a
+ * machine has Docker is not whether the file exists.)
+ */
+const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 
 /**
  * One floor per workspace, each about 3% under what that workspace measures today.
@@ -195,13 +228,18 @@ const projectRoot = resolve(import.meta.dir, "..");
  * resetting a profile for good. Measured agent-computer 176, re-raised to 3% under; the other three
  * carry more than this wave's tests and are left to the measurement that has all of them.
  *
+ * RE-RAISED 2026-09-13, with the app audit's fixes (W1-i): the retry that asks again in place, the
+ * session door, the polls, the first screen, the live screen, a Bot's name in Korean and the
+ * connection lines — rendered through the real route tree — and ten source walks rendered instead.
+ * Measured app 768, re-raised to 3% under; the other three are not this change's to move.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 1753, roots: ["server"] },
-  { name: "app", floor: 673, roots: ["app"] },
+  { name: "app", floor: 744, roots: ["app"] },
   { name: "agent-computer", floor: 170, roots: ["agent-computer"] },
   { name: "root", floor: 170, roots: ["tests", "agent-bot"] },
 ] as const;
@@ -222,6 +260,84 @@ function redacted(url: URL): string {
   const copy = new URL(url);
   copy.password = "";
   return copy.toString();
+}
+
+// --- which files are tests, and whether they are all still here --------------------------------
+
+/** Every test file in the tree, by the same names bun would find them under. */
+async function discoverTestFiles(): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (const pattern of TEST_FILE_GLOBS) {
+    for await (const path of new Glob(pattern).scan({
+      cwd: projectRoot,
+      onlyFiles: true,
+    })) {
+      // Agent worktrees under .claude/ are whole checkouts; their tests are counted in their own runs.
+      const parts = path.split("/");
+      if (!parts.includes("node_modules") && !parts.includes(".claude"))
+        found.add(path);
+    }
+  }
+  return found;
+}
+
+const discovered = await discoverTestFiles();
+
+/** The manifest, written the way `biome format` would leave it, so the gate's own write is clean. */
+function writeManifest(paths: Iterable<string>): void {
+  writeFileSync(
+    MANIFEST,
+    `${JSON.stringify([...new Set(paths)].sort(), null, 2)}\n`,
+  );
+}
+
+if (process.argv.includes("--update-manifest")) {
+  writeManifest(discovered);
+  console.error(
+    `${discovered.size} test files written to scripts/test-manifest.json, from the tree.\n` +
+      "Any file that was listed and is not in the tree has been forgotten: read the diff before committing it.",
+  );
+  process.exit(0);
+}
+
+/*
+ * Before the database is touched: a file that has gone missing is known from the tree alone, and a
+ * run that will refuse anyway has no business creating databases first.
+ */
+let listed: string[];
+try {
+  listed = JSON.parse(readFileSync(MANIFEST, "utf8")) as string[];
+} catch (error) {
+  fail(
+    `scripts/test-manifest.json could not be read: ${error instanceof Error ? error.message : String(error)}\n\n` +
+      "Write it with `bun scripts/test-ci.ts --update-manifest`.",
+  );
+}
+const listedSet = new Set(listed);
+const vanished = listed.filter((path) => !discovered.has(path)).sort();
+const unlisted = [...discovered].filter((path) => !listedSet.has(path)).sort();
+if (vanished.length > 0) {
+  fail(
+    `${vanished.length} test file(s) are in scripts/test-manifest.json and not in the tree:\n` +
+      `${vanished.map((path) => `  ${path}`).join("\n")}\n\n` +
+      "A test file that disappears takes its tests with it, and the count floors cannot see one file\n" +
+      "go. If it was deleted or renamed on purpose, remove its line from scripts/test-manifest.json in\n" +
+      "the same commit. If it was not, it is missing: a rebase or a move dropped it.",
+  );
+}
+if (unlisted.length > 0) {
+  const listing = unlisted.map((path) => `  ${path}`).join("\n");
+  if (process.env.CI) {
+    fail(
+      `${unlisted.length} test file(s) are in the tree and not in scripts/test-manifest.json:\n${listing}\n\n` +
+        "A local run of the gate adds them; commit the manifest with the tests. A file the manifest\n" +
+        "does not list is a file it cannot protect.",
+    );
+  }
+  writeManifest([...listed, ...unlisted]);
+  console.error(
+    `\nAdded to scripts/test-manifest.json — commit it with the tests:\n${listing}\n`,
+  );
 }
 
 // --- where the tests are allowed to write ------------------------------------------------------
@@ -320,19 +436,6 @@ if ((await migration.exited) !== 0) {
 
 // --- which tests belong under which floor ------------------------------------------------------
 
-const discovered = new Set<string>();
-for (const pattern of TEST_FILE_GLOBS) {
-  for await (const path of new Glob(pattern).scan({
-    cwd: projectRoot,
-    onlyFiles: true,
-  })) {
-    // Agent worktrees under .claude/ are whole checkouts; their tests are counted in their own runs.
-    const parts = path.split("/");
-    if (!parts.includes("node_modules") && !parts.includes(".claude"))
-      discovered.add(path);
-  }
-}
-
 const owns = (roots: readonly string[], path: string) =>
   roots.some((root) => path.startsWith(`${root}/`));
 
@@ -354,9 +457,33 @@ type Outcome = {
   floor: number;
   count: number | null;
   status: number;
+  /** The files in this group that the JUnit report says ran no test at all. */
+  emptyFiles: string[];
 };
 
 const outcomes: Outcome[] = [];
+
+/** Where bun writes each group's JUnit report; read once, then left for the OS to sweep. */
+const reports = mkdtempSync(join(tmpdir(), "laf-test-ci-"));
+
+/**
+ * How many tests each file ran, off bun's JUnit report.
+ *
+ * The report nests a `<testsuite>` per `describe` inside the one per file, all carrying the file's
+ * path; the outermost is the whole file's count, so the largest count seen for a path is the
+ * file's. A file that threw on import is absent from the report altogether, which reads as zero.
+ */
+function testsPerFile(report: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const match of report.matchAll(
+    /<testsuite\b[^>]*\bfile="([^"]+)"[^>]*\btests="(\d+)"/g,
+  )) {
+    const file = match[1] as string;
+    const tests = Number.parseInt(match[2] as string, 10);
+    counts.set(file, Math.max(counts.get(file) ?? 0, tests));
+  }
+  return counts;
+}
 
 /*
  * One group at a time. The groups share the one test database, and the deletions described at the
@@ -368,22 +495,44 @@ const outcomes: Outcome[] = [];
  * at the repository root is what makes a group's file list mean only that group's files.
  */
 for (const group of GROUPS) {
-  const files = [...discovered]
+  /*
+   * The group's files, decided ONCE and used for both the run and the check of what it ran.
+   *
+   * Measured, and not understood: computed a second time after the group's run, the same filter over
+   * the same set answered with the previous group's files — `root` "owned" the 92 app files, all of
+   * which then read as having run nothing — though `roots` printed correctly beside it and the same
+   * code in isolation does not do it. One list, taken before anything is awaited, leaves nothing to
+   * disagree.
+   */
+  const owned = [...discovered]
     .filter((path) => owns(group.roots, path))
-    .sort()
-    .map((path) => resolve(projectRoot, path));
+    .sort();
+  const files = owned.map((path) => resolve(projectRoot, path));
 
   console.error(`\n=== ${group.name} (${files.length} files) ===`);
 
   // `bun run test` rather than `bun test`, so the pretest hook fires and the generated application
   // config exists before route imports need it. `--silent` keeps a file list this long out of the
-  // log without hiding anything bun itself reports.
-  const proc = Bun.spawn(["bun", "run", "--silent", "test", ...files], {
-    cwd: projectRoot,
-    env: { ...process.env, DATABASE_URL: testUrl.toString() },
-    stdout: "inherit",
-    stderr: "pipe",
-  });
+  // log without hiding anything bun itself reports. The JUnit report is written beside the console
+  // output, not instead of it: bun keeps printing its summary, which is what the floors read.
+  const report = join(reports, `${group.name}.xml`);
+  const proc = Bun.spawn(
+    [
+      "bun",
+      "run",
+      "--silent",
+      "test",
+      "--reporter=junit",
+      `--reporter-outfile=${report}`,
+      ...files,
+    ],
+    {
+      cwd: projectRoot,
+      env: { ...process.env, DATABASE_URL: testUrl.toString() },
+      stdout: "inherit",
+      stderr: "pipe",
+    },
+  );
 
   // Bun writes its summary to stderr, so it is captured and echoed rather than inherited.
   const stderr = await new Response(proc.stderr).text();
@@ -391,11 +540,21 @@ for (const group of GROUPS) {
 
   const status = await proc.exited;
   const ran = stderr.match(/Ran (\d+) tests? across/);
+
+  let perFile = new Map<string, number>();
+  try {
+    perFile = testsPerFile(readFileSync(report, "utf8"));
+  } catch {
+    // No report at all is the same verdict for every file in the group, made below.
+  }
+  const emptyFiles = owned.filter((path) => (perFile.get(path) ?? 0) === 0);
+
   outcomes.push({
     name: group.name,
     floor: group.floor,
     count: ran ? Number.parseInt(ran[1] as string, 10) : null,
     status,
+    emptyFiles,
   });
 }
 
@@ -417,6 +576,14 @@ for (const outcome of outcomes) {
   if (outcome.count < outcome.floor) {
     problems.push(
       `${outcome.name}: ${outcome.count} tests ran, and at least ${outcome.floor} were expected.`,
+    );
+  }
+  if (outcome.emptyFiles.length > 0) {
+    problems.push(
+      `${outcome.name}: ${outcome.emptyFiles.length} test file(s) ran no test at all:\n` +
+        `${outcome.emptyFiles.map((path) => `    ${path}`).join("\n")}\n` +
+        "  A file with nothing in it is gone in every way that matters. Give it a test or delete it\n" +
+        "  and update the manifest.",
     );
   }
 }
