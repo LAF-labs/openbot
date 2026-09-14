@@ -729,6 +729,40 @@ then replace the secrets and the `pubkey` in `tauri.conf.json` in the same
 change — a release signed by a key the config does not name builds and
 publishes fine and is then rejected by every installed app.
 
+### An advisory the shell's lockfile carries, and Tauri's pin holds
+
+**GHSA-wrw7-89jp-8q8g** (RUSTSEC-2024-0429, medium): unsound `Iterator` and
+`DoubleEndedIterator` impls on `glib::VariantStrIter`, in `glib` 0.15 up to
+0.20. `desktop/src-tauri/Cargo.lock` holds `glib` 0.18.5. Dependabot alert #1
+opened on 2026-09-10, and the security update it runs for it fails every time
+(2026-09-10 and 2026-09-13): `security_update_not_possible`, latest resolvable
+0.18.5, lowest fixed 0.20.0.
+
+Nothing here asks for glib. Tauri 2.11.5 builds its Linux webview on the GTK 3
+bindings — `tauri-runtime-wry` 2.11.4 → `wry` 0.55.1 and `tao` 0.35.3 →
+`webkit2gtk` =2.0.2 and `gtk` ^0.18 → `glib` ^0.18 — and none of that chain has
+a release on a later glib: `webkit2gtk` 2.0.2 is its newest, and the newest
+`wry` (0.57.0) and `tao` (0.37.0) still require `gtk` ^0.18 (crates.io,
+2026-09-14). So neither a bump of glib nor a bump of Tauri resolves it today.
+
+It is not in anything that ships. The chain is compiled for Linux and the BSDs
+only, and the shell ships for macOS and Windows (`release.yml`):
+
+```bash
+cd desktop/src-tauri
+cargo tree -i glib@0.18.5 --target aarch64-apple-darwin --locked   # nothing to print
+cargo tree -i glib@0.18.5 --target x86_64-pc-windows-msvc --locked # nothing to print
+cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu --locked # glib v0.18.5
+```
+
+`.github/dependabot.yml` ignores `glib` 0.19 and later, so Dependabot stops
+proposing the jump that cannot resolve and would still propose a fix released
+on 0.18. That does not close the alert: while it is open, Dependabot keeps
+running the security update and ends it as `all_versions_ignored`. Dismissing
+the alert ("vulnerable code is not actually used") is the owner's decision on
+GitHub. Revisit both — and take the ignore out — in the change that ships the
+shell for Linux or moves Tauri off `gtk` 0.18.
+
 ## 비공개 저장소의 CI 비용
 
 2026-09-10에 이 저장소는 비공개가 됐다. 조직은 GitHub **Free** 플랜이고, 비공개

@@ -85,6 +85,28 @@ updates:
       shell:
         patterns: ["*"]
         update-types: [minor, patch]
+    # THE ONE CRATE NO BUMP HERE CAN MOVE, WRITTEN DOWN INSTEAD OF RE-DISCOVERED BY A RED RUN.
+    #
+    # `glib` 0.18.5 carries GHSA-wrw7-89jp-8q8g (fixed in 0.20.0), and the security update Dependabot
+    # runs for it has failed since the alert opened on 2026-09-10: `security_update_not_possible`,
+    # "latest possible version … 0.18.5". Nothing in Cargo.toml names glib. Tauri 2.11.5 — the newest
+    # release, 2026-09-13 — draws its Linux window with the GTK 3 bindings: tauri-runtime-wry 2.11.4 →
+    # wry 0.55 and tao 0.35 → webkit2gtk =2.0.2 and gtk ^0.18 → glib ^0.18, and webkit2gtk 2.0.2 is
+    # that crate's newest release. The newest wry (0.57) and tao (0.37) still ask for gtk ^0.18, so
+    # bumping Tauri does not reach it either, and grouping the gtk-rs crates would move nothing:
+    # version updates here touch direct dependencies only, and none of those crates is one.
+    #
+    # Only the versions that chain cannot reach are ignored, so a fix released on 0.18 would still be
+    # proposed. This does not turn the run green: while the alert is open Dependabot still runs that
+    # security update, and one whose fixes are all ignored fails as `all_versions_ignored`
+    # (dependabot-core#9085) — pointing here rather than at nothing. Dismissing the alert is a
+    # decision on GitHub, not a line in this file: glib is compiled for Linux and the BSDs only, and
+    # the shell ships for macOS and Windows (release.yml). Take this out in the change that moves the
+    # shell off gtk 0.18: `cargo tree -i glib --target all` in desktop/src-tauri says whether it has.
+    # docs/laf/deploying.md ("The shell") records the advisory.
+    ignore:
+      - dependency-name: glib
+        versions: [">= 0.19"]
     commit-message:
       prefix: "chore(deps)"
 
