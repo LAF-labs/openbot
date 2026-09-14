@@ -14,12 +14,24 @@ import type { Page } from "playwright";
 import type { Computer } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { log } from "./log";
-import { describe } from "./respond";
+import type { FactCode } from "./respond";
 import { type InputMessage, startScreencast } from "./screencast";
 import type { BotSession } from "./sessions";
 
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
 export type StreamData = { botId: string };
+
+/**
+ * A problem on the socket, as the fact.
+ *
+ * `code` was put beside the sentence on 2026-09-06, after the pane on the far side — Korean — was
+ * measured showing this process's English as it was. The surface owns the words, and chooses them by
+ * `code` (`app/src/lib/computer/screen-problems.ts`); `error` carries the same code, so a reader that
+ * still shows `error` shows a code rather than a sentence or Playwright's message.
+ */
+function screenError(code: FactCode): string {
+  return JSON.stringify({ type: "error", code, error: code });
+}
 
 /** How often the cast checks that it is still showing the page the Bot is on. */
 const FOLLOW_INTERVAL_MS = 1_000;
@@ -79,18 +91,8 @@ export function liveScreen({
         }, FOLLOW_INTERVAL_MS);
         if (session.viewer) session.viewer.follow = follow;
       } catch (error) {
-        /*
-         * `code` beside the sentence, here and on the two sends below. The pane on the far side is
-         * Korean and the sentence is this process's English; it used to be shown as it was
-         * (measured 2026-09-06). The surface owns the words, so it gets a fact to choose them by.
-         */
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            code: "laf:screen_not_started",
-            error: describe(error, "The screen could not be started."),
-          }),
-        );
+        log.error("screen_not_started", { bot: ws.data.botId, reason: error });
+        ws.send(screenError("laf:screen_not_started"));
         ws.close();
       }
     },
@@ -110,13 +112,7 @@ export function liveScreen({
       //
       // Refuse with an error so the surface can explain why input is ignored.
       if (!session.control.humanMayDrive()) {
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            code: "laf:take_control_first",
-            error: TAKE_CONTROL_FIRST,
-          }),
-        );
+        ws.send(screenError(TAKE_CONTROL_FIRST));
         return;
       }
       try {
@@ -130,13 +126,7 @@ export function liveScreen({
           input: message.type,
           reason: error,
         });
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            code: "laf:input_not_applied",
-            error: describe(error, "That input could not be applied."),
-          }),
-        );
+        ws.send(screenError("laf:input_not_applied"));
       }
     },
 

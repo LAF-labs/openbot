@@ -9,7 +9,7 @@
 import type { Frame, Page } from "playwright";
 import { checkNavigationTarget } from "../../shared/net/navigation-target";
 import type { BotRoute } from "./computer";
-import { ControlError } from "./control";
+import { ControlError, HUMAN_HAS_CONTROL } from "./control";
 import { log } from "./log";
 import {
   hopVerdict,
@@ -18,7 +18,14 @@ import {
   type NavigationHop,
 } from "./navigation-guard";
 import { readSettledPageText } from "./page-text";
-import { bodyOf, json } from "./respond";
+import {
+  bodyOf,
+  browserFailed,
+  fact,
+  invalid,
+  json,
+  pageTimeout,
+} from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
 
 /** A navigation this process stopped: where it was going, where it was sent from, and why. */
@@ -146,10 +153,10 @@ function refusedNavigation(
   hop: RefusedHop,
   startedAt: number,
 ): Response {
-  return json(
+  return fact(
+    "laf:navigation_refused",
+    403,
     withNotes(session, {
-      error: "laf:navigation_refused",
-      code: "laf:navigation_refused",
       refused: {
         origin: originOf(hop.url),
         ...(hop.redirectedFrom
@@ -159,7 +166,6 @@ function refusedNavigation(
       reason: hop.reason,
       elapsedMs: Date.now() - startedAt,
     }),
-    403,
   );
 }
 
@@ -208,8 +214,15 @@ async function stoppedNavigation(
   if (navigating.held) {
     return heldNavigation(session, target, navigating.held, startedAt);
   }
-  return json({ error: "Navigation failed." }, 502);
+  return fact(NAVIGATION_FAILED, 502);
 }
+
+/**
+ * The address could not be opened, for a reason that is the site's or the network's: a name that does
+ * not resolve, a connection refused, a navigation replaced by another. Not a timeout, which has its
+ * own code, and not the browser, which does too.
+ */
+const NAVIGATION_FAILED = "laf:navigation_failed";
 
 const LEAVE_PAGE_MS = 2_000;
 /** How long a stopped navigation is given to show its error page. A landing the guard missed has none. */
@@ -254,9 +267,7 @@ export const navigate: BotRoute = async (
     holdAtNewHost?: unknown;
     referer?: unknown;
   }>(request);
-  if (typeof body?.url !== "string") {
-    return json({ error: "A url is required." }, 400);
-  }
+  if (typeof body?.url !== "string") return invalid("url");
 
   const startedAt = Date.now();
   /*
@@ -286,6 +297,8 @@ export const navigate: BotRoute = async (
   let target: Page | undefined;
   let navigating: Navigating | undefined;
   let recordCommits: ((frame: Frame) => void) | undefined;
+  /** Whether a failure belongs to the address (the `goto`) or to the browser around it. */
+  let opening = false;
   try {
     session.control.assertBotMayAct();
     target = await profiles.page(botId);
@@ -303,11 +316,13 @@ export const navigate: BotRoute = async (
     };
     tab.on("framenavigated", recordCommits);
     session.navigating = navigating;
+    opening = true;
     const response = await target.goto(asked.url, {
       waitUntil: "domcontentloaded",
       timeout: config.navigationTimeoutMs,
       ...(referer ? { referer } : {}),
     });
+    opening = false;
     // A new document wipes every stamp, so every ref handed out before now is meaningless.
     // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
     // than fall through to a selector that matches nothing and read as a missing element.
@@ -355,7 +370,7 @@ export const navigate: BotRoute = async (
   } catch (error) {
     // A person holding the wheel is not a failed navigation; the Bot should wait.
     if (error instanceof ControlError) {
-      return json({ error: error.message, humanHasControl: true }, 409);
+      return fact(HUMAN_HAS_CONTROL, 409, { humanHasControl: true });
     }
     /*
      * A hop the guard stopped. Playwright's words for it are `net::ERR_BLOCKED_BY_CLIENT`, which
@@ -373,31 +388,19 @@ export const navigate: BotRoute = async (
      * (to a site that was fine) sat out its own deadline too, and `context.close()` never
      * returned. The wedge outlived stop, reset and the idle sweep, because all three waited on
      * that close. So the deadline is the moment this process stops trusting the page: the tab is
-     * replaced, or the browser is, before the Bot is told. The message is left as Playwright wrote
-     * it because the server recognises the timeout by it; the code is the fact for everything
-     * that reads facts.
+     * replaced, or the browser is, before the Bot is told.
      */
     if (isNavigationTimeout(error)) {
       const recycled = await profiles.recycle(botId);
       session.snapshotId += 1;
-      return json(
-        withNotes(session, {
-          error: error.message,
-          code: "laf:page_timeout",
-          recycled,
-          elapsedMs: Date.now() - startedAt,
-        }),
-        504,
+      return pageTimeout(
+        error.message,
+        withNotes(session, { recycled, elapsedMs: Date.now() - startedAt }),
       );
     }
     // The page is the Bot's working surface, so a failed navigation is reported rather than
     // thrown: the transcript needs to say what happened, and the browser stays usable.
-    return json(
-      {
-        error: error instanceof Error ? error.message : "Navigation failed.",
-      },
-      502,
-    );
+    return opening ? fact(NAVIGATION_FAILED, 502) : browserFailed(error);
   } finally {
     if (session.navigating === navigating) session.navigating = undefined;
     if (target && recordCommits) target.off("framenavigated", recordCommits);

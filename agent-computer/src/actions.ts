@@ -7,14 +7,12 @@
  */
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
-import { ControlError } from "./control";
-import { fileStatus } from "./file-routes";
-import { holdToLabel, LabelChangedError } from "./label-hold";
+import { actionFailure } from "./failures";
+import { holdToLabel } from "./label-hold";
 import { log } from "./log";
-import { resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
-import { bodyOf, describe, json } from "./respond";
+import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
+import { bodyOf, fact, invalid, json, RequestInvalidError } from "./respond";
 import { type BotSession, withNotes } from "./sessions";
-import { WorkspaceFileError, WorkspacePathError } from "./workspace";
 
 export type ActionBody = {
   ref?: unknown;
@@ -92,28 +90,28 @@ async function performAction(
   const ref = typeof body.ref === "string" && body.ref ? body.ref : undefined;
 
   if (action === "/click") {
-    if (!ref) throw new Error("A click needs the ref of an element to click.");
+    if (!ref) throw new RequestInvalidError("ref");
     const control = await resolveRef(session, target, ref, expected);
     await holdToLabel(control, body.element);
     const opening = watchForTab(target, actionTimeoutMs);
-    await control.click(acting);
+    await onElement(() => control.click(acting));
     await opening();
     return { action: "click", ref, url: target.url() };
   }
 
   if (action === "/type") {
-    if (!ref) throw new Error("Typing needs the ref of a field to type into.");
-    if (typeof body.text !== "string") {
-      throw new Error("Typing needs the text to enter.");
-    }
+    if (!ref) throw new RequestInvalidError("ref");
+    const text = body.text;
+    if (typeof text !== "string") throw new RequestInvalidError("text");
     const field = await resolveRef(session, target, ref, expected);
     await holdToLabel(field, body.element);
     // `fill` rather than keystrokes: it clears the field first, which is what "put this value in
     // this box" means. Typing into a field a previous attempt half-filled otherwise appends, and the
-    // form ends up with "AlicAlice" in it.
-    await field.fill(body.text, acting);
+    // form ends up with "AlicAlice" in it. Its failure is the element's, and says nothing else:
+    // Playwright's own message for it carries `fill("…")` with the text in it.
+    await onElement(() => field.fill(text, acting));
     if (body.submit === true) {
-      await field.press("Enter", acting);
+      await onElement(() => field.press("Enter", acting));
     }
     // The text itself is deliberately NOT returned. It is echoed nowhere: this response is read by
     // the model and logged by the server, and a value typed into a form is exactly where a password
@@ -121,16 +119,15 @@ async function performAction(
     return {
       action: "type",
       ref,
-      characters: body.text.length,
+      characters: text.length,
       submitted: body.submit === true,
       url: target.url(),
     };
   }
 
   if (action === "/key") {
-    if (typeof body.key !== "string" || !body.key) {
-      throw new Error("A key press needs a key name, such as Enter or Tab.");
-    }
+    const key = body.key;
+    if (typeof key !== "string" || !key) throw new RequestInvalidError("key");
     if (ref) {
       /*
        * A REF WITHOUT ITS SNAPSHOT IS STALE BY DEFINITION.
@@ -144,14 +141,14 @@ async function performAction(
       const control = await resolveRef(session, target, ref, expected);
       await holdToLabel(control, body.element);
       const opening = watchForTab(target, actionTimeoutMs);
-      await control.press(body.key, acting);
+      await onElement(() => control.press(key, acting));
       await opening();
     } else {
       const opening = watchForTab(target, actionTimeoutMs);
-      await target.keyboard.press(body.key);
+      await target.keyboard.press(key);
       await opening();
     }
-    return { action: "key", key: body.key, ref, url: target.url() };
+    return { action: "key", key, ref, url: target.url() };
   }
 
   // Scroll. A plain wheel event on the page, which is what moves a long form, rather than scrolling a
@@ -167,9 +164,7 @@ export const act: BotRoute = async (
   { config, profiles },
 ) => {
   const body = await bodyOf<ActionBody>(request);
-  if (!body) {
-    return json({ error: "An action needs a JSON body." }, 400);
-  }
+  if (!body) return invalid("body");
 
   const startedAt = Date.now();
   try {
@@ -205,30 +200,9 @@ export const act: BotRoute = async (
       });
       // 499, the convention for a client that closed the request: this is not the computer
       // failing, and a 502 here would be counted as one.
-      return json({ error: "Stopped.", stopped: true }, 499);
+      return fact("laf:stopped", 499, { stopped: true });
     }
-    // A stale ref is the caller's mistake and is fixable by taking a new snapshot, so it is a 409
-    // rather than a 502: the computer is fine and retrying the same call unchanged will not help.
-    if (error instanceof StaleSnapshotError) {
-      return json({ error: error.message, stale: true }, 409);
-    }
-    // Same status, because the instruction is the same — take a new snapshot — but its own code:
-    // the control is still there under another name, and the Bot must look before it acts on it.
-    if (error instanceof LabelChangedError) {
-      return json(
-        {
-          error: "laf:label_changed",
-          code: "laf:label_changed",
-          stale: true,
-        },
-        409,
-      );
-    }
-    // 409 as well, and for the same reason: nothing is broken, the caller simply has to wait.
-    if (error instanceof ControlError) {
-      return json({ error: error.message, humanHasControl: true }, 409);
-    }
-    return json({ error: describe(error, "The action failed.") }, 502);
+    return actionFailure(error);
   }
 };
 
@@ -250,11 +224,9 @@ export const upload: BotRoute = async (
     path?: unknown;
     element?: unknown;
   }>(request);
-  if (typeof body?.ref !== "string" || !body.ref) {
-    return json({ error: "The ref of a file input is required." }, 400);
-  }
+  if (typeof body?.ref !== "string" || !body.ref) return invalid("ref");
   if (typeof body?.path !== "string" || !body.path.trim()) {
-    return json({ error: "A file path is required." }, 400);
+    return invalid("path");
   }
   try {
     session.control.assertBotMayAct();
@@ -267,7 +239,9 @@ export const upload: BotRoute = async (
       typeof body.snapshotId === "number" ? body.snapshotId : undefined,
     );
     await holdToLabel(field, body.element);
-    await field.setInputFiles(full, { timeout: config.actionTimeoutMs });
+    await onElement(() =>
+      field.setInputFiles(full, { timeout: config.actionTimeoutMs }),
+    );
     return json(
       withNotes(session, {
         action: "upload_file",
@@ -279,36 +253,6 @@ export const upload: BotRoute = async (
       }),
     );
   } catch (error) {
-    if (error instanceof StaleSnapshotError) {
-      return json({ error: error.message, stale: true }, 409);
-    }
-    // Same status, because the instruction is the same — take a new snapshot — but its own code:
-    // the control is still there under another name, and the Bot must look before it acts on it.
-    if (error instanceof LabelChangedError) {
-      return json(
-        {
-          error: "laf:label_changed",
-          code: "laf:label_changed",
-          stale: true,
-        },
-        409,
-      );
-    }
-    if (error instanceof ControlError) {
-      return json({ error: error.message, humanHasControl: true }, 409);
-    }
-    if (
-      error instanceof WorkspacePathError ||
-      error instanceof WorkspaceFileError
-    ) {
-      return json(
-        { error: describe(error, "That file could not be used.") },
-        fileStatus(error),
-      );
-    }
-    return json(
-      { error: describe(error, "The file could not be attached.") },
-      502,
-    );
+    return actionFailure(error);
   }
 };

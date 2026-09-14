@@ -6,8 +6,9 @@
  */
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
-import { locateRef, StaleSnapshotError } from "./refs";
-import { bodyOf, describe, json } from "./respond";
+import { actionFailure } from "./failures";
+import { locateRef, onElement, StaleSnapshotError } from "./refs";
+import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
 
 // Who has the wheel. Polled by the surface alongside the screen, so the person sees the Bot ask
@@ -33,9 +34,8 @@ export const requestSecret: BotRoute = async ({ request, session }) => {
   try {
     return json(session.control.requestSecret(body ?? {}));
   } catch (error) {
-    if (error instanceof ControlRequestError) {
-      return json({ error: error.message }, 400);
-    }
+    // The one thing a request for a secret must say is which field it goes in.
+    if (error instanceof ControlRequestError) return invalid("ref");
     throw error;
   }
 };
@@ -59,13 +59,10 @@ export const supplySecret: BotRoute = async (
   { config, profiles },
 ) => {
   const pending = session.control.pendingSecret();
-  if (!pending) {
-    return json({ error: NO_SECRET_PENDING }, 409);
-  }
+  if (!pending) return fact(NO_SECRET_PENDING, 409);
   const body = await bodyOf<{ text?: unknown }>(request);
-  if (typeof body?.text !== "string" || !body.text) {
-    return json({ error: "A value is required." }, 400);
-  }
+  const text = body?.text;
+  if (typeof text !== "string" || !text) return invalid("text");
   try {
     const target = await profiles.page(botId);
     // Focus the field the Bot named, and let this throw if it cannot be found. A secret must not
@@ -80,8 +77,11 @@ export const supplySecret: BotRoute = async (
     // inherit an old one. If the ref resolves, it is the field the Bot meant. If it does not,
     // nothing is typed, which is the outcome the generation check existed to guarantee.
     const field = locateRef(session, target, pending.ref, undefined);
-    await field.click({ timeout: config.actionTimeoutMs });
-    await field.fill(body.text, { timeout: config.actionTimeoutMs });
+    await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
+    // A failure here must not say what it was filling: Playwright's message for it does.
+    await onElement(() =>
+      field.fill(text, { timeout: config.actionTimeoutMs }),
+    );
     /*
      * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
      * whatever the page calls it, and a ref is re-minted the moment the page renames the box
@@ -96,29 +96,19 @@ export const supplySecret: BotRoute = async (
         .catch(() => null),
       pending.ref,
     );
-    const characters = body.text.length;
+    const characters = text.length;
     // Cleared only after it actually landed, so a failure leaves the request open and the person
     // can try again rather than being told to start over.
     session.control.secretSupplied();
     return json({ supplied: true, characters, url: target.url() });
   } catch (error) {
-    if (error instanceof StaleSnapshotError) {
-      return json({ error: error.message, stale: true }, 409);
-    }
+    if (error instanceof StaleSnapshotError) return actionFailure(error);
     // The field is gone, which is unretryable, so the request is closed rather than left open.
     // Keeping it open is right for a mistyped value and wrong here: the person would retype their
     // password into the same dead ref for ever. Clearing it also unblocks the Bot, which can see
     // on its next turn that nothing is pending and ask again against a fresh snapshot.
     session.control.secretSupplied();
-    return json(
-      {
-        error: describe(
-          error,
-          "That value could not be entered: the field is no longer on the page. Ask the assistant to request it again.",
-        ),
-      },
-      502,
-    );
+    return actionFailure(error);
   }
 };
 

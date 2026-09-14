@@ -5,7 +5,7 @@
 import type { BotRoute } from "./computer";
 import { readSettledPageText } from "./page-text";
 import { TabError } from "./profiles";
-import { bodyOf, describe, json } from "./respond";
+import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
 
@@ -31,7 +31,7 @@ export const readPage: BotRoute = async ({ botId, session }, { profiles }) => {
       }),
     );
   } catch (error) {
-    return json({ error: describe(error, "Reading the page failed.") }, 502);
+    return browserFailed(error);
   }
 };
 
@@ -51,7 +51,7 @@ export const snapshot: BotRoute = async ({ botId, session }, { profiles }) => {
       ),
     );
   } catch (error) {
-    return json({ error: describe(error, "Snapshot failed.") }, 502);
+    return browserFailed(error);
   }
 };
 
@@ -72,12 +72,7 @@ export const screenshot: BotRoute = async ({ botId }, { profiles }) => {
       url: target.url(),
     });
   } catch (error) {
-    return json(
-      {
-        error: error instanceof Error ? error.message : "Screenshot failed.",
-      },
-      502,
-    );
+    return browserFailed(error);
   }
 };
 
@@ -94,7 +89,7 @@ export const switchTab: BotRoute = async (
 ) => {
   const body = await bodyOf<{ index?: unknown }>(request);
   if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
-    return json({ error: "A tab index is required." }, 400);
+    return invalid("index");
   }
   try {
     // Started if it is not running, so a switch is never answered with "there are no tabs" on a
@@ -112,9 +107,7 @@ export const switchTab: BotRoute = async (
       }),
     );
   } catch (error) {
-    if (error instanceof TabError) {
-      return json({ error: error.message, code: error.message }, 400);
-    }
-    return json({ error: describe(error, "The tab did not change.") }, 502);
+    if (error instanceof TabError) return fact("laf:tab_missing", 400);
+    return browserFailed(error);
   }
 };

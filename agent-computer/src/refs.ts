@@ -28,6 +28,34 @@ export class StaleSnapshotError extends Error {
 }
 
 /**
+ * The element a ref resolved to would not take the action: hidden, covered, disabled, not something
+ * text or a file can go into, or gone while Playwright waited for it.
+ *
+ * Its own class so the answer is decided by WHERE the failure happened rather than by reading
+ * Playwright's message, which is the call log (see `fact` in respond.ts for what that log carries).
+ * 409, because the instruction is the one a stale ref gets: look again before acting. It is also
+ * where the server has always put these — it matched `waiting for locator` in the call log and
+ * answered 409 — so a code in place of the log changes the words the Bot reads, not its next move.
+ */
+export const ELEMENT_NOT_ACTIONABLE = "laf:element_not_actionable";
+
+export class ElementActionError extends Error {
+  constructor(cause: unknown) {
+    super(ELEMENT_NOT_ACTIONABLE, { cause });
+    this.name = "ElementActionError";
+  }
+}
+
+/** Do one thing to an element, and let its failure say it was the element. */
+export async function onElement<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    throw new ElementActionError(error);
+  }
+}
+
+/**
  * Resolve a ref to a locator, refusing anything from a superseded snapshot.
  *
  * Every action that addresses an element goes through here, so the staleness check cannot be

@@ -35,7 +35,7 @@ import { HUMAN_INPUT, humanInput } from "./human-input";
 import type { StreamData } from "./live-screen";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
-import { json } from "./respond";
+import { fact } from "./respond";
 
 /** Every route that names a Bot, by `METHOD /path`. A method the table does not list is a 404. */
 const BOT_ROUTES = new Map<string, BotRoute>([
@@ -101,8 +101,8 @@ export function computerFetch(computer: Computer) {
       !matchesToken(computer.config.token, offeredToken(request.headers, url))
     ) {
       // Says nothing about what is here. A refusal that describes the endpoint it is protecting is a
-      // directory listing for whoever is knocking.
-      return json({ error: "Not authorised." }, 401);
+      // directory listing for whoever is knocking — so the one fact is that the token was refused.
+      return fact("laf:computer_token_refused", 401);
     }
 
     if (url.pathname === "/health") {
@@ -132,10 +132,7 @@ export function computerFetch(computer: Computer) {
        * that looks like it worked. The code is a fact for the server's logs; nobody reading it is a
        * person, because the surface never makes this call without the header.
        */
-      return json(
-        { code: "laf:bot_header_missing", error: "laf:bot_header_missing" },
-        400,
-      );
+      return fact("laf:bot_header_missing", 400);
     }
     /*
      * AND IT HAS TO BE A NAME, NOT A PATH.
@@ -145,9 +142,7 @@ export function computerFetch(computer: Computer) {
      * writing it back creates the directory. `../../tmp/x` got that far and wrote the file, as
      * root. Checked again on this side rather than trusted from the server: see `isBotId`.
      */
-    if (!isBotId(botId)) {
-      return json({ code: BOT_ID_INVALID, error: BOT_ID_INVALID }, 400);
-    }
+    if (!isBotId(botId)) return fact(BOT_ID_INVALID, 400);
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
     const session = computer.sessions.sessionFor(botId);
@@ -155,12 +150,12 @@ export function computerFetch(computer: Computer) {
     if (url.pathname === "/stream") {
       if (server.upgrade(request, { data: { botId } }))
         return undefined as unknown as Response;
-      return json({ error: "Expected a WebSocket upgrade." }, 400);
+      return fact("laf:stream_upgrade_required", 400);
     }
 
     const route = BOT_ROUTES.get(`${request.method} ${url.pathname}`);
     if (route) return route({ request, url, botId, session }, computer);
 
-    return json({ error: "Not found." }, 404);
+    return fact("laf:computer_route_unknown", 404);
   };
 }

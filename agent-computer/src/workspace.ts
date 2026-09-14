@@ -31,15 +31,32 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
+/**
+ * A path that is not the Bot's to name. The message is for this process's own tests and logs; what
+ * leaves the process is `code` (`failures.ts`), because the surface owns the words.
+ */
 export class WorkspacePathError extends Error {
+  readonly code = "laf:file_path_refused";
   constructor(message: string) {
     super(message);
     this.name = "WorkspacePathError";
   }
 }
 
+/** Why a file request did not fit what is on disk, as a code — and the numbers that go with it. */
+export type WorkspaceFileCode =
+  | "laf:file_not_found"
+  | "laf:file_wrong_kind"
+  | "laf:file_too_large"
+  | "laf:request_invalid"
+  | "laf:download_failed";
+
 export class WorkspaceFileError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: WorkspaceFileCode = "laf:file_not_found",
+    readonly facts: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = "WorkspaceFileError";
   }
@@ -195,7 +212,10 @@ export function createWorkspace(
         throw new WorkspaceFileError(`There is no folder at ${requested}.`);
       }
       if (!info.isDirectory()) {
-        throw new WorkspaceFileError(`${requested} is a file, not a folder.`);
+        throw new WorkspaceFileError(
+          `${requested} is a file, not a folder.`,
+          "laf:file_wrong_kind",
+        );
       }
 
       const entries: WorkspaceEntry[] = [];
@@ -246,6 +266,7 @@ export function createWorkspace(
       if (info.isDirectory()) {
         throw new WorkspaceFileError(
           `${requested} is a directory, not a file.`,
+          "laf:file_wrong_kind",
         );
       }
 
@@ -269,12 +290,18 @@ export function createWorkspace(
       options: { append?: boolean } = {},
     ): Promise<{ path: string; bytes: number; appended: boolean }> {
       if (typeof contents !== "string") {
-        throw new WorkspaceFileError("The contents to write must be text.");
+        throw new WorkspaceFileError(
+          "The contents to write must be text.",
+          "laf:request_invalid",
+          { field: "contents" },
+        );
       }
       const bytes = Buffer.byteLength(contents, "utf8");
       if (bytes > limits.writeBytes) {
         throw new WorkspaceFileError(
           `That is ${bytes} bytes and the limit is ${limits.writeBytes}.`,
+          "laf:file_too_large",
+          { bytes, limit: limits.writeBytes },
         );
       }
 
@@ -329,12 +356,17 @@ export function createWorkspace(
 
       const written = await stat(full).catch(() => null);
       if (!written) {
-        throw new WorkspaceFileError("The download did not arrive.");
+        throw new WorkspaceFileError(
+          "The download did not arrive.",
+          "laf:download_failed",
+        );
       }
       if (written.size > limits.writeBytes) {
         await rm(full, { force: true }).catch(() => undefined);
         throw new WorkspaceFileError(
           `That download is ${written.size} bytes and the limit is ${limits.writeBytes}.`,
+          "laf:file_too_large",
+          { bytes: written.size, limit: limits.writeBytes },
         );
       }
       return { path: relativePath, bytes: written.size };

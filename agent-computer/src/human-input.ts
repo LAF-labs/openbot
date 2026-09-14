@@ -14,7 +14,14 @@ import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { VIEWPORT } from "./profiles";
-import { bodyOf, describe, json } from "./respond";
+import {
+  bodyOf,
+  browserFailed,
+  fact,
+  invalid,
+  json,
+  RequestInvalidError,
+} from "./respond";
 
 export const HUMAN_INPUT = new Set([
   "/human/click",
@@ -40,7 +47,7 @@ async function performHumanInput(
     const x = typeof body.x === "number" ? body.x : Number.NaN;
     const y = typeof body.y === "number" ? body.y : Number.NaN;
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      throw new Error("A click needs an x and a y inside the page.");
+      throw new RequestInvalidError("point");
     }
     // Clamped rather than rejected. A click a pixel outside the viewport is a rounding artefact of
     // scaling the screenshot, not a mistake worth refusing.
@@ -57,9 +64,7 @@ async function performHumanInput(
   }
 
   if (action === "/human/type") {
-    if (typeof body.text !== "string") {
-      throw new Error("Typing needs text.");
-    }
+    if (typeof body.text !== "string") throw new RequestInvalidError("text");
     // `insertText` rather than per-key typing: a person pasting a one-time code should not have it
     // arrive one character at a time into a field that reformats as you go.
     await target.keyboard.insertText(body.text);
@@ -73,7 +78,7 @@ async function performHumanInput(
 
   if (action === "/human/key") {
     if (typeof body.key !== "string" || !body.key) {
-      throw new Error("A key press needs a key name.");
+      throw new RequestInvalidError("key");
     }
     await target.keyboard.press(body.key);
     return { action: "human_key", key: body.key, url: target.url() };
@@ -89,14 +94,15 @@ export const humanInput: BotRoute = async (
   { request, url, botId, session },
   { profiles },
 ) => {
-  if (!session.control.humanMayDrive()) {
-    return json({ error: TAKE_CONTROL_FIRST }, 409);
-  }
+  if (!session.control.humanMayDrive()) return fact(TAKE_CONTROL_FIRST, 409);
   const body = await bodyOf<Record<string, unknown>>(request);
   try {
     const target = await profiles.page(botId);
     return json(await performHumanInput(target, url.pathname, body ?? {}));
   } catch (error) {
-    return json({ error: describe(error, "That did not work.") }, 502);
+    // A malformed input is the caller's, and a 400 — not the browser failing, which it used to be
+    // reported as because the check was thrown from inside the input.
+    if (error instanceof RequestInvalidError) return invalid(error.field);
+    return browserFailed(error);
   }
 };

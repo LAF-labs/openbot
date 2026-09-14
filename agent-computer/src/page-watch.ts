@@ -62,8 +62,10 @@ export function watchPage(
       } catch (error) {
         await download.cancel().catch(() => undefined);
         note(session, {
+          // By the workspace's own code: a download that never arrived is not one that was too big.
           code:
-            error instanceof WorkspaceFileError
+            error instanceof WorkspaceFileError &&
+            error.code === "laf:file_too_large"
               ? "laf:download_too_large"
               : "laf:download_failed",
         });

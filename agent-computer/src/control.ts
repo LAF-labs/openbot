@@ -56,7 +56,8 @@ export class ControlRequestError extends Error {
   }
 }
 
-export const NO_SECRET_PENDING = "Nothing is waiting for a secret.";
+/** A person's value arrived and nothing had asked for one. A code, for the reason below. */
+export const NO_SECRET_PENDING = "laf:secret_not_pending";
 /**
  * A FACT CODE, NOT A SENTENCE.
  *
@@ -70,8 +71,8 @@ export const NO_SECRET_PENDING = "Nothing is waiting for a secret.";
  * is not decided by an English service that has never heard of a locale.
  */
 export const HUMAN_HAS_CONTROL = "laf:human_has_control";
-export const TAKE_CONTROL_FIRST =
-  "Take control before driving the computer yourself.";
+/** A person's own input, before they took the wheel. The live-screen pane has words for it. */
+export const TAKE_CONTROL_FIRST = "laf:take_control_first";
 
 /**
  * Who was driving when the process died, as far as the next process may believe it.

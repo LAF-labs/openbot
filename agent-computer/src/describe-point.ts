@@ -16,7 +16,7 @@
  * nothing.
  */
 import type { BotRoute } from "./computer";
-import { bodyOf, describe, json } from "./respond";
+import { bodyOf, browserFailed, invalid, json } from "./respond";
 
 /** `POST /describe-point`. */
 export const describePoint: BotRoute = async (
@@ -25,7 +25,7 @@ export const describePoint: BotRoute = async (
 ) => {
   const body = await bodyOf<{ x?: unknown; y?: unknown }>(request);
   if (typeof body?.x !== "number" || typeof body?.y !== "number") {
-    return json({ error: "A point needs x and y." }, 400);
+    return invalid("point");
   }
   try {
     const target = await profiles.page(botId);
@@ -118,6 +118,6 @@ export const describePoint: BotRoute = async (
     // as "clicked somewhere on this page" instead of as a confident lie.
     return json({ element: found?.name ? found : null });
   } catch (error) {
-    return json({ error: describe(error, "Nothing could be read.") }, 502);
+    return browserFailed(error);
   }
 };
