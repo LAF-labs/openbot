@@ -7,6 +7,7 @@
  * confirmation said.
  */
 import type { Frame, Page } from "playwright";
+import type { NoteCode } from "./codes";
 
 /**
  * How much page text a navigation hands back.
@@ -79,7 +80,7 @@ export type PageText = {
   text: string;
   truncated: boolean;
   /** The iframes that contributed, and the ones that would not. */
-  frames?: { url: string; chars: number; code?: string }[];
+  frames?: { url: string; chars: number; code?: NoteCode }[];
 };
 
 /**

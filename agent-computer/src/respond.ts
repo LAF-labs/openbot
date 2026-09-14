@@ -3,8 +3,9 @@
  *
  * Every route writes its body through here, and the types are what keep a failure honest: `json`
  * answers 200 and nothing else, so a refusal or a failure can only be written by `fact`, which
- * cannot be handed a sentence.
+ * cannot be handed a sentence — or a code `codes.ts` does not list.
  */
+import { type AnswerCode, isAnswerCode, statusOf } from "./codes";
 
 function write(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -23,56 +24,34 @@ export async function bodyOf<T>(request: Request): Promise<T | null> {
   return (await request.json().catch(() => null)) as T | null;
 }
 
-/** A fact this process answers a failure with: `laf:` and a name. */
-export type FactCode = `laf:${string}`;
-
 /**
  * A refusal or a failure, as the fact it is and the facts beside it — never a sentence.
  *
- * THE CODE IN `error` AS WELL AS IN `code`. `error` is what every reader of this contract already
- * reads: the server's client puts it into the error it throws, and from there it reaches the audit
- * trail, the model and the person. That is how this container's English — "A url is required.",
- * "The action failed." — and Playwright's own messages used to arrive on a Korean surface, and a
- * Playwright message is worse than English: it carries the call log, and the call log of a `fill`
+ * THE CODE IN `error` AS WELL AS IN `code`, AND THE STATUS FROM THE LIST. `error` is what every reader
+ * of this contract read before `code` existed, and it is how this container's English — "A url is
+ * required.", "The action failed." — and Playwright's own messages used to arrive on a Korean surface.
+ * A Playwright message is worse than English: it carries the call log, and the call log of a `fill`
  * carries the value being typed (measured 2026-09-14: `fill: Error: Element is not an <input> … -
- * fill("PERSON-TYPED-SECRET-7788")`, in the body `/human/secret` answered with). The words for every
- * code live in `shared/prompt/tool-results.ko.ts`; the facts ride beside it here.
+ * fill("PERSON-TYPED-SECRET-7788")`, in the body `/human/secret` answered with).
+ *
+ * No exception. A page that never loaded kept Playwright's first line in `error` until 2026-09-14,
+ * because the server's client told a slow site from a broken computer by matching it; the client
+ * reads `code` now, so nothing here is written for a reader to match.
  */
 export function fact(
-  code: FactCode,
-  status: number,
+  code: AnswerCode,
   facts: Record<string, unknown> = {},
 ): Response {
-  return write({ ...facts, error: code, code }, status);
+  return write({ ...facts, error: code, code }, statusOf(code));
 }
 
 /**
- * The page that never loaded: the one failure whose `error` is not its code.
- *
- * The server tells a page that never loaded from a computer that is down by Playwright's first line
- * (`server/src/computer/client.ts`, `/goto: Timeout .* exceeded/`, answered as 504 `laf:page_timeout`);
- * handed the code alone it answers 503, "the computer is not responding", about a site that is slow.
- * So the first line stays in `error` until that client reads `code` — the first line only, because
- * the call log under it names the address and is nobody's business here.
+ * The code an error already is, when this process threw it as one (`laf:navigation_guard_unavailable`).
+ * Only a listed answer: a message that merely looks like a code is still a message.
  */
-export function pageTimeout(
-  playwrightMessage: string,
-  facts: Record<string, unknown>,
-): Response {
-  return write(
-    {
-      ...facts,
-      error: playwrightMessage.split("\n", 1)[0],
-      code: "laf:page_timeout",
-    },
-    504,
-  );
-}
-
-/** The code an error already is, when this process threw it as one (`laf:navigation_guard_unavailable`). */
-export function codeOf(error: unknown): FactCode | undefined {
-  return error instanceof Error && /^laf:[a-z_]+$/.test(error.message)
-    ? (error.message as FactCode)
+export function codeOf(error: unknown): AnswerCode | undefined {
+  return error instanceof Error && isAnswerCode(error.message)
+    ? error.message
     : undefined;
 }
 
@@ -93,7 +72,7 @@ export class RequestInvalidError extends Error {
 
 /** The answer to a {@link RequestInvalidError}, or to the same check made at the door. */
 export function invalid(field: string): Response {
-  return fact(REQUEST_INVALID, 400, { field });
+  return fact(REQUEST_INVALID, { field });
 }
 
 /**
@@ -101,8 +80,8 @@ export function invalid(field: string): Response {
  * away under the call, a tab that closed, a browser that would not start.
  *
  * Playwright's message is not passed on (see `fact`). Where the failure was this process's own code
- * — the guard that could not be installed — that code is the answer.
+ * — the guard that could not be installed — that code is the answer, with its own status.
  */
 export function browserFailed(error: unknown): Response {
-  return fact(codeOf(error) ?? "laf:browser_failed", 502);
+  return fact(codeOf(error) ?? "laf:browser_failed");
 }

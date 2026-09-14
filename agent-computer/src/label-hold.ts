@@ -22,6 +22,7 @@
  * ref (`f1e3`) takes the whole selector into its frame.
  */
 import type { Locator } from "playwright";
+import { ElementActionError } from "./refs";
 
 export type JudgedLabel = { role: string; name: string };
 
@@ -74,14 +75,30 @@ export async function holdToLabel(
 ): Promise<"unchecked" | "same"> {
   const wanted = judgedLabelOf(judged);
   if (!wanted) return "unchecked";
-  const still = control.and(
-    control
-      .page()
-      .getByRole(wanted.role as Parameters<Locator["getByRole"]>[0], {
-        name: nameToMatch(wanted.name),
-        exact: true,
-      }),
-  );
-  if ((await still.count()) > 0) return "same";
+  const asJudged = (includeHidden: boolean) =>
+    control.and(
+      control
+        .page()
+        .getByRole(wanted.role as Parameters<Locator["getByRole"]>[0], {
+          name: nameToMatch(wanted.name),
+          exact: true,
+          includeHidden,
+        }),
+    );
+  if ((await asJudged(false).count()) > 0) return "same";
+  /*
+   * STILL CALLED WHAT IT WAS JUDGED AS, AND HIDDEN — NOT RENAMED.
+   *
+   * The role engine leaves out a node the accessibility tree hides, so a control a page hid after the
+   * snapshot (`display: none`, `aria-hidden`) failed the question above exactly as a renamed one did,
+   * and the Bot was told its name had changed. Measured 2026-09-14, through the server's routes: a
+   * button hidden between the snapshot and the click answered `laf:label_changed` in 31 ms, and the
+   * Bot's sentence said the name had changed. Asked again with hidden nodes counted, a match is the
+   * control it judged, which will not take the action — refused as that, and still before anything
+   * is pressed. A control that no longer has the name at all is still what it was: renamed.
+   */
+  if ((await asJudged(true).count()) > 0) {
+    throw new ElementActionError(new Error("hidden since the snapshot"));
+  }
   throw new LabelChangedError();
 }

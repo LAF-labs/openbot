@@ -719,9 +719,13 @@ export const ko: Record<string, string> = {
     "페이지가 너무 오래 열리지 않고 있습니다.",
   "Somebody is using this browser right now.":
     "지금 다른 사람이 이 브라우저를 쓰고 있습니다.",
-  "The Bot's computer is not responding.": "봇의 컴퓨터가 응답하지 않습니다.",
-  "The page changed while it was being read.":
-    "읽는 사이에 페이지가 바뀌었습니다.",
+  "The Bot's browser did not respond.": "봇의 브라우저가 응답하지 않았습니다.",
+  "The Bot's computer did not accept this server's connection.":
+    "봇의 컴퓨터가 이 서버의 연결을 받지 않았습니다.",
+  "The Bot's computer was not told which Bot's screen this is.":
+    "어느 봇의 화면인지 봇의 컴퓨터에 전해지지 않았습니다.",
+  "The Bot's computer and this server are different versions.":
+    "봇의 컴퓨터와 서버의 버전이 서로 맞지 않습니다.",
   "Something went wrong on the Bot's computer.":
     "봇의 컴퓨터에서 문제가 생겼습니다.",
   "The live picture could not be started.":
@@ -2236,11 +2240,36 @@ export const ko: Record<string, string> = {
   "The boundary could not be read. Nothing was changed.":
     "경계 설정을 읽지 못해 아무것도 바뀌지 않았습니다.",
   "That path is outside the workspace": "작업 공간 밖의 경로",
-  "That file could not be used": "그 파일을 쓸 수 없음",
   "The Bot's request was incomplete": "봇의 요청에 빠진 값이 있음",
   "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",
   "The Bot's computer did not answer in time":
     "봇의 컴퓨터가 제시간에 답하지 않음",
+  /*
+   * 툴 한 줄이 봇의 컴퓨터가 붙인 이름 그대로 말하는 것들(`lib/computer/outcome-labels.ts`, 2026-09-14).
+   * 서버가 몇몇을 다른 이름으로 바꿔 넘기던 때에는 이 줄에 모델에게 가는 지시문이 대신 찍혔다.
+   */
+  "That is not a web address": "웹 주소가 아님",
+  "The page kept redirecting": "페이지가 끝없이 다른 곳으로 넘김",
+  "The Bot's computer did not accept this server":
+    "봇의 컴퓨터가 서버의 연결을 받지 않음",
+  "The call did not say which Bot": "어느 봇의 요청인지 빠짐",
+  "The Bot's id was not a name": "봇 id가 이름 모양이 아님",
+  "The Bot's computer is a different version": "봇의 컴퓨터 버전이 서버와 다름",
+  "The Bot's browser did not manage it": "봇의 브라우저가 해내지 못함",
+  "The Bot's browser did not start": "봇의 브라우저가 열리지 않음",
+  "The computer could not use the request": "컴퓨터가 쓸 수 없는 요청",
+  "The page did not open in time": "페이지가 제시간에 열리지 않음",
+  "The page could not be opened": "페이지를 열지 못함",
+  "An address inside this deployment was blocked": "배포 안쪽 주소라 막음",
+  "The screen had changed": "화면이 바뀌어 있었음",
+  "The control had been renamed": "누르려던 요소의 이름이 바뀌었음",
+  "That element could not be used": "그 요소에 할 수 없었음",
+  "There is no such tab": "그런 탭이 없음",
+  "Nothing is at that path": "그 경로에 아무것도 없음",
+  "A folder where a file was meant, or the other way round":
+    "파일과 폴더를 바꿔 가리킴",
+  "Too large for the workspace": "작업 공간에 넣기엔 너무 큼",
+  "The workspace could not do it": "작업 공간에서 실패함",
   // 로그인이 거절됐을 때 로그인 화면이 하는 말 — better-auth의 영어 대신, 코드마다 한 문장.
   "Too many sign-in attempts in a row. Wait a few seconds and try again.":
     "로그인을 연달아 너무 많이 시도했습니다. 몇 초 뒤에 다시 시도해 주세요.",

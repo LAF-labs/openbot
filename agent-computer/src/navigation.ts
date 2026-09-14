@@ -18,14 +18,7 @@ import {
   type NavigationHop,
 } from "./navigation-guard";
 import { readSettledPageText } from "./page-text";
-import {
-  bodyOf,
-  browserFailed,
-  fact,
-  invalid,
-  json,
-  pageTimeout,
-} from "./respond";
+import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
 
 /** A navigation this process stopped: where it was going, where it was sent from, and why. */
@@ -60,16 +53,16 @@ export type Navigating = {
 type HeldHop = { to: string; from: string; referer?: string };
 
 /**
- * Whether `goto` gave up on the deadline rather than on the page.
+ * Whether a failure is the deadline's, by the name of the class Playwright gave it.
  *
- * Playwright's own class is not imported for this: its `errors.TimeoutError` is also what a locator
- * wait throws, and here the question is narrower — the navigation itself. The name is the class's,
- * the phrase is what `goto` writes, and the server recognises the same phrase (computer/client.ts).
+ * A locator's wait throws the same class, so it is asked only of the `goto` itself — `opening` in
+ * `navigate` says which call was in flight — and the narrower question is answered by where the
+ * failure happened rather than by its words. Until 2026-09-14 it also matched `goto: Timeout` and
+ * `navigating to "` in the message, and the server matched the same phrase again on the far side to
+ * tell a slow site from a broken computer. Neither reads a message now: the server reads `code`.
  */
-const isNavigationTimeout = (error: unknown): error is Error =>
-  error instanceof Error &&
-  error.name === "TimeoutError" &&
-  /goto: Timeout|navigating to "/i.test(error.message);
+const isTimeout = (error: unknown): boolean =>
+  error instanceof Error && error.name === "TimeoutError";
 
 /**
  * A destination as the trail and the Bot may see it: the origin, never the path or the query. An
@@ -155,7 +148,6 @@ function refusedNavigation(
 ): Response {
   return fact(
     "laf:navigation_refused",
-    403,
     withNotes(session, {
       refused: {
         origin: originOf(hop.url),
@@ -214,7 +206,7 @@ async function stoppedNavigation(
   if (navigating.held) {
     return heldNavigation(session, target, navigating.held, startedAt);
   }
-  return fact(NAVIGATION_FAILED, 502);
+  return fact(NAVIGATION_FAILED);
 }
 
 /**
@@ -370,7 +362,7 @@ export const navigate: BotRoute = async (
   } catch (error) {
     // A person holding the wheel is not a failed navigation; the Bot should wait.
     if (error instanceof ControlError) {
-      return fact(HUMAN_HAS_CONTROL, 409, { humanHasControl: true });
+      return fact(HUMAN_HAS_CONTROL, { humanHasControl: true });
     }
     /*
      * A hop the guard stopped. Playwright's words for it are `net::ERR_BLOCKED_BY_CLIENT`, which
@@ -390,17 +382,17 @@ export const navigate: BotRoute = async (
      * that close. So the deadline is the moment this process stops trusting the page: the tab is
      * replaced, or the browser is, before the Bot is told.
      */
-    if (isNavigationTimeout(error)) {
+    if (opening && isTimeout(error)) {
       const recycled = await profiles.recycle(botId);
       session.snapshotId += 1;
-      return pageTimeout(
-        error.message,
+      return fact(
+        "laf:page_timeout",
         withNotes(session, { recycled, elapsedMs: Date.now() - startedAt }),
       );
     }
     // The page is the Bot's working surface, so a failed navigation is reported rather than
     // thrown: the transcript needs to say what happened, and the browser stays usable.
-    return opening ? fact(NAVIGATION_FAILED, 502) : browserFailed(error);
+    return opening ? fact(NAVIGATION_FAILED) : browserFailed(error);
   } finally {
     if (session.navigating === navigating) session.navigating = undefined;
     if (target && recordCommits) target.off("framenavigated", recordCommits);

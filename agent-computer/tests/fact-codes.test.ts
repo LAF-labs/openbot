@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { type AnswerCode, statusOf } from "../src/codes";
 import { ControlError, HUMAN_HAS_CONTROL } from "../src/control";
 import { actionFailure, fileFailure } from "../src/failures";
 import { LabelChangedError } from "../src/label-hold";
@@ -16,7 +17,6 @@ import {
   browserFailed,
   fact,
   invalid,
-  pageTimeout,
   RequestInvalidError,
 } from "../src/respond";
 import { WorkspaceFileError, WorkspacePathError } from "../src/workspace";
@@ -32,7 +32,8 @@ import { PW_FIELDS, serveFixture } from "./fixture-site";
  * `fill` carries the text being filled: `fill: Error: Element is not an <input> … - fill("…")`. A
  * failed `/human/secret` handed the person's secret straight back over HTTP.
  *
- * `page_timeout` is the one `error` that is not its code, and says why in respond.ts.
+ * No exception any more: `page_timeout` kept Playwright's first line in `error` for the server's
+ * client to match, until the client read `code`.
  */
 
 type Body = Record<string, unknown>;
@@ -43,7 +44,7 @@ const bodyOf = async (response: Response): Promise<Body> =>
 
 describe("a failure, as it is written", () => {
   test("carries its code in `error` and in `code`, and its facts beside them", async () => {
-    const response = fact("laf:file_too_large", 400, {
+    const response = fact("laf:file_too_large", {
       bytes: 9,
       limit: 8,
     });
@@ -58,7 +59,7 @@ describe("a failure, as it is written", () => {
 
   test("cannot have its code overwritten by a fact", async () => {
     const body = await bodyOf(
-      fact("laf:stale_refs", 409, { error: "a sentence", code: "laf:other" }),
+      fact("laf:stale_refs", { error: "a sentence", code: "laf:other" }),
     );
     expect([body.error, body.code]).toEqual([
       "laf:stale_refs",
@@ -66,23 +67,16 @@ describe("a failure, as it is written", () => {
     ]);
   });
 
-  test("a page that never loaded keeps Playwright's first line for the server, and nothing under it", async () => {
-    const response = pageTimeout(
-      'goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating to "https://shop.example/orders?token=abc", waiting until "domcontentloaded"\n',
-      { recycled: "page" },
-    );
+  test("a page that never loaded is its code in both fields, like every other failure", async () => {
+    // It kept Playwright's first line in `error` until 2026-09-14, for the server to match; the
+    // status is the list's, and nothing a reader could match on is in the body.
+    const response = fact("laf:page_timeout", { recycled: "page" });
     expect(response.status).toBe(504);
-    const body = await bodyOf(response);
-    expect(body).toEqual({
-      error: "goto: Timeout 30000ms exceeded.",
+    expect(await bodyOf(response)).toEqual({
+      error: "laf:page_timeout",
       code: "laf:page_timeout",
       recycled: "page",
     });
-    // The regular expression the server's client classifies it by, verbatim.
-    expect(
-      /goto: Timeout .* exceeded|navigating to "/i.test(String(body.error)),
-    ).toBe(true);
-    expect(JSON.stringify(body)).not.toContain("token=abc");
   });
 
   test("a browser failure is never Playwright's message, unless the message is this process's own code", async () => {
@@ -445,6 +439,8 @@ describe("the computer's refusals, over HTTP", () => {
         code,
         code,
       ]);
+      // And the status is the one the list gives the code, which is where it is decided.
+      expect([name, statusOf(code as AnswerCode)]).toEqual([name, status]);
     }
   }, 30_000);
 

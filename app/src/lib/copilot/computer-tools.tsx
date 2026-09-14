@@ -17,6 +17,7 @@ import {
   pauseFrom,
   waitForApproval,
 } from "@/lib/approvals";
+import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
 import { activeConversationHeaders, useActiveBotHolder } from "./active-bot";
 import { reportComputerActivity } from "./computer-activity";
@@ -55,51 +56,6 @@ function fromCatalogue<T extends Record<string, unknown>>(name: string) {
     parameters: asStandardSchema<T>(tool.parameters),
   };
 }
-
-/**
- * What a refused or failed call says on the transcript line, in Korean.
- *
- * English keys because that is how `t()` works here, and a table rather than literals because the
- * value arrives as a code at runtime. `t(variable)` is invisible to the i18n coverage test, so this
- * table is walked by one of its own (`app/tests/tool-result-codes.test.ts`).
- */
-const OUTCOME_LABELS: Record<string, string> = {
-  "laf:human_has_control": "A person has the computer",
-  "laf:stopped": "Stopped",
-  "laf:person_declined": "A person declined that",
-  "laf:computer_unreachable": "The Bot's computer could not be reached",
-  "laf:nobody_answered": "Nobody answered in time",
-  "laf:request_cancelled": "The request was cancelled",
-  /*
-   * The boundary's own refusals, which used to arrive as English sentences the server had assembled
-   * and this line printed as they came. Five facts rather than one, because what a person does next
-   * differs: a rule to edit, a rule to add, a snapshot to take, an answer they already gave, and a
-   * password box that has its own door (§5.1(b)).
-   */
-  "laf:policy_denied": "A rule refused it",
-  "laf:no_rule_allows": "No rule allows it",
-  "laf:blind_action": "The screen had not been read yet",
-  "laf:declined_recently": "You said no to this recently",
-  "laf:use_request_secret": "It asked for a secret instead",
-  /*
-   * Two more floors under the boundary (security review, 2026-09): a letter pressed as a key is
-   * typing that no rule could see, and a secret request has to name a field on the screen the
-   * server holds — not whatever box a page told the Bot to point at.
-   */
-  "laf:key_is_text": "A letter was pressed as a key",
-  "laf:secret_target_not_a_field":
-    "The secret was aimed at something that is not a field",
-  /*
-   * What the computer itself answered (2026-09-14), which reached this line as English until then:
-   * the container's own "There is no file at notes.md.", the client's "The assistant's computer did
-   * not respond in time.", a sentence per missing argument.
-   */
-  "laf:workspace_path_refused": "That path is outside the workspace",
-  "laf:workspace_file_unusable": "That file could not be used",
-  "laf:tool_arguments_invalid": "The Bot's request was incomplete",
-  "laf:computer_failed": "It did not work on the Bot's computer",
-  "laf:computer_timed_out": "The Bot's computer did not answer in time",
-};
 
 /** The words for a line, from the code where there is one and from the server's text otherwise. */
 function labelForCode(code: unknown, fallback: unknown): string | undefined {
@@ -299,8 +255,13 @@ async function sendToComputer(
       ...(response.status === 403
         ? { refused: true, rule: body?.rule ?? null }
         : {}),
+      /*
+       * By the code: the server answers a failure as its code and nothing beside it, so the
+       * container's `humanHasControl: true` never reached this line, and a person at the wheel was
+       * handed to the model as `staleRefs: true` beside a sentence telling it to wait.
+       */
       ...(response.status === 409
-        ? body?.humanHasControl === true
+        ? code === "laf:human_has_control" || body?.humanHasControl === true
           ? { humanHasControl: true }
           : { staleRefs: true }
         : {}),

@@ -118,7 +118,7 @@ function computer(options: {
       if (screen === "down") {
         return json(
           {
-            code: "laf:computer_unavailable",
+            code: "laf:computer_unreachable",
             error: "The assistant's computer is not running.",
           },
           503,
@@ -377,7 +377,7 @@ describe("waiting looks like everything else that is loading", () => {
       "You cannot see the screen right now",
     );
     expect(view.picture.textContent).toContain(
-      "The Bot's computer is not responding.",
+      "The Bot's computer could not be reached.",
     );
     // The server's own sentence is a fact code's companion, never the words on screen.
     expect(view.host.textContent).not.toContain("assistant's computer");

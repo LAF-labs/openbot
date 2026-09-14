@@ -102,7 +102,7 @@ export function computerFetch(computer: Computer) {
     ) {
       // Says nothing about what is here. A refusal that describes the endpoint it is protecting is a
       // directory listing for whoever is knocking — so the one fact is that the token was refused.
-      return fact("laf:computer_token_refused", 401);
+      return fact("laf:computer_token_refused");
     }
 
     if (url.pathname === "/health") {
@@ -132,7 +132,7 @@ export function computerFetch(computer: Computer) {
        * that looks like it worked. The code is a fact for the server's logs; nobody reading it is a
        * person, because the surface never makes this call without the header.
        */
-      return fact("laf:bot_header_missing", 400);
+      return fact("laf:bot_header_missing");
     }
     /*
      * AND IT HAS TO BE A NAME, NOT A PATH.
@@ -142,7 +142,7 @@ export function computerFetch(computer: Computer) {
      * writing it back creates the directory. `../../tmp/x` got that far and wrote the file, as
      * root. Checked again on this side rather than trusted from the server: see `isBotId`.
      */
-    if (!isBotId(botId)) return fact(BOT_ID_INVALID, 400);
+    if (!isBotId(botId)) return fact(BOT_ID_INVALID);
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
     const session = computer.sessions.sessionFor(botId);
@@ -150,12 +150,12 @@ export function computerFetch(computer: Computer) {
     if (url.pathname === "/stream") {
       if (server.upgrade(request, { data: { botId } }))
         return undefined as unknown as Response;
-      return fact("laf:stream_upgrade_required", 400);
+      return fact("laf:stream_upgrade_required");
     }
 
     const route = BOT_ROUTES.get(`${request.method} ${url.pathname}`);
     if (route) return route({ request, url, botId, session }, computer);
 
-    return fact("laf:computer_route_unknown", 404);
+    return fact("laf:computer_route_unknown");
   };
 }

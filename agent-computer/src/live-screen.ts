@@ -11,10 +11,10 @@
  */
 import type { WebSocketHandler } from "bun";
 import type { Page } from "playwright";
+import type { ScreenCode } from "./codes";
 import type { Computer } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { log } from "./log";
-import type { FactCode } from "./respond";
 import { type InputMessage, startScreencast } from "./screencast";
 import type { BotSession } from "./sessions";
 
@@ -29,7 +29,7 @@ export type StreamData = { botId: string };
  * `code` (`app/src/lib/computer/screen-problems.ts`); `error` carries the same code, so a reader that
  * still shows `error` shows a code rather than a sentence or Playwright's message.
  */
-function screenError(code: FactCode): string {
+function screenError(code: ScreenCode): string {
   return JSON.stringify({ type: "error", code, error: code });
 }
 

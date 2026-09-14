@@ -3,24 +3,31 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import {
+  type AnswerCode,
+  COMPUTER_CODES,
+  isAnswerCode,
+} from "../../agent-computer/src/codes";
 import { TOOL_RESULT_KO } from "../../shared/prompt/tool-results.ko";
 import type { AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import {
+  COMPUTER_ANSWERS,
   COMPUTER_FAILED,
   COMPUTER_TIMED_OUT,
   COMPUTER_UNREACHABLE,
   type ComputerClient,
   ComputerUnavailableError,
+  ControlHeldError,
+  createComputerClient,
   ElementNotFoundError,
   NavigationRefusedError,
+  PageLoadFailedError,
   PageLoadTimeoutError,
   STALE_REFS,
   StaleSnapshotError,
   URL_INVALID,
-  WORKSPACE_FILE_UNUSABLE,
-  WORKSPACE_PATH_REFUSED,
   WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "../src/computer/client";
@@ -140,16 +147,17 @@ const FAILURES: Array<[string, Error, number, string]> = [
     503,
     "laf:computer_failed",
   ],
-  // A failure of a known kind that carries no code is still said, by its kind.
+  // A failure of a known kind that carries no code is still said, by its kind — and by one of the
+  // container's own names, never a second spelling (`laf:computer_unavailable`, `laf:snapshot_stale`).
   [
     "the computer is unavailable and carries no fact",
     new ComputerUnavailableError("The assistant's computer is not running."),
     503,
-    "laf:computer_unavailable",
+    "laf:computer_failed",
   ],
   [
     "a person holds the wheel",
-    new ComputerUnavailableError("laf:human_has_control"),
+    new ControlHeldError("laf:human_has_control"),
     409,
     "laf:human_has_control",
   ],
@@ -158,6 +166,12 @@ const FAILURES: Array<[string, Error, number, string]> = [
     new PageLoadTimeoutError(),
     504,
     "laf:page_timeout",
+  ],
+  [
+    "the page could not be opened at all",
+    new PageLoadFailedError("laf:navigation_failed"),
+    502,
+    "laf:navigation_failed",
   ],
   [
     "the refs are stale, as the computer says it",
@@ -169,13 +183,13 @@ const FAILURES: Array<[string, Error, number, string]> = [
     "the refs are stale and nothing says so in a code",
     new StaleSnapshotError("snapshot 3 is not current"),
     409,
-    "laf:snapshot_stale",
+    "laf:stale_refs",
   ],
   [
-    "the element left the page and nothing says so in a code",
+    "the element would not take it and nothing says so in a code",
     new ElementNotFoundError("Element e9 is not on the page any more."),
     409,
-    "laf:snapshot_stale",
+    "laf:stale_refs",
   ],
   [
     "something nobody named",
@@ -210,6 +224,101 @@ describe("the screenshot route", () => {
     const response = await surface().request("/bot-1/screenshot");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(SHOT);
+  });
+});
+
+/**
+ * EVERY FAILURE THE CONTAINER CAN ANSWER WITH, THROUGH THE REAL CLIENT AND THE REAL ROUTE.
+ *
+ * The container's list (`agent-computer/src/codes.ts`) against this server's one table for it
+ * (`COMPUTER_ANSWERS`), end to end: a computer that answers exactly as the container does — the code
+ * in both fields, the status the list gives it — and the screenshot route in front. The code must
+ * come out as it went in. The status must be the container's own, because the status is the next
+ * move a caller is told to make, except for the few the server says differently to its own callers:
+ * a failure that is the computer's rather than the request's is a 503 here, whatever the container
+ * answered this server with.
+ */
+describe("every answer the container can send", () => {
+  const ANSWERS = Object.keys(COMPUTER_CODES).filter(isAnswerCode);
+
+  /** Where the server's status is not the container's, and why it is not. */
+  const RESAID: Partial<Record<AnswerCode, number>> = {
+    // The browser, the disk or the guard failed: the computer's, and an operator's, problem.
+    "laf:browser_failed": 503,
+    "laf:navigation_guard_unavailable": 503,
+    "laf:file_failed": 503,
+    // The caller left; the container's 499 is a convention a person's browser never sees.
+    "laf:stopped": 503,
+    // The computer refusing THIS SERVER: a deployment that disagrees with itself, not a bad request.
+    "laf:computer_token_refused": 503,
+    "laf:computer_route_unknown": 503,
+    "laf:bot_header_missing": 503,
+    "laf:stream_upgrade_required": 503,
+  };
+
+  function answeredWith(code: AnswerCode) {
+    const status = COMPUTER_CODES[code].status;
+    const client = createComputerClient({
+      baseUrl: "http://agent-computer:4100",
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: code, code }), {
+          status,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch,
+    });
+    const gateway = createComputerGateway({
+      client,
+      auditStore: { insert: async () => {} },
+      policy: () => PERMISSIVE,
+      approvals: createApprovalRegistry(),
+    });
+    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", STAFF);
+      context.set("mayDriveBot", async () => true);
+      await next();
+    };
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createComputerRoutes(
+        client,
+        gateway,
+        createPolicyStore(PERMISSIVE),
+        requireUser,
+      ),
+    );
+    return app;
+  }
+
+  test("the list reached this test", () => {
+    expect(ANSWERS.length).toBeGreaterThan(20);
+  });
+
+  test("has one entry in the client's table, and the table has nothing else", () => {
+    expect(ANSWERS.filter((code) => !(code in COMPUTER_ANSWERS))).toEqual([]);
+    expect(
+      Object.keys(COMPUTER_ANSWERS).filter((code) => !isAnswerCode(code)),
+    ).toEqual([]);
+  });
+
+  for (const code of ANSWERS) {
+    const expected = RESAID[code] ?? COMPUTER_CODES[code].status;
+    test(`${code} passes through the routes as itself, with ${expected}`, async () => {
+      const answered = await answer(answeredWith(code), "/bot-1/screenshot");
+      expect(answered).toEqual({ status: expected, code, error: code });
+    });
+  }
+
+  test("the resaid list names only answers the container still sends", () => {
+    for (const code of Object.keys(RESAID)) {
+      expect({ code, answer: isAnswerCode(code) }).toEqual({
+        code,
+        answer: true,
+      });
+    }
   });
 });
 
@@ -324,16 +433,16 @@ describe("an acting route that the computer refused", () => {
     [
       "/bot-1/files/read",
       { path: "notes.md" },
-      new WorkspaceRequestError(WORKSPACE_FILE_UNUSABLE),
+      new WorkspaceRequestError("laf:file_not_found"),
       400,
-      "laf:workspace_file_unusable",
+      "laf:file_not_found",
     ],
     [
       "/bot-1/files/write",
       { path: "../secrets", contents: "x" },
-      new WorkspaceRefusedError(WORKSPACE_PATH_REFUSED),
+      new WorkspaceRefusedError("laf:file_path_refused"),
       403,
-      "laf:workspace_path_refused",
+      "laf:file_path_refused",
     ],
     [
       "/bot-1/click",
@@ -346,7 +455,7 @@ describe("an acting route that the computer refused", () => {
       // A 409 like a stale ref, and a different next move: the class alone cannot say which.
       "/bot-1/click",
       { ref: "e9", snapshotId: 7 },
-      new StaleSnapshotError("laf:human_has_control"),
+      new ControlHeldError("laf:human_has_control"),
       409,
       "laf:human_has_control",
     ],
@@ -531,8 +640,6 @@ describe("what a Bot is told when its computer says no", () => {
    */
   const PERSON_ONLY = new Set([
     // The masked box (`app/src/lib/computer/refusals.ts`).
-    "laf:secret_not_pending",
-    "laf:secret_field_gone",
     "laf:secret_value_required",
     // The live screen's own input, fired and not read back.
     "laf:input_unknown",

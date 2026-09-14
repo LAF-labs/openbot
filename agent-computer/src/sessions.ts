@@ -9,6 +9,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ElementHandle } from "playwright";
+import type { NoteCode } from "./codes";
 import {
   type Control,
   type ControlState,
@@ -28,7 +29,7 @@ import type { Screencast } from "./screencast";
  * moved. The Korean the model reads for each code is in `shared/prompt/tool-results.ko.ts`, for the
  * same reason `laf:human_has_control` lives there: this container ships facts and knows no locale.
  */
-export type ComputerNote = { code: string } & Record<string, unknown>;
+export type ComputerNote = { code: NoteCode } & Record<string, unknown>;
 
 /**
  * How many of them one result carries.

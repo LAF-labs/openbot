@@ -8,10 +8,18 @@
  * only sees a literal argument.
  */
 
-/** Handing a value to the page through the masked box. */
+/**
+ * Handing a value to the page through the masked box.
+ *
+ * The box's facts are the container's own (`agent-computer/src/codes.ts`), as its `/human/secret`
+ * answers them: nothing asked for a value, or the box it was for would not take it. Until 2026-09-14
+ * the server's client said the second as `laf:secret_field_gone`, a name of its own read off the door
+ * and the status — and the container, which had started calling it `laf:element_not_actionable`, was
+ * answered with this screen's fallback sentence instead.
+ */
 export const SECRET_REFUSALS: Record<string, string> = {
   "laf:secret_not_pending": "Nothing is waiting for that value any more.",
-  "laf:secret_field_gone":
+  "laf:element_not_actionable":
     "The box for that value is no longer on the page. Ask the Bot to request it again.",
   // The same box, gone by the time the value arrived: the page changed under the request.
   "laf:stale_refs":

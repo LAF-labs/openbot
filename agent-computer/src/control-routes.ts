@@ -59,7 +59,7 @@ export const supplySecret: BotRoute = async (
   { config, profiles },
 ) => {
   const pending = session.control.pendingSecret();
-  if (!pending) return fact(NO_SECRET_PENDING, 409);
+  if (!pending) return fact(NO_SECRET_PENDING);
   const body = await bodyOf<{ text?: unknown }>(request);
   const text = body?.text;
   if (typeof text !== "string" || !text) return invalid("text");

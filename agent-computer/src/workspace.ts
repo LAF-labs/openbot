@@ -36,20 +36,25 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
  * leaves the process is `code` (`failures.ts`), because the surface owns the words.
  */
 export class WorkspacePathError extends Error {
-  readonly code = "laf:file_path_refused";
+  readonly code = "laf:file_path_refused" as const;
   constructor(message: string) {
     super(message);
     this.name = "WorkspacePathError";
   }
 }
 
-/** Why a file request did not fit what is on disk, as a code — and the numbers that go with it. */
+/**
+ * Why a file request did not fit what is on disk, as a code — and the numbers that go with it.
+ *
+ * Answers only (codes.ts). A download that never arrived is `laf:file_not_found` here, and becomes
+ * the note `laf:download_failed` where the download is watched (page-watch.ts): the workspace says
+ * what is on disk, and the page's watcher says what that means for the click that started it.
+ */
 export type WorkspaceFileCode =
   | "laf:file_not_found"
   | "laf:file_wrong_kind"
   | "laf:file_too_large"
-  | "laf:request_invalid"
-  | "laf:download_failed";
+  | "laf:request_invalid";
 
 export class WorkspaceFileError extends Error {
   constructor(
@@ -358,7 +363,7 @@ export function createWorkspace(
       if (!written) {
         throw new WorkspaceFileError(
           "The download did not arrive.",
-          "laf:download_failed",
+          "laf:file_not_found",
         );
       }
       if (written.size > limits.writeBytes) {

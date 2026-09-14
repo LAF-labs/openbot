@@ -8,16 +8,22 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
 import {
+  COMPUTER_FAILED,
   type ComputerClient,
   ComputerUnavailableError,
+  ControlHeldError,
   ElementNotFoundError,
+  FILE_PATH_REFUSED,
+  HUMAN_HAS_CONTROL,
+  NAVIGATION_FAILED,
   NAVIGATION_REFUSED,
   NavigationRefusedError,
   PAGE_TIMEOUT,
+  PageLoadFailedError,
   PageLoadTimeoutError,
+  REQUEST_INVALID,
+  STALE_REFS,
   StaleSnapshotError,
-  WORKSPACE_FILE_UNUSABLE,
-  WORKSPACE_PATH_REFUSED,
   WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "./client";
@@ -1050,39 +1056,34 @@ function asRef(
 }
 
 /**
- * A person holding the wheel, or a person driving before taking it.
- *
- * The client says so in the message, not in a type of its own, and two functions below read it.
- * One predicate so they cannot disagree about which failures are this one.
- */
-function isHeldByAPerson(error: unknown): boolean {
-  return (
-    error instanceof ComputerUnavailableError && /control/i.test(error.message)
-  );
-}
-
-/**
  * Which HTTP status a failure deserves.
  *
  * Three genuinely different conditions that read identically if they all become 500: the computer is
  * not running (an operator fixes it), the refs are stale (the model fixes it by snapshotting again),
  * and everything else. Navigation established this; the acting routes follow it.
+ *
+ * By class, and the class by the code: the client turns each code the computer answers with into one
+ * of these through one table (`COMPUTER_ANSWERS` in client.ts). Nothing here reads a message — a
+ * person at the wheel used to be found by matching `control` in one.
  */
-function statusFor(error: unknown): 400 | 403 | 409 | 500 | 503 | 504 {
+function statusFor(error: unknown): 400 | 403 | 409 | 500 | 502 | 503 | 504 {
   // A caller that named something no filesystem should be asked about. The request is wrong, so it
   // is a 400 — never a 500, which would send an operator looking at a container that is behaving.
   if (error instanceof BotIdRefusedError) return 400;
   if (error instanceof StaleSnapshotError) return 409;
-  // The same answer as a stale snapshot, because it is the same instruction: the refs are wrong, take
-  // another snapshot. Not 503, which says the computer is unavailable and sends an operator hunting a
-  // container that is running perfectly.
+  // The same answer as a stale snapshot, because it is the same instruction: the element is not what
+  // the call assumed, look again. Not 503, which says the computer is unavailable and sends an
+  // operator hunting a container that is running perfectly.
   if (error instanceof ElementNotFoundError) return 409;
+  // Nothing is broken; the caller has to wait or take control first, and 409 is how both of those
+  // are already reported.
+  if (error instanceof ControlHeldError) return 409;
   // The page did not load in time. Not 409 — a fresh snapshot would not help — and not 503, which
   // sends an operator after a container that is running: the site, not the computer, is the problem.
   if (error instanceof PageLoadTimeoutError) return 504;
-  // Nothing is broken; the caller has to wait or take control first, and 409 is how both of those
-  // are already reported.
-  if (isHeldByAPerson(error)) return 409;
+  // The page did not open at all — a name that does not resolve, a connection refused. The site's
+  // or the network's, like the timeout, and said with the gateway's own status for it.
+  if (error instanceof PageLoadFailedError) return 502;
   if (error instanceof ComputerUnavailableError) return 503;
   // A refusal by the floor is the rules working, not a fault. Collapsing it into the same 5xx as an
   // unreachable computer would send somebody looking for an outage that is not happening.
@@ -1100,13 +1101,14 @@ function statusFor(error: unknown): 400 | 403 | 409 | 500 | 503 | 504 {
 /**
  * Which fact a failure is, for a surface that has to say it in the person's language.
  *
- * The failure's own code first. The client and the gateway raise each failure with its fact as the
- * message, and the class alone cannot tell the facts that share one apart: a person holding the
- * wheel, a renamed control and a stale ref are all a 409 the computer answered, and each is a
- * different next move. The class decides only what a failure that carries no code is — the same
- * branches as `statusFor`, in the same order, so the status and the code never describe two
- * different failures. The pane shows the words for the code (`app/src/lib/computer/screen-problems.ts`),
- * the model its own (`shared/prompt/tool-results.ko.ts`).
+ * The failure's own code first — which, for anything the computer answered, is the container's code
+ * as it came. The class alone cannot tell the facts that share one apart: a renamed control and a
+ * stale ref are both a 409, a missing file and a closed tab both a 400, and each is a different next
+ * move. The class decides only what a failure that carries no code is — the same branches as
+ * `statusFor`, so the status and the code never describe two different failures — and always with
+ * one of the container's own names (`agent-computer/src/codes.ts`), never a second spelling of it.
+ * The pane shows the words for the code (`app/src/lib/computer/screen-problems.ts`), the model its
+ * own (`shared/prompt/tool-results.ko.ts`).
  */
 function codeFor(error: unknown): string {
   if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
@@ -1114,25 +1116,30 @@ function codeFor(error: unknown): string {
     error instanceof StaleSnapshotError ||
     error instanceof ElementNotFoundError
   ) {
-    return carriedBy(error) ?? "laf:snapshot_stale";
+    return carriedBy(error) ?? STALE_REFS;
+  }
+  if (error instanceof ControlHeldError) {
+    return carriedBy(error) ?? HUMAN_HAS_CONTROL;
   }
   if (error instanceof PageLoadTimeoutError) return PAGE_TIMEOUT;
-  if (isHeldByAPerson(error)) return "laf:human_has_control";
+  if (error instanceof PageLoadFailedError) {
+    return carriedBy(error) ?? NAVIGATION_FAILED;
+  }
   if (error instanceof ComputerUnavailableError) {
-    return carriedBy(error) ?? "laf:computer_unavailable";
+    return carriedBy(error) ?? COMPUTER_FAILED;
   }
   if (error instanceof NavigationRefusedError) {
     return carriedBy(error) ?? NAVIGATION_REFUSED;
   }
   if (error instanceof WorkspaceRefusedError) {
-    return carriedBy(error) ?? WORKSPACE_PATH_REFUSED;
+    return carriedBy(error) ?? FILE_PATH_REFUSED;
   }
   if (error instanceof WorkspaceRequestError) {
-    return carriedBy(error) ?? WORKSPACE_FILE_UNUSABLE;
+    return carriedBy(error) ?? REQUEST_INVALID;
   }
   // Anything else is not the computer's: an audit insert that failed, a bug. Its message is not a
   // fact whatever it starts with, and `failed` logs what it said.
-  return "laf:computer_failed";
+  return COMPUTER_FAILED;
 }
 
 /** The code a computer failure carries as its message, if it carries one. */

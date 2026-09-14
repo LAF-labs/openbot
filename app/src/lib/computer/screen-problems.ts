@@ -20,16 +20,25 @@ export const SCREEN_PROBLEM_SAID: Record<string, string> = {
   "laf:bot_id_invalid": "This Bot's screen could not be found.",
   "laf:page_timeout": "The page is taking too long to open.",
   "laf:human_has_control": "Somebody is using this browser right now.",
-  "laf:computer_unavailable": "The Bot's computer is not responding.",
-  "laf:snapshot_stale": "The page changed while it was being read.",
+  // The server's client's own facts: nothing answered, an answer too late, an answer with no code.
   "laf:computer_failed": "Something went wrong on the Bot's computer.",
-  // The client's own two facts since 2026-09-14, where both were `computer_unavailable`: nothing
-  // answered, and an answer that did not come in time.
   "laf:computer_unreachable": "The Bot's computer could not be reached.",
   "laf:computer_timed_out": "The Bot's computer did not answer in time.",
-  // The container's, passed through the screenshot route: no browser without its address check.
+  /*
+   * THE CONTAINER'S, WHATEVER WAS ASKED (`caller: "any"` in `agent-computer/src/codes.ts`): its door
+   * and its browser, which the screenshot poll and the Computers page meet as surely as a Bot's tool
+   * does. They reach here by their own names since 2026-09-14; before, the server said most of them
+   * as `laf:computer_unavailable`, and `computer-codes.test.ts` now holds this table to the list.
+   */
   "laf:navigation_guard_unavailable":
     "The Bot's browser did not start, because its address check could not be set up.",
+  "laf:browser_failed": "The Bot's browser did not respond.",
+  "laf:computer_token_refused":
+    "The Bot's computer did not accept this server's connection.",
+  "laf:bot_header_missing":
+    "The Bot's computer was not told which Bot's screen this is.",
+  "laf:computer_route_unknown":
+    "The Bot's computer and this server are different versions.",
   // The live-screen socket, `agent-computer`'s `{type:"error"}` messages.
   "laf:screen_not_started": "The live picture could not be started.",
   "laf:take_control_first":

@@ -367,6 +367,43 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
     expect(clicked.status).toBe(200);
   });
 
+  /*
+   * MEASURED 2026-09-14, the real container through the server's routes: a button the page hid after
+   * the snapshot answered `laf:label_changed` in 31 ms, because the role engine the hold asks leaves
+   * hidden nodes out — and the Bot was told the control had been renamed. It had not; it was gone.
+   */
+  test("a control the page hid after the snapshot is not called renamed", async () => {
+    const opened = await post("/navigate", {
+      url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}&hide`,
+    });
+    expect(opened.status).toBe(200);
+    const shot = await snapshot();
+    const button = shot.elements.find(
+      (element) => element.name === RELABEL_BEFORE,
+    );
+    if (!button) {
+      throw new Error(
+        `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
+          .map((element) => element.name)
+          .join(" | ")}`,
+      );
+    }
+    await Bun.sleep(RELABEL_AFTER_MS + 300);
+
+    const started = Date.now();
+    const refused = await post("/click", {
+      ref: button.ref,
+      snapshotId: shot.snapshotId,
+      element: { role: button.role, name: RELABEL_BEFORE },
+    });
+    expect([refused.status, refused.body.code]).toEqual([
+      409,
+      "laf:element_not_actionable",
+    ]);
+    // Refused on the question, not after Playwright's action timeout waiting for it to reappear.
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   test("a control that kept its label is acted on, on the page and inside a frame", async () => {
     const opened = await post("/navigate", { url: fixture?.url });
     expect(opened.status).toBe(200);

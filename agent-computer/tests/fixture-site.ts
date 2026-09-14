@@ -147,7 +147,12 @@ export const RELABEL_AFTER = "결제하기";
  * which label was showing when it was pressed. The TOCTOU the money-word rule has to survive: the
  * snapshot sees 저장, the click lands on 결제하기, the same ref throughout.
  */
-function relabelHtml(after: number): string {
+function relabelHtml(after: number, hide: boolean): string {
+  // `hide` keeps the label and takes the button out of sight instead: a control that is no longer
+  // there to press, which is not the same fact as one that is called something else.
+  const change = hide
+    ? "document.getElementById('act').style.display = 'none';"
+    : `document.getElementById('act').textContent = ${JSON.stringify(RELABEL_AFTER)};`;
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>재라벨</title></head>
 <body>
@@ -155,7 +160,7 @@ function relabelHtml(after: number): string {
   <button id="act" type="button" onclick="document.title = '눌림:' + this.textContent">${RELABEL_BEFORE}</button>
   <script>
     setTimeout(function () {
-      document.getElementById('act').textContent = ${JSON.stringify(RELABEL_AFTER)};
+      ${change}
     }, ${after});
   </script>
 </body></html>`;
@@ -296,7 +301,7 @@ export function serveFixture(port = 0) {
           url.searchParams.get("after") ?? "300",
           10,
         );
-        return new Response(relabelHtml(after), {
+        return new Response(relabelHtml(after, url.searchParams.has("hide")), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

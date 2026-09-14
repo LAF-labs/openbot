@@ -118,6 +118,10 @@ describe.skipIf(!HAS_BROWSER)("a page that never loads", () => {
     const hung = await timed(post("/navigate", { url: `${fixture?.url}hang` }));
     expect(hung.result.status).toBe(504);
     expect(hung.result.body.code).toBe("laf:page_timeout");
+    // The code in `error` too, and none of Playwright's words: `error` held `goto: Timeout 2000ms
+    // exceeded.` until 2026-09-14, for a server that matched it instead of reading `code`.
+    expect(hung.result.body.error).toBe("laf:page_timeout");
+    expect(JSON.stringify(hung.result.body)).not.toMatch(/Timeout|goto|hang/);
     // The tab was replaced, or the browser was; either way the Bot was told which.
     expect(["page", "browser"]).toContain(String(hung.result.body.recycled));
     // The deadline plus the recovery, never a second deadline on top.

@@ -94,7 +94,7 @@ export const humanInput: BotRoute = async (
   { request, url, botId, session },
   { profiles },
 ) => {
-  if (!session.control.humanMayDrive()) return fact(TAKE_CONTROL_FIRST, 409);
+  if (!session.control.humanMayDrive()) return fact(TAKE_CONTROL_FIRST);
   const body = await bodyOf<Record<string, unknown>>(request);
   try {
     const target = await profiles.page(botId);

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { TOOL_RESULT_KO } from "../../shared/prompt/tool-results.ko";
 import { auditFactCodes } from "../../server/src/audit";
 import { REFUSAL_SAID } from "../src/lib/components/queries";
+import { OUTCOME_LABELS } from "../src/lib/computer/outcome-labels";
 import { ko } from "../src/lib/i18n-ko";
 import { TURN_NOTICES } from "../src/lib/copilot/stopped-turn";
 
@@ -21,27 +22,24 @@ import { TURN_NOTICES } from "../src/lib/copilot/stopped-turn";
  * labels and the model failures have.
  */
 
-const OUTCOME_LABELS = labelsFrom(
-  readFileSync(
-    join(import.meta.dir, "../src/lib/copilot/computer-tools.tsx"),
-    "utf8",
-  ),
-);
-
-/** The label table out of its own source, so this cannot pass against a table that moved. */
-function labelsFrom(source: string): Record<string, string> {
-  const block = source.match(
-    /const OUTCOME_LABELS: Record<string, string> = \{([\s\S]*?)\n\};/,
-  );
-  if (!block?.[1]) throw new Error("OUTCOME_LABELS is not where it was.");
-  return Object.fromEntries(
-    [...block[1].matchAll(/"(laf:[a-z_]+)":\s*\n?\s*"([^"]+)"/g)].map(
-      (match) => [match[1] as string, match[2] as string],
-    ),
-  );
-}
-
+/*
+ * The transcript line's table is imported since 2026-09-14, when it moved out of `computer-tools.tsx`
+ * into a module of its own (`lib/computer/outcome-labels.ts`). It was parsed out of that file's source
+ * before, so the test could not pass against a table that had moved; the import fails loudly instead.
+ */
 describe("what a tool result says to each of its readers", () => {
+  test("the transcript line is the table computer-tools.tsx draws from", () => {
+    const tools = readFileSync(
+      join(import.meta.dir, "../src/lib/copilot/computer-tools.tsx"),
+      "utf8",
+    );
+    expect(tools).toContain(
+      'import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";',
+    );
+    // And no second table beside it for a code to be added to instead.
+    expect(tools).not.toMatch(/const OUTCOME_LABELS/);
+  });
+
   test("every code the surface labels has Korean for the person", () => {
     expect(Object.keys(OUTCOME_LABELS).length).toBeGreaterThan(0);
     const missing = Object.values(OUTCOME_LABELS).filter(

@@ -24,18 +24,14 @@ const COMPONENTS = join(import.meta.dir, "../src/components");
 /**
  * Every code the two senders can put in front of this table.
  *
- * Listed here, by hand, against the server (`codeFor` in `server/src/computer/routes.ts`) and the
- * container's `{type:"error"}` socket messages: a code dropped from the table would otherwise
- * fall to the generic line and nothing would say so.
+ * Listed here, by hand, against the server's client (its own facts) and the container: its
+ * `{type:"error"}` socket messages, and the failures its door and its browser answer whatever was
+ * asked. `computer-codes.test.ts` derives the same from the container's list; this is the short
+ * version a reader of this file can check by eye. A code dropped from the table would otherwise fall
+ * to the generic line and nothing would say so.
  */
 const SENT_BY_THE_SERVER = [
-  "laf:bot_id_invalid",
-  "laf:page_timeout",
-  "laf:human_has_control",
-  "laf:computer_unavailable",
-  "laf:snapshot_stale",
   "laf:computer_failed",
-  // The client's own facts, which `codeFor` passes through since 2026-09-14.
   "laf:computer_unreachable",
   "laf:computer_timed_out",
 ];
@@ -43,7 +39,12 @@ const SENT_BY_THE_COMPUTER = [
   "laf:screen_not_started",
   "laf:take_control_first",
   "laf:input_not_applied",
-  // Thrown while starting a browser, and answered by the screenshot route as it came.
+  // Its door and its browser, passed through the screenshot route by their own names.
+  "laf:computer_token_refused",
+  "laf:bot_header_missing",
+  "laf:bot_id_invalid",
+  "laf:computer_route_unknown",
+  "laf:browser_failed",
   "laf:navigation_guard_unavailable",
 ];
 

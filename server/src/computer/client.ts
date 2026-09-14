@@ -58,12 +58,18 @@ export type ComputerClientOptions = {
  * They carried English until 2026-09-14 — this file's own ("The assistant's computer is not
  * running.") or whatever the computer container put in `error`, a Playwright call log among them —
  * and the routes answered with it: onto a Korean screen, into a model's tool result, into a
- * routine's. The message is the code now, the way `PageLoadTimeoutError`'s already was. The model's
- * words for each are in `shared/prompt/tool-results.ko.ts`, the person's in `i18n-ko.ts`, and
- * `computer-routes-codes.test.ts` holds every code a Bot's tool can meet to having the model's.
+ * routine's. The message is the code now.
+ *
+ * ONE VOCABULARY. What happened inside the browser is the container's to name
+ * (`agent-computer/src/codes.ts`), and its code passes through as it came, through the one table
+ * below. The names this file adds are only for what no answer from the computer could say: that
+ * nothing answered, that it answered too late or without a code, that the caller had already
+ * stopped, or that the floor refused the address before anything was sent. The model's words for
+ * all of them are in `shared/prompt/tool-results.ko.ts`, the person's in the app's tables, and
+ * `app/tests/computer-codes.test.ts` holds both to the container's list and to this file.
  */
 
-/** The caller stopped first: a person's Stop, or a routine's deadline. */
+/** The caller stopped first: a person's Stop, or a routine's deadline. The container says it too. */
 export const STOPPED = "laf:stopped";
 /** Nothing answered the connection. The container is not running, or not where it was configured. */
 export const COMPUTER_UNREACHABLE = "laf:computer_unreachable";
@@ -72,24 +78,39 @@ export const COMPUTER_UNREACHABLE = "laf:computer_unreachable";
  * cure is not the same: audit A3 (S3) found a slow page reported as a broken computer.
  */
 export const COMPUTER_TIMED_OUT = "laf:computer_timed_out";
-/** It answered with a failure this client has no more particular fact for. */
+/** It answered with a failure that carried no code — an older image, or not the computer at all. */
 export const COMPUTER_FAILED = "laf:computer_failed";
+/** What the Bot asked to open is not a web address at all. Only the floor here says this. */
+export const URL_INVALID = "laf:url_invalid";
+
+/** The facts this client says itself, where the computer's answer could not. */
+export const CLIENT_FACTS = [
+  STOPPED,
+  COMPUTER_UNREACHABLE,
+  COMPUTER_TIMED_OUT,
+  COMPUTER_FAILED,
+  URL_INVALID,
+] as const;
+
+/*
+ * The container's names this server also has to say itself — a floor that refuses before the call, a
+ * check the gateway makes on its own snapshot, the fallback for an error that reached a route without
+ * a code. The same strings as `codes.ts`, never a second spelling of one.
+ */
 /** The refs a call carried are not the page's any more. A fresh snapshot is the whole fix. */
 export const STALE_REFS = "laf:stale_refs";
-/** A page that did not open for a reason other than the deadline: a name that does not resolve. */
-export const PAGE_FAILED = "laf:page_failed";
+/** A person holds the wheel. */
+export const HUMAN_HAS_CONTROL = "laf:human_has_control";
 /** An address the floor will not open, or a hop or a landing that went inside this deployment. */
 export const NAVIGATION_REFUSED = "laf:navigation_refused";
-/** What the Bot asked to open is not a web address at all. */
-export const URL_INVALID = "laf:url_invalid";
+/** The page never finished loading by the computer's deadline. */
+export const PAGE_TIMEOUT = "laf:page_timeout";
+/** A page that did not open for a reason other than the deadline: a name that does not resolve. */
+export const NAVIGATION_FAILED = "laf:navigation_failed";
 /** A path the workspace never lets a Bot name: absolute, `..`, outside it. */
-export const WORKSPACE_PATH_REFUSED = "laf:workspace_path_refused";
-/** A path it may name, with nothing usable there: no file, a folder, more than the limit. */
-export const WORKSPACE_FILE_UNUSABLE = "laf:workspace_file_unusable";
-/** A person's value arrived for a request that is no longer open. */
-export const SECRET_NOT_PENDING = "laf:secret_not_pending";
-/** A person's value could not be typed: the box it was for has left the page. */
-export const SECRET_FIELD_GONE = "laf:secret_field_gone";
+export const FILE_PATH_REFUSED = "laf:file_path_refused";
+/** A request the computer could not use as it was sent. */
+export const REQUEST_INVALID = "laf:request_invalid";
 
 /**
  * The fact a failure from this client carries, for a caller that has to answer with one.
@@ -103,6 +124,10 @@ export function factOfError(error: unknown): string {
     : COMPUTER_FAILED;
 }
 
+/**
+ * The computer could not do it: nothing answered, the browser or the disk failed, its door refused
+ * this server, or the caller stopped. 503 at the routes — an operator's problem, not a rewording.
+ */
 export class ComputerUnavailableError extends Error {
   constructor(reason: string) {
     super(reason);
@@ -111,14 +136,12 @@ export class ComputerUnavailableError extends Error {
 }
 
 /**
- * The Bot acted on something that is not on the page.
+ * The Bot acted on an element that would not take the action: hidden, covered, disabled, not a field.
  *
- * Its own error because it is its own condition, and the one the Bot can fix by taking a fresh
- * snapshot.
- *
- * The message a locator failure carries is a Playwright call log, several lines of `waiting for
- * locator('aria-ref=e5')`, which is noise to a model and to a person. It is replaced with the fact,
- * `laf:stale_refs`, whose words say what to do next.
+ * Its own error because it is its own condition, and the one the Bot can fix by looking again. Until
+ * 2026-09-14 it was recognised by Playwright's call log in the answer — `waiting for locator(…)` —
+ * and a call log was also what a failed `fill` put the typed value in; the container names it
+ * `laf:element_not_actionable` now, and that is all this reads.
  */
 export class ElementNotFoundError extends Error {
   constructor(reason: string) {
@@ -126,9 +149,6 @@ export class ElementNotFoundError extends Error {
     this.name = "ElementNotFoundError";
   }
 }
-
-/** The fact a navigation that never finished is said with, on every path that reads it. */
-export const PAGE_TIMEOUT = "laf:page_timeout";
 
 /**
  * The page never finished loading.
@@ -146,6 +166,18 @@ export class PageLoadTimeoutError extends Error {
   }
 }
 
+/**
+ * The page did not open for a reason that is the site's or the network's: a name that does not
+ * resolve, a connection refused. 502 at the routes, beside the timeout's 504 — the site, not the
+ * computer, which is what a 503 would have said about an address with a typo in it.
+ */
+export class PageLoadFailedError extends Error {
+  constructor(reason: string = NAVIGATION_FAILED) {
+    super(reason);
+    this.name = "PageLoadFailedError";
+  }
+}
+
 export class NavigationRefusedError extends Error {
   constructor(reason: string) {
     super(reason);
@@ -154,7 +186,7 @@ export class NavigationRefusedError extends Error {
 }
 
 /**
- * The file request itself was refused by the computer: outside the workspace, missing, or too large.
+ * The file request itself was refused by the computer: a path outside the workspace.
  *
  * Distinct from a policy refusal, which happens in the gateway before the request is ever made. Both
  * reach the browser as a 403 but they mean different things: this one says the path is not a thing a
@@ -169,8 +201,8 @@ export class WorkspaceRefusedError extends Error {
 }
 
 /**
- * The request asked for something that is not there, or not usable: no such file, a folder where a
- * file was wanted, a write that is too big.
+ * The request asked for something that is not there, or not usable as sent: no such file, a folder
+ * where a file was wanted, a write that is too big, a tab that is not open, a part left out.
  *
  * Not a refusal. Nothing declined to let the Bot do this; the thing it named does not fit the request.
  * Kept separate from {@link WorkspaceRefusedError} because a Bot's next move differs completely: here
@@ -184,16 +216,99 @@ export class WorkspaceRequestError extends Error {
 }
 
 /**
- * The refs the caller is using were taken before the page changed.
+ * What the call was made against has moved on: refs from an older snapshot, a control renamed under
+ * its ref, a secret request that closed before its value arrived.
  *
- * Its own type because it is the one failure here that the model can fix without a person: take a new
- * snapshot and try again. Collapsed into a generic failure, the Bot apologises to the person instead.
+ * Its own type because it is the failure the model can fix without a person: take a new snapshot and
+ * try again. Collapsed into a generic failure, the Bot apologises to the person instead.
  */
 export class StaleSnapshotError extends Error {
   constructor(reason: string) {
     super(reason);
     this.name = "StaleSnapshotError";
   }
+}
+
+/**
+ * A person holds the wheel, or drove before taking it. Nothing is broken, and nothing to look again
+ * at: the Bot waits. A 409 like a stale ref, and its own type because routes.ts used to find it by
+ * matching `control` in the message.
+ */
+export class ControlHeldError extends Error {
+  constructor(reason: string = HUMAN_HAS_CONTROL) {
+    super(reason);
+    this.name = "ControlHeldError";
+  }
+}
+
+/**
+ * WHAT THIS SERVER MAKES OF EACH FACT THE COMPUTER ANSWERS WITH. THE ONE TABLE, READ BY `code`.
+ *
+ * The container decides what happened and says so in `code` (`agent-computer/src/codes.ts`); the code
+ * travels on as the message of the error this throws, unchanged. What the table adds is the one thing
+ * the container cannot know — which of this server's failures it is, and so the status its routes
+ * answer (`statusFor` in routes.ts) and the next move a Bot is told to make.
+ *
+ * UNTIL 2026-09-14 THIS WAS READ OFF EVERYTHING BUT THE CODE: the status (a 409 was a stale snapshot,
+ * a 403 the workspace, a 400 a missing file), the door (`/human/secret` was a gone box), and for a
+ * timeout, Playwright's first line, which the container kept in `error` for this file's regular
+ * expression. Two vocabularies grew out of it — `laf:page_failed` beside the container's
+ * `laf:navigation_failed`, `laf:workspace_file_unusable` for three facts the container already told
+ * apart — and each surface had words for one of them.
+ */
+export const COMPUTER_ANSWERS = {
+  // Look again: the page, the control or the request has moved on from what the call carried.
+  "laf:stale_refs": StaleSnapshotError,
+  "laf:label_changed": StaleSnapshotError,
+  "laf:secret_not_pending": StaleSnapshotError,
+  "laf:element_not_actionable": ElementNotFoundError,
+  // Wait: a person has the wheel, or has not taken it.
+  "laf:human_has_control": ControlHeldError,
+  "laf:take_control_first": ControlHeldError,
+  // The site, not the computer.
+  "laf:page_timeout": PageLoadTimeoutError,
+  "laf:navigation_failed": PageLoadFailedError,
+  // Never: the floor, and the workspace's walls.
+  "laf:navigation_refused": NavigationRefusedError,
+  "laf:file_path_refused": WorkspaceRefusedError,
+  // Send something different.
+  "laf:file_not_found": WorkspaceRequestError,
+  "laf:file_wrong_kind": WorkspaceRequestError,
+  "laf:file_too_large": WorkspaceRequestError,
+  "laf:tab_missing": WorkspaceRequestError,
+  "laf:request_invalid": WorkspaceRequestError,
+  "laf:bot_id_invalid": BotIdRefusedError,
+  // The computer could not: its browser, its disk, a caller that left, its door refusing this server.
+  "laf:browser_failed": ComputerUnavailableError,
+  "laf:navigation_guard_unavailable": ComputerUnavailableError,
+  "laf:file_failed": ComputerUnavailableError,
+  "laf:stopped": ComputerUnavailableError,
+  "laf:computer_token_refused": ComputerUnavailableError,
+  "laf:computer_route_unknown": ComputerUnavailableError,
+  "laf:bot_header_missing": ComputerUnavailableError,
+  "laf:stream_upgrade_required": ComputerUnavailableError,
+} as const satisfies Record<`laf:${string}`, new (code: string) => Error>;
+
+/** The shape a code has. Anything else in `code` is not one, whatever it starts with. */
+const CODE_SHAPE = /^laf:[a-z0-9_]{1,64}$/;
+
+/**
+ * The failure an unsuccessful answer from the computer is: its code, as the error the table names.
+ *
+ * A code the table does not know still passes through — a newer container than this server, for the
+ * length of a rollout — as the computer not managing it, because a fact is a fact and swallowing it
+ * would put `laf:computer_failed` in the trail where the real one was. An answer with no code is the
+ * one this file names itself.
+ */
+function failureOf(body: Record<string, unknown> | null): Error {
+  const code = body?.code;
+  if (typeof code !== "string" || !CODE_SHAPE.test(code)) {
+    return new ComputerUnavailableError(COMPUTER_FAILED);
+  }
+  const Failure = Object.hasOwn(COMPUTER_ANSWERS, code)
+    ? COMPUTER_ANSWERS[code as keyof typeof COMPUTER_ANSWERS]
+    : ComputerUnavailableError;
+  return new Failure(code);
 }
 
 export function createComputerClient(options: ComputerClientOptions) {
@@ -282,52 +397,9 @@ export function createComputerClient(options: ComputerClientOptions) {
         unknown
       > | null;
 
-      if (!response.ok) {
-        const detail =
-          typeof body?.error === "string"
-            ? body.error
-            : `HTTP ${response.status}`;
-        const fact = factOfAnswer(path, response.status, body, detail);
-        /*
-         * The computer stopped a navigation itself — a redirect hop into the deployment's own
-         * network, judged where the browser follows it. Asked before the 403 branch, which would
-         * otherwise read it as the workspace refusing a path. The reason the computer sends beside
-         * the code is a sentence, and stays where it was written.
-         */
-        if (body?.code === NAVIGATION_REFUSED) {
-          throw new NavigationRefusedError(NAVIGATION_REFUSED);
-        }
-        // A stale ref is fixed by taking a new snapshot, so it is not reported as the computer being
-        // unavailable. A control renamed under its ref (`laf:label_changed`) is fixed the same way.
-        if (response.status === 409) {
-          throw new StaleSnapshotError(fact);
-        }
-        // These two must not be collapsed: path confinement and ordinary bad requests lead to
-        // different next actions.
-        // 403 is the path confinement: a boundary, and the answer will never change.
-        if (response.status === 403) {
-          throw new WorkspaceRefusedError(fact);
-        }
-        // 400 is an ordinary bad request: no such file, a folder where a file was wanted, too large. A
-        // different request would succeed, which is exactly what the Bot needs to understand.
-        if (response.status === 400) {
-          throw new WorkspaceRequestError(fact);
-        }
-        /*
-         * A locator that never resolved is not an outage. Playwright reports it as a timeout whose
-         * message is a call log naming the selector, which is how "that button is not there" ended up
-         * indistinguishable from "the computer is down".
-         */
-        // Asked before the locator branch, which would otherwise take it: `goto` times out with the
-        // same word, and a page that will not load is not an element that left it.
-        if (body?.code === PAGE_TIMEOUT || GOTO_TIMEOUT.test(detail)) {
-          throw new PageLoadTimeoutError();
-        }
-        if (LOCATOR_TIMEOUT.test(detail)) {
-          throw new ElementNotFoundError(fact);
-        }
-        throw new ComputerUnavailableError(fact);
-      }
+      // The code, and nothing else about the answer: not its status, not the door it came out of,
+      // and never `error`, which is where Playwright's words used to ride. See COMPUTER_ANSWERS.
+      if (!response.ok) throw failureOf(body);
       return body;
     }
 
@@ -591,57 +663,6 @@ export type NavigateOptions = {
   /** The `Referer` a held hop was carrying, sent again when that hop is asked for. */
   referer?: string;
 };
-
-/**
- * Playwright's words for a navigation that ran out of time: the deadline's word, and the navigation's
- * beside it.
- *
- * The call log's `navigating to "` ALONE is in every `goto` that failed, and it used to be enough —
- * so an address that does not resolve, refused by Chromium in under a second (`net::ERR_NAME_NOT_RESOLVED`,
- * 946 ms, measured 2026-09-14), reached the Bot as a page that had taken thirty seconds not to load.
- * The container says `laf:page_timeout` itself for a real one; this is for an image that does not.
- */
-const GOTO_TIMEOUT =
-  /goto: Timeout .* exceeded|Timeout .* exceeded[\s\S]*navigating to "/i;
-/** And for a control it waited on in vain. */
-const LOCATOR_TIMEOUT = /waiting for locator|Timeout .* exceeded/i;
-
-/**
- * The fact an unsuccessful answer from the computer is.
- *
- * The container names most of what it refuses with a code, and a code passes through as it came.
- * Some it still says in words — a workspace path it will not hand over, a person driving without
- * the wheel, whatever Playwright threw — and a sentence from a service that knows no locale is not a
- * fact anybody downstream can phrase. So the words decide nothing here and go no further: what an
- * answer means is read off which door it came out of and with what status, which is also what the
- * container itself decided it on.
- */
-function factOfAnswer(
-  path: string,
-  status: number,
-  body: Record<string, unknown> | null,
-  detail: string,
-): string {
-  for (const said of [body?.code, body?.error]) {
-    if (typeof said === "string" && said.startsWith("laf:")) return said;
-  }
-  if (body?.stopped === true) return STOPPED;
-  // A person's own hands: the masked box, and the live screen.
-  if (path === "/human/secret") {
-    return status === 409 ? SECRET_NOT_PENDING : SECRET_FIELD_GONE;
-  }
-  if (path.startsWith("/human/")) {
-    return status === 409 ? "laf:take_control_first" : "laf:input_not_applied";
-  }
-  if (GOTO_TIMEOUT.test(detail)) return PAGE_TIMEOUT;
-  if (status === 409 || LOCATOR_TIMEOUT.test(detail)) return STALE_REFS;
-  if (path.startsWith("/files/") || path === "/upload") {
-    if (status === 403) return WORKSPACE_PATH_REFUSED;
-    if (status === 400) return WORKSPACE_FILE_UNUSABLE;
-  }
-  if (path === "/navigate") return PAGE_FAILED;
-  return COMPUTER_FAILED;
-}
 
 /**
  * Which refusal the navigation floor's verdict was.

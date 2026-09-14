@@ -107,7 +107,7 @@ export const switchTab: BotRoute = async (
       }),
     );
   } catch (error) {
-    if (error instanceof TabError) return fact("laf:tab_missing", 400);
+    if (error instanceof TabError) return fact("laf:tab_missing");
     return browserFailed(error);
   }
 };

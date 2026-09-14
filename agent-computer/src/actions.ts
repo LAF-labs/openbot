@@ -200,7 +200,7 @@ export const act: BotRoute = async (
       });
       // 499, the convention for a client that closed the request: this is not the computer
       // failing, and a 502 here would be counted as one.
-      return fact("laf:stopped", 499, { stopped: true });
+      return fact("laf:stopped", { stopped: true });
     }
     return actionFailure(error);
   }
