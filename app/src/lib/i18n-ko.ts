@@ -2417,6 +2417,8 @@ export const ko: Record<string, string> = {
   "A request for a secret was lost when the computer restarted":
     "컴퓨터가 다시 시작되면서 비밀값 요청이 사라짐",
   "A frame on the page could not be read": "페이지 안의 문서 하나를 읽지 못함",
+  "The page was still loading, so nothing on it could be read":
+    "페이지가 아직 열리는 중이라 내용을 읽지 못함",
   // 문의·의견 — 진단 정보 같이 보내기: 서버가 모은 것을 보여 주고, 보여 준 그대로 보낸다.
   "Send diagnostic details too": "진단 정보 같이 보내기",
   "The app version, whether the server is working, recent failure codes and your own Bots' recent records.":

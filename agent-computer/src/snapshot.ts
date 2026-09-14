@@ -17,7 +17,13 @@ import {
   parseAriaSnapshot,
   type SnapshotElement,
 } from "./aria-snapshot";
-import { settleIfLoading } from "./page-text";
+import {
+  type Arrival,
+  arrivalNote,
+  arrivalOf,
+  WHILE_ARRIVING_MS,
+} from "./page-arrival";
+import { settleIfLoading, titleOf } from "./page-text";
 import type { TabSummary } from "./profiles";
 import {
   SECRET_JOIN_TIMEOUT_MS,
@@ -25,7 +31,7 @@ import {
   secretSignals,
   typedIntoRefs,
 } from "./secret-fields";
-import type { BotSession } from "./sessions";
+import { type BotSession, note } from "./sessions";
 
 export type Snapshot = {
   snapshotId: number;
@@ -97,7 +103,15 @@ const RETAKE_MS = 2 * SECRET_JOIN_TIMEOUT_MS + FRAME_WAIT_MS;
  */
 async function pageTree(target: Page, deadline: number): Promise<string> {
   const left = () => deadline - Date.now() - AFTER_TREE_MS;
-  const first = Math.min(FRAME_WAIT_MS, left());
+  /*
+   * NOT A SECOND TRY FOR A PAGE WHOSE NEXT DOCUMENT IS ON ITS WAY: it will not answer before that
+   * one arrives, and the look that asked is told so (`treeOrArrival`) rather than made to wait out
+   * the deadline for it. Nor a full first try, once that is already known.
+   */
+  const first = Math.min(
+    arrivalOf(target) ? WHILE_ARRIVING_MS : FRAME_WAIT_MS,
+    left(),
+  );
   if (first <= 0) throw new Error("laf:browser_failed");
   try {
     return await target.ariaSnapshot({ mode: "ai", timeout: first });
@@ -105,12 +119,39 @@ async function pageTree(target: Page, deadline: number): Promise<string> {
     const again = left();
     if (
       !(error instanceof Error && error.name === "TimeoutError") ||
-      again <= 0
+      again <= 0 ||
+      arrivalOf(target)
     ) {
       throw error;
     }
     return target.ariaSnapshot({ mode: "ai", timeout: again });
   }
+}
+
+/**
+ * The look at a tab whose next document is on its way: nothing on it, because nothing on it answers.
+ *
+ * Nothing from the tree either, even one already taken: its refs name a document that is leaving, and
+ * whatever an early return would carry of it is exactly what the secret marking below exists to vet.
+ * The generation has moved on, so an action carrying an older ref is told to look again; the tabs and
+ * the address are the browser's to say, and `laf:page_loading` says why the rest is not here.
+ */
+async function stillArriving(
+  session: BotSession,
+  target: Page,
+  tabs: () => Promise<TabSummary[]>,
+  arrival: Arrival,
+): Promise<Snapshot> {
+  note(session, arrivalNote(arrival));
+  return {
+    snapshotId: session.snapshotId,
+    url: target.url(),
+    title: "",
+    elements: [],
+    truncated: false,
+    tabs: await tabs(),
+    opaqueFrames: 0,
+  };
 }
 
 export async function snapshotPage(
@@ -122,7 +163,26 @@ export async function snapshotPage(
   session.snapshotId += 1;
   // A tab that opened a moment ago is still `about:blank`, and an aria snapshot of that is an empty
   // list — which reads as "there is nothing on this page you can act on".
-  await settleIfLoading(target);
+  if (!(await settleIfLoading(target))) {
+    const arrival = arrivalOf(target);
+    if (arrival) return stillArriving(session, target, tabs, arrival);
+  }
+  /*
+   * A TREE THAT FAILED WHILE A DOCUMENT IS ON ITS WAY IS THAT, NOT A BROKEN BROWSER. Playwright's tree
+   * does take its timeout on a tab whose document answers nothing, so before this the look ended at
+   * the deadline as `laf:browser_failed` (measured 2026-09-14 in the image built from dbc1c67: 502 at
+   * 12.0 s, one second into a `/navigate` to `/hang`). A navigation can begin after the question above
+   * was answered — a page's own script — so every tree asks again.
+   */
+  const treeOrArrival = async (): Promise<string | Arrival> => {
+    try {
+      return await pageTree(target, deadline);
+    } catch (error) {
+      const arrival = arrivalOf(target);
+      if (arrival) return arrival;
+      throw error;
+    }
+  };
   /*
    * THE SECRET FIELDS FIRST, THE PAGE LAST. A ref is minted the first time an element is
    * snapshotted and reused after, so either order names the same refs — but Playwright resolves
@@ -132,7 +192,10 @@ export async function snapshotPage(
    * standing when the Bot acts.
    */
   const joined = await secretSignals(session, target);
-  let yaml = await pageTree(target, deadline);
+  let yaml = await treeOrArrival();
+  if (typeof yaml !== "string") {
+    return stillArriving(session, target, tabs, yaml);
+  }
   const marks: SecretMarks = {
     labels: [...joined.labels],
     values: [...joined.values],
@@ -153,19 +216,38 @@ export async function snapshotPage(
     marks.values.push(...late.values);
     marks.refs.push(...late.refs);
     if (!late.snapshotted) break;
-    yaml = await pageTree(target, deadline);
+    const retaken = await treeOrArrival();
+    if (typeof retaken !== "string") {
+      return stillArriving(session, target, tabs, retaken);
+    }
+    yaml = retaken;
   }
-  // After the page's snapshot, not before: whether a ref still names a node is asked of the
-  // snapshot standing now, and a node renamed since the last one has only just been handed its ref.
-  const typedInto = await typedIntoRefs(session, target, yaml);
+  /*
+   * After the page's snapshot, not before: whether a ref still names a node is asked of the
+   * snapshot standing now, and a node renamed since the last one has only just been handed its ref.
+   *
+   * AND WHEN THAT QUESTION CANNOT BE ANSWERED, NO BOX KEEPS ITS VALUE. A field a person typed a secret
+   * into is found in the tree by asking the page, and a page that stops answering part of the way —
+   * its next document on its way, or the look's deadline come — leaves the field unfound: its ref
+   * unmarked, and its value marked only if the join read it. A tab that is leaving is answered as
+   * leaving; any other page with a question left unanswered shows the contents of no box
+   * (`unverified`), which costs a Bot the sight of what is in the boxes for one look and never costs
+   * anybody the secret.
+   */
+  const typedInto = await typedIntoRefs(session, target, yaml, deadline);
+  if (!typedInto.complete) {
+    const arrival = arrivalOf(target);
+    if (arrival) return stillArriving(session, target, tabs, arrival);
+  }
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
-    title: await target.title(),
+    title: await titleOf(target),
     ...parseAriaSnapshot(yaml, {
       labels: marks.labels,
       values: marks.values,
-      refs: [...marks.refs, ...typedInto],
+      refs: [...marks.refs, ...typedInto.refs],
+      ...(typedInto.complete ? {} : { unverified: true }),
     }),
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.

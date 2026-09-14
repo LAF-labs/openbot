@@ -143,11 +143,18 @@ export async function startScreencast(
   });
 
   return {
+    /*
+     * ASKED, NOT WAITED FOR. On a tab whose next document is on its way, neither `Page.stopScreencast`
+     * nor the detach answered in 5 s (measured 2026-09-14; page-arrival.ts), and a reset waits for
+     * this stop: in the image built from dbc1c67, `/computers/reset` with the live screen open, one
+     * second into a `/navigate` to the fixture's `/hang`, answered at 29.3 s — when the navigation gave
+     * the page up. Frames that arrive after this are dropped by `stopped` either way.
+     */
     async stop() {
       if (stopped) return;
       stopped = true;
-      await client.send("Page.stopScreencast").catch(() => undefined);
-      await client.detach().catch(() => undefined);
+      void client.send("Page.stopScreencast").catch(() => undefined);
+      void client.detach().catch(() => undefined);
     },
 
     async send(message: InputMessage) {

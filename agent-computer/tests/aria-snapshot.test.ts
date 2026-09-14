@@ -449,6 +449,25 @@ describe("a secret field the DOM knows by identity", () => {
     );
     expect(JSON.stringify(elements)).not.toContain(SECRET);
   });
+
+  test("unverified: a field that could not be looked for in time could be any box, so no box shows its contents", () => {
+    // What `snapshotPage` hands over when the page stopped answering while a field a person typed a
+    // secret into was still being looked for: nothing marks the box, and nothing may show it.
+    const { elements } = parseAriaSnapshot(PAGE, { unverified: true });
+    const written = JSON.stringify(elements);
+    expect(written).not.toContain(SECRET);
+    expect(written).not.toContain(CODE);
+    expect(written).not.toContain("kim");
+    // Blanked, not marked: the boxes are still boxes, present and empty, and nothing else changed.
+    expect(
+      elements.map((element) => [element.ref, element.value, element.type]),
+    ).toEqual([
+      ["e2", "", undefined],
+      ["e3", "", undefined],
+      ["e4", "", undefined],
+      ["e5", undefined, undefined],
+    ]);
+  });
 });
 
 /**

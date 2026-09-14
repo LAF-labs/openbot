@@ -5,8 +5,10 @@
  * `evaluateAll` and `count` wait for the frame they are asked of to have a document, and a frame whose
  * request was accepted and never answered never has one: measured 2026-09-14 on 1.62.1, each of them
  * on such a frame outlasted every bound it was given (15 s, 15 s, 4 s), and a snapshot of a page
- * carrying one never came back (W3-c). `title()` is not one of them — it answered in milliseconds
- * with Chromium's own "Loading …" — so it is not asked through this.
+ * carrying one never came back (W3-c). A whole tab does the same while its next document is on its
+ * way (`page-arrival.ts`). `title()` looked like the exception — it answered in milliseconds — but what
+ * it answered was Playwright's `Loading ` and the address being loaded, not a title, so a title is
+ * asked of the document through this too (`titleOf`).
  */
 
 /**

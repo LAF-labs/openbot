@@ -6,6 +6,7 @@
  * both exist.
  */
 import type { Locator, Page } from "playwright";
+import { fromDocument } from "./page-arrival";
 import type { BotSession } from "./sessions";
 
 /**
@@ -77,6 +78,34 @@ export function locateRef(
 }
 
 /**
+ * How long a page is given to say whether a ref names anything.
+ *
+ * `count()` answers in milliseconds on a page that answers at all. On a tab whose next document is on
+ * its way it does not answer until that document arrives (`page-arrival.ts`), and it has no timeout:
+ * measured 2026-09-14 in the image built from dbc1c67, `/click` and `/type` one second into a
+ * `/navigate` to `/hang` answered 502 at 29.1 s, when the navigation gave the page up.
+ */
+export const REF_WAIT_MS = 2_000;
+
+/** What `count` answers, its failure kept apart from its silence. Undefined is no answer in `ms`. */
+export async function countOn(
+  target: Page,
+  locator: Locator,
+  ms: number = REF_WAIT_MS,
+): Promise<number | undefined> {
+  const counted = await fromDocument(
+    target,
+    ms,
+    locator.count().then(
+      (count) => ({ count }),
+      (error: unknown) => ({ error }),
+    ),
+  );
+  if (counted && "error" in counted) throw counted.error;
+  return counted?.count;
+}
+
+/**
  * The element, or a refusal that says what to do about it.
  *
  * A generation check is not an existence check. A ref from
@@ -86,7 +115,10 @@ export function locateRef(
  * instead of the actionable answer: take a fresh snapshot.
  *
  * `count()` resolves immediately rather than waiting, so a ref that names nothing is refused in
- * milliseconds instead of holding the action open for the full timeout.
+ * milliseconds instead of holding the action open for the full timeout. A page that does not answer
+ * the question at all is refused the same way: whatever it is doing — leaving for its next document,
+ * most often — the ref cannot be shown to name anything on it, and the snapshot the Bot takes next
+ * says what the page is doing.
  */
 export async function resolveRef(
   session: BotSession,
@@ -95,7 +127,7 @@ export async function resolveRef(
   expectedSnapshotId: number | undefined,
 ): Promise<Locator> {
   const locator = locateRef(session, target, ref, expectedSnapshotId);
-  if ((await locator.count()) === 0) {
+  if (!(await countOn(target, locator))) {
     throw new StaleSnapshotError(STALE_REFS);
   }
   return locator;

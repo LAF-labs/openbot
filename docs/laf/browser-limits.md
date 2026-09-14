@@ -54,6 +54,11 @@
   뜬 프레임의 요소는 그대로 온다. 기다리는 사이에 도착한 프레임의 비밀 칸은 한 번 더 확인해
   표시하고 값을 가린다. 답 없는 프레임이 있는 페이지는 `load`에 영영 닿지 않아서, 볼 때마다
   4초를 먼저 기다린다 — 그런 페이지의 스냅샷이 9초쯤 걸리는 까닭의 절반이 그것이다.
+- **넘어가는 중인 탭도 곧바로 답한다**(`agent-computer/src/page-arrival.ts`). 답하지 않는 사이트로
+  넘어가는 중인 탭은 새 페이지가 올 때까지 문서가 아무것도 답하지 않는다. 읽기·스냅샷·가리키기는
+  1초쯤에, 탭 목록은 곧바로 `laf:page_loading`(가는 곳의 origin만)과 함께 답하고, 스크린샷은 브라우저가
+  칠해 둔 떠나는 페이지를 준다. 그런 탭의 제목은 비운다 — Playwright는 제목 자리에 가는 주소 전체를
+  줬고, GET 폼은 그 주소에 칸의 값을 넣는다. 읽기 전체는 15초(`READ_DEADLINE_MS`) 안에 끝난다.
 - **root가 아니고, 샌드박스가 켜져 있다.** 컨테이너는 `pwuser`(1001)로 돌고, 렌더러마다
   자기 사용자·PID·네트워크 네임스페이스에 들어간다. 이것을 가능하게 하는 것이 compose의
   `security_opt`(Playwright의 seccomp 프로필) — 빠지면 브라우저가 "No usable sandbox!"로
@@ -158,6 +163,70 @@ Desktop 29.5, compose와 같은 seccomp·init·shm, 픽스처는 호스트에서
 | 답 없는 iframe이 있는 페이지의 스냅샷이 영원히 멈춘다 | **우리 것이었다 — 고침.** 스냅샷은 트리를 찍기 전에 비밀 칸을 확인하는데(`secretSignals`), 그 `evaluateAll`에는 기한이 없고 문서가 없는 프레임에서는 문서를 끝없이 기다린다 — `evaluate`·`count`도 같고 `title()`은 아니다(Playwright 1.62.1 실측). 확인을 통과했더라도 트리(`ariaSnapshot`)가 그 프레임 하나에 기본 기한 30초를 통째로 썼다(실측 30.04초). 이제 확인은 프레임마다 1초, 트리는 문서가 없는 프레임을 3초 기다리고, 스냅샷 전체는 15초 안에 끝난다. 그때까지 안 뜬 프레임은 트리에 속 빈 `- iframe` 줄로 남아 `opaqueFrames`로 센다 | 고치기 전(eeea985 이미지): navigate 200/7.1초, snapshot **120초 무응답 ×2**, 옆의 read 200/4.5초. 고친 뒤: navigate 200/5.1초, snapshot 200 **9.17초·9.23초**, `opaqueFrames: 1`, 페이지의 버튼(`e3`)과 뜬 프레임의 버튼(`f1e4`) 그대로, read 200/4.1초. 평범한 페이지는 달라지지 않았다: `/`·`/pw`·`/sites/smartstore-orders`에서 스냅샷 15번씩 두 차례, 중앙값이 전 12–19ms, 후 10–31ms. `hung-site.test.ts`가 매번 확인한다(고치기 전 코드에서는 60초 제한에 걸려 실패) |
 | 기한을 두면, 확인이 포기한 뒤 트리 도중 도착한 프레임의 비밀값이 샌다 | **막음.** 확인이 1초에 포기한 프레임이 트리를 찍는 사이 도착하면 값 든 비밀 칸이 아무 표시 없이 트리에 들어간다(늦은 확인을 끈 채 실측: `"name":"간편결제","value":"LATE-FRAME-SECRET-4455"`, 이름 없는 칸은 표시 없음). 그래서 트리 뒤에, 답하지 않았던 프레임과 확인 뒤에 붙은 프레임을 한 번 더 기다려 확인하고, 그때 입력 칸을 찍었으면 트리를 다시 찍는다 — 그래야 봇이 누를 ref가 서 있는 트리의 것이다 | `late-frame-secret.test.ts`가 프레임을 트리를 부르는 순간 풀어서 매번 확인한다: 스냅샷 전체에 값 없음, 두 칸 모두 `type: "password"`(이름도 값도 없는 칸 포함), 트리 2번, 늦은 프레임의 ref로 클릭 동작 |
 
+### 끝내 도착하지 않는 페이지로 넘어가는 탭 — W3-c 고침에서 찾은 것 (2026-09-14)
+
+W3-c의 스냅샷 기한을 고치다 찾았다: `/read`가 **넘어가는 중인** 탭에서 멈춘다. 답하지 않는 사이트로
+넘어가는 탭은 새 문서가 도착(commit)할 때까지 DevTools가 그 탭의 문서로 가는 메시지를 붙잡아 둔다.
+Playwright 1.62.1에서 `evaluate`·`locator.count`·`evaluateAll`·`screenshot`은 6초, CDP의
+`Runtime.evaluate`·`DOM.getDocument`·`Accessibility.getFullAXTree`·`Page.getFrameTree`는 4초 동안 답이
+없었고(`goto`로 보냈든 페이지 스크립트의 `location.href`로 보냈든 같다), 세션의 `detach`와
+`Page.stopScreencast`도 5초 동안 답이 없었다. 브라우저가 스스로 답하는 `Page.captureScreenshot`·
+`Target.getTargetInfo`는 몇 ms에 왔다. 고치기 전(dbc1c67 이미지)과 뒤를 각각 빌드한 이미지의 컨테이너에서
+쟀다(Docker Desktop, compose와 같은 seccomp·init·shm, 픽스처는 호스트에서 서빙). 기준은 `/pw`를 연 뒤
+`/navigate`로 `/hang`을 보내고(기한 30초) 1초 뒤에 부른 한 번이다.
+
+| 경로 | 고치기 전 | 고친 뒤 |
+|---|---|---|
+| `/read` | 502 `laf:browser_failed` **29.1초** — `/navigate`가 페이지를 버린 순간 | 200 **1.03초**, 본문 `""`, `laf:page_loading` |
+| `/snapshot` | 502 `laf:browser_failed` **12.0초** | 200 **1.01초**, 요소 0개, `laf:page_loading` |
+| `/screenshot` | 502 `laf:browser_failed` **29.1초** | 200 **52ms**, 떠나는 페이지(`/pw`)의 그림 |
+| `/tabs/switch` | 200 12ms, 탭 제목 `Loading http://…/hang` | 200 **11ms**, 제목 `""`, `laf:page_loading` |
+| `/describe-point` | 502 `laf:browser_failed` **29.1초** | 200 **1.01초**, `element: null`, `laf:page_loading` |
+| `/click`·`/type` | 502 `laf:browser_failed` **29.1초**·**29.1초** | 409 `laf:stale_refs` **1.01초**·**1.01초** |
+| `/key`(ref 없이)·`/scroll` | 200 190ms·8ms | 200 174ms·11ms — 전에도 멈추지 않았다 |
+
+기한이 없는 경로는 더 나빴다. 비밀값을 사람이 칸에 친 뒤 Enter로 GET 폼을 `/hang`에 보내면(`/to-hang`
+픽스처): 고치기 전 `/read`·`/describe-point`는 **40초 무응답**(잰 상한), `/snapshot` 502 12.0초,
+`/screenshot` 502 30.0초였고, `/tabs/switch`는 10ms에 답하면서 탭 제목으로
+**`Loading http://…/hang?pin=GET-FORM-SECRET-6021`** — 사람이 친 비밀값 — 을 내보냈다. 고친 뒤 같은 경로:
+`/read` 1.01초·`/snapshot` 1.02초·`/describe-point` 1.01초·`/tabs/switch` 6ms·`/screenshot` 50ms, 모두
+200이고 어느 응답에도 값이 없다. 같은 탭 링크로 보냈을 때도 같은 모양이다.
+
+같은 원인으로 멈춘 것 둘:
+
+- 새 탭 링크로 열려 넘겨받은 탭에서 폼을 보낸 뒤의 `/navigate`: **70초 무응답 → 200 0.55초**. 탭의
+  프레임 id를 문서에게 묻고(`Page.getFrameTree`) 세션 detach를 기다렸다(`mainFrameIdOf`). id는 탭마다 첫
+  `/navigate`에 기억되므로, 처음 쓰는 탭만 걸렸다.
+- 실시간 화면을 연 채 넘어가는 중에 `/computers/reset`: **29.3초 → 305ms**. 화면 캐스트의
+  `stopScreencast`와 detach를 기다렸다(`screencast.ts`).
+
+**어떻게 아는가.** 탭마다 CDP 세션 하나로 브라우저의 Page 이벤트를 듣는다: 문서를 바꾸는 내비게이션의
+시작(`frameStartedNavigating`)과 세 끝 — 도착(`frameNavigated`, 오류 페이지 포함), 문서 없이
+멈춤(`frameStoppedLoading`, 204는 시작 4ms 뒤에 왔다), 다운로드. 이 기록은 **문서가 기한 안에 답하지
+않았을 때만** 읽는다 — 끝을 놓친 기록이 답하는 페이지를 "열리는 중"으로 만들 수는 없다. 탭이 열리자마자
+보낸 `goto`(8/8)도, 새 탭의 스크립트가 곧바로 결제창 폼을 보낸 경우(6/6)도 시작을 들었다.
+
+**비밀 칸.** 넘어가는 중에는 문서가 아무것도 답하지 않으므로 답에 페이지 내용이 없다(요소 0개, 본문과
+제목 `""`), 알림은 가는 곳의 origin만 싣는다. 트리를 찍은 뒤 페이지가 답을 멈춰 비밀값을 친 칸을 끝까지
+찾지 못하면, 넘어가는 중이면 요소 없이 답하고 아니면 그 스냅샷의 모든 입력 칸 값을 비운다. `hung-site.test.ts`가
+매번 확인한다: 비밀값을 친 뒤 GET 폼으로, 또 `/navigate`로 `/hang`에 보내고 다섯 가지 보기가 모두 5초 안에
+200으로 오며 응답 전체에 값이 없는지. 고치기 전 코드에서는 폼 쪽이 60초 제한에 걸리고 `/navigate` 쪽은
+`/read` 502로 실패한다.
+
+**평범한 페이지는 그대로다.** `/`·`/pw`·`/sites/smartstore-orders`에서 15번씩 두 차례, 중앙값 전→후:
+읽기 3–6→2–5ms, 스냅샷 8–12→8–13ms, 스크린샷 32–35→32–39ms, 탭 전환 1→1–3ms.
+
+**남은 것.**
+
+- 답하지 않는 사이트로 가는 링크를 **누르는 것 자체**는 행동 기한 10초를 다 쓰고 409
+  `laf:element_not_actionable`로 온다(전후 모두 10.0초) — 클릭은 이미 일어났는데. Playwright의 클릭이
+  자기가 시작한 내비게이션의 도착을 기다린다. 바꾸지 않았다: 기다리지 않게 하면 클릭의 답에 실리는 주소가
+  옮겨 가기 전의 것이 되고, 게이트웨이의 스냅샷 캐시가 그 주소를 따라간다(`pageMoved`) — 따로 잴 일이다.
+- 답하지 않는 사이트를 **새 탭**으로 여는 링크: 그 탭은 10초가 지나도 `tabs`에 나오지 않는다.
+  Playwright는 첫 문서가 도착한 탭만 넘겨준다. 봇은 원래 탭에 남고 그 탭의 보기는 평소대로 답한다.
+- `/navigate`가 기한에 걸려 탭을 간 직후의 `/tabs/switch {index: 0}` 답에는 `active: true`인 탭이
+  없었다(전후 모두). 닫히는 중인 옛 탭을 고른 것으로 보이며, 따로 재지 않았다.
+
 ### 다시 재는 법
 
 ```bash
@@ -197,8 +266,8 @@ bunx playwright install chromium   # 없으면 이 파일의 13개가 skip된다
 보내고 문장은 거기서 붙는다. 컨테이너가 거절하거나 실패할 때는 `error`와 `code`에 **같은 코드**를
 싣는다(`agent-computer/src/respond.ts` `fact`) — 영어 문장도, Playwright 메시지도 아니다. Playwright
 메시지는 호출 기록을 달고 오고, `fill` 실패의 호출 기록에는 입력하던 값이 들어 있었다(2026-09-14 실측,
-`/human/secret` 실패 응답에 사람이 친 비밀값). 예외는 하나: `laf:page_timeout`의 `error`에는
-Playwright의 첫 줄이 남는다. 서버 클라이언트가 504를 그 줄로 가려내기 때문이다.
+`/human/secret` 실패 응답에 사람이 친 비밀값). 예외는 없다: `laf:page_timeout`도 `error`에 Playwright의
+첫 줄을 남기다가, 서버 클라이언트가 `code`를 읽게 된 뒤로 코드만 싣는다.
 
 | 코드 | 언제 |
 |---|---|
@@ -206,6 +275,7 @@ Playwright의 첫 줄이 남는다. 서버 클라이언트가 504를 그 줄로 
 | `laf:downloaded` | 파일이 `downloads/`에 저장됐다 |
 | `laf:download_too_large` / `laf:download_failed` | 저장하지 못했다 |
 | `laf:frame_opaque` | iframe 하나를 읽지 못했다 |
+| `laf:page_loading` | 탭이 다음 페이지로 넘어가는 중이라 문서가 답하지 않았다. 가는 곳의 `origin`과 `loadingMs`가 함께 온다 |
 | `laf:secret_request_lost` | 재시작으로 비밀값 요청이 사라졌다 |
 | `laf:tab_missing` | 그 번호의 탭이 없다 |
 | `laf:stale_refs` | 스냅샷이 낡았다. 다시 찍어야 한다 |

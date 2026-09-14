@@ -126,6 +126,11 @@ export type SecretSignals = {
   refs?: Iterable<string>;
   values?: Iterable<string>;
   labels?: Iterable<string>;
+  /**
+   * A field a person typed a secret into could not be looked for to the end in this tree
+   * (`typedIntoRefs`), so no text-entry control's contents are shown: any of them could be it.
+   */
+  unverified?: boolean;
 };
 
 /**
@@ -401,7 +406,11 @@ export function parseAriaSnapshot(
        * to keep out of the model. Dropped here, at the one place a value enters the element, so no
        * later reader has to remember to.
        */
-      if (element.type === "password" || isSecretLabel(label)) {
+      if (
+        element.type === "password" ||
+        isSecretLabel(label) ||
+        secrets.unverified
+      ) {
         if (element.value !== undefined) element.value = "";
       }
     }

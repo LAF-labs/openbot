@@ -107,6 +107,19 @@ export function hostnameOf(url: string): string {
   }
 }
 
+/**
+ * A destination as the trail and the Bot may see it: the origin, never the path or the query. An
+ * address with no origin (`file:`, `data:`) is named by its scheme, which is the fact that refused it.
+ */
+export function originOf(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === "null" ? parsed.protocol : parsed.origin;
+  } catch {
+    return url.slice(0, 80);
+  }
+}
+
 /** One request header, whatever case the browser spelled it in. */
 function headerOf(
   headers: Record<string, string>,
@@ -195,6 +208,14 @@ export async function guardNavigations(
  * Asked of the page's own CDP session and remembered: the id is the tab's target id and does not
  * change while the tab lives. Null when the tab will not say, and then nothing is held for it —
  * the floor still judges every hop, because it does not need to know whose hop it is.
+ *
+ * ASKED OF THE BROWSER, NOT THE DOCUMENT, AND LET GO WITHOUT WAITING. This read `Page.getFrameTree`,
+ * which the document answers, and awaited the session's `detach` — and a tab whose next document is
+ * on its way answers neither until it arrives (`page-arrival.ts`): measured 2026-09-14, no answer in
+ * 4 s and 8 s, while `Target.getTargetInfo` came back in 0–2 ms with the same id. The id is remembered
+ * after the first `/navigate` on a tab, so it was a tab a link had opened that met it: in the image
+ * built from dbc1c67, a `/navigate` on such a tab, whose form had just been sent to the fixture's
+ * `/hang`, gave no answer in 70 s — and the same tab's `goto` elsewhere, asked directly, took 25 ms.
  */
 const mainFrames = new WeakMap<Page, string>();
 
@@ -204,12 +225,12 @@ export async function mainFrameIdOf(page: Page): Promise<string | null> {
   let session: CDPSession | undefined;
   try {
     session = await page.context().newCDPSession(page);
-    const { frameTree } = await session.send("Page.getFrameTree");
-    mainFrames.set(page, frameTree.frame.id);
-    return frameTree.frame.id;
+    const { targetInfo } = await session.send("Target.getTargetInfo");
+    mainFrames.set(page, targetInfo.targetId);
+    return targetInfo.targetId;
   } catch {
     return null;
   } finally {
-    await session?.detach().catch(() => undefined);
+    void session?.detach().catch(() => undefined);
   }
 }

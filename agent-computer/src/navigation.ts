@@ -16,8 +16,10 @@ import {
   hostnameOf,
   mainFrameIdOf,
   type NavigationHop,
+  originOf,
 } from "./navigation-guard";
-import { readSettledPageText } from "./page-text";
+import { arrivalNote } from "./page-arrival";
+import { readSettledPageText, titleOf } from "./page-text";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
 
@@ -63,19 +65,6 @@ type HeldHop = { to: string; from: string; referer?: string };
  */
 const isTimeout = (error: unknown): boolean =>
   error instanceof Error && error.name === "TimeoutError";
-
-/**
- * A destination as the trail and the Bot may see it: the origin, never the path or the query. An
- * address with no origin (`file:`, `data:`) is named by its scheme, which is the fact that refused it.
- */
-function originOf(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.origin === "null" ? parsed.protocol : parsed.origin;
-  } catch {
-    return url.slice(0, 80);
-  }
-}
 
 /**
  * A hop the floor refused, reported where it will be read.
@@ -346,10 +335,13 @@ export const navigate: BotRoute = async (
       // A page's own script can leave for another host while it settles; the guard stopped that
       // too, and what was read is the error page it left behind, not an answer.
       if (!navigating.refused && !navigating.held) {
+        // Or it left for somewhere that has not answered yet: what opened is said, and that it is
+        // already on its way elsewhere, rather than waited on (`readSettledPageText`).
+        if (extract.arriving) note(session, arrivalNote(extract.arriving));
         return json(
           withNotes(session, {
             url: target.url(),
-            title: await target.title().catch(() => ""),
+            title: extract.arriving ? "" : await titleOf(target),
             text: extract.text,
             truncated: extract.truncated,
             ...(extract.frames ? { frames: extract.frames } : {}),

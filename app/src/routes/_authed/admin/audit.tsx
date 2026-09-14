@@ -829,6 +829,8 @@ export const COMPUTER_FACTS: Record<string, string> = {
   "laf:secret_request_lost":
     "A request for a secret was lost when the computer restarted",
   "laf:frame_opaque": "A frame on the page could not be read",
+  "laf:page_loading":
+    "The page was still loading, so nothing on it could be read",
 };
 
 /**

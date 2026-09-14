@@ -7,6 +7,7 @@
  */
 import type { Page } from "playwright";
 import { log } from "./log";
+import { followArrivals } from "./page-arrival";
 import { type BotSession, note } from "./sessions";
 import { type Workspace, WorkspaceFileError } from "./workspace";
 
@@ -21,6 +22,9 @@ export function watchPage(
    * at. The generation is bumped for a new tab for the same reason `/navigate` bumps it.
    */
   session.snapshotId += 1;
+
+  // Whether its next document is on its way, which is the one thing a look at it cannot ask it.
+  followArrivals(page);
 
   page.on("dialog", (dialog) => {
     const kind = dialog.type();

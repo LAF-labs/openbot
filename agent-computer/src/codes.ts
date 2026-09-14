@@ -127,6 +127,9 @@ export const COMPUTER_CODES = {
   "laf:secret_request_lost": { note: true },
   // A frame the page text could not include, on the `frames` of a read.
   "laf:frame_opaque": { note: true },
+  // The tab's document is on its way and answers nothing until it arrives, so a look carries only what
+  // the browser can say without it; `origin` and `loadingMs` ride beside it (page-arrival.ts).
+  "laf:page_loading": { note: true },
 } as const satisfies Record<`laf:${string}`, Answer | Told>;
 
 export type ComputerCode = keyof typeof COMPUTER_CODES;

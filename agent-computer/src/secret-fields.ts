@@ -255,7 +255,8 @@ export async function secretSignals(
 }
 
 /**
- * The refs, in the snapshot just taken, of the fields a person typed a secret into.
+ * The refs, in the snapshot just taken, of the fields a person typed a secret into — and whether
+ * every one of them was looked for to the end.
  *
  * BY NODE, WHATEVER THE PAGE HAS DONE TO IT SINCE. A ref outlives a snapshot only while the node
  * keeps its role and name: rename the box — a validation message added to its label is enough —
@@ -263,16 +264,25 @@ export async function secretSignals(
  * from the last time is asked first, and when it no longer names this node the page's text-entry
  * controls are asked in turn until one does. Asked of the node itself, through `aria-ref=`, which
  * resolves against the snapshot standing now; nothing about the label or the value is trusted.
+ *
+ * NOT COMPLETE is the page going silent under the question, or the look's deadline coming, while a
+ * control of the tree was still to be asked: then a field this did not find may be in the tree after
+ * all, and the caller must not show a box's contents as though it had been ruled out. A kept ref that
+ * does not answer is only a ref that no longer names the node — a frame that lost its document takes
+ * its refs with it — and the tree's own controls are asked next, as they always were.
  */
 export async function typedIntoRefs(
   session: BotSession,
   target: Page,
   yaml: string,
-): Promise<string[]> {
+  deadline: number,
+): Promise<{ refs: string[]; complete: boolean }> {
   const refs: string[] = [];
   let candidates: string[] | undefined;
   for (const field of session.secretFields) {
-    if (await refNamesNode(target, field.ref, field.handle)) {
+    if (
+      (await refNamesNode(target, field.ref, field.handle, deadline)) === true
+    ) {
       refs.push(field.ref);
       continue;
     }
@@ -280,37 +290,51 @@ export async function typedIntoRefs(
       .elements.filter((element) => isTextEntryRole(element.role))
       .map((element) => element.ref);
     for (const ref of candidates) {
-      if (await refNamesNode(target, ref, field.handle)) {
+      const named = await refNamesNode(target, ref, field.handle, deadline);
+      if (named === undefined) return { refs, complete: false };
+      if (named) {
         field.ref = ref;
         refs.push(ref);
         break;
       }
     }
   }
-  return refs;
+  return { refs, complete: true };
 }
 
 /**
- * Whether `ref`, in the current snapshot, is this very node. False for anything it cannot answer —
- * including a ref into a frame with no document, whose `count` has no timeout and waits for ever
- * (measured 2026-09-14).
+ * Whether `ref`, in the current snapshot, is this very node: false when it is not, or cannot be (a
+ * node in another frame's document), and undefined when the page did not answer the question in time
+ * or the look has no time left to ask it.
+ *
+ * Every wait is bounded, and by the look's deadline too: `count` on a ref into a frame with no document
+ * has no timeout and waits for ever (measured 2026-09-14), and `evaluate`'s own timeout is the wait for
+ * the locator, not for the answer.
  */
 async function refNamesNode(
   target: Page,
   ref: string,
   handle: ElementHandle,
-): Promise<boolean> {
-  try {
-    const located = target.locator(`aria-ref=${ref}`);
-    if ((await within(SECRET_JOIN_TIMEOUT_MS, located.count())) !== 1) {
-      return false;
-    }
-    return await located.evaluate((node, other) => node === other, handle, {
-      timeout: SECRET_JOIN_TIMEOUT_MS,
-    });
-  } catch {
-    return false;
-  }
+  deadline: number,
+): Promise<boolean | undefined> {
+  const wait = () => Math.min(SECRET_JOIN_TIMEOUT_MS, deadline - Date.now());
+  if (wait() <= 0) return undefined;
+  const located = target.locator(`aria-ref=${ref}`);
+  const count = await within(
+    wait(),
+    located.count().catch(() => 0),
+  );
+  if (count === undefined) return undefined;
+  if (count !== 1) return false;
+  if (wait() <= 0) return undefined;
+  return within(
+    wait(),
+    located
+      .evaluate((node, other) => node === other, handle, {
+        timeout: SECRET_JOIN_TIMEOUT_MS,
+      })
+      .catch(() => false),
+  );
 }
 
 /** Follow a field a person just typed a secret into, from the next snapshot on. */

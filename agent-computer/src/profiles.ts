@@ -38,6 +38,7 @@ import { type BrowserContext, chromium, type Page } from "playwright";
 import { keepChildProcesses } from "./child-processes";
 import { egressFor, egressLabel } from "./egress";
 import { log } from "./log";
+import { titleOf } from "./page-text";
 
 /** The viewport, which is what a person's click coordinates are relative to. */
 export const VIEWPORT = { width: 1280, height: 800 };
@@ -569,8 +570,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       return Promise.all(
         pages.map(async (page, index) => ({
           index,
-          // A page that navigates while we are describing it costs its title, not the list.
-          title: await page.title().catch(() => ""),
+          // A page that navigates while we are describing it costs its title, not the list — and a
+          // tab between documents has none, never Playwright's `Loading <address>` (see `titleOf`).
+          title: await titleOf(page),
           url: page.url(),
           active: page === running.page,
         })),

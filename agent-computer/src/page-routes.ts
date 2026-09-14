@@ -1,12 +1,18 @@
 /**
  * Looking at the page without changing anything on any site: `/read`, `/snapshot`, `/screenshot`
  * and `/tabs/switch`.
+ *
+ * Each answers within its own bound whatever the page is doing, and a tab whose next document is on
+ * its way is answered with what the browser can say without it, and `laf:page_loading` (see
+ * `page-arrival.ts` for why nothing else can be said about it).
  */
+import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
-import { readSettledPageText } from "./page-text";
+import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
+import { readSettledPageText, titleOf } from "./page-text";
 import { TabError } from "./profiles";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
-import { withNotes } from "./sessions";
+import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
 
 /**
@@ -21,10 +27,11 @@ export const readPage: BotRoute = async ({ botId, session }, { profiles }) => {
   try {
     const target = await profiles.page(botId);
     const extract = await readSettledPageText(target);
+    if (extract.arriving) note(session, arrivalNote(extract.arriving));
     return json(
       withNotes(session, {
         url: target.url(),
-        title: await target.title().catch(() => ""),
+        title: extract.arriving ? "" : await titleOf(target),
         text: extract.text,
         truncated: extract.truncated,
         ...(extract.frames ? { frames: extract.frames } : {}),
@@ -55,10 +62,46 @@ export const snapshot: BotRoute = async ({ botId, session }, { profiles }) => {
   }
 };
 
+/**
+ * How long Playwright's own picture is given. An ordinary page takes a fraction of a second; the wait
+ * it cannot get past is a document that answers nothing, and that one is photographed by the browser.
+ */
+const SCREENSHOT_WAIT_MS = 5_000;
+
+/** How long the browser is given to paint the tab when the document will not be asked. */
+const PAINT_WAIT_MS = 3_000;
+
+/**
+ * The tab as a picture.
+ *
+ * PLAYWRIGHT'S PICTURE, UNLESS THE DOCUMENT IS NOT ANSWERING. `page.screenshot` measures the page
+ * through the document before it asks the browser for pixels, so on a tab whose next document was on
+ * its way it waited for that document: measured 2026-09-14 in the image built from dbc1c67, 502
+ * `laf:browser_failed` at 29.1 s, one second into a `/navigate` to `/hang`. The browser can paint the
+ * tab without the document (`pictureOf`), and does here whenever a document is known to be on its way
+ * or Playwright's picture does not come in its bound.
+ */
+async function pictureOfTab(target: Page): Promise<Buffer | undefined> {
+  if (!arrivalOf(target)) {
+    try {
+      return await target.screenshot({
+        type: "png",
+        timeout: SCREENSHOT_WAIT_MS,
+      });
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "TimeoutError")) {
+        throw error;
+      }
+    }
+  }
+  return pictureOf(target, PAINT_WAIT_MS);
+}
+
 export const screenshot: BotRoute = async ({ botId }, { profiles }) => {
   try {
     const target = await profiles.page(botId);
-    const buffer = await target.screenshot({ type: "png" });
+    const buffer = await pictureOfTab(target);
+    if (!buffer) return fact("laf:browser_failed");
     const size = target.viewportSize() ?? { width: 1280, height: 800 };
     return json({
       base64: buffer.toString("base64"),
@@ -98,6 +141,9 @@ export const switchTab: BotRoute = async (
     const tabs = await profiles.switchTab(botId, body.index);
     session.snapshotId += 1;
     const target = await profiles.page(botId);
+    // The tab it is on now is still arriving: the next look will say so too, but this is where it went.
+    const arrival = arrivalOf(target);
+    if (arrival) note(session, arrivalNote(arrival));
     return json(
       withNotes(session, {
         action: "switch_tab",

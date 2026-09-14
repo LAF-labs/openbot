@@ -22,7 +22,12 @@
  * ref (`f1e3`) takes the whole selector into its frame.
  */
 import type { Locator } from "playwright";
-import { ElementActionError } from "./refs";
+import {
+  countOn,
+  ElementActionError,
+  STALE_REFS,
+  StaleSnapshotError,
+} from "./refs";
 
 export type JudgedLabel = { role: string; name: string };
 
@@ -85,7 +90,16 @@ export async function holdToLabel(
           includeHidden,
         }),
     );
-  if ((await asJudged(false).count()) > 0) return "same";
+  /*
+   * A page that stops answering between the ref and this question is neither renamed nor hidden: it
+   * is a page the control cannot be shown to be on any more, answered as a ref that names nothing.
+   */
+  const count = async (includeHidden: boolean): Promise<number> => {
+    const counted = await countOn(control.page(), asJudged(includeHidden));
+    if (counted === undefined) throw new StaleSnapshotError(STALE_REFS);
+    return counted;
+  };
+  if ((await count(false)) > 0) return "same";
   /*
    * STILL CALLED WHAT IT WAS JUDGED AS, AND HIDDEN — NOT RENAMED.
    *
@@ -97,7 +111,7 @@ export async function holdToLabel(
    * control it judged, which will not take the action — refused as that, and still before anything
    * is pressed. A control that no longer has the name at all is still what it was: renamed.
    */
-  if ((await asJudged(true).count()) > 0) {
+  if ((await count(true)) > 0) {
     throw new ElementActionError(new Error("hidden since the snapshot"));
   }
   throw new LabelChangedError();

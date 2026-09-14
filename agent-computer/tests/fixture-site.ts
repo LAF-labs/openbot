@@ -182,6 +182,33 @@ const LATE_FRAME_HTML = `<!doctype html>
   <p id="late-said"></p>
 </body></html>`;
 
+/** The box on `/to-hang` a person types a secret into, by the name it reaches the tree with. */
+export const TO_HANG_PIN = "간편 확인 칸";
+
+/**
+ * A page whose every way out leads to `/hang`: a form sent by GET, a link, and a link to a new tab —
+ * and a link that opens this same page in a new tab, for a tab this process has adopted to be sent
+ * nowhere from. Served at `/to-hang`.
+ *
+ * THE FORM PUTS ITS BOX IN THE ADDRESS. A GET form sends every field in the query, a password box
+ * included, so the navigation it starts carries the person's secret in its URL for as long as the
+ * site does not answer — and until 2026-09-14 a tab mid-navigation was listed under Playwright's
+ * `Loading <that address>`. The box is marked by nothing but its type, under a name no secret word
+ * matches, so what keeps its value out of a look is the look, not the vocabulary.
+ */
+const TO_HANG_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>결제 전 확인</title></head>
+<body>
+  <h1>${VISIBLE_TEXT}</h1>
+  <form action="/hang" method="get">
+    <input type="password" name="pin" aria-label="${TO_HANG_PIN}">
+    <button type="submit">확인</button>
+  </form>
+  <a id="hang-link" href="/hang">결제창 열기</a>
+  <a id="hang-tab" href="/hang" target="_blank">결제창 새 탭</a>
+  <a id="self-tab" href="/to-hang" target="_blank">이 화면 새 탭</a>
+</body></html>`;
+
 /** The label the relabel button starts with, and the money word it becomes. See `/relabel`. */
 export const RELABEL_BEFORE = "저장";
 export const RELABEL_AFTER = "결제하기";
@@ -337,6 +364,13 @@ export function serveFixture(port = 0) {
       }
       if (path === "/hanging-frame") {
         return new Response(HANGING_FRAME_HTML, { headers: html });
+      }
+      if (path === "/to-hang") {
+        return new Response(TO_HANG_HTML, { headers: html });
+      }
+      // A navigation that ends with no document at all: the browser stays on the page it was on.
+      if (path === "/no-content") {
+        return new Response(null, { status: 204 });
       }
       if (path === "/frame") {
         return new Response(FRAME_HTML, {
