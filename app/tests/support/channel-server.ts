@@ -1,3 +1,4 @@
+import type { StoredFailure } from "../../src/lib/channels/retry";
 import type { ApiRequest } from "./app-router";
 import { agentFixture, json } from "./app-router";
 
@@ -70,7 +71,7 @@ export const BOT_AT_THE_WHEEL = {
 export function channelServer(options: {
   channelId: string;
   history?: WireMessage[];
-  failures?: { messageId: string; code: string; at: string }[];
+  failures?: StoredFailure[];
   /** Answers to the run requests, in order. A run past the end fails the test. */
   runs?: Array<(input: RunInput) => Response>;
   /**

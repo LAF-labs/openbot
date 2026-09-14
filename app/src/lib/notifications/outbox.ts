@@ -132,6 +132,24 @@ export async function markNotificationSeen(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * 확인 on a routine's failure that keeps happening: its line goes quiet and stays quiet.
+ *
+ * Not `markNotificationSeen`, though the server marks the row seen too — looking at one failure is
+ * not saying "I know" about every repeat still to come. See `server/src/notifications/failure-groups.ts`.
+ */
+export async function acknowledgeFailureGroup(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `/api/me/notifications/${encodeURIComponent(id)}/acknowledge`,
+      { method: "POST", credentials: "include" },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Where acting on this notification should land somebody, or null when it names no place. */
 export function destinationOf(
   frame: NotificationFrame,

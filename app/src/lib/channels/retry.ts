@@ -12,6 +12,7 @@
  * which is what makes this the whole fix rather than half of one. A room reaches the same store
  * through `room-turn` with the message's own id.
  */
+import type { FailureGroup } from "./turn-failure";
 
 /** The part of a message these rules read. An AG-UI message has it, and so does a room's. */
 export type ThreadMessage = {
@@ -67,10 +68,18 @@ export function retriesInPlace(
 }
 
 /** A failed turn as `GET /api/channels/:id/failures` reports it. */
-export type StoredFailure = { messageId: string; code: string; at: string };
+export type StoredFailure = {
+  messageId: string;
+  code: string;
+  at: string;
+  group?: FailureGroup;
+};
+
+/** What the transcript draws under one message: the code, and the group it stands for, if any. */
+export type StandingFailure = { code: string; group?: FailureGroup };
 
 /**
- * The stored failures that still stand, as the transcript draws them: message id to code.
+ * The stored failures that still stand, as the transcript draws them: message id to failure.
  *
  * A RETRY IN PLACE LEAVES THE FIRST FAILURE ON THE SERVER'S RECORD. The ledger keys a failure to the
  * last message its run wrote, the question keeps the run id it was first written under, and the
@@ -96,16 +105,20 @@ export function standingFailures(
   failures: readonly StoredFailure[] | undefined,
   messages: readonly ThreadMessage[],
   times: Readonly<Record<string, string>> | undefined,
-): Record<string, string> {
-  const standing: Record<string, string> = {};
+): Record<string, StandingFailure> {
+  const standing: Record<string, StandingFailure> = {};
   if (!failures?.length || !times) return standing;
   const position = new Map(
     messages.map((message, index) => [message.id, index]),
   );
+  const drawn = (failure: StoredFailure): StandingFailure =>
+    failure.group
+      ? { code: failure.code, group: failure.group }
+      : { code: failure.code };
   for (const failure of failures) {
     const at = position.get(failure.messageId);
     if (at === undefined || messages[at]?.role !== "user") {
-      standing[failure.messageId] = failure.code;
+      standing[failure.messageId] = drawn(failure);
       continue;
     }
     const failedAt = Date.parse(failure.at);
@@ -119,7 +132,7 @@ export function standingFailures(
         break;
       }
     }
-    if (!superseded) standing[failure.messageId] = failure.code;
+    if (!superseded) standing[failure.messageId] = drawn(failure);
   }
   return standing;
 }

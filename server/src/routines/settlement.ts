@@ -1,7 +1,16 @@
+import { classifyTurnFailure } from "../channels/turn-failures";
 import type { Database } from "../db/client";
 import type { lafRoutines } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
+import {
+  type CountedFailure,
+  closeFailureGroups,
+  countRepeatedFailure,
+  openFailureGroup,
+  routineFailureSignature,
+  routineScope,
+} from "../notifications/failure-groups";
 import type { RunLedger } from "../runner/run-ledger";
 import type { Executor } from "../runner/thread-store";
 import type { UnattendedRunResult } from "../runner/unattended";
@@ -38,6 +47,11 @@ import { writeReceipt } from "./receipts";
  * that tells the person about a failed run fires off that insert (`notifications/from-audit.ts`)
  * and a notification must not go out for a record that could still roll back. A kill between the
  * two loses that row and its bell — never the truth of the conversation.
+ *
+ * AND WHETHER A FAILURE IS NEWS IS PART OF THE RECORD. A failure that repeats one still open —
+ * same routine, same code, same tool — is counted into that failure's group and marks nothing:
+ * the conversation keeps the one line it already has, and the count on it goes up. Decided in
+ * this transaction because the mark and the count must agree; see `notifications/failure-groups.ts`.
  */
 
 export type SettlementOptions = {
@@ -78,6 +92,12 @@ export type Settlement = {
   failedIn: Delivered | null;
   /** What became of the notepad the run changed. Null when it changed nothing. */
   notepad: NotepadWrite | null;
+  /**
+   * The failure group this run's failure was counted into. Null for a success, for a failure with
+   * nobody to tell, and for one the group could not be recorded for — which is then told the way
+   * every failure used to be.
+   */
+  group: CountedFailure | null;
 };
 
 /** Write the run's record whole, or report the run as the failure a rollback made it. */
@@ -86,10 +106,18 @@ export async function settleRun(
   run: RunToSettle,
 ): Promise<Settlement> {
   try {
-    const { delivered, failedIn, notepad } = await options.database.transaction(
-      async (transaction) => writeRecord(options, transaction, run),
-    );
-    return { ok: run.ok, failure: run.failure, delivered, failedIn, notepad };
+    const { delivered, failedIn, notepad, group } =
+      await options.database.transaction(async (transaction) =>
+        writeRecord(options, transaction, run),
+      );
+    return {
+      ok: run.ok,
+      failure: run.failure,
+      delivered,
+      failedIn,
+      notepad,
+      group,
+    };
   } catch (error) {
     /*
      * The record rolled back whole: nothing was delivered, no receipt was written, and the ledger
@@ -106,13 +134,18 @@ export async function settleRun(
     if (run.ledgerRunId) {
       await options.ledger?.finish(run.ledgerRunId, failure).catch(() => {});
     }
-    // The notepad rolled back with the rest: the cursor is where the last recorded run left it.
+    /*
+     * The notepad rolled back with the rest: the cursor is where the last recorded run left it. So
+     * did whatever the record did to a failure group — a close, a count, an opening — and a failure
+     * that carries no group is told the way every failure used to be (`notifications/from-audit.ts`).
+     */
     return {
       ok: false,
       failure,
       delivered: null,
       failedIn: null,
       notepad: run.notepad?.changed ? "discarded" : null,
+      group: null,
     };
   }
 }
@@ -122,10 +155,31 @@ async function writeRecord(
   transaction: Executor,
   run: RunToSettle,
 ): Promise<Omit<Settlement, "ok" | "failure">> {
-  // The cursor first, so every other write in the record is one that can still take it back.
+  /*
+   * WHERE THE NEXT RUN STARTS FROM IS ONE DECISION, taken here for both of its halves. A success
+   * lands the notepad and closes the routine's open failure groups; a failure discards the notepad
+   * and is counted into its group, or opens one. Both commit with the record or not at all, so a
+   * restart never finds the cursor moved past a run the routine is still counting as failing.
+   *
+   * THE ORDER IS THE LOCK ORDER, the same on both paths. The cursor first, so every other write in
+   * the record is one that can still take it back; it holds the notepad's row. Then the failure
+   * groups, before the conversation: the routine's groups take their lock here, the thread takes
+   * its own in `appendMessages`, and two settlements of one routine holding any two of those in
+   * opposite orders would be a deadlock Postgres settles by throwing one record away. A person's
+   * clear (`clearNotepad`) holds the notepad's row and nothing else, so it can make a settlement
+   * wait but never cross one.
+   */
   const notepad = await landNotepad(options, transaction, run);
+  if (run.ok) {
+    // The routine works again: whatever was failing is over, and its next failure is news.
+    await closeFailureGroups(transaction, {
+      userId: run.author,
+      scope: routineScope(run.row.id),
+      at: options.now(),
+    });
+  }
+  const { failedIn, group } = await markOrCount(options, transaction, run);
   const delivered = await deliverAnswer(options, transaction, run);
-  const failedIn = await markFailure(options, transaction, run);
 
   if (run.ledgerRunId) {
     await options.ledger?.settle(
@@ -145,7 +199,7 @@ async function writeRecord(
     error: run.ok ? null : run.failure,
     steps: run.steps,
   });
-  return { delivered, failedIn, notepad };
+  return { delivered, failedIn, notepad, group };
 }
 
 /**
@@ -163,6 +217,60 @@ async function landNotepad(
   if (!run.notepad?.changed) return null;
   if (!run.ok) return "discarded";
   return settleNotepad(transaction, run.notepad, run.runId, options.now());
+}
+
+/**
+ * A failure: counted into the open group of its signature, or marked and made a group of its own.
+ *
+ * The count comes first, because it decides whether there is a mark at all. A repeat marks
+ * nothing — no heading, no roster movement, no unread dot — since everything it would say is
+ * already on the line the group's first failure left. A failure the group could not be looked up
+ * for is marked the old way and left ungrouped, rather than taken for the first of its kind.
+ */
+async function markOrCount(
+  options: SettlementOptions,
+  transaction: Executor,
+  run: RunToSettle,
+): Promise<Pick<Settlement, "failedIn" | "group">> {
+  const { row, author } = run;
+  // Nobody to tell is nobody to group for; the mark needs a person too.
+  if (run.ok || !author) return { failedIn: null, group: null };
+
+  const at = options.now();
+  const signature = routineFailureSignature({
+    routineId: row.id,
+    code: classifyTurnFailure(run.failure),
+    steps: run.steps,
+  });
+  const counted = await countRepeatedFailure(transaction, {
+    userId: author,
+    signature,
+    at,
+  });
+  if (counted.kind === "repeat") {
+    return {
+      failedIn: null,
+      group: { id: counted.id, count: counted.count, opened: false },
+    };
+  }
+
+  const failedIn = await markFailure(options, transaction, run);
+  if (counted.kind === "unavailable") return { failedIn, group: null };
+
+  const id = await openFailureGroup(transaction, {
+    userId: author,
+    botId: row.agentId,
+    channelId: failedIn?.channelId,
+    run: { origin: "routine", label: row.name, code: signature.code },
+    signature,
+    // The run the mark carries, which is what the transcript's line is keyed to. No mark, no key.
+    runId: failedIn ? run.ledgerRunId : null,
+    at,
+  });
+  return {
+    failedIn,
+    group: id ? { id, count: 1, opened: true } : null,
+  };
 }
 
 /**

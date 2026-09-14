@@ -19,6 +19,7 @@ import {
   type QueuedMessage,
   reduceQueue,
 } from "@/components/channels/composer";
+import type { StandingFailure } from "@/lib/channels/retry";
 
 export function ConversationView({
   messages,
@@ -74,8 +75,8 @@ export function ConversationView({
    * See `lib/channels/turn-failure.ts`.
    */
   stoppedCode?: string;
-  /** Turns that failed earlier and are still on the server's record: message id to failure code. */
-  failures?: Readonly<Record<string, string>>;
+  /** Turns that failed earlier and are still on the server's record: message id to failure. */
+  failures?: Readonly<Record<string, StandingFailure>>;
   /** Ask one of them again. The transcript hands back the message that got no answer. */
   onRetry?: (message: RetriedMessage) => void;
   /** A room, where a retry keeps the replies some members already gave. See `ChatTranscript`. */

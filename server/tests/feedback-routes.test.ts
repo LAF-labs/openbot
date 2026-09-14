@@ -58,6 +58,8 @@ function surface(options: { outbox?: boolean; told?: string[] } = {}) {
     },
     recordFleetNotice: async () => {},
     redeliver: async () => 0,
+    offer: async () => null,
+    acknowledge: async () => false,
     list: async () => [],
     markSeen: async () => true,
     markSeenForApproval: async () => 0,

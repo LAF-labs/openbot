@@ -36,17 +36,27 @@ const RECORD: NotificationRecord = {
   deliveredVia: [],
 };
 
-/** An outbox that records what it was asked to write and writes nothing. */
-function spyOutbox(): NotificationOutbox & { written: EnqueueInput[] } {
+/** An outbox that records what it was asked to write, or to offer, and writes nothing. */
+function spyOutbox(): NotificationOutbox & {
+  written: EnqueueInput[];
+  offered: string[];
+} {
   const written: EnqueueInput[] = [];
+  const offered: string[] = [];
   return {
     written,
+    offered,
     enqueue: async (input) => {
       written.push(input);
       return { ...RECORD, ...input, deliveredVia: [] };
     },
     recordFleetNotice: async () => {},
     redeliver: async () => 0,
+    offer: async (id) => {
+      offered.push(id);
+      return null;
+    },
+    acknowledge: async () => false,
     list: async () => [],
     markSeen: async () => true,
     markSeenForApproval: async () => 0,
@@ -300,5 +310,74 @@ describe("the Bot asking for a person's own hands", () => {
     await store.insert(asked);
     await Promise.resolve();
     expect(written).toEqual(["computer.secret_requested"]);
+  });
+});
+
+describe("a routine that did not finish", () => {
+  const ran = (payload: Record<string, unknown>) => ({
+    eventType: "routine.ran" as const,
+    targetType: "routine",
+    targetId: "routine-1",
+    payload: {
+      agentId: "bot-1",
+      name: "리뷰 확인",
+      ok: false,
+      actor: "person-1",
+      failure: "laf:turn_rate_limited",
+      channelId: "channel-1",
+      ...payload,
+    },
+  });
+
+  test("the failure that opened a group is offered to the doors, and nothing is written twice", async () => {
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    await store.insert(
+      ran({ failureGroup: { id: "group-1", count: 1, opened: true } }),
+    );
+    await Promise.resolve();
+
+    // The settlement already wrote the row; a second one here would be the duplicate buzz.
+    expect(outbox.offered).toEqual(["group-1"]);
+    expect(outbox.written).toEqual([]);
+  });
+
+  test("a repeat counted into an open group says nothing at all", async () => {
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    for (let count = 2; count <= 10; count += 1) {
+      await store.insert(
+        ran({ failureGroup: { id: "group-1", count, opened: false } }),
+      );
+    }
+    await Promise.resolve();
+
+    expect(outbox.offered).toEqual([]);
+    expect(outbox.written).toEqual([]);
+  });
+
+  test("a failure no group could be recorded for is told the old way, once", async () => {
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    await store.insert(ran({}));
+    await Promise.resolve();
+
+    expect(outbox.offered).toEqual([]);
+    expect(outbox.written).toEqual([
+      {
+        kind: "run.failed",
+        botId: "bot-1",
+        userId: "person-1",
+        channelId: "channel-1",
+        run: {
+          origin: "routine",
+          label: "리뷰 확인",
+          code: "laf:turn_rate_limited",
+        },
+      },
+    ]);
   });
 });

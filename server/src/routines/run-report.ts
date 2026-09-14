@@ -8,7 +8,8 @@ import type { Settlement } from "./settlement";
  *
  * The outbox watch (`notifications/from-audit.ts`) reads this row to raise `run.failed`, so it is
  * written only after the settlement has committed — see `settlement.ts` for why a notification must
- * not go out for a record that could still roll back.
+ * not go out for a record that could still roll back. A failure the settlement counted into a
+ * failure group carries it, and only the failure that opened the group is told about.
  */
 export type RunReport = {
   row: typeof lafRoutines.$inferSelect;
@@ -56,6 +57,13 @@ export async function reportRun(
          * cursor moved with this run is the question somebody reading a skipped review asks.
          */
         ...(settled.notepad ? { notepad: settled.notepad } : {}),
+        /*
+         * Which failure group this failure was counted into, how many it holds now, and whether it
+         * was the one that opened it — the only one the watch offers to the doors. On the trail
+         * too, so "the ninth time the same thing failed" is readable without the outbox, which
+         * forgets after thirty days.
+         */
+        ...(!ok && settled.group ? { failureGroup: settled.group } : {}),
       },
     });
   } catch {

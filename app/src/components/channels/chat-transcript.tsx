@@ -1,5 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconBox,
@@ -35,12 +36,18 @@ import {
 } from "@/components/ui/message-scroller";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
-import { retriesInPlace } from "@/lib/channels/retry";
-import { turnFailureSentence } from "@/lib/channels/turn-failure";
+import { channelKeys } from "@/lib/channels/queries";
+import { retriesInPlace, type StandingFailure } from "@/lib/channels/retry";
+import {
+  type FailureGroup,
+  repeatedFailureLine,
+  turnFailureSentence,
+} from "@/lib/channels/turn-failure";
 import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
+import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { toVisibleChatItems } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
@@ -86,7 +93,8 @@ type ChatTranscriptProps = {
    */
   stoppedCode?: string;
   /**
-   * The turns that failed earlier in this conversation: message id to failure code.
+   * The turns that failed earlier in this conversation: message id to failure code, and the
+   * failure group the line stands for when a routine kept failing the same way.
    *
    * From the server, and therefore still here after a reload — which is what was missing. A failed
    * turn used to leave nothing behind at all: reload, and the question sat alone with no answer.
@@ -94,7 +102,7 @@ type ChatTranscriptProps = {
    * NOT MERGED INTO THE MESSAGES. A failure is not something anybody said, and this transcript is
    * handed back to the model on the next turn.
    */
-  failures?: Readonly<Record<string, string>>;
+  failures?: Readonly<Record<string, StandingFailure>>;
   /**
    * Ask the same thing again. Absent draws the failure line with nothing to press.
    *
@@ -122,7 +130,7 @@ export type RetriedMessage = { id: string; text: string };
 const EMPTY_QUEUE: readonly QueuedMessage[] = [];
 
 /** Same reason as `EMPTY_QUEUE`: a conversation with no failed turns hands down one stable object. */
-const EMPTY_FAILURES: Readonly<Record<string, string>> = {};
+const EMPTY_FAILURES: Readonly<Record<string, StandingFailure>> = {};
 
 /**
  * Split a person's message into the skill they invoked and the rest of what they typed.
@@ -187,27 +195,81 @@ function Thinking() {
  */
 function TurnFailed({
   code,
+  group,
   onRetry,
 }: {
   code: string;
+  /**
+   * The routine failure group this line stands for, when it stands for one.
+   *
+   * RED IS FOR WHAT IS STILL NEWS. A routine that failed the same way ten times used to be ten red
+   * lines, and somebody shown red every hour learns to stop reading red — including the day it
+   * matters. So the repeats have no line of their own (the server counts them into the group), the
+   * one line says how many and when last, and it stops being red once the person has said 확인 or
+   * a success has ended it. It stays, quiet, as the record of what happened.
+   */
+  group?: FailureGroup | undefined;
   onRetry?: (() => void) | undefined;
 }) {
   // Remembered for the 문의·의견 box: "send what is on screen too" attaches this code, and this
   // line is the one place the screen says one.
   useEffect(() => noteTurnFailure(code), [code]);
+  const queryClient = useQueryClient();
+  /*
+   * Quiet the moment it is pressed, not when the refetch lands: the press is the whole of what the
+   * person did, and a red line that stays red for a round trip reads as a press that did nothing.
+   * Put back if the server did not take it, so a line never claims an acknowledgement nobody holds.
+   */
+  const [pressed, setPressed] = useState(false);
+  const quiet = Boolean(
+    group && (group.acknowledged || group.closed || pressed),
+  );
+  const repeated = group ? repeatedFailureLine(group) : null;
+
+  const handleAcknowledge = async () => {
+    if (!group) return;
+    setPressed(true);
+    if (!(await acknowledgeFailureGroup(group.id))) {
+      setPressed(false);
+      return;
+    }
+    void queryClient.invalidateQueries({
+      queryKey: channelKeys.allFailures(),
+    });
+  };
+
   return (
     <div
       className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1"
+      data-quiet={quiet ? "true" : undefined}
       data-testid="transcript-stopped"
-      role="alert"
+      // A line that is no longer news is not an alert: a screen reader opening the conversation
+      // should not be interrupted by last Tuesday's failure somebody already acknowledged.
+      role={quiet ? "status" : "alert"}
     >
       <IconAlertTriangle
         aria-hidden="true"
-        className="size-4 shrink-0 text-destructive"
+        className={`size-4 shrink-0 ${quiet ? "text-muted-foreground" : "text-destructive"}`}
       />
-      <span className="text-destructive text-sm">
+      <span
+        className={`text-sm ${quiet ? "text-muted-foreground" : "text-destructive"}`}
+      >
         {turnFailureSentence(code)}
       </span>
+      {repeated ? (
+        <span className="text-muted-foreground text-xs">{repeated}</span>
+      ) : null}
+      {group && !quiet ? (
+        <Button
+          className="h-6 px-2 text-xs"
+          onClick={() => void handleAcknowledge()}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {t("Acknowledge")}
+        </Button>
+      ) : null}
       {/*
        * THE PRESS THAT WAS MISSING. The old line said something had gone wrong and offered nothing
        * to do about it, so the only way to ask again was to retype the question — under a red
@@ -1000,7 +1062,8 @@ export function ChatTranscript({
                      */
                     !(busy && item.id === lastAsked?.id) ? (
                       <TurnFailed
-                        code={failures[item.id]}
+                        code={failures[item.id].code}
+                        group={failures[item.id].group}
                         onRetry={
                           /*
                            * Only under the person's own words. A routine that did not finish

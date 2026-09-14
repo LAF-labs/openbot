@@ -57,6 +57,15 @@ function failureCodeOf(value: unknown): TurnFailureCode {
     : TURN_FAILURE_CODES.unknown;
 }
 
+/** The failure group the settlement counted this failure into, off the payload. See below. */
+function failureGroupOf(
+  value: unknown,
+): { id: string; opened: boolean } | null {
+  if (!value || typeof value !== "object") return null;
+  const { id, opened } = value as { id?: unknown; opened?: unknown };
+  return typeof id === "string" && id ? { id, opened: opened === true } : null;
+}
+
 export function withOutboxWatch(
   store: AuditStore,
   outbox: NotificationOutbox,
@@ -70,6 +79,22 @@ export function withOutboxWatch(
         const actor = event.payload.actor;
         if (typeof actor !== "string" || !actor) return;
         if (typeof botId !== "string" || !botId) return;
+        /*
+         * COUNTED INTO A GROUP, THE ROW ALREADY EXISTS. The settlement wrote it in the same
+         * transaction as the run's record (`failure-groups.ts`): for the failure that opened the
+         * group it is offered to the doors now, and for every repeat of it there is nothing to say —
+         * the row has counted it, and a buzz per repeat is the noise the group exists to end.
+         *
+         * A failure the settlement could not count arrives with no group, and is told the way every
+         * failure used to be: one row of its own.
+         */
+        const group = failureGroupOf(event.payload.failureGroup);
+        if (group) {
+          if (group.opened) {
+            void outbox.offer(group.id).catch(() => undefined);
+          }
+          return;
+        }
         void outbox
           .enqueue({
             kind: "run.failed",

@@ -36,6 +36,8 @@ export const channelKeys = {
   messageTimes: (channelId: string) =>
     ["channels", "message-times", channelId] as const,
   failures: (channelId: string) => ["channels", "failures", channelId] as const,
+  /** Every conversation's failures: what a failure group's acknowledgement changes, wherever it is drawn. */
+  allFailures: () => ["channels", "failures"] as const,
 };
 
 export function channelListQueryOptions() {

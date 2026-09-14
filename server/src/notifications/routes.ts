@@ -75,6 +75,38 @@ export function createNotificationRoutes(
   });
 
   /**
+   * 확인, on a routine's failure that keeps happening: the line goes quiet and stays quiet.
+   *
+   * Not `seen`, although it marks the row seen too. Seeing a notification is having looked at it;
+   * acknowledging a failure group is saying "I know, stop showing me this in red" about every
+   * repeat still to come — until the routine succeeds, or fails some other way. See
+   * `failure-groups.ts`.
+   *
+   * Pressing it again answers 204 again: the state asked for is the state there is. A row that is
+   * somebody else's, or not a failure group, is the same 404 `seen` gives.
+   */
+  routes.post(
+    "/me/notifications/:id/acknowledge",
+    requireUser,
+    async (context) => {
+      const acknowledged = await outbox.acknowledge(
+        context.var.actor.id,
+        context.req.param("id") ?? "",
+      );
+      if (!acknowledged) {
+        return context.json(
+          {
+            error: "laf:notification_not_found",
+            code: "laf:notification_not_found",
+          },
+          404,
+        );
+      }
+      return context.body(null, 204);
+    },
+  );
+
+  /**
    * How long people take to answer, and how long at night. The operator's, like the trail.
    *
    * A read of the audit trail rather than of the outbox — see `approval-metrics.ts` for why that

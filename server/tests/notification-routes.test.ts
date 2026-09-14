@@ -41,6 +41,9 @@ const ROW: NotificationRecord = {
   deliveredVia: ["socket"],
 };
 
+/** A routine's failure group, as the outbox would find it for its owner. */
+const A_GROUP = "notification-group-1";
+
 const METRICS: ApprovalMetrics = {
   days: 30,
   timeZone: "Asia/Seoul",
@@ -57,11 +60,17 @@ function surface(
 ) {
   const asked: Array<{ userId: string; since?: string }> = [];
   const marked: Array<{ userId: string; id: string }> = [];
+  const acknowledged: Array<{ userId: string; id: string }> = [];
   const windows: number[] = [];
   const outbox: NotificationOutbox = {
     enqueue: async () => null,
     recordFleetNotice: async () => {},
     redeliver: async () => 0,
+    offer: async () => null,
+    acknowledge: async (userId, id) => {
+      acknowledged.push({ userId, id });
+      return id === A_GROUP && userId === OWNER.id;
+    },
     list: async (userId, listOptions) => {
       asked.push({
         userId,
@@ -95,7 +104,7 @@ function surface(
           },
     ),
   );
-  return { app, asked, marked, windows };
+  return { app, asked, marked, acknowledged, windows };
 }
 
 describe("the in-app door", () => {
@@ -145,6 +154,30 @@ describe("the in-app door", () => {
       "laf:notification_not_found",
     );
     expect(marked.map((one) => one.userId)).toEqual([OWNER.id, OWNER.id]);
+  });
+
+  test("acknowledging a failure group is 204 every time, and somebody else's is the same 404", async () => {
+    const { app, acknowledged } = surface(OWNER);
+    const press = (id: string) =>
+      app.request(`/api/me/notifications/${id}/acknowledge`, {
+        method: "POST",
+      });
+
+    // Twice: a second press — another tab, a double click — is the state asked for, not a failure.
+    expect((await press(A_GROUP)).status).toBe(204);
+    expect((await press(A_GROUP)).status).toBe(204);
+
+    const missing = await press("somebody-elses");
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as { code: string }).code).toBe(
+      "laf:notification_not_found",
+    );
+    // Whose it is comes from the session, as everywhere on this door.
+    expect(acknowledged.map((one) => one.userId)).toEqual([
+      OWNER.id,
+      OWNER.id,
+      OWNER.id,
+    ]);
   });
 });
 

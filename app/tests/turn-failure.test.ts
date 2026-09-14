@@ -9,12 +9,15 @@
  * literal `t("…")`. This walks the table instead, the way `agent-presets.test.ts` walks its own.
  */
 import { describe, expect, it } from "bun:test";
+import { sittingLabel } from "@/lib/channels/message-time";
 import {
   liveTurnFailureCode,
+  repeatedFailureLine,
   TURN_FAILURE_CODES,
   TURN_FAILURE_SENTENCES,
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
+import { activeLocale } from "@/lib/i18n";
 import { ko } from "@/lib/i18n-ko";
 
 describe("turn failure sentences", () => {
@@ -210,5 +213,42 @@ describe("liveTurnFailureCode", () => {
     for (const input of inputs) {
       expect(TURN_FAILURE_CODES).toContain(liveTurnFailureCode(input));
     }
+  });
+});
+
+describe("a failure that keeps happening", () => {
+  const today = new Date("2026-09-14T15:00:00");
+
+  it("says nothing more for a failure that has not repeated", () => {
+    expect(
+      repeatedFailureLine({ count: 1, lastAt: today.toISOString() }, today),
+    ).toBeNull();
+  });
+
+  it("says how many, and only the clock when it was today", () => {
+    const last = new Date("2026-09-14T09:00:00");
+    const clock = last.toLocaleTimeString(activeLocale, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    expect(
+      repeatedFailureLine({ count: 7, lastAt: last.toISOString() }, today),
+    ).toBe(`Failed 7 times for the same reason · last ${clock}`);
+  });
+
+  it("names the day when it was not today, so last Tuesday does not read as this morning", () => {
+    const last = new Date("2026-09-13T09:00:00");
+    expect(
+      repeatedFailureLine({ count: 3, lastAt: last.toISOString() }, today),
+    ).toBe(
+      `Failed 3 times for the same reason · last ${sittingLabel(last, today)}`,
+    );
+    expect(sittingLabel(last, today)).toContain("Yesterday");
+  });
+
+  it("draws no line from a time that does not parse", () => {
+    expect(
+      repeatedFailureLine({ count: 4, lastAt: "not a time" }, today),
+    ).toBeNull();
   });
 });

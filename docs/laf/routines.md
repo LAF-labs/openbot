@@ -64,6 +64,17 @@ is the Routines page:
   muted.
 - **The trail.** The same `routine.ran` row, as always.
 
+**The same failure again is not news again (2026-09-14).** A failure's
+signature is the routine, its code, and the tool the code names. The first
+failure of a signature does all of the above; every later one while that
+signature's group is open is counted into the group's `run.failed` row
+(`count`, `lastAt`) inside the run's own settlement, and writes no heading, no
+red line, no unread dot and no notification. The line in the conversation says
+"같은 이유로 7번 실패 · 마지막 오전 9:00"; pressing 확인 on it quiets it through
+every repeat to come. A success closes the routine's open groups, so the next
+failure opens a new one and is told once. The group is a row, so a restart does
+not reset it. See `notifications/failure-groups.ts`.
+
 A run the server restarted under is the same failure with a different code.
 Boot reconciles every `running` row to `unknown` (`runner/laf-runner.ts`),
 then `reportInterruptedRuns` marks each routine's conversation and writes a
@@ -132,7 +143,8 @@ skip also carries the `next` one.
 Each routine keeps its last twenty runs (`laf_routine_runs`), which is what an
 operator actually reads. The history of record is `audit_events`: every firing
 writes a `routine.ran` row whichever way it went (with `failure` and
-`channelId` when it went badly, and `notepad` when the run changed its notepad),
+`channelId` when it went badly, `failureGroup` when that failure was counted
+into a group, and `notepad` when the run changed its notepad),
 a late window that ran writes `routine.caught_up`, one that was let go writes
 `routine.skipped_missed`, and a person emptying a notepad writes
 `routine.notepad_cleared`.
@@ -210,6 +222,16 @@ WHERE version =`), and only for a run whose record says it succeeded. So:
 
 The `routine.ran` row says which, as a word and never the contents: `notepad:
 "written"`, `"superseded"` or `"discarded"`, absent when the run changed nothing.
+
+**The notepad and the failure group are one decision.** Both say where the next
+run starts from, and the same settlement writes both: a success lands the draft
+and closes the routine's open failure groups; a failure discards the draft and
+is counted into its group or opens one. Neither commits without the other, so a
+restart never finds the cursor moved past a run the routine is still counting
+as failing. The draft is written first, then the groups, then the conversation
+— the order is the lock order (notepad row, the routine's group lock, the
+thread), the same on both paths (`settlement.ts`, `writeRecord`;
+`failure-groups.integration.test.ts` runs the two together).
 
 **Who reads and clears it.** The routine's person, by the same scope as its runs.
 The routine's row on `/routines` shows the entries, read-only — a note typed on

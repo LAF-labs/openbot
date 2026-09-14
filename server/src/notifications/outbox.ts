@@ -14,6 +14,11 @@
  * costs nothing, because the row is still there and the next door — or the in-app list on the next
  * page load — is another chance.
  *
+ * Two exceptions write inside somebody else's transaction and are offered to the doors only once it
+ * has committed: a fleet notice (`recordFleetNotice`), and a routine's failure group
+ * (`failure-groups.ts`), whose row is the one notification a run of identical failures is worth
+ * and is edited, not repeated, as the failures go on (`offer`, `acknowledge`).
+ *
  * WHAT IT IS NOT. It is not the audit trail and must never be read as one. The trail is append-only
  * and holds what happened; these rows are edited as they are delivered and seen, and the retention
  * tick deletes them after thirty days. The approvals KPI is computed from `approval.*` audit rows
@@ -32,6 +37,10 @@ import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
 import { lafNotifications } from "../db/schema";
 import type { RunOrigin } from "../runner/run-ledger";
+import {
+  acknowledgeFailureGroup,
+  type FailureGroupFacts,
+} from "./failure-groups";
 
 /**
  * The list of things worth interrupting somebody about.
@@ -161,6 +170,12 @@ export type NotificationRecord = {
   subject?: AskSubject;
   /** What the run was and how it ended, for a `run.failed` row. See {@link RunFailureFacts}. */
   run?: RunFailureFacts;
+  /**
+   * For a `run.failed` row that is a failure group: how many times, when last, and whether it is
+   * acknowledged or closed. Beside `run` rather than inside it, so the facts every door has always
+   * been sent about a run are exactly what they were. See `failure-groups.ts`.
+   */
+  group?: FailureGroupFacts;
   /** What the person wrote and where they were, for a `support.feedback` row. */
   support?: SupportFacts;
   /** The withdrawal the fleet is told about, for a `fleet.*` row. See {@link FleetFacts}. */
@@ -235,6 +250,21 @@ export type NotificationOutbox = {
    * Never throws. Answers how many rows were taken this time.
    */
   redeliver: () => Promise<number>;
+  /**
+   * Offer a row written earlier, inside a transaction that has since committed, to the doors.
+   *
+   * The failure group's half of what `enqueue` does in one call: `failure-groups.ts` writes the row
+   * inside the run's settlement, and the trail's watch offers it once the run is on the record
+   * (`from-audit.ts`). Only a row no door has taken yet, so a second offer delivers nothing twice.
+   * Never throws; null when there was nothing to offer.
+   */
+  offer: (id: string) => Promise<NotificationRecord | null>;
+  /**
+   * The person acknowledged a failure group: it goes quiet and stops waiting in their list.
+   *
+   * False when the row is not theirs, is not a group, or is gone. Pressing it twice is true twice.
+   */
+  acknowledge: (userId: string, id: string) => Promise<boolean>;
   /**
    * This person's unseen rows, newest first, capped.
    *
@@ -396,6 +426,28 @@ export function createNotificationOutbox(input: {
       return redelivering;
     },
 
+    offer: async (id) => {
+      try {
+        const [row] = await database
+          .select()
+          .from(lafNotifications)
+          .where(
+            and(
+              eq(lafNotifications.id, id),
+              isNull(lafNotifications.deliveredAt),
+            ),
+          );
+        if (!row) return null;
+        return await deliver(rowToRecord(row));
+      } catch (error) {
+        log(`[outbox] could not offer ${id}: ${message(error)}`);
+        return null;
+      }
+    },
+
+    acknowledge: (userId, id) =>
+      acknowledgeFailureGroup(database, { userId, id, at: now() }),
+
     enqueue: async (enqueueInput) => {
       let record: NotificationRecord;
       try {
@@ -513,9 +565,23 @@ export async function purgeNotificationsBefore(
   const removed = await database
     .delete(lafNotifications)
     .where(
-      // Except a fleet notice no door has taken yet: it is retried until one does, and dropping it
-      // after thirty days of an unreachable fleet would be the lost withdrawal it exists to prevent.
-      sql`${lafNotifications.createdAt} < ${cutoff} and not (${lafNotifications.kind} like 'fleet.%' and ${lafNotifications.deliveredAt} is null)`,
+      and(
+        // Except a fleet notice no door has taken yet: it is retried until one does, and dropping it
+        // after thirty days of an unreachable fleet would be the lost withdrawal it exists to prevent.
+        sql`${lafNotifications.createdAt} < ${cutoff} and not (${lafNotifications.kind} like 'fleet.%' and ${lafNotifications.deliveredAt} is null)`,
+        /*
+         * And except a failure group that failed again inside the window (`failure-groups.ts`). Its
+         * row is how the next failure knows it is a repeat, and a routine broken for five weeks
+         * would otherwise open a fresh group — a second red line, a second buzz, the acknowledgement
+         * forgotten — on day thirty-one, for a failure nothing about had changed. A group goes
+         * thirty days after its LAST failure, and its line in the conversation then reads as a
+         * plain failure line again, which is what every such line read before groups existed.
+         *
+         * Compared as text: both sides are `toISOString()`, which sorts as it reads, and a cast
+         * would let one malformed row fail the whole sweep.
+         */
+        sql`not (${lafNotifications.kind} = 'run.failed' and coalesce(${lafNotifications.subject} -> 'group' ->> 'lastAt', '') >= ${cutoff.toISOString()})`,
+      ),
     )
     .returning({ id: lafNotifications.id });
   return removed.length;
@@ -524,12 +590,17 @@ export async function purgeNotificationsBefore(
 /** The `subject` column, read back as whichever fact it holds. See `RunFailureFacts`. */
 function factsOf(
   stored: unknown,
-): Pick<NotificationRecord, "subject" | "run" | "support" | "fleet"> {
+): Pick<NotificationRecord, "subject" | "run" | "group" | "support" | "fleet"> {
   if (!stored || typeof stored !== "object") return {};
   const held = stored as Record<string, unknown>;
   if (held.kind === "run") {
-    const { kind: _kind, ...facts } = held;
-    return { run: facts as RunFailureFacts };
+    const { kind: _kind, group, ...facts } = held;
+    return {
+      run: facts as RunFailureFacts,
+      ...(group && typeof group === "object"
+        ? { group: group as FailureGroupFacts }
+        : {}),
+    };
   }
   if (held.kind === "support") {
     const { kind: _kind, ...facts } = held;

@@ -13,7 +13,8 @@
  * the codes IS the wire contract between the two; `turn-failure.test.ts` walks it, and adding a
  * code on either side without the other leaves the generic sentence, which is true of everything.
  */
-import { t } from "@/lib/i18n";
+import { sittingLabel } from "@/lib/channels/message-time";
+import { activeLocale, t } from "@/lib/i18n";
 
 /**
  * The codes `GET /api/channels/:id/failures` can send. Keep in step with the server's table.
@@ -39,12 +40,55 @@ export const TURN_FAILURE_CODES = [
 
 export type TurnFailureCode = (typeof TURN_FAILURE_CODES)[number];
 
+/**
+ * A routine failing the same way over and over, as the one line that stands for all of it.
+ *
+ * The server counts a failure that repeats an open group into that group and writes nothing else
+ * (`server/src/notifications/failure-groups.ts`), so this is the only place the repeats are seen:
+ * how many, when last, and whether the person has said 확인 or a success has ended it.
+ */
+export type FailureGroup = {
+  /** The group's notification row. What 확인 sends back. */
+  id: string;
+  count: number;
+  lastAt: string;
+  acknowledged: boolean;
+  closed: boolean;
+};
+
 /** One question that never got an answer, as the server reports it. */
 export type TurnFailure = {
   messageId: string;
   code: string;
   at: string;
+  group?: FailureGroup;
 };
+
+/**
+ * "같은 이유로 7번 실패 · 마지막 오전 9:00", or nothing for a failure that has not repeated.
+ *
+ * The clock alone when it was today — the case this exists for is a routine failing every hour
+ * while somebody is at work — and the day with it otherwise, in the words the transcript's own
+ * separators use, because "마지막 오전 9:00" about last Tuesday reads as this morning.
+ */
+export function repeatedFailureLine(
+  group: Pick<FailureGroup, "count" | "lastAt">,
+  now: Date = new Date(),
+): string | null {
+  const last = new Date(group.lastAt);
+  if (group.count < 2 || Number.isNaN(last.getTime())) return null;
+  const time =
+    last.toDateString() === now.toDateString()
+      ? last.toLocaleTimeString(activeLocale, {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : sittingLabel(last, now);
+  return t("Failed {count} times for the same reason · last {time}", {
+    count: group.count,
+    time,
+  });
+}
 
 /**
  * What each failure means to the person who asked, in the English `t()` reads as a key.

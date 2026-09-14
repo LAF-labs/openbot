@@ -19,6 +19,10 @@
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafThreadMessages, lafThreadRuns } from "../db/schema";
+import {
+  type FailureGroupMark,
+  failureGroupsMarkedAt,
+} from "../notifications/failure-groups";
 
 /**
  * What kind of failure it was, as a fact rather than a sentence.
@@ -76,6 +80,12 @@ export type TurnFailure = {
   code: TurnFailureCode;
   /** When the run gave up, ISO-8601. */
   at: string;
+  /**
+   * When this line stands for a routine failing the same way over and over: how many times, when
+   * last, and whether the person acknowledged it or a success closed it. The repeats themselves
+   * left no line of their own. See `notifications/failure-groups.ts`.
+   */
+  group?: FailureGroupMark;
 };
 
 /**
@@ -207,6 +217,13 @@ export function createTurnFailureReader(database: Database) {
         and(
           eq(lafThreadRuns.threadId, threadId),
           inArray(lafThreadRuns.status, ["error", "unknown"]),
+          /*
+           * Only runs that left something to draw under, and filtered BEFORE the limit. A routine
+           * failing the same way again writes nothing (`notifications/failure-groups.ts`), and
+           * fifty such repeats newer than the one line they are counted on would otherwise push
+           * that line off the page — the count going up while the line it is on disappears.
+           */
+          sql`exists (select 1 from ${lafThreadMessages} where ${lafThreadMessages.threadId} = ${lafThreadRuns.threadId} and ${lafThreadMessages.runId} = ${lafThreadRuns.runId})`,
         ),
       )
       .orderBy(desc(lafThreadRuns.finishedAt))
@@ -238,6 +255,8 @@ export function createTurnFailureReader(database: Database) {
     const messageOfRun = new Map(
       lastOfRun.map((row) => [row.runId, row.messageId]),
     );
+    // The groups whose one line is one of these. Read beside the ledger, not instead of it.
+    const groups = await failureGroupsMarkedAt(database, runIds);
 
     const failures: TurnFailure[] = [];
     for (const run of failed) {
@@ -245,6 +264,7 @@ export function createTurnFailureReader(database: Database) {
       // A run that failed before it wrote anything has no message to draw under, and inventing a
       // place for it would put the line under somebody else's question.
       if (!messageId) continue;
+      const group = groups.get(run.runId);
       failures.push({
         at: (run.finishedAt ?? new Date()).toISOString(),
         code:
@@ -252,6 +272,7 @@ export function createTurnFailureReader(database: Database) {
             ? TURN_FAILURE_CODES.interrupted
             : classifyTurnFailure(run.error),
         messageId,
+        ...(group ? { group } : {}),
       });
     }
     return failures.reverse();

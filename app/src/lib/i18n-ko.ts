@@ -2386,4 +2386,8 @@ export const ko: Record<string, string> = {
     "다음 실행은 지난번에 어디까지 했는지 모른 채 시작해서, 이미 본 것을 다시 볼 수 있습니다.",
   "A person cleared where it left off": "사람이 루틴의 메모장을 비움",
   "A routine's notepad": "루틴 메모장",
+  // A routine failing the same way over and over: one line, the count on it, and 확인 to quiet it.
+  "Failed {count} times for the same reason · last {time}":
+    "같은 이유로 {count}번 실패 · 마지막 {time}",
+  Acknowledge: "확인",
 };
