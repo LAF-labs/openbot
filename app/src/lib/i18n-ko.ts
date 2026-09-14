@@ -2398,4 +2398,20 @@ export const ko: Record<string, string> = {
     "{since}부터 로그인 · {seen}까지 로그인 확인됨",
   "{count} frames on the page could not be seen into":
     "페이지 안의 문서 {count}개는 들여다보지 못함",
+  // 감사 표 — 봇의 컴퓨터가 남긴 코드 중 대화 줄에 나오지 않는 것들(agent-computer/src/codes.ts).
+  "The live screen was opened the wrong way":
+    "실시간 화면을 잘못된 방식으로 열려고 함",
+  "Nothing was waiting for that value any more":
+    "그 값을 기다리는 요청이 없었음",
+  "A person had not taken the wheel": "사람이 제어를 가져가지 않은 상태였음",
+  "The live picture could not be started": "실시간 화면을 시작하지 못함",
+  "A click or keystroke did not reach the page":
+    "클릭이나 키 입력이 페이지에 닿지 않음",
+  "The page opened a dialog": "페이지가 알림창을 띄움",
+  "A file was saved to the workspace": "파일을 작업 공간에 저장함",
+  "A download was too large to keep": "내려받은 파일이 너무 커서 저장하지 않음",
+  "A download could not be saved": "내려받은 파일을 저장하지 못함",
+  "A request for a secret was lost when the computer restarted":
+    "컴퓨터가 다시 시작되면서 비밀값 요청이 사라짐",
+  "A frame on the page could not be read": "페이지 안의 문서 하나를 읽지 못함",
 };

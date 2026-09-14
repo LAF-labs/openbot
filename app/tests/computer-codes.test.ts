@@ -15,6 +15,7 @@ import { OUTCOME_LABELS } from "../src/lib/computer/outcome-labels";
 import { SECRET_REFUSALS } from "../src/lib/computer/refusals";
 import { SCREEN_PROBLEM_SAID } from "../src/lib/computer/screen-problems";
 import { ko } from "../src/lib/i18n-ko";
+import { COMPUTER_FACTS, FACTS } from "../src/routes/_authed/admin/audit";
 
 /**
  * THE CONTRACT: WHAT THE BOT'S COMPUTER CAN SAY, AND WHO KNOWS IT.
@@ -165,6 +166,36 @@ describe("the person knows every code, where they meet it", () => {
       )
       .filter((sentence) => !(sentence in ko));
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * THE AUDIT TRAIL, WHICH PRINTED THEM AS THEY CAME.
+ *
+ * A computer action that did not happen keeps its failure as the code the computer or the client
+ * named, and `/admin/audit` looked codes up only in the trail's own facts — so a Korean trail read
+ * `laf:navigation_failed` under 실행되지 않음 until 2026-09-14. Every code the container can send and
+ * every code the client says itself has to have words in the page's table, whether or not a row can
+ * carry it today: the day one does is not the day to find out.
+ */
+describe("the audit trail knows every code", () => {
+  test("each code the container lists, and each the client says itself, has words in the audit table", () => {
+    expect(unknownTo(COMPUTER_FACTS, [...ALL, ...CLIENT_FACTS])).toEqual([]);
+  });
+
+  test("and the words are words: Korean for each, and never the code again", () => {
+    const codes = [...ALL, ...CLIENT_FACTS];
+    const said = codes.map((code) => COMPUTER_FACTS[code] as string);
+    expect(said.filter((sentence) => !(sentence in ko))).toEqual([]);
+    expect(said.filter((sentence) => sentence.startsWith("laf:"))).toEqual([]);
+  });
+
+  test("no code means two things on one page: where the trail's own facts name one, they agree", () => {
+    // The page reads the trail's facts first. A code in both tables would print the first table's
+    // words, and the walk above would be checking a sentence nobody sees.
+    expect(
+      Object.keys(COMPUTER_FACTS).filter((code) => Object.hasOwn(FACTS, code)),
+    ).toEqual([]);
   });
 });
 

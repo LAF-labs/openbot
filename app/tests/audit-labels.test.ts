@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
 import { auditEventTypes, auditFactCodes } from "../../server/src/audit";
 import {
+  COMPUTER_FACTS,
   DECISIONS,
   DISCONNECT_REASONS,
   EVENTS,
@@ -32,6 +33,7 @@ describe("the audit trail's labels", () => {
       ...Object.values(EVENTS),
       ...Object.values(TOOLS),
       ...Object.values(FACTS),
+      ...Object.values(COMPUTER_FACTS),
       ...UNLABELLED_OUTCOMES,
     ].filter((label) => !(label in ko));
     expect(missing).toEqual([]);

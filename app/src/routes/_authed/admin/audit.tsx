@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
+import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
@@ -423,8 +424,8 @@ function Row({
         typeof payload.lastSeenAt === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {t("Signed in since {since}, last seen signed in {seen}", {
-              since: dateOf(payload.signedInSince),
-              seen: dateOf(payload.lastSeenAt),
+              since: dayOf(payload.signedInSince),
+              seen: dayOf(payload.lastSeenAt),
             })}
           </div>
         ) : null}
@@ -447,7 +448,7 @@ function Row({
          * still in the other rows onto this page, so the condition IS the boundary: a note that has
          * become a code has words here, and a note that is still prose stays where it was.
          */}
-        {typeof payload.note === "string" && FACTS[payload.note] ? (
+        {typeof payload.note === "string" && wordsFor(payload.note) ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {fact(payload.note)}
           </div>
@@ -679,6 +680,18 @@ function hostOf(url: string): string {
 /** One day, so the heading can name yesterday without a date library. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * A date inside a sentence: no weekday, which the heading's format carries and which read
+ * "9월 14일 월부터" once words were put after it.
+ */
+function dayOf(at: string): string {
+  return new Date(at).toLocaleDateString(activeLocale, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 /** A day heading, in the reader's own language and calendar. */
 function dateOf(at: string): string {
   return new Date(at).toLocaleDateString(activeLocale, {
@@ -725,8 +738,23 @@ const Id = ({ children }: { children: React.ReactNode }) => (
  */
 function fact(value: string): string {
   if (!value.startsWith("laf:")) return value;
-  const label = FACTS[value];
+  const label = wordsFor(value);
   return label ? t(label) : value;
+}
+
+/**
+ * The English key for a fact code, from the trail's own facts or from what the Bot's computer says.
+ *
+ * Two tables because they answer to two lists — `server/src/audit.ts` for the first, the container's
+ * `agent-computer/src/codes.ts` and the client's own facts for the second — and each is walked
+ * against its list by a test, so a code added to either fails a run rather than reaching a reader.
+ */
+function wordsFor(code: string): string | undefined {
+  return Object.hasOwn(FACTS, code)
+    ? FACTS[code]
+    : Object.hasOwn(COMPUTER_FACTS, code)
+      ? COMPUTER_FACTS[code]
+      : undefined;
 }
 
 /**
@@ -767,6 +795,40 @@ export const FACTS: Record<string, string> = {
   // The boot row's whole content. Not a refusal — the arrangement this deployment runs under.
   "laf:one_shared_computer":
     "Every Bot of this account drives the same browser: sessions, files and logins are shared",
+};
+
+/**
+ * WHAT THE BOT'S COMPUTER SAID, AS THIS COLUMN SAYS IT.
+ *
+ * A computer action that did not happen records its failure as the fact the computer or the
+ * server's client named — `laf:navigation_failed`, `laf:computer_unreachable` — and until
+ * 2026-09-14 this page printed that code as it came, because `FACTS` above answers only to the
+ * trail's own list. The container's list is the source of truth for what happened in the browser
+ * (`agent-computer/src/codes.ts`), and `computer-codes.test.ts` walks it, and the client's own facts,
+ * against this table.
+ *
+ * Most of them already have words for a person: the transcript line's (`OUTCOME_LABELS`), which is
+ * where the same failure is told to the person who asked the Bot. Taken from there rather than
+ * written a second time, so one fact reads the same on both screens. The rest of the list reaches no
+ * transcript — a person's own doors, the live screen, what the browser noticed on its own — and is
+ * phrased here.
+ */
+export const COMPUTER_FACTS: Record<string, string> = {
+  ...OUTCOME_LABELS,
+  // A person's own doors, and the live screen.
+  "laf:stream_upgrade_required": "The live screen was opened the wrong way",
+  "laf:secret_not_pending": "Nothing was waiting for that value any more",
+  "laf:take_control_first": "A person had not taken the wheel",
+  "laf:screen_not_started": "The live picture could not be started",
+  "laf:input_not_applied": "A click or keystroke did not reach the page",
+  // What the browser noticed that nobody asked about.
+  "laf:dialog": "The page opened a dialog",
+  "laf:downloaded": "A file was saved to the workspace",
+  "laf:download_too_large": "A download was too large to keep",
+  "laf:download_failed": "A download could not be saved",
+  "laf:secret_request_lost":
+    "A request for a secret was lost when the computer restarted",
+  "laf:frame_opaque": "A frame on the page could not be read",
 };
 
 /**
