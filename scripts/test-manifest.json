@@ -316,6 +316,7 @@
   "tests/skill-index.test.ts",
   "tests/smoke/journey.test.ts",
   "tests/spillover.test.ts",
+  "tests/test-ci-report.test.ts",
   "tests/tool-bridge.test.ts",
   "tests/tool-catalogue.test.ts",
   "tests/tool-notes.test.ts",

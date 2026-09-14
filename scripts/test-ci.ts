@@ -28,6 +28,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Glob, SQL } from "bun";
+import { fileVerdict } from "./test-ci-report";
 
 const projectRoot = resolve(import.meta.dir, "..");
 
@@ -58,7 +59,8 @@ const projectRoot = resolve(import.meta.dir, "..");
  * And each file is checked to have run at least one test, off bun's own JUnit report: a file whose
  * tests were all removed, or that threw before registering any, is gone in every way that matters
  * and still present in every way the list can see. (A skipped test still counts as run: whether a
- * machine has Docker is not whether the file exists.)
+ * machine has Docker is not whether the file exists.) The report is read in `test-ci-report.ts`,
+ * where `tests/test-ci-report.test.ts` holds that reading to a report bun writes.
  */
 const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 
@@ -459,6 +461,8 @@ type Outcome = {
   status: number;
   /** The files in this group that the JUnit report says ran no test at all. */
   emptyFiles: string[];
+  /** How many tests the JUnit report puts against this group's files. */
+  accounted: number;
 };
 
 const outcomes: Outcome[] = [];
@@ -466,24 +470,18 @@ const outcomes: Outcome[] = [];
 /** Where bun writes each group's JUnit report; read once, then left for the OS to sweep. */
 const reports = mkdtempSync(join(tmpdir(), "laf-test-ci-"));
 
-/**
- * How many tests each file ran, off bun's JUnit report.
- *
- * The report nests a `<testsuite>` per `describe` inside the one per file, all carrying the file's
- * path; the outermost is the whole file's count, so the largest count seen for a path is the
- * file's. A file that threw on import is absent from the report altogether, which reads as zero.
- */
-function testsPerFile(report: string): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const match of report.matchAll(
-    /<testsuite\b[^>]*\bfile="([^"]+)"[^>]*\btests="(\d+)"/g,
-  )) {
-    const file = match[1] as string;
-    const tests = Number.parseInt(match[2] as string, 10);
-    counts.set(file, Math.max(counts.get(file) ?? 0, tests));
-  }
-  return counts;
+/** The files under any of `roots`, sorted. Out here rather than in the loop below: see the loop. */
+function filesOwnedBy(
+  roots: readonly string[],
+  paths: Iterable<string>,
+): string[] {
+  const owned: string[] = [];
+  for (const path of paths) if (owns(roots, path)) owned.push(path);
+  return owned.sort();
 }
+
+/** A path as the tree names it, made absolute. Out here rather than in the loop below: see the loop. */
+const absolute = (path: string) => resolve(projectRoot, path);
 
 /*
  * One group at a time. The groups share the one test database, and the deletions described at the
@@ -496,18 +494,24 @@ function testsPerFile(report: string): Map<string, number> {
  */
 for (const group of GROUPS) {
   /*
-   * The group's files, decided ONCE and used for both the run and the check of what it ran.
+   * NOTHING IN THIS LOOP MAKES A FUNCTION. The group's files and the verdict on its report come from
+   * functions defined outside it, handed what they need as arguments.
    *
-   * Measured, and not understood: computed a second time after the group's run, the same filter over
-   * the same set answered with the previous group's files — `root` "owned" the 92 app files, all of
-   * which then read as having run nothing — though `roots` printed correctly beside it and the same
-   * code in isolation does not do it. One list, taken before anything is awaited, leaves nothing to
-   * disagree.
+   * MEASURED 2026-09-14. Under Bun 1.3.11, once a group's run has held this loop at an `await` for
+   * about half a minute, a closure made in a later pass can read an EARLIER pass's variables while
+   * the loop body beside it reads its own. The gate said "agent-computer: 18 test file(s) ran no
+   * test at all", and the same of root's 28, while bun ran 222 and 304 tests and both reports were
+   * whole: `owned.filter((path) => (perFile.get(path) ?? 0) === 0)` was looking their files up in
+   * the FIRST pass's `perFile`, server's. Shown with each run replaced by a sleep and a copy of a
+   * saved report, misread in: 0 of 10 runs waiting 20 s or less, 21 of 23 waiting 30 s or more;
+   * 0 of 4 with the JIT off, 0 of 3 with only the baseline JIT; 0 of 7 once server's report also
+   * listed those files. The real groups take 26, 33 and 50 s, so it came and went between runs of
+   * one tree. The same waits against this loop as it is now: 12 of 12 read right. The note that
+   * stood here from 2026-09-13 — a filter taken again after the run made `root` own app's 92 files
+   * — was this bug reading `group`; taking that list before the run moved it, and did not end it.
    */
-  const owned = [...discovered]
-    .filter((path) => owns(group.roots, path))
-    .sort();
-  const files = owned.map((path) => resolve(projectRoot, path));
+  const owned = filesOwnedBy(group.roots, discovered);
+  const files = owned.map(absolute);
 
   console.error(`\n=== ${group.name} (${files.length} files) ===`);
 
@@ -541,20 +545,21 @@ for (const group of GROUPS) {
   const status = await proc.exited;
   const ran = stderr.match(/Ran (\d+) tests? across/);
 
-  let perFile = new Map<string, number>();
+  let reportText: string | null = null;
   try {
-    perFile = testsPerFile(readFileSync(report, "utf8"));
+    reportText = readFileSync(report, "utf8");
   } catch {
     // No report at all is the same verdict for every file in the group, made below.
   }
-  const emptyFiles = owned.filter((path) => (perFile.get(path) ?? 0) === 0);
+  const verdict = fileVerdict(owned, reportText);
 
   outcomes.push({
     name: group.name,
     floor: group.floor,
     count: ran ? Number.parseInt(ran[1] as string, 10) : null,
     status,
-    emptyFiles,
+    emptyFiles: verdict.ranNothing,
+    accounted: verdict.accounted,
   });
 }
 
@@ -577,6 +582,19 @@ for (const outcome of outcomes) {
     problems.push(
       `${outcome.name}: ${outcome.count} tests ran, and at least ${outcome.floor} were expected.`,
     );
+  }
+  /*
+   * The report is held to bun's own count before a single file is judged by it. A report read
+   * short, or keyed by paths other than the ones asked about, names every file in the group as
+   * having run nothing — the very message a misreading printed on 2026-09-14 (see the loop above) —
+   * so a report that disagrees with the count is said to be one, and no file is named off it.
+   */
+  if (outcome.accounted !== outcome.count) {
+    problems.push(
+      `${outcome.name}: bun counted ${outcome.count} tests and its JUnit report accounts for ${outcome.accounted}, so\n` +
+        "  the report was not read whole, and no file is judged by it.",
+    );
+    continue;
   }
   if (outcome.emptyFiles.length > 0) {
     problems.push(
