@@ -261,7 +261,7 @@ function startProvider(): string {
       // The server's auto-review probe at boot asks without streaming and wants JSON back.
       return Response.json({
         choices: [
-          { message: { content: '{"allowed": true, "reason": "yes"}' } },
+          { message: { content: '{"verdict": "allow", "reason": "yes"}' } },
         ],
         usage,
       });
