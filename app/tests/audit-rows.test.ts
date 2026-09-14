@@ -150,6 +150,12 @@ describe("what counts as the same row", () => {
       { ...base, decision: { allowed: true, rule: "true" } },
       { ...base, decision: { allowed: true, rule: "true", approvedBy: "kim" } },
       { ...base, silentForMs: 60_000, chunks: 0 },
+      { ...base, opaqueFrames: 2 },
+      {
+        ...base,
+        signedInSince: "2026-09-01T00:00:00.000Z",
+        lastSeenAt: "2026-09-13T00:00:00.000Z",
+      },
     ];
     const signatures = new Set(
       changes.map((payload) =>

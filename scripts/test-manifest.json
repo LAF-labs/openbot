@@ -163,6 +163,7 @@
   "server/tests/computer-routes-codes.test.ts",
   "server/tests/computer-routes.test.ts",
   "server/tests/computer-secret-payload.test.ts",
+  "server/tests/computer-snapshot-row.test.ts",
   "server/tests/computer-target.test.ts",
   "server/tests/config-discipline.test.ts",
   "server/tests/config.test.ts",

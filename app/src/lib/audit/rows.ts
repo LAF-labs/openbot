@@ -100,6 +100,11 @@ export function signatureOf(event: AuditEvent): string {
     // The stall row's two numbers, which are the only reason to read it.
     typeof payload.silentForMs === "number" ? payload.silentForMs : "",
     typeof payload.chunks === "number" ? payload.chunks : "",
+    // A look that could not see into two frames is not the same row as one that missed five.
+    typeof payload.opaqueFrames === "number" ? payload.opaqueFrames : "",
+    // Two lapses of one site are two sessions, told apart by when each began and was last alive.
+    text(payload.signedInSince),
+    text(payload.lastSeenAt),
   ]);
 }
 

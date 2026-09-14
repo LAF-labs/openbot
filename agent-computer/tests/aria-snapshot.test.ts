@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   isSecretLabel,
+  opaqueFramesIn,
   parseAriaSnapshot,
   parseDescriptor,
 } from "../src/aria-snapshot";
@@ -447,5 +448,60 @@ describe("a secret field the DOM knows by identity", () => {
       `- textbox "패스워드" [ref=e1]: ${SECRET}`,
     );
     expect(JSON.stringify(elements)).not.toContain(SECRET);
+  });
+});
+
+/**
+ * THE FRAMES A SNAPSHOT COULD NOT SEE INTO.
+ *
+ * Captured with Playwright 1.62.1 and a real Chromium (2026-09-14): a page with a readable
+ * cross-origin frame, an empty one and `<iframe src="chrome://version">`, which the browser never
+ * gives a document. Playwright writes the colon after an iframe's line only when it came back from
+ * inside it with something — the empty frame's single blank line included — so the bare line is the
+ * one frame the Bot cannot see into.
+ */
+const WITH_FRAMES =
+  '- generic [active] [ref=e1]:\n  - button "주문 확인" [ref=e2]\n  - iframe [ref=e3]:\n    - button "결제 진행" [ref=f1e2]\n  - iframe [ref=e4]:\n    \n  - iframe [ref=e5]';
+
+describe("frames the snapshot could not see into", () => {
+  test("the captured page has one, and its controls still parse", () => {
+    expect(opaqueFramesIn(WITH_FRAMES)).toBe(1);
+    expect(
+      parseAriaSnapshot(WITH_FRAMES).elements.map((element) => element.name),
+    ).toEqual(["주문 확인", "결제 진행"]);
+  });
+
+  test("a frame it entered is not one, whether or not anything was inside", () => {
+    expect(
+      opaqueFramesIn(
+        '- iframe [ref=e3]:\n  - button "결제 진행" [ref=f1e2]\n- iframe [ref=e4]:\n  ',
+      ),
+    ).toBe(0);
+  });
+
+  test("the bare line counts wherever it sits, with the flags Playwright puts on it", () => {
+    expect(
+      opaqueFramesIn(
+        "- iframe [ref=e1]\n- generic [ref=e2]:\n  - iframe [active] [ref=e3]\n  - paragraph [ref=e4]:\n    - iframe [ref=e5]",
+      ),
+    ).toBe(3);
+  });
+
+  test("text that mentions an iframe is not one, and neither is a control named like one", () => {
+    expect(
+      opaqueFramesIn(
+        '- text: "- iframe [ref=e1]"\n- button "iframe [ref=e2]" [ref=e3]\n- iframe\n- iframe [ref=]',
+      ),
+    ).toBe(0);
+  });
+
+  test("counted to the last frame on a page past the element limit", () => {
+    const buttons = Array.from(
+      { length: 250 },
+      (_, index) => `- button "b${index}" [ref=e${index + 10}]`,
+    );
+    const yaml = [...buttons, "- iframe [ref=e999]"].join("\n");
+    expect(parseAriaSnapshot(yaml).truncated).toBe(true);
+    expect(opaqueFramesIn(yaml)).toBe(1);
   });
 });

@@ -6,8 +6,12 @@
  * empties. It is kept apart from the decision itself because the decision's most important refusal,
  * the blind action, is a question about this state rather than a part of it.
  */
+import type { AuditStore } from "../../audit";
+import { log } from "../../log";
 import type { ComputerClient } from "../client";
 import type { ReadResult, SnapshotElement, SnapshotResult } from "../schema";
+import type { ActionActor } from "./caller";
+import { writeSnapshotRow } from "./trail";
 
 /**
  * The last snapshot the server took, per computer.
@@ -88,6 +92,8 @@ export type SnapshotCache = ReturnType<typeof createSnapshotCache>;
 export function createPageReads(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
   as: (botId: string) => ComputerClient;
+  /** Where a look that could not see into a frame is written down. See `writeSnapshotRow`. */
+  auditStore: AuditStore;
   snapshots: SnapshotCache;
   /**
    * The elements as they may enter this process, with the value of every secret field blanked.
@@ -100,10 +106,18 @@ export function createPageReads(deps: {
     result: SnapshotResult,
   ) => SnapshotElement[];
 }) {
-  const { as, snapshots, withoutSecrets } = deps;
+  const { as, auditStore, snapshots, withoutSecrets } = deps;
 
-  /** Read-only, so it passes straight through. Nothing has changed and there is nothing to decide. */
-  async function snapshot(computerId: string): Promise<SnapshotResult> {
+  /**
+   * Read-only, so it passes straight through. Nothing has changed and there is nothing to decide.
+   *
+   * `caller` is who looked, for the one kind of look the trail keeps: one that could not see into a
+   * frame. Optional, because a look with nobody to name — a test, a warm-up — has nothing to write.
+   */
+  async function snapshot(
+    computerId: string,
+    caller?: { botId: string; actor: ActionActor },
+  ): Promise<SnapshotResult> {
     const result = await as(computerId).snapshot();
     const elements = withoutSecrets(computerId, result);
     snapshots.set(computerId, {
@@ -112,6 +126,28 @@ export function createPageReads(deps: {
       elements: new Map(elements.map((element) => [element.ref, element])),
       stale: false,
     });
+    if (caller && (result.opaqueFrames ?? 0) > 0) {
+      /*
+       * Awaited and swallowed, like the repeat row: an observation must never refuse the look it is
+       * about, and a trail that could not be reached is no reason for a Bot to be told its screen
+       * could not be read.
+       */
+      try {
+        await writeSnapshotRow(auditStore, {
+          botId: caller.botId,
+          actor: caller.actor,
+          computerId,
+          pageUrl: result.url,
+          opaqueFrames: result.opaqueFrames ?? 0,
+        });
+      } catch (error) {
+        log.error("computer_snapshot_row_lost", {
+          bot: caller.botId,
+          opaqueFrames: result.opaqueFrames,
+          reason: error,
+        });
+      }
+    }
     return { ...result, elements };
   }
 

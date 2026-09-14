@@ -159,6 +159,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   return {
     ...createPageReads({
       as,
+      auditStore,
       snapshots,
       withoutSecrets: secrets.withoutSecrets,
     }),

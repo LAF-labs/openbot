@@ -15,6 +15,7 @@ import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
 import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { siteById } from "@/lib/sites/catalogue";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -306,7 +307,10 @@ function Row({
       </td>
       <td className="px-4 py-2">
         {/* Named targets and file paths are the audit subject before page elements. */}
-        {NAMED_TARGETS.has(event.targetType) && event.targetId ? (
+        {event.targetType === "site" && event.targetId ? (
+          // A site's sign-in rows name the site by its catalogue id; the catalogue has the words.
+          <Words id={event.targetId} label={siteById(event.targetId)?.name} />
+        ) : NAMED_TARGETS.has(event.targetType) && event.targetId ? (
           <span>
             <Id>{event.targetId}</Id>
             {typeof payload.function === "string" ? (
@@ -408,6 +412,29 @@ function Row({
         {failed && typeof payload.failure === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {fact(payload.failure)}
+          </div>
+        ) : null}
+        {/*
+         * The two dates a lapse row exists to carry: when the session that ran out began, and the
+         * last time anything saw it alive. Between them is how long a login to this site lasts.
+         */}
+        {event.eventType === "site.login_lapsed" &&
+        typeof payload.signedInSince === "string" &&
+        typeof payload.lastSeenAt === "string" ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {t("Signed in since {since}, last seen signed in {seen}", {
+              since: dateOf(payload.signedInSince),
+              seen: dateOf(payload.lastSeenAt),
+            })}
+          </div>
+        ) : null}
+        {/* A look at the screen that could not see into part of it: the row's whole reason. */}
+        {typeof payload.opaqueFrames === "number" &&
+        payload.opaqueFrames > 0 ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {t("{count} frames on the page could not be seen into", {
+              count: payload.opaqueFrames,
+            })}
           </div>
         ) : null}
         {/*
@@ -537,6 +564,10 @@ export const DECISIONS: Record<string, string> = {
   "computer.stopped": "A person pressed stop",
   // Not "Blocked". Nothing refused this; the Bot did the same thing again and the trail is saying so.
   "computer.action_repeated": "The Bot repeated itself",
+  // Neither is a permission or a refusal: the Bot's browser found a site signed in where it had not
+  // been, or found the login wall where it had been signed in. The row beneath a lapse says when.
+  "site.signed_in": "The site was signed in",
+  "site.login_lapsed": "The site's sign-in had run out",
   "approval.requested": "The boundary asked a person",
   "approval.granted": "A person allowed it",
   "approval.denied": "A person declined it",
@@ -816,6 +847,8 @@ export const EVENTS: Record<string, string> = {
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
   "computer.reset_failed": "The computer",
+  "site.signed_in": "A site's sign-in",
+  "site.login_lapsed": "A site's sign-in",
   "computer.policy_loaded": "The boundary",
   "computer.policy_changed": "The boundary",
   "computer.isolation_loaded": "Isolation",

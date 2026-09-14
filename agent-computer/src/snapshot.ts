@@ -12,7 +12,11 @@
  * values and checked state, filters to actionable elements and descends into iframes.
  */
 import type { Page } from "playwright";
-import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
+import {
+  opaqueFramesIn,
+  parseAriaSnapshot,
+  type SnapshotElement,
+} from "./aria-snapshot";
 import { settleIfLoading } from "./page-text";
 import type { TabSummary } from "./profiles";
 import { secretSignals, typedIntoRefs } from "./secret-fields";
@@ -25,6 +29,14 @@ export type Snapshot = {
   elements: SnapshotElement[];
   truncated: boolean;
   tabs: TabSummary[];
+  /**
+   * How many iframes on the page the snapshot could not see into (`opaqueFramesIn`).
+   *
+   * Always a number, zero included, so the server can tell "none" from an older image that never
+   * counted. What a Bot is missing inside one is a payment or 본인인증 window more often than not,
+   * and the audit row for a snapshot that met one is how anybody learns which sites do it.
+   */
+  opaqueFrames: number;
 };
 
 export async function snapshotPage(
@@ -64,5 +76,6 @@ export async function snapshotPage(
      * opened is usually where the answer is. `computer_switch_tab` takes the index from here.
      */
     tabs: await tabs(),
+    opaqueFrames: opaqueFramesIn(yaml),
   };
 }

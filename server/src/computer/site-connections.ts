@@ -15,10 +15,20 @@
  * NOTHING HERE MAY THROW INTO ITS CALLER, for the same reason `notifications/outbox.ts` says so:
  * the busiest caller is the success path of a navigation somebody's routine is in the middle of,
  * and a bookkeeping write that fails must cost a card its freshness, never the work.
+ *
+ * THE MOMENTS THE FLAG CHANGES ARE WRITTEN DOWN AS WELL (2026-09-14). The row is the present and
+ * nothing else, so "how long does a 배민 login last" could only be answered with a lower bound
+ * (laf-control `core/insights.ts` §4-3). `site.signed_in` is written when a look finds a site
+ * signed in that was not — never connected, or behind the wall — and `site.login_lapsed` when the
+ * browser the session lives in first meets the wall, with when that session began and when it was
+ * last seen alive. A look that changes nothing writes nothing: the thousandth morning a routine finds
+ * 배민 still signed in is not news, and a trail of them would bury the two that are.
  */
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { type AuditStore, createAuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
-import { lafSiteConnections } from "../db/schema";
+import { auditEvents, lafSiteConnections } from "../db/schema";
+import { log } from "../log";
 
 export type SiteConnection = {
   siteId: string;
@@ -79,7 +89,85 @@ const asConnection = (row: Row): SiteConnection => ({
 
 export function createSiteConnectionStore(
   database: Database,
+  options: {
+    /**
+     * Where the two transition rows go. The deployment's own trail unless a test hands in another;
+     * `main.ts` builds its boot store the same way, over the same database.
+     */
+    auditStore?: AuditStore;
+  } = {},
 ): SiteConnectionStore {
+  const auditStore = options.auditStore ?? createAuditStore(database);
+
+  /**
+   * One transition row, written after the change it describes has committed.
+   *
+   * Swallowed and logged on failure, like the repeat row in the gateway: this is an observation
+   * about bookkeeping, and a trail that could not be reached must not turn a routine's successful
+   * navigation, or a person's finished login, into a failure.
+   */
+  const note = async (
+    eventType: "site.signed_in" | "site.login_lapsed",
+    userId: string,
+    siteId: string,
+    /** Built inside the guard, so a lookup it needs cannot throw past it either. */
+    fields: () => Promise<Record<string, unknown>>,
+  ) => {
+    try {
+      await recordAuditEvent(auditStore, {
+        eventType,
+        targetType: "site",
+        targetId: siteId,
+        actorUserId: userId,
+        payload: { site: siteId, ...(await fields()) },
+      });
+    } catch (error) {
+      log.error("site_transition_row_lost", {
+        row: eventType,
+        site: siteId,
+        reason: error,
+      });
+    }
+  };
+
+  /**
+   * When the session that just ran out began, as well as this store can say.
+   *
+   * `connected_at` is the first sign-in ever and never moves, so a site that has lapsed and been
+   * signed into again would report its first March login as the start of September's session. The
+   * start of THIS session is the last `site.signed_in` this Bot's browser wrote for the site; a
+   * session older than those rows has only `connected_at` to go on, and gets it.
+   *
+   * AND NEVER LATER THAN IT WAS LAST SEEN. The row is written a moment after the look it records,
+   * stamped by the database, while the connection's clocks are the look's own — so a session seen
+   * exactly once came back "signed in since" 27 ms after it was "last seen" (measured through the
+   * running stack, 2026-09-14). A session cannot have begun after it was seen alive.
+   */
+  const sessionStart = async (
+    userId: string,
+    siteId: string,
+    botId: string,
+    connectedAt: Date,
+    lastSeenAt: Date,
+  ): Promise<Date> => {
+    const [latest] = await database
+      .select({ at: auditEvents.createdAt })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "site.signed_in"),
+          eq(auditEvents.targetType, "site"),
+          eq(auditEvents.targetId, siteId),
+          eq(auditEvents.actorUserId, userId),
+          sql`${auditEvents.payload}->>'bot' = ${botId}`,
+        ),
+      )
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(1);
+    const began = latest && latest.at > connectedAt ? latest.at : connectedAt;
+    return began > lastSeenAt ? lastSeenAt : began;
+  };
+
   return {
     async list(userId) {
       const rows = await database
@@ -92,37 +180,89 @@ export function createSiteConnectionStore(
     async record({ userId, siteId, botId, signedIn }) {
       const now = new Date();
       if (!signedIn) {
-        const [updated] = await database
-          .update(lafSiteConnections)
-          .set({ needsLogin: true })
-          .where(
-            and(
+        /*
+         * Read and changed under one lock, so two looks at the same wall in the same instant write
+         * one lapse between them rather than one each. Nothing else is read inside: a transaction
+         * that reached for a second pooled connection is how `db/client.ts` says a pool deadlocks.
+         */
+        const { before, after } = await database.transaction(
+          async (transaction) => {
+            // Only the browser the session lives in can report it gone. See `record` above.
+            const own = and(
               eq(lafSiteConnections.userId, userId),
               eq(lafSiteConnections.siteId, siteId),
-              // Only the browser the session lives in can report it gone. See `record` above.
               eq(lafSiteConnections.botId, botId),
-            ),
-          )
-          .returning();
-        return updated ? asConnection(updated) : null;
+            );
+            const [held] = await transaction
+              .select()
+              .from(lafSiteConnections)
+              .where(own)
+              .for("update");
+            if (!held || held.needsLogin) return { before: held, after: held };
+            const [marked] = await transaction
+              .update(lafSiteConnections)
+              .set({ needsLogin: true })
+              .where(own)
+              .returning();
+            return { before: held, after: marked };
+          },
+        );
+        if (before && !before.needsLogin && after) {
+          await note("site.login_lapsed", userId, siteId, async () => ({
+            bot: botId,
+            signedInSince: (
+              await sessionStart(
+                userId,
+                siteId,
+                botId,
+                before.connectedAt,
+                before.lastSeenAt,
+              )
+            ).toISOString(),
+            // Not moved by the wall: the last look that found the session alive.
+            lastSeenAt: before.lastSeenAt.toISOString(),
+          }));
+        }
+        return after ? asConnection(after) : null;
       }
 
-      const [saved] = await database
-        .insert(lafSiteConnections)
-        .values({
-          userId,
-          siteId,
-          botId,
-          connectedAt: now,
-          lastSeenAt: now,
-          needsLogin: false,
-        })
-        .onConflictDoUpdate({
-          target: [lafSiteConnections.userId, lafSiteConnections.siteId],
-          // `connectedAt` is deliberately absent. See `record` above.
-          set: { botId, lastSeenAt: now, needsLogin: false },
-        })
-        .returning();
+      const { before, saved } = await database.transaction(
+        async (transaction) => {
+          const [held] = await transaction
+            .select({ needsLogin: lafSiteConnections.needsLogin })
+            .from(lafSiteConnections)
+            .where(
+              and(
+                eq(lafSiteConnections.userId, userId),
+                eq(lafSiteConnections.siteId, siteId),
+              ),
+            )
+            .for("update");
+          const [written] = await transaction
+            .insert(lafSiteConnections)
+            .values({
+              userId,
+              siteId,
+              botId,
+              connectedAt: now,
+              lastSeenAt: now,
+              needsLogin: false,
+            })
+            .onConflictDoUpdate({
+              target: [lafSiteConnections.userId, lafSiteConnections.siteId],
+              // `connectedAt` is deliberately absent. See `record` above.
+              set: { botId, lastSeenAt: now, needsLogin: false },
+            })
+            .returning();
+          return { before: held, saved: written };
+        },
+      );
+      // Signed in where it was not: a first connection, or a login after the wall.
+      if (saved && (!before || before.needsLogin)) {
+        await note("site.signed_in", userId, siteId, async () => ({
+          bot: botId,
+        }));
+      }
       return saved ? asConnection(saved) : null;
     },
 

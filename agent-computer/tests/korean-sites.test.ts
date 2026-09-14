@@ -128,6 +128,7 @@ async function snapshot() {
     snapshotId: number;
     elements: { ref: string; role: string; name: string; type?: string }[];
     tabs?: { index: number; title: string; url: string; active: boolean }[];
+    opaqueFrames?: number;
   };
 }
 
@@ -265,6 +266,8 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
      */
     const inside = refFor(shot.elements, FRAME_BUTTON);
     expect(inside).toMatch(/^f\d+e\d+$/);
+    // And a frame it could see into is not counted as one it could not: zero, said as a number.
+    expect(shot.opaqueFrames).toBe(0);
 
     const clicked = await post("/click", {
       ref: inside,

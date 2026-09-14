@@ -186,6 +186,21 @@ export const auditEventTypes = [
    */
   "computer.reset_failed",
   /**
+   * A business site's sign-in, as the Bot's own browser found it: begun, and run out.
+   *
+   * `laf_site_connections` holds only the present — `needs_login` is overwritten and `connected_at`
+   * never moves — so "how many days does a 배민 login last" had nothing to count but a lower bound
+   * (laf-control `core/insights.ts`, §4-3). These two are the moments the flag changes, and only
+   * those: `site.signed_in` when a site the browser was not signed into reads as signed in, and
+   * `site.login_lapsed` when the browser the session lived in first meets the login wall, carrying
+   * when that session began and when it was last seen alive.
+   *
+   * The site's catalogue id and the Bot, never an address: a login page's query string is where a
+   * one-time token rides, and nothing about what anybody typed is anywhere near this.
+   */
+  "site.signed_in",
+  "site.login_lapsed",
+  /**
    * The boundary this deployment booted with.
    *
    * The live policy is held in memory, so a restart returns to the configured default unless the

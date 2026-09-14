@@ -763,7 +763,10 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           case "computer_read":
             return { ok: true, ...withNotes(await gateway.read(botId)) };
           case "computer_snapshot":
-            return { ok: true, ...withNotes(await gateway.snapshot(botId)) };
+            return {
+              ok: true,
+              ...withNotes(await gateway.snapshot(botId, { botId, actor })),
+            };
           case "computer_switch_tab": {
             if (typeof args.index !== "number") {
               return invalidArguments();

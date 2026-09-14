@@ -213,7 +213,19 @@ export function createComputerRoutes(
     requireBotAccess(),
     async (context) => {
       try {
-        return context.json(await gateway.snapshot(context.req.param("botId")));
+        return context.json(
+          await gateway.snapshot(botIdOf(context), {
+            botId: botIdOf(context),
+            // Who looked, for the row a look that could not see into a frame leaves. The same
+            // actor the navigate route above builds, for the same reason it builds it that way.
+            actor: {
+              id: context.var.actor.id,
+              ...(context.var.actor.email === DEV_ACTOR.email
+                ? {}
+                : { userId: context.var.actor.id }),
+            },
+          }),
+        );
       } catch (error) {
         return failed(context, error);
       }

@@ -15,7 +15,7 @@ import type { PendingApproval } from "../approvals";
 import type { PolicyDecision } from "../policy";
 import type { SnapshotElement } from "../schema";
 import type { AllowanceTier } from "../standing-approvals";
-import { pageForTrail } from "./addresses";
+import { originOf, pageForTrail } from "./addresses";
 import type { ActionActor } from "./caller";
 
 /**
@@ -153,6 +153,44 @@ export async function write(
          */
         carriedOut: entry.decision.forward,
       },
+    },
+  });
+}
+
+/**
+ * One row for a look at the screen that could not see all of it.
+ *
+ * A snapshot decides nothing and changes nothing, so it has never had a row, and still does not for
+ * the ordinary look — a Bot takes several per task, and a row for each would bury the actions this
+ * trail exists for under the Bot reading its own screen. What is worth a row is the frame it could
+ * not see into: that is where a Bot gets stuck, and on which site, which is what laf-control's
+ * `insights` counts (`computer.action_allowed` with `action: computer_snapshot`, `opaqueFrames`).
+ *
+ * NO DECISION BLOCK, because none was made: `write` would have to invent one. And the page as its
+ * origin only — scheme and host, no path — because the site is the whole of what this row is for.
+ */
+export async function writeSnapshotRow(
+  auditStore: AuditStore,
+  entry: {
+    botId: string;
+    actor: ActionActor;
+    computerId: string;
+    pageUrl: string;
+    opaqueFrames: number;
+  },
+) {
+  await recordAuditEvent(auditStore, {
+    eventType: "computer.action_allowed",
+    targetType: "computer",
+    targetId: entry.computerId,
+    ...(entry.actor.userId ? { actorUserId: entry.actor.userId } : {}),
+    payload: {
+      action: "computer_snapshot",
+      bot: entry.botId,
+      actor: entry.actor.id,
+      // `about:blank` has the origin "null", which is not a site.
+      page: /^https?:/i.test(entry.pageUrl) ? originOf(entry.pageUrl) : "",
+      opaqueFrames: entry.opaqueFrames,
     },
   });
 }

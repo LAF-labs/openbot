@@ -202,6 +202,34 @@ export function isSecretLabel(name: string): boolean {
   return SECRET_LABEL.test(name);
 }
 
+/**
+ * An iframe the snapshot could not see into, as Playwright writes one: its line, with no colon.
+ *
+ * Playwright snapshots each iframe's document on its own and splices it in under the iframe's line,
+ * adding the colon only when that came back with something (`ariaSnapshotForFrame`, 1.62.1). A frame
+ * it could not enter — detached while it looked, or one that never gave it a document, like a frame
+ * the browser itself refused to load — is caught there and left as the bare line. An empty frame it
+ * DID enter still gets its colon. Measured on 1.62.1 with a real Chromium: `<iframe
+ * src="chrome://version">` and an iframe replaced every 20 ms came back bare; an X-Frame-Options
+ * refusal, a CSP `frame-ancestors` refusal, a connection refused, a data: URL, a PDF and a page that
+ * reloads itself every 30 ms all came back with the colon.
+ *
+ * Matched on the line rather than off the parsed tree, the way Playwright matches it, so a page past
+ * the element limit is still counted to its last frame.
+ */
+const UNSEEN_IFRAME =
+  /^[ \t]*- iframe(?: \[[^\]\n]*\])* \[ref=[^\]\n]+\](?: \[[^\]\n]*\])*$/gm;
+
+/**
+ * How many iframes on the page the snapshot could not see into.
+ *
+ * `laf:frame_opaque` on a read is a frame whose text would not come; this is the same fact for a
+ * snapshot, and the number the audit row for a snapshot carries (`opaqueFrames`).
+ */
+export function opaqueFramesIn(yaml: string): number {
+  return yaml.match(UNSEEN_IFRAME)?.length ?? 0;
+}
+
 /** The descriptor half of an entry: everything before the colon. */
 type Descriptor = {
   role: string;

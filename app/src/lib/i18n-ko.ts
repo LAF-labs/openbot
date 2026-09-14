@@ -2390,4 +2390,12 @@ export const ko: Record<string, string> = {
   "Failed {count} times for the same reason · last {time}":
     "같은 이유로 {count}번 실패 · 마지막 {time}",
   Acknowledge: "확인",
+  // 감사 표 — 사이트 로그인 전이 행과, 페이지 속 문서를 들여다보지 못한 화면 보기 행.
+  "The site was signed in": "사이트에 로그인됨",
+  "The site's sign-in had run out": "사이트 로그인이 풀려 있었음",
+  "A site's sign-in": "사이트 로그인",
+  "Signed in since {since}, last seen signed in {seen}":
+    "{since}부터 로그인 · {seen}까지 로그인 확인됨",
+  "{count} frames on the page could not be seen into":
+    "페이지 안의 문서 {count}개는 들여다보지 못함",
 };

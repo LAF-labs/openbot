@@ -144,6 +144,14 @@ export type SnapshotResult = {
    * "this computer does not report tabs", never "there is only one".
    */
   tabs?: TabSummary[];
+  /**
+   * How many iframes on the page the snapshot could not see into.
+   *
+   * Optional for the same reason `tabs` is: an older computer does not count them, and an absent
+   * number means "not counted", never "none". A snapshot that met one is written to the trail; see
+   * `writeSnapshotRow`.
+   */
+  opaqueFrames?: number;
   /** Anything the browser noticed since the last call. See {@link ComputerNote}. */
   notes?: ComputerNote[];
 };

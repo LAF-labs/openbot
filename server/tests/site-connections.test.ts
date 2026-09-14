@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, like } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { siteById } from "../../shared/sites/catalogue";
@@ -13,7 +13,7 @@ import type { ActionPolicy } from "../src/computer/policy";
 import { createSiteConnectionStore } from "../src/computer/site-connections";
 import { createSiteRoutes } from "../src/computer/site-routes";
 import { createDatabase } from "../src/db/client";
-import { lafSiteConnections, users } from "../src/db/schema";
+import { auditEvents, lafSiteConnections, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -223,6 +223,298 @@ describe("the 사이트 연결 store", () => {
     ]);
     // A site that was never connected is not an error; there is simply nothing to take.
     expect(await store.forget({ userId: mine, siteId: "hometax" })).toBe(false);
+  });
+});
+
+/**
+ * THE MOMENTS A SIGN-IN CHANGES, WRITTEN DOWN (laf-control `core/insights.ts` §4-3).
+ *
+ * The row holds only the present, so "how long does a login to this site last" had nothing to be
+ * counted from. Two rows now say when the flag moves — and only then: a morning's routine finding
+ * 배민 still signed in is the ordinary case, and a trail of those would bury the two that matter.
+ * The rows are read back out of the trail table itself, because `site.login_lapsed` reads it too.
+ */
+describe("the moments a sign-in changes", () => {
+  /** The site rows this person's looks left, oldest first, as the trail holds them. */
+  async function siteRows(userId: string) {
+    return database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.actorUserId, userId),
+          like(auditEvents.eventType, "site.%"),
+        ),
+      )
+      .orderBy(asc(auditEvents.createdAt));
+  }
+
+  test("a first sign-in is one row; the looks that find it still signed in are none", async () => {
+    const userId = await createUser();
+    for (const botId of ["bot-1", "bot-1", "bot-1"]) {
+      await store.record({
+        userId,
+        siteId: "baemin-ceo",
+        botId,
+        signedIn: true,
+      });
+    }
+
+    const rows = await siteRows(userId);
+    expect(
+      rows.map((row) => [row.eventType, row.targetType, row.targetId]),
+    ).toEqual([["site.signed_in", "site", "baemin-ceo"]]);
+    expect(rows[0]?.payload).toEqual({ site: "baemin-ceo", bot: "bot-1" });
+  });
+
+  test("the session's own browser meeting the wall is one lapse, with when it began and was last alive", async () => {
+    const userId = await createUser();
+    const connected = await store.record({
+      userId,
+      siteId: "hometax",
+      botId: "bot-1",
+      signedIn: true,
+    });
+    await Bun.sleep(200);
+    const refreshed = await store.record({
+      userId,
+      siteId: "hometax",
+      botId: "bot-1",
+      signedIn: true,
+    });
+    // The wall, three mornings running: the first is the news, the other two are not.
+    for (let morning = 0; morning < 3; morning += 1) {
+      await store.record({
+        userId,
+        siteId: "hometax",
+        botId: "bot-1",
+        signedIn: false,
+      });
+    }
+
+    const rows = await siteRows(userId);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "site.signed_in",
+      "site.login_lapsed",
+    ]);
+    const lapse = rows[1]?.payload as Record<string, string>;
+    expect(Object.keys(lapse).sort()).toEqual([
+      "bot",
+      "lastSeenAt",
+      "signedInSince",
+      "site",
+    ]);
+    expect(lapse.site).toBe("hometax");
+    expect(lapse.bot).toBe("bot-1");
+    if (!connected || !refreshed) {
+      throw new Error("a signed-in look wrote no connection");
+    }
+    // Last seen alive is the refresh, not the first look and not the wall.
+    expect(lapse.lastSeenAt).toBe(refreshed.lastSeenAt);
+    // The session began with the sign-in, and never later than the last time it was seen.
+    const began = Date.parse(lapse.signedInSince as string);
+    expect(began).toBeGreaterThanOrEqual(
+      Date.parse(connected.connectedAt) - 1_000,
+    );
+    expect(began).toBeLessThan(Date.parse(refreshed.lastSeenAt));
+  });
+
+  test("another Bot's browser meeting the wall writes nothing, because nothing about the session changed", async () => {
+    const userId = await createUser();
+    await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-a",
+      signedIn: true,
+    });
+    await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-b",
+      signedIn: false,
+    });
+
+    expect((await siteRows(userId)).map((row) => row.eventType)).toEqual([
+      "site.signed_in",
+    ]);
+  });
+
+  test("after signing in again, the next lapse is counted from the second sign-in, not the first", async () => {
+    const userId = await createUser();
+    const site = { userId, siteId: "coupang-wing", botId: "bot-1" };
+    const first = await store.record({ ...site, signedIn: true });
+    await store.record({ ...site, signedIn: false });
+    // Long enough that the two sign-ins cannot be confused whatever the two clocks disagree by.
+    await Bun.sleep(1_200);
+    const again = await store.record({ ...site, signedIn: true });
+    await store.record({ ...site, signedIn: false });
+
+    const rows = await siteRows(userId);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "site.signed_in",
+      "site.login_lapsed",
+      "site.signed_in",
+      "site.login_lapsed",
+    ]);
+    const secondSignIn = rows[2]?.createdAt as Date;
+    const secondLapse = rows[3]?.payload as {
+      signedInSince: string;
+      lastSeenAt: string;
+    };
+    if (!again) throw new Error("the second sign-in wrote no connection");
+    // The second session began at the second sign-in: the look itself, which its row follows by the
+    // moment it took to write.
+    expect(secondLapse.signedInSince).toBe(again.lastSeenAt);
+    expect(secondSignIn.getTime() - Date.parse(again.lastSeenAt)).toBeLessThan(
+      1_000,
+    );
+    // `connected_at` did not move — the card's "since" is still the first one — and the lapse did
+    // not borrow it.
+    if (!first) throw new Error("the first sign-in wrote no connection");
+    expect((await store.list(userId))[0]?.connectedAt ?? "").toBe(
+      first.connectedAt,
+    );
+    expect(Date.parse(secondLapse.signedInSince)).toBeGreaterThan(
+      Date.parse(first.connectedAt) + 1_000,
+    );
+  });
+
+  test("a session seen only when it was signed into began then, not when its row was written", async () => {
+    // Through the running stack the lapse said "signed in since" 27 ms after "last seen": the row's
+    // clock is the database's and it is written a moment after the look.
+    const userId = await createUser();
+    const site = { userId, siteId: "yogiyo-ceo", botId: "bot-1" };
+    const signedIn = await store.record({ ...site, signedIn: true });
+    await store.record({ ...site, signedIn: false });
+
+    const lapse = (await siteRows(userId))[1]?.payload as {
+      signedInSince: string;
+      lastSeenAt: string;
+    };
+    if (!signedIn) throw new Error("the sign-in wrote no connection");
+    expect(lapse.lastSeenAt).toBe(signedIn.lastSeenAt);
+    expect(Date.parse(lapse.signedInSince)).toBeLessThanOrEqual(
+      Date.parse(lapse.lastSeenAt),
+    );
+  });
+
+  test("a person finishing a login through the check route is the sign-in, and the wall they left is the lapse", async () => {
+    const userId = await createUser();
+    await routesReading(BAEMIN_SIGNED_IN, userId).request(
+      "/api/sites/baemin-ceo/check",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ botId: "bot-1" }),
+      },
+    );
+    await routesReading(BAEMIN_LOGIN_WALL, userId).request(
+      "/api/sites/baemin-ceo/check",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ botId: "bot-1" }),
+      },
+    );
+    await routesReading(BAEMIN_SIGNED_IN, userId).request(
+      "/api/sites/baemin-ceo/check",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ botId: "bot-1" }),
+      },
+    );
+
+    const rows = await siteRows(userId);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "site.signed_in",
+      "site.login_lapsed",
+      "site.signed_in",
+    ]);
+    /*
+     * The site and the Bot and two clocks. The page carried a URL path and a string that looks like
+     * what somebody types into a login form; neither is anywhere in what the trail kept.
+     */
+    const kept = JSON.stringify(rows);
+    expect(kept).not.toContain(TYPED_SECRET);
+    expect(kept).not.toContain("/orders");
+    expect(kept).not.toContain("/login");
+    expect(kept).not.toContain("ceo.baemin.com");
+  });
+
+  test("a routine's navigation landing on the wall is the lapse too, through the gateway's own report", async () => {
+    const userId = await createUser();
+    await store.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-1",
+      signedIn: true,
+    });
+    const view = {
+      navigate: async () => ({
+        url: BAEMIN_LOGIN_WALL.url,
+        title: BAEMIN_LOGIN_WALL.title,
+        text: `${BAEMIN_LOGIN_WALL.text} ${TYPED_SECRET}`,
+        truncated: false,
+        elapsedMs: 1,
+      }),
+    };
+    const gateway = createComputerGateway({
+      client: { ...view, forBot: () => view } as unknown as ComputerClient,
+      auditStore: { insert: async () => {} },
+      policy: () => ({ deny: [], ask: [], allow: ["true"] }),
+      // Exactly as main.ts wires it: the report goes straight into the store, and is not awaited.
+      siteSeen: (seen) => {
+        void store.record(seen).catch(() => undefined);
+      },
+    });
+
+    await gateway.navigate(
+      "bot-1",
+      "bot-1",
+      { id: userId, userId },
+      "https://ceo.baemin.com/orders",
+    );
+
+    // The report is not awaited by the navigation, so wait for the row it leaves.
+    let rows = await siteRows(userId);
+    for (let tries = 0; tries < 50 && rows.length < 2; tries += 1) {
+      await Bun.sleep(20);
+      rows = await siteRows(userId);
+    }
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "site.signed_in",
+      "site.login_lapsed",
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(TYPED_SECRET);
+  });
+
+  test("a trail that cannot be reached costs the row, never the connection", async () => {
+    const userId = await createUser();
+    const unreachable = createSiteConnectionStore(database, {
+      auditStore: {
+        insert: async () => {
+          throw new Error("the audit store is unreachable");
+        },
+      },
+    });
+
+    const connected = await unreachable.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-1",
+      signedIn: true,
+    });
+    const lapsed = await unreachable.record({
+      userId,
+      siteId: "baemin-ceo",
+      botId: "bot-1",
+      signedIn: false,
+    });
+
+    expect(connected?.needsLogin).toBe(false);
+    expect(lapsed?.needsLogin).toBe(true);
+    expect(await siteRows(userId)).toEqual([]);
   });
 });
 
