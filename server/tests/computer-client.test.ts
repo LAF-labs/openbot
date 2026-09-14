@@ -889,3 +889,142 @@ describe("the header that says which Bot", () => {
     ]);
   });
 });
+
+/**
+ * A COMPUTER REPLACED UNDER A RUNNING SERVER.
+ *
+ * W2-g (2026-09-14): `docker rm -f` and `docker run` on the same port, and the next four calls through
+ * the running server each waited out the 45 s deadline, while `lsof` showed the server holding a socket
+ * to the port that Docker's forwarder still held open. Four calls, four keep-alive sockets: fetch
+ * writes a request into a pooled socket whose far end will never answer, waits for the whole deadline,
+ * and only then lets the socket go.
+ *
+ * Reproduced here with real sockets and no Docker: a "computer" that answers the first request on a
+ * connection and then stops answering on it without closing it — which is what a connection left open
+ * by a forwarder looks like from this side — and a replacement listening on the same port.
+ */
+describe("a computer replaced under a running server", () => {
+  const BODY = JSON.stringify({ status: "ok" });
+  const ANSWER = `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${BODY.length}\r\nconnection: keep-alive\r\n\r\n${BODY}`;
+
+  /**
+   * A listener that answers each new connection's first request and is silent on it afterwards —
+   * and, once `retire` is called, stops listening and is silent on everything it accepted, without
+   * closing any of it.
+   */
+  function computerOnPort(port = 0) {
+    let retired = false;
+    let accepted = 0;
+    const listener = Bun.listen<{ answered: boolean }>({
+      hostname: "127.0.0.1",
+      port,
+      socket: {
+        open(socket) {
+          accepted += 1;
+          socket.data = { answered: false };
+        },
+        data(socket, chunk) {
+          if (!String(chunk).includes("\r\n\r\n")) return;
+          if (retired || socket.data.answered) return;
+          socket.data.answered = true;
+          socket.write(ANSWER);
+        },
+      },
+    });
+    return {
+      port: listener.port,
+      accepted: () => accepted,
+      retire: () => {
+        retired = true;
+        listener.stop(false);
+      },
+      stop: () => listener.stop(true),
+    };
+  }
+
+  const timedStatus = async (
+    client: ReturnType<typeof createComputerClient>,
+  ) => {
+    const started = Date.now();
+    const status = await client.status("bot-1");
+    return { ...status, ms: Date.now() - started };
+  };
+
+  test("a connection its peer stopped answering does not hold the next call to the deadline", async () => {
+    const computer = computerOnPort();
+    const client = createComputerClient({
+      baseUrl: `http://127.0.0.1:${computer.port}`,
+      timeoutMs: 1_500,
+    });
+    try {
+      const calls = [];
+      for (let n = 0; n < 3; n += 1) calls.push(await timedStatus(client));
+      // Pooled, the second call went out on the first call's socket and came back
+      // `laf:computer_timed_out` at the deadline — 1.5 s here, 45 s through the running server.
+      expect(calls.map((call) => call.state)).toEqual([
+        "ready",
+        "ready",
+        "ready",
+      ]);
+      expect(Math.max(...calls.map((call) => call.ms))).toBeLessThan(750);
+      // One connection per call: nothing is reused, so nothing can be reused dead.
+      expect(computer.accepted()).toBe(3);
+    } finally {
+      computer.stop();
+    }
+  });
+
+  test("the first call after the swap is refused at once or answered, and none waits out the deadline", async () => {
+    const old = computerOnPort();
+    const client = createComputerClient({
+      baseUrl: `http://127.0.0.1:${old.port}`,
+      timeoutMs: 1_500,
+    });
+    // Four calls at once leave four connections behind, as the server's four did.
+    const warm = await Promise.all([1, 2, 3, 4].map(() => timedStatus(client)));
+    expect(warm.map((call) => call.state)).toEqual([
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+    ]);
+
+    // The old computer goes, leaving what it accepted open, and nothing listens yet.
+    old.retire();
+    const between = await timedStatus(client);
+    // Refused at once, as the fact that nothing is there — never the deadline's fact.
+    expect(between).toMatchObject({
+      state: "unreachable",
+      reason: "laf:computer_unreachable",
+    });
+    expect(between.ms).toBeLessThan(750);
+
+    // The new computer, on the same port.
+    const replacement = computerOnPort(old.port);
+    try {
+      const after = [];
+      for (let n = 0; n < 4; n += 1) after.push(await timedStatus(client));
+      expect(after.map((call) => call.state)).toEqual([
+        "ready",
+        "ready",
+        "ready",
+        "ready",
+      ]);
+      expect(Math.max(...after.map((call) => call.ms))).toBeLessThan(750);
+    } finally {
+      replacement.stop();
+      old.stop();
+    }
+  });
+
+  test("every call keeps out of the pool, whatever else is in the request", async () => {
+    const seen: RequestInit[] = [];
+    const client = clientWith((_url, init) => {
+      if (init) seen.push(init);
+      return ok({ computers: [] });
+    });
+    await client.computers();
+    await client.forBot("bot-1").snapshot();
+    expect(seen.map((init) => init.keepalive)).toEqual([false, false]);
+  });
+});

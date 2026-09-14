@@ -378,6 +378,29 @@ export function createComputerClient(options: ComputerClientOptions) {
           signal: caller
             ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
             : AbortSignal.timeout(timeoutMs),
+          /*
+           * A CONNECTION OF ITS OWN FOR EVERY CALL, NEVER ONE FROM THE POOL.
+           *
+           * Replacing the container under a running server — what `laf upgrade` does when only this
+           * image changed — hung the next four calls for 45 s each (W2-g, 2026-09-14), with `lsof`
+           * showing the server's socket to the port and Docker's forwarder's end of it both still
+           * ESTABLISHED. fetch keeps the sockets of finished calls; a request written into one whose
+           * container is gone is answered by nobody, fetch waits out the whole deadline, lets that
+           * socket go, and the next call takes the next one — four calls at once had left four.
+           * Nothing on this side can tell that silence from a slow page until the deadline says so.
+           *
+           * Measured through this server and a real container behind a forwarder that keeps a
+           * connection's host side open (Docker Desktop 4.76 closed them on `docker rm -f` in six
+           * tries here; W2-g's did not): four calls 45.0 s each and then 0.8 s, before; the first call
+           * 0.39 s, after. A call made while the new container is still starting is refused in
+           * 0.01 s as `laf:computer_unreachable`, and the one after it is answered.
+           *
+           * What it costs is the handshake: 200 `/health` calls through the forwarder took 1.0–1.1 ms
+           * at the median against 0.35–0.41 ms pooled — not what a click or a screen's poll waits on.
+           * Bun's `keepalive: false` is what keeps a call out of the pool; a `Connection: close`
+           * header is not, because the request carrying it takes a pooled socket first (measured).
+           */
+          keepalive: false,
         });
       } catch (error) {
         // Distinguished from a failed page load on purpose: this one means the computer itself is not
