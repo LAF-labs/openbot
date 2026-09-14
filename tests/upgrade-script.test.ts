@@ -276,7 +276,7 @@ describe("scripts/upgrade.sh", () => {
 
     expect(result.code).toBe(1);
     expect(result.out).toContain("THE MIGRATION FAILED (migrate exited 1)");
-    expect(result.out).toContain("front door is up and answers 502");
+    expect(result.out).toContain("front door is up and answers 503 (down)");
     expect(result.err).toContain("The schema is where it was");
     expect(
       result.calls.some((line) => line.startsWith("compose logs migrate")),

@@ -289,12 +289,13 @@ services:
   # a service whose dependency failed. So one failed migration closed 80 and 443 along with the
   # API: measured 2026-09-10, `docker compose up -d` against a database whose migration table had
   # been dropped ended with `dependency failed to start`, and with the dependency in place the
-  # front door was never created — the fleet monitor saw connection refused rather than the 502
-  # it is written to read, and a person at the address saw a browser error rather than the app.
-  # Caddy resolves `server` per request and answers 502 while it is absent, which is the answer
-  # `/health` is documented to give for "the API is not there" (deploying.md); a front door that
-  # refuses to open while the kitchen is broken is worse than one that answers 502 — and the
-  # certificate cannot be issued or renewed at all until this is listening on 80.
+  # front door was never created — the fleet monitor, written to read what the front door answers,
+  # saw connection refused, and a person at the address saw a browser error rather than the app.
+  # Caddy resolves `server` per request, and while it is absent `/health` answers 503
+  # `{"status":"down","checks":{"api":"unreachable"}}` (`handle_errors` in app/Caddyfile), the answer
+  # deploying.md documents for "the API is not there"; a front door that refuses to open while the
+  # kitchen is broken is worse than one that says so — and the certificate cannot be issued or
+  # renewed at all until this is listening on 80.
   # `tests/compose.test.ts` asserts the absence.
   web:
     image: ghcr.io/laf-labs/openbot-web:${IMAGE_TAG:-stable}
@@ -332,10 +333,10 @@ services:
     # telling at /health, one layer down. A dial that cannot go red is not a dial.
     #
     # So it asks the front door the question the internet asks it, through the address app/Caddyfile
-    # keeps for this and publishes nowhere. Red when the API is gone (502 from here), red when the
-    # API is degraded (503 from the API), red when Caddy is not routing at all. wget is busybox's,
-    # already in the alpine image, and exits non-zero on an HTTP error status; `-O /dev/null` rather
-    # than `--spider`, which sends a HEAD the API's GET route does not answer.
+    # keeps for this and publishes nowhere. Red when the API is gone (503 `down`, from here), red
+    # when the API is degraded (503 `degraded`, from the API), red when Caddy is not routing at all.
+    # wget is busybox's, already in the alpine image, and exits non-zero on an HTTP error status;
+    # `-O /dev/null` rather than `--spider`, which sends a HEAD the API's GET route does not answer.
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2021/health"]
       interval: 10s

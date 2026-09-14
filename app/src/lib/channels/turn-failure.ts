@@ -172,7 +172,8 @@ export function turnFailureSentence(code: string): string {
  * `connectionLost` is the one fact the sentence cannot be read off: the account's socket has
  * dropped, which it does within a second of the API process dying. A turn that fails while it is
  * down failed because the server was gone, whatever status a proxy in the middle chose to say —
- * Vite says 500, which without this line reads as a server fault, and Caddy says 502.
+ * Vite says 500, which without this line reads as a server fault, and Caddy says 503
+ * (`laf:api_unreachable`, `handle_errors` in app/Caddyfile).
  */
 export function liveTurnFailureCode(
   reported: unknown,

@@ -240,8 +240,9 @@ const parsedCompose = parseYaml(
  * It waited for the API's container to exist, and the API waits for the migration to succeed;
  * compose does not start a service whose dependency failed. Measured 2026-09-10: with the
  * migration table dropped, `up -d` ended in `dependency failed to start` and `web` was never
- * created — 80 and 443 closed, connection refused where the fleet monitor is written to read 502.
- * Without the dependency the app answers and `/health` is the 502 the documentation promises.
+ * created — 80 and 443 closed, connection refused where the fleet monitor is written to read what
+ * the front door answers. Without the dependency the app answers and `/health` is the 503 `down`
+ * the documentation promises.
  */
 test("starts the front door whatever the migration did", () => {
   expect(parsedCompose.services.web).toBeDefined();

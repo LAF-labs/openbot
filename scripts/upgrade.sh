@@ -126,16 +126,16 @@ say "Starting"
 # `up -d` exits non-zero when a service it was asked for could not be started, and the one that
 # fails here is the migration: the API waits for it to complete successfully, and compose does not
 # start a service whose dependency failed. The front door does not wait for either (see the `web`
-# service), so a failed migration leaves 80 and 443 answering — the app, and 502 at /health — with
-# no API behind them. Named here, with the migration's own log, rather than left to be inferred
-# from a health wait that could never succeed.
+# service), so a failed migration leaves 80 and 443 answering — the app, and 503 `down` at
+# /health — with no API behind them. Named here, with the migration's own log, rather than left to
+# be inferred from a health wait that could never succeed.
 up_ok=true
 docker compose up -d || up_ok=false
 migrate_exit="$(docker compose ps -a --format '{{.ExitCode}}' migrate 2>/dev/null | head -1 || true)"
 migrate_exit="${migrate_exit:-0}"
 if [ "$up_ok" != true ] || [ "$migrate_exit" != 0 ]; then
   if [ "$migrate_exit" != 0 ]; then
-    say "THE MIGRATION FAILED (migrate exited $migrate_exit). The API was not started; the front door is up and answers 502 for it."
+    say "THE MIGRATION FAILED (migrate exited $migrate_exit). The API was not started; the front door is up and answers 503 (down) for it."
     echo "   The schema is where it was: drizzle applies the missing migrations in one transaction, so a failure leaves none of them applied." >&2
     echo "   What it said:" >&2
     docker compose logs migrate --tail=30 >&2 || true

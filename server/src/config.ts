@@ -936,8 +936,9 @@ const DEFAULT_PORT = 3001;
  * MEASURED BY AUDIT A1 (2026-09-10): this was `Number.parseInt(process.env.PORT ?? "3001")` in
  * `main.ts`, and `PORT=abc` is `NaN`, which Bun reads as "any port" — the server opened on 49953,
  * wrote `port: 49953` on a boot line that looked perfectly healthy, and Caddy went on waiting at
- * 3001. A deployment whose front door answers 502 while its log says it booted is the failure every
- * other refusal in this file exists to prevent. Digits only: `3001abc` was 3001 to `parseInt`.
+ * 3001. A deployment whose front door answers that the API is not there while its log says it booted
+ * is the failure every other refusal in this file exists to prevent. Digits only: `3001abc` was 3001
+ * to `parseInt`.
  */
 function port(environment: Environment): number {
   const raw = optional(environment, "PORT");

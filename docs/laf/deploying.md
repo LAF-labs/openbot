@@ -490,10 +490,10 @@ stack on 2026-09-10:
   list above reads. Before 2026-09-10 `web`
   waited for the API's container to exist, and one failed migration closed 80
   and 443 with it — connection refused where the monitor is written to read
-  502, and no ACME renewal while it lasted. The script reads `migrate`'s exit
-  code before any health wait, prints the migration's own log, says that the
-  schema is where it was (drizzle applies the missing migrations in one
-  transaction), and prints the way back.
+  the front door's answer, and no ACME renewal while it lasted. The script
+  reads `migrate`'s exit code before any health wait, prints the migration's
+  own log, says that the schema is where it was (drizzle applies the missing
+  migrations in one transaction), and prints the way back.
 - **Not healthy** after the wait: the deployment is up and answering 503, or
   not answering. The script prints the three commands that say which
   dependency is down, and the way back.
