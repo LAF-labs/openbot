@@ -132,8 +132,110 @@ skip also carries the `next` one.
 Each routine keeps its last twenty runs (`laf_routine_runs`), which is what an
 operator actually reads. The history of record is `audit_events`: every firing
 writes a `routine.ran` row whichever way it went (with `failure` and
-`channelId` when it went badly), a late window that ran writes
-`routine.caught_up`, and one that was let go writes `routine.skipped_missed`.
+`channelId` when it went badly, and `notepad` when the run changed its notepad),
+a late window that ran writes `routine.caught_up`, one that was let go writes
+`routine.skipped_missed`, and a person emptying a notepad writes
+`routine.notepad_cleared`.
+
+## The notepad — where a routine left off
+
+The jobs a shop hands a routine first — reply drafts for new reviews, answers
+for new inquiries, settlement mismatches — are all "since last time". The
+previous answer's prose rides into the next run (1,500 characters,
+`routines/run.ts`), and that is not a cursor: the Bot has to read "how far did
+I get" back out of its own sentences, and a paraphrase or a cut answers a review
+twice or skips one. Each routine therefore keeps a **notepad**
+(`laf_routine_notepads`, one row per routine; the shape Hermes Agent's per-job
+notepad has).
+
+**What it holds.** Up to **20 entries**. An entry is a `note` — a key and one
+fact, at most **500 characters** — or a `watermark`: a key and the newest thing
+the run handled, as `lastId` (a review number, an order number, a settlement
+date) and/or `lastAt` (ISO 8601 *with* a zone; a time without one is refused,
+because the server clock would read it nine hours wrong). Keys are letters,
+digits, `_`, `-` and `.`, up to 40. The whole notepad is at most **4,096
+bytes**, counted as UTF-8 over the entry lines exactly as the next run reads
+them, so the ceiling bounds the prompt rather than the raw values.
+
+**How a run reads it.** Inside the Bot's lane — not when the routine was claimed,
+so a run queued behind another reads what that one settled. It travels as
+`forwardedProps.notepad`; the prompt middleware (`copilot.ts`) parses it down to
+its shape and bounds whoever forwarded it (`notepadOf`), and the composer draws
+it **in routine mode only**, after the mode text and before the clock, under a
+heading that says it is a record and not an instruction
+(`shared/prompt/notepad.ko.ts`). Values are JSON-quoted, so a value cannot close
+its line and open a "시스템:" line under it. An empty notepad draws nothing.
+
+**How a run writes it: `routine_note`, and why that rung.** One tool —
+`watermark`, `set`, `delete` — offered **only to a routine's own run**
+(`routines/notepad.ts`, `withNotepad`), the way `skill_view` exists only for a
+Bot that holds a skill. The rung below it on the footprint ladder, a structured
+field the run's final answer carries, costs no schema and was skipped: a write
+that fails validation has to be refused **to the run that made it**, and the
+final answer is the one thing a run does after which it can be told nothing — a
+cursor refused there stays put while the run that thought it moved it is already
+over. It would also re-create the `[SILENT]` marker's paraphrase problem for keys
+and values, and the block would have to be stripped from the delivered answer,
+the receipt and the carried report. The toolless fallback (`runAgentOnce`,
+composed as a coworker) is offered no tool and shown no notepad.
+
+**What a write is held to.** The memory store's scans (`agents/memory-store.ts`):
+a note's value and a watermark's id are refused if they read as an instruction,
+a key if it has a prompt's structure, and a note's value if it looks like a
+secret. A watermark's id is *not* held to the secret scan — the newest order a
+shop handled is sixteen digits, which is the shape that scan refuses as a card,
+and a cursor that cannot hold an order number is not a cursor. Every refusal is
+a fact code the model reads in Korean in the same run
+(`shared/prompt/tool-results.ko.ts`): `laf:notepad_arguments_invalid` (with
+`field`), `laf:notepad_value_too_long`, `laf:notepad_full` (with the counts),
+`laf:notepad_looks_like_instruction`, `laf:notepad_looks_like_a_secret`,
+`laf:notepad_no_such_key`; a write that passes is `laf:notepad_staged` or
+`laf:notepad_deleted`.
+
+**When it lands.** Nothing is written while the run is out. Each call is applied
+to a draft in memory; the settlement writes the draft **first, in the same
+transaction** as the delivery, the ledger's ending and the receipt
+(`settlement.ts`), over the version the run read (`… ON CONFLICT DO UPDATE …
+WHERE version =`), and only for a run whose record says it succeeded. So:
+
+- a run killed before its record commits leaves the cursor where the last
+  recorded run left it (`routine-notepad-kill.integration.test.ts`, a real
+  SIGKILL between the answer and the commit);
+- a run that fails, or whose record rolls back, moves nothing — the next run
+  covers the same window again, which for a draft nobody received is the side to
+  fail on;
+- a person who clears the notepad while a run is out bumps the version, and that
+  run's writes — made against the notepad they cleared — are dropped rather than
+  written back over the reset.
+
+The `routine.ran` row says which, as a word and never the contents: `notepad:
+"written"`, `"superseded"` or `"discarded"`, absent when the run changed nothing.
+
+**Who reads and clears it.** The routine's person, by the same scope as its runs.
+The routine's row on `/routines` shows the entries, read-only — a note typed on
+that screen would be a "fact" planted in front of a run nobody watches — with a
+Clear button that asks first and says what it costs. `GET
+/api/routines/:id/notepad` answers `{ notepad: { entries, updatedAt } }`;
+`DELETE` empties it and answers `{ cleared }`. A clear that removed something
+writes `routine.notepad_cleared` (who, which routine, how many entries); one that
+removed nothing writes no row. There is no HTTP door that writes a notepad, the
+browser never registers `routine_note` (a chat turn that calls it is answered
+`laf:tool_unknown` inside `agent-bot`), and a room's toolkit does not carry it.
+
+**What it costs, measured.** 2026-09-14, the real `agent-bot` with a recording
+fake provider (`routine-notepad.test.ts` keeps the bound):
+
+| notepad | entry lines | system message | provider request |
+|---|---|---|---|
+| empty | 0 B | — | — |
+| 20 short entries (key-full) | 1,911 B | +2,192 B | +2,258 B |
+| 8 entries at the byte ceiling | 4,094 B | +4,375 B | +4,403 B |
+
+4,375 is the 278-byte heading, its line break, the 4,094 bytes of entries and the
+blank line the composer puts between paragraphs — nothing else moved. The tool's
+own definition adds **996 bytes** to every request of a routine run and to no
+other run (1,262 before its description was cut to the four things it has to
+say).
 
 ## Ownership
 
@@ -151,8 +253,9 @@ own English is a fallback for a code the app does not know.
 ## Surface
 
 `/routines` in the app: create, enable/disable (re-enabling re-arms from now —
-a routine paused for a week must not fire a backlog), run now, delete, and the
-recent runs inline. API under `/api/routines`.
+a routine paused for a week must not fire a backlog), run now, delete, and — in
+the expanded row — the notepad (read, clear) above the recent runs. API under
+`/api/routines`.
 
 ## Suggestions
 

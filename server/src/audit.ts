@@ -282,6 +282,14 @@ export const auditEventTypes = [
    */
   "routine.caught_up",
   /**
+   * A person emptied a routine's notepad — where it left off (`routines/notepad.ts`).
+   *
+   * A decision about what the routine does next, not housekeeping: its next run starts with no
+   * cursor and may go over the same reviews again. The row carries who, which routine, and how many
+   * entries went — never what they said, which was the routine's work and is gone with the clear.
+   */
+  "routine.notepad_cleared",
+  /**
    * A Bot read the body of one of its skills through `skill_view`.
    *
    * The prompt lists a Bot's skills by name and one line only; the body is fetched on demand, and

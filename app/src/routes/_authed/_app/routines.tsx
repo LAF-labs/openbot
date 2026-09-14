@@ -7,6 +7,7 @@ import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
+import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
 import { Button } from "@/components/ui/button";
 import {
@@ -164,6 +165,10 @@ function RoutineRow({ routine }: { routine: Routine }) {
       invalidate();
       void queryClient.invalidateQueries({
         queryKey: routineKeys.runs(routine.id),
+      });
+      // The run's settlement is what writes the notepad, so the one on screen is now stale too.
+      void queryClient.invalidateQueries({
+        queryKey: routineKeys.notepad(routine.id),
       });
     },
   });
@@ -338,6 +343,8 @@ function RoutineRow({ routine }: { routine: Routine }) {
       />
       {showRuns ? (
         <div className="border-border border-t px-4">
+          {/* Where it left off before what it said: the notepad is what the next run starts from. */}
+          <RoutineNotepad routineId={routine.id} />
           <RunHistory routineId={routine.id} />
         </div>
       ) : null}

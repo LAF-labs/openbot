@@ -139,6 +139,7 @@ describe("LAF Agent database schema", () => {
     // against the schema it is about.
     const {
       computerStandingApprovals,
+      lafRoutineNotepads,
       lafRoutineRuns,
       lafRoutines,
       lafThreadRuns,
@@ -159,6 +160,10 @@ describe("LAF Agent database schema", () => {
       "created_by_id -> users -> set null",
     ]);
     expect(references(lafRoutineRuns)).toEqual([
+      "routine_id -> laf_routines -> cascade",
+    ]);
+    // Where a routine left off has no meaning without the routine.
+    expect(references(lafRoutineNotepads)).toEqual([
       "routine_id -> laf_routines -> cascade",
     ]);
     expect(references(lafThreadRuns)).toEqual([

@@ -587,6 +587,8 @@ export const DECISIONS: Record<string, string> = {
   "routine.skipped_missed": "A routine's window was skipped",
   // The other half of the same decision: late, within grace, run once now.
   "routine.caught_up": "A routine ran late, within its grace",
+  // A person's decision about where the routine's next run starts, which is why it names who.
+  "routine.notepad_cleared": "A person cleared where it left off",
   // A read, not a permission: the grant was checked and this is the Bot opening the body.
   "skill.viewed": "The Bot read a skill",
   "model.usage": "Model usage recorded",
@@ -820,6 +822,7 @@ export const EVENTS: Record<string, string> = {
   "routine.skipped": "A routine",
   "routine.skipped_missed": "A routine",
   "routine.caught_up": "A routine",
+  "routine.notepad_cleared": "A routine's notepad",
   "skill.viewed": "A skill",
   "component.granted": "A component",
   "component.revoked": "A component",

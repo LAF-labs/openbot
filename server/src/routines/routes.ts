@@ -11,7 +11,7 @@ type Routes = Hono<{ Variables: AppVariables }>;
 type RequireUser = MiddlewareHandler<{ Variables: AppVariables }>;
 
 /**
- * The routines surface: create, list, arm, run now, read the recent runs.
+ * The routines surface: create, list, arm, run now, read the recent runs, read and clear the notepad.
  *
  * Thin by design — every rule lives in the service, so a second surface (the Bot proposing its own
  * routine, one day) enforces the same limits by construction.
@@ -153,6 +153,38 @@ function addRoutineVerbs(
         context.req.param("id"),
       );
       return context.json({ runs });
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
+
+  /*
+   * THE NOTEPAD HAS A READ AND A CLEAR, AND NO WRITE. What a routine notes is written by that
+   * routine's own run and landed by its settlement (`notepad.ts`); a person reads it and may empty
+   * it, and nothing that arrives over HTTP — a person, a page, a chat turn's tool — can put a value
+   * into it. A write door here would be a way to plant "facts" in front of an unattended run.
+   */
+  routes.get("/:id/notepad", requireUser, async (context) => {
+    try {
+      const notepad = await service.notepad(
+        context.var.actor,
+        context.req.param("id"),
+      );
+      return context.json({ notepad });
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
+
+  routes.delete("/:id/notepad", requireUser, async (context) => {
+    try {
+      const { cleared } = await service.clearNotepad(
+        context.var.actor,
+        context.req.param("id"),
+      );
+      return context.json({ cleared });
     } catch (error) {
       const mapped = mapError(error);
       return context.json(mapped.body, mapped.status);

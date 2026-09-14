@@ -28,7 +28,7 @@ import type {
   Message,
   Tool,
 } from "@ag-ui/client";
-import type { PromptMode } from "../../../shared/prompt";
+import type { PromptMode, RoutineNote } from "../../../shared/prompt";
 import {
   noteTexts,
   toolResultText,
@@ -103,6 +103,12 @@ export type UnattendedRunOptions = {
    * in a routine by two files that never read each other.
    */
   mode: Extract<PromptMode, "room" | "routine">;
+  /**
+   * Where a routine left off (`routines/notepad.ts`), forwarded beside the mode for the same reason
+   * the mode is: the words it is said in are composed by the prompt middleware, and this loop only
+   * carries the facts. The middleware draws it for a routine and for nothing else.
+   */
+  notepad?: readonly RoutineNote[];
   /**
    * What the Bot remembers going in, placed between the situation note and the instruction.
    *
@@ -315,7 +321,13 @@ export async function runUnattended(
     await withDeadline(
       target.runAgent(
         // The mode travels as a forwarded prop, which is where the prompt middleware reads it.
-        { tools, forwardedProps: { mode: options.mode } },
+        {
+          tools,
+          forwardedProps: {
+            mode: options.mode,
+            ...(options.notepad?.length ? { notepad: options.notepad } : {}),
+          },
+        },
         {
           ...options.watch,
           onRunErrorEvent: ({ event }) => {

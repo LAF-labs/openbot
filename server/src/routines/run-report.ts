@@ -51,6 +51,11 @@ export async function reportRun(
          */
         ...(ok ? {} : { failure: classifyTurnFailure(failure) }),
         ...(settled.failedIn ? { channelId: settled.failedIn.channelId } : {}),
+        /*
+         * What became of the notepad the run changed, as a word and never its contents: whether the
+         * cursor moved with this run is the question somebody reading a skipped review asks.
+         */
+        ...(settled.notepad ? { notepad: settled.notepad } : {}),
       },
     });
   } catch {

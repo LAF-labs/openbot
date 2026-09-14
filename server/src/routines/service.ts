@@ -2,6 +2,7 @@ import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
@@ -10,6 +11,7 @@ import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
 import type { DeliverRoutineAnswer, DeliverRoutineFailure } from "./deliver";
 import { RoutineError } from "./errors";
+import { clearNotepad, readNotepad } from "./notepad";
 import { mine } from "./ownership";
 import { createRoutineRun, ROUTINE_RUN_TIMEOUT_MS } from "./run";
 import { nextRunAt, scheduleOf } from "./schedule";
@@ -38,6 +40,7 @@ import { createRoutineTicker } from "./ticker";
  *   settlement.ts  the run's record in one transaction — delivery, `[SILENT]`, receipt, ledger
  *   run-report.ts  the `routine.ran` trail row a failed run's notification is raised from
  *   receipts.ts    `laf_routine_runs`: what was reported, the newest few kept
+ *   notepad.ts     where a routine left off: read at the run, written by its settlement, cleared here
  *   store.ts       made, listed, paused and deleted, with the cap and the Bot check
  *   ownership.ts   whose routine it is
  *   errors.ts      what a refusal carries
@@ -158,6 +161,22 @@ export function createRoutineService(options: RoutineServiceOptions) {
       return removeRoutine(store, actor, id);
     },
 
+    /** What the routine noted for its next run. Scoped like its runs: a note is the routine's work. */
+    async notepad(actor: AgentActor, id: string) {
+      await mine(database, actor, id);
+      const { entries, updatedAt } = await readNotepad(database, id);
+      return { entries, updatedAt };
+    },
+
+    /** Empty the notepad, as its person asks. See `forgetNotepad`. */
+    clearNotepad(actor: AgentActor, id: string) {
+      return forgetNotepad(
+        { database, now, auditStore: options.auditStore },
+        actor,
+        id,
+      );
+    },
+
     /** Run one routine now, ahead of its clock. The claim still applies, so a due tick cannot double it. */
     runNow(actor: AgentActor, id: string) {
       return runAheadOfTheClock(firing, actor, id);
@@ -181,6 +200,45 @@ export function createRoutineService(options: RoutineServiceOptions) {
 }
 
 export type RoutineService = ReturnType<typeof createRoutineService>;
+
+/**
+ * A person emptying a routine's notepad, and the row that says they did.
+ *
+ * AUDITED, because clearing is a decision about what a Bot does next: the routine's next run starts
+ * with no idea where the last one left off and may look at the same reviews again. "Why did it
+ * answer yesterday's inquiries a second time" has to be answerable from the trail, with who pressed
+ * it — and a clear that removed nothing is not a decision anybody made, so it writes no row.
+ *
+ * The row is written after the clear commits and its loss does not undo the clear: the notepad is
+ * empty either way, and a person pressing the button again to get a row would be pressing it for
+ * the trail's sake.
+ */
+async function forgetNotepad(
+  store: { database: Database; now: () => Date; auditStore?: AuditStore },
+  actor: AgentActor,
+  id: string,
+): Promise<{ cleared: number }> {
+  const row = await mine(store.database, actor, id);
+  const cleared = await clearNotepad(store.database, id, store.now());
+  if (cleared > 0) {
+    await store.auditStore
+      ?.insert({
+        eventType: "routine.notepad_cleared",
+        targetType: "routine",
+        targetId: id,
+        // A fixture is not a person: it is named in the payload and never becomes the actor.
+        ...(actor.id === DEV_ACTOR.id ? {} : { actorUserId: actor.id }),
+        payload: {
+          agentId: row.agentId,
+          name: row.name,
+          actor: actor.id,
+          entries: cleared,
+        },
+      })
+      .catch(() => {});
+  }
+  return { cleared };
+}
 
 async function runAheadOfTheClock(
   firing: Firing,

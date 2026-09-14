@@ -6,9 +6,11 @@ import { textOf } from "../../shared/message-content";
 import {
   composePrompt,
   DEFAULT_TIME_ZONE,
+  notepadOf,
   type PromptMode,
   promptModeOf,
   type PromptSkill,
+  type RoutineNote,
 } from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
@@ -145,7 +147,13 @@ function isSupersededPrompt(id: unknown, agentId: string): boolean {
  */
 export function botPromptMessage(
   profile: AgentStandingProfile,
-  options: { mode: PromptMode; now: Date; timeZone: string },
+  options: {
+    mode: PromptMode;
+    now: Date;
+    timeZone: string;
+    /** A routine's notepad, as the run forwarded it. The composer draws it in routine mode only. */
+    notepad?: readonly RoutineNote[];
+  },
 ): StandingRoleMessage {
   return {
     id: promptMessageId(profile.id),
@@ -158,6 +166,7 @@ export function botPromptMessage(
       standingRole: profile.roleDescription,
       ...(profile.memories ? { memories: profile.memories } : {}),
       ...(profile.skills ? { skills: profile.skills } : {}),
+      ...(options.notepad?.length ? { notepad: options.notepad } : {}),
     }),
   };
 }
@@ -353,6 +362,11 @@ function remoteAgentWithPrompt(
       mode: promptModeOf(forwarded),
       now: new Date(),
       timeZone,
+      /*
+       * Where a routine left off. Parsed to its shape and its bounds here whoever forwarded it —
+       * this seam cannot tell a routine's run from a browser's — and drawn for a routine only.
+       */
+      notepad: notepadOf(forwarded),
     });
     return next.run({
       ...input,

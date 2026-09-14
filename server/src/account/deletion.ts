@@ -24,7 +24,7 @@
  *
  *   cascade  agent_profiles, agent_preferences, agent_memories, channel_agents, plugin_grants,
  *            component_exclusions, computer_standing_approvals, laf_routines
- *            (and laf_routine_runs behind laf_routines)
+ *            (and laf_routine_runs and laf_routine_notepads behind laf_routines)
  *   SET NULL laf_thread_runs.agent_id, channels.last_message_agent_id
  *
  * NO FOREIGN KEY AT ALL, so this module is the only thing that will ever remove them:

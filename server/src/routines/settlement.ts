@@ -10,6 +10,7 @@ import type {
   DeliverRoutineAnswer,
   DeliverRoutineFailure,
 } from "./deliver";
+import { type NotepadDraft, type NotepadWrite, settleNotepad } from "./notepad";
 import { writeReceipt } from "./receipts";
 
 /**
@@ -28,6 +29,10 @@ import { writeReceipt } from "./receipts";
  * transaction, the announcement after it commits (`channels/events.ts` on why a socket frame
  * must never precede a commit), which is why a delivery returns its announcement instead of
  * making it.
+ *
+ * The notepad a successful run leaves behind is in the same commit (`notepad.ts`), so the cursor
+ * moves exactly when the answer it describes is on record, and a restart never finds one without
+ * the other.
  *
  * The `routine.ran` trail row stays after the commit (`run-report.ts`), because the outbox watch
  * that tells the person about a failed run fires off that insert (`notifications/from-audit.ts`)
@@ -60,6 +65,8 @@ export type RunToSettle = {
   steps: UnattendedRunResult["steps"] | null;
   /** Decided once, before this, so the conversation, the receipt and the trail cannot disagree. */
   silent: boolean;
+  /** What the run staged for its notepad. Null for a run that was never offered one. */
+  notepad: NotepadDraft | null;
 };
 
 /** What the record came to, and the announcements it earned — to be made by the caller. */
@@ -69,6 +76,8 @@ export type Settlement = {
   failure: string;
   delivered: Delivered | null;
   failedIn: Delivered | null;
+  /** What became of the notepad the run changed. Null when it changed nothing. */
+  notepad: NotepadWrite | null;
 };
 
 /** Write the run's record whole, or report the run as the failure a rollback made it. */
@@ -77,10 +86,10 @@ export async function settleRun(
   run: RunToSettle,
 ): Promise<Settlement> {
   try {
-    const { delivered, failedIn } = await options.database.transaction(
+    const { delivered, failedIn, notepad } = await options.database.transaction(
       async (transaction) => writeRecord(options, transaction, run),
     );
-    return { ok: run.ok, failure: run.failure, delivered, failedIn };
+    return { ok: run.ok, failure: run.failure, delivered, failedIn, notepad };
   } catch (error) {
     /*
      * The record rolled back whole: nothing was delivered, no receipt was written, and the ledger
@@ -97,7 +106,14 @@ export async function settleRun(
     if (run.ledgerRunId) {
       await options.ledger?.finish(run.ledgerRunId, failure).catch(() => {});
     }
-    return { ok: false, failure, delivered: null, failedIn: null };
+    // The notepad rolled back with the rest: the cursor is where the last recorded run left it.
+    return {
+      ok: false,
+      failure,
+      delivered: null,
+      failedIn: null,
+      notepad: run.notepad?.changed ? "discarded" : null,
+    };
   }
 }
 
@@ -105,7 +121,9 @@ async function writeRecord(
   options: SettlementOptions,
   transaction: Executor,
   run: RunToSettle,
-): Promise<{ delivered: Delivered | null; failedIn: Delivered | null }> {
+): Promise<Omit<Settlement, "ok" | "failure">> {
+  // The cursor first, so every other write in the record is one that can still take it back.
+  const notepad = await landNotepad(options, transaction, run);
   const delivered = await deliverAnswer(options, transaction, run);
   const failedIn = await markFailure(options, transaction, run);
 
@@ -127,7 +145,24 @@ async function writeRecord(
     error: run.ok ? null : run.failure,
     steps: run.steps,
   });
-  return { delivered, failedIn };
+  return { delivered, failedIn, notepad };
+}
+
+/**
+ * The notepad the run changed, written over the version it read (`notepad.ts`, `settleNotepad`).
+ *
+ * Only for a run that succeeded. A failed run's answer reached nobody, and a cursor advanced past
+ * what nobody received is a review skipped — so its writes are discarded, and the next run covers
+ * the same window again.
+ */
+async function landNotepad(
+  options: SettlementOptions,
+  transaction: Executor,
+  run: RunToSettle,
+): Promise<NotepadWrite | null> {
+  if (!run.notepad?.changed) return null;
+  if (!run.ok) return "discarded";
+  return settleNotepad(transaction, run.notepad, run.runId, options.now());
 }
 
 /**

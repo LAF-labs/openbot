@@ -8,9 +8,10 @@
  * 어느 쪽이 실제로 읽히는지 아무도 모르게 된다.
  *
  * 조립 순서: 기본 → 이 봇이 누구인지 → 무엇을 기억하는지 → 어떤 스킬을 받았는지 → 이번 모드
- * → 지금 몇 시인지.
+ * → (루틴이면) 그 루틴의 메모장 → 지금 몇 시인지.
  * 모드가 신원과 기억 뒤에 오는 이유는 모드가 이번 실행에서만 참이고, 다른 것과 부딪히면 이겨야
- * 하기 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다).
+ * 하기 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다). 메모장은 실행마다 바뀔 수
+ * 있는 글이라 모드 뒤, 시계 앞에 선다.
  *
  * 시계가 맨 끝에 오는 이유는 캐시다. 공급자는 프롬프트를 앞에서부터 같은 만큼만 캐시에서
  * 읽는데(prefix cache), 매분 바뀌는 한 줄이 위에 있으면 그 뒤의 모든 것 — 직무, 기억, 모드 —
@@ -24,9 +25,18 @@ import { CHAT_KO } from "./mode/chat.ko";
 import { COWORKER_KO } from "./mode/coworker.ko";
 import { roomKo } from "./mode/room.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
+import { notepadText, type RoutineNote } from "./notepad.ko";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO } from "./base.ko";
+export {
+  NOTEPAD_MAX_BYTES,
+  NOTEPAD_MAX_KEYS,
+  notepadBytes,
+  notepadOf,
+  notepadText,
+  type RoutineNote,
+} from "./notepad.ko";
 export { asRole, copula } from "./particles";
 export {
   estimateTokens,
@@ -117,6 +127,8 @@ export type ComposePromptInput = {
   memories?: readonly string[];
   /** 이 봇에게 허용된 스킬. 이름과 한 줄만 — 본문은 skill_view가 읽는다. */
   skills?: readonly PromptSkill[];
+  /** 루틴의 메모장. 루틴 모드에서만 실린다 — 다른 자리에서 온 것은 그리지 않는다. */
+  notepad?: readonly RoutineNote[];
 };
 
 /** 이번 실행의 자리에만 해당하는 부분. */
@@ -187,6 +199,11 @@ export function composePrompt(input: ComposePromptInput): string {
     // Names and one line each, capped. Bots that hold nothing read nothing here.
     skillIndexText(input.skills ?? []),
     modeText(mode, bot.name),
+    /*
+     * 루틴에서만. 대화나 방에 메모장이 실려 오면 그것은 루틴이 아닌 누군가가 보낸 것이고, 거기서
+     * 그리면 루틴의 커서가 대화의 "사실"이 된다. 비어 있으면 빈 문자열이라 문단이 떨어진다.
+     */
+    mode === "routine" ? notepadText(input.notepad ?? []) : "",
     // Last, on purpose: the one line that changes every minute. See the module comment.
     nowLine(input.now, input.timeZone),
   ]

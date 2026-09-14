@@ -36,6 +36,7 @@
 | `laf_thread_runs` | 봇이 언제 무엇을 실행했는지(내용 아님) | 본인, 관리자 | **1년** |
 | `laf_routines` | 정해진 시각에 반복하는 지시문 | 본인, 봇 주인 | 계정을 지울 때까지 |
 | `laf_routine_runs` | 루틴이 실행된 기록과 그 답 (최근 20건) | 본인, 봇 주인 | **1년**(그 전에 20건을 넘기면 그때 정리) |
+| `laf_routine_notepads` | 루틴의 메모장 — 지난 실행이 어디까지 처리했는지(리뷰·주문번호, 시각)와 짧은 사실 몇 줄. 루틴의 실행만 쓰고 사람은 읽고 비운다 | 본인, 봇 주인 | 비우거나 루틴을 지울 때까지 |
 | `laf_routine_suggestion_dismissals` | 추천 루틴 카드에 "다음에"라고 한 것 (카드 이름과 시각뿐) | 본인 | 계정을 지울 때까지 |
 | `laf_feedback` | 문의·의견 칸에 쓴 글. "지금 화면을 같이 보냄"을 켰으면 그때 보고 있던 화면의 **주소**와 마지막 **실패 코드** — 스크린샷도, 대화 내용도 아니다. `LAF_ALERT_WEBHOOK_URL`이 있으면 같은 글이 운영자의 알림 채널로도 간다 | 운영자(DB로) | 계정을 지울 때까지 |
 | `skills` | `/`로 부르는 내 지시문 | 본인(배포가 만든 것은 모두) | 계정을 지울 때까지 |
@@ -76,7 +77,7 @@
 - `bots` — 내가 소유한 봇 전부(지운 봇 포함)와 그 프로필
 - `botPreferences`, `memories` — 봇 표시 설정, 봇이 기억한 사실(잊은 것 포함)
 - `channels`, `conversations` — 내가 속한 방과 **모든 대화 전문**
-- `routines`, `routineRuns`, `runs` — 루틴과 실행 기록
+- `routines`, `routineRuns`, `routineNotepads`, `runs` — 루틴과 실행 기록, 루틴의 메모장
 - `skills`, `standingApprovals` — 내 스킬, 내가 준 상시 허용
 - `auditEvents` — **내가 행위자인** 기록만
 

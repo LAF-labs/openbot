@@ -88,6 +88,26 @@ function fakeService(overrides: Partial<RoutineService> = {}) {
       calls.push(["remove", actor, id]);
       mine(actor, id);
     },
+    async notepad(actor: { id: string }, id: string) {
+      calls.push(["notepad", actor, id]);
+      mine(actor, id);
+      return {
+        entries: [
+          {
+            key: "new_reviews",
+            kind: "watermark" as const,
+            lastId: "R-1002",
+            at: "2026-09-14T07:20:00.000Z",
+          },
+        ],
+        updatedAt: new Date("2026-09-14T07:20:00.000Z"),
+      };
+    },
+    async clearNotepad(actor: { id: string }, id: string) {
+      calls.push(["clearNotepad", actor, id]);
+      mine(actor, id);
+      return { cleared: 1 };
+    },
     async trigger(id: string, token: string, payload?: string) {
       calls.push(["trigger", id, token, payload]);
       if (id !== routine.id || token !== "the-token-once") {
@@ -176,6 +196,28 @@ describe("the routines surface, as its owner", () => {
     ]);
   });
 
+  test("reads the notepad and clears it, as its owner", async () => {
+    const service = fakeService();
+    const app = appAs(OWNER, service);
+
+    const read = await app.request("http://laf.test/routine_1/notepad");
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({
+      notepad: { entries: [{ key: "new_reviews", lastId: "R-1002" }] },
+    });
+
+    const cleared = await app.request("http://laf.test/routine_1/notepad", {
+      method: "DELETE",
+    });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toEqual({ cleared: 1 });
+
+    expect(service.calls).toEqual([
+      ["notepad", OWNER, "routine_1"],
+      ["clearNotepad", OWNER, "routine_1"],
+    ]);
+  });
+
   test("the list body carries no trigger token hash", async () => {
     // A hash is not the token, but it is the material for guessing one offline, and the roster has
     // no use for it. Asserted on the serialised body, which is what actually reaches a browser.
@@ -240,6 +282,16 @@ describe("the routines surface, as somebody else on the same VM", () => {
     ],
     ["running it now", "http://laf.test/routine_1/run", post()],
     ["deleting it", "http://laf.test/routine_1", { method: "DELETE" }],
+    [
+      "reading its notepad",
+      "http://laf.test/routine_1/notepad",
+      { method: "GET" },
+    ],
+    [
+      "clearing its notepad",
+      "http://laf.test/routine_1/notepad",
+      { method: "DELETE" },
+    ],
   ])(
     "is refused %s, as a routine that is not there",
     async (_what, url, init) => {

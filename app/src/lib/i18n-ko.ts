@@ -2358,4 +2358,24 @@ export const ko: Record<string, string> = {
   "Choose a Bot first.": "먼저 봇을 고르세요.",
   "Choose a data source first.": "먼저 데이터 소스를 고르세요.",
   "Write a description first.": "먼저 설명을 적어 주세요.",
+  /*
+   * 루틴의 메모장 — 루틴이 다음 실행을 위해 어디까지 했는지 적어 두는 곳. 사람은 읽고 비울 수만
+   * 있다(`components/routines/notepad.tsx`). "기준점"이나 "워터마크" 대신 "어디까지"라고 쓴다.
+   */
+  Notepad: "메모장",
+  "Where this routine left off, as its last run noted it.":
+    "이 루틴이 어디까지 했는지, 지난 실행이 적어 둔 그대로입니다.",
+  Clear: "비우기",
+  "Clearing…": "비우는 중…",
+  "Loading the notepad…": "메모장을 불러오는 중…",
+  "The notepad could not be loaded.": "메모장을 불러오지 못했습니다.",
+  "Nothing noted yet.": "아직 적어 둔 것이 없습니다.",
+  "Noted {when}": "{when}에 적음",
+  "Up to {id}, {when}": "{id}까지 처리 ({when})",
+  "Up to {where}": "{where}까지 처리",
+  "Clear this routine's notepad?": "이 루틴의 메모장을 비울까요?",
+  "Its next run starts without knowing where the last one left off, so it may go over the same things again.":
+    "다음 실행은 지난번에 어디까지 했는지 모른 채 시작해서, 이미 본 것을 다시 볼 수 있습니다.",
+  "A person cleared where it left off": "사람이 루틴의 메모장을 비움",
+  "A routine's notepad": "루틴 메모장",
 };

@@ -15,6 +15,12 @@ import {
   type UnattendedToolkit,
 } from "../runner/unattended";
 import { isSilentAnswer } from "./deliver";
+import {
+  draftOf,
+  type NotepadDraft,
+  readNotepad,
+  withNotepad,
+} from "./notepad";
 import { lastReport } from "./receipts";
 import { reportRun } from "./run-report";
 import {
@@ -82,7 +88,10 @@ export type RoutineRunOptions = SettlementOptions & {
 type RoutineRow = typeof lafRoutines.$inferSelect;
 
 /** What asking the Bot came to, before any of it is written down. */
-type Attempt = Pick<RunToSettle, "ok" | "answer" | "failure" | "steps"> & {
+type Attempt = Pick<
+  RunToSettle,
+  "ok" | "answer" | "failure" | "steps" | "notepad"
+> & {
   /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
   awaiting: boolean;
 };
@@ -147,6 +156,7 @@ async function executeNow(
     failure: attempt.failure,
     steps: attempt.steps,
     silent,
+    notepad: attempt.notepad,
   });
 
   // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
@@ -204,6 +214,7 @@ async function askTheBot(
   row: RoutineRow,
   author: string | null,
 ): Promise<Attempt> {
+  let notepad: NotepadDraft | null = null;
   try {
     if (!author) {
       throw new Error(
@@ -226,13 +237,30 @@ async function askTheBot(
         // The local actor is not a row in `users`, so it is named without claiming to be one.
         ...(author === DEV_ACTOR.id ? {} : { userId: author }),
       };
-      const toolkit = await options.tools(row.agentId, actor);
+      /*
+       * The notepad, read here — inside the Bot's lane, not when the routine was claimed. Run now
+       * and the clock can each claim the same routine and queue behind one another on the lane, and
+       * the second run must read what the first one settled rather than what both saw at the claim.
+       * A read that fails fails the run: a routine that cannot see where it left off must not run
+       * as though it had never started.
+       */
+      notepad = draftOf(
+        row.id,
+        await readNotepad(options.database, row.id),
+        options.now,
+      );
+      const toolkit = withNotepad(
+        await options.tools(row.agentId, actor),
+        notepad,
+      );
       const run = await runUnattended(target, instruction, {
         toolkit,
         timeoutMs: options.runTimeoutMs,
         // Nobody is watching. What that means is said by `shared/prompt/mode/routine.ko.ts`,
         // composed by the same middleware every other run path goes through.
         mode: "routine",
+        // And where this routine left off, as facts that middleware composes after the mode.
+        notepad: notepad.read,
       });
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
@@ -243,14 +271,32 @@ async function askTheBot(
         ? `${run.answer}\n\n⏸ ${run.awaiting}`.trim()
         : run.answer;
       const awaiting = Boolean(run.awaiting);
-      return { ok: true, answer, failure: "", steps: run.steps, awaiting };
+      return {
+        ok: true,
+        answer,
+        failure: "",
+        steps: run.steps,
+        awaiting,
+        notepad,
+      };
     }
+    /*
+     * No tools, no notepad: this run is composed as a coworker's (`runAgentOnce`), is offered no
+     * `routine_note` to write with, and is shown no notepad to read.
+     */
     const answer = await runAgentOnce(
       target,
       instruction,
       options.runTimeoutMs,
     );
-    return { ok: true, answer, failure: "", steps: null, awaiting: false };
+    return {
+      ok: true,
+      answer,
+      failure: "",
+      steps: null,
+      awaiting: false,
+      notepad: null,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -259,6 +305,8 @@ async function askTheBot(
       // A failed loop still took its turns; they are the record of how far it got.
       steps: error instanceof UnattendedRunError ? error.steps : null,
       awaiting: false,
+      // Kept so the trail can say a failed run's writes were discarded — never so they are written.
+      notepad,
     };
   }
 }

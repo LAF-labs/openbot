@@ -716,6 +716,8 @@ const A_ALLOWED = [
   "DELETE /api/agents/:agentId",
   "DELETE /api/computers/:botId/demonstration",
   "DELETE /api/routines/:id",
+  // The routine's notepad: read and cleared by its person, never written over HTTP.
+  "DELETE /api/routines/:id/notepad",
   "GET /api/agents/:agentId",
   "GET /api/agents/:agentId/memories",
   "GET /api/approvals/:botId",
@@ -726,6 +728,7 @@ const A_ALLOWED = [
   "GET /api/computers/:botId/screenshot",
   "GET /api/computers/:botId/status",
   "GET /api/plugins/for/:agentId",
+  "GET /api/routines/:id/notepad",
   "GET /api/routines/:id/runs",
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",

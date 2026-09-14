@@ -11,6 +11,8 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+// The entry's shape is the prompt's: one definition, so what is stored is what the next run reads.
+import type { RoutineNote } from "../../../../shared/prompt/notepad.ko";
 import { agents, users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
 // lands as a JSON *string* that no SQL operator can read. See ./json.ts.
@@ -324,6 +326,47 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
         calls: Array<{ name: string; ok: boolean }>;
       }>
     >(),
+});
+
+/**
+ * A routine's notepad: the few facts it carries from one run to the next — where it left off.
+ *
+ * The three jobs a shop hands a routine first are all "since last time": reply drafts for new
+ * reviews, answers for new inquiries, settlement mismatches. What crossed from one run to the next
+ * was the previous answer's prose (`routines/run.ts`), which is not a cursor — the Bot had to read
+ * "how far did I get" back out of its own sentences, and a paraphrase or a cut at 1,500 characters
+ * answered a review twice or skipped one. The shape and the bounds live with the prompt that
+ * carries it (`shared/prompt/notepad.ko.ts`); what is written, and when, is `routines/notepad.ts`.
+ *
+ * ONE ROW PER ROUTINE, THE WHOLE NOTEPAD IN IT, BEHIND A VERSION. A notepad is one small document
+ * — twenty entries, four kilobytes as the next run reads them — and it is written the way a cursor
+ * has to be: as a whole, and only over the version the run read. A run stages its writes and the
+ * settlement lands them in the same transaction as the rest of its record, `WHERE version =` the
+ * one it started from; a person clearing the notepad while the run was out bumps the version, and
+ * the run's writes — made against a cursor that no longer exists — are dropped rather than written
+ * back over the reset. One row per key could not say "the notepad this run read" without a second
+ * clock beside it.
+ *
+ * `entries` is an array rather than an object so the order a Bot wrote them in is the order the
+ * next run and the person read them: `jsonb` does not keep an object's key order.
+ *
+ * Cascades with the routine. `written_by_run` is the receipt id of the run whose settlement wrote
+ * it (`laf_routine_runs.id`), text rather than a reference because receipts are pruned to twenty.
+ */
+export const lafRoutineNotepads = pgTable("laf_routine_notepads", {
+  routineId: text("routine_id")
+    .primaryKey()
+    .references(() => lafRoutines.id, { onDelete: "cascade" }),
+  // Each entry as the prompt reads it, plus when it was written — the part the person reads.
+  entries: jsonb("entries")
+    .$type<Array<RoutineNote & { at: string }>>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  version: integer("version").notNull().default(0),
+  writtenByRun: text("written_by_run"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 /**

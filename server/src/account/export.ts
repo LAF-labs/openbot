@@ -34,6 +34,7 @@ import {
   channels,
   channelThreads,
   computerStandingApprovals,
+  lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
   lafThreadRuns,
@@ -336,6 +337,16 @@ export function createAccountExport(database: Database): AccountExport {
       truncated.push("routineRuns");
     }
     yield `,\n"routineRuns":${JSON.stringify(routineRuns.slice(0, EXPORT_LIMITS.routineRuns))}`;
+
+    // Where each routine left off. No cap: one row per routine, each at most four kilobytes.
+    yield `,\n"routineNotepads":${JSON.stringify(
+      routineIds.length
+        ? await database
+            .select()
+            .from(lafRoutineNotepads)
+            .where(inArray(lafRoutineNotepads.routineId, routineIds))
+        : [],
+    )}`;
 
     const runs = await database
       .select()

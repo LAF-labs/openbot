@@ -1,3 +1,4 @@
+import type { RoutineNote } from "@shared/prompt/notepad.ko";
 import { queryOptions } from "@tanstack/react-query";
 import { activeLocale, t } from "@/lib/i18n";
 
@@ -59,9 +60,35 @@ export function runShape(
   return parts.join(" · ");
 }
 
+/** One entry of a routine's notepad, as the server keeps it: what the next run reads, and when. */
+export type RoutineNotepadEntry = RoutineNote & { at: string };
+
+/** Where a routine left off. Written by its own runs; a person reads it and may empty it. */
+export type RoutineNotepad = {
+  entries: RoutineNotepadEntry[];
+  updatedAt: string | null;
+};
+
+/**
+ * What one entry says, in the reader's words.
+ *
+ * A note is its value, as the Bot wrote it. A watermark is where the routine got to — the newest
+ * thing its last run handled — and it reads as that rather than as `lastId`/`lastAt`, which are the
+ * model's field names and nothing a shop owner has a use for.
+ */
+export function notepadEntryLabel(entry: RoutineNotepadEntry): string {
+  if (entry.kind === "note") return entry.value;
+  const when = entry.lastAt ? whenLabel(entry.lastAt) : "";
+  if (entry.lastId && when) {
+    return t("Up to {id}, {when}", { id: entry.lastId, when });
+  }
+  return t("Up to {where}", { where: entry.lastId ?? when });
+}
+
 export const routineKeys = {
   all: ["routines"] as const,
   runs: (routineId: string) => ["routine-runs", routineId] as const,
+  notepad: (routineId: string) => ["routine-notepad", routineId] as const,
 };
 
 /**

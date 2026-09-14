@@ -19,6 +19,7 @@ import {
   channelThreads,
   computerStandingApprovals,
   credentials,
+  lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
   lafThreadMessages,
@@ -133,6 +134,19 @@ async function makePerson(label: string): Promise<Person> {
     startedAt: new Date(),
     ok: true,
     answer: "Nothing new.",
+  });
+  await database.insert(lafRoutineNotepads).values({
+    routineId,
+    entries: [
+      {
+        key: "orders",
+        kind: "watermark",
+        lastId: `${label}-order-17`,
+        at: new Date().toISOString(),
+      },
+    ],
+    version: 1,
+    writtenByRun: `${routineId}-run`,
   });
   await database.insert(lafThreadRuns).values({
     runId,
@@ -253,6 +267,12 @@ describe("the export", () => {
       (document.routines as Array<{ id: string }>).map((row) => row.id),
     ).toEqual([leaver.routineId]);
     expect(document.routineRuns).toHaveLength(1);
+    // Where their routine left off is their routine's work too.
+    expect(
+      (document.routineNotepads as Array<{ routineId: string }>).map(
+        (row) => row.routineId,
+      ),
+    ).toEqual([leaver.routineId]);
     expect(
       (document.skills as Array<{ id: string }>).map((row) => row.id),
     ).toEqual([leaver.skillId]);
@@ -365,6 +385,13 @@ describe("deletion", () => {
         .select()
         .from(lafRoutineRuns)
         .where(eq(lafRoutineRuns.routineId, leaver.routineId)),
+    );
+    await gone(
+      "routineNotepads",
+      database
+        .select()
+        .from(lafRoutineNotepads)
+        .where(eq(lafRoutineNotepads.routineId, leaver.routineId)),
     );
     await gone(
       "runs",
