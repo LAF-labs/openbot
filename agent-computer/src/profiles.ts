@@ -35,6 +35,7 @@
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
+import { keepChildProcesses } from "./child-processes";
 import { egressFor, egressLabel } from "./egress";
 import { log } from "./log";
 
@@ -359,6 +360,12 @@ export type ProfileOptions = {
 };
 
 export function createProfiles(root: string, options: ProfileOptions = {}) {
+  /*
+   * Before the first browser, so no browser this module ever launches can have its DevTools pipe
+   * closed by the garbage of one it closed earlier. See child-processes.ts: measured, five Bots'
+   * browsers at once, dead within seconds of launch, every second run.
+   */
+  keepChildProcesses();
   const now = options.now ?? (() => Date.now());
   const idleCloseMs = options.idleCloseMs ?? IDLE_CLOSE_MS;
   /**

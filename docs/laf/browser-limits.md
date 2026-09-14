@@ -121,6 +121,25 @@
 `plugin-call-validation.test.ts`, `screen-problems.test.ts`, `composer-first-keystrokes.test.ts`가
 잡는다.
 
+### 다섯 봇의 브라우저가 한꺼번에 멈춘다 — W1-d가 남긴 사실 (2026-09-14)
+
+W1-d(2026-09-13)는 봇 5개 × 내비게이션 20회를 네 번 재서 한 번 **동시 페이지 타임아웃 8건**을 봤고
+원인을 남기지 못했다. 같은 모양 — 봇 5개가 동시에 픽스처 페이지 20개를 차례로 열고(`holdAtNewHost`,
+게이트웨이가 보내는 그대로) 끝나면 전부 reset — 을 새로 빌드한 컨테이너에서 다시 쟀다. Docker Desktop
+29.5(VM 8 vCPU·4 GiB), 픽스처는 호스트에서 서빙하고 요청이 사이트에 **도착했는지**를 기록했다.
+
+| 사실 | 지금 | 잰 것 |
+|---|---|---|
+| 동시 페이지 타임아웃 | **우리 것이었다 — 고침.** 사이트도 VM도 샌드박스도 아니고 런타임이다. Bun의 `node:child_process`는 끝난 자식의 파이프를 닫고, 그 `ChildProcess` 객체가 GC될 때 **같은 번호를 한 번 더 닫는다**. 그때 그 번호는 다음에 띄운 브라우저의 DevTools 파이프(fd 3·4)다. 크로미움은 `Connection terminated while reading from pipe`를 남기고 0으로 끝나는데, Playwright는 자기 쪽 끝이 닫힌 걸 못 봐서 계속 "연결됨"이다. 그래서 그 봇의 다음 `goto`는 30초를 다 기다리고(요청은 나가지도 않는다), 기한이 없는 호출(`evaluate`)은 끝없이 기다린다. GC가 언제 도느냐에 달려서 "네 번에 한 번"처럼 보였다. 고침: 브라우저 프로세스 객체를 이 프로세스가 사는 동안 붙들고, 닫힌 뒤에는 리스너만 뗀다(`child-processes.ts`). `closed-browser-pipes.test.ts`가 GC를 강제해서 매번 확인한다 | 고치기 전(main 이미지, 4회): 1회가 1–5초 사이에 **다섯 브라우저를 모두 잃음** — 504 `laf:page_timeout` 5건(사이트 도착 0/5), 그 봇들의 직전 내비게이션 5건은 120초 넘게 무응답, 그 실행만 168초(나머지 12–13초). 로그를 붙인 같은 코드 5회에서는 2·4회째가 똑같이. 고친 뒤: **12회(6회씩 두 번) 1,200/1,200 성공**, 타임아웃·recycle 0, 실행별 p50 0.54–0.75초, 실행당 11.8–19.2초 |
+| 제품 코드 없이도 재현된다 | Playwright만으로: 브라우저 3개를 닫고 3개를 띄운 뒤 `Bun.gc(true)`. 원인이 GC이고, 붙들어야 하는 것이 `ChildProcess`임을 가른 대조군이다 | 이미지(Bun 1.3.14) **9/9 죽음**, macOS(Bun 1.3.11) 6/6 죽음. GC를 강제하지 않으면 9/9 삶. 닫힌 `ChildProcess`를 붙들면 9/9 삶, 그 stdio 스트림만 붙들면 8/9 죽음. 붙드는 비용: 브라우저 30개를 띄웠다 닫아도 GC 뒤 힙 25.0→24.9 MiB(리스너까지 붙들면 브라우저당 34 KiB) |
+| 환경 탓이 아니었다는 근거 | 실패하는 순간 컨테이너의 메모리·IO 압박(PSI) 0, OOM 0, pid 상한 0, 컨테이너 이벤트 루프 지연 0, 호스트 쪽 사이트 서버의 타이머 지연 0 — 그런데 브라우저 다섯의 프로세스가 1초 안에 함께 사라졌다(pids 350→25). 실패는 부하를 따라가지 않고 **두 번째 실행마다** 났다. 다른 작업트리가 같은 Docker VM에서 앱 이미지를 빌드하던 동안에는 모양이 다른 실패가 섞였다 — OOM kill 5, 컨테이너 이벤트 루프 지연 최대 34초, 요청은 사이트에 도착하는데 502 47건. 그쪽은 환경이다 | 샘플은 1초 간격(컨테이너 안 `/proc/pressure/*`·cgroup, 호스트 `vm_stat`) |
+
+2-B 후속 표의 "새 봇 2개 중 1개가 두 번째 열기에서 30s 타임아웃, 그 뒤 브라우저 전체가 걸림"도 모양이 같다
+(브라우저를 닫고 다시 띄운 뒤의 두 번째 열기). 다시 재지는 않았다. Bun upstream에는 이름이
+"extra stdio pipes are not double-closed on GC"인 회귀 테스트가 있다 — 고정한 Bun을 올릴 때
+`closed-browser-pipes.test.ts`가 `keepChildProcesses` 없이 통과하면 우회를 뺀다. 남은 사실 하나: 다른
+이유로 파이프가 죽어도 기한 없는 Playwright 호출은 여전히 기다리고, 그 한도는 서버 클라이언트의 45초다.
+
 ### 다시 재는 법
 
 ```bash
@@ -157,7 +176,11 @@ bunx playwright install chromium   # 없으면 이 파일의 13개가 skip된다
 ## 5. 봇이 받는 사실 코드
 
 전부 `shared/prompt/tool-results.ko.ts`에 한국어가 있다. 서버와 컨테이너는 코드만
-보내고 문장은 거기서 붙는다.
+보내고 문장은 거기서 붙는다. 컨테이너가 거절하거나 실패할 때는 `error`와 `code`에 **같은 코드**를
+싣는다(`agent-computer/src/respond.ts` `fact`) — 영어 문장도, Playwright 메시지도 아니다. Playwright
+메시지는 호출 기록을 달고 오고, `fill` 실패의 호출 기록에는 입력하던 값이 들어 있었다(2026-09-14 실측,
+`/human/secret` 실패 응답에 사람이 친 비밀값). 예외는 하나: `laf:page_timeout`의 `error`에는
+Playwright의 첫 줄이 남는다. 서버 클라이언트가 504를 그 줄로 가려내기 때문이다.
 
 | 코드 | 언제 |
 |---|---|
@@ -168,7 +191,17 @@ bunx playwright install chromium   # 없으면 이 파일의 13개가 skip된다
 | `laf:secret_request_lost` | 재시작으로 비밀값 요청이 사라졌다 |
 | `laf:tab_missing` | 그 번호의 탭이 없다 |
 | `laf:stale_refs` | 스냅샷이 낡았다. 다시 찍어야 한다 |
+| `laf:label_changed` | 스냅샷 뒤에 요소의 이름이 바뀌어서 누르지 않았다 |
+| `laf:element_not_actionable` | 그 요소가 행동을 받지 않았다(가려짐·숨음·비활성, 글자나 파일을 못 넣는 요소) |
+| `laf:page_timeout` | 페이지가 기한 안에 열리지 않았다. 탭이나 브라우저를 갈았다(`recycled`) |
+| `laf:navigation_failed` | 그 주소를 열 수 없었다(이름 없음·연결 거절) |
+| `laf:navigation_refused` | 배포 안의 주소로 넘어가려 해서 막았다 |
+| `laf:browser_failed` | 브라우저가 그 동작을 끝내지 못했다 |
+| `laf:request_invalid` | 요청에 필요한 값이 빠졌다. 어느 값인지 `field` |
+| `laf:file_path_refused` / `laf:file_not_found` / `laf:file_wrong_kind` / `laf:file_too_large` / `laf:file_failed` | 작업 공간 파일 요청. 너무 크면 `bytes`·`limit` |
+| `laf:secret_not_pending` | 기다리는 비밀값 요청이 없는데 값이 왔다 |
 | `laf:bot_header_missing` | 어느 봇인지 말하지 않은 호출(배포 버그) |
+| `laf:computer_token_refused` / `laf:computer_route_unknown` | 비밀이 맞지 않거나 없는 경로(배포 버그) |
 
 ## 사이트 연결 카탈로그
 
