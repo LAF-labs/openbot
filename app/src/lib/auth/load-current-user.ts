@@ -1,11 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 import {
+  authKeys,
   type CurrentUser,
   currentUserQueryOptions,
   FORBIDDEN,
+  REVOKED,
   UNREACHABLE,
 } from "./queries";
+import { SESSION_REVOKED } from "./session-revoked";
 
 /**
  * THE ONE DOOR EVERY ROUTE GOES THROUGH, AND WHAT HAPPENS WHEN IT WILL NOT OPEN.
@@ -34,6 +37,16 @@ export async function loadCurrentUser(
   // A different fact from the one above, and it used to be shown as it: the server is fine.
   if (result === FORBIDDEN) {
     throw redirect({ to: "/no-access" });
+  }
+  /*
+   * And a third: the session was taken away. To the door, with the fact in its address — the door
+   * owns the sentence (`sign-in-refusal.ts`). The cached answer becomes plain "nobody" first, because
+   * `/sign` asks this same question before it draws, and a cache still saying REVOKED would send it
+   * round to itself for as long as the answer stayed fresh.
+   */
+  if (result === REVOKED) {
+    queryClient.setQueryData(authKeys.currentUser(), null);
+    throw redirect({ to: "/sign", search: { error: SESSION_REVOKED } });
   }
   return result;
 }

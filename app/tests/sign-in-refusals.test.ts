@@ -13,6 +13,7 @@ import {
   refusalSentence,
   type SignInRefusal,
 } from "../src/lib/auth/sign-in-refusal";
+import { SESSION_REVOKED } from "../src/lib/auth/session-revoked";
 import { ko } from "../src/lib/i18n-ko";
 import type { Scenario, Shown } from "./support/sign-in-render";
 
@@ -101,6 +102,23 @@ const refusedEmailCode = (() => {
     throw new Error("server/src/auth/index.ts no longer refuses");
   }
   return code.split(" ").join("_");
+})();
+
+/**
+ * A session TAKEN AWAY, as the server's guard answers it (`server/src/auth/session-revocation.ts`) and
+ * as the app carries it to this screen in `?error=` (`load-current-user.ts`, `use-session-gate.ts`).
+ * Read out of the server rather than copied, like the refusal above, and held to the app's own copy.
+ */
+const revokedSessionCode = (() => {
+  const source = readFileSync(
+    join(import.meta.dir, "../../server/src/auth/session-revocation.ts"),
+    "utf8",
+  );
+  const code = /export const SESSION_REVOKED = "([^"]+)"/.exec(source)?.[1];
+  if (!code) {
+    throw new Error("server/src/auth/session-revocation.ts no longer names it");
+  }
+  return code;
 })();
 
 /**
@@ -213,7 +231,12 @@ type Case = { label: string; scenario: Scenario; expected: SignInRefusal };
 
 const cases: Case[] = [
   ...[
-    ...new Set([...callbackCodes(), refusedEmailCode, ...PROVIDER_CODES]),
+    ...new Set([
+      ...callbackCodes(),
+      refusedEmailCode,
+      revokedSessionCode,
+      ...PROVIDER_CODES,
+    ]),
   ].map((code) => ({
     label: `?error=${code}`,
     scenario: arrive(code),
@@ -374,6 +397,10 @@ describe("the codes a sign-in can come back with", () => {
     }
     expect(codes.length).toBeGreaterThan(25);
     expect(refusedEmailCode).toBe("laf:sign_in_not_admitted");
+    // The code the app brings a revoked session here with is the one the server answers.
+    expect(revokedSessionCode).toBe("laf:session_revoked");
+    expect(SESSION_REVOKED).toBe(revokedSessionCode);
+    expect(refusalForCode(revokedSessionCode)).toBe("revoked");
   });
 
   test("every start code is still thrown where this file says it is", () => {
@@ -389,6 +416,7 @@ describe("the codes a sign-in can come back with", () => {
       ...new Set([
         ...callbackCodes(),
         refusedEmailCode,
+        revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,
         ...START_CODES.map(({ code }) => code),
@@ -405,6 +433,7 @@ describe("the codes a sign-in can come back with", () => {
       [
         ...callbackCodes(),
         refusedEmailCode,
+        revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,
         ...START_CODES.map(({ code }) => code),

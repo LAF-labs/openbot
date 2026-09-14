@@ -136,3 +136,92 @@ describe("server authorization", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 });
+
+/*
+ * A SESSION WHOSE PERSON IS NO LONGER LET IN.
+ *
+ * The admission is a stub here, so each branch of the guard can be seen to fall on its own; the real
+ * list, the real rows and the real cookies are `session-revocation.integration.test.ts`.
+ */
+describe("a session whose person the deployment no longer admits", () => {
+  function admission(input: { admits: boolean; revokedCookie?: boolean }) {
+    const revoked: string[] = [];
+    return {
+      revoked,
+      admission: {
+        admits: () => input.admits,
+        revoke: async (userId: string) => {
+          revoked.push(userId);
+          return 1;
+        },
+        wasRevoked: () => input.revokedCookie ?? false,
+      },
+    };
+  }
+
+  const appWith = (
+    auth: Parameters<typeof createApp>[1],
+    roles: Parameters<typeof createApp>[2],
+    sessions: ReturnType<typeof admission>["admission"],
+  ) => {
+    const args: Parameters<typeof createApp> = [config, auth, roles];
+    args[44] = sessions;
+    return createApp(...args);
+  };
+
+  test("is revoked and refused with its own code, before any role is read — an administrator's too", async () => {
+    const { admission: struckOff, revoked } = admission({ admits: false });
+    let rolesRead = 0;
+    const app = appWith(
+      authenticatedAs("struck-off"),
+      {
+        rolesForUser: async () => {
+          rolesRead += 1;
+          return ["admin"];
+        },
+      },
+      struckOff,
+    );
+
+    const response = await app.request("http://laf.local/api/admin/status");
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "laf:session_revoked",
+      code: "laf:session_revoked",
+    });
+    expect(revoked).toEqual(["struck-off"]);
+    expect(rolesRead).toBe(0);
+  });
+
+  test("a cookie whose session was already taken away is told so, not that nobody is signed in", async () => {
+    const { admission: gone, revoked } = admission({
+      admits: true,
+      revokedCookie: true,
+    });
+    const app = appWith(noSessionAuth, { rolesForUser: async () => [] }, gone);
+
+    const response = await app.request("http://laf.local/api/me");
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "laf:session_revoked",
+      code: "laf:session_revoked",
+    });
+    expect(revoked).toEqual([]);
+  });
+
+  test("a person still admitted is untouched", async () => {
+    const { admission: admitted, revoked } = admission({ admits: true });
+    const app = appWith(
+      authenticatedAs("member"),
+      { rolesForUser: async () => ["user"] },
+      admitted,
+    );
+
+    const response = await app.request("http://laf.local/api/me");
+
+    expect(response.status).toBe(200);
+    expect(revoked).toEqual([]);
+  });
+});

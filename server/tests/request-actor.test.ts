@@ -85,6 +85,26 @@ describe("who is asking", () => {
     }
   });
 
+  test("a person the sign-in list no longer admits is refused at both doors, and their sessions revoked", async () => {
+    const revoked: string[] = [];
+    const actors = createRequestActors({
+      devNoAuth: false,
+      auth: signedIn({ id: "u5", email: "struck-off@laf.test", name: "직원" }),
+      roles: { rolesForUser: async () => ["user"] },
+      admission: {
+        admits: (email) => email !== "struck-off@laf.test",
+        revoke: async (userId) => {
+          revoked.push(userId);
+          return 1;
+        },
+      },
+    });
+    await expect(actors.resolve(request)).rejects.toThrow("CopilotKit run");
+    // The live-screen upgrade's door: refused rather than guessed, and revoked all the same.
+    expect(await actors.resolveOrNull(request)).toBeNull();
+    expect(revoked).toEqual(["u5", "u5"]);
+  });
+
   test("the runtime's projection carries the id and the role, and nothing else", async () => {
     expect(
       await actorsWith(signedIn({ id: "u4", name: "직원" }), ["user"]).identify(

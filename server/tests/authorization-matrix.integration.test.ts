@@ -1,5 +1,6 @@
 /**
- * THE AUTHORIZATION MATRIX: every route this server mounts, driven by four people.
+ * THE AUTHORIZATION MATRIX: every route this server mounts, driven by four people and one who was
+ * removed.
  *
  * Audit A8 (2026-09-10) stood the server up with real authentication, planted two people with a
  * Bot each, and pressed every route as each of them and as nobody. It found that the anonymous
@@ -18,7 +19,10 @@
  *   - a colleague (B) naming the owner's (A's) Bot is told 404 — `laf:bot_not_found` — on every
  *     door the Bot id opens, never 200 and never a 403 that would confirm the Bot exists;
  *   - the cells that answer 2xx are EXACTLY the ones listed here, per person, so an accidental
- *     widening anywhere in the server is a diff in this file.
+ *     widening anywhere in the server is a diff in this file;
+ *   - somebody struck off the sign-in list, still holding a session and a role, reaches exactly what
+ *     nobody signed in reaches — told on every guarded door that the session was taken away
+ *     (2026-09-14: that person used to keep everything they had until the cookie expired).
  *
  * The stores behind the routes are the real ones on the test database wherever the constructor
  * takes a database; the computer is a fake that answers everything, because the question here is
@@ -50,8 +54,13 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
 import { createAuditReader, createAuditStore } from "../src/audit";
 import type { AuthService } from "../src/auth/guards";
+import { createSignInAllowlist } from "../src/auth/allowlist";
 import { createRoleRepository, lookupBotOwner } from "../src/auth/guards";
 import { createOnboardingStore } from "../src/auth/onboarding";
+import {
+  createSessionRevocation,
+  SESSION_REVOKED,
+} from "../src/auth/session-revocation";
 import { streamBotAccess } from "../src/auth/stream-access";
 import { createChannelEventHub } from "../src/channels/events";
 import { createChannelStore } from "../src/channels/routes";
@@ -127,8 +136,15 @@ const run = randomUUID().slice(0, 8);
 const A = { id: `matrix-a-${run}`, role: "user" as const };
 const B = { id: `matrix-b-${run}`, role: "user" as const };
 const ADMIN = { id: `matrix-admin-${run}`, role: "admin" as const };
-const PEOPLE = [A, B, ADMIN];
+/**
+ * And one who was removed: an account with a role and a session, whose address the deployment's
+ * sign-in list no longer carries — `laf member remove`, then the push. An administrator's role, so
+ * the column shows that no role buys anything back.
+ */
+const REMOVED = { id: `matrix-removed-${run}`, role: "admin" as const };
+const PEOPLE = [A, B, ADMIN, REMOVED];
 const PEOPLE_IDS = PEOPLE.map((person) => person.id);
+const emailOf = (person: { id: string }) => `${person.id}@laf.test`;
 
 /** A's Bots: the one every cell names, one marked public, one for the delete cell to consume. */
 const BOT_A = `agent_a_${run}`;
@@ -206,11 +222,24 @@ const auth: AuthService = {
       const id = cookie.match(/(?:^|;\s*)session=([^;]+)/)?.[1];
       const person = PEOPLE.find((candidate) => candidate.id === id);
       return person
-        ? { user: { id: person.id, email: `${person.id}@laf.test` } }
+        ? { user: { id: person.id, email: emailOf(person) } }
         : null;
     },
   },
 };
+
+/**
+ * The sign-in list this deployment booted with: the three who are still here. The session above
+ * keeps answering for the removed person on every request — the way a row did before 2026-09-14 —
+ * so every cell of theirs is the guard deciding, never a session that happened to be gone already.
+ */
+const admission = createSessionRevocation({
+  database,
+  allowlist: createSignInAllowlist({
+    allowedEmails: [A, B, ADMIN].map(emailOf),
+    initialAdminEmails: [],
+  }),
+});
 
 /** The deployment as `main.ts` assembles it, every mount present, on the test database. */
 function deployment() {
@@ -335,12 +364,13 @@ function deployment() {
       diagnostics: createDiagnosticsSource({ database, lines: () => [] }),
     },
     (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
+    admission,
   );
   return { app, routineService };
 }
 
 type App = ReturnType<typeof createApp>;
-type Person = "anonymous" | "A" | "B" | "admin";
+type Person = "anonymous" | "A" | "B" | "admin" | "removed";
 
 /** One cell of the matrix: who, which route, and what came back. */
 type Cell = {
@@ -457,7 +487,15 @@ async function press(
   template: string,
 ): Promise<Cell> {
   const person =
-    who === "A" ? A : who === "B" ? B : who === "admin" ? ADMIN : null;
+    who === "A"
+      ? A
+      : who === "B"
+        ? B
+        : who === "admin"
+          ? ADMIN
+          : who === "removed"
+            ? REMOVED
+            : null;
   const response = await app.request(
     `http://laf.local${concrete(method, template)}`,
     {
@@ -536,7 +574,7 @@ async function measure(): Promise<Cell[]> {
       methodA.localeCompare(methodB),
   );
   const cells: Cell[] = [];
-  for (const who of ["anonymous", "B", "A", "admin"] as const) {
+  for (const who of ["anonymous", "B", "A", "admin", "removed"] as const) {
     await restore();
     for (const [method, template] of routes) {
       cells.push(await press(who, method, template));
@@ -827,7 +865,7 @@ describe("the matrix", () => {
     // test-ci floors: a route removed on purpose lowers it with a reason; one lost by accident
     // — a mount that silently stopped — fails here.
     expect(mountedRoutes(app).length).toBeGreaterThanOrEqual(140);
-    expect(matrix).toHaveLength(mountedRoutes(app).length * 4);
+    expect(matrix).toHaveLength(mountedRoutes(app).length * 5);
   });
 
   test("nothing answers 500 but the one named, and the 503s are the deliberate ones", () => {
@@ -873,6 +911,41 @@ describe("the matrix", () => {
         .map((cell) => [keyOf(cell), cell.status]),
     );
     expect(reached).toEqual(PUBLIC);
+  });
+
+  /*
+   * THE COLUMN THAT DID NOT EXIST: a person struck off the sign-in list, who still holds a session and
+   * an administrator's role. Measured on 2026-09-14 before the guard asked: `GET /api/me` 200 on the
+   * old cookie, and a renewal on every use. Now the column is the anonymous column cell for cell,
+   * except that every door the session guard stands at says why — the session was taken away.
+   */
+  test("somebody struck off the sign-in list reaches exactly what nobody signed in reaches, and is told why", () => {
+    const anonymous = new Map(
+      cellsOf("anonymous").map((cell) => [keyOf(cell), cell]),
+    );
+    const removed = cellsOf("removed");
+    expect(removed).toHaveLength(anonymous.size);
+    const differing = removed
+      .filter((cell) => {
+        const nobody = anonymous.get(keyOf(cell));
+        const expected =
+          nobody?.code === "laf:unauthenticated"
+            ? { status: 401, code: SESSION_REVOKED }
+            : { status: nobody?.status, code: nobody?.code };
+        return cell.status !== expected.status || cell.code !== expected.code;
+      })
+      .map((cell) => `${cell.status} ${keyOf(cell)} ${cell.code ?? "-"}`);
+    expect(differing).toEqual([]);
+    // Most doors are the session guard's, so this is not a column of public routes passing trivially.
+    expect(
+      removed.filter((cell) => cell.code === SESSION_REVOKED).length,
+    ).toBeGreaterThan(120);
+    expect(okCells("removed")).toEqual(
+      Object.entries(PUBLIC)
+        .filter(([, status]) => status < 300)
+        .map(([key]) => key)
+        .sort(),
+    );
   });
 
   /*

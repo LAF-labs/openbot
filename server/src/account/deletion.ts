@@ -58,6 +58,10 @@
  */
 import { type AnyColumn, and, eq, inArray, or, sql } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
+import type {
+  EndedSession,
+  SessionRevocation,
+} from "../auth/session-revocation";
 import type { ComputerClient } from "../computer/client";
 import type { Database } from "../db/client";
 import {
@@ -142,6 +146,16 @@ export type AccountDeletionDependencies = {
    * nowhere else, which is why the absence gets a line at boot instead of being silent.
    */
   fleetNotices?: Pick<NotificationOutbox, "recordFleetNotice" | "redeliver">;
+  /**
+   * Told which sessions this deletion ended, once it has committed.
+   *
+   * The rows go inside the transaction below, as they always did. What that could not do is the
+   * rest of an ending: remember the cookies as revoked, so the person an administrator removed is
+   * told so at the sign-in door rather than shown it as a plain sign-out, and close the live screens
+   * they still have open — a socket outlives the row it was opened under. Absent in the suites that
+   * delete rows and nothing else; `main.ts` always passes it.
+   */
+  sessions?: Pick<SessionRevocation, "ended">;
 };
 
 export type AccountDeletion = {
@@ -161,6 +175,7 @@ export function createAccountDeletion(
     retirePartnersFor,
     computerClient,
     fleetNotices,
+    sessions: sessionEnds,
   } = dependencies;
 
   return {
@@ -242,6 +257,8 @@ export function createAccountDeletion(
         ? await retirePartnersFor(userId, pseudonym)
         : { retired: 0 };
 
+      /** The sessions the transaction ended, kept out of the tally: a token is not a count. */
+      let endedSessions: EndedSession[] = [];
       const counts = await database.transaction(async (transaction) => {
         const tally: DeletionCounts = {};
         const record = (name: string, rows: { length: number }) => {
@@ -524,13 +541,11 @@ export function createAccountDeletion(
             .returning({ id: credentials.id }),
         );
 
-        record(
-          "sessions",
-          await transaction
-            .delete(sessions)
-            .where(eq(sessions.userId, userId))
-            .returning({ id: sessions.id }),
-        );
+        endedSessions = await transaction
+          .delete(sessions)
+          .where(eq(sessions.userId, userId))
+          .returning({ token: sessions.token, expiresAt: sessions.expiresAt });
+        record("sessions", endedSessions);
         record(
           "authAccounts",
           await transaction
@@ -625,6 +640,24 @@ export function createAccountDeletion(
 
         return tally;
       });
+
+      /*
+       * THE SESSIONS' ENDING, THE MOMENT THE ROWS ARE GONE — before anything else is awaited.
+       *
+       * After the commit and never inside it: a rolled-back deletion must not leave a cookie that
+       * still works remembered as revoked, or a live screen closed on somebody who is still here.
+       * Synchronous, so no request can land between the commit and the cookies being known.
+       *
+       * Removed by somebody else, the cookies are remembered: that person's next request is told
+       * their access was taken away. Leaving by their own hand, they are not — the page that pressed
+       * the button already said the account is gone, and the sign-in door must not tell them that
+       * somebody else decided it.
+       */
+      sessionEnds?.ended(
+        userId,
+        endedSessions,
+        by === userId ? null : "account_removed",
+      );
 
       /*
        * Offered now, and awaited, because the common case is a fleet that answers at once and the

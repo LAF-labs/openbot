@@ -199,7 +199,13 @@ export function createAuth(
           /*
            * The lock on every later visit. An account that predates the list — or one struck from
            * it — stops getting sessions, which is what "removed" has to mean for the removal to be
-           * worth anything. Sessions already issued live until they expire; this decides new ones.
+           * worth anything.
+           *
+           * THIS DECIDES NEW SESSIONS ONLY. It said so here, and until 2026-09-14 that was the whole
+           * of it: a session issued before the removal lived out its seven days and renewed on use
+           * (measured — see `session-revocation.ts`). The sessions already issued are ended by the
+           * same list, read through the same `createSignInAllowlist`: at boot (`sweep`), and on
+           * every request by the guards.
            */
           before: async (session) => {
             if (!allowlist.enforced) return { data: session };

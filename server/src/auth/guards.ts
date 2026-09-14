@@ -4,6 +4,7 @@ import { BOT_ID_INVALID, isBotId } from "../computer/bot-id";
 import type { Database } from "../db/client";
 import { agentProfiles, agents, userRoles } from "../db/schema";
 import type { UserRole } from "./roles";
+import { SESSION_REVOKED, type SessionAdmission } from "./session-revocation";
 
 export type AuthenticatedActor = {
   id: string;
@@ -88,6 +89,11 @@ export const UNAUTHENTICATED = "laf:unauthenticated";
 export const NO_ACCESS = "laf:no_access";
 /** Signed in, and not an administrator, at a door that is only an administrator's. */
 export const ADMIN_REQUIRED = "laf:admin_required";
+/*
+ * A FOURTH SINCE 2026-09-14, `SESSION_REVOKED`: the session was taken away — its person struck off
+ * the sign-in list, or their account removed by an administrator. It is defined beside the machinery
+ * that revokes (`session-revocation.ts`) and answered below, in place of `UNAUTHENTICATED`.
+ */
 
 /**
  * May this person act THROUGH this Bot?
@@ -155,6 +161,12 @@ export function createRoleRepository(
 export function createRequireUser(
   auth: AuthService,
   roleRepository: RoleRepository,
+  /**
+   * Whether the session's person is still let in, asked on every request. Optional in the TYPE for
+   * the suites that stub a session and nothing else; `main.ts` always passes it, and a deployment
+   * without it is one where a removal decides only who may sign in again — the defect this closes.
+   */
+  admission?: SessionAdmission,
 ): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (context, next) => {
     const session = await auth.api.getSession({
@@ -163,8 +175,21 @@ export function createRequireUser(
     });
 
     if (!session) {
+      const code = admission?.wasRevoked(context.req.raw.headers)
+        ? SESSION_REVOKED
+        : UNAUTHENTICATED;
+      return context.json({ error: code, code }, 401);
+    }
+
+    /*
+     * BEFORE THE ROLE, and before anything else is read for them. A person the list no longer admits
+     * is not a person with a smaller role; they are not signed in here any more, and every session
+     * they hold goes now — not just this one, and not left in the table for `/api/auth/*` to renew.
+     */
+    if (admission && !admission.admits(session.user.email)) {
+      await admission.revoke(session.user.id, "sign_in_list");
       return context.json(
-        { error: UNAUTHENTICATED, code: UNAUTHENTICATED },
+        { error: SESSION_REVOKED, code: SESSION_REVOKED },
         401,
       );
     }

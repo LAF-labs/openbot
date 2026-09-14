@@ -274,6 +274,7 @@
   "server/tests/screen-view.test.ts",
   "server/tests/secret-redaction.test.ts",
   "server/tests/security-middleware.test.ts",
+  "server/tests/session-revocation.integration.test.ts",
   "server/tests/settle.test.ts",
   "server/tests/site-connections.test.ts",
   "server/tests/skill-ownership.integration.test.ts",

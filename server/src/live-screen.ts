@@ -13,6 +13,10 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
+import {
+  SESSION_REVOKED,
+  type SessionRevocation,
+} from "./auth/session-revocation";
 import { streamBotAccess } from "./auth/stream-access";
 import type { BotOwnerLookup } from "./auth/guards";
 import type { websocket as channelSocket } from "./channels/socket";
@@ -156,7 +160,15 @@ export type LiveScreen = {
   ) => Promise<Response | undefined>;
   /** The server's one WebSocket handler, for both the proxy and the channel sockets. */
   websocket: (channels: typeof channelSocket) => WebSocketHandler<SocketData>;
+  /** How many screens this person has open right now. */
+  openFor: (userId: string) => number;
 };
+
+/**
+ * The close code a screen is ended with when its person's sessions are: 4000–4999 is the
+ * application's own range (RFC 6455 §7.4.2), and 4401 reads as the 401 every other door answers.
+ */
+export const SCREEN_SESSION_ENDED = 4401;
 
 export function createLiveScreen(input: {
   /** Absent means no computer, and every upgrade is answered 503. */
@@ -174,8 +186,35 @@ export function createLiveScreen(input: {
   screenViews: ScreenViewAudit;
   /** Where teaching is recorded from the messages passing through. */
   demonstrations: DemonstrationRecorder;
+  /**
+   * Where a person's sessions are ended — removed by an administrator, struck off the sign-in list.
+   *
+   * THE SESSION IS CHECKED ONCE, AT THE UPGRADE, and a socket that opened lives as long as nobody
+   * closes it: taking the row away does nothing to a connection already carrying frames out and
+   * keystrokes in. So the screens a person has open are held here by who opened them, and closed
+   * when their sessions end. Absent in the suites that drive the proxy alone.
+   */
+  sessions?: Pick<SessionRevocation, "onEnded">;
 }): LiveScreen {
   const { computer, demonstrations, screenViews } = input;
+  /** Every proxied screen open on this process, by the person who opened it. */
+  const openByViewer = new Map<string, Set<ServerWebSocket<StreamData>>>();
+
+  input.sessions?.onEnded((userId) => {
+    const open = openByViewer.get(userId);
+    if (!open) return;
+    openByViewer.delete(userId);
+    for (const ws of open) {
+      /*
+       * The person's side first, with the code. Closing inward first handed the browser a plain
+       * 1000 (measured): the inward socket's own `onclose` closes this one, and it got there before
+       * the line that says why.
+       */
+      ws.close(SCREEN_SESSION_ENDED, SESSION_REVOKED);
+      ws.data.inward?.close();
+    }
+    log.info("live_screens_closed", { user: userId, screens: open.size });
+  });
 
   return {
     botOf(request) {
@@ -257,6 +296,10 @@ export function createLiveScreen(input: {
         // Once per socket, here and not per frame: the session is the fact. Not awaited — the
         // screen opens whether or not the trail is reachable, as every other computer row does.
         void screenViews.opened(ws.data.botId, ws.data.viewer);
+        const viewer = ws.data.viewer.id;
+        const held = openByViewer.get(viewer) ?? new Set();
+        held.add(ws as ServerWebSocket<StreamData>);
+        openByViewer.set(viewer, held);
         const inward = new WebSocket(ws.data.upstream);
         ws.data.inward = inward;
         // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
@@ -302,7 +345,15 @@ export function createLiveScreen(input: {
           return;
         }
         ws.data.inward?.close();
+        const held = openByViewer.get(ws.data.viewer.id);
+        if (held) {
+          held.delete(ws as ServerWebSocket<StreamData>);
+          // Dropped when empty, so a process that runs for months keeps no set per person who ever looked.
+          if (held.size === 0) openByViewer.delete(ws.data.viewer.id);
+        }
       },
     }),
+
+    openFor: (userId) => openByViewer.get(userId)?.size ?? 0,
   };
 }

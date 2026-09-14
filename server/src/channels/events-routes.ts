@@ -39,7 +39,12 @@ export function createEventRoutes(
       let detach = () => {};
       return {
         onOpen: (_event, ws) => {
-          detach = events.register(userId, (payload) => ws.send(payload));
+          detach = events.register(
+            userId,
+            (payload) => ws.send(payload),
+            // Their sessions were ended: 4401, the application's own code for the 401 every door answers.
+            () => ws.close(4401, "laf:session_revoked"),
+          );
         },
         onClose: () => detach(),
         onError: () => detach(),

@@ -18,6 +18,8 @@
  * it. Announced early, a member's roster would move for a message that then rolled back, and the
  * only thing that would correct it is a refetch nobody has a reason to make.
  */
+import { log } from "../log";
+
 export type ChannelActivityEvent = {
   channelId: string;
   /** Who may receive it. Resolved by the writer, which already had to check membership. */
@@ -36,8 +38,17 @@ export type ChannelActivityEvent = {
 type Send = (payload: string) => void;
 
 export type ChannelEventHub = {
-  /** Attach a connection for a person. Returns the detach. */
-  register(userId: string, send: Send): () => void;
+  /** Attach a connection for a person, and how to close it. Returns the detach. */
+  register(userId: string, send: Send, close?: () => void): () => void;
+  /**
+   * Close every connection a person holds, because their sessions were ended — struck off the
+   * sign-in list, or removed by an administrator (`auth/session-revocation.ts`).
+   *
+   * Not only a nicety for a tidy socket list. A room turn works out who hears it ONCE, when it starts
+   * (`rooms/service.ts`), so somebody removed mid-turn was still sent every frame of the Bot's answer
+   * in a room they had just been taken out of, for as long as the turn ran.
+   */
+  closeFor(userId: string): number;
   /**
    * Fan one event out to the connections open here.
    *
@@ -51,12 +62,13 @@ export type ChannelEventHub = {
 };
 
 export function createChannelEventHub(): ChannelEventHub {
-  const connections = new Map<string, Set<Send>>();
+  /** Each person's connections: how to write to one, and how to close it. */
+  const connections = new Map<string, Map<Send, () => void>>();
 
   return {
-    register(userId, send) {
-      const existing = connections.get(userId) ?? new Set<Send>();
-      existing.add(send);
+    register(userId, send, close = () => {}) {
+      const existing = connections.get(userId) ?? new Map<Send, () => void>();
+      existing.set(send, close);
       connections.set(userId, existing);
 
       return () => {
@@ -69,10 +81,29 @@ export function createChannelEventHub(): ChannelEventHub {
       };
     },
 
+    closeFor(userId) {
+      const held = connections.get(userId);
+      if (!held) return 0;
+      // Out of the map first: a frame delivered while these close must already find nobody here.
+      connections.delete(userId);
+      for (const close of held.values()) {
+        try {
+          close();
+        } catch {
+          // Already closing. The rest of this person's connections still have to go.
+        }
+      }
+      log.info("activity_sockets_closed", {
+        user: userId,
+        sockets: held.size,
+      });
+      return held.size;
+    },
+
     deliverRoom(frame) {
       const payload = JSON.stringify(frame);
       for (const userId of frame.memberIds) {
-        for (const send of connections.get(userId) ?? []) {
+        for (const send of connections.get(userId)?.keys() ?? []) {
           try {
             send(payload);
           } catch {
@@ -85,7 +116,7 @@ export function createChannelEventHub(): ChannelEventHub {
 
     deliver(event) {
       for (const userId of event.memberIds) {
-        for (const send of connections.get(userId) ?? []) {
+        for (const send of connections.get(userId)?.keys() ?? []) {
           try {
             send(JSON.stringify(event));
           } catch {

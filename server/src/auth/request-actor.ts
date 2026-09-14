@@ -3,6 +3,7 @@ import { DEV_ACTOR } from "./dev-actor";
 import type { RoleRepository } from "./guards";
 import type { createAuth } from "./index";
 import type { UserRole } from "./roles";
+import type { SessionAdmission } from "./session-revocation";
 
 /** A person, as a request that reached the server outside Hono's `requireUser` resolves them. */
 export type RequestActor = { id: string; name: string; role: UserRole };
@@ -55,6 +56,12 @@ export function createRequestActors(input: {
   /** Absent on a deployment without sign-in, where only `devNoAuth` admits anybody. */
   auth: ReturnType<typeof createAuth> | undefined;
   roles: Pick<RoleRepository, "rolesForUser">;
+  /**
+   * The same question `requireUser` asks of every request, asked at the two doors it never sees. The
+   * live-screen upgrade is the one that matters: it is not behind `requireUser`, and it is the socket
+   * a person's keystrokes travel down.
+   */
+  admission?: Pick<SessionAdmission, "admits" | "revoke">;
 }): RequestActors {
   const resolve = async (request: Request): Promise<RequestActor> => {
     if (input.devNoAuth) {
@@ -66,6 +73,11 @@ export function createRequestActors(input: {
     const user = session?.user;
     if (!user) {
       throw new Error("A CopilotKit run requires a signed-in user.");
+    }
+    if (input.admission && !input.admission.admits(user.email)) {
+      // Revoked here too, not only refused: the next request from this person anywhere is told why.
+      await input.admission.revoke(user.id, "sign_in_list");
+      throw new Error("A CopilotKit run requires an admitted user.");
     }
     const roles = await input.roles.rolesForUser(user.id);
     if (!roles.includes("admin") && !roles.includes("user")) {

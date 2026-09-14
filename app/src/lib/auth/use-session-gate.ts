@@ -2,7 +2,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { authKeys } from "./queries";
-import { SESSION_LOST, sessionState } from "./session-watch";
+import { SESSION_REVOKED } from "./session-revoked";
+import {
+  SESSION_LOST,
+  type SessionLostEvent,
+  sessionState,
+} from "./session-watch";
 
 /**
  * To the door, with where they were.
@@ -23,13 +28,20 @@ export function useSessionGate(): void {
   const leaving = useRef(false);
 
   useEffect(() => {
-    const onLost = () => {
+    const onLost = (event: Event) => {
       if (leaving.current) return;
       leaving.current = true;
       queryClient.setQueryData(authKeys.currentUser(), null);
+      /*
+       * A session TAKEN AWAY goes to the door with the fact, and without the destination: the person
+       * was removed, and signing in again is not a way back to the screen they were on.
+       */
+      const revoked = (event as SessionLostEvent).code === SESSION_REVOKED;
       void navigate({
         to: "/sign",
-        search: { redirect: router.state.location.href },
+        search: revoked
+          ? { error: SESSION_REVOKED }
+          : { redirect: router.state.location.href },
         replace: true,
       });
     };

@@ -131,6 +131,81 @@ describe("a session that ends while the app is open", () => {
   });
 });
 
+/**
+ * A SESSION TAKEN AWAY IS NOT A SESSION THAT ENDED.
+ *
+ * MEASURED 2026-09-14: staff struck off the sign-in list kept a working session for its seven days
+ * (`server/src/auth/session-revocation.ts`). The server now revokes it and answers every request
+ * `401 laf:session_revoked` — and read by its status alone, that 401 drew the door with nothing on it,
+ * exactly what an ordinary expiry draws. The person removed has to be told they were.
+ */
+describe("a session taken away", () => {
+  const REVOKED = { error: "laf:session_revoked", code: "laf:session_revoked" };
+  const SENTENCE =
+    "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.";
+
+  test("a reload lands on the door, saying the access was taken away", async () => {
+    const view = await mountApp({
+      path: "/agents",
+      api: ({ pathname }) =>
+        pathname === "/api/me" ? json(REVOKED, 401) : undefined,
+    });
+    try {
+      await view.waitFor(
+        () => view.router.state.location.pathname === "/sign",
+        "the sign-in door",
+        8000,
+      );
+      // The fact, and no destination: signing in again is not a way back to that screen.
+      expect(view.router.state.location.search).toEqual({
+        error: "laf:session_revoked",
+      });
+      await view.waitFor(
+        () => view.host.textContent?.includes(SENTENCE) === true,
+        "the sentence under the buttons",
+        8000,
+      );
+      expect(ko[SENTENCE]).toBe(
+        "이 계정의 권한이 회수되어 로그아웃되었습니다. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",
+      );
+    } finally {
+      await view.unmount();
+    }
+  });
+
+  test("while the app is open, the next request takes the person to the door, saying so", async () => {
+    let removed = false;
+    const view = await mountApp({
+      path: "/agents",
+      api: () => (removed ? json(REVOKED, 401) : undefined),
+    });
+    const unwatch = await watchingTheSession();
+    try {
+      expect(view.router.state.location.pathname).toBe("/agents");
+
+      // An administrator removes them. The next screen they open asks the server for its data.
+      removed = true;
+      await view.navigate("/routines");
+      await view.waitFor(
+        () => view.router.state.location.pathname === "/sign",
+        "the sign-in door",
+        8000,
+      );
+      expect(view.router.state.location.search).toEqual({
+        error: "laf:session_revoked",
+      });
+      await view.waitFor(
+        () => view.host.textContent?.includes(SENTENCE) === true,
+        "the sentence under the buttons",
+        8000,
+      );
+    } finally {
+      unwatch();
+      await view.unmount();
+    }
+  });
+});
+
 describe("a 403 from /api/me", () => {
   test("says the account's access was taken away, not that the server is down", async () => {
     const view = await mountApp({

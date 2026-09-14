@@ -13,9 +13,11 @@ import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
 import { createAuditReader, createAuditStore } from "./audit";
 import { createAuth } from "./auth";
+import { createSignInAllowlist } from "./auth/allowlist";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
 import { createRequestActors } from "./auth/request-actor";
+import { createSessionRevocation } from "./auth/session-revocation";
 import {
   recordStartingArrangement,
   sayBooted,
@@ -260,20 +262,40 @@ const loadAgentsForActor = withGrantedSkills(
   createRuntimeAgentLoader(database, agentVault),
   database,
 );
+/**
+ * Who is still let in, for the sessions already issued (auth/session-revocation.ts).
+ *
+ * From the same list, through the same function, the sign-in hook refuses new sessions with — two
+ * readings of one configuration cannot disagree. Built before the boot settles anything, because a
+ * boot is the moment `laf member remove` takes effect, and handed to every place a session is read
+ * or ended: both guards, the account deletion and the live screen.
+ */
+const sessionRevocation = config.auth
+  ? createSessionRevocation({
+      database,
+      allowlist: createSignInAllowlist(config.auth),
+    })
+  : undefined;
 await reconcileBeforeServing({
   database,
   devNoAuth: config.devNoAuth,
   tenantPackage,
   tokenEncryptionKey: config.tokenEncryptionKey,
+  sessions: sessionRevocation,
 });
 const auth = config.auth
   ? createAuth(config, database, fleetNotifier)
   : undefined;
+// A person whose sessions end loses their activity sockets with them. See `ChannelEventHub.closeFor`.
+sessionRevocation?.onEnded((userId) => {
+  channelEvents.closeFor(userId);
+});
 /** Who is asking, for the two doors `requireUser` never sees: the runtime and the screen socket. */
 const actors = createRequestActors({
   devNoAuth: config.devNoAuth,
   auth,
   roles: roleRepository,
+  admission: sessionRevocation,
 });
 /*
  * Long tool results go on file on the Bot's computer and reach the model as a preview and a
@@ -708,6 +730,8 @@ const app = createApp(
       retirePartnersFor: partnerRuntime.connections.retireFor,
       ...(computerClient ? { computerClient } : {}),
       ...(fleetNotifier ? { fleetNotices: notificationOutbox } : {}),
+      // The cookies of somebody an administrator removed, remembered as revoked; their screens closed.
+      ...(sessionRevocation ? { sessions: sessionRevocation } : {}),
     }),
     auditStore: bootAuditStore,
   },
@@ -753,6 +777,8 @@ const app = createApp(
   // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.
   (days: number) =>
     readInsights(database, { days, timeZone: config.botTimeZone }),
+  // Whether the person behind each session is still let in, asked by `requireUser` on every request.
+  sessionRevocation,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -763,6 +789,7 @@ const liveScreen = createLiveScreen({
   botOwner: roleRepository.botOwner,
   screenViews,
   demonstrations,
+  ...(sessionRevocation ? { sessions: sessionRevocation } : {}),
 });
 
 const server = serve<SocketData>({

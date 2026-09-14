@@ -28,6 +28,7 @@ export type SignInRefusal =
   | "cancelled"
   | "expired"
   | "not_admitted"
+  | "revoked"
   | "other_sign_in"
   | "email_missing"
   | "profile_missing"
@@ -146,6 +147,15 @@ const REFUSAL_BY_KEY: Readonly<
   laf_sign_in_not_admitted: "not_admitted",
   signup_disabled: "not_admitted",
 
+  /*
+   * NOT A SIGN-IN THAT FAILED: A SESSION THAT WAS TAKEN AWAY. The server's guard answers
+   * `laf:session_revoked` to a person struck off the list or removed by an administrator
+   * (`server/src/auth/session-revocation.ts`), and the app brings them here with it
+   * (`load-current-user.ts`, `use-session-gate.ts`). Until 2026-09-14 that person was not signed out
+   * at all; a screen that then said nothing about why would read as an ordinary expiry.
+   */
+  laf_session_revoked: "revoked",
+
   // The deployment itself.
   oauth_provider_not_found: "misconfigured",
   provider_not_found: "misconfigured",
@@ -222,6 +232,10 @@ export function refusalSentence(refusal: SignInRefusal): string {
     case "not_admitted":
       return t(
         "This account cannot sign in here. Try again with the account this place was set up for.",
+      );
+    case "revoked":
+      return t(
+        "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.",
       );
     case "other_sign_in":
       return t(

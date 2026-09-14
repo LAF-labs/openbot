@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { DEFAULT_BOT_SEATS } from "@/lib/agents/seats";
+import { SESSION_REVOKED } from "./session-revoked";
 
 export type AuthenticatedUser = {
   id: string;
@@ -79,11 +80,21 @@ export const UNREACHABLE = "unreachable";
  */
 export const FORBIDDEN = "forbidden";
 
+/**
+ * The server answered, and said this session was taken away — not that it expired.
+ *
+ * Its own value because it is its own sentence: somebody struck off the sign-in list, or removed by
+ * an administrator, lands on the door being told so (`load-current-user.ts`). Read by the plain 401
+ * it came with, it was the door with nothing on it, which is what an ordinary expiry looks like.
+ */
+export const REVOKED = "revoked";
+
 export type CurrentUserResult =
   | CurrentUser
   | null
   | typeof UNREACHABLE
-  | typeof FORBIDDEN;
+  | typeof FORBIDDEN
+  | typeof REVOKED;
 
 /** The `code` of a JSON refusal, or null for a body that has none or is not JSON. */
 async function refusalCode(response: Response): Promise<string | null> {
@@ -105,7 +116,7 @@ async function currentUser(): Promise<CurrentUserResult> {
   }
 
   if (response.status === 401) {
-    return null;
+    return (await refusalCode(response)) === SESSION_REVOKED ? REVOKED : null;
   }
   /*
    * NOT SIGNED IN AND CANNOT BE ARE THE SAME ANSWER HERE.
@@ -172,6 +183,8 @@ export function currentUserQueryOptions() {
      * exists exactly where the decision is made.
      */
     select: (result: CurrentUserResult): CurrentUser | null =>
-      result === UNREACHABLE || result === FORBIDDEN ? null : result,
+      result === UNREACHABLE || result === FORBIDDEN || result === REVOKED
+        ? null
+        : result,
   });
 }

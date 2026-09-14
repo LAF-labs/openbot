@@ -10,17 +10,21 @@ import { t } from "@/lib/i18n";
  */
 
 /**
- * The three facts every route can answer before it does anything (`server/src/auth/guards.ts`).
+ * The facts every route can answer before it does anything (`server/src/auth/guards.ts`).
  *
  * Read after the screen's own table, so any screen that asks gets them without listing them. They
  * were "Authentication required.", "Authorization required." and "Administrator access required."
- * until 2026-09-14, printed by whichever screen happened to reach one.
+ * until 2026-09-14, printed by whichever screen happened to reach one. The fourth,
+ * `laf:session_revoked`, is a session taken away (`server/src/auth/session-revocation.ts`); the
+ * session gate takes the person to the door with it, and a screen that reads it first says the same.
  */
 export const ACCESS_REFUSALS: Record<string, string> = {
   "laf:unauthenticated":
     "You have been signed out. Sign in again and try once more.",
   "laf:no_access": "This account no longer has access here.",
   "laf:admin_required": "Only an administrator can do that.",
+  "laf:session_revoked":
+    "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.",
 };
 
 /**

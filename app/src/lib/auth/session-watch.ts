@@ -19,6 +19,15 @@ export const sessionState = new EventTarget();
 export const SESSION_LOST = "session-lost";
 
 /**
+ * A `SESSION_LOST` event, and the refusal's code when the body had one (`session-revoked.ts`).
+ *
+ * A property on a plain `Event` rather than a `CustomEvent`'s `detail`: under the test DOM the two
+ * constructors can come from different places than this module's `EventTarget`, and a `CustomEvent`
+ * the target did not make was refused outright (see `session-revoked.ts` for the measurement).
+ */
+export type SessionLostEvent = Event & { code?: string | null };
+
+/**
  * Is this request one of ours: same origin, under `/api/`.
  *
  * Only those can carry a verdict on the session. A 401 from somewhere else — an image, a plugin's
@@ -59,7 +68,29 @@ export function watchSession(
   ): Promise<Response> => {
     const response = await original(input, init);
     if (response.status === 401 && isApiRequest(input)) {
-      sessionState.dispatchEvent(new Event(SESSION_LOST));
+      // Made now, while this request runs, exactly as it always was; only the dispatch waits.
+      const lost: SessionLostEvent = new Event(SESSION_LOST);
+      /*
+       * The code decides which sentence the door shows, so it is read — from a copy, after the
+       * response has been handed back, so the caller's own read of the body is untouched and
+       * nothing waits on this one.
+       */
+      let copy: Response | undefined;
+      try {
+        copy = response.clone();
+      } catch {
+        // A body that cannot be copied still ended the session; it just says nothing about why.
+      }
+      void (copy ? copy.json() : Promise.resolve(null))
+        .then(
+          (body: { code?: unknown } | null) =>
+            typeof body?.code === "string" ? body.code : null,
+          () => null,
+        )
+        .then((code) => {
+          lost.code = code;
+          sessionState.dispatchEvent(lost);
+        });
     }
     return response;
   };

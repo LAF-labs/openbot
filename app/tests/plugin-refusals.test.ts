@@ -72,12 +72,19 @@ describe("the refusal copy", () => {
     }
   });
 
-  test("the three every route can answer are exactly the session guard's", async () => {
+  test("the four every route can answer are exactly the session guard's", async () => {
     const guards = await constants("auth/guards.ts");
-    const facts = ["UNAUTHENTICATED", "NO_ACCESS", "ADMIN_REQUIRED"].map(
-      (name) => guards.get(name),
-    );
+    const facts = [
+      ...["UNAUTHENTICATED", "NO_ACCESS", "ADMIN_REQUIRED"].map((name) =>
+        guards.get(name),
+      ),
+      // A session taken away: defined beside what revokes it, answered by the same guard.
+      (await constants("auth/session-revocation.ts")).get("SESSION_REVOKED"),
+    ];
     expect(facts.every(Boolean)).toBe(true);
+    expect(
+      (await server("auth/guards.ts")).includes("code: SESSION_REVOKED"),
+    ).toBe(true);
     expect(Object.keys(ACCESS_REFUSALS).sort()).toEqual(
       (facts as string[]).sort(),
     );

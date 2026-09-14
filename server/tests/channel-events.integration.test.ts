@@ -84,6 +84,44 @@ describe("channel event hub", () => {
     expect(() => hub.deliver(event())).not.toThrow();
     expect(healthy).toHaveLength(1);
   });
+
+  /*
+   * A person whose sessions were ended loses every activity socket at once — and with them, the rest
+   * of a room turn that worked out its listeners before they were removed (`rooms/service.ts`).
+   */
+  test("closes every connection of a person whose sessions ended, and nobody else's", () => {
+    const hub = createChannelEventHub();
+    const closed: string[] = [];
+    const removed: string[] = [];
+    const stayed: string[] = [];
+    hub.register(
+      "removed",
+      (payload) => removed.push(payload),
+      () => closed.push("removed:tab-a"),
+    );
+    hub.register(
+      "removed",
+      (payload) => removed.push(payload),
+      () => {
+        closed.push("removed:tab-b");
+        throw new Error("already closing");
+      },
+    );
+    hub.register(
+      "owner",
+      (payload) => stayed.push(payload),
+      () => closed.push("owner"),
+    );
+
+    expect(hub.closeFor("removed")).toBe(2);
+    hub.deliverRoom({ memberIds: ["removed", "owner"], delta: "…" });
+
+    expect(closed).toEqual(["removed:tab-a", "removed:tab-b"]);
+    expect(removed).toEqual([]);
+    expect(stayed).toHaveLength(1);
+    expect(hub.connectionCount("removed")).toBe(0);
+    expect(hub.closeFor("nobody")).toBe(0);
+  });
 });
 
 const databaseUrl =

@@ -18,6 +18,7 @@ import {
 } from "./auth/guards";
 import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
 import type { OnboardingStore } from "./auth/onboarding";
+import type { SessionAdmission } from "./auth/session-revocation";
 import {
   isOriginExempt,
   originAllowed,
@@ -375,6 +376,15 @@ export function createApp(
    * a door this deployment opens, and a path nothing is mounted on answers 404 like any other.
    */
   insights?: (days: number) => Promise<InsightsReport>,
+  /**
+   * Whether a session's person is still let in, asked by `requireUser` on every request. Last, like
+   * everything new here.
+   *
+   * Absent, a removal decides who may sign in again and nothing about who is already inside — the
+   * state measured on 2026-09-14 (`auth/session-revocation.ts`). `main.ts` always passes it; the
+   * suites that stub a session without a sign-in list leave it out.
+   */
+  sessionAdmission?: SessionAdmission,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -569,7 +579,7 @@ export function createApp(
   const requireUser = config.devNoAuth
     ? createDevRequireUser()
     : auth && roleRepository
-      ? createRequireUser(auth, roleRepository)
+      ? createRequireUser(auth, roleRepository, sessionAdmission)
       : authenticationUnavailable;
 
   app.get("/api/me", requireUser, async (context) => {

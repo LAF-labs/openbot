@@ -2287,6 +2287,9 @@ export const ko: Record<string, string> = {
     "로그인 시간이 지났거나 다른 창에서 시작한 로그인입니다. 여기서 다시 시작해 주세요.",
   "This account cannot sign in here. Try again with the account this place was set up for.":
     "이 계정으로는 이곳에 로그인할 수 없습니다. 이곳에 등록된 계정으로 다시 시도해 주세요.",
+  // 로그인이 실패한 게 아니라, 쓰던 세션을 회수당했을 때 (명단에서 빠졌거나 관리자가 계정을 지웠을 때).
+  "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.":
+    "이 계정의 권한이 회수되어 로그아웃되었습니다. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",
   "This email already has an account here, made with a different button. Sign in with the one you used first.":
     "이 이메일로 다른 버튼을 눌러 만든 계정이 이미 있습니다. 처음에 누른 버튼으로 로그인해 주세요.",
   "The account you chose did not share its email address. Allow the email address when you are asked, then try again.":

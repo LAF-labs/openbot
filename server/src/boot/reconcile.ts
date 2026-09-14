@@ -1,4 +1,5 @@
 import { initializeDevActorUser } from "../auth/dev-actor";
+import type { SessionRevocation } from "../auth/session-revocation";
 import { sealStoredTokens } from "../auth/token-encryption";
 import type { Database } from "../db/client";
 import {
@@ -20,6 +21,8 @@ export async function reconcileBeforeServing(input: {
   devNoAuth: boolean;
   tenantPackage: LoadedTenantPackage;
   tokenEncryptionKey: string;
+  /** Absent on a deployment without sign-in, which has no list to end anybody's sessions by. */
+  sessions?: Pick<SessionRevocation, "sweep">;
 }): Promise<void> {
   // The local administrator's row, when LAF_DEV_NO_AUTH admits everybody as them. See dev-actor.ts.
   await initializeDevActorUser(input.database, input.devNoAuth);
@@ -27,4 +30,7 @@ export async function reconcileBeforeServing(input: {
   await recordTenantPackage(input.database, input.tenantPackage);
   // The rows that predate the envelope, sealed before anybody can sign in. See auth/token-encryption.ts.
   await sealStoredTokens(input.database, input.tokenEncryptionKey);
+  // The sessions of anybody the sign-in list no longer admits, ended before anybody can use one:
+  // `laf member remove` arrives as this boot. See auth/session-revocation.ts.
+  await input.sessions?.sweep();
 }
