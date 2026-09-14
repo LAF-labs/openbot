@@ -116,7 +116,13 @@ export function partnerTransport(input: {
        * which is the one failure this whole design exists to make impossible.
        */
       const actorId = connection.actorId ?? "";
-      if (!actorId) throw new PluginRefusedError(input.anonymousFact, null);
+      if (!actorId) {
+        throw new PluginRefusedError(
+          input.anonymousFact,
+          null,
+          input.anonymousFact,
+        );
+      }
 
       const text = await input.run({
         toolName,

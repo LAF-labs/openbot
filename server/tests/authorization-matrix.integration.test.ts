@@ -333,6 +333,8 @@ type Cell = {
   template: string;
   status: number;
   code?: string;
+  /** What a refusal said that was not a code: an `error` or `message` sentence, or plain text. */
+  said?: string;
 };
 
 let app: App;
@@ -451,13 +453,31 @@ async function press(
   );
   const text = await response.text();
   let code: string | undefined;
+  let said: string | undefined;
   try {
-    const parsed = JSON.parse(text) as { code?: unknown };
+    const parsed = JSON.parse(text) as {
+      code?: unknown;
+      error?: unknown;
+      message?: unknown;
+    };
     if (typeof parsed?.code === "string") code = parsed.code;
+    said = [parsed?.error, parsed?.message].find(
+      (value): value is string =>
+        typeof value === "string" && !value.startsWith("laf:"),
+    );
   } catch {
-    // Not JSON: the connected page, a redirect, or nothing. The status is the fact.
+    // Not JSON: the connected page, a redirect, or nothing. The status is the fact — unless it is
+    // a refusal with words in it, which is a sentence however it was sent.
+    if (response.status >= 400 && text.trim()) said = text.slice(0, 80);
   }
-  return { who, method, template, status: response.status, code };
+  return {
+    who,
+    method,
+    template,
+    status: response.status,
+    code,
+    ...(said === undefined ? {} : { said }),
+  };
 }
 
 /** The fixture the destructive cells consume, put back so the next person meets the same one. */
@@ -792,6 +812,25 @@ describe("the matrix", () => {
     }
     // And never for somebody who is not signed in: 401 comes before "cannot".
     expect(unavailable.filter((cell) => cell.who === "anonymous")).toEqual([]);
+  });
+
+  /*
+   * EVERY REFUSAL IS A FACT, ON THE WIRE — the live half of `error-codes.test.ts`, which reads the
+   * source. Until 2026-09-14 the anonymous column alone was 142 cells of
+   * `{"error":"Authentication required."}`, and the colleague and owner columns held the plugin and
+   * component routes' own sentences, while the source walk looked at six directories and said none.
+   */
+  test("every refusal any of the four is given carries a code and no sentence", () => {
+    const refusals = matrix.filter((cell) => cell.status >= 400);
+    expect(refusals.length).toBeGreaterThan(300);
+    expect(
+      refusals
+        .filter((cell) => !cell.code?.startsWith("laf:") || cell.said)
+        .map(
+          (cell) =>
+            `${cell.who} ${cell.status} ${keyOf(cell)} ${cell.code ?? "-"} ${cell.said ?? ""}`,
+        ),
+    ).toEqual([]);
   });
 
   test("nobody signed in reaches nothing but the public routes", () => {

@@ -11,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { refusalFrom } from "@/lib/refusals";
 import {
+  PLAYGROUND_REFUSALS,
   type SandboxedRecord,
   sandboxedKeys,
   sandboxedListQueryOptions,
@@ -120,10 +122,13 @@ function PlaygroundPage() {
       setError(null);
       const response = await action();
       if (!response.ok) {
-        const detail = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(detail?.error ?? t("That did not work."));
+        throw new Error(
+          await refusalFrom(
+            response,
+            PLAYGROUND_REFUSALS,
+            t("That did not work."),
+          ),
+        );
       }
       return response.json();
     },

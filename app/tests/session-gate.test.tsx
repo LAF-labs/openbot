@@ -53,7 +53,10 @@ describe("a session that ends while the app is open", () => {
       path: "/agents",
       api: ({ pathname }) =>
         over && pathname !== "/api/me"
-          ? json({ error: "Authentication required." }, 401)
+          ? json(
+              { error: "laf:unauthenticated", code: "laf:unauthenticated" },
+              401,
+            )
           : undefined,
     });
     const unwatch = await watchingTheSession();
@@ -134,7 +137,7 @@ describe("a 403 from /api/me", () => {
       path: "/agents",
       api: ({ pathname }) =>
         pathname === "/api/me"
-          ? json({ error: "Authorization required." }, 403)
+          ? json({ error: "laf:no_access", code: "laf:no_access" }, 403)
           : undefined,
     });
     try {

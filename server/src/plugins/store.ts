@@ -167,19 +167,26 @@ export class PluginRefusedError extends Error {
     message: string,
     readonly rule: string | null,
     /**
-     * WHICH refusal this is, beside the sentence rather than instead of it.
+     * WHICH refusal this is, beside the sentence rather than instead of it — and never absent.
      *
-     * Optional, because the settle path already puts its code in `message` and the vendor's own
-     * 403 has no code of ours to give. Where it is set, a test pins this and not the English: the
-     * sentence is a placeholder for words the surface has yet to write in Korean, and a test that
-     * pins the placeholder makes rewording it a failing test (docs/laf/redesign-2026-09.md §4-2).
+     * It was optional, on the reasoning that the settle path already put its code in `message`. What
+     * that left was a class whose refusals the route answered by `message`, so two sentences with no
+     * code at all — "… is not a tool.", "'…' changed its definition since it was approved." — went
+     * to the surface as they were written (2026-09-14). Required now: the route and the unattended
+     * runner answer by this and nothing else, and a test pins this and not the English.
      */
-    readonly code?: string,
+    readonly code: string,
   ) {
     super(message);
     this.name = "PluginRefusedError";
   }
 }
+
+/** A tool ref that names no tool — the same fact the Bot's own loop answers an invented name with. */
+export const TOOL_UNKNOWN = "laf:tool_unknown";
+
+/** A tool whose definition changed since it was approved, held until somebody looks at it again. */
+export const TOOL_NEEDS_REVIEW = "laf:tool_needs_review";
 
 /**
  * The boundary wants a person's answer before this call is made.
@@ -192,6 +199,8 @@ export class PluginRefusedError extends Error {
  * worse than having no ask list at all.
  */
 export class PluginNeedsApprovalError extends Error {
+  /** The fact, as the computer's own pause carries it (`computer/gateway/caller.ts`). */
+  readonly code = "laf:awaiting_approval";
   /** What the caller presents once somebody has answered. */
   readonly approvalId: string;
   /** What is being asked about, in facts. The sentence is composed where it is read. */
@@ -243,17 +252,35 @@ export class BotNotDrivableError extends Error {
   }
 }
 
+/** The fact a server this deployment does not have — or will not connect to — is answered with. */
+export const SERVER_UNKNOWN = "laf:server_unknown";
+
+/**
+ * A server id with no row here, or a row whose catalogue entry a later build removed.
+ *
+ * The code is the message as well: the routes answered this class's `.message` — "notion is not a
+ * server this deployment will connect to." — and the unattended runner handed the same sentence to
+ * a Bot. The id rides beside it, for a log line.
+ */
 export class CatalogueEntryUnknownError extends Error {
-  constructor(key: string) {
-    super(`${key} is not a server this deployment will connect to.`);
+  readonly code = SERVER_UNKNOWN;
+
+  constructor(readonly server: string) {
+    super(SERVER_UNKNOWN);
     this.name = "CatalogueEntryUnknownError";
   }
 }
 
-/** A URL an administrator offered that this deployment will not point itself at. */
+/**
+ * A server, a URL or a credential an administrator offered that this deployment will not accept.
+ *
+ * One class for a dozen reasons, each its own code — the address is not https, it resolves inside
+ * this network, the name is taken, the token is another server's — because the screen that asked
+ * has something different to say about each. They were a dozen English sentences, one per throw.
+ */
 export class CustomServerRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(readonly code: string) {
+    super(code);
     this.name = "CustomServerRefusedError";
   }
 }

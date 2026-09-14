@@ -108,7 +108,7 @@ export async function writeUpRecording(
  */
 export async function saveAsSkill(
   draft: Draft & { slug: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; code: string | null }> {
   try {
     const response = await fetch("/api/plugins/skills", {
       method: "POST",
@@ -117,12 +117,16 @@ export async function saveAsSkill(
       body: JSON.stringify(draft),
     });
     if (response.ok) return { ok: true };
+    // The fact, for the screen to say: this handed on the server's `error`, which was English.
     const body = (await response.json().catch(() => null)) as {
-      error?: string;
+      code?: unknown;
     } | null;
-    return { ok: false, error: body?.error ?? "" };
+    return {
+      ok: false,
+      code: typeof body?.code === "string" ? body.code : null,
+    };
   } catch {
-    return { ok: false, error: "" };
+    return { ok: false, code: null };
   }
 }
 

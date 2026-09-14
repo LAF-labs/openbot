@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
+import { refusalText } from "@/lib/refusals";
 
 /**
  * WHERE A BOT RUNS, WHICH IS AN OPERATOR'S QUESTION AND NOBODY ELSE'S.
@@ -109,16 +110,19 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
       });
       const body = (await response.json().catch(() => null)) as
         | ConnectionVerdict
-        | { error?: string }
+        | { code?: string }
         | null;
       setConnection(
         body && "ok" in body
           ? body
           : {
               ok: false,
-              reason:
-                (body as { error?: string } | null)?.error ??
+              // A refusal, not a verdict: its code, never `error` — which is the code itself.
+              reason: refusalText(
+                {},
+                (body as { code?: string } | null)?.code,
                 t("The connection could not be tested."),
+              ),
             },
       );
     } catch {

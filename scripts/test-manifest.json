@@ -87,6 +87,7 @@
   "app/tests/person-avatar.test.tsx",
   "app/tests/playground-sandbox.test.ts",
   "app/tests/plugin-catalogue-copy.test.ts",
+  "app/tests/plugin-refusals.test.ts",
   "app/tests/polling.test.tsx",
   "app/tests/query-client.test.ts",
   "app/tests/repair-history.test.ts",

@@ -38,7 +38,8 @@ describe("server authorization", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
-      error: "Authentication required.",
+      error: "laf:unauthenticated",
+      code: "laf:unauthenticated",
     });
   });
 
@@ -51,7 +52,8 @@ describe("server authorization", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Administrator access required.",
+      error: "laf:admin_required",
+      code: "laf:admin_required",
     });
   });
 
@@ -74,7 +76,8 @@ describe("server authorization", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Authorization required.",
+      error: "laf:no_access",
+      code: "laf:no_access",
     });
   });
 
@@ -88,7 +91,8 @@ describe("server authorization", () => {
     // The session guard's answer, not the administrator guard's: there is no actor to ask about.
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Authorization required.",
+      error: "laf:no_access",
+      code: "laf:no_access",
     });
   });
 

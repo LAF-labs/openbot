@@ -224,7 +224,42 @@ describe("authentication availability", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
-      error: "Authentication is not configured.",
+      error: "laf:auth_not_configured",
+      code: "laf:auth_not_configured",
+    });
+  });
+
+  /*
+   * better-auth's own limiter, which refuses the fourth sign-in start in ten seconds, answers with a
+   * sentence and no code — the rehearsal VM's sign-in screen printed it under the buttons. The
+   * response below is the one `rateLimitResponse` in better-auth 1.6.27 builds, byte for byte.
+   */
+  test("better-auth's own 429 is answered with this deployment's fact, and its wait kept", async () => {
+    const limitedApp = createApp(loadConfig({ ...testEnvironment() }), {
+      handler: () =>
+        new Response(
+          JSON.stringify({
+            message: "Too many requests. Please try again later.",
+          }),
+          {
+            status: 429,
+            statusText: "Too Many Requests",
+            headers: { "X-Retry-After": "7" },
+          },
+        ),
+      api: { getSession: async () => null },
+    });
+
+    const response = await limitedApp.request(
+      "http://laf.local/api/auth/sign-in/oauth2",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7");
+    await expect(response.json()).resolves.toEqual({
+      error: "laf:rate_limited",
+      code: "laf:rate_limited",
     });
   });
 

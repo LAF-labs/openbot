@@ -19,6 +19,23 @@ import { describeFailure } from "../failure-text";
 import { DATA_FUNCTIONS, dataFunction } from "./functions";
 import { ComponentNotFoundError, type ComponentStore } from "./store";
 
+/*
+ * What a request to these routes can be refused for before a store is asked anything.
+ *
+ * Eleven English sentences until 2026-09-14 — "The Bot is required.", "No component is called …" —
+ * answered to the admin screen and to a card's own data call. The screens say their own sentence;
+ * these name which part of the request was missing.
+ */
+/** `PUT /catalogue` without a list. The browser announcing its build sends one on every load. */
+export const COMPONENT_LIST_REQUIRED = "laf:component_list_required";
+/** A decision, a call or a grant that names no Bot. */
+export const COMPONENT_BOT_REQUIRED = "laf:component_bot_required";
+/** A data call that names no function. */
+export const COMPONENT_FUNCTION_REQUIRED = "laf:component_function_required";
+/** A draft saved with nothing in it. */
+export const COMPONENT_DESCRIPTION_REQUIRED =
+  "laf:component_description_required";
+
 /**
  * Granting, publishing and asking whether a Bot may use a component.
  *
@@ -81,7 +98,10 @@ export function createComponentRoutes(
     } | null;
     const entries = Array.isArray(body?.components) ? body.components : null;
     if (!entries) {
-      return context.json({ error: "A list of components is required." }, 400);
+      return context.json(
+        { error: COMPONENT_LIST_REQUIRED, code: COMPONENT_LIST_REQUIRED },
+        400,
+      );
     }
 
     const valid = entries.flatMap((entry) => {
@@ -156,7 +176,10 @@ export function createComponentRoutes(
     } | null;
     const agentId = typeof body?.agentId === "string" ? body.agentId : "";
     if (!agentId) {
-      return context.json({ error: "The Bot is required." }, 400);
+      return context.json(
+        { error: COMPONENT_BOT_REQUIRED, code: COMPONENT_BOT_REQUIRED },
+        400,
+      );
     }
     if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
     const functions = Array.isArray(body?.functions)
@@ -230,10 +253,11 @@ export function createComponentRoutes(
       typeof body?.function === "string" ? body.function : "";
     const agentId = typeof body?.agentId === "string" ? body.agentId : "";
     if (!functionName || !agentId) {
-      return context.json(
-        { error: "The function and the Bot are both required." },
-        400,
-      );
+      // The Bot first: which Bot is asking is the question every other refusal here depends on.
+      const code = agentId
+        ? COMPONENT_FUNCTION_REQUIRED
+        : COMPONENT_BOT_REQUIRED;
+      return context.json({ error: code, code }, 400);
     }
     if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
 
@@ -290,7 +314,10 @@ export function createComponentRoutes(
       });
       // The same code the row carries. It was the English sentence the surface ALREADY had Korean
       // for, sent from here anyway, so the card printed the server's copy of it untranslated.
-      return context.json({ allowed: true, error: READ_FAILED }, 502);
+      return context.json(
+        { allowed: true, error: READ_FAILED, code: READ_FAILED },
+        502,
+      );
     }
   });
 
@@ -305,8 +332,9 @@ export function createComponentRoutes(
     const functionName =
       typeof body?.function === "string" ? body.function : "";
     if (!functionName || !dataFunction(functionName)) {
+      // The same fact a card's call is refused with for a function this build does not have.
       return context.json(
-        { error: "A function this deployment ships is required." },
+        { error: FUNCTION_UNKNOWN, code: FUNCTION_UNKNOWN },
         400,
       );
     }
@@ -315,7 +343,7 @@ export function createComponentRoutes(
       await store.grantFunction(name, functionName, context.var.actor.email);
     } catch (error) {
       if (error instanceof ComponentNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }
@@ -349,14 +377,17 @@ export function createComponentRoutes(
     } | null;
     const agentId = typeof body?.agentId === "string" ? body.agentId : "";
     if (!agentId) {
-      return context.json({ error: "The Bot is required." }, 400);
+      return context.json(
+        { error: COMPONENT_BOT_REQUIRED, code: COMPONENT_BOT_REQUIRED },
+        400,
+      );
     }
 
     try {
       await store.grant(name, agentId);
     } catch (error) {
       if (error instanceof ComponentNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }
@@ -375,7 +406,7 @@ export function createComponentRoutes(
       await store.revoke(name, agentId, context.var.actor.email);
     } catch (error) {
       if (error instanceof ComponentNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }
@@ -401,7 +432,7 @@ export function createComponentRoutes(
       }
     } catch (error) {
       if (error instanceof ComponentNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }
@@ -430,14 +461,20 @@ export function createComponentRoutes(
     const description =
       typeof body?.description === "string" ? body.description.trim() : "";
     if (!description) {
-      return context.json({ error: "A description is required." }, 400);
+      return context.json(
+        {
+          error: COMPONENT_DESCRIPTION_REQUIRED,
+          code: COMPONENT_DESCRIPTION_REQUIRED,
+        },
+        400,
+      );
     }
 
     try {
       await store.saveDraft(name, description, context.var.actor.email);
     } catch (error) {
       if (error instanceof ComponentNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }

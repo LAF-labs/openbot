@@ -111,6 +111,7 @@ describe("POST /api/me/consent", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
       error: "laf:consent_not_recorded",
+      code: "laf:consent_not_recorded",
     });
   });
 

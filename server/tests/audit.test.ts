@@ -224,7 +224,8 @@ describe("admin audit API", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Administrator access required.",
+      error: "laf:admin_required",
+      code: "laf:admin_required",
     });
   });
 });

@@ -94,10 +94,16 @@ test("reads the front door's 503 for a missing API as unreachable, and only that
     globalThis.fetch = answering(frontDoorBody as string);
     expect(await run()).toBe(UNREACHABLE);
 
-    // The API's own 503s: no code, another code, or a body that is not JSON at all.
+    // The API's own 503s: its code for no sign-in, another code, or a body that is not JSON at all.
     for (const body of [
-      JSON.stringify({ error: "Authentication is not configured." }),
-      JSON.stringify({ error: "laf:consent_not_recorded" }),
+      JSON.stringify({
+        error: "laf:auth_not_configured",
+        code: "laf:auth_not_configured",
+      }),
+      JSON.stringify({
+        error: "laf:consent_not_recorded",
+        code: "laf:consent_not_recorded",
+      }),
       "Service Unavailable",
     ]) {
       globalThis.fetch = answering(body);

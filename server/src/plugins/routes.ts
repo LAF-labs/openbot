@@ -2,12 +2,15 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import {
+  ADMIN_REQUIRED,
   BOT_NOT_FOUND,
   mayDriveBot,
   requireAdmin,
   requireBotAccess,
 } from "../auth/guards";
 import { THREAD_HEADER } from "../computer/gateway";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import {
   authEndpointsFor,
   CATALOGUE,
@@ -16,6 +19,7 @@ import {
   instanceNameOf,
 } from "./catalogue";
 import type { ConnectFailureReason } from "./connected-page";
+import { McpServerError } from "./mcp";
 import {
   authorizationUrlFor,
   type ConnectOrigin,
@@ -48,7 +52,49 @@ import {
   PluginNeedsApprovalError,
   PluginRefusedError,
   type PluginStore,
+  TOOL_UNKNOWN,
 } from "./store";
+
+/*
+ * WHAT THESE ROUTES REFUSE WITH, BEYOND WHAT THE STORE ALREADY NAMES.
+ *
+ * Thirty-three refusals here were English until 2026-09-14 — "A slug is lower-case letters, numbers
+ * and hyphens.", "`${slug}` is somebody else's skill.", a vendor's own failure sentence on a 502 —
+ * and four screens printed them as they came: the skill form, the skill's Bot list, the admin
+ * Plugins page and a teaching session's 스킬로 저장. Each answers `{ error: code, code }` now; the
+ * words are `app/src/lib/plugins/refusals.ts`, whose test reads this file for the codes.
+ */
+/** `POST /servers` without the catalogue entry it is adding. */
+export const CATALOGUE_KEY_REQUIRED = "laf:catalogue_key_required";
+/** `POST /servers/custom` without a name, a title or a URL. */
+export const CUSTOM_SERVER_INCOMPLETE = "laf:custom_server_incomplete";
+/** An OAuth client pasted in with no client id. */
+export const OAUTH_CLIENT_ID_REQUIRED = "laf:oauth_client_id_required";
+/** A skill saved without a slug, a title or instructions. */
+export const SKILL_INCOMPLETE = "laf:skill_incomplete";
+/** A slug that is not lower-case letters, numbers and hyphens, two to forty. */
+export const SKILL_SLUG_INVALID = "laf:skill_slug_invalid";
+/** A grant or a revoke that does not say what kind, which one and for which Bot. */
+export const GRANT_INCOMPLETE = "laf:grant_incomplete";
+/** A skill somebody else wrote, which only they may change or put on a Bot. */
+export const SKILL_NOT_YOURS = "laf:skill_not_yours";
+/** A skill an administrator wrote for the whole deployment. */
+export const SKILL_BELONGS_TO_DEPLOYMENT = "laf:skill_belongs_to_deployment";
+/** A grant naming a skill nobody wrote. */
+export const SKILL_UNKNOWN = "laf:skill_unknown";
+/** Your skill, on a Bot you may drive and do not own — a shared one this deployment publishes. */
+export const BOT_NOT_OWNED = "laf:bot_not_owned";
+/** `POST /call` without the tool or the Bot it is for. */
+export const CALL_INCOMPLETE = "laf:call_incomplete";
+/**
+ * The call went out and the vendor's side failed — not a refusal, and said as its own fact.
+ *
+ * The body carried the failure's own sentence until 2026-09-14, which for a vendor's 403 was
+ * Google's paragraph about an API not enabled for a project, handed to a Bot and printed on the
+ * person's tool line in English. The status rides beside the code; the sentence goes to the audit
+ * row (`mcp.call_failed`), which is where whoever can fix it reads.
+ */
+export const TOOL_SERVER_FAILED = "laf:tool_server_failed";
 
 /**
  * What the connect flow needs from the deployment, and nothing else.
@@ -185,10 +231,8 @@ export function createPluginRoutes(
     if (actor.isAdmin) return null;
     const owner = await store.skillOwner(slug);
     if (owner === undefined) return null; // A new skill. Ownership is decided on the way in.
-    if (owner === null) {
-      return `${slug} belongs to this deployment. An administrator looks after it.`;
-    }
-    return owner === actor.id ? null : `${slug} is somebody else's skill.`;
+    if (owner === null) return SKILL_BELONGS_TO_DEPLOYMENT;
+    return owner === actor.id ? null : SKILL_NOT_YOURS;
   }
 
   /** Everything the Plugins page draws: the catalogue, what is added, and the skills. */
@@ -231,7 +275,10 @@ export function createPluginRoutes(
       credentialId?: string;
     } | null;
     if (!body?.key) {
-      return context.json({ error: "A catalogue key is required." }, 400);
+      return context.json(
+        { error: CATALOGUE_KEY_REQUIRED, code: CATALOGUE_KEY_REQUIRED },
+        400,
+      );
     }
 
     /*
@@ -243,8 +290,9 @@ export function createPluginRoutes(
     if (entry && !entryIsOffered(entry, deploymentKey)) {
       return context.json(
         {
-          error: `${entry.title} is not configured on this deployment.`,
+          error: "laf:deployment_key_missing",
           code: "laf:deployment_key_missing",
+          server: entry.key,
         },
         503,
       );
@@ -259,8 +307,12 @@ export function createPluginRoutes(
       });
       return context.json({ server });
     } catch (error) {
-      if (error instanceof CatalogueEntryUnknownError) {
-        return context.json({ error: error.message }, 400);
+      // A credential this server cannot spend is refused inside `addServer`, and was a 500 here.
+      if (
+        error instanceof CatalogueEntryUnknownError ||
+        error instanceof CustomServerRefusedError
+      ) {
+        return context.json({ error: error.code, code: error.code }, 400);
       }
       throw error;
     }
@@ -285,7 +337,7 @@ export function createPluginRoutes(
     } | null;
     if (!body?.id || !body.title || !body.url) {
       return context.json(
-        { error: "A name, a title and a URL are required." },
+        { error: CUSTOM_SERVER_INCOMPLETE, code: CUSTOM_SERVER_INCOMPLETE },
         400,
       );
     }
@@ -304,7 +356,7 @@ export function createPluginRoutes(
         error instanceof CustomServerRefusedError ||
         error instanceof CatalogueEntryUnknownError
       ) {
-        return context.json({ error: error.message }, 400);
+        return context.json({ error: error.code, code: error.code }, 400);
       }
       throw error;
     }
@@ -339,7 +391,7 @@ export function createPluginRoutes(
       );
       return approved
         ? context.json({ ok: true })
-        : context.json({ error: "No such tool" }, 404);
+        : context.json({ error: TOOL_UNKNOWN, code: TOOL_UNKNOWN }, 404);
     },
   );
 
@@ -361,7 +413,7 @@ export function createPluginRoutes(
       });
     } catch (error) {
       if (error instanceof CatalogueEntryUnknownError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }
@@ -427,7 +479,10 @@ export function createPluginRoutes(
       clientSecret?: string;
     } | null;
     if (!body?.clientId) {
-      return context.json({ error: "A client id is required." }, 400);
+      return context.json(
+        { error: OAUTH_CLIENT_ID_REQUIRED, code: OAUTH_CLIENT_ID_REQUIRED },
+        400,
+      );
     }
 
     try {
@@ -445,7 +500,7 @@ export function createPluginRoutes(
         error instanceof CustomServerRefusedError ||
         error instanceof CatalogueEntryUnknownError
       ) {
-        return context.json({ error: error.message }, 400);
+        return context.json({ error: error.code, code: error.code }, 400);
       }
       throw error;
     }
@@ -459,13 +514,14 @@ export function createPluginRoutes(
    */
   routes.post("/servers/:id/connect", requireUser, async (context) => {
     const serverId = context.req.param("id");
+    /*
+     * Nine refusals, each carrying its code beside an English sentence since the 연결 screen started
+     * reading codes (`refusalText` in `components/plugins/connections.tsx`) — and each sentence still
+     * sent, in `error`, where any other reader would have printed it. The code alone now.
+     */
     if (!connect?.publicUrl) {
       return context.json(
-        {
-          error:
-            "This deployment has no public URL configured, so it cannot complete a consent flow. Set BETTER_AUTH_URL.",
-          code: "laf:no_public_url",
-        },
+        { error: "laf:no_public_url", code: "laf:no_public_url" },
         503,
       );
     }
@@ -474,7 +530,7 @@ export function createPluginRoutes(
     if (entry?.auth.kind !== "user-oauth") {
       return context.json(
         {
-          error: `${serverId} is not connected as an individual person.`,
+          error: "laf:not_a_personal_connection",
           code: "laf:not_a_personal_connection",
         },
         400,
@@ -491,7 +547,7 @@ export function createPluginRoutes(
     if (!entryIsConnectable(entry, sharedClient)) {
       return context.json(
         {
-          error: `${entry.title} is not configured on this deployment.`,
+          error: "laf:connector_not_configured",
           code: "laf:connector_not_configured",
         },
         409,
@@ -514,7 +570,7 @@ export function createPluginRoutes(
     if (entry.host === null && !instanceName) {
       return context.json(
         {
-          error: `${entry.title} needs the name of the shop this deployment should connect to.`,
+          error: "laf:instance_name_required",
           code: "laf:instance_name_required",
         },
         400,
@@ -547,7 +603,10 @@ export function createPluginRoutes(
         error instanceof CatalogueEntryUnknownError
       ) {
         return context.json(
-          { error: error.message, code: "laf:instance_name_refused" },
+          {
+            error: "laf:instance_name_refused",
+            code: "laf:instance_name_refused",
+          },
           400,
         );
       }
@@ -563,7 +622,7 @@ export function createPluginRoutes(
     if (!endpoints) {
       return context.json(
         {
-          error: `${entry.title} is not at an address this deployment will send a consent to.`,
+          error: "laf:instance_name_refused",
           code: "laf:instance_name_refused",
         },
         400,
@@ -593,10 +652,7 @@ export function createPluginRoutes(
     } catch (error) {
       if (error instanceof CatalogueEntryUnknownError) {
         return context.json(
-          {
-            error: `${entry.title} has not been added to this deployment yet. An administrator has to add it first.`,
-            code: "laf:server_not_added",
-          },
+          { error: "laf:server_not_added", code: "laf:server_not_added" },
           409,
         );
       }
@@ -606,17 +662,14 @@ export function createPluginRoutes(
       if (entry.auth.clientRegistration === "dynamic") {
         return context.json(
           {
-            error: `${entry.title} refused this deployment's registration. Try again, and check the vendor's status if it persists.`,
+            error: "laf:registration_refused",
             code: "laf:registration_refused",
           },
           502,
         );
       }
       return context.json(
-        {
-          error: `${entry.title} has no OAuth client registered yet. An administrator has to add one first.`,
-          code: "laf:no_oauth_client",
-        },
+        { error: "laf:no_oauth_client", code: "laf:no_oauth_client" },
         409,
       );
     }
@@ -919,29 +972,27 @@ export function createPluginRoutes(
     } | null;
     if (!body?.slug || !body.title || !body.instructions) {
       return context.json(
-        { error: "A slug, a title and instructions are required." },
+        { error: SKILL_INCOMPLETE, code: SKILL_INCOMPLETE },
         400,
       );
     }
     if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(body.slug)) {
       return context.json(
-        { error: "A slug is lower-case letters, numbers and hyphens." },
+        { error: SKILL_SLUG_INVALID, code: SKILL_SLUG_INVALID },
         400,
       );
     }
 
     const actor = skillActor(context);
+    // A skill for the whole deployment is an administrator's to write.
     if (body.global && !actor.isAdmin) {
-      return context.json(
-        { error: "Only an administrator writes a skill for the deployment." },
-        403,
-      );
+      return context.json({ error: ADMIN_REQUIRED, code: ADMIN_REQUIRED }, 403);
     }
 
     // Editing an existing slug, which is what a repeated save is, needs the right to edit that
     // skill. Without this, saving over somebody else's name would silently take it.
-    const refusal = await skillRefusal(context, body.slug);
-    if (refusal) return context.json({ error: refusal }, 403);
+    const code = await skillRefusal(context, body.slug);
+    if (code) return context.json({ error: code, code }, 403);
 
     await store.installSkill({
       slug: body.slug,
@@ -956,8 +1007,8 @@ export function createPluginRoutes(
 
   routes.delete("/skills/:slug", requireUser, async (context) => {
     const slug = context.req.param("slug");
-    const refusal = await skillRefusal(context, slug);
-    if (refusal) return context.json({ error: refusal }, 403);
+    const code = await skillRefusal(context, slug);
+    if (code) return context.json({ error: code, code }, 403);
 
     await store.uninstallSkill(slug, actorEmail(context));
     return context.json({ ok: true });
@@ -998,22 +1049,19 @@ export function createPluginRoutes(
   ): Promise<string | null> {
     const actor = skillActor(context);
     if (actor.isAdmin) return null;
-    if (kind === "mcp") {
-      return "An administrator decides which Bots may reach a tool.";
-    }
+    // Which Bots may reach a tool is an administrator's decision.
+    if (kind === "mcp") return ADMIN_REQUIRED;
 
     const owner = await store.skillOwner(ref);
-    if (owner === undefined) return `There is no skill called ${ref}.`;
+    if (owner === undefined) return SKILL_UNKNOWN;
     if (owner !== actor.id) {
-      return owner === null
-        ? `${ref} belongs to this deployment. An administrator decides which Bots use it.`
-        : `${ref} is somebody else's skill.`;
+      return owner === null ? SKILL_BELONGS_TO_DEPLOYMENT : SKILL_NOT_YOURS;
     }
 
     // The shared Bots this deployment publishes have no owner at all, and driving one is not
     // owning it: a skill one person wrote would otherwise change how a Bot answers everybody.
     if ((await store.agentOwner(agentId)) !== actor.id) {
-      return "You can only put your own skills on Bots you own.";
+      return BOT_NOT_OWNED;
     }
     return null;
   }
@@ -1026,18 +1074,18 @@ export function createPluginRoutes(
     } | null;
     if (!body?.kind || !body.ref || !body.agentId) {
       return context.json(
-        { error: "A kind, a ref and a Bot are required." },
+        { error: GRANT_INCOMPLETE, code: GRANT_INCOMPLETE },
         400,
       );
     }
     if (!(await mayDriveBot(context, body.agentId))) return notYourBot(context);
-    const refusal = await enablementRefusal(
+    const code = await enablementRefusal(
       context,
       body.kind,
       body.ref,
       body.agentId,
     );
-    if (refusal) return context.json({ error: refusal }, 403);
+    if (code) return context.json({ error: code, code }, 403);
 
     await store.grant(body.kind, body.ref, body.agentId, actorEmail(context));
     return context.json({ ok: true });
@@ -1049,13 +1097,13 @@ export function createPluginRoutes(
     const agentId = context.req.query("agentId");
     if ((kind !== "mcp" && kind !== "skill") || !ref || !agentId) {
       return context.json(
-        { error: "A kind, a ref and a Bot are required." },
+        { error: GRANT_INCOMPLETE, code: GRANT_INCOMPLETE },
         400,
       );
     }
     if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
-    const refusal = await enablementRefusal(context, kind, ref, agentId);
-    if (refusal) return context.json({ error: refusal }, 403);
+    const code = await enablementRefusal(context, kind, ref, agentId);
+    if (code) return context.json({ error: code, code }, 403);
 
     await store.revoke(kind, ref, agentId, actorEmail(context));
     return context.json({ ok: true });
@@ -1097,7 +1145,9 @@ export function createPluginRoutes(
         actorId: context.var.actor.id,
       });
       if (!viewed.allowed) {
-        return context.json({ error: viewed.reason, code: viewed.reason }, 403);
+        // The store's refusal is a fact code (`laf:skill_not_granted`), never a sentence.
+        const code = viewed.reason;
+        return context.json({ error: code, code }, 403);
       }
       return context.json(viewed.skill);
     },
@@ -1107,8 +1157,8 @@ export function createPluginRoutes(
    * Call a tool, as a Bot.
    *
    * The grant, the policy and the audit row all happen inside the store, so this endpoint cannot
-   * accidentally satisfy one of them and skip another. A refusal comes back as 403 with the reason
-   * the model and the person are both shown, which is the same sentence written to the trail.
+   * accidentally satisfy one of them and skip another. A refusal comes back as 403 with the code the
+   * trail records; the model's Korean and the person's are both looked up by it on the other side.
    */
   routes.post("/call", requireUser, async (context) => {
     const body = (await context.req.json().catch(() => null)) as {
@@ -1118,7 +1168,10 @@ export function createPluginRoutes(
       approvalId?: unknown;
     } | null;
     if (!body?.ref || !body.agentId) {
-      return context.json({ error: "A tool and a Bot are required." }, 400);
+      return context.json(
+        { error: CALL_INCOMPLETE, code: CALL_INCOMPLETE },
+        400,
+      );
     }
 
     try {
@@ -1165,7 +1218,8 @@ export function createPluginRoutes(
           {
             // A code rather than a sentence, and the facts beside it: the card is Korean and this
             // server does not write Korean. See `computer/approvals.ts` AskSubject.
-            error: error.message,
+            error: error.code,
+            code: error.code,
             awaitingApproval: true,
             approvalId: error.approvalId,
             subject: error.subject,
@@ -1189,22 +1243,34 @@ export function createPluginRoutes(
       }
       if (error instanceof PluginRefusedError) {
         return context.json(
-          { error: error.message, rule: error.rule, code: error.code },
+          { error: error.code, code: error.code, rule: error.rule },
           403,
         );
       }
       if (error instanceof CatalogueEntryUnknownError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
-      // A server that failed is not a refusal, and saying so matters: one means the deployment
-      // decided against it, the other means somebody else's software did not answer.
+      /*
+       * A server that failed is not a refusal, and saying so matters: one means the deployment
+       * decided against it, the other means somebody else's software did not answer. `failed` says
+       * which, the status is the vendor's where there was one, and what it wrote is on the audit row
+       * the call path left — and in this line, for a failure that happened before any vendor did.
+       */
+      const status =
+        error instanceof McpServerError && error.status !== null
+          ? { status: error.status }
+          : {};
+      log.warn("plugin_call_failed", {
+        ref: body.ref,
+        ...status,
+        reason: describeFailure(error),
+      });
       return context.json(
         {
-          error:
-            error instanceof Error
-              ? error.message
-              : "The server did not answer.",
+          error: TOOL_SERVER_FAILED,
+          code: TOOL_SERVER_FAILED,
           failed: true,
+          ...status,
         },
         502,
       );

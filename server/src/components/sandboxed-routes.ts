@@ -8,6 +8,9 @@ import {
   type SandboxedStore,
 } from "./sandboxed";
 
+/** A save that names no component or gives it no title. The playground's own form sends both. */
+export const SANDBOXED_INCOMPLETE = "laf:sandboxed_incomplete";
+
 /**
  * The playground's endpoints, and the one the app renders from.
  *
@@ -64,7 +67,10 @@ export function createSandboxedRoutes(
     } | null;
 
     if (!body?.slug || !body.title) {
-      return context.json({ error: "A name and a title are required." }, 400);
+      return context.json(
+        { error: SANDBOXED_INCOMPLETE, code: SANDBOXED_INCOMPLETE },
+        400,
+      );
     }
 
     try {
@@ -82,7 +88,7 @@ export function createSandboxedRoutes(
       return context.json({ component });
     } catch (error) {
       if (error instanceof SandboxedNameRefusedError) {
-        return context.json({ error: error.message }, 400);
+        return context.json({ error: error.code, code: error.code }, 400);
       }
       throw error;
     }
@@ -100,7 +106,7 @@ export function createSandboxedRoutes(
       return context.json({ component });
     } catch (error) {
       if (error instanceof SandboxedNotFoundError) {
-        return context.json({ error: error.message }, 404);
+        return context.json({ error: error.code, code: error.code }, 404);
       }
       throw error;
     }

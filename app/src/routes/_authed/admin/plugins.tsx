@@ -35,6 +35,8 @@ import {
   pluginKeys,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { PLUGIN_ADMIN_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalFrom } from "@/lib/refusals";
 
 /**
  * Account-wide plugin and skill installation, with separate per-Bot grants.
@@ -55,6 +57,21 @@ export const Route = createFileRoute("/_authed/admin/plugins")({
   validateSearch: pluginsSearchSchema,
   component: PluginsPage,
 });
+
+/**
+ * A refused change, as the sentence this page draws above the lists.
+ *
+ * The code, never the server's `error`: that was the English sentence until 2026-09-14 — "Give a
+ * hostname rather than an IP address." above a Korean page — and it is the code itself now.
+ */
+const refusedBy = async (response: Response): Promise<Error> =>
+  new Error(
+    await refusalFrom(
+      response,
+      PLUGIN_ADMIN_REFUSALS,
+      t("That did not go through. Try again."),
+    ),
+  );
 
 function PluginsPage() {
   const queryClient = useQueryClient();
@@ -104,14 +121,7 @@ function PluginsPage() {
       method: "DELETE",
       credentials: "include",
     });
-    if (!response.ok) {
-      const detail = (await response.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(
-        detail?.error ?? t("That did not go through. Try again."),
-      );
-    }
+    if (!response.ok) throw await refusedBy(response);
   };
 
   const post = async (path: string, body: unknown) => {
@@ -122,14 +132,7 @@ function PluginsPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!response.ok) {
-      const detail = (await response.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(
-        detail?.error ?? t("That did not go through. Try again."),
-      );
-    }
+    if (!response.ok) throw await refusedBy(response);
     return response.json();
   };
 

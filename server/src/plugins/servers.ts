@@ -41,6 +41,22 @@ import {
  * defensive is about the second one.
  */
 
+/*
+ * What adding a server is refused for, beside the URL's own refusals (`customUrlRefusal`). Each was
+ * an English sentence handed to the admin screen as it was written; the screen owns the words now
+ * (`app/src/lib/plugins/refusals.ts`), and a test walks this file for codes it has none for.
+ */
+/** A credential id offered for a server that takes none when it is added. */
+export const SERVER_TAKES_NO_CREDENTIAL = "laf:server_takes_no_credential";
+/** A credential that is not a live `mcp` token minted for this very server. One code for both. */
+export const CREDENTIAL_NOT_FOR_SERVER = "laf:credential_not_for_server";
+/** A custom server named like a vendor this deployment already knows. */
+export const SERVER_NAME_TAKEN = "laf:server_name_taken";
+/** A custom server name that is not lower-case letters, numbers and hyphens. */
+export const SERVER_NAME_INVALID = "laf:server_name_invalid";
+/** A server that holds a credential, asked to move to another address. */
+export const SERVER_ADDRESS_MOVED = "laf:server_address_moved";
+
 /**
  * Advertised tool names this deployment's write list does not name, where that list is the whole
  * barrier.
@@ -143,21 +159,18 @@ export function createServers(
    * those apart can ask this endpoint which credential ids are real.
    */
   async function requireCredentialOfKind(
-    serverTitle: string,
     serverId: string,
     credentialId: string,
     kind: "mcp" | null,
   ): Promise<void> {
     /*
      * A server that takes no credential when it is added is refused here rather than at the caller,
-     * so that offering an id is one question with one answer wherever it is asked. The wording says
-     * what is true of both kinds that reach it: a `user-oauth` server's client arrives through the
-     * call that mints it, and a server needing no credential has nothing to be given.
+     * so that offering an id is one question with one answer wherever it is asked. The fact is true
+     * of both kinds that reach it: a `user-oauth` server's client arrives through the call that mints
+     * it, and a server needing no credential has nothing to be given.
      */
     if (!kind) {
-      throw new CustomServerRefusedError(
-        `${serverTitle} takes no credential when it is added.`,
-      );
+      throw new CustomServerRefusedError(SERVER_TAKES_NO_CREDENTIAL);
     }
 
     const looksLikeId =
@@ -196,9 +209,7 @@ export function createServers(
      * than the secret itself.
      */
     if (named[0]?.kind !== kind || named[0].provider !== serverId) {
-      throw new CustomServerRefusedError(
-        "That is not a credential this server can use. Add the server's own token instead.",
-      );
+      throw new CustomServerRefusedError(CREDENTIAL_NOT_FOR_SERVER);
     }
   }
 
@@ -770,7 +781,6 @@ export function createServers(
       const credentialId = input.credentialId?.trim() || undefined;
       if (credentialId) {
         await requireCredentialOfKind(
-          resolved.entry.title,
           resolved.entry.key,
           credentialId,
           serverCredentialKind(resolved.entry),
@@ -861,17 +871,13 @@ export function createServers(
         const name = (input.instanceName ?? "").trim().toLowerCase();
         const template = entry.instanceHostTemplate;
         if (!name || !template) {
-          throw new CustomServerRefusedError(
-            `${entry.title} needs the name of the shop to connect to.`,
-          );
+          throw new CustomServerRefusedError("laf:instance_name_required");
         }
         instanceHost = template.replace("{name}", name);
         // Said here rather than left to `resolveServerUrl` returning null, which the caller would
         // report as "this deployment does not know that vendor" — true of nothing that happened.
         if (!hostAdmissible(entry, instanceHost)) {
-          throw new CustomServerRefusedError(
-            `'${name}' is not a name ${entry.title} gives a shop.`,
-          );
+          throw new CustomServerRefusedError("laf:instance_name_refused");
         }
       }
 
@@ -924,14 +930,11 @@ export function createServers(
       // what a grant and a policy rule are written against, so allowing a shadow would let a custom
       // server inherit rules an operator wrote about the vendor.
       if (catalogueEntry(input.id)) {
-        throw new CustomServerRefusedError(
-          `${input.id} is the name of a server this deployment already knows. Choose another.`,
-        );
+        throw new CustomServerRefusedError(SERVER_NAME_TAKEN);
       }
+      // Lower-case letters, numbers and hyphens, two to forty.
       if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(input.id)) {
-        throw new CustomServerRefusedError(
-          "A server name is lower-case letters, numbers and hyphens.",
-        );
+        throw new CustomServerRefusedError(SERVER_NAME_INVALID);
       }
 
       /*
@@ -960,20 +963,13 @@ export function createServers(
         existing.url !== input.url &&
         (existing.credentialId || credentialId)
       ) {
-        throw new CustomServerRefusedError(
-          `${input.id} is already here at a different address and holds a credential. Remove it and add it again, with the token the new address is meant to have.`,
-        );
+        throw new CustomServerRefusedError(SERVER_ADDRESS_MOVED);
       }
 
       if (credentialId) {
         // Always `mcp`: a server added by URL is reached with the one token the deployment holds
         // for it, whatever the vendor is, because nothing here knows the vendor.
-        await requireCredentialOfKind(
-          input.title,
-          input.id,
-          credentialId,
-          "mcp",
-        );
+        await requireCredentialOfKind(input.id, credentialId, "mcp");
       }
 
       await database

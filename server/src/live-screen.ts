@@ -22,6 +22,8 @@ import type {
 } from "./computer/demonstration";
 import type { ScreenViewAudit, ScreenViewer } from "./computer/screen-view";
 import type { DeploymentConfig } from "./config";
+import { describeFailure } from "./failure-text";
+import { log } from "./log";
 
 /**
  * What is at a point on a Bot's screen, asked of its computer, for a demonstration's step.
@@ -125,6 +127,19 @@ const fact = (code: string, status: number) =>
     headers: { "content-type": "application/json" },
   });
 
+/*
+ * The three the upgrade answered in English until 2026-09-14, as plain text: "No computer is
+ * configured.", "Expected a WebSocket upgrade.", and whatever building the inward address threw. A
+ * browser's WebSocket never shows its page a refused handshake's body, so no screen printed them;
+ * a proxy's log and anybody with curl did, and the rule is the wire's, not the screen's.
+ */
+/** This deployment runs no computer, so there is no screen behind any Bot. */
+const COMPUTER_NOT_CONFIGURED = "laf:computer_not_configured";
+/** The request named the stream but Bun would not upgrade it — agent-computer's word for the same. */
+const UPGRADE_REQUIRED = "laf:stream_upgrade_required";
+/** The inward address could not be built. The pane's own word for a screen it could not reach. */
+const SCREEN_UNREACHABLE = "laf:screen_unreachable";
+
 export type LiveScreen = {
   /**
    * Which Bot's screen this request is an upgrade for, or null when it is not one.
@@ -176,7 +191,7 @@ export function createLiveScreen(input: {
 
     async upgrade(request, server, botId) {
       if (!computer) {
-        return new Response("No computer is configured.", { status: 503 });
+        return fact(COMPUTER_NOT_CONFIGURED, 503);
       }
       /*
        * Where the socket was opened from, checked before anything else and before the session.
@@ -212,13 +227,12 @@ export function createLiveScreen(input: {
         upstream = toStreamUrl(computer.baseUrl, botId, computer.token ?? "");
       } catch (error) {
         // Said out loud rather than falling back to another Bot's computer, which is the failure this
-        // whole path exists to prevent.
-        return new Response(
-          error instanceof Error
-            ? error.message
-            : "That Bot's computer could not be reached.",
-          { status: 502 },
-        );
+        // whole path exists to prevent — to the operator as what went wrong, to the caller as a fact.
+        log.warn("live_screen_unreachable", {
+          bot: botId,
+          reason: describeFailure(error),
+        });
+        return fact(SCREEN_UNREACHABLE, 502);
       }
       if (
         server.upgrade(request, {
@@ -231,7 +245,7 @@ export function createLiveScreen(input: {
       ) {
         return undefined;
       }
-      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+      return fact(UPGRADE_REQUIRED, 400);
     },
 
     websocket: (channels) => ({

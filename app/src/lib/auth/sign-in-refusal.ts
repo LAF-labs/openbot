@@ -138,9 +138,12 @@ const REFUSAL_BY_KEY: Readonly<
 
   /*
    * Not on this deployment's list. `server/src/auth/index.ts` refuses an unlisted email while the
-   * account is being made, and better-auth hands the refusal on as its message.
+   * account is being made, and an account struck off the list when it asks for a session, with
+   * `laf:sign_in_not_admitted` both times — better-auth hands it on as the message on the first
+   * road and as the code on the second. It was the sentence `This_deployment_belongs_to_someone_else.`
+   * until 2026-09-14, and the second road did not reach this screen at all.
    */
-  this_deployment_belongs_to_someone_else: "not_admitted",
+  laf_sign_in_not_admitted: "not_admitted",
   signup_disabled: "not_admitted",
 
   // The deployment itself.

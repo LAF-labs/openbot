@@ -2264,4 +2264,69 @@ export const ko: Record<string, string> = {
     "서버에 닿지 못했습니다. 잠시 후 다시 시도해 주세요.",
   "Could not sign in. Please try again.":
     "로그인하지 못했습니다. 다시 시도해 주세요.",
+  /*
+   * 서버의 나머지 거절들도 코드로만 온다 (2파동 W2-f, 2026-09-14). 모든 문이 먼저 답하는 셋은
+   * ACCESS_REFUSALS(`lib/refusals.ts`), 스킬·관리자 플러그인 화면은 SKILL_REFUSALS·PLUGIN_ADMIN_REFUSALS
+   * (`lib/plugins/refusals.ts`), 플레이그라운드는 PLAYGROUND_REFUSALS, 관리자 컴포넌트 화면은
+   * COMPONENT_ADMIN_REFUSALS이고 `plugin-refusals.test.ts`가 서버 소스를 읽어 걷는다.
+   */
+  "You have been signed out. Sign in again and try once more.":
+    "로그아웃되었습니다. 다시 로그인한 뒤 한 번 더 해 주세요.",
+  "Only an administrator can do that.": "관리자만 할 수 있는 일입니다.",
+  "A skill needs a command, a title and instructions.":
+    "스킬에는 명령, 제목, 지시문이 모두 있어야 합니다.",
+  "A command is 2 to 40 lower-case letters, numbers and hyphens.":
+    "명령은 영어 소문자·숫자·하이픈(-)으로 2~40자여야 합니다.",
+  "That skill is somebody else's, so only they can change it or put it on a Bot.":
+    "다른 사람의 스킬이라 그 사람만 고치거나 봇에 줄 수 있습니다.",
+  "That skill was written for everyone here, so only an administrator can change it or choose its Bots.":
+    "모두를 위해 만든 스킬이라 관리자만 고치거나 지닐 봇을 정할 수 있습니다.",
+  "There is no skill by that name.": "그런 이름의 스킬이 없습니다.",
+  "You can only put your own skills on Bots you own.":
+    "내 스킬은 내가 만든 봇에만 줄 수 있습니다.",
+  "Choose a server from the list first.": "먼저 목록에서 서버를 고르세요.",
+  "This deployment does not connect to that server.":
+    "그 서버는 이 배포가 연결하는 곳이 아닙니다.",
+  "That tool is no longer there. Refresh the list.":
+    "그 도구는 이제 없습니다. 목록을 새로 고쳐 주세요.",
+  "A server needs a name, a title and an address.":
+    "서버에는 이름, 제목, 주소가 모두 있어야 합니다.",
+  "A server name is lower-case letters, numbers and hyphens.":
+    "서버 이름은 영어 소문자·숫자·하이픈(-)으로만 적어 주세요.",
+  "That name belongs to a server this deployment already knows. Choose another.":
+    "이미 있는 서버의 이름입니다. 다른 이름을 고르세요.",
+  "That server is already here at another address and holds a token. Remove it, then add it again with the token for the new address.":
+    "그 서버는 다른 주소로 이미 추가되어 토큰을 갖고 있습니다. 지운 뒤 새 주소의 토큰으로 다시 추가하세요.",
+  "This server takes no token when it is added.":
+    "이 서버는 추가할 때 토큰을 받지 않습니다.",
+  "That token cannot be used for this server. Add the server's own token.":
+    "그 토큰은 이 서버에 쓸 수 없습니다. 이 서버의 토큰을 넣어 주세요.",
+  "This server is not connected through an OAuth client.":
+    "이 서버는 OAuth 클라이언트로 연결하는 서버가 아닙니다.",
+  "Enter the client ID.": "클라이언트 ID를 입력해 주세요.",
+  "That is not a web address.": "웹 주소 형식이 아닙니다.",
+  "The address has to start with https://.":
+    "주소는 https:// 로 시작해야 합니다.",
+  "Put the token in the token field, not in the address.":
+    "토큰은 주소에 넣지 말고 토큰 칸에 넣어 주세요.",
+  "Use the server's host name, not an IP address.":
+    "IP 주소 대신 서버의 호스트 이름을 적어 주세요.",
+  "That address holds this deployment's own cloud credentials, so it cannot be added.":
+    "그 주소에는 이 배포의 클라우드 자격 증명이 있어 추가할 수 없습니다.",
+  "That address is this deployment itself, so it cannot be added.":
+    "그 주소는 이 배포 자신이라 추가할 수 없습니다.",
+  "That address cannot be reached from outside this network, so it cannot be added.":
+    "그 주소는 이 네트워크 밖에서 닿을 수 없어 추가할 수 없습니다.",
+  "That address could not be found, so it cannot be added.":
+    "그 주소를 찾을 수 없어 추가할 수 없습니다.",
+  "That address points inside this network, so it cannot be added.":
+    "그 주소는 이 네트워크 안을 가리켜 추가할 수 없습니다.",
+  "A component needs a name and a title.":
+    "컴포넌트에는 이름과 제목이 있어야 합니다.",
+  "A name is 2 to 40 lower-case letters, numbers and underscores.":
+    "이름은 영어 소문자·숫자·밑줄(_)로 2~40자여야 합니다.",
+  "That component is no longer there.": "그 컴포넌트는 이제 없습니다.",
+  "Choose a Bot first.": "먼저 봇을 고르세요.",
+  "Choose a data source first.": "먼저 데이터 소스를 고르세요.",
+  "Write a description first.": "먼저 설명을 적어 주세요.",
 };

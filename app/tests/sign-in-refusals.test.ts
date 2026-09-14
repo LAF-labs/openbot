@@ -78,18 +78,29 @@ function callbackCodes(): string[] {
 
 /**
  * This deployment's own refusal of an email not on its list, as the callback spells it: the hook's
- * message with the spaces swapped (`result.error.split(" ").join("_")`), full stop and all.
+ * message with the spaces swapped (`result.error.split(" ").join("_")`).
+ *
+ * The message was a sentence and arrived as `This_deployment_belongs_to_someone_else.`; since
+ * 2026-09-14 it is the code `laf:sign_in_not_admitted`, in the message and in the error's `code` —
+ * which is also what makes better-auth redirect a struck-off account's SESSION refusal here instead
+ * of answering the callback with raw JSON (`server/tests/laf-oidc.integration.test.ts`).
  */
 const refusedEmailCode = (() => {
   const source = readFileSync(
     join(import.meta.dir, "../../server/src/auth/index.ts"),
     "utf8",
   );
-  const message = /new APIError\("FORBIDDEN", \{\s*message: "([^"]+)"/.exec(
+  const code = /export const SIGN_IN_NOT_ADMITTED = "([^"]+)"/.exec(
     source,
   )?.[1];
-  if (!message) throw new Error("server/src/auth/index.ts no longer refuses");
-  return message.split(" ").join("_");
+  const refuses =
+    /new APIError\("FORBIDDEN", \{\s*message: SIGN_IN_NOT_ADMITTED,\s*code: SIGN_IN_NOT_ADMITTED,/.test(
+      source,
+    );
+  if (!code || !refuses) {
+    throw new Error("server/src/auth/index.ts no longer refuses");
+  }
+  return code.split(" ").join("_");
 })();
 
 /**
@@ -265,7 +276,10 @@ const cases: Case[] = [
   },
   {
     label: "start 503 from an API with no sign-in configured",
-    scenario: press(503, { error: "Authentication is not configured." }),
+    scenario: press(503, {
+      error: "laf:auth_not_configured",
+      code: "laf:auth_not_configured",
+    }),
     expected: "misconfigured",
   },
   {
@@ -359,7 +373,7 @@ describe("the codes a sign-in can come back with", () => {
       expect(codes).toContain(code);
     }
     expect(codes.length).toBeGreaterThan(25);
-    expect(refusedEmailCode).toBe("This_deployment_belongs_to_someone_else.");
+    expect(refusedEmailCode).toBe("laf:sign_in_not_admitted");
   });
 
   test("every start code is still thrown where this file says it is", () => {

@@ -270,7 +270,11 @@ describe("the webhook, which has no session", () => {
   const unauthenticated = (service: ReturnType<typeof fakeService>) => {
     const refuse: MiddlewareHandler<{ Variables: AppVariables }> = async (
       context,
-    ) => context.json({ error: "Authentication required." }, 401);
+    ) =>
+      context.json(
+        { error: "laf:unauthenticated", code: "laf:unauthenticated" },
+        401,
+      );
     const app = new Hono<{ Variables: AppVariables }>();
     app.route(
       "/",

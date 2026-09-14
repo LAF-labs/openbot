@@ -2,6 +2,21 @@ import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { polled } from "@/lib/polling";
 
+/**
+ * What the playground's save, publish and delete are refused for, in this surface's words.
+ *
+ * The routes answered "A name and a title are required." and "No component is called custom_x."
+ * until 2026-09-14, and the playground printed them. They send codes now
+ * (`server/src/components/sandboxed-routes.ts`, `sandboxed.ts`); this table owns the sentences and
+ * `plugin-refusals.test.ts` walks it against that source.
+ */
+export const PLAYGROUND_REFUSALS: Record<string, string> = {
+  "laf:sandboxed_incomplete": "A component needs a name and a title.",
+  "laf:sandboxed_name_invalid":
+    "A name is 2 to 40 lower-case letters, numbers and underscores.",
+  "laf:component_unknown": "That component is no longer there.",
+};
+
 /** A component authored in the browser, as the playground edits it. */
 export type SandboxedRecord = {
   name: string;

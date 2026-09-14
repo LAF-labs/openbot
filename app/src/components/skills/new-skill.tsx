@@ -6,6 +6,8 @@ import { pageTitleClass } from "@/components/ui/page-header";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalFrom } from "@/lib/refusals";
 import { emptySkillForm, type SkillFormValues } from "@/lib/skills/form";
 
 /**
@@ -40,14 +42,18 @@ export function NewSkill() {
       });
       if (!response.ok) {
         /*
-         * The server's sentence, not one invented here. It refuses for reasons this form cannot
-         * check — a slug somebody else already owns is the common one — and paraphrasing that into
-         * "That did not work" would throw away the only part worth reading.
+         * WHICH refusal, not "that did not work". The server refuses for reasons this form cannot
+         * check — a slug somebody else already owns is the common one — and says which by code; the
+         * sentence is ours. It was the server's English until 2026-09-14, and the fallback beside it
+         * was English too, outside `t()`.
          */
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "The skill could not be saved.");
+        throw new Error(
+          await refusalFrom(
+            response,
+            SKILL_REFUSALS,
+            t("The skill could not be saved."),
+          ),
+        );
       }
       return response.json();
     },

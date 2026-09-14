@@ -259,7 +259,8 @@ export function connectionsQueryOptions() {
 export class ConnectRefusedError extends Error {
   readonly status: number;
   /**
-   * The `laf:` fact the server sent alongside its English sentence, when it sent one.
+   * The `laf:` fact the server sent — the whole of what it says, since its English sentence beside
+   * the code went (2026-09-14).
    *
    * The status alone tells three situations apart; the code tells NINE, and two of them share a
    * 400: a mall id that is not a mall id, and no mall id at all. Read before the status wherever
@@ -318,13 +319,14 @@ export async function beginConnect(
   );
   const body = (await response.json().catch(() => null)) as {
     authorizationUrl?: string;
-    error?: string;
-    /** The fact behind the sentence. Sent by every refusal this route has. */
+    /** The fact. Sent by every refusal this route has; `error` is the same code. */
     code?: string;
   } | null;
   if (!response.ok || !body?.authorizationUrl) {
+    // The message is never drawn — `refusalText` in `connections.tsx` reads the code and status —
+    // and it is ours, so a reader that did draw it would not print the code.
     throw new ConnectRefusedError(
-      body?.error ?? t("The connection could not be started."),
+      t("The connection could not be started."),
       response.status,
       typeof body?.code === "string" ? body.code : null,
     );
@@ -626,6 +628,8 @@ async function sendCall(
     approvalId?: string;
     question?: string;
     scope?: unknown;
+    /** The call went out and the other side broke: a failure, never a refusal. */
+    failed?: boolean;
   } | null;
 
   if (response.ok) {
@@ -639,6 +643,20 @@ async function sendCall(
   // going to wait and then send the very same call again.
   const pause = response.status === 409 ? pauseFrom(body) : null;
   if (pause) return { awaitingApproval: true, ...pause };
+  /*
+   * A server that failed, before the codes below are read as refusals — which is what they are
+   * everywhere else. Its body carried the vendor's own English until 2026-09-14 (a 403 from Google
+   * was a paragraph about an API not enabled for a project) and now carries
+   * `laf:tool_server_failed`; read as a refusal it would draw the line as the deployment saying no,
+   * and tell the model a boundary stopped it when somebody else's software did.
+   */
+  if (body?.failed === true) {
+    return {
+      ok: false,
+      refused: false,
+      reason: toolResultText(factCarriedBy(body) || "laf:tool_server_failed"),
+    };
+  }
   if (response.status === 403) {
     /*
      * A fact code from the boundary, turned into the sentence the MODEL reads.

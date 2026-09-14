@@ -214,7 +214,7 @@ function keep(response: Response) {
 const cookies = () =>
   [...jar.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
 
-async function buildAuth() {
+async function buildAuth(allowed = ALLOWED) {
   const environment = {
     DATABASE_URL: databaseUrl,
     KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -223,7 +223,7 @@ async function buildAuth() {
     AUTH_PROVIDERS: "laf",
     LAF_OIDC_ISSUER: issuer,
     LAF_OIDC_CLIENT_ID: CLIENT_ID,
-    SIGN_IN_ALLOWED_EMAILS: ALLOWED,
+    SIGN_IN_ALLOWED_EMAILS: allowed,
     MANAGED_AGENT_AG_UI_URL: "http://localhost:4200/ag-ui",
   };
   return createAuth(loadConfig(environment), database);
@@ -321,9 +321,10 @@ describe("signing in through the fleet broker", () => {
     jar.clear();
 
     const callback = await signInThroughBroker(auth);
-    // better-auth surfaces the refusal as an error redirect, never a session.
+    // better-auth surfaces the refusal as an error redirect, never a session — carrying the fact,
+    // which it was handed as the refusal's message, and never the sentence that used to be there.
     expect(callback.status).toBe(302);
-    expect(callback.headers.get("location")).toContain("error");
+    expect(refusalIn(callback)).toBe("laf:sign_in_not_admitted");
 
     const [row] = await database
       .select({ id: users.id })
@@ -331,4 +332,29 @@ describe("signing in through the fleet broker", () => {
       .where(eq(users.email, UNLISTED));
     expect(row).toBeUndefined();
   });
+
+  /*
+   * THE OTHER ROAD: an account that exists, struck off the list since. The refusal is the SESSION
+   * hook's, and better-auth redirects from there only when the refusal carries a code — without one
+   * it rethrew, and the person's browser was handed the callback URL's raw
+   * `403 {"message":"This deployment belongs to someone else."}` instead of the sign-in screen
+   * (measured 2026-09-14, wave 1 residue R1).
+   */
+  test("명단에서 빠진 기존 계정도 같은 사실을 들고 로그인 문으로 돌아간다", async () => {
+    // The account the first test made, with a list it is no longer on.
+    const auth = await buildAuth(`someone-else-${run}@laf.test`);
+    emailToIssue = ALLOWED;
+    jar.clear();
+
+    const callback = await signInThroughBroker(auth);
+    expect(callback.status).toBe(302);
+    expect(refusalIn(callback)).toBe("laf:sign_in_not_admitted");
+    expect(jar.has("better-auth.session_token")).toBe(false);
+  });
 });
+
+/** The `error` a refused callback redirected with, whichever page it named. */
+function refusalIn(callback: Response): string | null {
+  const location = callback.headers.get("location") ?? "";
+  return new URL(location, ORIGIN).searchParams.get("error");
+}

@@ -170,7 +170,10 @@ describe("what the route refuses", () => {
     const response = await post(app, { text: "   " });
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "laf:feedback_empty" });
+    expect(await response.json()).toEqual({
+      error: "laf:feedback_empty",
+      code: "laf:feedback_empty",
+    });
     expect(kept).toEqual([]);
   });
 
@@ -183,6 +186,7 @@ describe("what the route refuses", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: "laf:feedback_too_long",
+      code: "laf:feedback_too_long",
       limit: FEEDBACK_MAX_LENGTH,
     });
     expect(kept).toEqual([]);

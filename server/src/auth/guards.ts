@@ -71,6 +71,24 @@ export type AppVariables = {
 /** The fact a refused Bot answers with. The same word for "not yours" and "not here", deliberately. */
 export const BOT_NOT_FOUND = "laf:bot_not_found";
 
+/*
+ * THE THREE FACTS EVERY ROUTE CAN ANSWER BEFORE IT DOES ANYTHING.
+ *
+ * They were three English sentences — "Authentication required.", "Authorization required.",
+ * "Administrator access required." — and the first is the body every protected route on a
+ * deployment answers somebody who is not signed in. The rehearsal VM measured it on 2026-09-13 while
+ * the walk that was meant to catch sentences said there were none, because it did not look here.
+ * The surface decides by status (`app/src/lib/auth/queries.ts`, `session-watch.ts`); what it may
+ * print is the code's words, never these.
+ */
+
+/** Nobody is signed in: the same code the live-screen upgrade has always answered with. */
+export const UNAUTHENTICATED = "laf:unauthenticated";
+/** Signed in, and given no role here — access withdrawn, or never granted. */
+export const NO_ACCESS = "laf:no_access";
+/** Signed in, and not an administrator, at a door that is only an administrator's. */
+export const ADMIN_REQUIRED = "laf:admin_required";
+
 /**
  * May this person act THROUGH this Bot?
  *
@@ -145,7 +163,10 @@ export function createRequireUser(
     });
 
     if (!session) {
-      return context.json({ error: "Authentication required." }, 401);
+      return context.json(
+        { error: UNAUTHENTICATED, code: UNAUTHENTICATED },
+        401,
+      );
     }
 
     const roles = await roleRepository.rolesForUser(session.user.id);
@@ -156,7 +177,7 @@ export function createRequireUser(
         : undefined;
 
     if (!role) {
-      return context.json({ error: "Authorization required." }, 403);
+      return context.json({ error: NO_ACCESS, code: NO_ACCESS }, 403);
     }
 
     const actor: AuthenticatedActor = {
@@ -228,7 +249,7 @@ export function requireBotAccess(
 
 export function requireAdmin(context: Context<{ Variables: AppVariables }>) {
   if (context.var.actor.role !== "admin") {
-    return context.json({ error: "Administrator access required." }, 403);
+    return context.json({ error: ADMIN_REQUIRED, code: ADMIN_REQUIRED }, 403);
   }
 
   return undefined;

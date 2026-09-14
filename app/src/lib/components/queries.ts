@@ -194,6 +194,23 @@ export const REFUSAL_SAID: Record<string, string> = {
 };
 
 /**
+ * What the admin Components page's own changes are refused for — grants, data sources, publishing
+ * and the draft — in that page's words.
+ *
+ * The routes answered "The Bot is required." and "No component is called showActivityReport." until
+ * 2026-09-14 (`server/src/components/routes.ts`); they send codes now and `plugin-refusals.test.ts`
+ * walks this table against that file. Shorter than `REFUSAL_SAID`, whose reader is somebody in a
+ * conversation looking at a card that did not appear.
+ */
+export const COMPONENT_ADMIN_REFUSALS: Record<string, string> = {
+  "laf:component_unknown": "That component is no longer there.",
+  "laf:function_unknown": "This deployment has no data source by that name",
+  "laf:component_bot_required": "Choose a Bot first.",
+  "laf:component_function_required": "Choose a data source first.",
+  "laf:component_description_required": "Write a description first.",
+};
+
+/**
  * A refusal the server sent, as a sentence.
  *
  * Anything that is not a `laf:` code passes through untouched. That is deliberate and it is the same

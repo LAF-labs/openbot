@@ -61,7 +61,7 @@ import {
 } from "./failure-text";
 import { createHealthRoute, type HealthProbes } from "./health";
 import { log } from "./log";
-import { createSecurityMiddleware } from "./middleware/security";
+import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
@@ -86,6 +86,26 @@ import {
 import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
 import { createSupportRoutes, type SupportService } from "./support/routes";
 import type { PackageStatusReader } from "./tenant-package";
+
+/*
+ * What the routes written inline below refuse with.
+ *
+ * They were the last English sentences in the server's own file — "Credential input is invalid.",
+ * four "Credential storage is not configured.", "Authentication is not configured." on every door
+ * of a deployment without sign-in — and `POST /api/admin/credentials` with a bad body was the one
+ * refusal wave 1 counted and could not close, because this file was not its to change. The screens
+ * that call these routes say their own sentence; these are the facts beside the status.
+ */
+/** No sign-in is configured on this deployment, so nobody can be asked who they are. */
+const AUTH_NOT_CONFIGURED = "laf:auth_not_configured";
+/** No audit reader was wired into this process. */
+const AUDIT_UNAVAILABLE = "laf:audit_unavailable";
+/** No credential vault was wired into this process. */
+const CREDENTIALS_UNAVAILABLE = "laf:credentials_unavailable";
+/** The body is not a credential this route accepts. See `credentialInput`. */
+const CREDENTIAL_INPUT_INVALID = "laf:credential_input_invalid";
+/** No package reader was wired into this process. */
+const PACKAGE_UNAVAILABLE = "laf:package_unavailable";
 
 export function createApp(
   config: DeploymentConfig,
@@ -495,18 +515,40 @@ export function createApp(
         : [],
     }),
   );
-  app.on(["GET", "POST"], "/api/auth/*", (context) => {
+  app.on(["GET", "POST"], "/api/auth/*", async (context) => {
     if (!auth) {
-      return context.json({ error: "Authentication is not configured." }, 503);
+      return context.json(
+        { error: AUTH_NOT_CONFIGURED, code: AUTH_NOT_CONFIGURED },
+        503,
+      );
     }
 
-    return auth.handler(context.req.raw);
+    /*
+     * better-auth's own limit, answered with this deployment's fact.
+     *
+     * Its limiter refuses the fourth sign-in start in ten seconds with `429 {"message":"Too many
+     * requests. Please try again later."}` — no code, a sentence — and the sign-in screen printed it
+     * under the buttons (rehearsal VM, 2026-09-13). The API's own limit on the same door answers
+     * `laf:rate_limited` with `Retry-After`; the two are one fact to the person pressing, so they are
+     * one answer on the wire. The wait better-auth computed is kept, in the header the surface reads.
+     */
+    const answered = await auth.handler(context.req.raw);
+    if (answered.status !== 429) return answered;
+    const wait = Number(answered.headers.get("x-retry-after"));
+    context.header(
+      "Retry-After",
+      String(Number.isFinite(wait) && wait > 0 ? Math.ceil(wait) : 1),
+    );
+    return context.json(RATE_LIMITED, 429);
   });
 
   const authenticationUnavailable: MiddlewareHandler<{
     Variables: AppVariables;
   }> = async (context) =>
-    context.json({ error: "Authentication is not configured." }, 503);
+    context.json(
+      { error: AUTH_NOT_CONFIGURED, code: AUTH_NOT_CONFIGURED },
+      503,
+    );
   // Local development can stand in a fixed administrator so the product is reachable before the
   // authentication slice is built. It is checked first so a machine with the flag set does not also
   // need Google credentials configured just to boot.
@@ -569,7 +611,10 @@ export function createApp(
    */
   app.post("/api/me/consent", requireUser, async (context) => {
     if (!consent) {
-      return context.json({ error: "laf:consent_not_recorded" }, 503);
+      return context.json(
+        { error: "laf:consent_not_recorded", code: "laf:consent_not_recorded" },
+        503,
+      );
     }
     await consent.record(context.var.actor.id);
     return context.body(null, 204);
@@ -596,7 +641,10 @@ export function createApp(
       return denied;
     }
     if (!auditReader) {
-      return context.json({ error: "Audit logging is not configured." }, 503);
+      return context.json(
+        { error: AUDIT_UNAVAILABLE, code: AUDIT_UNAVAILABLE },
+        503,
+      );
     }
 
     return context.json(
@@ -610,7 +658,7 @@ export function createApp(
     }
     if (!credentialService) {
       return context.json(
-        { error: "Credential storage is not configured." },
+        { error: CREDENTIALS_UNAVAILABLE, code: CREDENTIALS_UNAVAILABLE },
         503,
       );
     }
@@ -624,7 +672,7 @@ export function createApp(
     }
     if (!credentialService) {
       return context.json(
-        { error: "Credential storage is not configured." },
+        { error: CREDENTIALS_UNAVAILABLE, code: CREDENTIALS_UNAVAILABLE },
         503,
       );
     }
@@ -632,7 +680,10 @@ export function createApp(
     const body = await context.req.json().catch(() => null);
     const input = credentialInput(body, context.var.actor.id);
     if (!input) {
-      return context.json({ error: "Credential input is invalid." }, 400);
+      return context.json(
+        { error: CREDENTIAL_INPUT_INVALID, code: CREDENTIAL_INPUT_INVALID },
+        400,
+      );
     }
 
     return context.json(
@@ -650,7 +701,7 @@ export function createApp(
       }
       if (!credentialService) {
         return context.json(
-          { error: "Credential storage is not configured." },
+          { error: CREDENTIALS_UNAVAILABLE, code: CREDENTIALS_UNAVAILABLE },
           503,
         );
       }
@@ -658,7 +709,10 @@ export function createApp(
       const body = await context.req.json().catch(() => null);
       const input = credentialInput(body, context.var.actor.id);
       if (!input) {
-        return context.json({ error: "Credential input is invalid." }, 400);
+        return context.json(
+          { error: CREDENTIAL_INPUT_INVALID, code: CREDENTIAL_INPUT_INVALID },
+          400,
+        );
       }
 
       return context.json({
@@ -679,7 +733,7 @@ export function createApp(
       }
       if (!credentialService) {
         return context.json(
-          { error: "Credential storage is not configured." },
+          { error: CREDENTIALS_UNAVAILABLE, code: CREDENTIALS_UNAVAILABLE },
           503,
         );
       }
@@ -696,7 +750,10 @@ export function createApp(
     const denied = requireAdmin(context);
     if (denied) return denied;
     if (!packageStatusReader) {
-      return context.json({ error: "Tenant package is not configured." }, 503);
+      return context.json(
+        { error: PACKAGE_UNAVAILABLE, code: PACKAGE_UNAVAILABLE },
+        503,
+      );
     }
     return context.json({ package: await packageStatusReader.active() });
   });

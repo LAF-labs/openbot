@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
+  COMPONENT_ADMIN_REFUSALS,
   type ComponentRecord,
   componentKeys,
   componentListQueryOptions,
@@ -33,6 +34,11 @@ import {
 } from "@/lib/components/queries";
 import { RENDERABLE_NAMES } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
+import { refusalFrom } from "@/lib/refusals";
+
+/** A refused change, as the line this page draws: which refusal, or the page's own sentence. */
+const refusedBy = async (response: Response, fallback: string) =>
+  new Error(await refusalFrom(response, COMPONENT_ADMIN_REFUSALS, fallback));
 
 /**
  * Runtime governance for compiled gallery components: publication, per-Bot grants, model-facing
@@ -87,7 +93,9 @@ function RouteComponent() {
             `/api/components/${encodeURIComponent(name)}/grants/${encodeURIComponent(agentId)}`,
             { method: "DELETE", credentials: "include" },
           );
-      if (!response.ok) throw new Error(t("That change could not be saved."));
+      if (!response.ok) {
+        throw await refusedBy(response, t("That change could not be saved."));
+      }
     },
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => {
@@ -117,7 +125,9 @@ function RouteComponent() {
             `/api/components/${encodeURIComponent(name)}/functions/${encodeURIComponent(functionName)}`,
             { method: "DELETE", credentials: "include" },
           );
-      if (!response.ok) throw new Error(t("That change could not be saved."));
+      if (!response.ok) {
+        throw await refusedBy(response, t("That change could not be saved."));
+      }
     },
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => {
@@ -143,7 +153,9 @@ function RouteComponent() {
           body: JSON.stringify({ published }),
         },
       );
-      if (!response.ok) throw new Error(t("That change could not be saved."));
+      if (!response.ok) {
+        throw await refusedBy(response, t("That change could not be saved."));
+      }
     },
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => {
@@ -169,7 +181,9 @@ function RouteComponent() {
           body: JSON.stringify({ description }),
         },
       );
-      if (!response.ok) throw new Error(t("That draft could not be saved."));
+      if (!response.ok) {
+        throw await refusedBy(response, t("That draft could not be saved."));
+      }
     },
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => {

@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, COMPONENT_UNKNOWN, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { components, sandboxedComponents } from "../db/schema";
 
@@ -59,16 +59,29 @@ export type PublishedSandboxed = {
   argumentSchema: Record<string, unknown>;
 };
 
+/**
+ * A playground component this deployment has no row for — the same fact as a compiled one's
+ * (`ComponentNotFoundError`), because to whoever asked it is the same absence.
+ */
 export class SandboxedNotFoundError extends Error {
-  constructor(name: string) {
-    super(`No component is called ${name}.`);
+  readonly code = COMPONENT_UNKNOWN;
+  readonly status = 404;
+
+  constructor(readonly component: string) {
+    super(COMPONENT_UNKNOWN);
     this.name = "SandboxedNotFoundError";
   }
 }
 
+/** A name a playground component may not have. What is allowed is in `save`, beside the pattern. */
+export const SANDBOXED_NAME_INVALID = "laf:sandboxed_name_invalid";
+
 export class SandboxedNameRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
+  readonly code = SANDBOXED_NAME_INVALID;
+  readonly status = 400;
+
+  constructor() {
+    super(SANDBOXED_NAME_INVALID);
     this.name = "SandboxedNameRefusedError";
   }
 }
@@ -161,10 +174,9 @@ export function createSandboxedStore(
       sampleArguments: Record<string, unknown>;
       by: string;
     }): Promise<SandboxedRecord> {
+      // What the refusal used to spell out in English; the playground says it now (PLAYGROUND_REFUSALS).
       if (!/^[a-z0-9][a-z0-9_]{0,38}[a-z0-9]$/.test(input.slug)) {
-        throw new SandboxedNameRefusedError(
-          "A name is lower-case letters, numbers and underscores.",
-        );
+        throw new SandboxedNameRefusedError();
       }
       const name = sandboxedNameFor(input.slug);
 

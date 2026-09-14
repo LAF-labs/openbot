@@ -132,7 +132,11 @@ describe("sending", () => {
         stubFetch(
           async () =>
             new Response(
-              JSON.stringify({ error: "laf:feedback_too_long", limit: 2000 }),
+              JSON.stringify({
+                error: "laf:feedback_too_long",
+                code: "laf:feedback_too_long",
+                limit: 2000,
+              }),
               { status: 400 },
             ),
         ),

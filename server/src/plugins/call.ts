@@ -26,6 +26,8 @@ import {
   type PluginContext,
   PluginNeedsApprovalError,
   PluginRefusedError,
+  TOOL_NEEDS_REVIEW,
+  TOOL_UNKNOWN,
   toolNameFor,
 } from "./store";
 
@@ -260,7 +262,11 @@ export function createCallPath(
           rule: question.rule,
         },
       });
-      throw new PluginRefusedError(settled.code, question.rule || null);
+      throw new PluginRefusedError(
+        settled.code,
+        question.rule || null,
+        settled.code,
+      );
     }
 
     if (settled.outcome === "allowed") return settled;
@@ -336,7 +342,7 @@ export function createCallPath(
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
       if (!serverId || !toolName) {
-        throw new PluginRefusedError(`${input.ref} is not a tool.`, null);
+        throw new PluginRefusedError(TOOL_UNKNOWN, null, TOOL_UNKNOWN);
       }
 
       if (
@@ -377,7 +383,7 @@ export function createCallPath(
             reason: decision.reason,
           },
         });
-        throw new PluginRefusedError(decision.reason, null);
+        throw new PluginRefusedError(decision.reason, null, decision.reason);
       }
 
       const { row, entry } = await servers.requireServer(serverId);
@@ -414,8 +420,9 @@ export function createCallPath(
           },
         });
         throw new PluginRefusedError(
-          `'${toolName}' changed its definition since it was approved. Review it under Plugins before it runs again.`,
+          TOOL_NEEDS_REVIEW,
           null,
+          TOOL_NEEDS_REVIEW,
         );
       }
 
@@ -524,7 +531,7 @@ export function createCallPath(
               server: serverId,
               tool: toolName,
               effect,
-              refusal: error.code ?? error.message,
+              refusal: error.code,
             },
           });
         }
@@ -748,10 +755,8 @@ export function createCallPath(
         });
         // The code, not a sentence: the model reads Korean out of
         // `shared/prompt/tool-results.ko.ts` and the person reads Korean out of the dictionary.
-        throw new PluginRefusedError(
-          verdict.code ?? "laf:policy_denied",
-          verdict.matched,
-        );
+        const refused = verdict.code ?? "laf:policy_denied";
+        throw new PluginRefusedError(refused, verdict.matched, refused);
       }
 
       /*

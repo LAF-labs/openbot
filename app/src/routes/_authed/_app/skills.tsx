@@ -35,6 +35,8 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalFrom } from "@/lib/refusals";
 
 /**
  * Personal `/` skills. They are instructions, not capabilities, and can only be granted to Bots the
@@ -93,10 +95,9 @@ function SkillsPage() {
     mutationFn: async (run: () => Promise<Response>) => {
       const response = await run();
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? t("That did not work."));
+        throw new Error(
+          await refusalFrom(response, SKILL_REFUSALS, t("That did not work.")),
+        );
       }
     },
     onError: (caught: Error) => setError(caught.message),

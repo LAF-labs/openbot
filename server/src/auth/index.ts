@@ -18,6 +18,9 @@ import { createSignInAllowlist } from "./allowlist";
 import { roleForEmail } from "./roles";
 import { tokenSealingHooks } from "./token-encryption";
 
+/** An email this deployment's sign-in list does not admit, refused at the door. */
+export const SIGN_IN_NOT_ADMITTED = "laf:sign_in_not_admitted";
+
 /**
  * The fleet learns that this machine now has somebody on it.
  *
@@ -67,11 +70,22 @@ export function createAuth(
     allowedEmails: authConfig.allowedEmails,
     initialAdminEmails: authConfig.initialAdminEmails,
   });
-  // Refused before anything is written, with a message the sign-in screen can show. The OAuth
-  // dance has already happened by the time this runs; what is being refused is an account here.
+  /*
+   * Refused before anything is written. The OAuth dance has already happened by the time this runs;
+   * what is being refused is an account here.
+   *
+   * A CODE, AND IN BOTH FIELDS, because better-auth sends this on by two different roads. Refusing a
+   * NEW account, it redirects with the message as `?error=` (spaces made underscores — the sentence
+   * that was here arrived as `This_deployment_belongs_to_someone_else.`); refusing a SESSION for an
+   * account struck off the list, it redirects only when the error carries a `code`, and without one
+   * answered the callback URL with `403 {"message":"This deployment belongs to someone else."}` as
+   * raw JSON in the person's browser (measured 2026-09-14, wave 1 residue R1). With the code in both,
+   * either road reaches the sign-in screen carrying the same fact, and the screen owns the words.
+   */
   const refuse = () => {
     throw new APIError("FORBIDDEN", {
-      message: "This deployment belongs to someone else.",
+      message: SIGN_IN_NOT_ADMITTED,
+      code: SIGN_IN_NOT_ADMITTED,
     });
   };
 

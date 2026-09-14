@@ -255,7 +255,7 @@ describe("adding a custom server asks both halves", () => {
     const refusal = await resolvedCustomUrlRefusal(url, {
       resolve: answering({ "mcp.example.com": ["10.0.0.5"] }),
     });
-    expect(refusal).toContain("inside this network");
+    expect(refusal).toBe("laf:host_resolves_privately");
   });
 
   test("and allowed when it points at an ordinary public address", async () => {

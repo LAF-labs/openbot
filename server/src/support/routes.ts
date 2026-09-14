@@ -60,11 +60,18 @@ export function createSupportRoutes(
 
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text) {
-      return context.json({ error: "laf:feedback_empty" }, 400);
+      return context.json(
+        { error: "laf:feedback_empty", code: "laf:feedback_empty" },
+        400,
+      );
     }
     if (text.length > FEEDBACK_MAX_LENGTH) {
       return context.json(
-        { error: "laf:feedback_too_long", limit: FEEDBACK_MAX_LENGTH },
+        {
+          error: "laf:feedback_too_long",
+          code: "laf:feedback_too_long",
+          limit: FEEDBACK_MAX_LENGTH,
+        },
         400,
       );
     }

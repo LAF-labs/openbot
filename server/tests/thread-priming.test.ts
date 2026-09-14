@@ -64,7 +64,10 @@ describe("the runtime's thread routes", () => {
       { actor: "owner" },
     );
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "laf:thread_not_found" });
+    expect(await response.json()).toEqual({
+      error: "laf:thread_not_found",
+      code: "laf:thread_not_found",
+    });
   });
 
   test("a caller whose session could not be read is refused, not guessed at", async () => {
@@ -75,7 +78,10 @@ describe("the runtime's thread routes", () => {
     ]) {
       const response = await ask(path);
       expect(response.status).toBe(401);
-      expect(await response.json()).toEqual({ error: "laf:unauthenticated" });
+      expect(await response.json()).toEqual({
+        error: "laf:unauthenticated",
+        code: "laf:unauthenticated",
+      });
     }
     expect(primed).toEqual([]);
   });

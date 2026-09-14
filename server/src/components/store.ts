@@ -47,9 +47,19 @@ export type ComponentDecision =
   | { allowed: true; description: string }
   | { allowed: false; reason: string };
 
+/**
+ * A component name this deployment has no row for.
+ *
+ * The fact is the same one a Bot's refused card carries, `laf:component_unknown`, and it is the
+ * message as well as the code: the admin routes answered this class's `.message` — "No component is
+ * called showActivityReport." — straight onto a Korean screen.
+ */
 export class ComponentNotFoundError extends Error {
-  constructor(name: string) {
-    super(`No component is called ${name}.`);
+  readonly code = COMPONENT_UNKNOWN;
+  readonly status = 404;
+
+  constructor(readonly component: string) {
+    super(COMPONENT_UNKNOWN);
     this.name = "ComponentNotFoundError";
   }
 }

@@ -876,6 +876,25 @@ function readsAsCredential(name: string): boolean {
 }
 
 /**
+ * Why a URL an administrator typed was refused, as a code.
+ *
+ * Each answer was English — "Give a hostname rather than an IP address." — and went to the admin
+ * screen as written. The screen says it in Korean now (`app/src/lib/plugins/refusals.ts`), from this
+ * union, which its test reads. The last two are the resolver's own facts, the same ones a Bot's
+ * browser answers with.
+ */
+export type CustomUrlRefusal =
+  | "laf:custom_url_invalid"
+  | "laf:custom_url_not_https"
+  | "laf:custom_url_holds_credential"
+  | "laf:custom_url_is_address"
+  | "laf:custom_url_metadata"
+  | "laf:custom_url_local"
+  | "laf:custom_url_internal"
+  | "laf:host_unresolvable"
+  | "laf:host_resolves_privately";
+
+/**
  * Is this a URL an administrator may point the deployment at?
  *
  * A curated entry is reviewed in code; this is the other path, and it needs its own floor because
@@ -896,16 +915,16 @@ function readsAsCredential(name: string): boolean {
  * The ranges and the names are {@link ../net/host-verdict}'s, which is also what a Bot's browser
  * asks before it navigates. They used to be two lists of the same addresses.
  */
-export function customUrlRefusal(raw: string): string | null {
+export function customUrlRefusal(raw: string): CustomUrlRefusal | null {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return "That is not a URL.";
+    return "laf:custom_url_invalid";
   }
 
   if (url.protocol !== "https:") {
-    return "An MCP server must be reached over https.";
+    return "laf:custom_url_not_https";
   }
 
   // Userinfo is not part of the host, so none of the host rules below would look at it, and what is
@@ -914,7 +933,7 @@ export function customUrlRefusal(raw: string): string | null {
   // value. A secret written this way would sit in the trail in clear text. The refusal deliberately
   // does not echo the URL back.
   if (url.username || url.password) {
-    return "Put the credential in the token field rather than in the address.";
+    return "laf:custom_url_holds_credential";
   }
 
   /*
@@ -940,7 +959,7 @@ export function customUrlRefusal(raw: string): string | null {
     ...fragment.flatMap((part) => [...new URLSearchParams(part).keys()]),
   ];
   if (named.some(readsAsCredential)) {
-    return "Put the credential in the token field rather than in the address.";
+    return "laf:custom_url_holds_credential";
   }
 
   // Normalised once, in the shared module: a trailing dot is the root-anchored spelling of the same
@@ -950,18 +969,18 @@ export function customUrlRefusal(raw: string): string | null {
   const host = normalizeHostname(url.hostname);
 
   if (isAddressLiteral(host)) {
-    return "Give a hostname rather than an IP address.";
+    return "laf:custom_url_is_address";
   }
   // The cloud metadata endpoint, by name rather than by luck — asked of the same list a Bot's
   // browser asks, so an alias added there does not have to be remembered here as well.
   if (isCloudMetadataHostname(host)) {
-    return "That address holds this deployment's own cloud credentials.";
+    return "laf:custom_url_metadata";
   }
   if (isLoopbackHostname(host)) {
-    return "That address is local to the deployment.";
+    return "laf:custom_url_local";
   }
   if (isNotPubliclyRoutableName(host)) {
-    return "That address is not reachable from outside this network.";
+    return "laf:custom_url_internal";
   }
 
   return null;
@@ -985,7 +1004,7 @@ export function customUrlRefusal(raw: string): string | null {
 export async function resolvedCustomUrlRefusal(
   raw: string,
   options: { resolve?: HostResolver } = {},
-): Promise<string | null> {
+): Promise<CustomUrlRefusal | null> {
   const refusal = customUrlRefusal(raw);
   if (refusal) return refusal;
 
@@ -995,6 +1014,6 @@ export async function resolvedCustomUrlRefusal(
   if (verdict.allowed) return null;
 
   return verdict.fact === "laf:host_unresolvable"
-    ? "That address does not resolve, so this deployment cannot tell where it points."
-    : "That address resolves to somewhere inside this network.";
+    ? "laf:host_unresolvable"
+    : "laf:host_resolves_privately";
 }

@@ -190,16 +190,22 @@ describe("a URL an administrator typed", () => {
   });
 
   test("plaintext is refused", () => {
-    expect(customUrlRefusal("http://mcp.example.com")).toContain("https");
+    expect(customUrlRefusal("http://mcp.example.com")).toBe(
+      "laf:custom_url_not_https",
+    );
   });
 
   test("an address literal is refused", () => {
     // The cloud metadata endpoint, which is the reason this check exists.
-    expect(
-      customUrlRefusal("https://169.254.169.254/latest/meta-data/"),
-    ).toContain("hostname");
-    expect(customUrlRefusal("https://127.0.0.1/mcp")).toContain("hostname");
-    expect(customUrlRefusal("https://[::1]/mcp")).toContain("hostname");
+    expect(customUrlRefusal("https://169.254.169.254/latest/meta-data/")).toBe(
+      "laf:custom_url_is_address",
+    );
+    expect(customUrlRefusal("https://127.0.0.1/mcp")).toBe(
+      "laf:custom_url_is_address",
+    );
+    expect(customUrlRefusal("https://[::1]/mcp")).toBe(
+      "laf:custom_url_is_address",
+    );
   });
 
   test("names that only resolve inside the network are refused", () => {
@@ -212,35 +218,35 @@ describe("a URL an administrator typed", () => {
   });
 
   test("the metadata endpoint is refused by name, in every spelling", () => {
-    expect(customUrlRefusal("https://metadata.goog/computeMetadata")).toContain(
-      "cloud credentials",
+    expect(customUrlRefusal("https://metadata.goog/computeMetadata")).toBe(
+      "laf:custom_url_metadata",
     );
     expect(
       customUrlRefusal("https://metadata.google.internal/computeMetadata"),
     ).not.toBeNull();
     // The root-anchored spelling resolves to the same place and must not walk through.
-    expect(customUrlRefusal("https://metadata.goog./x")).toContain(
-      "cloud credentials",
+    expect(customUrlRefusal("https://metadata.goog./x")).toBe(
+      "laf:custom_url_metadata",
     );
     expect(customUrlRefusal("https://localhost./mcp")).not.toBeNull();
   });
 
   test("a credential written into the address is refused wherever it hides", () => {
     // Userinfo is stored and audited verbatim with the rest of the string.
-    expect(customUrlRefusal("https://user:secret@mcp.example.com/")).toContain(
-      "token field",
+    expect(customUrlRefusal("https://user:secret@mcp.example.com/")).toBe(
+      "laf:custom_url_holds_credential",
     );
     // The query, by parameter name — and one word away from the obvious spelling still counts.
-    expect(
-      customUrlRefusal("https://mcp.example.com/mcp?api_token=abc"),
-    ).toContain("token field");
-    expect(
-      customUrlRefusal("https://mcp.example.com/mcp?apiKey=abc"),
-    ).toContain("token field");
+    expect(customUrlRefusal("https://mcp.example.com/mcp?api_token=abc")).toBe(
+      "laf:custom_url_holds_credential",
+    );
+    expect(customUrlRefusal("https://mcp.example.com/mcp?apiKey=abc")).toBe(
+      "laf:custom_url_holds_credential",
+    );
     // The fragment never reaches the server and is still stored, which is the concern.
     expect(
       customUrlRefusal("https://mcp.example.com/mcp#access_token=abc"),
-    ).toContain("token field");
+    ).toBe("laf:custom_url_holds_credential");
     // Ordinary routing parameters are left alone; a floor an operator works around is a gap.
     expect(customUrlRefusal("https://mcp.example.com/mcp?version=2")).toBe(
       null,
@@ -249,6 +255,6 @@ describe("a URL an administrator typed", () => {
   });
 
   test("nonsense is refused rather than thrown", () => {
-    expect(customUrlRefusal("not a url")).toBe("That is not a URL.");
+    expect(customUrlRefusal("not a url")).toBe("laf:custom_url_invalid");
   });
 });

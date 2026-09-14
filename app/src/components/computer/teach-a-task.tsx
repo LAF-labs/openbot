@@ -10,6 +10,8 @@ import {
 } from "@/lib/computer/demonstration";
 import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
+import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalText } from "@/lib/refusals";
 
 /**
  * One row of the computer card, on the card's own left rule.
@@ -240,7 +242,11 @@ export function TeachATask({
                 setBusy(false);
                 if (!result.ok) {
                   setProblem(
-                    result.error || t("That could not be saved. Try again."),
+                    refusalText(
+                      SKILL_REFUSALS,
+                      result.code,
+                      t("That could not be saved. Try again."),
+                    ),
                   );
                   return;
                 }

@@ -5,6 +5,8 @@ import { SkillFields } from "@/components/skills/skill-fields";
 import { pageTitleClass } from "@/components/ui/page-header";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalFrom } from "@/lib/refusals";
 import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
@@ -36,10 +38,13 @@ export function EditSkill({ slug }: { slug: string }) {
         body: JSON.stringify(values),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? t("The skill could not be saved."));
+        throw new Error(
+          await refusalFrom(
+            response,
+            SKILL_REFUSALS,
+            t("The skill could not be saved."),
+          ),
+        );
       }
       return response.json();
     },

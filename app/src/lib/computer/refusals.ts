@@ -1,5 +1,3 @@
-import { t } from "@/lib/i18n";
-
 /**
  * What the computer's routes refuse, in the words of the screen that asked.
  *
@@ -40,13 +38,7 @@ export const BOUNDARY_REFUSALS: Record<string, string> = {
  * The words for a refusal's code out of one of the tables, or the reader's own sentence.
  *
  * Never the server's `error`: that field is the code itself now, and read as a fallback it would
- * print `laf:…` on the screen.
+ * print `laf:…` on the screen. One reader for every screen since the rest of the server's refusals
+ * became codes too (2026-09-14); it lives in `lib/refusals.ts` and is named here as it always was.
  */
-export function refusalText(
-  table: Record<string, string>,
-  code: unknown,
-  fallback: string,
-): string {
-  const known = typeof code === "string" ? table[code] : undefined;
-  return known ? t(known) : fallback;
-}
+export { refusalText } from "@/lib/refusals";

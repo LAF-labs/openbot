@@ -30,14 +30,24 @@ export function primeThreadRoutes(input: {
     .use("/api/copilotkit/threads", async (context, next) => {
       if (context.req.method === "GET") {
         const actor = await input.actorOf(context.req.raw);
-        if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
+        if (!actor) {
+          return context.json(
+            { error: "laf:unauthenticated", code: "laf:unauthenticated" },
+            401,
+          );
+        }
         await input.runner.primeThreadList(actor.id);
       }
       return next();
     })
     .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
       const actor = await input.actorOf(context.req.raw);
-      if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
+      if (!actor) {
+        return context.json(
+          { error: "laf:unauthenticated", code: "laf:unauthenticated" },
+          401,
+        );
+      }
       /*
        * REFUSED HERE, not merely left unprimed.
        *
@@ -50,7 +60,12 @@ export function primeThreadRoutes(input: {
         context.req.param("threadId"),
         actor.id,
       );
-      if (!mine) return context.json({ error: "laf:thread_not_found" }, 404);
+      if (!mine) {
+        return context.json(
+          { error: "laf:thread_not_found", code: "laf:thread_not_found" },
+          404,
+        );
+      }
       return next();
     });
 }

@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys } from "@/lib/plugins/queries";
+import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { refusalFrom } from "@/lib/refusals";
 
 /**
  * Which of your Agents carry this skill.
@@ -43,11 +45,14 @@ export function SkillAgents({
             body: JSON.stringify({ kind: "skill", ref: slug, agentId }),
           });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        // The server's sentence: it knows why it refused and this component does not.
-        throw new Error(body?.error ?? "That Agent could not be changed.");
+        // The server knows why it refused and this component does not; it says which by code.
+        throw new Error(
+          await refusalFrom(
+            response,
+            SKILL_REFUSALS,
+            t("That did not go through. Try again."),
+          ),
+        );
       }
     },
     onSuccess: () =>

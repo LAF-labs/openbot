@@ -20,6 +20,9 @@ import {
 } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 
+/** A client offered for a server that is not reached through one — a token server, or a custom one. */
+export const NOT_AN_OAUTH_SERVER = "laf:not_an_oauth_server";
+
 /**
  * The deployment's own identity at one vendor: the OAuth client it introduces itself with.
  *
@@ -355,9 +358,7 @@ export function createOAuthClients(
   }): Promise<void> {
     const { entry } = await servers().requireServer(input.serverId);
     if (entry?.auth.kind !== "user-oauth") {
-      throw new CustomServerRefusedError(
-        `${input.serverId} is not reached with an OAuth client.`,
-      );
+      throw new CustomServerRefusedError(NOT_AN_OAUTH_SERVER);
     }
 
     const { replaced } = await withOAuthClientLock(
