@@ -1,0 +1,92 @@
+name: Upgrade e2e
+
+# The upgrade a customer's VM takes, run end to end once a week: a deployment stood up from `:stable`'s
+# bundle, seeded through the front door, upgraded to `:edge` by `scripts/upgrade.sh` as written, and
+# checked — every row still there, the migrations applied once, /health ok, the person still signed
+# in, one turn answered, the Bot's browser opening the profile the old one wrote, and the dump the
+# upgrade took restoring to what was there. `scripts/upgrade-e2e.ts` is the whole of it; this file
+# only gives it a runner. docs/laf/deploying.md ("Rehearsed, not remembered") has what it measured.
+#
+# Until this existed the upgrade from the channel customers run to the next build had been measured
+# by hand exactly once (the rehearsal VM, 68–136 s, data intact), and nothing proved it again before
+# a release.
+#
+# WEEKLY AND BY HAND, NOT ON A TAG. A tag is when this would matter most, and the only run that could
+# stop a bad release is one between images.yml's per-architecture builds and its `merge` job, which
+# mints `:vX.Y.Z` and moves `:stable` in the same step. A workflow of its own starts beside images.yml
+# rather than inside it and cannot hold `merge` back. Holding it back means a job in images.yml that
+# `merge` needs — and a job skipped on main skips `merge` with it, so `merge` would also need its own
+# status condition to keep publishing `:edge`: a change to the job that moves the fleet's default
+# channel, which is a decision for that file's owner and not a side effect of this one. Until then,
+# rehearse before tagging: `gh workflow run upgrade-e2e.yml` against the `:edge` about to be tagged.
+#
+# ONE ARM64 RUNNER. Every customer VM is Ampere A1, so the arm64 halves of both sets of images are the
+# ones worth upgrading, and the runner is the cheapest Linux minute there is on the Free plan
+# ($0.005 against $0.006). The images are pulled, never built. What a run costs is under
+# "비공개 저장소의 CI 비용" in deploying.md.
+
+on:
+  schedule:
+    # Monday 03:10 UTC, noon in Seoul: a failure is read the same working day, before the week's tag.
+    - cron: "10 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "What a deployment runs today (a channel or vX.Y.Z)"
+        type: string
+        default: stable
+      to:
+        description: "What it is upgraded to (a channel or vX.Y.Z)"
+        type: string
+        default: edge
+
+# Nothing at the top: the one job says what it reads.
+permissions: {}
+
+# The newest run wins. A run that is cancelled has left nothing behind on a runner that is thrown away.
+concurrency:
+  group: upgrade-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    name: upgrade a deployment, end to end
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    permissions:
+      contents: read # the checkout, with its history
+      packages: read # both sets of images and bundles, pulled from GHCR, private with the repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history. A `:stable` older than the deploy bundle (2026-09-10) has no bundle
+          # image, and the driver rebuilds the directory a VM holds from git at the commit its images
+          # name; `:edge` built for an earlier commit is accepted only when git says everything since
+          # is documentation.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Sign in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      # No `bun install`: the driver reads nothing but Bun, node's built-ins and the fake model in
+      # agent-bot/tests, which imports nothing.
+      - name: Upgrade
+        env:
+          FROM_TAG: ${{ inputs.from || 'stable' }}
+          TO_TAG: ${{ inputs.to || 'edge' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          # `:edge` must be this commit's build (or one whose every later change is documentation).
+          # A version tag names its own build, and there is nothing to hold it to.
+          expect=()
+          if [ "$TO_TAG" = edge ]; then expect=(--expect-revision "$COMMIT"); fi
+          bun scripts/upgrade-e2e.ts --from "$FROM_TAG" --to "$TO_TAG" "${expect[@]}" \
+            --summary "$GITHUB_STEP_SUMMARY"

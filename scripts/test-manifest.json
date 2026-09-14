@@ -306,6 +306,7 @@
   "tests/tool-bridge.test.ts",
   "tests/tool-catalogue.test.ts",
   "tests/tool-notes.test.ts",
+  "tests/upgrade-e2e.test.ts",
   "tests/upgrade-script.test.ts",
   "tests/workspace.test.ts"
 ]

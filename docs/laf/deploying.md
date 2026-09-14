@@ -525,6 +525,122 @@ is the three `docker create` / `cp` / `rm` lines above, then
 from the directory it sits in; it never reached for git, and now there is no
 checkout to reach for.
 
+### Rehearsed, not remembered
+
+```bash
+bun scripts/upgrade-e2e.ts             # :stable → the five images built from this checkout
+bun scripts/upgrade-e2e.ts --to edge   # :stable → what main is, pulled the way a VM pulls it
+bun scripts/upgrade-e2e.ts --keep      # …and leave the deployment up to look at
+```
+
+The upgrade from the channel customers run to the next build had been measured
+by hand exactly once — the rehearsal VM, 68–136 s, data intact — and nothing
+proved it again before a release. `scripts/upgrade-e2e.ts` is that rehearsal as
+a program. It stands a deployment up the way a VM is stood up: the FROM tag's
+bundle extracted, a `.env` with the run's own secrets (production in every way
+the server checks — no `LAF_DEV_NO_AUTH`, a declared sign-in provider, keys in
+their real shapes), `pull`, `up -d`, the honest `/health`. It seeds it through
+the front door as a signed-in person — two Bots, a room with a few messages, a
+routine that has run, the Bot's browser opened once, a site connection, and the
+trail all of that leaves — and photographs every table. Then it re-extracts the
+TO tag's bundle over the directory as `laf upgrade` does and runs
+`scripts/upgrade.sh` as written, while `/`, `/health` and `/api/capabilities`
+are asked every 0.25 s from outside. What it holds the upgrade to:
+
+- **Every row that existed is still there, unchanged**, column by column over
+  the columns both schemas have. Allowed to move, each with its reason in the
+  script's `MOVING_COLUMNS`: `updated_at`, a session's `expires_at`, and the
+  tenant-package row every boot re-stamps. Rows added during the upgrade are
+  reported, never failed — a booting server writes to its trail.
+- **The migrations applied once**: one `__drizzle_migrations` row per entry in
+  the new image's journal, no hash twice.
+- `/health` ok from outside; **the cookie from before still signs the person
+  in**; `/api/version` is the new build; the Bot's browser answers `/health`
+  **and opens the profile the old computer wrote** (as root, on any image from
+  before 2026-09-13); a routine seeded before the upgrade runs after it and
+  answers through the model.
+- **The dump `upgrade.sh` took is a way back**: `restore.sh --dry-run` on it
+  opens nothing, and restored beside the live database it holds every table with
+  the row counts the photograph had.
+
+Then it takes away every container, volume and network it made and every image
+it pulled or built, and puts back a tag a pull moved.
+
+Three things are stood in for, each the one thing a run cannot have. The model
+is a fake the driver serves (`agent-bot/tests/fake-provider.ts`), reached from
+the containers at `host.docker.internal` or, on Linux, the default bridge's
+gateway; in a room it speaks through `send_message`, because a room member's
+plain text is heard by nobody — the first run answered in prose and waited two
+minutes on a silent room. The person is a session row carrying better-auth's own
+cookie signature, the way the integration tests stand one up: the only real way
+in is OAuth. The site connection is a row, because the only route that writes
+one reads a Bot's browser signed into the real 스마트스토어.
+
+**A local run builds the five images** as `:e2e-<commit>` and never pushes
+them. `upgrade.sh` pulls before it replaces anything, and `docker compose pull`
+fails the whole upgrade on a tag the registry does not have, `build:` section or
+not (measured: exit 1) — so a local run adds exactly one thing, an override
+through `COMPOSE_FILE` that sets `pull_policy: missing` on the services it
+built. The web image is vite over sixteen thousand modules and wants most of a
+4 GB Docker VM to itself — measured: built in 303 s, then killed for memory at
+"rendering chunks" five times running while another checkout's containers
+shared the VM, then built in 65 s once they had stopped — so `--no-build` takes
+the images an earlier build left, provided each carries this commit's revision
+label.
+
+**Weekly on CI**, `.github/workflows/upgrade-e2e.yml`, Mondays 03:10 UTC and by
+hand: `:stable` → `:edge`, on one arm64 runner, which is what every customer VM
+is. `:edge` must be the commit the run checked out, or one whose every later
+change is documentation (images.yml's own `paths-ignore`); anything else stops
+the run before it stands a thing up. It did exactly that the first time it was
+tried here, against an `:edge` already rebuilt from a newer main.
+
+**Not on a tag, yet.** A tag is where this matters most, and the only run that
+could stop a bad release sits between images.yml's per-architecture builds and
+its `merge` job, which mints `:vX.Y.Z` and moves `:stable` in one step. A
+workflow of its own starts beside images.yml and cannot hold `merge` back.
+Holding it back is a job in images.yml that `merge` needs — and since a job
+skipped on main skips `merge` with it, `merge` would also need a status
+condition of its own to keep publishing `:edge`. That is a change to the job
+that moves the fleet's default channel, and it is left to a change about that
+job. Until then, before a tag: `gh workflow run upgrade-e2e.yml`, which
+rehearses the `:edge` about to be tagged.
+
+Measured 2026-09-14 on Docker Desktop, arm64: `:stable` (v0.4.5, `0e08817`)
+upgraded across five migrations (0034–0038, one of which moves the roster
+preview off `channels`) to two builds:
+
+| | → this checkout's build (`e71d09e`), two runs | → `:edge` (`8272cea`), pulled |
+|---|---|---|
+| `upgrade.sh`, start to exit | 24.1 s, 23.6 s (images already local) | 44.7 s |
+| `/` down, from outside | 3.0 s, 3.0 s, one window each | 3.0 s, one window |
+| `/health` and `/api/capabilities` down | 14.3 s, 14.8 s, one window each | 16.3 s, one window |
+| rows | 92 in 36 tables, none lost or changed | the same tables |
+| restore beside | 38 tables · 34 equal · 4 differ | 38 · 34 · 4 |
+| checks | all 13 pass, both runs | 12 of 13 (below) |
+| first command to last check | 63.3 s, 62.6 s | 96.5 s |
+
+The four that differ are the upgrade's own: five migration rows, two boot rows
+on the trail (`computer.policy_loaded`, `computer.isolation_loaded`) and two new
+empty tables. The `:edge` run came first and failed on a single column —
+`deployment_packages.loaded_at`, which `recordTenantPackage` re-stamps on every
+boot — which is why that column is on the list; nothing a person wrote moved in
+either run.
+
+What the first runs found, and the script keeps reporting until it is not true:
+
+- **There is no `openbot-deploy:stable`.** The bundle was first published
+  2026-09-10, after v0.4.5, so on a VM that follows `:stable` the three
+  `docker create` / `cp` / `rm` lines above fail with `not found` — the first
+  step of standing one up, and of `laf upgrade`. The driver rebuilds the
+  directory from git at the commit `:stable`'s images carry, which is what a VM
+  cloned then holds, and says so. The next release tag mints it.
+- **`:stable`'s compose file never passes `LAF_TOKEN_ENCRYPTION_KEY`**, which
+  the new server refuses to start without. A VM whose `.env` was written for
+  `:stable` need not have the line, and must gain it before this upgrade. The
+  run's own `.env` carries it from the start, so this is read from the two
+  compose files, not measured as a failed start.
+
 ### What a VM runs
 
 ```bash
@@ -802,6 +918,7 @@ shell for Linux or moves Tauri off `gtk` 0.18.
 | `release.yml` | `v*` 태그, `desktop/**`나 `release.yml`이 바뀐 `main` 푸시, 수동. PR은 `shell` 테스트만 | 그 밖의 `main` 푸시 전부 |
 | `smoke.yml` | 매일 02:40 UTC, 수동 | — |
 | `security_zizmor.yml` | `.github/**` 변경, 매주 월요일 | — |
+| `upgrade-e2e.yml` | 매주 월요일 03:10 UTC, 수동 | 푸시와 태그 전부 — 태그에 걸지 않은 이유는 위 "Rehearsed, not remembered" |
 
 `ci.yml`·`images.yml`·`release.yml`은 ref별 `concurrency` 그룹이라 한 브랜치에
 푸시가 몰리면 가장 최근 것만 끝까지 돈다. 태그는 취소하지 않는다.
@@ -810,6 +927,12 @@ shell for Linux or moves Tauri off `gtk` 0.18.
 변경 2회: Linux+arm64 ≈ 45×18 + 3×18 + 40 ≈ 900분, macOS·Windows ≈ 5회 × 140 ≈
 700 가중 분, 합계 **≈ 1,600–1,700 가중 분/월**. 9월 첫 열흘처럼 태그를 일곱 개
 찍으면 넘친다 — 태그가 가장 비싼 행위이고, 리허설은 `:edge`로 한다.
+
+`upgrade-e2e.yml`(2026-09-14 추가)은 arm64 러너 한 대에서 회당 약 8분(6–10분)으로
+추정한다. 로컬 실측으로 이미지가 이미 있을 때 처음부터 끝까지 63–97초였고, 러너는
+여기에 두 이미지 묶음을 처음부터 받는 시간이 더해진다 — `:stable`의 서버 이미지만
+1.92GB이고 로컬에서 그 한 장을 받는 데 92초가 걸렸다. 러너에서는 아직 재지 않았다.
+주 1회면 월 35분 안팎으로, 위 합계를 거의 움직이지 않는다.
 
 arm64 러너는 그대로 둔다. GitHub 러너 문서는 `ubuntu-24.04-arm`을 비공개
 저장소용 표준 러너로도 적고(2 vCPU/8GB, 공개용은 4/16), 그 러너들이 포함 분을
