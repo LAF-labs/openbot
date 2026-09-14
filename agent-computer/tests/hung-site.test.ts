@@ -4,7 +4,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { serveFixture, VISIBLE_TEXT } from "./fixture-site";
+import { SNAPSHOT_DEADLINE_MS } from "../src/snapshot";
+import {
+  FRAME_BUTTON,
+  HANGING_FRAME_PAGE_BUTTON,
+  serveFixture,
+  VISIBLE_TEXT,
+} from "./fixture-site";
 
 /**
  * A site that never answers, and the Bot that has to go on working afterwards.
@@ -154,4 +160,41 @@ describe.skipIf(!HAS_BROWSER)("a page that never loads", () => {
     expect(fresh.result.status).toBe(200);
     expect(String(fresh.result.body.text)).toContain(VISIBLE_TEXT);
   }, 40_000);
+});
+
+/*
+ * A FRAME THAT NEVER LOADS, ON A PAGE THAT DID.
+ *
+ * Found by W3-c (2026-09-14) and measured again in the image built from eeea985: `/navigate` to
+ * `/hanging-frame` answered 200 in 7.1 s, and `/snapshot` did not answer in 120 s — twice — while
+ * `/read` beside it answered in 4.5 s. Every look the Bot took at a page carrying a dead payment
+ * window was its whole turn. The look answers inside its deadline now, with what the page and the
+ * frame that did load hold, and the dead frame counted rather than left out in silence. Twice, so
+ * nothing the first look left waiting holds the second.
+ */
+describe.skipIf(!HAS_BROWSER)("a page with a frame that never loads", () => {
+  test("is looked at within the deadline, the frame counted as unseen and the rest listed", async () => {
+    const opened = await post("/navigate", {
+      url: `${fixture?.url}hanging-frame`,
+    });
+    expect(opened.status).toBe(200);
+
+    for (let look = 0; look < 2; look += 1) {
+      const shot = await timed(post("/snapshot", {}));
+      expect(shot.result.status).toBe(200);
+      expect(shot.ms).toBeLessThan(SNAPSHOT_DEADLINE_MS);
+      expect(shot.result.body.opaqueFrames).toBe(1);
+      const elements = shot.result.body.elements as {
+        ref: string;
+        name: string;
+      }[];
+      expect(elements.map((element) => element.name)).toContain(
+        HANGING_FRAME_PAGE_BUTTON,
+      );
+      // The frame that did load is read, its control under a frame-scoped ref.
+      expect(
+        elements.find((element) => element.name === FRAME_BUTTON)?.ref,
+      ).toMatch(/^f\d+e\d+$/);
+    }
+  }, 60_000);
 });

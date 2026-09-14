@@ -19,6 +19,7 @@
   "agent-computer/tests/hung-site.test.ts",
   "agent-computer/tests/korean-browser.test.ts",
   "agent-computer/tests/korean-sites.test.ts",
+  "agent-computer/tests/late-frame-secret.test.ts",
   "agent-computer/tests/navigation-guard.test.ts",
   "agent-computer/tests/sandbox.test.ts",
   "agent-computer/tests/secret-snapshot.test.ts",

@@ -138,6 +138,50 @@ const OTHER_HTML = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>주문 상세</title></head>
 <body><h1>주문 상세 화면</h1></body></html>`;
 
+/** A control on the page whose second frame never loads, so a look can be seen to have read the page. */
+export const HANGING_FRAME_PAGE_BUTTON = "주문하기";
+
+/**
+ * A page with two frames: the same-origin frame that loads (`/frame`, with {@link FRAME_BUTTON} in it)
+ * and one whose request is accepted and never answered (`/hang`) — a payment window or a 본인인증
+ * panel behind a load balancer that has stopped answering. Served at `/hanging-frame`.
+ *
+ * Until 2026-09-14 a snapshot of this page never came back (W3-c): the look waited on the frame
+ * that never arrives, for ever, and the Bot's turn with it.
+ */
+const HANGING_FRAME_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>결제</title></head>
+<body>
+  <h1>${VISIBLE_TEXT}</h1>
+  <button type="button">${HANGING_FRAME_PAGE_BUTTON}</button>
+  <iframe src="/frame" title="세금계산서" width="400" height="200"></iframe>
+  <iframe src="/hang" title="결제창" width="400" height="200"></iframe>
+</body></html>`;
+
+/** What the box in the late frame already holds. A look that shows it has shown a secret. */
+export const LATE_FRAME_SECRET = "LATE-FRAME-SECRET-4455";
+
+/** The late frame's button, and what pressing it writes into the frame. */
+export const LATE_FRAME_BUTTON = "결제 진행";
+export const LATE_FRAME_CLICKED = "결제창 버튼 눌림";
+
+/**
+ * The page of a frame that arrives late: served at `/late-frame` only once `releaseLateFrames()` is
+ * called, so a test decides the moment it arrives.
+ *
+ * Two secret boxes nothing but the markup marks: one holding {@link LATE_FRAME_SECRET} under a name
+ * no secret-word list carries, and one with no name and no value, which only the join by ref can
+ * mark. And a button, so a ref from the late frame can be seen to still work after the look.
+ */
+const LATE_FRAME_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>결제창</title></head>
+<body>
+  <input type="password" aria-label="간편결제" value="${LATE_FRAME_SECRET}">
+  <input type="password">
+  <button type="button" onclick="document.getElementById('late-said').textContent='${LATE_FRAME_CLICKED}'">${LATE_FRAME_BUTTON}</button>
+  <p id="late-said"></p>
+</body></html>`;
+
 /** The label the relabel button starts with, and the money word it becomes. See `/relabel`. */
 export const RELABEL_BEFORE = "저장";
 export const RELABEL_AFTER = "결제하기";
@@ -227,10 +271,20 @@ export function serveFixture(port = 0) {
   let quiet = false;
   /** Every `/hang` request still being held open. See the route. */
   const hanging = new Set<(response: Response) => void>();
+  /** Every `/late-frame` request, held until `releaseLateFrames`. */
+  const late = new Set<(response: Response) => void>();
 
   const server = Bun.serve({
     port,
     hostname: "127.0.0.1",
+    /*
+     * NEVER, NOT TEN SECONDS. Bun closes a connection that has sent nothing for ten seconds unless
+     * told otherwise, and Chromium takes the close as the frame's answer and gives it an error page
+     * — so `/hang` inside an iframe was a frame that arrived at ten seconds. Measured 2026-09-14: Bun
+     * logged `request timed out after 10 seconds`, and a read of that frame which had been waiting
+     * since the page opened answered in the same moment. A site that never answers does not do that.
+     */
+    idleTimeout: 0,
     async fetch(request) {
       const url = new URL(request.url);
       const path = url.pathname;
@@ -275,6 +329,14 @@ export function serveFixture(port = 0) {
         return new Promise<Response>((resolve) => {
           hanging.add(resolve);
         });
+      }
+      if (path === "/late-frame") {
+        return new Promise<Response>((resolve) => {
+          late.add(resolve);
+        });
+      }
+      if (path === "/hanging-frame") {
+        return new Response(HANGING_FRAME_HTML, { headers: html });
       }
       if (path === "/frame") {
         return new Response(FRAME_HTML, {
@@ -328,9 +390,19 @@ export function serveFixture(port = 0) {
   return {
     url: `http://127.0.0.1:${server.port}/`,
     stop: () => {
-      for (const release of hanging) release(new Response("", { status: 503 }));
+      for (const release of [...hanging, ...late]) {
+        release(new Response("", { status: 503 }));
+      }
       hanging.clear();
+      late.clear();
       return server.stop(true);
+    },
+    /** Answer every `/late-frame` request waiting so far. */
+    releaseLateFrames: () => {
+      for (const release of late) {
+        release(new Response(LATE_FRAME_HTML, { headers: html }));
+      }
+      late.clear();
     },
     setQuiet: (on: boolean) => {
       quiet = on;

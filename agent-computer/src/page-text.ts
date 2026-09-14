@@ -8,6 +8,7 @@
  */
 import type { Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
+import { within } from "./within";
 
 /**
  * How much page text a navigation hands back.
@@ -32,6 +33,9 @@ const NETWORK_IDLE_CAP_MS = 3_000;
 /** And a moment for the load event, which most pages reach long before the network does. */
 const LOAD_CAP_MS = 1_000;
 
+/** How long a page is given to say whether it has finished loading. A page with a document answers in milliseconds. */
+const READY_STATE_WAIT_MS = 1_000;
+
 /** Let a page finish arriving. Never throws: every wait here is an optimisation, not a requirement. */
 export async function settle(target: Page): Promise<void> {
   await target
@@ -50,11 +54,16 @@ export async function settle(target: Page): Promise<void> {
  * at all, so waiting unconditionally would put three seconds on every one of those calls. The page
  * that IS still loading is the one that matters here: the tab a `target=_blank` link just opened is
  * `about:blank` for the first fraction of a second, and a snapshot of it lists nothing.
+ *
+ * The question is bounded, and no answer counts as still loading. A tab whose navigation was sent and
+ * never answered has no document to ask, and `evaluate` waits for one without a timeout (measured
+ * 2026-09-14: past 3 s on a tab whose `goto` had given up) — so the snapshot that asked it did too.
  */
 export async function settleIfLoading(target: Page): Promise<void> {
-  const ready = await target
-    .evaluate(() => document.readyState)
-    .catch(() => "complete");
+  const ready = await within(
+    READY_STATE_WAIT_MS,
+    target.evaluate(() => document.readyState).catch(() => "complete"),
+  );
   if (ready !== "complete") await settle(target);
 }
 

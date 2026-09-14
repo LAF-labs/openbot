@@ -212,7 +212,9 @@ export function isSecretLabel(name: string): boolean {
  * DID enter still gets its colon. Measured on 1.62.1 with a real Chromium: `<iframe
  * src="chrome://version">` and an iframe replaced every 20 ms came back bare; an X-Frame-Options
  * refusal, a CSP `frame-ancestors` refusal, a connection refused, a data: URL, a PDF and a page that
- * reloads itself every 30 ms all came back with the colon.
+ * reloads itself every 30 ms all came back with the colon. An iframe whose request is accepted and
+ * never answered comes back bare too, once the tree's timeout has run out on it (measured
+ * 2026-09-14; `FRAME_WAIT_MS` in snapshot.ts is that timeout).
  *
  * Matched on the line rather than off the parsed tree, the way Playwright matches it, so a page past
  * the element limit is still counted to its last frame.
