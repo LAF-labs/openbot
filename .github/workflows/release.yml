@@ -1,9 +1,23 @@
 name: Release
 
-# Builds the desktop shell for every platform it ships on, signs the updater artifacts, and
-# publishes them as a DRAFT release. Pushing a `v*` tag does the whole thing; a push to `main` and a
-# manual run only build and keep the installers as workflow artifacts, so nobody can publish by
-# clicking.
+# Builds the desktop shell for every platform it ships on, signs the updater artifacts, and carries
+# them to the fleet's front door, `https://agent.laf-co.com/desktop/` — where installed apps look for
+# their next version and where a new customer downloads the app. Pushing a `v*` tag does the whole
+# thing; a push to `main` and a manual run only build and keep the installers as workflow artifacts,
+# so nobody can publish by clicking.
+#
+# WHY THE FRONT DOOR AND NOT A GITHUB RELEASE. This repository went private on 2026-09-10, and from
+# that day `releases/latest/download/latest.json` — the endpoint every installed app was built with —
+# answered 404 to anybody without an account: no app could update, and there was no public place to
+# download one. The updater now reads `https://agent.laf-co.com/desktop/latest.json`
+# (desktop/scripts/front-door.ts writes it; laf-control's `laf desktop door` built the door).
+#
+# AND NO DRAFT RELEASE BESIDE IT, on purpose. Publishing the draft used to be the gate that offered
+# an update; nothing reads GitHub releases any more, so a draft would be a button that does nothing
+# — with a latest.json inside pointing every app at URLs that answer 404. Dropping it is also what
+# takes `contents: write` away from the build jobs, which hold the updater's signing key while they
+# run other people's build code. The record of a release is its tag (the code) and the door (the
+# bytes, newest three versions); a version the door no longer keeps is rebuilt from its tag.
 #
 # THE INSTALLERS EXIST ON EVERY PUSH THAT TOUCHES THE SHELL, and that is the point of the build-only
 # path. Before it, getting a `.dmg` or a `.exe` into anybody's hands took a tag — which is a
@@ -43,18 +57,24 @@ name: Release
 #                                      notarization. Without them the dmg is ad-hoc signed and
 #                                      Gatekeeper warns on every other Mac — a rehearsal, not a ship.
 #
+# And set by `bun run laf desktop door` in laf-control, never by hand (`--rotate` replaces them):
+#   DESKTOP_DOOR_SSH_KEY               the private half of the one key the entry VM accepts for
+#                                      `laf-desktop`, whose authorized_keys line is
+#                                      `restrict,command="/usr/local/lib/laf-desktop/receive"`: it
+#                                      can hand a tar to the receiver and do nothing else.
+#   DESKTOP_DOOR_KNOWN_HOSTS           the entry VM's host key, pinned from the operator's session.
+#   DESKTOP_DOOR_KEY_FINGERPRINT       a VARIABLE, not a secret: the public fingerprint the verb
+#                                      wrote last, after everything else it did succeeded.
+#
 # A pull request that touches `desktop/**` runs the `shell` job and nothing else: no secrets, no
 # write permission, no bundle. It is here rather than in `ci.yml` because CI runs on Linux, where
 # Tauri needs webkit2gtk development packages for a binary that only ever ships as a .app and an
 # .exe — so the shell's Rust tests can only run on the runners it is actually built on.
 #
-# `releases/latest/download/latest.json` — the updater endpoint — only serves PUBLISHED releases,
-# so no installed app is offered anything until the draft is published. That is the gate.
-#
-# Both platform jobs write into the SAME draft and the action merges their platforms into one
-# latest.json. They deliberately do not fail as a unit (`fail-fast: false`, so one platform failing
-# does not cancel the other's build), which means a RED run can still leave a draft holding one
-# platform. Read the run before publishing the draft: green is both, red is not.
+# THE TAG IS THE GATE NOW. The door job runs once both platforms built and signed (`needs: build`
+# with `fail-fast: false` still lets one platform finish while the other fails, but a red leg means
+# no door job at all), and the moment it succeeds every installed app is offered the version on its
+# next launch. So a tag is a release, not a rehearsal: rehearse on a `main` push's installers.
 
 on:
   push:
@@ -68,20 +88,23 @@ on:
     paths:
       - "desktop/**"
       - "!desktop/README.md"
+      # The publisher runs on a tag only and is not in either installer; a change to it alone is
+      # proven by tests/desktop-front-door.test.ts, not by ~150 weighted minutes of compile.
+      - "!desktop/scripts/**"
       - ".github/workflows/release.yml"
   # And on a pull request that touches the shell, for the `shell` job below only. `ci.yml` runs on
   # Linux, where this crate does not build at all, so before this the shell's own tests ran nowhere
   # until somebody pushed a tag — which is the last moment anybody wants to learn about them.
   pull_request:
-    paths: ["desktop/**"]
+    paths: ["desktop/**", "!desktop/scripts/**"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 # The newest push wins on a branch or a pull request: a burst of shell commits builds once, at the
-# end, instead of once per commit at macOS prices. A tag is never cancelled — its run is writing a
-# draft release, and half a draft is worse than a slow one.
+# end, instead of once per commit at macOS prices. A tag is never cancelled — its run IS the release,
+# and a release that stopped after the macOS build has spent the minutes and shipped nothing.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
@@ -113,13 +136,14 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    # Never on a pull request: this job writes releases and holds the signing key. The trigger above
-    # exists for `shell` alone.
+    # Never on a pull request: this job holds the updater's signing key. The trigger above exists for
+    # `shell` alone.
     if: github.event_name != 'pull_request'
     timeout-minutes: 60
-    # Creating the draft release and uploading to it is the one thing here that writes.
+    # Read-only. It runs a compile full of other people's code while holding the signing key, and
+    # since the draft release went (see the top of this file) nothing here writes to the repository.
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -128,10 +152,12 @@ jobs:
             runner: macos-14
             targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin
+            door: macos
           - name: Windows (x64 installer)
             runner: windows-latest
             targets: ""
             args: ""
+            door: windows
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,13 +192,13 @@ jobs:
       #   1. `createUpdaterArtifacts` is on in `tauri.conf.json`, and the bundler REFUSES TO BUILD
       #      with it on and no signing key in the environment. A build-only run that has no key
       #      would produce nothing at all instead of the installers it exists for.
-      #   2. The endpoint is `releases/latest/download/latest.json`, and the version in the file is
-      #      whatever main happens to carry — 0.2.0, while the last published release is 0.4.4. So a
-      #      build-only installer launched, found a "newer" version, and REPLACED ITSELF WITH THE
-      #      RELEASE: the log read `update 0.4.4 is available; installing`, and the commit somebody
-      #      installed the build to try was gone on the next launch. Emptying the endpoints makes
-      #      the plugin inert (`no updater configured: Updater does not have any endpoints set.`)
-      #      and the app runs unchanged.
+      #   2. The endpoint is the front door's latest.json, and the version in the file is whatever
+      #      main happens to carry — 0.2.0, while the last release was 0.4.4. So a build-only
+      #      installer launched, found a "newer" version, and REPLACED ITSELF WITH THE RELEASE: the
+      #      log read `update 0.4.4 is available; installing` (measured against the GitHub endpoint
+      #      this one replaced), and the commit somebody installed the build to try was gone on the
+      #      next launch. Emptying the endpoints makes the plugin inert (`no updater configured:
+      #      Updater does not have any endpoints set.`) and the app runs unchanged.
       #
       # Both are stamped on the runner, like the version below, and neither is committed: the file
       # in the repository keeps the updater on, for the tag path, which is the only path that has a
@@ -190,8 +216,8 @@ jobs:
       # decode path the bundler uses, instead of as a cryptic error after the compile.
       #
       # A TAG WITHOUT THE KEY STILL FAILS HERE, and should: a release whose `latest.json` is
-      # unsigned is one no installed app will accept, and the moment to learn that is not after the
-      # draft is published. A build-only run skips the step entirely — it signs nothing, so a
+      # unsigned is one no installed app will accept, and the moment to learn that is before the
+      # compile, not at the door. A build-only run skips the step entirely — it signs nothing, so a
       # missing key costs it nothing.
       - name: Prove the updater key can sign
         if: github.ref_type == 'tag'
@@ -212,6 +238,21 @@ jobs:
           bunx tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" sign-probe.txt
           rm -f sign-probe.txt sign-probe.txt.sig
 
+      # The same question about the door, asked before ~150 weighted minutes are spent on a release
+      # that has nowhere to go. The variable, not the key: this job never holds the door's key, and
+      # the fingerprint is written only after `laf desktop door` finished everything else.
+      - name: Prove the front door is keyed
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          DOOR_FINGERPRINT: ${{ vars.DESKTOP_DOOR_KEY_FINGERPRINT }}
+        run: |
+          if [ -z "$DOOR_FINGERPRINT" ]; then
+            echo "::error::DESKTOP_DOOR_KEY_FINGERPRINT is not set: the front door was never keyed. Run 'bun run laf desktop door' in laf-control, then push the tag again."
+            exit 1
+          fi
+          echo "The door is keyed ($DOOR_FINGERPRINT)."
+
       # The built version comes from tauri.conf.json, which does not know what tag it is being built
       # for. Without this every release carries the version in the file — 0.1.0 forever — and an
       # installed app compares that against its own, finds them equal, and is never offered the
@@ -222,12 +263,14 @@ jobs:
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
+        # X.Y.Z exactly: the door orders versions as three numbers and refuses anything else, so a
+        # `v1.2.3-rc.1` is refused here, before the compile, rather than after it.
         run: |
           VERSION="${TAG#v}"
-          case "$VERSION" in
-            [0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::Tag '$TAG' is not a version. Tag releases as v1.2.3."; exit 1 ;;
-          esac
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a version. Tag releases as v1.2.3."
+            exit 1
+          fi
           export VERSION
           bun -e 'const p = "src-tauri/tauri.conf.json"; const c = await Bun.file(p).json(); c.version = process.env.VERSION; await Bun.write(p, JSON.stringify(c, null, 2))'
           echo "Building version $VERSION"
@@ -274,25 +317,96 @@ jobs:
           echo "Developer ID signing and notarization are on."
 
 
-      # On a tag: build, sign the updater artifacts, create or extend the draft release. Both matrix
-      # jobs land in the same draft, and the action merges their platforms into one latest.json.
-      # On a push to main or a manual run: build only, and keep the installers as workflow
-      # artifacts. `tagName` is empty on those, and the action reaches nothing release-shaped
-      # without one — no create, no extend, no publish, no latest.json. The artifacts are named
+      # Build — and on a tag, sign the updater artifacts (the bundler does, from the key in the
+      # environment). No `tagName`, ever: without one the action reaches nothing release-shaped. On a
+      # push to main or a manual run it keeps the installers as workflow artifacts, named
       # `[platform]-[arch]-[bundle]`, one file each: `darwin-universal-dmg` here and
       # `windows-x64-nsis` (the `-setup.exe`) on the other runner.
-      - name: Build and publish draft
+      - name: Build
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
           tauriScript: bunx tauri
           args: ${{ matrix.args }}
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('LAF Agent {0}', github.ref_name) || '' }}
-          releaseDraft: true
-          prerelease: false
           uploadWorkflowArtifacts: ${{ github.ref_type != 'tag' }}
+
+      # On a tag, what the door serves goes to the door job and nowhere else: this platform's
+      # installer and its updater files, where the bundler wrote them. One list for both runners;
+      # each matches its own half, and the door job refuses a release missing either.
+      - name: Hand the signed files to the door job
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: door-${{ matrix.door }}
+          path: |
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*_universal.dmg
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+            desktop/src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  # The release itself: both platforms' signed files, checked against the key the app embeds, onto
+  # https://agent.laf-co.com/desktop/<version>/ and read back from outside. The only job that holds
+  # the door's key, and it runs no build: checkout, bun, and one script with no dependencies.
+  door:
+    name: front door
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+          no-cache: true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: door-*
+          path: door-in
+
+      # The key is checked against the fingerprint `laf desktop door` wrote last before it is used:
+      # a secret replaced by hand, or a rotation that died half-way, is named here instead of
+      # arriving as `Permission denied (publickey)`. Then the script stages the version (refusing a
+      # signature any installed app would refuse), sends it as a tar to the forced command — which
+      # places it, moves `current` onto it and keeps three — and reads it back over HTTPS.
+      - name: Carry the release to the front door
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          DOOR_KEY: ${{ secrets.DESKTOP_DOOR_SSH_KEY }}
+          DOOR_KNOWN_HOSTS: ${{ secrets.DESKTOP_DOOR_KNOWN_HOSTS }}
+          DOOR_FINGERPRINT: ${{ vars.DESKTOP_DOOR_KEY_FINGERPRINT }}
+        run: |
+          if [ -z "$DOOR_KEY" ] || [ -z "$DOOR_KNOWN_HOSTS" ] || [ -z "$DOOR_FINGERPRINT" ]; then
+            echo "::error::The front door is not keyed. Run 'bun run laf desktop door' in laf-control; it sets DESKTOP_DOOR_SSH_KEY, DESKTOP_DOOR_KNOWN_HOSTS and DESKTOP_DOOR_KEY_FINGERPRINT."
+            exit 1
+          fi
+          umask 077
+          door="$RUNNER_TEMP/door"
+          mkdir -p "$door"
+          printf '%s\n' "$DOOR_KEY" > "$door/key"
+          printf '%s\n' "$DOOR_KNOWN_HOSTS" > "$door/known_hosts"
+          held=$(ssh-keygen -lf "$door/key" | awk '{print $2}')
+          if [ "$held" != "$DOOR_FINGERPRINT" ]; then
+            echo "::error::DESKTOP_DOOR_SSH_KEY is $held, and the door was last keyed with $DOOR_FINGERPRINT. Run 'bun run laf desktop door --rotate' in laf-control."
+            exit 1
+          fi
+          bun desktop/scripts/front-door.ts \
+            --from door-in \
+            --version "${TAG#v}" \
+            --stage "$RUNNER_TEMP/door-stage" \
+            --key "$door/key" \
+            --known-hosts "$door/known_hosts"

@@ -285,6 +285,7 @@
   "tests/caddyfile.test.ts",
   "tests/clean-checkout.test.ts",
   "tests/compose.test.ts",
+  "tests/desktop-front-door.test.ts",
   "tests/desktop-shell.test.ts",
   "tests/dockerfiles.test.ts",
   "tests/eval-deferral.test.ts",

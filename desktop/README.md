@@ -188,8 +188,13 @@ configs — a partial window would build fine and open at the wrong size. The
 two files are the one place in this shell where a value is duplicated on
 purpose; change the window's shape in both or neither.
 
-The updater's endpoint is this repository's latest release, which publishes
-`latest.json` beside the installers. The pubkey in `tauri.conf.json` is the
+The updater's endpoint is the fleet's front door,
+`https://agent.laf-co.com/desktop/latest.json` — not a GitHub release. It was
+this repository's `releases/latest/download/latest.json` until the repository
+went private on 2026-09-10, after which that URL answered 404 to every installed
+app (anonymously, which is how an app asks) and no app could update. Apps built
+before the move still ask GitHub and never will update; they are reinstalled
+once from the door (docs/laf/installing.md). The pubkey in `tauri.conf.json` is the
 pair generated 2026-08-25 (key id `3E9A4235FEC7D535`); its private half and
 password live in this repository's Actions secrets and with the owner, outside
 any repository. Lose both and no installed app will ever accept another
@@ -201,12 +206,24 @@ rotated it: nothing signed by that key was ever published.)
 ## Releasing
 
 `.github/workflows/release.yml` builds a universal macOS dmg and a Windows
-x64 installer (NSIS, per-user) and publishes them as a **draft** release
-when a `v*` tag is pushed:
+x64 installer (NSIS, per-user), and when a `v*` tag is pushed its `door` job —
+once BOTH builds are green — carries them with their signed updater files to
+`https://agent.laf-co.com/desktop/<version>/` and moves the stable names
+(`LAF-Agent-mac.dmg`, `LAF-Agent-windows.exe`, `latest.json`) onto them:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.5.0 && git push origin v0.5.0
 ```
+
+**The tag is the release.** There is no draft to publish any more: the moment
+the door job succeeds, every installed app is offered the version on its next
+launch. `scripts/front-door.ts` refuses, before any connection, an updater
+signature from any key but the pubkey here or over any bytes but the build's —
+the two ways a release is silently refused by every app. The door itself (an
+account whose only key is forced into a receiver, the Caddy route, the key as
+GitHub secrets) is laf-control's `laf desktop door`; it keeps the newest three
+versions and refuses a version lower than the one it serves, the same number
+with different bytes, and a release without a feed over one that has it.
 
 **A push to `main` builds both installers and publishes nothing.** They are
 kept as workflow artifacts on the run — `darwin-universal-dmg` and
@@ -229,10 +246,6 @@ configured` and the app runs as built. A **tag** keeps both: it is the only
 path with a release to offer anybody, and without the signing key it still
 fails, as it should.
 
-The updater reads `releases/latest/download/latest.json`, which serves
-published releases only — publishing the draft is what offers the update to
-installed apps.
-
 `docs/laf/installing.md` is what a person is handed: how to install each one,
 and exactly what an unsigned build shows them.
 
@@ -242,6 +255,9 @@ generate` writes) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the
 repository secrets, entered by a person. Both are set (2026-08-25) and match
 the pubkey committed here. Rotating is a pair, two secrets and a pubkey commit
 in one change, or the release builds signed updates that installed apps will
-reject. Apple Developer ID secrets are optional; without them the dmg is
+reject — and the door job now says so by key id instead of publishing them. The
+door's own `DESKTOP_DOOR_SSH_KEY`, `DESKTOP_DOOR_KNOWN_HOSTS` and the variable
+`DESKTOP_DOOR_KEY_FINGERPRINT` are written by `laf desktop door`, never by
+hand. Apple Developer ID secrets are optional; without them the dmg is
 ad-hoc signed, which Gatekeeper accepts only on the Mac that built it. Windows
 code signing is not set up; SmartScreen will warn until it is.
