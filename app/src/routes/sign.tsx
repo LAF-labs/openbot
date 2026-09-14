@@ -5,11 +5,22 @@ import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
-import { type SignInProvider, signInWithProvider } from "@/lib/auth/client";
+import {
+  type SignInProvider,
+  SignInRefusedError,
+  signInWithProvider,
+} from "@/lib/auth/client";
 import {
   bakedProviders,
   signInProvidersQueryOptions,
 } from "@/lib/auth/providers";
+import {
+  refusalForCode,
+  refusalForStart,
+  refusalOnArrival,
+  refusalSentence,
+  type SignInRefusal,
+} from "@/lib/auth/sign-in-refusal";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
@@ -21,13 +32,28 @@ const ENTRANCE_STAGGER_SECONDS = 0.08;
 const ENTRANCE_OFFSET = "translateY(12px)";
 
 export const Route = createFileRoute("/sign")({
-  /** `.catch({})` so a malformed `?redirect=` is ignored rather than destroying the route. */
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
-    typeof search.redirect === "string" ? { redirect: search.redirect } : {},
+  /**
+   * `redirect` is where they were going; `error` is the code a refused sign-in came back with. Only
+   * the code: better-auth's `error_description` beside it is a provider's prose and is never read.
+   * The router's parser turns `error=123` into a number, so anything present is kept as text — an
+   * unknown code draws the generic sentence, which is still a refusal said out loud.
+   */
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { redirect?: string; error?: string } => ({
+    ...(typeof search.redirect === "string"
+      ? { redirect: search.redirect }
+      : {}),
+    ...(search.error !== undefined && search.error !== null
+      ? { error: String(search.error) }
+      : {}),
+  }),
   beforeLoad: async ({ context, search }) => {
     const user = await loadCurrentUser(context.queryClient);
     if (user) {
-      throw redirect({ to: safeRedirect(search.redirect) });
+      throw redirect({
+        to: safeRedirect(refusalOnArrival(search).redirect),
+      });
     }
   },
   /*
@@ -97,11 +123,22 @@ const PROVIDER_BUTTONS: Array<{
 ];
 
 function SignScreen() {
-  const { redirect: wanted } = Route.useSearch();
+  const arrival = refusalOnArrival(Route.useSearch());
+  const wanted = arrival.redirect;
   const [pendingProvider, setPendingProvider] = useState<SignInProvider | null>(
     null,
   );
-  const [error, setError] = useState<string | null>(null);
+  /*
+   * Two refusals, and the newer one is the one on screen: the code this screen was opened with, until
+   * a button is pressed, and then whatever that press came back with.
+   */
+  const [isArrivalDismissed, setIsArrivalDismissed] = useState(false);
+  const [startRefusal, setStartRefusal] = useState<SignInRefusal | null>(null);
+  const refusal =
+    startRefusal ??
+    (!isArrivalDismissed && arrival.code !== null
+      ? refusalForCode(arrival.code)
+      : null);
 
   /*
    * The deployment's own answer, not the build's: which sign-ins exist is read from
@@ -123,16 +160,18 @@ function SignScreen() {
     viaBroker || providers.includes(provider);
 
   async function handleSignIn(provider: SignInProvider) {
-    setError(null);
+    setIsArrivalDismissed(true);
+    setStartRefusal(null);
     setPendingProvider(provider);
 
     try {
       await signInWithProvider(provider, safeRedirect(wanted), viaBroker);
     } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : t("Could not start sign-in."),
+      // A refusal carries its status and code; anything else thrown is a request with no answer.
+      setStartRefusal(
+        caughtError instanceof SignInRefusedError
+          ? refusalForStart(caughtError)
+          : "unreachable",
       );
       setPendingProvider(null);
     }
@@ -217,9 +256,9 @@ function SignScreen() {
               {t("No auth providers are configured.")}
             </p>
           )}
-          {error ? (
+          {refusal ? (
             <p className="mt-3 text-sm text-destructive" role="alert">
-              {error}
+              {refusalSentence(refusal)}
             </p>
           ) : null}
         </motion.div>

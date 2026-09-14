@@ -102,6 +102,7 @@
   "app/tests/shell-links.test.ts",
   "app/tests/sidebar-rail.test.tsx",
   "app/tests/sign-in-providers.test.ts",
+  "app/tests/sign-in-refusals.test.ts",
   "app/tests/site-catalogue.test.ts",
   "app/tests/skills-page.test.tsx",
   "app/tests/stopped-turn.test.ts",

@@ -2241,4 +2241,27 @@ export const ko: Record<string, string> = {
   "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",
   "The Bot's computer did not answer in time":
     "봇의 컴퓨터가 제시간에 답하지 않음",
+  // 로그인이 거절됐을 때 로그인 화면이 하는 말 — better-auth의 영어 대신, 코드마다 한 문장.
+  "Too many sign-in attempts in a row. Wait a few seconds and try again.":
+    "로그인을 연달아 너무 많이 시도했습니다. 몇 초 뒤에 다시 시도해 주세요.",
+  "Sign-in was cancelled before it finished. Press a button to start again.":
+    "로그인이 끝나기 전에 취소되었습니다. 버튼을 눌러 다시 시작해 주세요.",
+  "This sign-in took too long or was started in another window. Start again from here.":
+    "로그인 시간이 지났거나 다른 창에서 시작한 로그인입니다. 여기서 다시 시작해 주세요.",
+  "This account cannot sign in here. Try again with the account this place was set up for.":
+    "이 계정으로는 이곳에 로그인할 수 없습니다. 이곳에 등록된 계정으로 다시 시도해 주세요.",
+  "This email already has an account here, made with a different button. Sign in with the one you used first.":
+    "이 이메일로 다른 버튼을 눌러 만든 계정이 이미 있습니다. 처음에 누른 버튼으로 로그인해 주세요.",
+  "The account you chose did not share its email address. Allow the email address when you are asked, then try again.":
+    "선택한 계정이 이메일 주소를 알려 주지 않았습니다. 동의 화면에서 이메일 제공을 허용한 뒤 다시 시도해 주세요.",
+  "The service you signed in with did not send your account details. Please try again.":
+    "로그인한 서비스가 계정 정보를 보내 주지 않았습니다. 다시 시도해 주세요.",
+  "Sign-in is not set up correctly here yet. Nothing here needs fixing — get in touch and we will fix it.":
+    "이곳의 로그인 설정이 아직 올바르지 않습니다. 여기서 고칠 것은 없습니다 — 문의해 주시면 고쳐 드립니다.",
+  "Sign-in could not be finished on our side. Please try again in a moment.":
+    "저희 쪽 문제로 로그인을 마치지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  "The server could not be reached. Please try again in a moment.":
+    "서버에 닿지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  "Could not sign in. Please try again.":
+    "로그인하지 못했습니다. 다시 시도해 주세요.",
 };
