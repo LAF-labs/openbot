@@ -85,6 +85,22 @@ export const agentProfiles = pgTable(
      * Empty means ask about everything the policy stops, which is the behaviour before this column.
      */
     autoReview: text("auto_review").notNull().default(""),
+    /**
+     * Which preset this Bot was shaped from, by catalogue key (`app/src/lib/agents/presets.ts`),
+     * or null for a Bot nobody picked one for.
+     *
+     * WHY A COLUMN, when the preset writes nothing else a person could not have typed: the intro
+     * card PATCHes a preset's TRANSLATED title and role and then the preset is gone, so "which of
+     * the eight kinds of work do people actually pick" — the first thing the launch plan says only
+     * customers can teach us — had no row anywhere to be counted from. The key is what laf-control's
+     * `insights` reads (`GET /api/admin/metrics/insights`), never the words it wrote.
+     *
+     * WRITTEN BY A PERSON'S OWN PRESS, NEVER BY THE BOT. The create and the replacing PATCH take it;
+     * `update_profile` cannot reach it, the same line `autoReview` draws — a Bot renaming itself
+     * must not rewrite the record of what it was made as. A duplicate does not inherit it: nobody
+     * picked anything for the copy.
+     */
+    presetId: text("preset_id"),
     visibility: agentVisibility("visibility").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),

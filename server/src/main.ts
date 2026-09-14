@@ -58,6 +58,7 @@ import {
 import { createDatabase } from "./db/client";
 import { createFleetNotifier } from "./fleet/notify";
 import { deploymentHealthProbes } from "./health";
+import { readInsights } from "./insights/read";
 import {
   createLiveScreen,
   describePointOn,
@@ -742,6 +743,10 @@ const app = createApp(
     auditStore: bootAuditStore,
     outbox: notificationOutbox,
   },
+  // The fleet's counts, read per request over the window it asks for, in the Bot's own clock — the
+  // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.
+  (days: number) =>
+    readInsights(database, { days, timeZone: config.botTimeZone }),
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

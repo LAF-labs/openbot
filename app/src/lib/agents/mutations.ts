@@ -57,6 +57,8 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_auto_review_too_long":
     "That instruction can be up to 1,000 characters.",
   "laf:agent_auth_header_invalid": "That header name cannot be used.",
+  "laf:agent_preset_invalid":
+    "That kind of work cannot be picked. Try another.",
   /*
    * The refusals the store and the memory and coworker routes throw, which used to reach the roster
    * and the ask box as the server's own English — "Agent not found.", "You do not have permission
@@ -90,6 +92,12 @@ export type AgentInput = {
    * Bot's own tool posts to, and this is the one field a Bot must never be able to write.
    */
   autoReview?: string;
+  /**
+   * Which preset a press on the intro card picked, by its catalogue key — the one record of that
+   * choice once the translated title and role have been written (`agent_profiles.preset_id`).
+   * Omitted by every other caller, which leaves whatever is stored alone.
+   */
+  presetId?: string;
 };
 
 /**

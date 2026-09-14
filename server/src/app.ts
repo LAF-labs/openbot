@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { buildOf } from "../../shared/log";
 import { type AccountService, createAccountRoutes } from "./account/routes";
 import type { CoworkerCall } from "./agents/coworker-call";
+import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
@@ -60,6 +61,8 @@ import {
   refusalBody,
 } from "./failure-text";
 import { createHealthRoute, type HealthProbes } from "./health";
+import type { InsightsReport } from "./insights/report";
+import { createInsightsRoutes } from "./insights/routes";
 import { log } from "./log";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
@@ -361,6 +364,13 @@ export function createApp(
    * behaviour: a deployment that cannot keep a message must not draw a box that says 보냈습니다.
    */
   support?: SupportService,
+  /**
+   * The fleet's read of this VM's counts (`insights/read.ts`). Last, like everything new.
+   *
+   * Mounted only with `config.fleetMetricsToken` as well: a reader with no token to guard it is not
+   * a door this deployment opens, and a path nothing is mounted on answers 404 like any other.
+   */
+  insights?: (days: number) => Promise<InsightsReport>,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -851,6 +861,17 @@ export function createApp(
     );
   }
 
+  /*
+   * The fleet's counts, beside the operator's one metric but not behind the operator's session:
+   * the fleet has no session here and is given a bearer token instead. See insights/routes.ts.
+   */
+  if (config.fleetMetricsToken && insights) {
+    app.route(
+      "/api/admin/metrics",
+      createInsightsRoutes({ token: config.fleetMetricsToken, read: insights }),
+    );
+  }
+
   if (agentProfileStore) {
     app.route(
       "/api/agents",
@@ -894,6 +915,16 @@ export function createApp(
           : undefined,
       ),
     );
+
+    // A first-task chip pressed on a new Bot's conversation: one row, catalogue keys only. Under
+    // `/api/me` because the press is the person's; it needs the roster to know the Bot is theirs to
+    // see, and the trail to be written to. See agents/first-task.ts.
+    if (auditStore) {
+      app.route(
+        "/api",
+        createFirstTaskRoutes(agentProfileStore, auditStore, requireUser),
+      );
+    }
   }
 
   if (channelStore) {

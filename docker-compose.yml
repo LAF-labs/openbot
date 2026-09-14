@@ -240,6 +240,9 @@ services:
       # endpoint on the other end destroys machines); the server refuses to start without it.
       LAF_FLEET_WEBHOOK_URL: ${LAF_FLEET_WEBHOOK_URL:-}
       LAF_FLEET_WEBHOOK_SECRET: ${LAF_FLEET_WEBHOOK_SECRET:-}
+      # The other direction: the bearer the fleet reads `GET /api/admin/metrics/insights` with —
+      # counts and catalogue codes, never content. Unset, the route is not mounted at all.
+      LAF_FLEET_METRICS_TOKEN: ${LAF_FLEET_METRICS_TOKEN:-}
       # The fleet's own OAuth application for Cafe24, and where relayed vendors send the browser
       # back. Google's pair is already passed above for sign-in and is the SAME application these
       # connectors consent under — one client, one console, both callbacks registered on it.

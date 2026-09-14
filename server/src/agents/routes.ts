@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { describeFailure, NOT_FOUND } from "../failure-text";
+import { isCatalogueKey } from "../insights/catalogue-key";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
@@ -48,7 +49,8 @@ export type AgentInputRefusal =
   | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
-  | "laf:agent_auth_header_invalid";
+  | "laf:agent_auth_header_invalid"
+  | "laf:agent_preset_invalid";
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
@@ -63,6 +65,7 @@ type AgentInputObject = {
   avatarSeed?: unknown;
   effort?: unknown;
   autoReview?: unknown;
+  presetId?: unknown;
   auth?: unknown;
 };
 
@@ -169,6 +172,21 @@ export function parseAgentInput(
   );
   if (typeof autoReview !== "string") return autoReview;
 
+  /*
+   * Which preset a person picked, when the press that sent this was one. A catalogue key and never
+   * the preset's words: those arrive as the title and the role, translated, and this is what stays
+   * countable after the language changes (`agentProfiles.presetId`). Refused rather than dropped
+   * when it is not key-shaped, because the only sender is our own intro card, and a card that sent
+   * something else is a bug worth a 400 rather than a pick that silently goes uncounted.
+   */
+  let presetId: string | undefined;
+  if (input.presetId !== undefined) {
+    if (!isCatalogueKey(input.presetId)) {
+      return { ok: false, code: "laf:agent_preset_invalid" };
+    }
+    presetId = input.presetId;
+  }
+
   // The key is optional and write-only. An absent field leaves an existing key alone; sending one
   // replaces it. There is no way to read one back, here or anywhere.
   let auth: { header: string; value: string } | undefined;
@@ -203,6 +221,7 @@ export function parseAgentInput(
       // somebody does on purpose. `optionalBoundedText` answers "" for an absent field too, so the
       // presence check is on the input rather than on what came back.
       ...(input.autoReview === undefined ? {} : { autoReview }),
+      ...(presetId === undefined ? {} : { presetId }),
     },
   };
 }
@@ -553,6 +572,10 @@ export function createAgentRoutes(
            * helpful. It is edited on the profile screen by a person, through PATCH, and nowhere
            * else. Sending it here changes nothing rather than failing, because a Bot being told
            * "no" is a Bot that tries again in another shape.
+           *
+           * NOR IS `presetId`. It is the record of what a person picked the Bot to be, and a Bot
+           * rewriting its own job must not rewrite that record on the way — the count it feeds is
+           * what people chose, not what their Bots became.
            */
         },
         allowPrivateHosts,

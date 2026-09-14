@@ -58,6 +58,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
     title?: string;
     roleDescription?: string;
     avatarSeed?: string;
+    presetId?: string;
   }) => {
     await updateAgent.mutateAsync({
       agentId: agent.id,
@@ -79,6 +80,12 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
     await save({
       roleDescription: t(preset.roleDescription),
       title: t(preset.title),
+      /*
+       * And the key, which is the only part of the choice that survives it. Without it the preset
+       * was gone the moment its words were written — in whichever language `t()` spoke that day —
+       * and "which kinds of work do people pick" had nothing to be counted from.
+       */
+      presetId: preset.id,
     });
   };
 

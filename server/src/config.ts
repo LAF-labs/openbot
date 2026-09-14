@@ -104,6 +104,8 @@ export const ENVIRONMENT = {
   LAF_ALERT_WEBHOOK_URL: "compose",
   LAF_FLEET_WEBHOOK_URL: "compose",
   LAF_FLEET_WEBHOOK_SECRET: "compose",
+  // What the fleet may read back: counts and codes, behind its own bearer token.
+  LAF_FLEET_METRICS_TOKEN: "compose",
   // What the fleet holds an application or a key for.
   CAFE24_CLIENT_ID: "compose",
   CAFE24_CLIENT_SECRET: "compose",
@@ -280,6 +282,19 @@ export type DeploymentConfig = {
     secret: string;
     origin: string;
   };
+  /**
+   * `LAF_FLEET_METRICS_TOKEN`: the bearer the fleet presents to read `GET /api/admin/metrics/insights`.
+   *
+   * The other direction from `fleet` above, and deliberately a separate secret: that one signs what
+   * this deployment SENDS to a machine that destroys VMs; this one admits a reader to counts. A leak
+   * of one should cost exactly one of the two.
+   *
+   * Absent means the route is not mounted at all, so a laptop — or a VM the fleet has not handed a
+   * token — answers that path with the same 404 as a path that does not exist, and advertises
+   * nothing. Present, it is at least 32 characters: the door is on the public internet, and a short
+   * token is one somebody can guess.
+   */
+  fleetMetricsToken?: string;
   /**
    * What this deployment can offer as a one-press 연결, and how a vendor gets the browser back.
    *
@@ -681,6 +696,28 @@ function fleetConfig(environment: Environment): DeploymentConfig["fleet"] {
   return { webhookUrl, secret, origin };
 }
 
+/** Long enough that guessing it is not a plan: what `openssl rand -hex 16` gives, at the least. */
+const FLEET_METRICS_TOKEN_MIN_LENGTH = 32;
+
+/**
+ * The fleet's read token, or a refusal to start.
+ *
+ * Optional as a whole and strict once it exists, like the webhook above it. A token with whitespace
+ * inside is one a shell or a `.env` line split somewhere, and the fleet would be refused with a
+ * token that looks right on both ends; a short one is a door on the internet with a guessable key.
+ * Either is refused at boot, by name, rather than discovered as a fleet that cannot read this VM.
+ */
+function fleetMetricsToken(environment: Environment): string | undefined {
+  const token = optional(environment, "LAF_FLEET_METRICS_TOKEN");
+  if (!token) return undefined;
+  if (/\s/.test(token) || token.length < FLEET_METRICS_TOKEN_MIN_LENGTH) {
+    throw new Error(
+      `LAF_FLEET_METRICS_TOKEN must be at least ${FLEET_METRICS_TOKEN_MIN_LENGTH} characters with no whitespace: it is the only key to a door on the public internet. Generate one with: openssl rand -hex 32`,
+    );
+  }
+  return token;
+}
+
 /**
  * The fleet's OAuth relay, and the name this deployment answers to underneath the product domain.
  *
@@ -992,6 +1029,7 @@ export function loadConfig(
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),
     fleet: fleetConfig(environment),
+    fleetMetricsToken: fleetMetricsToken(environment),
     connectors: connectorsConfig(environment),
     partners: partnersConfig(environment),
     // Read after everything above, so a refusal that existed before these did still comes first.

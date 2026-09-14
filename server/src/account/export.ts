@@ -149,6 +149,7 @@ export function createAccountExport(database: Database): AccountExport {
             avatarSeed: agentProfiles.avatarSeed,
             effort: agentProfiles.effort,
             autoReview: agentProfiles.autoReview,
+            presetId: agentProfiles.presetId,
             visibility: agentProfiles.visibility,
             deletedAt: agentProfiles.deletedAt,
           })
@@ -168,6 +169,8 @@ export function createAccountExport(database: Database): AccountExport {
         avatarSeed: row.avatarSeed,
         effort: row.effort,
         autoReview: row.autoReview,
+        // Which preset they picked for it, if any: the deployment holds it, so it leaves with them.
+        presetId: row.presetId,
         visibility: row.visibility,
         deletedAt: row.deletedAt,
         createdAt: row.createdAt,

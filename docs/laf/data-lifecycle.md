@@ -307,6 +307,18 @@ payload의 `own`이 그것을 가른다 — 주인의 계정 id(`ownerUserId`), 
 그리지 않는다 — 초안이라는 표시는 파일을 교체할 사람을 위한 것이지 읽는 사람을 위한 것이
 아니다. 자문 뒤에는 그 두 파일과 `LEGAL_VERSION`을 함께 바꾸는 것으로 확정된다.
 
+**함대가 읽어 가는 수치 (2026-09-14).** 출시 계획의 "고객만 가르쳐 줄 수 있는" 질문 — 어떤
+일 종류를 고르는지, 밤에 승인에 답하는지, 봇이 어디서 막히는지, 도움말을 여는지 — 에 답하려고
+함대(`laf insights`)가 `GET /api/admin/metrics/insights?days=N`을 읽는다. **수와 카탈로그 코드뿐이다**:
+메시지·답·지시문·봇 제목·이메일·사람 id는 문장에 이름조차 나오지 않고, 실패 문구는 `laf:` 코드
+모양만, 페이지 주소는 카탈로그 사이트 id(아니면 `other`)로만 나간다. 세션이 아니라 함대의 토큰
+(`LAF_FLEET_METRICS_TOKEN`, 상수 시간 비교)으로만 열리고, 토큰이 없는 배포에는 라우트가 없다.
+이를 위해 남기는 것은 셋이다 — 첫 일 칩을 누른 것(`onboarding.first_task_pressed`, 문장이 아니라
+칩의 키), 도움말을 연 것(`support.help_opened`, 방문당 한 줄), 봇이 어느 프리셋에서
+만들어졌는지(`agent_profiles.preset_id`, 카탈로그 키). 앞의 둘은 감사 기록이라 1년 보존과 가명
+처리를 그대로 따르고, 셋째는 봇의 프로필 행에 붙어 있어 계정 삭제 때 봇과 함께 지워진다. 코드는 `server/src/insights/read.ts`, 내용이
+새지 않음은 `server/tests/insights-read.integration.test.ts`가 심어 둔 이메일·문장으로 확인한다.
+
 ---
 
 ## 6. 코드에서 어디를 보면 되는가
@@ -319,6 +331,7 @@ payload의 `own`이 그것을 가른다 — 주인의 계정 id(`ownerUserId`), 
 | 보존 기간 청소 | `server/src/account/retention.ts` |
 | 세 개의 라우트 | `server/src/account/routes.ts` |
 | 탈퇴·가입을 함대에 알리는 웹훅 | `server/src/fleet/notify.ts` |
+| 함대가 읽는 수치(수와 코드뿐)와 그 토큰 | `server/src/insights/read.ts`, `server/src/insights/routes.ts` |
 | append-only 트리거와 그 두 통로 | `server/drizzle/0028_pipa_lifecycle.sql` |
 | 화면 | `app/src/routes/_authed/settings/account.tsx` |
 | 두 사람이 있는 배포에서 한 사람만 지워지는지 | `server/tests/account-lifecycle.integration.test.ts` |

@@ -617,6 +617,10 @@ export const DECISIONS: Record<string, string> = {
   // Neither a permission nor a refusal: a person wrote to the operator. The payload says how far
   // it got; the words themselves are not in the trail.
   "support.feedback_sent": "A message was sent to the operator",
+  // Two things a person did with what the product offered them, counted for the launch plan and
+  // said here as what happened — a press and a visit, not a decision anybody made about access.
+  "onboarding.first_task_pressed": "A person pressed a suggested first task",
+  "support.help_opened": "A person opened the help page",
 };
 
 /**
@@ -840,4 +844,6 @@ export const EVENTS: Record<string, string> = {
   "fleet.notified": "The fleet",
   "fleet.notify_failed": "The fleet",
   "support.feedback_sent": "A message to the operator",
+  "onboarding.first_task_pressed": "A first task",
+  "support.help_opened": "The help page",
 };

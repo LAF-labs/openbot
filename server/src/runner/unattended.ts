@@ -152,7 +152,8 @@ export type UnattendedRunResult = {
   awaiting: string | null;
 };
 
-const DEFAULT_MAX_STEPS = 12;
+/** Exported for the one reader that counts runs which met it (`insights/read.ts`, `limits`). */
+export const DEFAULT_MAX_STEPS = 12;
 
 /**
  * A run that did not get to an answer, carrying the turns it did take.

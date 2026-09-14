@@ -782,6 +782,94 @@ describe("the auto-review instruction", () => {
 });
 
 /**
+ * WHICH PRESET A BOT WAS SHAPED FROM (`agent_profiles.preset_id`).
+ *
+ * The intro card writes a preset's translated title and role, and the key beside them is the only
+ * part of the choice that can still be counted once the language has changed — laf-control's
+ * `insights` counts it. So what matters here is the shape that reaches the column (a catalogue key,
+ * never words) and who can write it: the person's own replacing PATCH, and never the merging
+ * `/profile` a Bot's `update_profile` calls.
+ */
+describe("the preset a Bot was shaped from", () => {
+  test("goes through as a catalogue key on the replacing input", () => {
+    const parsed = parseAgentInput({
+      name: "Review Watch",
+      visibility: "private",
+      presetId: "review-replies",
+    });
+    expect(parsed).toEqual({
+      ok: true,
+      value: {
+        name: "Review Watch",
+        title: "",
+        roleDescription: "",
+        visibility: "private",
+        endpoint: undefined,
+        auth: undefined,
+        presetId: "review-replies",
+      },
+    });
+  });
+
+  test("absent leaves it alone, which is every caller but the preset press", () => {
+    const parsed = parseAgentInput({ name: "Analyst", visibility: "private" });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value).not.toHaveProperty("presetId");
+  });
+
+  test.each([
+    ["words", "리뷰 답변 담당"],
+    ["an address", "owner@laf.test"],
+    ["capitals", "Review-Replies"],
+    ["a dot", "reviews.v2"],
+    ["forty-one characters", "a".repeat(41)],
+    ["a number", 7],
+    ["null", null],
+    ["an empty string", ""],
+  ])("anything that is not a key is refused by code: %s", (_label, value) => {
+    const parsed = parseAgentInput({
+      name: "Analyst",
+      visibility: "private",
+      presetId: value,
+    });
+    expect(parsed).toEqual({ ok: false, code: "laf:agent_preset_invalid" });
+  });
+
+  test("the person's own PATCH carries it to the store", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request("/agent-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Review Watch",
+        title: "리뷰 답변",
+        roleDescription: "새 리뷰마다 답을 준비한다.",
+        visibility: "private",
+        presetId: "review-replies",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const update = store.calls.find(([method]) => method === "update");
+    const input = update?.[3] as CreateAgentInput | undefined;
+    expect(input?.presetId).toBe("review-replies");
+  });
+
+  test("a Bot's own tool cannot set it, and saying it changes nothing rather than failing", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request("/agent-1/profile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "정산 담당", presetId: "settlement" }),
+    });
+    expect(response.status).toBe(200);
+    const update = store.calls.find(([method]) => method === "update");
+    const input = update?.[3] as Record<string, unknown>;
+    expect(input.title).toBe("정산 담당");
+    expect(input).not.toHaveProperty("presetId");
+  });
+});
+
+/**
  * WHAT A BOT WRITES INTO ITS PROFILE IS ONE LINE, AND NOT A PROMPT.
  *
  * The description is rendered into every later system message as a paragraph of its own

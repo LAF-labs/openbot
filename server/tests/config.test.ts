@@ -589,6 +589,7 @@ describe("what loadConfig reads", () => {
     PUBLIC_ORIGIN: "https://shop1.agent.laf-co.com",
     LAF_FLEET_WEBHOOK_URL: "https://fleet.laf-co.test/hooks",
     LAF_FLEET_WEBHOOK_SECRET: "fleet-secret",
+    LAF_FLEET_METRICS_TOKEN: "cd".repeat(32),
     CAFE24_CLIENT_ID: "cafe24-id",
     CAFE24_CLIENT_SECRET: "cafe24-secret",
     LAF_OAUTH_RELAY_URL: "https://auth.agent.laf-co.com/oauth/relay",

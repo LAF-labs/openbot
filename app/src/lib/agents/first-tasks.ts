@@ -344,13 +344,17 @@ export function isFirstConversation(
 }
 
 /**
- * The one thing recorded when a chip is pressed: a browser event, nothing on the server.
+ * What is recorded when a chip is pressed: a browser event, and one row on the server.
  *
- * The question the launch plan asks of this screen is "did the chips shorten the first ten
- * minutes", and a `window` event is enough to answer it from the console or from whatever listens
- * later. Not an audit row — the audit trail is what the Bot did on somebody's behalf, and a person
- * pressing a suggestion is not that. The detail carries the KEY of the sentence, never text
- * anybody typed.
+ * The event came first, on the reasoning that "did the chips shorten the first ten minutes" could
+ * be answered from a console. It cannot be answered from the fleet that way, and the fleet is who
+ * asks — laf-control's `insights` counts which of the eight kinds of work people pick, VM by VM —
+ * so the press is also posted to `POST /api/me/first-task` (`server/src/agents/first-task.ts`).
+ *
+ * THE EVENT CARRIES THE SENTENCE'S KEY; THE REQUEST DOES NOT. `kind`, `pattern` and `via` already
+ * name the sentence exactly — one per pattern with nothing connected, one per site, one per
+ * account — so the server is given those and never a sentence, and a field that could someday hold
+ * somebody's own words does not exist on the wire to hold them.
  */
 export const FIRST_TASK_PRESSED = "laf:first-task-pressed";
 
@@ -365,14 +369,51 @@ export type FirstTaskPressed = {
   hint: WorkPatternId | null;
 };
 
+/** What `POST /api/me/first-task` is sent: the press without its sentence. */
+export type FirstTaskPressBody = Omit<FirstTaskPressed, "sentence">;
+
+export function firstTaskPressBody(
+  detail: FirstTaskPressed,
+): FirstTaskPressBody {
+  return {
+    agentId: detail.agentId,
+    kind: detail.kind,
+    pattern: detail.pattern,
+    via: detail.via,
+    hint: detail.hint,
+  };
+}
+
 export function reportFirstTaskPressed(
   detail: FirstTaskPressed,
   // A parameter so a test can listen on a target of its own; the screen passes nothing.
   target: EventTarget | null = typeof window === "undefined" ? null : window,
+  // `fetch` looked up at the moment of the press, and called as itself rather than detached.
+  send: (url: string, init: RequestInit) => Promise<Response> = (url, init) =>
+    fetch(url, init),
 ): void {
   target?.dispatchEvent(
     new CustomEvent<FirstTaskPressed>(FIRST_TASK_PRESSED, { detail }),
   );
+  /*
+   * Not awaited, and nothing is said when it fails. The press has already done what the person
+   * asked — the sentence is on its way to the Bot — and a count that did not land is a missing
+   * count, not something to put in front of somebody on the first screen of their first Bot.
+   * `keepalive` because the connect chip is a navigation, and the row should not depend on it.
+   */
+  void (async () => {
+    try {
+      await send("/api/me/first-task", {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(firstTaskPressBody(detail)),
+      });
+    } catch {
+      // See above: nothing to tell anybody.
+    }
+  })();
 }
 
 /** When the morning report arrives, on the wall clock of the person's own zone. */

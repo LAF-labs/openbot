@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ko } from "../src/lib/i18n-ko";
+import {
+  HELP_SECTIONS,
+  helpOpenedBody,
+  helpSectionFrom,
+  helpSectionOfHeading,
+} from "../src/lib/support/help-opened";
 import { router } from "../src/router";
 
 /**
@@ -61,6 +67,31 @@ describe("the guide", () => {
     expect(names.length).toBeGreaterThan(20);
     const invented = names.filter((name) => !drawn.has(name));
     expect(invented).toEqual([]);
+  });
+
+  /*
+   * The keys a visit is counted under, held to the headings they anchor. A heading renamed in the
+   * guide and not here would be a section no address can name and no count can see.
+   */
+  test("its five sections have keys, in the guide's own order", () => {
+    expect(HELP_SECTIONS.map((section) => section.heading)).toEqual([
+      ...SECTIONS,
+    ]);
+    const keys = HELP_SECTIONS.map((section) => section.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    // The shape the server keeps (`insights/catalogue-key.ts`); anything else it records as none.
+    for (const key of keys) expect(key).toMatch(/^[a-z0-9][a-z0-9-]{0,39}$/);
+  });
+
+  test("an address names a section by its key, and nothing else names one", () => {
+    expect(helpSectionFrom("#routines")).toBe("routines");
+    expect(helpSectionFrom("routines")).toBe("routines");
+    expect(helpSectionFrom("")).toBeNull();
+    expect(helpSectionFrom("#루틴")).toBeNull();
+    expect(helpSectionFrom("#nowhere")).toBeNull();
+    expect(helpSectionOfHeading(" 문제가 생기면 ")).toBe("trouble");
+    expect(helpSectionOfHeading("Still stuck?")).toBeNull();
+    expect(helpOpenedBody(null)).toEqual({ section: null });
   });
 
   test("links both legal documents from inside the text", () => {

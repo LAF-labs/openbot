@@ -175,6 +175,15 @@ describe("the first-task chips", () => {
     );
     const asked: string[] = [];
     const reported: FirstTaskPressed[] = [];
+    const posted: { url: string; method?: string; body: unknown }[] = [];
+    globalThis.fetch = stubFetch(async (url, init) => {
+      posted.push({
+        url: String(url),
+        method: init?.method,
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return new Response(null, { status: 204 });
+    });
     const listener = (event: Event) => {
       reported.push((event as CustomEvent<FirstTaskPressed>).detail);
     };
@@ -204,6 +213,28 @@ describe("the first-task chips", () => {
           hint: null,
         },
       ]);
+      /*
+       * And once to the server, which is what the fleet counts — the keys of the chip, and not the
+       * sentence in either language: `kind` and `pattern` already name it.
+       */
+      expect(posted).toEqual([
+        {
+          url: "/api/me/first-task",
+          method: "POST",
+          body: {
+            agentId: "bot-1",
+            kind: "ask",
+            pattern: "reputation",
+            via: null,
+            hint: null,
+          },
+        },
+      ]);
+      const wire = JSON.stringify(posted);
+      expect(wire).not.toContain("Write three short introductions");
+      expect(wire).not.toContain(
+        t("Write three short introductions for our shop."),
+      );
     } finally {
       window.removeEventListener(FIRST_TASK_PRESSED, listener);
     }
@@ -258,9 +289,20 @@ describe("the first-task chips", () => {
       await view.press(routine);
       await view.settle(50);
 
-      expect(requests).toHaveLength(1);
-      expect(requests[0]?.url).toBe("/api/routines");
-      expect(requests[0]?.body).toEqual({
+      // The press is reported first, as the keys of the chip; then the routine is made.
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toEqual({
+        url: "/api/me/first-task",
+        body: {
+          agentId: "bot-1",
+          kind: "routine",
+          pattern: "schedule",
+          via: null,
+          hint: null,
+        },
+      });
+      expect(requests[1]?.url).toBe("/api/routines");
+      expect(requests[1]?.body).toEqual({
         agentId: "bot-1",
         name: t("Morning report"),
         instruction: t("Tell me today's date and this week's public holidays."),

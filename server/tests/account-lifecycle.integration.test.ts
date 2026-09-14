@@ -257,6 +257,11 @@ describe("the export", () => {
     expect(
       (document.bots as Array<{ id: string }>).map((bot) => bot.id),
     ).toEqual([leaver.botId]);
+    // The preset a Bot was made from is held about it, so it leaves with it — null, here, as a key.
+    expect((document.bots as Array<Record<string, unknown>>)[0]).toHaveProperty(
+      "presetId",
+      null,
+    );
     expect(
       (document.memories as Array<{ content: string }>)[0]?.content,
     ).toContain("closes on Sundays");

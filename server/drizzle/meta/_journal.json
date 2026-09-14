@@ -281,6 +281,13 @@
       "when": 1788590000000,
       "tag": "0039_routine_notepad",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789368703679,
+      "tag": "0040_insight_rows",
+      "breakpoints": true
     }
   ]
 }

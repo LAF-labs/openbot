@@ -330,6 +330,15 @@ describe("LAF Agent database schema", () => {
         primary: false,
       },
       {
+        // Which preset a person picked, by catalogue key. Nullable and without a default: every Bot
+        // that existed before the column was made by nobody's pick, and a guess would be a fact
+        // nobody recorded. Written by the person's create or PATCH, never by `update_profile`.
+        name: "preset_id",
+        notNull: false,
+        hasDefault: false,
+        primary: false,
+      },
+      {
         name: "visibility",
         notNull: true,
         hasDefault: false,

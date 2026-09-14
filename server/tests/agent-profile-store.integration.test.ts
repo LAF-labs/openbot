@@ -660,6 +660,104 @@ describe("agent profile store integration", () => {
 });
 
 /**
+ * `agent_profiles.preset_id`: which preset a person picked for a Bot, as the row the fleet counts.
+ *
+ * Read back from the column rather than from the profile, because the column is what laf-control's
+ * `insights` reads and the profile does not carry it — a count that depended on a field the store
+ * forgot to write would be green here and zero on every VM.
+ */
+describe("the preset a Bot was shaped from", () => {
+  const presetOf = async (agentId: string) => {
+    const [row] = await database
+      .select({ presetId: agentProfiles.presetId })
+      .from(agentProfiles)
+      .where(eq(agentProfiles.agentId, agentId));
+    return row?.presetId;
+  };
+
+  test("is written on create when one was picked, and is null for a blank Bot", async () => {
+    const owner = await createUser();
+    const picked = await store.create(owner, {
+      name: `Preset ${randomUUID()}`,
+      title: "리뷰 답변",
+      roleDescription: "새 리뷰마다 답을 준비한다.",
+      visibility: "private",
+      presetId: "review-replies",
+    });
+    createdAgentIds.push(picked.id);
+    const blank = await store.create(owner, {
+      name: `Blank ${randomUUID()}`,
+      title: "",
+      roleDescription: "",
+      visibility: "private",
+    });
+    createdAgentIds.push(blank.id);
+
+    expect(await presetOf(picked.id)).toBe("review-replies");
+    expect(await presetOf(blank.id)).toBeNull();
+  });
+
+  test("the intro card's press sets it on a Bot made blank, and a later edit without it leaves it", async () => {
+    const owner = await createUser();
+    const bot = await store.create(owner, {
+      name: `Instant ${randomUUID()}`,
+      title: "",
+      roleDescription: "",
+      visibility: "private",
+    });
+    createdAgentIds.push(bot.id);
+
+    // The card: the translated words and the key, in one replacing PATCH.
+    await store.update(owner, bot.id, {
+      name: bot.name,
+      title: "정산 대조",
+      roleDescription: "그날 매출과 입금을 맞춰 본다.",
+      visibility: "private",
+      presetId: "settlement",
+    });
+    expect(await presetOf(bot.id)).toBe("settlement");
+
+    // The name field on the same card, a minute later: it sends no preset, and must not clear one.
+    await store.update(owner, bot.id, {
+      name: "정산이",
+      title: "정산 대조",
+      roleDescription: "그날 매출과 입금을 맞춰 본다.",
+      visibility: "private",
+    });
+    expect(await presetOf(bot.id)).toBe("settlement");
+
+    // A second chip pressed on the card is what the Bot was then made as.
+    await store.update(owner, bot.id, {
+      name: "정산이",
+      title: "재고 확인",
+      roleDescription: "떨어져 가는 것을 먼저 알려 준다.",
+      visibility: "private",
+      presetId: "stock",
+    });
+    expect(await presetOf(bot.id)).toBe("stock");
+  });
+
+  test("a duplicate does not inherit it: nobody picked anything for the copy", async () => {
+    const owner = await createUser();
+    const source = await store.create(owner, {
+      name: `Source ${randomUUID()}`,
+      title: "리뷰",
+      roleDescription: "리뷰를 본다.",
+      visibility: "private",
+      presetId: "reviews",
+    });
+    createdAgentIds.push(source.id);
+
+    const copy = await store.duplicate(owner, source.id);
+    createdAgentIds.push(copy.id);
+
+    expect(copy.title).toBe("리뷰");
+    expect(await presetOf(source.id)).toBe("reviews");
+    expect(await presetOf(copy.id)).toBeNull();
+  });
+});
+
+/**
  * The computer seats five.
  *
  * An account gets one virtual computer and up to five Bots share it (computer/assignment.ts), so

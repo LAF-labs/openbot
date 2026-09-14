@@ -375,6 +375,25 @@ export const auditEventTypes = [
    * live in `laf_feedback` and leave with the person, where this row stays a year under a pseudonym.
    */
   "support.feedback_sent",
+
+  /*
+   * What a person did with the two things the product put in front of them to get started, and
+   * whether anybody opens the guide — counted by laf-control's `insights` (README §3.13), which
+   * listed them as the questions no row could answer. Neither is something a Bot did on anybody's
+   * behalf, which is why they stayed out of this trail until the launch plan needed them counted on
+   * the fleet rather than guessed at.
+   *
+   * `onboarding.first_task_pressed`: one of the chips on a new Bot's empty conversation. The payload
+   * is catalogue keys and nothing else — which kind of chip, which of the eight work patterns, which
+   * site or account made it answerable, what the Bot's card suggested. NOT the sentence: those keys
+   * already name it exactly, and a sentence in the trail is a sentence one change away from being
+   * somebody's own.
+   *
+   * `support.help_opened`: `/help`, once per visit, and which of its sections the address asked for
+   * when it named one.
+   */
+  "onboarding.first_task_pressed",
+  "support.help_opened",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

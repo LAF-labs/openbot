@@ -430,6 +430,7 @@ export function createAgentProfileStore(
           ...(input.autoReview === undefined
             ? {}
             : { autoReview: input.autoReview }),
+          ...(input.presetId === undefined ? {} : { presetId: input.presetId }),
           visibility: input.visibility,
         });
 
@@ -496,6 +497,10 @@ export function createAgentProfileStore(
               ...(input.autoReview === undefined
                 ? {}
                 : { autoReview: input.autoReview }),
+              // Absent leaves it alone — which is every caller but the intro card's preset press.
+              ...(input.presetId === undefined
+                ? {}
+                : { presetId: input.presetId }),
               updatedAt,
             })
             .where(eq(agentProfiles.agentId, id));
@@ -534,6 +539,10 @@ export function createAgentProfileStore(
            * NOT COPIED. Everything else about a duplicate is the same colleague again, and this one
            * is a standing permission to act without being seen — inheriting it silently would make
            * "Duplicate" a way to widen a boundary by pressing a button labelled something else.
+           *
+           * Nor is `presetId`, for a plainer reason: it records what a person picked, and nobody
+           * picked anything for the copy. Carried over, every duplicate would count as one more
+           * person choosing that kind of work.
            */
           visibility: "private",
         });

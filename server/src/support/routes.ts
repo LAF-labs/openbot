@@ -1,5 +1,6 @@
 /**
- * `POST /api/support/feedback`: the 문의·의견 box, as the browser reaches it.
+ * `POST /api/support/feedback`: the 문의·의견 box, as the browser reaches it. And
+ * `POST /api/support/help-opened`: the guide was opened.
  *
  * FACTS, NEVER SENTENCES. A refusal carries a code and the surface owns the words, the same
  * arrangement `account/routes.ts` and the consent call use. The answer to a message that landed is
@@ -17,6 +18,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import { isCatalogueKey } from "../insights/catalogue-key";
 import type { NotificationOutbox } from "../notifications/outbox";
 import { FEEDBACK_MAX_LENGTH, type FeedbackStore } from "./feedback";
 
@@ -129,6 +131,31 @@ export function createSupportRoutes(
       { id: receipt.id, receivedAt: receipt.createdAt.toISOString(), told },
       201,
     );
+  });
+
+  /**
+   * The guide was opened — once per visit, which the page decides (`lib/support/help-opened.ts`).
+   *
+   * The launch plan asks whether anybody reads the help at all, and `/help` left nothing anywhere
+   * to count. One row per visit and the section the address named, as a key: the guide's headings
+   * are Korean prose and the page maps them to keys, so a `section` that is not key-shaped is not a
+   * section this page has, and is recorded as none rather than kept. Nothing else in the body is
+   * read. 204 either way — the page does not wait on this, and has nothing to say about it.
+   */
+  routes.post("/help-opened", requireUser, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      section?: unknown;
+    } | null;
+    const named = body?.section;
+    const section = isCatalogueKey(named) ? named : null;
+    await recordAuditEvent(service.auditStore, {
+      eventType: "support.help_opened",
+      targetType: "help",
+      ...(section ? { targetId: section } : {}),
+      actorUserId: context.var.actor.id,
+      payload: { section },
+    });
+    return context.body(null, 204);
   });
 
   return routes;

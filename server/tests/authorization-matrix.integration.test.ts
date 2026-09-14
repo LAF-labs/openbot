@@ -93,6 +93,7 @@ import { createRoutineService } from "../src/routines/service";
 import { createSuggestionDismissalStore } from "../src/routines/suggestions";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
+import { readInsights } from "../src/insights/read";
 import { createFeedbackStore } from "../src/support/feedback";
 import { createPackageStatusReader } from "../src/tenant-package";
 import { credentialVaultStub } from "./support/credentials";
@@ -106,8 +107,16 @@ const database = createDatabase(
 );
 
 const TRUSTED = "https://matrix.agent.laf-co.test";
+/**
+ * The fleet's read token, so its door is mounted and pressed like every other. None of the four
+ * people holds it — a session is not the fleet — so every cell on it is a 401 with a code.
+ */
+const FLEET_METRICS_TOKEN = `matrix-fleet-${"0".repeat(32)}`;
 const config = loadConfig(
-  testEnvironment({ TRUSTED_ORIGINS: `${TRUSTED},http://localhost:3000` }),
+  testEnvironment({
+    TRUSTED_ORIGINS: `${TRUSTED},http://localhost:3000`,
+    LAF_FLEET_METRICS_TOKEN: FLEET_METRICS_TOKEN,
+  }),
 );
 
 /** One suffix per run, so two gates on one database never see each other's rows. */
@@ -319,6 +328,7 @@ function deployment() {
       ownerOf: async (botId) => (await lookupBotOwner(database, botId)) ?? null,
     }),
     { feedback: createFeedbackStore(database), auditStore, outbox },
+    (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
   );
   return { app, routineService };
 }
@@ -421,6 +431,15 @@ function bodyFor(method: string, template: string): unknown {
       return { kind: "skill", ref: `nothing-${run}`, agentId: BOT_A };
     case "POST /api/channels":
       return { agentIds: [BOT_A] };
+    case "POST /api/me/first-task":
+      // A chip pressed on A's Bot: the owner's press is a row, the colleague's is a Bot not there.
+      return {
+        agentId: BOT_A,
+        kind: "connect",
+        pattern: null,
+        via: null,
+        hint: null,
+      };
     default:
       return {};
   }
@@ -707,6 +726,8 @@ const B_ALLOWED = [
   "POST /api/me/consent",
   "POST /api/me/onboarded",
   "POST /api/plugins/servers/:id/disconnect",
+  // The guide was opened: a row about the person who opened it, and nothing about anybody's Bot.
+  "POST /api/support/help-opened",
   "POST /api/threads/mint",
 ].sort();
 
@@ -736,6 +757,7 @@ const A_ALLOWED = [
   "POST /api/channels",
   "POST /api/components/:name/call",
   "POST /api/components/:name/decision",
+  "POST /api/me/first-task",
   "POST /api/computers/:botId/computers/stop",
   "POST /api/computers/:botId/control/release",
   "POST /api/computers/:botId/control/request",
@@ -878,6 +900,28 @@ describe("the matrix", () => {
         template,
         404,
         "laf:bot_not_found",
+      ]);
+    }
+    /*
+     * A first-task press names its Bot in the body too, and asks the roster rather than the drive
+     * rule — a press is a fact about a Bot the person can see, not an act through it — so the
+     * colleague is told what `GET /api/agents/:agentId` tells them: the same 404, the roster's code.
+     */
+    const press = cellsOf("B").find(
+      (candidate) => keyOf(candidate) === "POST /api/me/first-task",
+    );
+    expect([press?.status, press?.code]).toEqual([404, "laf:agent_not_found"]);
+  });
+
+  test("the fleet's door opens for nobody holding a session, an administrator included", () => {
+    for (const who of ["anonymous", "B", "A", "admin"] as const) {
+      const cell = cellsOf(who).find(
+        (candidate) => keyOf(candidate) === "GET /api/admin/metrics/insights",
+      );
+      expect([who, cell?.status, cell?.code]).toEqual([
+        who,
+        401,
+        "laf:fleet_token_refused",
       ]);
     }
   });

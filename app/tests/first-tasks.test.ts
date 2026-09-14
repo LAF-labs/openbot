@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { parseFirstTaskPress } from "../../server/src/agents/first-task";
 import {
   ACCOUNT_FIRST_TASKS,
   FIRST_TASK_COUNT,
   FIRST_TASK_PRESSED,
   type FirstTask,
   type FirstTaskPressed,
+  firstTaskPressBody,
   isFirstConversation,
   MORNING_REPORT_TIME,
   makeMorningReport,
@@ -412,39 +414,128 @@ describe("whether the chips are shown at all", () => {
 });
 
 describe("what a press reports", () => {
-  test("one browser event, carrying the key and never typed text", () => {
+  test("one browser event carrying the key, and one request carrying no sentence at all", async () => {
     const target = new EventTarget();
     const seen: FirstTaskPressed[] = [];
     target.addEventListener(FIRST_TASK_PRESSED, (event) => {
       seen.push((event as CustomEvent<FirstTaskPressed>).detail);
     });
+    const sent: { url: string; init: RequestInit }[] = [];
     const detail: FirstTaskPressed = {
       agentId: "bot-1",
       kind: "ask",
       pattern: "schedule",
       sentence: holidays,
+      via: { kind: "site", id: "naver-smartplace" },
+      hint: "schedule",
+    };
+    reportFirstTaskPressed(detail, target, async (url, init) => {
+      sent.push({ url, init });
+      return new Response(null, { status: 204 });
+    });
+    await Promise.resolve();
+
+    expect(seen).toEqual([detail]);
+    expect(JSON.stringify(seen)).not.toContain(ko[holidays] ?? "\x00");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.url).toBe("/api/me/first-task");
+    expect(sent[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      agentId: "bot-1",
+      kind: "ask",
+      pattern: "schedule",
+      via: { kind: "site", id: "naver-smartplace" },
+      hint: "schedule",
+    });
+    // Neither the key nor its Korean: the keys beside it already name the sentence exactly.
+    expect(String(sent[0]?.init.body)).not.toContain(holidays);
+    expect(String(sent[0]?.init.body)).not.toContain(ko[holidays] ?? "\x00");
+    expect(firstTaskPressBody(detail)).not.toHaveProperty("sentence");
+  });
+
+  test("nowhere to report to, and a server that cannot be reached, are not errors", async () => {
+    const connect: FirstTaskPressed = {
+      agentId: "bot-1",
+      kind: "connect",
+      pattern: null,
+      sentence: null,
       via: null,
       hint: null,
     };
-    reportFirstTaskPressed(detail, target);
-    expect(seen).toEqual([detail]);
-    expect(JSON.stringify(seen)).not.toContain(ko[holidays] ?? " ");
+    expect(() =>
+      reportFirstTaskPressed(connect, null, async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    ).not.toThrow();
+    expect(() =>
+      reportFirstTaskPressed(connect, null, () => {
+        throw new TypeError("thrown before a promise existed");
+      }),
+    ).not.toThrow();
+    // Let both rejections settle: an unhandled one would fail the run from here.
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 
-  test("nowhere to report to is not an error", () => {
-    expect(() =>
-      reportFirstTaskPressed(
-        {
-          agentId: "bot-1",
-          kind: "connect",
-          pattern: null,
-          sentence: null,
-          via: null,
-          hint: null,
-        },
-        null,
-      ),
-    ).not.toThrow();
+  /*
+   * THE TETHER TO THE SERVER. The route checks every field against the catalogue it names
+   * (`server/src/agents/first-task.ts`), and a chip the screen can draw that the route refuses is a
+   * press that silently never counts — a green chip test and a zero on every VM. So every chip
+   * `pickFirstTasks` can produce, for every hint and with everything or nothing connected, is put
+   * through the route's own parser.
+   */
+  test("every chip the screen can draw is a press the server accepts", () => {
+    const everything = overview(
+      BUSINESS_SITES.map((known) => site(known.id)),
+      Object.keys(ACCOUNT_FIRST_TASKS).map((id) => account(id)),
+    );
+    const agentId = "agent_1f2e3d4c-aaaa-4bbb-8ccc-123456789abc";
+    let checked = 0;
+    for (const hint of [null, ...WORK_PATTERNS.map((pattern) => pattern.id)]) {
+      for (const connected of [overview(), everything]) {
+        const tasks = pickFirstTasks(connected, { hint, count: 64 });
+        const leading = tasks.find((task) => task.kind === "ask");
+        const presses: FirstTaskPressed[] = tasks.map((task) =>
+          task.kind === "connect"
+            ? {
+                agentId,
+                kind: "connect",
+                pattern: null,
+                sentence: null,
+                via: null,
+                hint,
+              }
+            : {
+                agentId,
+                kind: "ask",
+                pattern: task.pattern,
+                sentence: task.sentence,
+                via: task.via,
+                hint,
+              },
+        );
+        if (leading?.kind === "ask") {
+          presses.push({
+            agentId,
+            kind: "routine",
+            pattern: leading.pattern,
+            sentence: leading.sentence,
+            via: leading.via,
+            hint,
+          });
+        }
+        for (const press of presses) {
+          const parsed = parseFirstTaskPress(firstTaskPressBody(press));
+          expect([press.kind, press.pattern, press.via, parsed.ok]).toEqual([
+            press.kind,
+            press.pattern,
+            press.via,
+            true,
+          ]);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 });
 

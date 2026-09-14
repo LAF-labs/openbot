@@ -2177,6 +2177,14 @@ export const ko: Record<string, string> = {
   // 감사 표: 사람이 운영자에게 글을 보냈다. 글 자체는 표에 없다.
   "A message was sent to the operator": "운영자에게 문의·의견을 보냄",
   "A message to the operator": "문의·의견",
+  // 감사 표: 새 봇의 첫 일 칩을 누른 것과 도움말을 연 것. 누른 문장은 표에 없고 칩의 종류만 있다.
+  "A person pressed a suggested first task": "추천된 첫 일을 누름",
+  "A first task": "첫 일",
+  "A person opened the help page": "도움말을 열어 봄",
+  "The help page": "도움말",
+  // 인트로 카드의 일 종류 칩이 거절됐을 때. 우리 카드가 잘못 보낸 것이라 다른 칩을 권한다.
+  "That kind of work cannot be picked. Try another.":
+    "그 일 종류는 고를 수 없습니다. 다른 것을 골라 주세요.",
   // The footer on Settings and the help page: what is running, for a support thread to start from.
   "Version {build}": "버전 {build}",
   "Version {build} · app {shell}": "버전 {build} · 앱 {shell}",
