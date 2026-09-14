@@ -14,7 +14,7 @@
  * ON THE CALLER'S EXECUTOR, WHICH IS USUALLY A TRANSACTION. The service that runs a routine
  * settles the run in one transaction — the answer, the roster row, the ledger's ending and the
  * receipt — because a delivery that had committed on its own beside a ledger row still saying
- * `running` was what a restart then reported as interrupted (`routines/service.ts`). So nothing
+ * `running` was what a restart then reported as interrupted (`routines/settlement.ts`). So nothing
  * here announces from inside a write: each delivery returns `announce`, and whoever owns the
  * transaction calls it once that has committed (the rule in `channels/events.ts`). Run on the
  * pool, with no transaction around it, the write has committed by the time the function returns
@@ -296,7 +296,7 @@ export function createRoutineDelivery(
     options: DeliveryOptions = {},
   ): Promise<Delivered | null> => {
     // Nothing to report is nothing to deliver: no message, no preview, no bell. The run itself is
-    // still recorded, and the audit row says it was silent — see `routines/service.ts`.
+    // still recorded, and the audit row says it was silent — see `routines/run.ts`.
     if (isSilentAnswer(delivery.answer)) return null;
     const executor = options.within ?? database;
     const target = await appendToSoloConversation(executor, {

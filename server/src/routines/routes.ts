@@ -7,6 +7,9 @@ import {
   type RoutineService,
 } from "./service";
 
+type Routes = Hono<{ Variables: AppVariables }>;
+type RequireUser = MiddlewareHandler<{ Variables: AppVariables }>;
+
 /**
  * The routines surface: create, list, arm, run now, read the recent runs.
  *
@@ -15,28 +18,39 @@ import {
  */
 export function createRoutineRoutes(
   service: RoutineService,
-  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  requireUser: RequireUser,
 ) {
-  const routes = new Hono<{ Variables: AppVariables }>();
+  const routes: Routes = new Hono<{ Variables: AppVariables }>();
+  // Registered in this order: the collection, the webhook, then the verbs on one routine.
+  addCollection(routes, service, requireUser);
+  addWebhook(routes, service);
+  addRoutineVerbs(routes, service, requireUser);
+  return routes;
+}
 
-  /**
-   * The refusal as the surface reads it: the fact code, twice.
-   *
-   * The code is what the app renders Korean from (`ROUTINE_REFUSALS`). `error` used to carry the
-   * service's sentence "for operators", and the app read it as the fallback for any code it had no
-   * words for — which is how "The daily time must be HH:MM." reached a Korean screen. The
-   * sentence is on the thrown error for a stack trace; nothing on the wire is prose.
-   */
-  const mapError = (error: unknown) => {
-    if (error instanceof RoutineError) {
-      return {
-        body: { error: error.code, code: error.code },
-        status: error.status,
-      };
-    }
-    throw error;
-  };
+/**
+ * The refusal as the surface reads it: the fact code, twice.
+ *
+ * The code is what the app renders Korean from (`ROUTINE_REFUSALS`). `error` used to carry the
+ * service's sentence "for operators", and the app read it as the fallback for any code it had no
+ * words for — which is how "The daily time must be HH:MM." reached a Korean screen. The
+ * sentence is on the thrown error for a stack trace; nothing on the wire is prose.
+ */
+const mapError = (error: unknown) => {
+  if (error instanceof RoutineError) {
+    return {
+      body: { error: error.code, code: error.code },
+      status: error.status,
+    };
+  }
+  throw error;
+};
 
+function addCollection(
+  routes: Routes,
+  service: RoutineService,
+  requireUser: RequireUser,
+) {
   routes.get("/", requireUser, async (context) =>
     context.json({ routines: await service.list(context.var.actor) }),
   );
@@ -81,13 +95,15 @@ export function createRoutineRoutes(
       return context.json(mapped.body, mapped.status);
     }
   });
+}
 
-  /**
-   * The webhook. Deliberately NOT behind requireUser: the caller is a machine holding the token
-   * that was shown once at creation. The token rides a header, never the URL — URLs land in access
-   * logs, referrers and browser history, and a capability that gets logged is a capability shared
-   * with everyone who can read the log.
-   */
+/**
+ * The webhook. Deliberately NOT behind requireUser: the caller is a machine holding the token
+ * that was shown once at creation. The token rides a header, never the URL — URLs land in access
+ * logs, referrers and browser history, and a capability that gets logged is a capability shared
+ * with everyone who can read the log.
+ */
+function addWebhook(routes: Routes, service: RoutineService) {
   routes.post("/:id/trigger", async (context) => {
     const token = context.req.header("x-trigger-token") ?? "";
     if (!token) {
@@ -114,16 +130,22 @@ export function createRoutineRoutes(
       return context.json(mapped.body, mapped.status);
     }
   });
+}
 
-  /*
-   * EVERY ONE OF THESE CARRIES THE ACTOR.
-   *
-   * They used to pass the id alone, and the service scoped by nothing: on a VM a shop owner shares
-   * with their staff, any signed-in account could list, run, disable and delete anybody's routines,
-   * and the list handed out every routine's trigger token hash on the way past. The actor is the
-   * whole fix and it belongs on the service, not here — see `scopeOf` — so that the next surface to
-   * reach a routine (the Bot proposing its own, one day) cannot arrive without one.
-   */
+/*
+ * EVERY ONE OF THESE CARRIES THE ACTOR.
+ *
+ * They used to pass the id alone, and the service scoped by nothing: on a VM a shop owner shares
+ * with their staff, any signed-in account could list, run, disable and delete anybody's routines,
+ * and the list handed out every routine's trigger token hash on the way past. The actor is the
+ * whole fix and it belongs on the service, not here — see `scopeOf` — so that the next surface to
+ * reach a routine (the Bot proposing its own, one day) cannot arrive without one.
+ */
+function addRoutineVerbs(
+  routes: Routes,
+  service: RoutineService,
+  requireUser: RequireUser,
+) {
   routes.get("/:id/runs", requireUser, async (context) => {
     try {
       const runs = await service.runs(
@@ -173,6 +195,4 @@ export function createRoutineRoutes(
       return context.json(mapped.body, mapped.status);
     }
   });
-
-  return routes;
 }

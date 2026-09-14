@@ -128,78 +128,83 @@ const notOffered = () =>
     "laf:routine_suggestion_not_offered",
   );
 
+/** Every eligible card, unbounded and in catalogue order. `list` cuts it; `accept` searches it. */
+async function offeredTo(
+  options: RoutineSuggestionOptions,
+  catalogue: readonly RoutineSuggestionEntry[],
+  actor: AgentActor,
+): Promise<OfferedSuggestion[]> {
+  const bots = await options.bots(actor);
+  if (bots.length === 0) return [];
+
+  const [connections, dismissed, routines] = await Promise.all([
+    options.connections(actor.id),
+    options.dismissals.dismissedKeys(actor.id),
+    options.routines.list(actor),
+  ]);
+
+  /*
+   * `connected` only. `needs_login` and `needs_reconnect` are connections the person HAD, and a
+   * routine offered on one would open a login wall at seven in the morning — the failed run
+   * scheduled in advance that the catalogue's note is about.
+   */
+  const held = new Set<string>();
+  for (const row of connections.sites) {
+    if (row.status === "connected") held.add(`site:${row.id}`);
+  }
+  const accountTitles = new Map<string, string>();
+  for (const row of connections.accounts) {
+    if (row.title) accountTitles.set(row.id, row.title);
+    if (row.status === "connected") held.add(`account:${row.id}`);
+  }
+  /*
+   * The overview's title first, because it is what the 연결 screen drew; the catalogue's for
+   * an account this deployment cannot connect (it is then in `needs`, never in `via`), so the
+   * fact still carries a name and not a key.
+   */
+  const named = (requirement: SuggestionRequirement): NamedRequirement => ({
+    ...requirement,
+    title:
+      (requirement.kind === "site"
+        ? siteById(requirement.id)?.name
+        : (accountTitles.get(requirement.id) ??
+          catalogueEntry(requirement.id)?.title)) ?? requirement.id,
+  });
+
+  const latched = new Set(dismissed);
+  const takenKeys = new Set<string>();
+  const takenNames = new Set<string>();
+  for (const routine of routines) {
+    if (routine.suggestionKey) takenKeys.add(routine.suggestionKey);
+    takenNames.add(routine.name);
+  }
+
+  const cards: OfferedSuggestion[] = [];
+  for (const entry of catalogue) {
+    if (latched.has(entry.key)) continue;
+    if (takenKeys.has(entry.key) || takenNames.has(entry.name)) continue;
+    const via = entry.needsAnyOf.filter((requirement) =>
+      held.has(requirementKey(requirement)),
+    );
+    if (entry.needsAnyOf.length > 0 && via.length === 0) continue;
+    cards.push({
+      key: entry.key,
+      name: entry.name,
+      instruction: entry.instruction,
+      schedule: entry.schedule,
+      needs: entry.needsAnyOf.map(named),
+      via: via.map(named),
+    });
+  }
+  return cards;
+}
+
 export function createRoutineSuggestionService(
   options: RoutineSuggestionOptions,
 ) {
   const catalogue = options.catalogue ?? ROUTINE_SUGGESTIONS;
   const limit = options.limit ?? MAX_PENDING_SUGGESTIONS;
-
-  /** Every eligible card, unbounded and in catalogue order. `list` cuts it; `accept` searches it. */
-  async function offered(actor: AgentActor): Promise<OfferedSuggestion[]> {
-    const bots = await options.bots(actor);
-    if (bots.length === 0) return [];
-
-    const [connections, dismissed, routines] = await Promise.all([
-      options.connections(actor.id),
-      options.dismissals.dismissedKeys(actor.id),
-      options.routines.list(actor),
-    ]);
-
-    /*
-     * `connected` only. `needs_login` and `needs_reconnect` are connections the person HAD, and a
-     * routine offered on one would open a login wall at seven in the morning — the failed run
-     * scheduled in advance that the catalogue's note is about.
-     */
-    const held = new Set<string>();
-    for (const row of connections.sites) {
-      if (row.status === "connected") held.add(`site:${row.id}`);
-    }
-    const accountTitles = new Map<string, string>();
-    for (const row of connections.accounts) {
-      if (row.title) accountTitles.set(row.id, row.title);
-      if (row.status === "connected") held.add(`account:${row.id}`);
-    }
-    /*
-     * The overview's title first, because it is what the 연결 screen drew; the catalogue's for
-     * an account this deployment cannot connect (it is then in `needs`, never in `via`), so the
-     * fact still carries a name and not a key.
-     */
-    const named = (requirement: SuggestionRequirement): NamedRequirement => ({
-      ...requirement,
-      title:
-        (requirement.kind === "site"
-          ? siteById(requirement.id)?.name
-          : (accountTitles.get(requirement.id) ??
-            catalogueEntry(requirement.id)?.title)) ?? requirement.id,
-    });
-
-    const latched = new Set(dismissed);
-    const takenKeys = new Set<string>();
-    const takenNames = new Set<string>();
-    for (const routine of routines) {
-      if (routine.suggestionKey) takenKeys.add(routine.suggestionKey);
-      takenNames.add(routine.name);
-    }
-
-    const cards: OfferedSuggestion[] = [];
-    for (const entry of catalogue) {
-      if (latched.has(entry.key)) continue;
-      if (takenKeys.has(entry.key) || takenNames.has(entry.name)) continue;
-      const via = entry.needsAnyOf.filter((requirement) =>
-        held.has(requirementKey(requirement)),
-      );
-      if (entry.needsAnyOf.length > 0 && via.length === 0) continue;
-      cards.push({
-        key: entry.key,
-        name: entry.name,
-        instruction: entry.instruction,
-        schedule: entry.schedule,
-        needs: entry.needsAnyOf.map(named),
-        via: via.map(named),
-      });
-    }
-    return cards;
-  }
+  const offered = (actor: AgentActor) => offeredTo(options, catalogue, actor);
 
   return {
     async list(actor: AgentActor): Promise<OfferedSuggestion[]> {
