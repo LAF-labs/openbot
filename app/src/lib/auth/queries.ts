@@ -85,6 +85,16 @@ export type CurrentUserResult =
   | typeof UNREACHABLE
   | typeof FORBIDDEN;
 
+/** The `code` of a JSON refusal, or null for a body that has none or is not JSON. */
+async function refusalCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { code?: unknown } | null;
+    return typeof body?.code === "string" ? body.code : null;
+  } catch {
+    return null;
+  }
+}
+
 async function currentUser(): Promise<CurrentUserResult> {
   let response: Response;
   try {
@@ -103,10 +113,18 @@ async function currentUser(): Promise<CurrentUserResult> {
    * A deployment with no sign-in configured answers 503 on every authenticated route, which is
    * exactly the state a first deployment is in before its OAuth client exists. The sign-in screen
    * already knows how to say that no providers are configured, in Korean, so the job is only to
-   * let somebody reach it. This 503 is ours; a proxy with nothing behind it answers 502.
+   * let somebody reach it.
+   *
+   * BUT NOT EVERY 503 IS OURS. The front door answers 503 `laf:api_unreachable` when there is no API
+   * behind it at all (`app/Caddyfile`, `handle_errors`) — it used to be an empty 502, which the line
+   * below this block already read as unreachable. Read by status alone, the new answer would send
+   * somebody who is signed in to the sign-in screen for the length of every restart. So the code
+   * decides, and the status only when there is no code.
    */
   if (response.status === 503) {
-    return null;
+    return (await refusalCode(response)) === "laf:api_unreachable"
+      ? UNREACHABLE
+      : null;
   }
   if (response.status === 403) {
     return FORBIDDEN;

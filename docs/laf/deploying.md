@@ -81,8 +81,8 @@ mode of each is the whole deployment stopping, not one service misbehaving.
 
 `web` also has a healthcheck that can go red — it asks its own `/health` on a
 loopback address the Caddyfile keeps for that, so it is red when the API is
-absent (502) or degraded (503). The front door is the one service whose death
-is the product's death, and it used to have nothing.
+absent or degraded (a 503 either way; the body says which). The front door is
+the one service whose death is the product's death, and it used to have nothing.
 
 `POSTGRES_PASSWORD` comes from `.env` now, defaulting to `openbot` so that
 existing deployments are unchanged. It is worth setting on a new one — but only
@@ -402,9 +402,12 @@ had been reading as "alive". A watcher can now hold the API to three things:
 - **`503` with `"status":"degraded"`** — the API is up and `checks` names which
   dependency is down. A probe that is absent is not reported, so a deployment
   with no computer configured has two checks and is not degraded for it.
-- **`502`, empty body** — the API is not answering at all. That comes from the
-  front door, not the API, so a watcher reading only the status code still
-  learns it.
+- **`503` with `"status":"down"`** — the API is not answering at all, and
+  `checks` says `"api":"unreachable"`. That comes from the front door
+  (`handle_errors` in `app/Caddyfile`), not the API, and every other `/api/*`
+  answers `503 {"code":"laf:api_unreachable"}` beside it. Until 2026-09-14 it
+  was a `502` with an empty body, which told a watcher nothing it could read
+  (`operating.md`, "When there is no API to write the line").
 
 The answer is cached for a few seconds, so polling it costs nothing.
 
@@ -482,8 +485,9 @@ stack on 2026-09-10:
   (`service "migrate" didn't complete successfully: exit 1`, and for the API
   `dependency failed to start`). The front door does **not** wait for either
   — `web` depends on nothing, on purpose — so `/` keeps serving the app (200,
-  1,790 bytes) and `/health` answers 502 from Caddy: exactly the "API is not
-  answering" state the watcher list above reads. Before 2026-09-10 `web`
+  1,790 bytes) and `/health` answers 503 `down` from Caddy (an empty 502 when
+  this was measured): exactly the "API is not answering" state the watcher
+  list above reads. Before 2026-09-10 `web`
   waited for the API's container to exist, and one failed migration closed 80
   and 443 with it — connection refused where the monitor is written to read
   502, and no ACME renewal while it lasted. The script reads `migrate`'s exit

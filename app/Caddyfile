@@ -39,9 +39,8 @@
 	# Without this block the fallback below answered it: measured 2026-09-06 on a customer VM,
 	# `/health` from outside was index.html — 200, 1,790 bytes — and stayed 200 through a six-second
 	# API outage, so the fleet monitor read a dead API as alive. With it, the API's JSON comes
-	# through (503 when it is degraded), and an API that is not there is a 502 from here: a poller
-	# that reads only the status code learns the truth either way. `/api/health` is the same answer
-	# through the `/api/*` block above.
+	# through (503 when it is degraded), and an API that is not there is answered by `handle_errors`
+	# at the end of this block. `/api/health` is the same answer through the `/api/*` block above.
 	handle /health {
 		reverse_proxy server:3001
 	}
@@ -100,6 +99,39 @@
 		try_files {path} /index.html
 
 		file_server
+	}
+
+	# WHEN THE API IS NOT THERE, THE FRONT DOOR SAYS SO IN WORDS A PROGRAM CAN READ.
+	#
+	# `reverse_proxy` with nothing behind it — the container stopped, restarting, or never started
+	# because a migration failed — is an error inside Caddy, and an unhandled error is its status
+	# code with an EMPTY body. Measured 2026-09-14 on the web image with the server container
+	# stopped: `/health` and `/api/me` were `502` with `content-length: 0`, so a watcher reading the
+	# body learned nothing. Now `/health` (and `/api/health`, the same answer) is 503 with the API's
+	# own health shape — `status` is `down`, and `checks` names the API as what is missing — and
+	# every other `/api/*` is 503 with a `laf:` code, the way the API itself refuses. 503 and not
+	# 502 because it is the answer the API gives for "not serving" (degraded is 503 too), so a
+	# poller keeps one rule; the app reads the code, not the status, to tell this 503 from the API's
+	# own (`app/src/lib/auth/queries.ts`).
+	#
+	# Only these paths, and only the proxy's own failures (502 no upstream, 503 none available,
+	# 504 no answer in time). What the API answers itself passes through untouched, and the SPA
+	# fallback and `/connected` keep Caddy's default: no route below matches them.
+	handle_errors 502 503 504 {
+		@health path /health /api/health
+		handle @health {
+			header Content-Type application/json
+			respond `{"status":"down","checks":{"api":"unreachable"}}` 503
+		}
+
+		@api {
+			path /api/*
+			not path /api/health
+		}
+		handle @api {
+			header Content-Type application/json
+			respond `{"code":"laf:api_unreachable"}` 503
+		}
 	}
 }
 

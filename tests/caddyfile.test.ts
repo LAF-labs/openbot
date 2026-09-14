@@ -50,9 +50,18 @@ type Handler = {
   handler: string;
   routes?: Route[];
   upstreams?: { dial: string }[];
+  status_code?: number | string;
+  body?: string;
+  response?: { set?: Record<string, string[]> };
+};
+type Matcher = {
+  path?: string[];
+  host?: string[];
+  not?: Matcher[];
+  expression?: string;
 };
 type Route = {
-  match?: { path?: string[]; host?: string[] }[];
+  match?: Matcher[];
   handle?: Handler[];
   group?: string;
 };
@@ -69,8 +78,12 @@ type Route = {
  * host's paths and a runner's docker-in-docker shares none, so a mount that works on one machine
  * fails on the next with a message about mounting a directory onto a file — measured here, from a
  * temp directory, before this was stdin.
+ *
+ * `errors` reads the same sites' `handle_errors` routes instead of their ordinary ones.
  */
-function adaptedAppSites(): Map<string, Route[]> {
+function adaptedAppSites(
+  kind: "routes" | "errors" = "routes",
+): Map<string, Route[]> {
   const run = Bun.spawnSync(
     [
       "docker",
@@ -94,7 +107,10 @@ function adaptedAppSites(): Map<string, Route[]> {
   const config = JSON.parse(run.stdout.toString()) as {
     apps: {
       http: {
-        servers: Record<string, { listen: string[]; routes: Route[] }>;
+        servers: Record<
+          string,
+          { listen: string[]; routes: Route[]; errors?: { routes: Route[] } }
+        >;
       };
     };
   };
@@ -103,7 +119,9 @@ function adaptedAppSites(): Map<string, Route[]> {
   for (const server of Object.values(config.apps.http.servers)) {
     // PUBLIC_ORIGIN is unset here, so the app's host is the Caddyfile's own default, `localhost`.
     // The www block is a different host and its own listener, and is not one of these.
-    const site = server.routes.find((route) =>
+    const routes =
+      kind === "routes" ? server.routes : (server.errors?.routes ?? []);
+    const site = routes.find((route) =>
       route.match?.some((m) => m.host?.includes("localhost")),
     );
     const subroute = site?.handle?.find((h) => h.handler === "subroute");
@@ -166,6 +184,167 @@ test.skipIf(!dockerAvailable || !caddyImage)(
   120_000,
 );
 
+/** Every handler a route runs, through however many subroutes the adapter nested it in. */
+function handlersOf(route: Route): Handler[] {
+  return (route.handle ?? []).flatMap((handler) =>
+    handler.handler === "subroute"
+      ? (handler.routes ?? []).flatMap(handlersOf)
+      : [handler],
+  );
+}
+
+/** What an error route answers: its status, its body as JSON, and the content type it sets. */
+function answerOf(route: Route) {
+  const handlers = handlersOf(route);
+  const response = handlers.find((h) => h.handler === "static_response");
+  const headers = handlers.find((h) => h.handler === "headers");
+  return {
+    status: Number(response?.status_code),
+    body: JSON.parse(response?.body ?? "null") as unknown,
+    contentType: headers?.response?.set?.["Content-Type"],
+  };
+}
+
+/*
+ * WHEN THE API IS NOT THERE, `/health` AND `/api/*` SAY SO — AND NOTHING ELSE CHANGES.
+ *
+ * Measured 2026-09-14 on the web image built from this tree, with the server container stopped:
+ * `/health` and `/api/me` were `502` with `content-length: 0`. A watcher reading the body learned
+ * nothing, and the app could not tell a front door with nothing behind it from any other 502.
+ */
+const API_GONE_HEALTH = { status: "down", checks: { api: "unreachable" } };
+const API_GONE_REFUSAL = { code: "laf:api_unreachable" };
+
+test.skipIf(!dockerAvailable || !caddyImage)(
+  "answers a missing API on /health and /api/* in JSON, and on no other path, as Caddy itself reads the file",
+  () => {
+    const sites = adaptedAppSites("errors");
+    expect([...sites.keys()].sort()).toEqual(
+      [":80", `:${healthcheckPort}`].sort(),
+    );
+
+    for (const errors of sites.values()) {
+      // One block, and it is for the proxy's own failures only: an error of any other status keeps
+      // Caddy's default answer.
+      expect(errors).toHaveLength(1);
+      const block = errors[0] as Route;
+      expect(block.match).toEqual([
+        { expression: "{http.error.status_code} in [502, 503, 504]" },
+      ]);
+
+      const routes =
+        block.handle?.find((h) => h.handler === "subroute")?.routes ?? [];
+      expect(routes).toHaveLength(2);
+      const [health, api] = routes as [Route, Route];
+
+      expect(health.match).toEqual([{ path: ["/health", "/api/health"] }]);
+      expect(answerOf(health)).toEqual({
+        status: 503,
+        body: API_GONE_HEALTH,
+        contentType: ["application/json"],
+      });
+
+      expect(api.match).toEqual([
+        { path: ["/api/*"], not: [{ path: ["/api/health"] }] },
+      ]);
+      expect(answerOf(api)).toEqual({
+        status: 503,
+        body: API_GONE_REFUSAL,
+        contentType: ["application/json"],
+      });
+
+      // Every error route names its paths: the SPA fallback and /connected have none here.
+      for (const route of routes) {
+        expect(route.match?.every((m) => (m.path?.length ?? 0) > 0)).toBe(true);
+      }
+    }
+  },
+  120_000,
+);
+
+/*
+ * AND THE SAME, ASKED OF A RUNNING CADDY. The adapted JSON says what the routes are; this says what
+ * the pinned image does with them, which a digest bump can change without the JSON moving. The
+ * container has no network, so `server` resolves to nothing — the stopped API, as the proxy sees it.
+ *
+ * Asked with busybox `nc` from inside the container, with stdin held open for a moment: `nc` closes
+ * its sending half on EOF, and a client that has half-closed reads to Caddy as one that went away —
+ * measured, every proxied path then came back `200` with an empty body, which is Go's default for a
+ * handler that wrote nothing.
+ */
+test.skipIf(!dockerAvailable || !caddyImage)(
+  "answers a missing API that way when it is running",
+  async () => {
+    const started = Bun.spawnSync([
+      "docker",
+      "run",
+      "--detach",
+      "--rm",
+      "--network",
+      "none",
+      "--env",
+      `CADDYFILE=${caddyfile}`,
+      caddyImage as string,
+      "sh",
+      "-c",
+      'printf "%s" "$CADDYFILE" > /etc/caddy/Caddyfile && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile',
+    ]);
+    const container = started.stdout.toString().trim();
+    expect(started.exitCode).toBe(0);
+
+    const ask = (path: string) => {
+      const run = Bun.spawnSync([
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        `(printf 'GET ${path} HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n'; sleep 0.5) | nc localhost ${healthcheckPort}`,
+      ]);
+      const raw = run.stdout.toString();
+      const [head = "", body = ""] = raw.split("\r\n\r\n");
+      return {
+        status: Number(head.split(" ")[1]),
+        contentType: /\r\ncontent-type: ([^\r\n]+)/i.exec(head)?.[1] ?? null,
+        body,
+      };
+    };
+
+    try {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (!Number.isNaN(ask("/health").status)) break;
+        await Bun.sleep(100);
+      }
+      for (const path of ["/health", "/api/health"]) {
+        const answer = ask(path);
+        expect({ path, ...answer, body: JSON.parse(answer.body) }).toEqual({
+          path,
+          status: 503,
+          contentType: "application/json",
+          body: API_GONE_HEALTH,
+        });
+      }
+      const refusal = ask("/api/me");
+      expect({ ...refusal, body: JSON.parse(refusal.body) }).toEqual({
+        status: 503,
+        contentType: "application/json",
+        body: API_GONE_REFUSAL,
+      });
+      // Untouched: the page the API draws keeps Caddy's own answer, and so does the SPA fallback
+      // (a 404 here, since this image has no built app in /srv).
+      expect(ask("/connected")).toEqual({
+        status: 502,
+        contentType: null,
+        body: "",
+      });
+      expect(ask("/").status).toBe(404);
+    } finally {
+      Bun.spawnSync(["docker", "rm", "--force", container]);
+    }
+  },
+  120_000,
+);
+
 /*
  * The same facts read off the text, for a machine with no Docker: weaker, since they cannot see
  * what Caddy makes of the file, but never skipped.
@@ -173,6 +352,16 @@ test.skipIf(!dockerAvailable || !caddyImage)(
 test("hands /health to the API rather than to the SPA fallback", () => {
   expect(caddyfile).toMatch(
     /handle \/health \{\n\t+reverse_proxy server:3001\n\t+\}/,
+  );
+});
+
+test("answers a missing API in JSON, for the proxy's own failures only", () => {
+  expect(caddyfile).toContain("handle_errors 502 503 504 {");
+  expect(caddyfile).toContain(
+    `respond \`${JSON.stringify(API_GONE_HEALTH)}\` 503`,
+  );
+  expect(caddyfile).toContain(
+    `respond \`${JSON.stringify(API_GONE_REFUSAL)}\` 503`,
   );
 });
 

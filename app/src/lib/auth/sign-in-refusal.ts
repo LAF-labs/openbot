@@ -160,6 +160,9 @@ const REFUSAL_BY_KEY: Readonly<
   unable_to_create_session: "server_trouble",
   internal_server_error: "server_trouble",
   state_generation_error: "server_trouble",
+
+  // The front door, answering for an API that is not behind it (`app/Caddyfile`, `handle_errors`).
+  laf_api_unreachable: "unreachable",
 };
 
 /** What a code means for the person, or `unknown` for a code nobody wrote words for. */
@@ -175,8 +178,9 @@ export const KNOWN_REFUSAL_KEYS: readonly string[] =
 /**
  * A start the server refused, or one that never reached it.
  *
- * The code first, where there is one, then the status. No status at all is a request that got no
- * answer.
+ * The code first, where there is one: it is the only thing that tells the front door's 503 for an
+ * API that is not there (`laf:api_unreachable`) from the API's own 503 for a deployment with no
+ * sign-in configured. Then the status. No status at all is a request that got no answer.
  */
 export function refusalForStart(failure: {
   status?: number;

@@ -163,6 +163,18 @@ const START_CODES: { code: string; status: number; thrownIn: string }[] = [
   },
 ];
 
+/**
+ * What the front door answers for an API that is not behind it, read out of `app/Caddyfile`: a 503
+ * the API's own "no sign-in configured" 503 has to be told apart from.
+ */
+const frontDoorCode = (() => {
+  const caddyfile = readFileSync(join(import.meta.dir, "../Caddyfile"), "utf8");
+  const code = /\{"code":"(laf:[a-z_]+)"\}/.exec(caddyfile)?.[1];
+  if (!code)
+    throw new Error("app/Caddyfile no longer answers for a missing API");
+  return code;
+})();
+
 /** The words for a refusal, in the Korean the screen is expected to show. */
 const koreanFor = (refusal: SignInRefusal): string => {
   const english = refusalSentence(refusal);
@@ -245,6 +257,11 @@ const cases: Case[] = [
     label: "start 400 VALIDATION_ERROR",
     scenario: press(400, { code: "VALIDATION_ERROR", message: "Invalid body" }),
     expected: "misconfigured",
+  },
+  {
+    label: "start 503 from the front door, with no API behind it",
+    scenario: press(503, { code: frontDoorCode }),
+    expected: "unreachable",
   },
   {
     label: "start 503 from an API with no sign-in configured",
@@ -362,6 +379,7 @@ describe("the codes a sign-in can come back with", () => {
         ...PROVIDER_CODES,
         ...START_CODES.map(({ code }) => code),
         "VALIDATION_ERROR",
+        frontDoorCode,
       ]),
     ].filter((code) => refusalForCode(code) === "unknown");
     expect(generic).toEqual([]);
@@ -377,6 +395,7 @@ describe("the codes a sign-in can come back with", () => {
         ...PROVIDER_CODES,
         ...START_CODES.map(({ code }) => code),
         "VALIDATION_ERROR",
+        frontDoorCode,
       ].map(refusalKey),
     );
     expect(KNOWN_REFUSAL_KEYS.filter((key) => !sent.has(key))).toEqual([]);
@@ -451,6 +470,9 @@ describe("reading the refusal a screen was opened with", () => {
   test("keeps a start's code ahead of its status, and a missing answer apart from both", () => {
     expect(refusalForStart({ status: 403, code: "INVALID_ORIGIN" })).toBe(
       "misconfigured",
+    );
+    expect(refusalForStart({ status: 503, code: frontDoorCode })).toBe(
+      "unreachable",
     );
     expect(refusalForStart({ status: 503 })).toBe("misconfigured");
     expect(refusalForStart({ status: 429, code: null })).toBe("rate_limited");

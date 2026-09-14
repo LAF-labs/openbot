@@ -90,6 +90,32 @@ killed by the kernel, not stopped: its log ends without a `shutdown` line, `OOMK
 `true`, and `unless-stopped` has already restarted it. A `crashed` line names a bug; no last line
 at all names the ceiling.
 
+### When there is no API to write the line
+
+A `server` that is stopped, restarting or never started — its migration failed, it crashed on
+boot — writes nothing, so the first thing to say so is the front door, and since 2026-09-14 it says
+so in JSON (`handle_errors` in `app/Caddyfile`). Before, it was Caddy's default for a proxy with
+nothing behind it: measured on the web image with the server container stopped, `/health` and
+`/api/me` were `502` with `content-length: 0`, and a watcher reading the body learned nothing.
+
+| asked                    | the API answering                                    | no API behind the door                                  |
+| ------------------------ | ---------------------------------------------------- | ------------------------------------------------------- |
+| `/health`, `/api/health` | its own: `200` `ok`, or `503` `degraded` + `checks`  | `503` `{"status":"down","checks":{"api":"unreachable"}}` |
+| any other `/api/*`       | its own                                              | `503` `{"code":"laf:api_unreachable"}`                   |
+| `/connected`, the app    | the page, the app                                    | unchanged: `/connected` is an empty `502`, the app loads |
+
+```bash
+curl -si https://<name>.agent.laf-co.com/health    # 503 {"status":"down","checks":{"api":"unreachable"}}
+docker compose ps -a server                        # Exited or Restarting: why is in the next line
+docker compose logs --tail=50 server migrate       # `crashed`, `boot_refused`, or a migration's own error
+```
+
+`down` is not `degraded`. Degraded is an API that answered and named the dependency it is missing;
+down is no API at all, and the log to read is the server's last lines, not a probe's. Both are
+`503`, so a poller that reads only the status keeps one rule. The app reads the code instead:
+`laf:api_unreachable` takes a signed-in person to the "cannot reach the server" screen, where the
+API's own `503` — sign-in not configured — sends them to sign in.
+
 ## 3. What is never in it
 
 The log is on a disk that is rotated, shipped to a laptop by `laf collect`, and pasted into

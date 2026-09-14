@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { QueryClient } from "@tanstack/react-query";
 import { isRedirect } from "@tanstack/react-router";
 import { loadCurrentUser } from "../src/lib/auth/load-current-user";
@@ -31,7 +33,8 @@ test("uses a stable key for the current authenticated user", () => {
  *
  *   401 — signed out.
  *   503 — sign-in is not configured, which is where every deployment starts. Same answer: the
- *         sign-in screen explains it. This 503 is ours; a proxy with nothing behind it says 502.
+ *         sign-in screen explains it. Unless it is the FRONT DOOR's 503, which carries
+ *         `laf:api_unreachable` and means there is no API behind it at all.
  *   anything else, including no response at all — unreachable, which is not "signed out" and must
  *         not be shown as it.
  */
@@ -60,6 +63,46 @@ test("answers, rather than rejecting, however the request fails", async () => {
       throw new TypeError("Failed to fetch");
     });
     expect(await run()).toBe(UNREACHABLE);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+/**
+ * THE FRONT DOOR'S 503 IS AN OUTAGE, NOT A DEPLOYMENT WITHOUT SIGN-IN.
+ *
+ * `app/Caddyfile` used to answer an `/api/*` with no API behind it as an empty 502, which the test
+ * above reads as unreachable. It answers 503 with a code now, so a watcher learns why — and read by
+ * status alone, that 503 would send somebody who is signed in to the sign-in screen for the length
+ * of every restart. The body is the one the Caddyfile itself writes, read out of it.
+ */
+test("reads the front door's 503 for a missing API as unreachable, and only that 503", async () => {
+  const caddyfile = readFileSync(
+    join(import.meta.dir, "..", "Caddyfile"),
+    "utf8",
+  );
+  const frontDoorBody = /respond `(\{"code":"laf:[a-z_]+"\})` 503/.exec(
+    caddyfile,
+  )?.[1];
+  expect(frontDoorBody).toBe('{"code":"laf:api_unreachable"}');
+
+  const original = globalThis.fetch;
+  const run = currentUserQueryOptions().queryFn as () => Promise<unknown>;
+  const answering = (body: string) =>
+    stubFetch(async () => new Response(body, { status: 503 }));
+  try {
+    globalThis.fetch = answering(frontDoorBody as string);
+    expect(await run()).toBe(UNREACHABLE);
+
+    // The API's own 503s: no code, another code, or a body that is not JSON at all.
+    for (const body of [
+      JSON.stringify({ error: "Authentication is not configured." }),
+      JSON.stringify({ error: "laf:consent_not_recorded" }),
+      "Service Unavailable",
+    ]) {
+      globalThis.fetch = answering(body);
+      expect(await run()).toBeNull();
+    }
   } finally {
     globalThis.fetch = original;
   }
