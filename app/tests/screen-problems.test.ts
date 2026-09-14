@@ -35,11 +35,16 @@ const SENT_BY_THE_SERVER = [
   "laf:computer_unavailable",
   "laf:snapshot_stale",
   "laf:computer_failed",
+  // The client's own facts, which `codeFor` passes through since 2026-09-14.
+  "laf:computer_unreachable",
+  "laf:computer_timed_out",
 ];
 const SENT_BY_THE_COMPUTER = [
   "laf:screen_not_started",
   "laf:take_control_first",
   "laf:input_not_applied",
+  // Thrown while starting a browser, and answered by the screenshot route as it came.
+  "laf:navigation_guard_unavailable",
 ];
 
 const GENERIC = "The screen is not available right now.";

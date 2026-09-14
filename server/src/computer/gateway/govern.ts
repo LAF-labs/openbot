@@ -12,7 +12,7 @@ import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
 import { type ApprovalRegistry, fingerprintOf } from "../approvals";
 import type { ReviewSubject, ReviewVerdict } from "../auto-review";
-import { ComputerUnavailableError } from "../client";
+import { ComputerUnavailableError, STOPPED } from "../client";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
@@ -478,7 +478,7 @@ export function createGovern(options: {
 
 export type Govern = ReturnType<typeof createGovern>;
 
-/** What a stopped caller is told: the same error the client throws for one. */
+/** What a stopped caller is told: the same error, and the same fact, the client throws for one. */
 function stopped(): ComputerUnavailableError {
-  return new ComputerUnavailableError("The action was stopped.");
+  return new ComputerUnavailableError(STOPPED);
 }

@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
+import { refusalText } from "@/lib/computer/refusals";
+import { SCREEN_PROBLEM_SAID } from "@/lib/computer/screen-problems";
 import { activeLocale, t } from "@/lib/i18n";
 
 type ComputerProfile = {
@@ -53,9 +55,16 @@ function ComputersPage() {
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
-          error?: string;
+          code?: string;
         } | null;
-        setProblem(body?.error ?? t("The computers could not be listed."));
+        // The computer's facts are the pane's facts — unreachable, timed out — and have its words.
+        setProblem(
+          refusalText(
+            SCREEN_PROBLEM_SAID,
+            body?.code,
+            t("The computers could not be listed."),
+          ),
+        );
         return;
       }
       const body = (await response.json()) as {
@@ -85,7 +94,7 @@ function ComputersPage() {
         );
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as {
-            error?: string;
+            code?: string;
           } | null;
           /*
            * Two sentences, not one template. `The computer could not be ${action}.` produced "The
@@ -93,10 +102,13 @@ function ComputersPage() {
            * that needed its past participle, and untranslatable either way.
            */
           setProblem(
-            body?.error ??
-              (action === "stop"
+            refusalText(
+              SCREEN_PROBLEM_SAID,
+              body?.code,
+              action === "stop"
                 ? t("The browser could not be stopped.")
-                : t("The computer could not be reset.")),
+                : t("The computer could not be reset."),
+            ),
           );
         } else {
           setProblem(null);

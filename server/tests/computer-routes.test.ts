@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { AuditEventInput, AuditStore } from "../src/audit";
@@ -282,8 +282,27 @@ describe("the Bot an address names", () => {
  * will not accept the row is a failure that reaches this file — and Drizzle puts the SQL it sent
  * AND its bound parameters into `message`. The route answered with `error.message`, so the reply to
  * a caller was the row the database had just refused, over HTTP, to anybody with a session.
+ *
+ * And then with `describeFailure(error)`, which kept the SQL out and still put a sentence on the
+ * wire. Since 2026-09-14 the caller is told the fact and the operator's log is told what it was.
  */
 describe("a failure on its way out", () => {
+  /** Every line the logger printed while `act` ran. */
+  async function printedDuring<T>(act: () => T | Promise<T>) {
+    const lines: string[] = [];
+    const keep = (...parts: unknown[]) => {
+      lines.push(parts.map(String).join(" "));
+    };
+    const spies = (["error", "warn", "log"] as const).map((method) =>
+      spyOn(console, method).mockImplementation(keep),
+    );
+    try {
+      return { result: await act(), lines };
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  }
+
   /** Shaped like the real thing: `query` and `params`, and the code on the cause. */
   const queryError = () => {
     const error = new Error(
@@ -295,27 +314,39 @@ describe("a failure on its way out", () => {
     return error;
   };
 
-  test("carries the database's code, and neither the statement nor what was bound to it", async () => {
+  test("carries the fact, and neither the statement nor what was bound to it", async () => {
     const { app, seen } = surface(ADMIN, PERMISSIVE, queryError());
     await seen();
 
-    const response = await app.request("/bot-1/click", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
-    });
+    const { result: response, lines } = await printedDuring(() =>
+      app.request("/bot-1/click", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
+      }),
+    );
 
     expect(response.status).toBe(500);
-    const body = (await response.json()) as { error?: string };
-    expect(body.error).toBe("database error (23505)");
+    const body = (await response.json()) as { error?: string; code?: string };
+    expect(body).toEqual({
+      error: "laf:computer_failed",
+      code: "laf:computer_failed",
+    });
     const said = JSON.stringify(body);
     expect(said).not.toContain("insert into");
     expect(said).not.toContain(SECRET);
+    // The database's code is the operator's, on one log line — and the statement and its values
+    // are on no line at all.
+    const logged = lines.join("\n");
+    expect(logged).toContain("computer_route_failed");
+    expect(logged).toContain("database error (23505)");
+    expect(logged).not.toContain("insert into");
+    expect(logged).not.toContain(SECRET);
   });
 
-  test("still says what an ordinary failure was", async () => {
-    // The bound is on how much and what kind, not on saying anything: a caller that cannot be told
-    // what went wrong is a caller that reports an outage for a full disk.
+  test("still says what an ordinary failure was, to the operator", async () => {
+    // The bound is on where it goes, not on saying anything: an operator who cannot be told what
+    // went wrong is one who reports an outage for a full disk. The caller is told the fact.
     const { app, seen } = surface(
       ADMIN,
       PERMISSIVE,
@@ -323,15 +354,19 @@ describe("a failure on its way out", () => {
     );
     await seen();
 
-    const response = await app.request("/bot-1/click", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
-    });
-
-    expect(((await response.json()) as { error?: string }).error).toBe(
-      "The trail is full.",
+    const { result: response, lines } = await printedDuring(() =>
+      app.request("/bot-1/click", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
+      }),
     );
+
+    expect(await response.json()).toEqual({
+      error: "laf:computer_failed",
+      code: "laf:computer_failed",
+    });
+    expect(lines.join("\n")).toContain("The trail is full.");
   });
 });
 

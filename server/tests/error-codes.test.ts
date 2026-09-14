@@ -34,6 +34,9 @@ const ROOTS = [
   "account",
   "notifications",
   "agents",
+  // The Bot's computer (wave 2, 2026-09-14): its routes answered a sentence per refusal, and its
+  // client passed on whatever the browser container wrote, Playwright's call logs included.
+  "computer",
 ];
 
 function sourceFiles(directory: string): string[] {

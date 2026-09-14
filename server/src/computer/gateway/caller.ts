@@ -41,6 +41,8 @@ export class ActionRefusedError extends Error {
  * the failure that makes an ask list worse than useless.
  */
 export class ActionNeedsApprovalError extends Error {
+  /** The fact, like a refusal's: a code, and the message is the same code. */
+  readonly code = "laf:awaiting_approval";
   /** What the caller presents once somebody has answered. */
   readonly approvalId: string;
   /** What is being asked about, in facts. The sentence is composed where it is read. */

@@ -50,6 +50,7 @@
   "app/tests/composer-first-keystrokes.test.tsx",
   "app/tests/computer-card-alignment.test.tsx",
   "app/tests/computer-frame-bitmap.test.ts",
+  "app/tests/computer-refusals.test.ts",
   "app/tests/confirm-dialog.test.tsx",
   "app/tests/connect-card.test.ts",
   "app/tests/connect-outcome.test.ts",

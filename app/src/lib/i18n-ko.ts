@@ -2216,4 +2216,29 @@ export const ko: Record<string, string> = {
   "The coworker did not answer in time.":
     "다른 봇이 제시간에 답하지 않았습니다.",
   "The coworker could not answer.": "다른 봇이 답하지 못했습니다.",
+  /*
+   * 봇의 컴퓨터가 코드로만 보내는 거절들 (2파동, 2026-09-14). 예전에는 서버와 컨테이너의 영어 문장이
+   * 그대로 떴다 — 비밀번호를 넣는 칸 아래, 경계 설정 화면, 컴퓨터 화면, 툴 한 줄. 표는
+   * SECRET_REFUSALS·BOUNDARY_REFUSALS(`lib/computer/refusals.ts`), SCREEN_PROBLEM_SAID, OUTCOME_LABELS이고
+   * 각자의 테스트가 걷는다.
+   */
+  "Nothing is waiting for that value any more.":
+    "그 값을 기다리는 요청이 이제 없습니다.",
+  "The box for that value is no longer on the page. Ask the Bot to request it again.":
+    "그 값을 넣을 칸이 페이지에서 사라졌습니다. 봇에게 다시 요청하게 해 주세요.",
+  "The Bot's computer could not be reached.": "봇의 컴퓨터에 닿지 못했습니다.",
+  "The Bot's computer did not answer in time.":
+    "봇의 컴퓨터가 제시간에 답하지 않았습니다.",
+  "The Bot's browser did not start, because its address check could not be set up.":
+    "주소 검사를 걸지 못해 봇의 브라우저를 열지 않았습니다.",
+  "That rule could not be saved, so it has not been applied. The previous boundary is still in force.":
+    "규칙을 저장하지 못해 적용하지 않았습니다. 이전 경계가 그대로 적용되고 있습니다.",
+  "The boundary could not be read. Nothing was changed.":
+    "경계 설정을 읽지 못해 아무것도 바뀌지 않았습니다.",
+  "That path is outside the workspace": "작업 공간 밖의 경로",
+  "That file could not be used": "그 파일을 쓸 수 없음",
+  "The Bot's request was incomplete": "봇의 요청에 빠진 값이 있음",
+  "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",
+  "The Bot's computer did not answer in time":
+    "봇의 컴퓨터가 제시간에 답하지 않음",
 };

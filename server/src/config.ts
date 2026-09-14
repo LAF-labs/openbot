@@ -682,7 +682,10 @@ function actionPolicy(environment: Environment): ActionPolicy | undefined {
 
   const result = parseActionPolicy(parsed);
   if (!result.ok) {
-    throw new Error(`AGENT_COMPUTER_POLICY is invalid: ${result.error}`);
+    // The parser answers in codes now; the list it names is the part an operator edits.
+    throw new Error(
+      `AGENT_COMPUTER_POLICY is invalid: ${result.code}${result.list ? ` (${result.list})` : ""}`,
+    );
   }
   return result.policy;
 }

@@ -23,6 +23,13 @@ export const SCREEN_PROBLEM_SAID: Record<string, string> = {
   "laf:computer_unavailable": "The Bot's computer is not responding.",
   "laf:snapshot_stale": "The page changed while it was being read.",
   "laf:computer_failed": "Something went wrong on the Bot's computer.",
+  // The client's own two facts since 2026-09-14, where both were `computer_unavailable`: nothing
+  // answered, and an answer that did not come in time.
+  "laf:computer_unreachable": "The Bot's computer could not be reached.",
+  "laf:computer_timed_out": "The Bot's computer did not answer in time.",
+  // The container's, passed through the screenshot route: no browser without its address check.
+  "laf:navigation_guard_unavailable":
+    "The Bot's browser did not start, because its address check could not be set up.",
   // The live-screen socket, `agent-computer`'s `{type:"error"}` messages.
   "laf:screen_not_started": "The live picture could not be started.",
   "laf:take_control_first":

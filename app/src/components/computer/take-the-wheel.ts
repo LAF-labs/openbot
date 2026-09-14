@@ -1,6 +1,7 @@
 /**
  * Computer control API helpers and screenshot-to-page coordinate conversion.
  */
+import { refusalText, SECRET_REFUSALS } from "@/lib/computer/refusals";
 import { t } from "@/lib/i18n";
 
 export type ControlState = {
@@ -95,16 +96,21 @@ export async function supplySecret(
     });
     if (response.ok) return { ok: true };
     const body = (await response.json().catch(() => null)) as {
-      error?: string;
+      code?: string;
     } | null;
     return {
       ok: false,
-      error: body?.error ?? t("That could not be sent to the page. Try again."),
+      error: refusalText(
+        SECRET_REFUSALS,
+        body?.code,
+        t("That could not be sent to the page. Try again."),
+      ),
     };
   } catch {
     return {
       ok: false,
-      error: "The assistant's computer could not be reached.",
+      // Under the box a person is typing a password into, so in their language as well.
+      error: t("The Bot's computer could not be reached."),
     };
   }
 }

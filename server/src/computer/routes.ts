@@ -11,10 +11,13 @@ import {
   type ComputerClient,
   ComputerUnavailableError,
   ElementNotFoundError,
+  NAVIGATION_REFUSED,
+  NavigationRefusedError,
   PAGE_TIMEOUT,
   PageLoadTimeoutError,
-  NavigationRefusedError,
   StaleSnapshotError,
+  WORKSPACE_FILE_UNUSABLE,
+  WORKSPACE_PATH_REFUSED,
   WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "./client";
@@ -118,8 +121,8 @@ export function createComputerRoutes(
    *
    * Measured 2026-09-06: the screen card printed `error` out of this body under a Korean heading —
    * "The assistant's computer did not respond in time.", and once a Playwright call log. The
-   * server sends facts; `code` is the fact, and the surface owns the words for it. `error` stays
-   * beside it for any reader that still expects a sentence.
+   * server sends facts; `code` is the fact, and the surface owns the words for it. `error` beside
+   * it is the same code, for the readers that take `error`: no route here answers a sentence.
    */
   routes.get(
     "/:botId/screenshot",
@@ -131,10 +134,7 @@ export function createComputerRoutes(
           await client.forBot(context.req.param("botId")).screenshot(),
         );
       } catch (error) {
-        return context.json(
-          { error: describe(error), code: codeFor(error) },
-          statusFor(error),
-        );
+        return failed(context, error);
       }
     },
   );
@@ -147,10 +147,7 @@ export function createComputerRoutes(
       try {
         return context.json(await gateway.read(context.req.param("botId")));
       } catch (error) {
-        return context.json(
-          { error: describe(error), code: codeFor(error) },
-          statusFor(error),
-        );
+        return failed(context, error);
       }
     },
   );
@@ -165,7 +162,7 @@ export function createComputerRoutes(
         approvalId?: unknown;
       } | null;
       if (typeof body?.url !== "string" || !body.url.trim()) {
-        return context.json({ error: "A web address is required." }, 400);
+        return context.json(ARGUMENTS_INVALID_BODY, 400);
       }
 
       try {
@@ -195,25 +192,11 @@ export function createComputerRoutes(
           return awaitingApproval(context, error);
         }
         if (error instanceof ActionRefusedError) {
-          return context.json(
-            {
-              // The code twice, deliberately: `error` is what every caller of these routes already
-              // reads, and `code` is where a refusal's fact has been since the surface started owning
-              // the words. Neither is a sentence any more. See ActionRefusedError.
-              error: error.message,
-              rule: error.rule,
-              code: error.code,
-            },
-            403,
-          );
+          return refused(context, error);
         }
-        // A refusal is the rules working, not a fault, so it is a 403 with the reason a person reads.
-        // Collapsing it into the same 5xx as an unreachable computer would send somebody looking for
-        // an outage that is not happening.
-        if (error instanceof NavigationRefusedError) {
-          return context.json({ error: error.message }, 403);
-        }
-        return context.json({ error: describe(error) }, statusFor(error));
+        // A refusal by the floor is answered 403 too — see `statusFor` — and a page that did not
+        // load is not a refusal, whatever else it is.
+        return failed(context, error);
       }
     },
   );
@@ -226,7 +209,7 @@ export function createComputerRoutes(
       try {
         return context.json(await gateway.snapshot(context.req.param("botId")));
       } catch (error) {
-        return context.json({ error: describe(error) }, statusFor(error));
+        return failed(context, error);
       }
     },
   );
@@ -244,7 +227,7 @@ export function createComputerRoutes(
   routes.post("/:botId/click", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
-      if (!ref) return badRef;
+      if (!ref) return ARGUMENTS_INVALID_BODY;
       return gateway.click(
         botId,
         botId,
@@ -259,10 +242,8 @@ export function createComputerRoutes(
   routes.post("/:botId/type", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
-      if (!ref) return badRef;
-      if (typeof body?.text !== "string") {
-        return { error: "The text to enter is required." };
-      }
+      if (!ref) return ARGUMENTS_INVALID_BODY;
+      if (typeof body?.text !== "string") return ARGUMENTS_INVALID_BODY;
       return gateway.type(
         botId,
         botId,
@@ -281,7 +262,7 @@ export function createComputerRoutes(
   routes.post("/:botId/key", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       if (typeof body?.key !== "string" || !body.key) {
-        return { error: "A key name is required, such as Enter or Tab." };
+        return ARGUMENTS_INVALID_BODY;
       }
       const ref = asRef(body);
       return gateway.key(
@@ -325,7 +306,7 @@ export function createComputerRoutes(
     (context) =>
       act(context, (botId, actor, body) => {
         if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
-          return { error: "A tab index is required." };
+          return ARGUMENTS_INVALID_BODY;
         }
         return gateway.switchTab(
           botId,
@@ -341,9 +322,9 @@ export function createComputerRoutes(
   routes.post("/:botId/upload", requireUser, requireBotAccess(), (context) =>
     act(context, (botId, actor, body, signal) => {
       const ref = asRef(body);
-      if (!ref) return badRef;
+      if (!ref) return ARGUMENTS_INVALID_BODY;
       if (typeof body?.path !== "string" || !body.path.trim()) {
-        return { error: "A file path is required." };
+        return ARGUMENTS_INVALID_BODY;
       }
       return gateway.uploadFile(
         botId,
@@ -368,7 +349,7 @@ export function createComputerRoutes(
       try {
         return context.json(await gateway.control(context.req.param("botId")));
       } catch (error) {
-        return context.json({ error: describe(error) }, statusFor(error));
+        return failed(context, error);
       }
     },
   );
@@ -411,7 +392,7 @@ export function createComputerRoutes(
       try {
         return context.json(await gateway.computers());
       } catch (error) {
-        return context.json({ error: describe(error) }, statusFor(error));
+        return failed(context, error);
       }
     },
   );
@@ -537,13 +518,16 @@ export function createComputerRoutes(
       );
       if (!recording || recording.steps.length === 0) {
         return context.json(
-          { error: "There is nothing recorded to write up." },
+          { error: "laf:recording_empty", code: "laf:recording_empty" },
           409,
         );
       }
       if (!writeUp) {
         return context.json(
-          { error: "This deployment cannot write a recording up." },
+          {
+            error: "laf:write_up_unavailable",
+            code: "laf:write_up_unavailable",
+          },
           501,
         );
       }
@@ -558,13 +542,17 @@ export function createComputerRoutes(
       return written.because === "busy"
         ? context.json(
             {
-              error: "The model is busy. Try again in a moment.",
+              error: "laf:write_up_busy",
+              code: "laf:write_up_busy",
               retryLater: true,
             },
             503,
           )
         : context.json(
-            { error: "The recording could not be written up." },
+            {
+              error: "laf:write_up_unreadable",
+              code: "laf:write_up_unreadable",
+            },
             502,
           );
     },
@@ -598,13 +586,10 @@ export function createComputerRoutes(
     (context) =>
       act(context, (botId, actor, body) => {
         if (typeof body?.ref !== "string" || !body.ref) {
-          return {
-            error:
-              "Say which field the value goes in, using a ref from your snapshot.",
-          };
+          return ARGUMENTS_INVALID_BODY;
         }
         if (typeof body?.snapshotId !== "number") {
-          return { error: "The snapshotId the ref came from is required." };
+          return ARGUMENTS_INVALID_BODY;
         }
         return gateway.requestSecret(botId, botId, actor, {
           label:
@@ -631,7 +616,10 @@ export function createComputerRoutes(
     (context) =>
       act(context, (botId, actor, body) => {
         if (typeof body?.text !== "string" || !body.text) {
-          return { error: "A value is required." };
+          return {
+            error: "laf:secret_value_required",
+            code: "laf:secret_value_required",
+          };
         }
         return gateway.supplySecret(botId, botId, actor, body.text);
       }),
@@ -657,7 +645,10 @@ export function createComputerRoutes(
         kind !== "key" &&
         kind !== "scroll"
       ) {
-        return context.json({ error: "Unknown input." }, 400);
+        return context.json(
+          { error: "laf:input_unknown", code: "laf:input_unknown" },
+          400,
+        );
       }
       const body = (await context.req.json().catch(() => null)) as Record<
         string,
@@ -675,7 +666,7 @@ export function createComputerRoutes(
           } as Parameters<typeof gateway.humanInput>[1]),
         );
       } catch (error) {
-        return context.json({ error: describe(error) }, statusFor(error));
+        return failed(context, error);
       }
     },
   );
@@ -708,7 +699,7 @@ export function createComputerRoutes(
     (context) =>
       act(context, (botId, actor, body) => {
         if (typeof body?.path !== "string" || !body.path.trim()) {
-          return { error: "A file path is required." };
+          return ARGUMENTS_INVALID_BODY;
         }
         return gateway.readFile(
           botId,
@@ -727,11 +718,9 @@ export function createComputerRoutes(
     (context) =>
       act(context, (botId, actor, body) => {
         if (typeof body?.path !== "string" || !body.path.trim()) {
-          return { error: "A file path is required." };
+          return ARGUMENTS_INVALID_BODY;
         }
-        if (typeof body?.contents !== "string") {
-          return { error: "The contents to write are required." };
-        }
+        if (typeof body?.contents !== "string") return ARGUMENTS_INVALID_BODY;
         return gateway.writeFile(
           botId,
           botId,
@@ -764,7 +753,14 @@ export function createComputerRoutes(
     > | null;
     const parsed = parseActionPolicy(body);
     if (!parsed.ok) {
-      return context.json({ error: parsed.error }, 400);
+      return context.json(
+        {
+          error: parsed.code,
+          code: parsed.code,
+          ...(parsed.list ? { list: parsed.list } : {}),
+        },
+        400,
+      );
     }
     /*
      * WHY, WHERE THE CHANGE IS ONE THAT STANDS THE BOUNDARY DOWN.
@@ -788,10 +784,7 @@ export function createComputerRoutes(
        * rather than quietly held in memory. Nothing changes: the previous policy is still in force.
        */
       return context.json(
-        {
-          error:
-            "That rule could not be saved, so it has not been applied. The previous boundary is still in force.",
-        },
+        { error: POLICY_NOT_SAVED, code: POLICY_NOT_SAVED },
         503,
       );
     }
@@ -836,12 +829,29 @@ export function createComputerRoutes(
 type ComputerContext = Context<{ Variables: AppVariables }>;
 
 /** A request that was rejected before any decision was needed, because it was not a valid action. */
-type BadRequest = { error: string };
+type BadRequest = { error: `laf:${string}`; code: `laf:${string}` };
 
-const badRef: BadRequest = {
-  error:
-    "A ref and the snapshotId it came from are both required. Take a snapshot first.",
+/**
+ * An acting request missing what its tool requires: a ref and its snapshotId, the text, the key.
+ *
+ * ONE FACT FOR ALL OF THEM, and the one the unattended runner answers the same mistake with, so a
+ * Bot is told the same thing whether a person's tab or a routine made the call. They were a sentence
+ * per field — "A ref and the snapshotId it came from are both required. Take a snapshot first." —
+ * in English, into a Korean-speaking model's tool result; the tool's own definition says what its
+ * arguments are, and a second author of that is how the two come to disagree.
+ */
+const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
+const ARGUMENTS_INVALID_BODY: BadRequest = {
+  error: ARGUMENTS_INVALID,
+  code: ARGUMENTS_INVALID,
 };
+
+/**
+ * The boundary could not be written down, so it was not changed. Its own fact because it is the one
+ * refusal here that says something is still true — the previous boundary is in force — and a person
+ * reading "could not be saved" alone would not know whether anything had been loosened.
+ */
+const POLICY_NOT_SAVED = "laf:policy_not_saved";
 
 /**
  * Shared plumbing for acting routes that use this helper: resolve who is asking, run, and map
@@ -890,7 +900,7 @@ async function act(
         id: record.id,
         // Only a real users row may go in the audit table's foreign key column. The local development
         // actor is not one, so writing it there fails the constraint and loses the row entirely. Who
-        // it was is recorded in the payload regardless. See gateway.ts.
+        // it was is recorded in the payload regardless. See `write` in gateway/trail.ts.
         ...(record.email === DEV_ACTOR.email ? {} : { userId: record.id }),
         // Which conversation this is happening in, so an answer can be "for this conversation".
         // Absent is fine: the question is then asked in the standing terms alone.
@@ -907,32 +917,50 @@ async function act(
     if (error instanceof ActionNeedsApprovalError) {
       return awaitingApproval(context, error);
     }
-    // A policy refusal is the product working. 403 with the rule that refused it, so the surface can
-    // tell the person which boundary they met rather than reporting a malfunction.
     if (error instanceof ActionRefusedError) {
-      return context.json(
-        {
-          // The code, not a sentence — see the sibling handler above and ActionRefusedError.
-          error: error.message,
-          rule: error.rule,
-          code: error.code,
-        },
-        403,
-      );
+      return refused(context, error);
     }
-    // The computer refused the path itself, which is a different thing from the policy refusing this
-    // Bot. Same status, no rule attached, because there is no rule to go and edit.
-    if (error instanceof WorkspaceRefusedError) {
-      return context.json({ error: error.message }, 403);
-    }
-    // A 400, deliberately, NOT a 403. The surface treats 403 as "a boundary refused you" and renders
-    // it as Blocked, so returning it for "there is no file at notes.md" told both the person and the
-    // model that a policy had intervened when none had.
-    if (error instanceof WorkspaceRequestError) {
-      return context.json({ error: error.message }, 400);
-    }
-    return context.json({ error: describe(error) }, statusFor(error));
+    return failed(context, error);
   }
+}
+
+/**
+ * A policy refusal is the product working. 403 with the rule that refused it, so the surface can
+ * tell the person which boundary they met rather than reporting a malfunction.
+ */
+function refused(context: ComputerContext, error: ActionRefusedError) {
+  return context.json(
+    {
+      // The code twice, deliberately: `error` is what every caller of these routes already reads,
+      // and `code` is where a refusal's fact has been since the surface started owning the words.
+      // Neither is a sentence any more. See ActionRefusedError.
+      error: error.code,
+      rule: error.rule,
+      code: error.code,
+    },
+    403,
+  );
+}
+
+/**
+ * A failure, answered as its fact and the status that fact deserves.
+ *
+ * `error` and `code` are the same code. `error` used to be what the failure said, bounded to a line
+ * by `describeFailure` — a Playwright call log, the container's English, the client's own — and the
+ * surface, the model and a routine all read it as the reason. What it said is still worth something
+ * when it is a failure nobody here named, the 500: that line goes to the operator's log, where
+ * `describeFailure` has always kept a query's SQL and parameters out of it, and not to the wire.
+ */
+function failed(context: ComputerContext, error: unknown) {
+  const code = codeFor(error);
+  const status = statusFor(error);
+  if (status === 500) {
+    log.error("computer_route_failed", {
+      route: context.req.routePath,
+      reason: describeFailure(error),
+    });
+  }
+  return context.json({ error: code, code }, status);
 }
 
 function isBadRequest(value: unknown): value is BadRequest {
@@ -965,7 +993,8 @@ function awaitingApproval(
     {
       // A code, not a sentence. The card is Korean and the model reads Korean; neither of them is
       // owed this server's English. See ActionRefusedError.
-      error: error.message,
+      error: error.code,
+      code: error.code,
       awaitingApproval: true,
       approvalId: error.approvalId,
       // What is being asked about, in facts. `app/src/lib/approvals.ts` turns it into a sentence.
@@ -1021,24 +1050,6 @@ function asRef(
 }
 
 /**
- * What a failure is allowed to say once it leaves the place it happened.
- *
- * THIS USED TO BE `error.message`, AND NOT EVERY ERROR THAT REACHES IT IS OURS. Every acting route
- * writes an audit row through the gateway before it answers, and a Drizzle query error carries the
- * SQL it sent AND its bound parameters in `message` — so a trail that would not accept a row
- * answered the caller with the row it was refusing, out of a 500 body, over HTTP. See
- * failure-text.ts, which turns that into the PostgreSQL code an operator can actually act on and
- * bounds everything else to one line.
- */
-function describe(error: unknown): string {
-  // A fact code rather than a description, and the one failure here that has one. It cannot be
-  // reached through a route — the middleware above refuses first — and is here for the caller that
-  // arrives some other way.
-  if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
-  return describeFailure(error);
-}
-
-/**
  * A person holding the wheel, or a person driving before taking it.
  *
  * The client says so in the message, not in a type of its own, and two functions below read it.
@@ -1057,7 +1068,7 @@ function isHeldByAPerson(error: unknown): boolean {
  * not running (an operator fixes it), the refs are stale (the model fixes it by snapshotting again),
  * and everything else. Navigation established this; the acting routes follow it.
  */
-function statusFor(error: unknown): 400 | 409 | 500 | 503 | 504 {
+function statusFor(error: unknown): 400 | 403 | 409 | 500 | 503 | 504 {
   // A caller that named something no filesystem should be asked about. The request is wrong, so it
   // is a 400 — never a 500, which would send an operator looking at a container that is behaving.
   if (error instanceof BotIdRefusedError) return 400;
@@ -1073,16 +1084,29 @@ function statusFor(error: unknown): 400 | 409 | 500 | 503 | 504 {
   // are already reported.
   if (isHeldByAPerson(error)) return 409;
   if (error instanceof ComputerUnavailableError) return 503;
+  // A refusal by the floor is the rules working, not a fault. Collapsing it into the same 5xx as an
+  // unreachable computer would send somebody looking for an outage that is not happening.
+  if (error instanceof NavigationRefusedError) return 403;
+  // The computer refused the path itself, which is a different thing from the policy refusing this
+  // Bot. Same status, no rule attached, because there is no rule to go and edit.
+  if (error instanceof WorkspaceRefusedError) return 403;
+  // A 400, deliberately, NOT a 403. The surface treats 403 as "a boundary refused you" and renders
+  // it as Blocked, so returning it for "there is no file at notes.md" told both the person and the
+  // model that a policy had intervened when none had.
+  if (error instanceof WorkspaceRequestError) return 400;
   return 500;
 }
 
 /**
  * Which fact a failure is, for a surface that has to say it in the person's language.
  *
- * The same branches as `statusFor`, in the same order, so the status and the code never describe
- * two different failures. `describe(error)` beside it is a sentence for a log or an older reader;
- * the pane shows the words for this code (`app/src/lib/computer/screen-problems.ts`) and never
- * the sentence — which is what it did, in English, until 2026-09-06.
+ * The failure's own code first. The client and the gateway raise each failure with its fact as the
+ * message, and the class alone cannot tell the facts that share one apart: a person holding the
+ * wheel, a renamed control and a stale ref are all a 409 the computer answered, and each is a
+ * different next move. The class decides only what a failure that carries no code is — the same
+ * branches as `statusFor`, in the same order, so the status and the code never describe two
+ * different failures. The pane shows the words for the code (`app/src/lib/computer/screen-problems.ts`),
+ * the model its own (`shared/prompt/tool-results.ko.ts`).
  */
 function codeFor(error: unknown): string {
   if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
@@ -1090,12 +1114,28 @@ function codeFor(error: unknown): string {
     error instanceof StaleSnapshotError ||
     error instanceof ElementNotFoundError
   ) {
-    return "laf:snapshot_stale";
+    return carriedBy(error) ?? "laf:snapshot_stale";
   }
   if (error instanceof PageLoadTimeoutError) return PAGE_TIMEOUT;
   if (isHeldByAPerson(error)) return "laf:human_has_control";
   if (error instanceof ComputerUnavailableError) {
-    return "laf:computer_unavailable";
+    return carriedBy(error) ?? "laf:computer_unavailable";
   }
+  if (error instanceof NavigationRefusedError) {
+    return carriedBy(error) ?? NAVIGATION_REFUSED;
+  }
+  if (error instanceof WorkspaceRefusedError) {
+    return carriedBy(error) ?? WORKSPACE_PATH_REFUSED;
+  }
+  if (error instanceof WorkspaceRequestError) {
+    return carriedBy(error) ?? WORKSPACE_FILE_UNUSABLE;
+  }
+  // Anything else is not the computer's: an audit insert that failed, a bug. Its message is not a
+  // fact whatever it starts with, and `failed` logs what it said.
   return "laf:computer_failed";
+}
+
+/** The code a computer failure carries as its message, if it carries one. */
+function carriedBy(error: Error): string | undefined {
+  return error.message.startsWith("laf:") ? error.message : undefined;
 }

@@ -105,7 +105,10 @@ export function createApprovalRoutes(
       // the same conflict an answered question reports, for the same reason.
       if (!revoked) {
         return context.json(
-          { error: "That allowance is no longer standing." },
+          {
+            error: "laf:allowance_not_standing",
+            code: "laf:allowance_not_standing",
+          },
           409,
         );
       }
@@ -171,7 +174,10 @@ export function createApprovalRoutes(
       // read as an approval, and reading a missing field as a refusal would be equally wrong.
       if (typeof body?.granted !== "boolean") {
         return context.json(
-          { error: "Say whether this is allowed or not." },
+          {
+            error: "laf:approval_answer_missing",
+            code: "laf:approval_answer_missing",
+          },
           400,
         );
       }
@@ -189,8 +195,8 @@ export function createApprovalRoutes(
       if (!answered.ok) {
         return context.json(
           {
-            error:
-              "That request is no longer waiting for an answer. It may have expired, or somebody else answered it.",
+            error: "laf:approval_not_waiting",
+            code: "laf:approval_not_waiting",
           },
           409,
         );

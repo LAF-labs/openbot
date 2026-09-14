@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AskSubject, describeSubject } from "@/lib/approvals";
+import { BOUNDARY_REFUSALS, refusalText } from "@/lib/computer/refusals";
 import { activeLocale, t } from "@/lib/i18n";
 
 /**
@@ -238,10 +239,16 @@ function BoundariesPage() {
       });
       const body = (await response.json().catch(() => null)) as {
         policy?: ActionPolicy;
-        error?: string;
+        code?: string;
       } | null;
       if (!response.ok) {
-        setProblem(body?.error ?? t("The boundary could not be saved."));
+        setProblem(
+          refusalText(
+            BOUNDARY_REFUSALS,
+            body?.code,
+            t("The boundary could not be saved."),
+          ),
+        );
         return false;
       }
       // Display the persisted policy in case the server normalized it.

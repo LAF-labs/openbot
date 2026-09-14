@@ -383,6 +383,6 @@ export type ComputerState = (typeof COMPUTER_STATES)[number];
 export type ComputerStatus = {
   botId: string;
   state: ComputerState;
-  /** Set when state is "unreachable", in words a person can act on. */
+  /** Set when state is "unreachable": the fact, as a `laf:` code the surface says in its own words. */
   reason?: string;
 };

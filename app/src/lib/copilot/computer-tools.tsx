@@ -89,6 +89,16 @@ const OUTCOME_LABELS: Record<string, string> = {
   "laf:key_is_text": "A letter was pressed as a key",
   "laf:secret_target_not_a_field":
     "The secret was aimed at something that is not a field",
+  /*
+   * What the computer itself answered (2026-09-14), which reached this line as English until then:
+   * the container's own "There is no file at notes.md.", the client's "The assistant's computer did
+   * not respond in time.", a sentence per missing argument.
+   */
+  "laf:workspace_path_refused": "That path is outside the workspace",
+  "laf:workspace_file_unusable": "That file could not be used",
+  "laf:tool_arguments_invalid": "The Bot's request was incomplete",
+  "laf:computer_failed": "It did not work on the Bot's computer",
+  "laf:computer_timed_out": "The Bot's computer did not answer in time",
 };
 
 /** The words for a line, from the code where there is one and from the server's text otherwise. */

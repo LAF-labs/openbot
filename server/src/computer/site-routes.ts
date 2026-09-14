@@ -16,7 +16,7 @@ import type { MiddlewareHandler } from "hono";
 import { siteById } from "../../../shared/sites/catalogue";
 import type { AppVariables } from "../auth/guards";
 import { BOT_ID_INVALID, isBotId } from "./bot-id";
-import { ComputerUnavailableError } from "./client";
+import { ComputerUnavailableError, factOfError } from "./client";
 import type { ComputerGateway } from "./gateway";
 import type { SiteConnectionStore } from "./site-connections";
 
@@ -41,13 +41,16 @@ export function createSiteRoutes(
    */
   routes.post("/:siteId/check", requireUser, async (context) => {
     const site = siteById(context.req.param("siteId"));
-    if (!site) return context.json({ error: "No such site." }, 404);
+    if (!site) return context.json(SITE_UNKNOWN_BODY, 404);
 
     const body = (await context.req.json().catch(() => null)) as {
       botId?: unknown;
     } | null;
     if (typeof body?.botId !== "string" || !body.botId.trim()) {
-      return context.json({ error: "A Bot is required." }, 400);
+      return context.json(
+        { error: "laf:site_bot_required", code: "laf:site_bot_required" },
+        400,
+      );
     }
     const botId = body.botId.trim();
     /*
@@ -65,12 +68,11 @@ export function createSiteRoutes(
       page = await gateway.read(botId);
     } catch (error) {
       // A browser that will not answer is not a failed login. The card must not start saying "log
-      // in again" because the container was restarting.
+      // in again" because the container was restarting. Answered with the computer's own fact —
+      // unreachable, timed out — rather than a sentence about it.
       const status = error instanceof ComputerUnavailableError ? 503 : 500;
-      return context.json(
-        { error: "The Bot's browser could not be read right now." },
-        status,
-      );
+      const code = factOfError(error);
+      return context.json({ error: code, code }, status);
     }
 
     const signedIn = site.signedIn(page.url, page.text);
@@ -99,7 +101,7 @@ export function createSiteRoutes(
    */
   routes.delete("/:siteId/connection", requireUser, async (context) => {
     const site = siteById(context.req.param("siteId"));
-    if (!site) return context.json({ error: "No such site." }, 404);
+    if (!site) return context.json(SITE_UNKNOWN_BODY, 404);
     const forgotten = await store.forget({
       userId: context.var.actor.id,
       siteId: site.id,
@@ -109,3 +111,7 @@ export function createSiteRoutes(
 
   return routes;
 }
+
+/** A site the catalogue does not have. A fact, like every refusal these routes answer. */
+const SITE_UNKNOWN = "laf:site_unknown";
+const SITE_UNKNOWN_BODY = { error: SITE_UNKNOWN, code: SITE_UNKNOWN };

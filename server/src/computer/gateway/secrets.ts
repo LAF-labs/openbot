@@ -10,7 +10,7 @@
  * crosses this process.
  */
 import type { AuditStore } from "../../audit";
-import { type ComputerClient, StaleSnapshotError } from "../client";
+import { type ComputerClient, STALE_REFS, StaleSnapshotError } from "../client";
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
 import type { SecretRequest, SnapshotElement, SnapshotResult } from "../schema";
@@ -146,9 +146,7 @@ export function createSecrets(deps: {
      */
     const cached = snapshots.get(computerId);
     if (!cached || cached.stale || cached.snapshotId !== input.snapshotId) {
-      throw new StaleSnapshotError(
-        "The snapshot this ref came from is no longer current. Take a fresh snapshot and use the refs from it.",
-      );
+      throw new StaleSnapshotError(STALE_REFS);
     }
     const element = cached.elements.get(input.ref);
     if (!element || !SECRET_ENTRY_ROLES.has(element.role)) {

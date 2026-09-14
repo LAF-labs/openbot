@@ -153,6 +153,12 @@ function clone(policy: ActionPolicy): ActionPolicy {
   };
 }
 
+/** Why a policy that arrived was not taken. */
+export type PolicyRefusal =
+  | "laf:policy_not_object"
+  | "laf:policy_list_invalid"
+  | "laf:policy_settle_invalid";
+
 /**
  * Validate a policy that arrived over HTTP.
  *
@@ -163,12 +169,17 @@ function clone(policy: ActionPolicy): ActionPolicy {
  * Expressions are NOT validated for correctness on the way in, only for being strings. Whether a rule
  * is meaningful is the policy engine's business, it fails closed there, and pre-validating here would
  * mean two parsers to keep in agreement.
+ *
+ * A refusal is a code, and the list it is about where it is about one. It was an English sentence,
+ * which the route answered with and the Boundaries page printed as the reason a rule was not saved.
  */
 export function parseActionPolicy(
   input: unknown,
-): { ok: true; policy: ActionPolicy } | { ok: false; error: string } {
+):
+  | { ok: true; policy: ActionPolicy }
+  | { ok: false; code: PolicyRefusal; list?: "deny" | "ask" | "allow" } {
   if (!input || typeof input !== "object") {
-    return { ok: false, error: "A policy must be an object." };
+    return { ok: false, code: "laf:policy_not_object" };
   }
   const candidate = input as Record<string, unknown>;
 
@@ -195,7 +206,7 @@ export function parseActionPolicy(
   for (const key of ["deny", "ask", "allow"] as const) {
     const value = candidate[key] ?? [];
     if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
-      return { ok: false, error: `${key} must be a list of expressions.` };
+      return { ok: false, code: "laf:policy_list_invalid", list: key };
     }
     lists[key] = value as string[];
   }
@@ -205,10 +216,7 @@ export function parseActionPolicy(
   // the two, because a typo silently meaning "allowed" is the direction that loosens a boundary.
   const standing = candidate.settleWithoutAsking;
   if (standing !== undefined && standing !== "allowed" && standing !== "off") {
-    return {
-      ok: false,
-      error: 'settleWithoutAsking must be "allowed" or "off".',
-    };
+    return { ok: false, code: "laf:policy_settle_invalid" };
   }
 
   return {

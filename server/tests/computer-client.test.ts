@@ -7,6 +7,9 @@ import {
   PageLoadTimeoutError,
   ElementNotFoundError,
   NavigationRefusedError,
+  StaleSnapshotError,
+  WorkspaceRefusedError,
+  WorkspaceRequestError,
 } from "../src/computer/client";
 
 function clientWith(
@@ -75,7 +78,7 @@ describe("computer client", () => {
 
     await expect(
       client.navigate("https://example.com/", stop.signal),
-    ).rejects.toThrow("The action was stopped.");
+    ).rejects.toThrow("laf:stopped");
     expect(dispatched).toBe(0);
   });
 
@@ -90,6 +93,9 @@ describe("computer client", () => {
 
     await expect(client.navigate("http://169.254.169.254/")).rejects.toThrow(
       NavigationRefusedError,
+    );
+    await expect(client.navigate("http://169.254.169.254/")).rejects.toThrow(
+      "laf:navigation_refused",
     );
     expect(called).toBe(false);
   });
@@ -219,7 +225,7 @@ describe("computer client", () => {
       throw new Error("connect ECONNREFUSED");
     });
     await expect(missing.navigate("https://example.com")).rejects.toThrow(
-      "The assistant's computer is not running.",
+      "laf:computer_unreachable",
     );
 
     const badPage = clientWith(
@@ -229,9 +235,11 @@ describe("computer client", () => {
           headers: { "content-type": "application/json" },
         }),
     );
-    await expect(badPage.navigate("https://nope.example")).rejects.toThrow(
-      "net::ERR_NAME_NOT_RESOLVED",
-    );
+    // The page's own fact, and not Chromium's words for it, which reached a Korean model as they came.
+    const failure = await badPage
+      .navigate("https://nope.example")
+      .catch((error: Error) => error);
+    expect((failure as Error).message).toBe("laf:page_failed");
   });
 
   test("status reports unreachable rather than throwing", async () => {
@@ -242,7 +250,7 @@ describe("computer client", () => {
     await expect(client.status("bot-1")).resolves.toEqual({
       botId: "bot-1",
       state: "unreachable",
-      reason: "The assistant's computer is not running.",
+      reason: "laf:computer_unreachable",
     });
   });
 
@@ -271,7 +279,8 @@ describe("computer client", () => {
 
     await expect(client.status("bot-1")).resolves.toMatchObject({
       state: "unreachable",
-      reason: "The assistant's computer did not respond in time.",
+      // Its own fact, not the absent computer's: audit A3 (S3) found a slow page read as a broken one.
+      reason: "laf:computer_timed_out",
     });
   });
 });
@@ -303,18 +312,175 @@ describe("acting on an element that is not there", () => {
     ).rejects.toBeInstanceOf(ElementNotFoundError);
   });
 
-  test("says what to do next, and drops the call log", async () => {
+  test("is the stale-refs fact, whose words say what to do next, and drops the call log", async () => {
     try {
       await timingOut().click({ ref: "e5", snapshotId: 1 });
       throw new Error("should have refused");
     } catch (error) {
       const message = (error as Error).message;
-      // The instruction, naming the ref that failed.
-      expect(message).toContain("e5");
-      expect(message).toContain("fresh snapshot");
+      // The fact, and the model's instruction beside it rather than a sentence of this file's own.
+      expect(message).toBe("laf:stale_refs");
+      expect(toolResultText(message)).toContain("computer_snapshot");
       // Not several lines of Playwright internals, which are noise to a model and to a person.
       expect(message).not.toContain("Call log");
       expect(message).not.toContain("Timeout");
+    }
+  });
+});
+
+/**
+ * WHAT THE COMPUTER SAID, AS THE FACTS IT WAS.
+ *
+ * Until 2026-09-14 every refusal from the computer went up as whatever the container wrote in
+ * `error` — "There is no file at notes.md.", "Nothing is waiting for a secret.", a Playwright log —
+ * and the routes answered with it, into a Korean model's tool result and onto a Korean screen. A code
+ * the container sends passes through; a sentence becomes the fact its door and status mean.
+ */
+describe("a refusal from the computer", () => {
+  /** A value somebody typed, distinctive enough that finding it anywhere means what it looks like. */
+  const SECRET_VALUE = "hunter2-Zx9-BANKPASS";
+
+  const answering = (status: number, body: Record<string, unknown>) => () =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  const failureOf = (promise: Promise<unknown>) =>
+    promise.then(
+      () => {
+        throw new Error("should have refused");
+      },
+      (error: Error) => error,
+    );
+
+  test("that carries a code keeps the code", async () => {
+    const relabelled = clientWith(
+      answering(409, {
+        error: "laf:label_changed",
+        code: "laf:label_changed",
+        stale: true,
+      }),
+    );
+    const failure = await failureOf(
+      relabelled.click({ ref: "e5", snapshotId: 1 }),
+    );
+    expect(failure).toBeInstanceOf(StaleSnapshotError);
+    expect(failure.message).toBe("laf:label_changed");
+
+    const held = clientWith(
+      answering(409, { error: "laf:human_has_control", humanHasControl: true }),
+    );
+    expect(
+      (await failureOf(held.click({ ref: "e5", snapshotId: 1 }))).message,
+    ).toBe("laf:human_has_control");
+  });
+
+  test("about a workspace path is the fact the status means, never the container's sentence", async () => {
+    const missing = clientWith(
+      answering(400, { error: "There is no file at notes.md." }),
+    );
+    const request = await failureOf(missing.readFile({ path: "notes.md" }));
+    expect(request).toBeInstanceOf(WorkspaceRequestError);
+    expect(request.message).toBe("laf:workspace_file_unusable");
+
+    const outside = clientWith(
+      answering(403, {
+        error: "../secrets is outside your workspace, so it cannot be reached.",
+      }),
+    );
+    const refusal = await failureOf(outside.readFile({ path: "../secrets" }));
+    expect(refusal).toBeInstanceOf(WorkspaceRefusedError);
+    expect(refusal.message).toBe("laf:workspace_path_refused");
+  });
+
+  test("on a person's own door is said as what the person was doing", async () => {
+    // The masked box: nothing asked for a value, or the box it was for has gone.
+    const nothingAsked = clientWith(
+      answering(409, { error: "Nothing is waiting for a secret." }),
+    );
+    expect(
+      (await failureOf(nothingAsked.supplySecret(SECRET_VALUE))).message,
+    ).toBe("laf:secret_not_pending");
+    const gone = clientWith(
+      answering(502, {
+        error:
+          "That value could not be entered: the field is no longer on the page. Ask the assistant to request it again.",
+      }),
+    );
+    expect((await failureOf(gone.supplySecret(SECRET_VALUE))).message).toBe(
+      "laf:secret_field_gone",
+    );
+    // The live screen, pressed before the wheel was taken.
+    const notYours = clientWith(
+      answering(409, {
+        error: "Take control before driving the computer yourself.",
+      }),
+    );
+    expect(
+      (await failureOf(notYours.humanInput({ kind: "click", x: 1, y: 2 })))
+        .message,
+    ).toBe("laf:take_control_first");
+  });
+
+  test("the floor says which of its two refusals it was", async () => {
+    let called = false;
+    const client = clientWith(() => {
+      called = true;
+      return ok({});
+    });
+    // Not a web address: fixed by writing one.
+    for (const target of ["open the pricing page", "file:///etc/passwd"]) {
+      expect((await failureOf(client.navigate(target))).message).toBe(
+        "laf:url_invalid",
+      );
+    }
+    // A web address that points inside the deployment: no rewording opens it.
+    expect((await failureOf(client.navigate("http://10.0.0.5/"))).message).toBe(
+      "laf:navigation_refused",
+    );
+    expect(called).toBe(false);
+  });
+
+  test("a caller who stops while the request is out is told it stopped, not that the computer is gone", async () => {
+    const stop = new AbortController();
+    const client = clientWith(async (_url, init) => {
+      stop.abort();
+      // What fetch does with an aborted signal: it rejects with the abort, not with a response.
+      throw init?.signal?.reason ?? new DOMException("aborted", "AbortError");
+    });
+    expect(
+      (await failureOf(client.click({ ref: "e1", snapshotId: 1 }, stop.signal)))
+        .message,
+    ).toBe("laf:stopped");
+  });
+
+  test("no failure the client raises carries a sentence", async () => {
+    const cases: Array<[number, Record<string, unknown>, string]> = [
+      [502, { error: "The action failed." }, "/click"],
+      [500, { error: "Screenshot failed." }, "/screenshot"],
+      [401, { error: "Not authorised." }, "/snapshot"],
+      [409, { error: "Nothing is waiting for a secret." }, "/human/secret"],
+      [400, { error: "notes is a directory, not a file." }, "/files/read"],
+    ];
+    for (const [status, body, path] of cases) {
+      const client = clientWith(answering(status, body));
+      const call =
+        path === "/click"
+          ? client.click({ ref: "e1", snapshotId: 1 })
+          : path === "/screenshot"
+            ? client.screenshot()
+            : path === "/snapshot"
+              ? client.snapshot()
+              : path === "/human/secret"
+                ? client.supplySecret(SECRET_VALUE)
+                : client.readFile({ path: "notes" });
+      const failure = await failureOf(call);
+      expect({ path, fact: failure.message.startsWith("laf:") }).toEqual({
+        path,
+        fact: true,
+      });
+      expect(failure.message).not.toContain(String(body.error));
     }
   });
 });
@@ -356,6 +522,47 @@ describe("a navigation that never finishes", () => {
       expect(toolResultText(PAGE_TIMEOUT)).not.toBe(PAGE_TIMEOUT);
       expect(toolResultText(PAGE_TIMEOUT)).not.toContain("snapshot");
     }
+  });
+
+  /*
+   * MEASURED 2026-09-14, against the computer run from source: an address that does not resolve is
+   * refused by Chromium in under a second, and the call log beside it says `navigating to "` like
+   * every failed `goto` does. That phrase alone used to be read as a timeout, so the Bot was told the
+   * page had taken thirty seconds not to load. This is the body the computer actually sent.
+   */
+  test("an address that does not resolve is a page that failed, not one that timed out", async () => {
+    const unresolved = clientWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            error:
+              'goto: net::ERR_NAME_NOT_RESOLVED at https://nope.invalid/\nCall log:\n  - navigating to "https://nope.invalid/", waiting until "domcontentloaded"\n',
+          }),
+          { status: 502, headers: { "content-type": "application/json" } },
+        ),
+    );
+    const failure = await unresolved
+      .navigate("https://nope.invalid/")
+      .catch((error: Error) => error);
+    expect(failure).not.toBeInstanceOf(PageLoadTimeoutError);
+    expect((failure as Error).message).toBe("laf:page_failed");
+  });
+
+  test("the computer's own code for a timeout decides it, whatever the words beside it", async () => {
+    const said = clientWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: "Navigation did not finish.",
+            code: "laf:page_timeout",
+            recycled: "tab",
+          }),
+          { status: 504, headers: { "content-type": "application/json" } },
+        ),
+    );
+    await expect(said.navigate("https://slow.example/")).rejects.toBeInstanceOf(
+      PageLoadTimeoutError,
+    );
   });
 });
 

@@ -2012,6 +2012,7 @@ describe("a caller that has already stopped", () => {
       allow: ["true"],
     });
 
+    // The fact the client says it with too, so both doors read the same to a Bot.
     await expect(
       gateway.click(
         "default",
@@ -2020,7 +2021,7 @@ describe("a caller that has already stopped", () => {
         { ref: "e9", snapshotId: 7 },
         stopped(),
       ),
-    ).rejects.toThrow("The action was stopped.");
+    ).rejects.toThrow("laf:stopped");
 
     expect(calls).toEqual([]);
     expect(rows).toEqual([]);
@@ -2036,7 +2037,7 @@ describe("a caller that has already stopped", () => {
 
     await expect(
       gateway.click("default", "bot-1", ACTOR, click, stopped()),
-    ).rejects.toThrow("The action was stopped.");
+    ).rejects.toThrow("laf:stopped");
     // Counted, this would be the second identical attempt and the rule would refuse it.
     await gateway.click("default", "bot-1", ACTOR, click);
     expect(calls).toEqual(["click"]);
