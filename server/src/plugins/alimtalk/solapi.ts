@@ -74,9 +74,12 @@ export type SolapiSettings = {
  * `LAF_ALIMTALK_API_KEY` is `key:secret`, one variable rather than two, because they are issued
  * together and a deployment holding one half is a deployment that cannot call anything — a state
  * worth being unable to express.
+ *
+ * Called once, by `config.ts`, which is the one reader of the environment; the connect flow, the
+ * tools and the notification door are handed what this returns rather than parsing it again.
  */
 export function solapiSettings(
-  environment: Record<string, string | undefined> = process.env,
+  environment: Record<string, string | undefined>,
 ): SolapiSettings | null {
   const pair = environment.LAF_ALIMTALK_API_KEY?.trim();
   if (!pair) return null;

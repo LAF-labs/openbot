@@ -24,7 +24,7 @@ import {
   type AlimtalkConnect,
   createAlimtalkConnect,
 } from "./alimtalk/connect";
-import { solapiSettings } from "./alimtalk/solapi";
+import type { SolapiSettings } from "./alimtalk/solapi";
 import { ALIMTALK_TOOLS, createAlimtalkTools } from "./alimtalk/tools";
 import type { PartnerFamily } from "./catalogue";
 import {
@@ -95,20 +95,20 @@ export type PartnerRuntime = {
 export function createPartnerRuntime(input: {
   context: PartnerContext;
   database: Database;
-  environment?: Record<string, string | undefined>;
+  /** LAF's 솔라피 account as `config.ts` parsed it (`config.partners.alimtalk`), or null. */
+  alimtalk: SolapiSettings | null;
 }): PartnerRuntime {
-  const environment = input.environment ?? process.env;
   const connections = createPartnerConnections(input.context);
 
-  const hasAlimtalk = solapiSettings(environment) !== null;
-
-  const alimtalk = hasAlimtalk
-    ? createAlimtalkConnect(input.context, connections, environment)
+  const alimtalk = input.alimtalk
+    ? createAlimtalkConnect(input.context, connections, input.alimtalk)
     : null;
 
   const transports: Partial<Record<PartnerFamily, VendorTransport>> = {
-    ...(hasAlimtalk
-      ? { "kakao-alimtalk": createAlimtalkTools(connections, environment) }
+    ...(input.alimtalk
+      ? {
+          "kakao-alimtalk": createAlimtalkTools(connections, input.alimtalk),
+        }
       : {}),
   };
 

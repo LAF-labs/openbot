@@ -76,9 +76,12 @@ export type RetentionJob = {
  * the tick and remember why". Anything that is not a whole number of days at least zero refuses to
  * start, the same stance `AGENT_STALL_TIMEOUT_MS` takes and for the same reason — an operator who
  * typed `1y` should not get a running deployment quietly pruning on the default.
+ *
+ * Called by `loadConfig`, before anything else is built. It used to be called after `serve()`, so a
+ * malformed value opened the port and then took the process down (audit A1 §7).
  */
 export function retentionDays(
-  environment: Record<string, string | undefined> = process.env,
+  environment: Record<string, string | undefined>,
 ): number {
   const raw = environment.AUDIT_RETENTION_DAYS?.trim();
   if (!raw) return DEFAULT_RETENTION_DAYS;

@@ -14,6 +14,7 @@ import {
   users,
 } from "../src/db/schema";
 import { createAlimtalkAdapter } from "../src/notifications/alimtalk";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import { createPartnerRoutes } from "../src/plugins/partner-routes";
 import { createPartnerRuntime } from "../src/plugins/partners";
 import type { PluginStore } from "../src/plugins/store";
@@ -170,7 +171,8 @@ function appFor(
   const partners = createPartnerRuntime({
     context: { database, auditStore },
     database,
-    environment,
+    // Parsed the way `config.ts` parses a deployment's environment.
+    alimtalk: solapiSettings(environment),
   });
   const app = new Hono<{ Variables: AppVariables }>();
   app.route(
@@ -273,7 +275,7 @@ describe("the AlimTalk door", () => {
       const partners = createPartnerRuntime({
         context: { database, auditStore },
         database,
-        environment,
+        alimtalk: solapiSettings(environment),
       }).connections;
       await partners.save({
         provider: "kakao-alimtalk",
@@ -290,7 +292,10 @@ describe("the AlimTalk door", () => {
         reason: "",
       });
 
-      const door = createAlimtalkAdapter({ partners, environment });
+      const door = createAlimtalkAdapter({
+        partners,
+        settings: solapiSettings(environment),
+      });
       const delivered = await door.deliver({
         id: "notification-1",
         kind: "approval.requested",
@@ -335,7 +340,7 @@ describe("the AlimTalk door", () => {
     const partners = createPartnerRuntime({
       context: { database, auditStore },
       database,
-      environment,
+      alimtalk: solapiSettings(environment),
     }).connections;
     await partners.save({
       provider: "kakao-alimtalk",
@@ -355,7 +360,7 @@ describe("the AlimTalk door", () => {
     const said: string[] = [];
     const door = createAlimtalkAdapter({
       partners,
-      environment,
+      settings: solapiSettings(environment),
       log: (message) => said.push(message),
     });
     const delivered = await door.deliver({

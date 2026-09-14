@@ -1,16 +1,26 @@
 /**
  * Everything a deployment is told about itself, read from the environment once.
  *
+ * ONE READER. This module is the place in `server/src` that reads `process.env`, and
+ * `server/tests/config-discipline.test.ts` walks the tree and fails on another reader (its two
+ * exceptions say why they are exceptions). Everything else is handed the parsed, typed value: a
+ * variable read in two places is a variable parsed two ways, and audit A1 measured what that costs —
+ * `PORT=abc` opened a random port behind a green boot line, `AUDIT_RETENTION_DAYS=abc` was refused
+ * only after the port had opened, `BOT_TIME_ZONE` had two readers that each fell back on their own.
+ *
  * There is one runtime and no switch for it. Upstream reads its durable threads and memory out of
  * CopilotKit Intelligence; this fork's rule is that the only external dependencies are the model
  * API and the machines it runs on, so conversations live in our own Postgres (runner/laf-runner.ts)
  * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
  * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */
+import { DEFAULT_TIME_ZONE, resolveTimeZone } from "../../shared/prompt";
+import { retentionDays } from "./account/retention";
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 import { log } from "./log";
+import { type SolapiSettings, solapiSettings } from "./plugins/alimtalk/solapi";
 import type {
   DeploymentKeyFamily,
   SharedClientFamily,
@@ -22,8 +32,114 @@ import {
   sharedClientsFrom,
 } from "./plugins/shared-clients";
 
+/**
+ * Where a deployment's value for a variable comes from — which is what the documents are held to.
+ *
+ *   operator     written into `.env` by whoever stands the deployment up, because nothing else can
+ *                supply a usable value. The table in docs/laf/deploying.md lists exactly these, and
+ *                compose passes them to the server.
+ *   compose      compose passes it through from `.env`, or sets it itself. Unset is a correct
+ *                deployment, or compose supplies the value.
+ *   development  a local run or a test sets it, and compose never passes it: the image is built around
+ *                its default (`PORT` — Caddy and the healthcheck both ask :3001), or a deployment
+ *                carrying it would be unsafe (`LAF_DEV_NO_AUTH`, `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`).
+ *   retired      read only to refuse a stale spelling. Nobody should set it, so `.env.example` does
+ *                not list it.
+ *
+ * `server/tests/configuration-documents.test.ts` holds `.env.example`, the deploying guide's table and
+ * the compose file to this list, and `config.test.ts` holds this list to what `loadConfig` reads.
+ */
+export type VariableSource = "operator" | "compose" | "development" | "retired";
+
+/**
+ * Every environment variable this server reads, and where a deployment's value comes from.
+ *
+ * A new variable is added here first: the helpers below take only these names, so a read of one
+ * that is not declared does not compile. The one exception is `BOT_SEATS_PER_ACCOUNT`, which
+ * `computer/assignment.ts` still reads for itself while that directory is being split.
+ */
+export const ENVIRONMENT = {
+  // What the process cannot start without, and where it listens.
+  DATABASE_URL: "compose",
+  KEY_ENCRYPTION_KEY: "operator",
+  LAF_TOKEN_ENCRYPTION_KEY: "operator",
+  MANAGED_AGENT_AG_UI_URL: "compose",
+  NODE_ENV: "compose",
+  PORT: "development",
+  TENANT_PACKAGE_DIR: "compose",
+  // The deployment's name, where a browser may come from, and who may sign in.
+  PUBLIC_ORIGIN: "operator",
+  TRUSTED_ORIGINS: "compose",
+  AUTH_PROVIDERS: "operator",
+  BETTER_AUTH_URL: "compose",
+  BETTER_AUTH_SECRET: "operator",
+  GOOGLE_OAUTH_CLIENT_ID: "operator",
+  GOOGLE_OAUTH_CLIENT_SECRET: "operator",
+  KAKAO_OAUTH_CLIENT_ID: "operator",
+  KAKAO_OAUTH_CLIENT_SECRET: "operator",
+  NAVER_OAUTH_CLIENT_ID: "operator",
+  NAVER_OAUTH_CLIENT_SECRET: "operator",
+  LAF_OIDC_ISSUER: "operator",
+  LAF_OIDC_CLIENT_ID: "operator",
+  INITIAL_ADMIN_EMAILS: "operator",
+  SIGN_IN_ALLOWED_EMAILS: "operator",
+  LAF_DEV_NO_AUTH: "development",
+  OPENBOT_DEV_NO_AUTH: "retired",
+  // The model, and the clock a Bot is told about.
+  OPENAI_API_KEY: "operator",
+  OPENAI_BASE_URL: "compose",
+  BOT_MODEL: "operator",
+  BOT_MODEL_EFFORT: "compose",
+  REVIEW_MODEL: "compose",
+  BOT_TIME_ZONE: "compose",
+  AGENT_STALL_TIMEOUT_MS: "compose",
+  // The Bot's computer and its boundary.
+  AGENT_COMPUTER_URL: "compose",
+  COMPUTER_TOKEN: "operator",
+  AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "development",
+  AGENT_COMPUTER_POLICY: "compose",
+  COMPUTER_REPEAT_WINDOW_MS: "compose",
+  // Who is told: the person, the operator, the fleet.
+  LAF_NOTIFY_WEBHOOK_URL: "compose",
+  LAF_ALERT_WEBHOOK_URL: "compose",
+  LAF_FLEET_WEBHOOK_URL: "compose",
+  LAF_FLEET_WEBHOOK_SECRET: "compose",
+  // What the fleet holds an application or a key for.
+  CAFE24_CLIENT_ID: "compose",
+  CAFE24_CLIENT_SECRET: "compose",
+  LAF_OAUTH_RELAY_URL: "compose",
+  LAF_PRODUCT_DOMAIN: "compose",
+  DATA_GO_KR_SERVICE_KEY: "compose",
+  LAF_ALIMTALK_API_KEY: "compose",
+  LAF_ALIMTALK_BASE_URL: "compose",
+  LAF_ALIMTALK_FROM: "compose",
+  // How long the trail is kept.
+  AUDIT_RETENTION_DAYS: "compose",
+} as const satisfies Record<string, VariableSource>;
+
+export type VariableName = keyof typeof ENVIRONMENT;
+
+/**
+ * The variables the tenant package's `${NAME}` references resolve against.
+ *
+ * Named here rather than handing the package the whole environment, so this list stays the one
+ * place a variable the server reads is declared. `configuration-documents.test.ts` fails when a file
+ * in `tenant/laf` names a variable that is not in it.
+ */
+export const TENANT_PACKAGE_VARIABLES = [
+  "BOT_MODEL",
+  "BOT_MODEL_EFFORT",
+  "REVIEW_MODEL",
+] as const satisfies readonly VariableName[];
+
 export type DeploymentConfig = {
   databaseUrl: string;
+  /**
+   * Where this process listens. 3001 unless a local run says otherwise; the image is built around
+   * that number — Caddy proxies to it and compose's healthcheck asks it — so compose never sets one.
+   * Zero asks for any free port, which is how a test starts the server and reads the port back.
+   */
+  port: number;
   keyEncryptionKey: string;
   /**
    * What the provider tokens a sign-in stores in `accounts` are sealed under. Its own key, 32 bytes
@@ -32,6 +148,45 @@ export type DeploymentConfig = {
   tokenEncryptionKey: string;
   managedAgentAgUiUrl: URL;
   tenantPackageDirectory: string;
+  /** What the package's `${NAME}` references resolve against: see {@link TENANT_PACKAGE_VARIABLES}. */
+  tenantPackageVariables: Readonly<Record<string, string | undefined>>;
+  /**
+   * Where this server's own model calls go — the auto-review judge, its probe, a demonstration's
+   * write-up — and the key they fall back to when the vault holds none.
+   *
+   * `OPENAI_BASE_URL` is where everything in this deployment reaches a model, `agent-bot` included;
+   * unset, it is OpenAI. The key is only the fallback: the vault is asked first, per call, so a
+   * revoked credential takes effect on the next action rather than on the next restart.
+   */
+  model: { baseUrl: string; apiKey?: string };
+  /**
+   * The wall clock a Bot is told about, and what "night" means in the approval metrics.
+   *
+   * `BOT_TIME_ZONE` rather than the host's own zone: the VM may be anywhere and the person is in
+   * Korea. An unusable name falls back to Seoul rather than refusing to start — a typo in a
+   * deployment's environment should not stop every Bot answering, it should stop being believed —
+   * and the fallback is said at boot, where it used to be silent in two places.
+   */
+  botTimeZone: string;
+  /**
+   * How long the audit trail and the run records are kept, in days. Zero keeps everything and
+   * switches the sweep off. See `account/retention.ts`.
+   */
+  auditRetentionDays: number;
+  /**
+   * `PUBLIC_ORIGIN`: the deployed address, and what the fleet and the operator's alert channel
+   * know this deployment by. Absent on a laptop.
+   */
+  publicOrigin?: string;
+  /**
+   * The two webhooks the notification outbox can reach besides the page itself.
+   *
+   * `webhookUrl` is the person's buzz (`LAF_NOTIFY_WEBHOOK_URL`); `alertWebhookUrl` is the fleet's
+   * alert channel (`LAF_ALERT_WEBHOOK_URL`), the only door a `support.feedback` row goes through.
+   * Each is a URL or absent: a value that is not one used to boot quietly and fail at the first
+   * notification, which is the moment nobody is watching the log.
+   */
+  notifications: { webhookUrl?: string; alertWebhookUrl?: string };
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -154,27 +309,29 @@ export type DeploymentConfig = {
     relay?: { url: string; slug: string; productDomain: string };
   };
   /**
-   * The partner vendors LAF holds the ACCOUNT at, and whether this VM was given the keys.
+   * The partner vendors LAF holds the ACCOUNT at, and the keys this VM was given for them.
    *
    * The third shape a connector can have, after "the person's own grant" and "a token an
    * administrator pasted": LAF is 솔라피's customer, and each business is registered underneath
    * through a screen in this product. So the credential is fleet configuration, the same on every VM
    * that offers the connector and absent on every VM that does not.
    *
-   * Booleans rather than the values. The modules read their own settings out of the environment —
-   * one place that knows what a 솔라피 key looks like — and what belongs HERE is the boot-time
-   * refusal: a half-configured partner is refused before the process starts rather than discovered
-   * by somebody pressing 연결. See {@link partnersConfig}.
+   * THE VALUES, NOT BOOLEANS — the same decision as `connectors.keys`. These were booleans while the
+   * modules read their own settings out of the environment a second time, per call; they are parsed
+   * here once, by `solapiSettings`, which is still the one place that knows what a 솔라피 key looks
+   * like, and the modules are handed what it parsed. The boot-time refusal stays here too: a
+   * half-configured partner is refused before the process starts rather than discovered by somebody
+   * pressing 연결. See {@link partnersConfig}.
    */
   partners: {
-    /** 카카오 알림톡, through 솔라피's agency API. */
-    alimtalk: boolean;
+    /** 카카오 알림톡, through 솔라피's agency API. Null when this VM holds no key. */
+    alimtalk: SolapiSettings | null;
   };
 };
 
 type Environment = Record<string, string | undefined>;
 
-function required(environment: Environment, name: string): string {
+function required(environment: Environment, name: VariableName): string {
   const value = environment[name]?.trim();
   if (!value) {
     throw new Error(`${name} must be configured`);
@@ -182,7 +339,10 @@ function required(environment: Environment, name: string): string {
   return value;
 }
 
-function optional(environment: Environment, name: string): string | undefined {
+function optional(
+  environment: Environment,
+  name: VariableName,
+): string | undefined {
   return environment[name]?.trim() || undefined;
 }
 
@@ -266,7 +426,7 @@ function tokenEncryptionKey(environment: Environment): string {
   return value.toLowerCase();
 }
 
-function url(environment: Environment, name: string): string | undefined {
+function url(environment: Environment, name: VariableName): string | undefined {
   const value = optional(environment, name);
   if (!value) {
     return undefined;
@@ -280,7 +440,7 @@ function url(environment: Environment, name: string): string | undefined {
   return value;
 }
 
-function requiredHttpUrl(environment: Environment, name: string): URL {
+function requiredHttpUrl(environment: Environment, name: VariableName): URL {
   const value = required(environment, name);
 
   let parsed: URL;
@@ -334,7 +494,10 @@ function lafOidcClient(
   return { issuer: issuer.replace(/\/+$/, ""), clientId };
 }
 
-function commaSeparated(environment: Environment, name: string): string[] {
+function commaSeparated(
+  environment: Environment,
+  name: VariableName,
+): string[] {
   return (optional(environment, name) ?? "")
     .split(",")
     .map((value) => value.trim())
@@ -633,7 +796,7 @@ function partnersConfig(
     );
   }
 
-  return { alimtalk: Boolean(alimtalkKey) };
+  return { alimtalk: alimtalkKey ? solapiSettings(environment) : null };
 }
 
 /**
@@ -646,7 +809,7 @@ function partnersConfig(
  */
 function milliseconds(
   environment: Environment,
-  name: string,
+  name: VariableName,
 ): number | undefined {
   const raw = optional(environment, name);
   if (!raw) {
@@ -727,6 +890,77 @@ function agentStallTimeoutMs(environment: Environment): number {
   return milliseconds;
 }
 
+/** What the image serves on, and what every local instruction in this repository assumes. */
+const DEFAULT_PORT = 3001;
+
+/**
+ * Where to listen, or a refusal to start.
+ *
+ * MEASURED BY AUDIT A1 (2026-09-10): this was `Number.parseInt(process.env.PORT ?? "3001")` in
+ * `main.ts`, and `PORT=abc` is `NaN`, which Bun reads as "any port" — the server opened on 49953,
+ * wrote `port: 49953` on a boot line that looked perfectly healthy, and Caddy went on waiting at
+ * 3001. A deployment whose front door answers 502 while its log says it booted is the failure every
+ * other refusal in this file exists to prevent. Digits only: `3001abc` was 3001 to `parseInt`.
+ */
+function port(environment: Environment): number {
+  const raw = optional(environment, "PORT");
+  if (!raw) return DEFAULT_PORT;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || value > 65_535) {
+    throw new Error(
+      "PORT must be a whole number from 0 to 65535 (0 asks for any free port)",
+    );
+  }
+  return value;
+}
+
+/** Where a model is reached when nothing says otherwise. */
+const DEFAULT_MODEL_BASE_URL = "https://api.openai.com/v1";
+
+/**
+ * The endpoint and fallback key for the server's own model calls.
+ *
+ * An address that is not an HTTP(S) URL refuses to start. It used to boot and fail at the auto-review
+ * probe, which reported honestly — but only by switching a control off, which is a long way from the
+ * variable that caused it.
+ */
+function modelEndpoint(environment: Environment): DeploymentConfig["model"] {
+  const baseUrl = optional(environment, "OPENAI_BASE_URL");
+  // Checked, and then kept as written rather than as `URL` would print it: the client appends its
+  // path to this string, and a slash `URL` added would change the address.
+  if (baseUrl) requiredHttpUrl(environment, "OPENAI_BASE_URL");
+  const apiKey = optional(environment, "OPENAI_API_KEY");
+  return {
+    baseUrl: baseUrl ?? DEFAULT_MODEL_BASE_URL,
+    ...(apiKey ? { apiKey } : {}),
+  };
+}
+
+/** The zone a Bot is told the time in, falling back to Seoul — out loud — on a name nobody knows. */
+function botTimeZone(environment: Environment): string {
+  const configured = optional(environment, "BOT_TIME_ZONE");
+  const zone = resolveTimeZone(configured);
+  if (configured && zone !== configured) {
+    log.warn("bot_time_zone_unknown", {
+      configured,
+      using: DEFAULT_TIME_ZONE,
+      note: "BOT_TIME_ZONE is not a time zone this runtime knows, so every Bot is told the time in Seoul. Use an IANA name such as Asia/Seoul.",
+    });
+  }
+  return zone;
+}
+
+/** The declared package variables, and nothing else of the environment. */
+function tenantPackageVariables(
+  environment: Environment,
+): DeploymentConfig["tenantPackageVariables"] {
+  return Object.freeze(
+    Object.fromEntries(
+      TENANT_PACKAGE_VARIABLES.map((name) => [name, environment[name]]),
+    ),
+  );
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -760,5 +994,16 @@ export function loadConfig(
     fleet: fleetConfig(environment),
     connectors: connectorsConfig(environment),
     partners: partnersConfig(environment),
+    // Read after everything above, so a refusal that existed before these did still comes first.
+    port: port(environment),
+    publicOrigin: url(environment, "PUBLIC_ORIGIN"),
+    notifications: {
+      webhookUrl: url(environment, "LAF_NOTIFY_WEBHOOK_URL"),
+      alertWebhookUrl: url(environment, "LAF_ALERT_WEBHOOK_URL"),
+    },
+    model: modelEndpoint(environment),
+    tenantPackageVariables: tenantPackageVariables(environment),
+    botTimeZone: botTimeZone(environment),
+    auditRetentionDays: retentionDays(environment),
   };
 }

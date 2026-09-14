@@ -224,7 +224,7 @@ function deployment() {
   const partners = createPartnerRuntime({
     context: { database, auditStore },
     database,
-    environment: {},
+    alimtalk: null,
   });
   const pluginStore = createPluginStore({
     database,

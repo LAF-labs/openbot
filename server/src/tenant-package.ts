@@ -184,11 +184,14 @@ function yaml(value: string, filename: string): Record<string, unknown> {
  * A package describes a deployment, and the addresses of the services behind it belong to the
  * environment rather than to the package: the same package has to be usable against a local stack,
  * a staging one and production. An unset name is an error rather than an empty string.
+ *
+ * The server hands in `config.tenantPackageVariables` — the names `config.ts` declares for the
+ * package, and nothing else of the environment.
  */
 export function expandEnvironment(
   value: string,
   filename: string,
-  environment: Record<string, string | undefined> = process.env,
+  environment: Readonly<Record<string, string | undefined>>,
 ): string {
   return value.replace(
     /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g,
@@ -250,6 +253,8 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
 
 export async function loadTenantPackage(
   sourcePath: string,
+  /** What `${NAME}` in the package files resolves against. See {@link expandEnvironment}. */
+  environment: Readonly<Record<string, string | undefined>>,
 ): Promise<LoadedTenantPackage> {
   const filenames = ["brand.yaml", "model.yaml"] as const;
   const contents = await Promise.all(
@@ -257,6 +262,7 @@ export async function loadTenantPackage(
       expandEnvironment(
         await readFile(join(sourcePath, filename), "utf8"),
         filename,
+        environment,
       ),
     ),
   );

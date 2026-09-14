@@ -12,7 +12,11 @@ const tenantPackageDirectory = configuredTenantPackageDirectory
     ? configuredTenantPackageDirectory
     : resolve(projectRoot, "server", configuredTenantPackageDirectory)
   : resolve(projectRoot, "tenant/laf");
-const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
+// A build script reads its own environment; the server hands the package only what config.ts declares.
+const tenantPackage = await loadTenantPackage(
+  tenantPackageDirectory,
+  process.env,
+);
 /*
  * Which sign-in providers the surface FALLS BACK to, compiled in.
  *

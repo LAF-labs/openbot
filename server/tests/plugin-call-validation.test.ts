@@ -12,6 +12,7 @@ import {
   mcpTools,
   pluginGrants,
 } from "../src/db/schema";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import { createAlimtalkTools } from "../src/plugins/alimtalk/tools";
 import { createPartnerConnections } from "../src/plugins/partner-connections";
 import {
@@ -76,10 +77,10 @@ const alimtalk = createAlimtalkTools(
     database,
     auditStore: createAuditStore(database),
   }),
-  {
+  solapiSettings({
     LAF_ALIMTALK_API_KEY: "TESTKEY01:TESTSECRET02",
     LAF_ALIMTALK_BASE_URL: `http://127.0.0.1:${vendor.port}`,
-  },
+  }),
 );
 const transport: VendorTransport = {
   ...alimtalk,

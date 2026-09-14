@@ -29,8 +29,8 @@
 import type { AskSubject } from "../computer/approvals";
 import {
   SolapiError,
+  type SolapiSettings,
   sendTemplateMessage,
-  solapiSettings,
 } from "../plugins/alimtalk/solapi";
 import { standardTemplate } from "../plugins/alimtalk/templates";
 import type { PartnerConnections } from "../plugins/partner-connections";
@@ -40,30 +40,14 @@ import type {
   NotificationRecord,
 } from "./outbox";
 
-/**
- * The environment names this door needs, so `.env.example` and compose can carry them.
- *
- * ONE VARIABLE FOR THE KEY, because 솔라피 issues the pair together and a deployment holding one
- * half can sign nothing — a state worth being unable to express. `LAF_ALIMTALK_TO` is gone: the
- * recipient used to be deployment configuration, and it is now the number the person proved they
- * controlled during their own connect, which is the only one that can be right.
+/*
+ * The environment names this door needs — `LAF_ALIMTALK_API_KEY`, `_BASE_URL`, `_FROM` — are
+ * declared with every other variable in `config.ts`, which parses them once. ONE VARIABLE FOR THE
+ * KEY, because 솔라피 issues the pair together and a deployment holding one half can sign nothing.
+ * `LAF_ALIMTALK_TO` is gone: the recipient used to be deployment configuration, and it is now the
+ * number the person proved they controlled during their own connect, which is the only one that can
+ * be right.
  */
-export const ALIMTALK_ENV = [
-  "LAF_ALIMTALK_API_KEY",
-  "LAF_ALIMTALK_BASE_URL",
-  "LAF_ALIMTALK_FROM",
-] as const;
-
-export type AlimtalkSettings = {
-  /** Whether this deployment holds LAF's 솔라피 key at all. */
-  isConfigured: boolean;
-};
-
-export function alimtalkSettings(
-  environment: Record<string, string | undefined> = process.env,
-): AlimtalkSettings {
-  return { isConfigured: solapiSettings(environment) !== null };
-}
 
 /**
  * Which of LAF's owner templates carries this kind of buzz, or null for one that carries none.
@@ -117,10 +101,10 @@ function whenItHappened(iso: string): string {
 export function createAlimtalkAdapter(input: {
   /** Whose channel, and which templates are approved under it. */
   partners: PartnerConnections;
-  environment?: Record<string, string | undefined>;
+  /** LAF's 솔라피 account as `config.ts` parsed it, or null when this deployment holds none. */
+  settings: SolapiSettings | null;
   log?: (message: string) => void;
 }): NotificationAdapter {
-  const environment = input.environment ?? process.env;
   const log = input.log ?? ((message: string) => console.info(message));
   const said = new Set<string>();
   const sayOnce = (reason: string, message: string): false => {
@@ -134,7 +118,7 @@ export function createAlimtalkAdapter(input: {
   return {
     name: "alimtalk",
     deliver: async (record: NotificationRecord) => {
-      const settings = solapiSettings(environment);
+      const settings = input.settings;
       if (!settings) {
         return sayOnce(
           "not_configured",

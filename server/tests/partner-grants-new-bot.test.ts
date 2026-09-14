@@ -23,6 +23,7 @@ import {
   pluginGrants,
   users,
 } from "../src/db/schema";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import { createPartnerRuntime } from "../src/plugins/partners";
 import { createPluginStore, type PluginStore } from "../src/plugins/store";
 import { credentialVaultStub } from "./support/credentials";
@@ -157,10 +158,10 @@ function deployment() {
   const partners = createPartnerRuntime({
     context: { database, auditStore },
     database,
-    environment: {
+    alimtalk: solapiSettings({
       LAF_ALIMTALK_API_KEY: "TESTKEY01:TESTSECRET02",
       LAF_ALIMTALK_BASE_URL: baseUrl,
-    },
+    }),
   });
   const store = createPluginStore({
     database,

@@ -28,7 +28,6 @@ import {
   requestChannelToken,
   SolapiError,
   type SolapiSettings,
-  solapiSettings,
 } from "./solapi";
 import { STANDARD_TEMPLATES } from "./templates";
 
@@ -109,7 +108,8 @@ export function normalizeRecipient(raw: string): string {
 export function createAlimtalkConnect(
   context: PartnerContext,
   partners: PartnerConnections,
-  environment: Record<string, string | undefined> = process.env,
+  /** LAF's 솔라피 account as `config.ts` parsed it, or null when this deployment holds none. */
+  configured: SolapiSettings | null,
 ) {
   /**
    * LAF's key, or the refusal for holding none.
@@ -118,11 +118,10 @@ export function createAlimtalkConnect(
    * button in this state would be a control that saves and does nothing.
    */
   function requireSettings(): SolapiSettings {
-    const settings = solapiSettings(environment);
-    if (!settings) {
+    if (!configured) {
       throw new PartnerRefusedError("laf:alimtalk_not_configured", 503);
     }
-    return settings;
+    return configured;
   }
 
   /**
@@ -202,7 +201,7 @@ export function createAlimtalkConnect(
    * take these.
    */
   async function statusFor(userId: string): Promise<AlimtalkStatus> {
-    const isConfigured = solapiSettings(environment) !== null;
+    const isConfigured = configured !== null;
     const connection = await partners.find(PROVIDER, userId);
     const rows = connection ? await partners.templatesFor(userId) : [];
     const byCode = new Map(rows.map((row) => [row.code, row]));

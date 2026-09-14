@@ -268,6 +268,10 @@ root's login on every VM ahead of its first pull (laf-control
 
 Then edit `.env` by hand. The values that have no usable default:
 
+<!-- The first column is held to server/src/config.ts: exactly the variables its ENVIRONMENT marks
+"operator", by server/tests/configuration-documents.test.ts. A row added or dropped here without the
+same change there fails the gate. -->
+
 | | |
 |---|---|
 | `PUBLIC_ORIGIN` | the deployed address, with scheme |
@@ -276,14 +280,17 @@ Then edit `.env` by hand. The values that have no usable default:
 | `COMPUTER_TOKEN` | any high-entropy string; the Bot's browser refuses to start without one |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`, at least 32 characters |
 | `AUTH_PROVIDERS` | which sign-ins this deployment offers, comma separated: `google`, `kakao`, `naver`, `laf` — see below |
-| the credentials naming them | `<PROVIDER>_OAUTH_CLIENT_ID` / `_SECRET` per direct provider, or `LAF_OIDC_ISSUER` + `LAF_OIDC_CLIENT_ID` for the broker |
+| `<PROVIDER>_OAUTH_CLIENT_ID`, `<PROVIDER>_OAUTH_CLIENT_SECRET` | the pair for each direct provider `AUTH_PROVIDERS` names — `GOOGLE`, `KAKAO`, `NAVER` |
+| `LAF_OIDC_ISSUER`, `LAF_OIDC_CLIENT_ID` | the broker's issuer and this deployment's public client id, when `AUTH_PROVIDERS` names `laf` |
 | `INITIAL_ADMIN_EMAILS` | who is an administrator on first sign-in |
 | `SIGN_IN_ALLOWED_EMAILS` | who may sign in at all. Unset means anyone the provider authenticates gets an account here, which on a one-person VM is the wrong default |
 | `BOT_MODEL` | shipped set in `.env.example` and it must stay set: `agent-bot` refuses to start without it rather than answering on a model nobody chose. The fallback for the API server's own half is `tenant/laf/model.yaml`, and it is the only one in the repository |
+| `OPENAI_API_KEY` | the key for the endpoint `OPENAI_BASE_URL` names; the API server and `agent-bot` both spend it, and no Bot answers without one |
 
-`OPENAI_API_KEY` and `OPENAI_BASE_URL` go with it — the deployed default is
-served through OpenRouter, so the key is that account's and the base URL is
-theirs.
+`OPENAI_BASE_URL` goes with the key — the deployed default is served through
+OpenRouter, so the key is that account's and the base URL is theirs. Every
+other variable the server reads has a default, or is optional, or is supplied
+by compose; `.env.example` lists all of them.
 
 Remove `LAF_DEV_NO_AUTH` while you are in there. It is refused in
 production, so leaving it in is a failed start rather than a security hole, but

@@ -5,10 +5,10 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { textOf } from "../../shared/message-content";
 import {
   composePrompt,
+  DEFAULT_TIME_ZONE,
   type PromptMode,
   promptModeOf,
   type PromptSkill,
-  resolveTimeZone,
 } from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import type { StallGuard } from "./channels/stall-guard";
@@ -108,18 +108,12 @@ export type AgentStandingProfile = {
   skills?: readonly PromptSkill[];
 };
 
-/**
- * The wall clock a Bot is told about, from the environment, defaulting to Seoul.
- *
- * `BOT_TIME_ZONE` rather than the host's own zone: the VM may be anywhere and the person is in
- * Korea. An unusable name falls back rather than throwing — a typo in a deployment's environment
- * should not stop every Bot answering, it should stop being believed.
+/*
+ * The wall clock a Bot is told about is `config.botTimeZone` — `BOT_TIME_ZONE`, parsed once in
+ * `config.ts` and handed to every function below that takes a `timeZone`. It was read from the
+ * environment here, as a default parameter, by four functions at four different moments. The
+ * defaults that remain are Seoul, for the tests that build agents without a deployment.
  */
-export function botTimeZone(
-  environment: Record<string, string | undefined> = process.env,
-): string {
-  return resolveTimeZone(environment.BOT_TIME_ZONE);
-}
 
 /** The message id every composed prompt carries, so a replayed thread cannot accumulate copies. */
 export function promptMessageId(agentId: string): string {
@@ -264,8 +258,8 @@ export function buildAgents(
   model: RuntimeModel,
   /** Absent leaves every stream unwatched, which is what an unconfigured timeout means. */
   stallGuard?: StallGuard,
-  /** The clock a Bot is told about. Read from the environment once, at the top of the app. */
-  timeZone: string = botTimeZone(),
+  /** The clock a Bot is told about: `config.botTimeZone`, read from the environment once, at boot. */
+  timeZone: string = DEFAULT_TIME_ZONE,
   /** Files long tool results on the Bot's computer. Absent — no computer — forwards them whole. */
   spill?: ResultSpill,
 ): Record<string, AbstractAgent> {
@@ -425,7 +419,7 @@ export async function resolveRuntimeAgents(
   loadAgents: () => Promise<RegisteredAgent[]>,
   model: RuntimeModel,
   stallGuard?: StallGuard,
-  timeZone: string = botTimeZone(),
+  timeZone: string = DEFAULT_TIME_ZONE,
   spill?: ResultSpill,
 ): Promise<Record<string, AbstractAgent>> {
   const registered = await loadAgents();
@@ -466,7 +460,7 @@ export function createRequestAgents(
    * that opened it has been answered.
    */
   stallGuard?: StallGuard,
-  timeZone: string = botTimeZone(),
+  timeZone: string = DEFAULT_TIME_ZONE,
   spill?: ResultSpill,
 ) {
   return async ({ request }: { request: Request }) => {
@@ -500,6 +494,8 @@ export function mountCopilotRuntime(
   stallGuard: StallGuard,
   /** The durable runner every turn goes through. */
   localRunner: AgentRunner,
+  /** The clock every Bot is told about: `config.botTimeZone`. */
+  timeZone: string,
   basePath = "/api/copilotkit",
   /** Files long tool results on the Bot's computer. See computer/spillover.ts. */
   spill?: ResultSpill,
@@ -509,7 +505,7 @@ export function mountCopilotRuntime(
     loadAgents,
     model,
     stallGuard,
-    botTimeZone(),
+    timeZone,
     spill,
   );
 

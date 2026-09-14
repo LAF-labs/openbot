@@ -186,6 +186,7 @@ describe("tenant YAML validation", () => {
   test("loads the mounted LAF package without a theme file", async () => {
     const tenantPackage = await loadTenantPackage(
       new URL("../../tenant/laf", import.meta.url).pathname,
+      {},
     );
 
     expect(tenantPackage.tenantId).toBe("openbot");

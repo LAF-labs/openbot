@@ -16,7 +16,10 @@ import {
   users,
 } from "../src/db/schema";
 import { createAlimtalkConnect } from "../src/plugins/alimtalk/connect";
-import { solapiAuthorization } from "../src/plugins/alimtalk/solapi";
+import {
+  solapiAuthorization,
+  solapiSettings,
+} from "../src/plugins/alimtalk/solapi";
 import { STANDARD_TEMPLATES } from "../src/plugins/alimtalk/templates";
 import {
   ALIMTALK_TOOLS,
@@ -78,10 +81,12 @@ const auditStore: AuditStore = {
   },
 };
 
-const environment = () => ({
-  LAF_ALIMTALK_API_KEY: "TESTKEY01:TESTSECRET02",
-  LAF_ALIMTALK_BASE_URL: baseUrl,
-});
+/** LAF's account as `config.ts` would parse it, pointed at the fake vendor once it is listening. */
+const settings = () =>
+  solapiSettings({
+    LAF_ALIMTALK_API_KEY: "TESTKEY01:TESTSECRET02",
+    LAF_ALIMTALK_BASE_URL: baseUrl,
+  });
 
 beforeAll(() => {
   vendor = Bun.serve({
@@ -180,9 +185,9 @@ function connectors() {
     connect: createAlimtalkConnect(
       { database, auditStore },
       partners,
-      environment(),
+      settings(),
     ),
-    tools: createAlimtalkTools(partners, environment()),
+    tools: createAlimtalkTools(partners, settings()),
   };
 }
 

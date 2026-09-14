@@ -1,4 +1,7 @@
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
+import type { ComputerClient } from "./computer/client";
+import type { Database } from "./db/client";
 
 /**
  * `/health`, which used to be `context.json({ status: "ok" })` and nothing else.
@@ -25,6 +28,46 @@ export type HealthProbes = {
   agentBot?: HealthProbe;
   computer?: HealthProbe;
 };
+
+/**
+ * What `/health` asks on a real deployment. The three things a deployment is made of, each answered
+ * by the same route the product itself uses, so a check cannot pass against a path nothing else
+ * takes.
+ *
+ * The computer is included only when one is configured: a deployment without it is not degraded,
+ * it is a deployment without a browser.
+ */
+export function deploymentHealthProbes(input: {
+  database: Database;
+  /** `MANAGED_AGENT_AG_UI_URL`; `agent-bot`'s own `/health` is asked, beside it. */
+  agentBotUrl: URL;
+  computer: ComputerClient | undefined;
+}): HealthProbes {
+  const { computer } = input;
+  return {
+    database: async () => {
+      await input.database.execute(sql`select 1`);
+      return true;
+    },
+    agentBot: async () => {
+      const response = await fetch(
+        new URL("/health", input.agentBotUrl),
+        // Its own bound as well as the route's: the route stops waiting after two seconds, but only
+        // this stops the socket, and a health poll every ten seconds must not leave one behind.
+        { signal: AbortSignal.timeout(2_000) },
+      );
+      return response.ok;
+    },
+    ...(computer
+      ? {
+          computer: async () =>
+            // The id is a label on the answer, not a route: `status` asks the computer's own
+            // /health, which belongs to no Bot.
+            (await computer.status("health")).state === "ready",
+        }
+      : {}),
+  };
+}
 
 export type HealthRouteOptions = {
   /**

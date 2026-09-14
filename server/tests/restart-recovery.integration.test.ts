@@ -43,6 +43,7 @@ import {
 } from "../src/db/schema";
 import { createAlimtalkAdapter } from "../src/notifications/alimtalk";
 import { withOutboxWatch } from "../src/notifications/from-audit";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import {
   createNotificationOutbox,
   type NotificationAdapter,
@@ -206,7 +207,7 @@ function alimtalkThatCounts(asked: { count: number }) {
   } as unknown as PartnerConnections;
   return createAlimtalkAdapter({
     partners,
-    environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+    settings: solapiSettings({ LAF_ALIMTALK_API_KEY: "key:secret" }),
     log: () => {},
   });
 }
@@ -687,7 +688,7 @@ describe("the AlimTalk door and a failed run", () => {
     } as unknown as PartnerConnections;
     const adapter = createAlimtalkAdapter({
       partners,
-      environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+      settings: solapiSettings({ LAF_ALIMTALK_API_KEY: "key:secret" }),
       log: (message) => said.push(message),
     });
 

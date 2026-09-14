@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { loadConfig, TEST_TOKEN_ENCRYPTION_KEY } from "../src/config";
+import { describe, expect, spyOn, test } from "bun:test";
+import {
+  ENVIRONMENT,
+  loadConfig,
+  TEST_TOKEN_ENCRYPTION_KEY,
+} from "../src/config";
+import { log } from "../src/log";
 
 /**
  * The whole minimum contract, and nothing that used to be part of it.
@@ -466,7 +471,7 @@ describe("telling the fleet about a withdrawal", () => {
 describe("the partner connectors", () => {
   test("not configured is a correct deployment, not a failure", () => {
     const config = loadConfig(baseEnvironment);
-    expect(config.partners).toEqual({ alimtalk: false });
+    expect(config.partners).toEqual({ alimtalk: null });
   });
 
   test("a 솔라피 key that is not a pair refuses to boot", () => {
@@ -476,12 +481,28 @@ describe("the partner connectors", () => {
     expect(() =>
       loadConfig({ ...baseEnvironment, LAF_ALIMTALK_API_KEY: "just-the-key" }),
     ).toThrow("LAF_ALIMTALK_API_KEY");
+  });
+
+  test("a pair is carried through parsed, as the value, like the deployment keys", () => {
+    // The value and not a boolean: the connect flow, the tools and the notification door are handed
+    // this, rather than each reading the environment a second time on every call.
     expect(
       loadConfig({
         ...baseEnvironment,
-        LAF_ALIMTALK_API_KEY: "key:secret",
+        LAF_ALIMTALK_API_KEY: " key:secret ",
+        LAF_ALIMTALK_BASE_URL: "https://solapi.test",
+        LAF_ALIMTALK_FROM: "0212345678",
       }).partners.alimtalk,
-    ).toBe(true);
+    ).toEqual({
+      apiKey: "key",
+      apiSecret: "secret",
+      baseUrl: "https://solapi.test",
+      from: "0212345678",
+    });
+    expect(
+      loadConfig({ ...baseEnvironment, LAF_ALIMTALK_API_KEY: "key:secret" })
+        .partners.alimtalk?.baseUrl,
+    ).toBe("https://api.solapi.com");
   });
 
   test("an address with no key behind it refuses to boot", () => {
@@ -520,5 +541,238 @@ describe("the deployment keys", () => {
         loadConfig({ ...baseEnvironment, DATA_GO_KR_SERVICE_KEY: decoded }),
       ).toThrow("DATA_GO_KR_SERVICE_KEY");
     }
+  });
+});
+
+/**
+ * `ENVIRONMENT` is the list the documents are held to (`configuration-documents.test.ts`), so it has
+ * to be the list of what `loadConfig` actually reads — no more and no less. The helpers inside
+ * `config.ts` only take declared names, but the parsers it hands the environment to
+ * (`sharedClientsFrom`, `solapiSettings`, `devAuthEnabled`, `retentionDays`) read their own, so this
+ * watches every name read across environments that between them take every branch.
+ */
+describe("what loadConfig reads", () => {
+  const minimum = {
+    DATABASE_URL: baseEnvironment.DATABASE_URL,
+    KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+    MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+  };
+  const everything = {
+    ...baseEnvironment,
+    NODE_ENV: "development",
+    LAF_TOKEN_ENCRYPTION_KEY: "ab".repeat(32),
+    PORT: "3001",
+    TENANT_PACKAGE_DIR: "../tenant/laf",
+    TRUSTED_ORIGINS: "https://shop1.agent.laf-co.com",
+    AUTH_PROVIDERS: "google,kakao,naver",
+    KAKAO_OAUTH_CLIENT_ID: "kakao-id",
+    KAKAO_OAUTH_CLIENT_SECRET: "kakao-secret",
+    NAVER_OAUTH_CLIENT_ID: "naver-id",
+    NAVER_OAUTH_CLIENT_SECRET: "naver-secret",
+    INITIAL_ADMIN_EMAILS: "owner@example.com",
+    SIGN_IN_ALLOWED_EMAILS: "owner@example.com",
+    LAF_DEV_NO_AUTH: "true",
+    OPENAI_API_KEY: "sk-test",
+    OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+    BOT_MODEL: "z-ai/glm-5.3-flash",
+    BOT_MODEL_EFFORT: "true",
+    REVIEW_MODEL: "small",
+    BOT_TIME_ZONE: "Asia/Seoul",
+    AGENT_STALL_TIMEOUT_MS: "60000",
+    AGENT_COMPUTER_URL: "http://localhost:4100",
+    COMPUTER_TOKEN: "computer-token",
+    AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
+    AGENT_COMPUTER_POLICY: '{"deny":[],"ask":[],"allow":["true"]}',
+    COMPUTER_REPEAT_WINDOW_MS: "180000",
+    LAF_NOTIFY_WEBHOOK_URL: "https://hooks.example/notify",
+    LAF_ALERT_WEBHOOK_URL: "https://hooks.example/alert",
+    PUBLIC_ORIGIN: "https://shop1.agent.laf-co.com",
+    LAF_FLEET_WEBHOOK_URL: "https://fleet.laf-co.test/hooks",
+    LAF_FLEET_WEBHOOK_SECRET: "fleet-secret",
+    CAFE24_CLIENT_ID: "cafe24-id",
+    CAFE24_CLIENT_SECRET: "cafe24-secret",
+    LAF_OAUTH_RELAY_URL: "https://auth.agent.laf-co.com/oauth/relay",
+    LAF_PRODUCT_DOMAIN: "agent.laf-co.com",
+    DATA_GO_KR_SERVICE_KEY: "abc%2Bdef%3D",
+    LAF_ALIMTALK_API_KEY: "key:secret",
+    LAF_ALIMTALK_BASE_URL: "https://api.solapi.com",
+    LAF_ALIMTALK_FROM: "0212345678",
+    AUDIT_RETENTION_DAYS: "365",
+  };
+  const broker = {
+    ...minimum,
+    BETTER_AUTH_SECRET: baseEnvironment.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: baseEnvironment.BETTER_AUTH_URL,
+    AUTH_PROVIDERS: "laf",
+    LAF_OIDC_ISSUER: "https://auth.agent.laf-co.com",
+    LAF_OIDC_CLIENT_ID: "shop1.agent.laf-co.com",
+  };
+
+  /** Every name `loadConfig` asked the environment for. */
+  const namesRead = (environment: Record<string, string | undefined>) => {
+    const read = new Set<string>();
+    const watched = new Proxy(environment, {
+      get(target, name) {
+        if (typeof name === "string") read.add(name);
+        return Reflect.get(target, name);
+      },
+      has(target, name) {
+        if (typeof name === "string") read.add(name);
+        return Reflect.has(target, name);
+      },
+    });
+    loadConfig(watched);
+    return read;
+  };
+
+  test("reads nothing ENVIRONMENT does not declare, and declares nothing it does not read", () => {
+    const read = new Set([
+      ...namesRead(minimum),
+      ...namesRead(everything),
+      ...namesRead(broker),
+    ]);
+    // A name read and not declared is a variable the documents are not held to.
+    expect([...read].filter((name) => !(name in ENVIRONMENT)).sort()).toEqual(
+      [],
+    );
+    // A name declared and never read is a document promising a setting that reaches nothing.
+    expect(Object.keys(ENVIRONMENT).filter((name) => !read.has(name))).toEqual(
+      [],
+    );
+  });
+});
+
+/**
+ * The variables `main.ts`, `copilot.ts` and five other modules read for themselves until 2026-09-14,
+ * each parsed once here now. Audit A1 §7 measured what their own readers did with a wrong value.
+ */
+describe("the variables that used to be read elsewhere", () => {
+  test("PORT is 3001 unless said, and 0 asks for any free port", () => {
+    expect(loadConfig(baseEnvironment).port).toBe(3001);
+    expect(loadConfig({ ...baseEnvironment, PORT: "4001" }).port).toBe(4001);
+    // How a test starts the server and reads the port back off the boot line.
+    expect(loadConfig({ ...baseEnvironment, PORT: "0" }).port).toBe(0);
+    // Compose passes nothing for it; an empty value is an absent one.
+    expect(loadConfig({ ...baseEnvironment, PORT: "" }).port).toBe(3001);
+  });
+
+  // Measured: `PORT=abc` was NaN, and Bun opened a random port behind a healthy-looking boot line.
+  test.each(["abc", "3001abc", "-1", "65536", "30.5", "1e3"])(
+    "refuses to start on PORT=%p",
+    (value) => {
+      expect(() => loadConfig({ ...baseEnvironment, PORT: value })).toThrow(
+        "PORT must be a whole number",
+      );
+    },
+  );
+
+  test("the model endpoint is OpenAI unless said, and kept exactly as written", () => {
+    expect(loadConfig(baseEnvironment).model).toEqual({
+      baseUrl: "https://api.openai.com/v1",
+    });
+    expect(
+      loadConfig({
+        ...baseEnvironment,
+        OPENAI_BASE_URL: " https://openrouter.ai/api/v1 ",
+        OPENAI_API_KEY: " sk-or-key ",
+      }).model,
+    ).toEqual({ baseUrl: "https://openrouter.ai/api/v1", apiKey: "sk-or-key" });
+    expect(() =>
+      loadConfig({ ...baseEnvironment, OPENAI_BASE_URL: "garbage" }),
+    ).toThrow("OPENAI_BASE_URL must be a valid HTTP(S) URL");
+  });
+
+  test("the Bot's clock is Seoul unless said, and a name nobody knows falls back out loud", () => {
+    expect(loadConfig(baseEnvironment).botTimeZone).toBe("Asia/Seoul");
+    expect(
+      loadConfig({ ...baseEnvironment, BOT_TIME_ZONE: "Europe/Berlin" })
+        .botTimeZone,
+    ).toBe("Europe/Berlin");
+
+    // A typo must not stop every Bot answering — and it must not be silent either, which it was in
+    // both of the places that used to read it.
+    const warned = spyOn(log, "warn");
+    try {
+      expect(
+        loadConfig({ ...baseEnvironment, BOT_TIME_ZONE: "Mars/Olympus" })
+          .botTimeZone,
+      ).toBe("Asia/Seoul");
+      expect(
+        warned.mock.calls.some(
+          ([event, fields]) =>
+            event === "bot_time_zone_unknown" &&
+            (fields as { configured?: string }).configured === "Mars/Olympus",
+        ),
+      ).toBe(true);
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  test("the retention period is refused before anything is built, not after the port opens", () => {
+    expect(loadConfig(baseEnvironment).auditRetentionDays).toBe(365);
+    expect(
+      loadConfig({ ...baseEnvironment, AUDIT_RETENTION_DAYS: "0" })
+        .auditRetentionDays,
+    ).toBe(0);
+    expect(() =>
+      loadConfig({ ...baseEnvironment, AUDIT_RETENTION_DAYS: "1y" }),
+    ).toThrow("AUDIT_RETENTION_DAYS");
+  });
+
+  test("the two webhooks are URLs or absent", () => {
+    expect(loadConfig(baseEnvironment).notifications).toEqual({
+      webhookUrl: undefined,
+      alertWebhookUrl: undefined,
+    });
+    expect(
+      loadConfig({
+        ...baseEnvironment,
+        LAF_NOTIFY_WEBHOOK_URL: " https://hooks.example/notify ",
+        LAF_ALERT_WEBHOOK_URL: "https://hooks.example/alert",
+      }).notifications,
+    ).toEqual({
+      webhookUrl: "https://hooks.example/notify",
+      alertWebhookUrl: "https://hooks.example/alert",
+    });
+    // Measured: this booted quietly and failed at the first notification.
+    expect(() =>
+      loadConfig({ ...baseEnvironment, LAF_NOTIFY_WEBHOOK_URL: "not-a-url" }),
+    ).toThrow("LAF_NOTIFY_WEBHOOK_URL must be a valid URL");
+    expect(() =>
+      loadConfig({ ...baseEnvironment, LAF_ALERT_WEBHOOK_URL: "not-a-url" }),
+    ).toThrow("LAF_ALERT_WEBHOOK_URL must be a valid URL");
+  });
+
+  test("PUBLIC_ORIGIN is carried once, as a URL", () => {
+    expect(loadConfig(baseEnvironment).publicOrigin).toBeUndefined();
+    expect(
+      loadConfig({
+        ...baseEnvironment,
+        PUBLIC_ORIGIN: "https://shop1.agent.laf-co.com",
+      }).publicOrigin,
+    ).toBe("https://shop1.agent.laf-co.com");
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        PUBLIC_ORIGIN: "shop1.agent.laf-co.com",
+      }),
+    ).toThrow("PUBLIC_ORIGIN must be a valid URL");
+  });
+
+  test("the tenant package is handed its declared variables and nothing else of the environment", () => {
+    expect(
+      loadConfig({
+        ...baseEnvironment,
+        BOT_MODEL: "z-ai/glm-5.3-flash",
+        REVIEW_MODEL: "",
+        OPENAI_API_KEY: "sk-must-not-reach-the-package",
+      }).tenantPackageVariables,
+    ).toEqual({
+      BOT_MODEL: "z-ai/glm-5.3-flash",
+      BOT_MODEL_EFFORT: undefined,
+      // As written: `${REVIEW_MODEL:-}` treats an empty value as unset, and that is the package's call.
+      REVIEW_MODEL: "",
+    });
   });
 });

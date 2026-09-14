@@ -1,36 +1,34 @@
 import "./telemetry-off";
 import { serve } from "bun";
-import { eq, sql } from "drizzle-orm";
-import { Hono } from "hono";
-import { buildOf } from "../../shared/log";
-import { COMPUTER_TOOLS } from "../../shared/tools/computer";
-import { SELF_TOOLS } from "../../shared/tools/self";
-import { SKILL_TOOLS } from "../../shared/tools/skills";
+import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
-import { createRetentionJob, retentionDays } from "./account/retention";
 import { createCoworkerCall } from "./agents/coworker-call";
+import { recordCoworkerExchange } from "./agents/coworker-exchange";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
+import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
-import {
-  createAuditReader,
-  createAuditStore,
-  ONE_SHARED_COMPUTER,
-  recordAuditEvent,
-} from "./audit";
+import { createAuditReader, createAuditStore } from "./audit";
 import { createAuth } from "./auth";
-import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
-import { createConsentStore } from "./account/consent";
 import { createOnboardingStore } from "./auth/onboarding";
-import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
-import type { UserRole } from "./auth/roles";
-import { streamBotAccess } from "./auth/stream-access";
-import { sealStoredTokens } from "./auth/token-encryption";
-import { createChannelEventHub } from "./channels/events";
+import { createRequestActors } from "./auth/request-actor";
+import {
+  recordStartingArrangement,
+  sayBooted,
+  sayConnectors,
+  sayFleetIsUnconfigured,
+} from "./boot/announce";
+import { startBackgroundWork } from "./boot/background";
+import { keepServingThroughUnhandledRejections } from "./boot/process";
+import { reconcileBeforeServing } from "./boot/reconcile";
+import {
+  type ChannelActivityEvent,
+  createChannelEventHub,
+} from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
@@ -38,11 +36,6 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
-import {
-  createAutoReviewProbe,
-  createModelAutoReviewer,
-  type ReviewSubject,
-} from "./computer/auto-review";
 import { createComputerClient } from "./computer/client";
 import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createComputerGateway } from "./computer/gateway";
@@ -52,44 +45,31 @@ import {
 } from "./computer/policy-store";
 import { releaseComputerFor } from "./computer/release";
 import { createRepeatDetector } from "./computer/repeat";
-import {
-  botOwnerLookup,
-  createScreenViewAudit,
-  type ScreenViewer,
-} from "./computer/screen-view";
+import { botOwnerLookup, createScreenViewAudit } from "./computer/screen-view";
 import { createSiteConnectionStore } from "./computer/site-connections";
 import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
-import { createWriteUp } from "./computer/write-up";
 import { loadConfig } from "./config";
-import {
-  botTimeZone,
-  type IdentifyActor,
-  mountCopilotRuntime,
-  resolveRuntimeAgents,
-} from "./copilot";
+import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
   createCredentialStore,
-  resolveModelApiKey,
 } from "./credentials";
 import { createDatabase } from "./db/client";
-import { agentProfiles, users } from "./db/schema";
-import { describeFailure } from "./failure-text";
-import { createFleetDoor, createFleetNotifier } from "./fleet/notify";
+import { createFleetNotifier } from "./fleet/notify";
+import { deploymentHealthProbes } from "./health";
+import {
+  createLiveScreen,
+  describePointOn,
+  type SocketData,
+} from "./live-screen";
 import { log } from "./log";
-import { createAlimtalkAdapter } from "./notifications/alimtalk";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
+import { createDeploymentOutbox } from "./notifications/doors";
 import { withOutboxWatch } from "./notifications/from-audit";
-import {
-  createFinishedNotice,
-  createSocketAdapter,
-} from "./notifications/in-app";
-import {
-  createWebhookAdapter,
-  withApprovalNotifications,
-} from "./notifications/notify";
-import { createNotificationOutbox } from "./notifications/outbox";
+import { createFinishedNotice } from "./notifications/in-app";
+import { withApprovalNotifications } from "./notifications/notify";
+import { connectConfigFor } from "./plugins/connect-config";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
 import { createPublicDataRuntime } from "./plugins/public-data-rest";
@@ -100,7 +80,6 @@ import { createThreadMessageReader } from "./rooms/messages";
 import { createRoomService } from "./rooms/service";
 import { createApprovalWaiter } from "./rooms/wait-for-approval";
 import {
-  appendToSoloConversation,
   createRoutineDelivery,
   createRoutineFailureDelivery,
 } from "./routines/deliver";
@@ -110,81 +89,29 @@ import { createBotLane } from "./runner/bot-lane";
 import { LafPostgresRunner, reportInterruptedRuns } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
+import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
-import {
-  createFeedbackStore,
-  createSupportWebhookAdapter,
-} from "./support/feedback";
-import {
-  createPackageStatusReader,
-  loadTenantPackage,
-  recordTenantPackage,
-} from "./tenant-package";
-
-/**
- * Who is asking, for a CopilotKit request.
- *
- * One resolver, because a run has two questions to answer about the same person: whose threads and
- * memory these are, and which coworkers they may run. Answering them from different places is how
- * one person ends up running another's private coworker, or reading their thread.
- */
-async function resolveRequestActor(request: Request): Promise<{
-  id: string;
-  name: string;
-  role: UserRole;
-}> {
-  if (config.devNoAuth) {
-    return { id: DEV_ACTOR.id, name: DEV_ACTOR.email, role: DEV_ACTOR.role };
-  }
-  const session = await auth?.api.getSession({ headers: request.headers });
-  const user = session?.user;
-  if (!user) {
-    throw new Error("A CopilotKit run requires a signed-in user.");
-  }
-  const roles = await roleRepository.rolesForUser(user.id);
-  if (!roles.includes("admin") && !roles.includes("user")) {
-    throw new Error("A CopilotKit run requires an authorized user.");
-  }
-  return {
-    id: user.id,
-    name: user.name ?? user.email ?? user.id,
-    role: roles.includes("admin") ? "admin" : "user",
-  };
-}
+import { createServerModelCalls } from "./server-model-calls";
+import { createFeedbackStore } from "./support/feedback";
+import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 
 /*
- * `identifyUser` — the name-and-id projection of the resolver above — is gone. Its one caller was
- * the live-screen upgrade, which needed the ROLE it dropped in order to ask whose Bot was being
- * watched. `resolveRequestActor` is called there directly now, and there was nothing else a
- * name-without-a-role was for.
- */
-
-/**
- * The authorization projection of the same person: agent visibility is decided from this.
+ * The server: the one process a deployment runs (docs/laf/deployment-model.md), started by
+ * `index.ts` once `eventsource` has loaded.
  *
- * THE FALLBACK IS NOT THE GUARD AND NEVER WAS. It used to be justified by `/info` answering an
- * anonymous deployment check; `/api/copilotkit/*` is behind `requireUser` now (app.ts), so no
- * unauthenticated request reaches this at all. What is left is the transient case — a session read
- * or a role lookup failing under an authenticated request — and it is kept here, and only here,
- * because this one runs INSIDE the vendored runtime's agent factory: throwing there takes the run
- * down with a 500, while resolving to somebody who owns nothing takes it down by name. It grants
- * nothing — no private profile matches, and it is not an administrator — and the two places that
- * decide whose data is served (the live-screen upgrade and the thread priming below) refuse instead.
+ * A COMPOSITION ROOT, AND ONLY THAT. It reads the configuration, builds each store and service,
+ * hands them to each other, opens the port, and stops. What any of them DOES lives beside the
+ * feature it belongs to; what the boot itself does — the facts it announces, what it settles before
+ * serving, what it runs on a clock — lives under `boot/`. This file was 1,501 lines until
+ * 2026-09-14, a third of the code in it logic rather than wiring (audit A1 §5), and a feature
+ * reachable only by starting the whole process is a feature no test can reach.
+ *
+ * THE ORDER IS LOAD-BEARING. Several things below are built before others because of what they are
+ * handed, and the comments say which; the log lines come out in the order the boot reaches them.
  */
-const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
-
-const identifyActor: IdentifyActor = async (request) => {
-  try {
-    const { id, role } = await resolveRequestActor(request);
-    return { id, role };
-  } catch {
-    return ANONYMOUS_ACTOR;
-  }
-};
 
 const config = loadConfig();
-const port = Number.parseInt(process.env.PORT ?? "3001", 10);
 const database = createDatabase(config.databaseUrl);
 /*
  * The boot audit store, built first because the runner tees model usage into it.
@@ -197,22 +124,13 @@ const bootAuditStore = createAuditStore(database);
  * The fleet tool, which created this machine and is the only thing that can destroy it.
  *
  * Built next to the audit store because that is the only thing it needs, and before `createAuth`
- * and the account routes, which are the two places a person arrives and leaves.
- *
- * The absence is announced. A deployment with no fleet webhook is correct on a laptop and wrong on
- * a VM, and the wrongness is invisible from every surface: a withdrawal completes, the person is
- * told their account is gone, and the machine keeps running and keeps being paid for because
- * nothing outside this process ever heard. So it says so once, at boot, where an operator reading
- * the logs of a deployment that is behaving perfectly can still see it.
+ * and the account routes, which are the two places a person arrives and leaves. Its absence is said
+ * out loud (see `sayFleetIsUnconfigured`).
  */
 const fleetNotifier = config.fleet
   ? createFleetNotifier({ ...config.fleet, auditStore: bootAuditStore })
   : undefined;
-if (!fleetNotifier) {
-  log.warn("fleet_webhook_unconfigured", {
-    note: "LAF_FLEET_WEBHOOK_URL is unset. Sign-ups and withdrawals on this deployment reach nothing: a person who leaves is gone from here and the machine outlives them.",
-  });
-}
+if (!fleetNotifier) sayFleetIsUnconfigured();
 // One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
 // one module writes it. Built before the runner because the runner opens its rows through it.
 const runLedger = createRunLedger(database);
@@ -223,7 +141,6 @@ const lafRunner = await LafPostgresRunner.create(
   runLedger,
   bootAuditStore,
 );
-await initializeDevActorUser(database, config.devNoAuth);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -256,7 +173,10 @@ const agentProfileStore = createAgentProfileStore(
 );
 // Read here rather than beside the row it writes below, because the package names the deployment
 // and the channel store needs that name before it can mint a thread id.
-const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
+const tenantPackage = await loadTenantPackage(
+  config.tenantPackageDirectory,
+  config.tenantPackageVariables,
+);
 const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
 /**
  * Every socket open on this server, and the one thing that fans an event out to them.
@@ -274,84 +194,49 @@ const channelEvents = createChannelEventHub();
  * door needs to know whose channel to send as, and the store needs the transport for the catalogue
  * entry whose tools are this repository's own code. Built here rather than inside the store because
  * the partner modules import the store's refusal class — see `plugins/partners.ts`.
- *
- * A VM with no key configured gets an object with nothing in it, no cards and no tools, which is a
- * correct deployment. `config.partners` refused to start on half of one.
  */
 const partnerRuntime = createPartnerRuntime({
   context: { database, auditStore: bootAuditStore },
   database,
+  alimtalk: config.partners.alimtalk,
 });
-log.info("partner_connectors", { alimtalk: config.partners.alimtalk });
 /**
  * The public data the fleet holds one key for, assembled once, from the key `config` already read.
  *
  * Nothing per person: a VM with the key offers 나라장터 and 기업마당 to every Bot on it from boot
- * (the reconciliation runs below, beside the retention sweep), and a VM without it has no entry.
- * Said at boot, like the partner line above, so an operator reading the log knows which it is.
+ * (the reconciliation runs with the background work, beside the retention sweep).
  */
 const publicDataRuntime = createPublicDataRuntime({
   keys: config.connectors.keys,
   listBots: () => allLiveBots(database),
 });
-log.info("public_data", { dataGoKr: publicDataRuntime.configured });
+sayConnectors({
+  alimtalk: config.partners.alimtalk !== null,
+  dataGoKr: publicDataRuntime.configured,
+});
 /**
- * One outbox for "somebody has to be told", and every door it goes out through.
- *
- * Built here, before anything that raises a notification, because there is exactly one of these and
- * the things that write into it — a boundary opening a question, a Bot asking for a password, a
- * routine finishing at seven in the morning — are spread across the process. Three doors:
- *
- *   socket    the page itself, when somebody is connected. The common case, and the fast one.
- *   webhook   `LAF_NOTIFY_WEBHOOK_URL`, unchanged in what it sends but now carrying the row's id.
- *   alimtalk  the phone in the owner's hand, once they have connected their own 카카오톡 채널 and
- *             카카오 has approved LAF's template under it. Until then it declines honestly and the
- *             row stays undelivered for the other two.
- *
- * And a fourth that faces the other way:
- *
- *   support   `LAF_ALERT_WEBHOOK_URL`, the fleet's alert channel. The only door that takes a
- *             `support.feedback` row, and it takes nothing else — a person's message to the
- *             operator must not buzz the person, and an approval must not page the operator.
- *
- * The socket goes first because it is the only door that is free and instantaneous, and the order
- * is otherwise cosmetic — they are offered the row together (see `outbox.ts`).
+ * One outbox for "somebody has to be told", and every door it goes out through. Built here, before
+ * anything that raises a notification, because there is exactly one of these and the things that
+ * write into it are spread across the process. See `notifications/doors.ts`.
  */
-// Absent is announced on the `boot` line (`supportWebhook: false`): a message kept in `laf_feedback`
-// that nobody was told about is correct on a laptop and wrong on a VM, and invisible from every
-// surface — the box still says 보냈습니다, because the row is there.
-const supportWebhookUrl = process.env.LAF_ALERT_WEBHOOK_URL?.trim();
-const notificationOutbox = createNotificationOutbox({
+const notificationOutbox = createDeploymentOutbox({
   database,
-  adapters: [
-    createSocketAdapter(channelEvents),
-    ...(process.env.LAF_NOTIFY_WEBHOOK_URL
-      ? [createWebhookAdapter(process.env.LAF_NOTIFY_WEBHOOK_URL)]
-      : []),
-    createAlimtalkAdapter({
-      partners: partnerRuntime.connections,
-      log: (message) => log.info("alimtalk", { message }),
-    }),
-    ...(supportWebhookUrl
-      ? [
-          createSupportWebhookAdapter({
-            webhookUrl: supportWebhookUrl,
-            // What the fleet knows this deployment by, or the auth origin on a laptop.
-            origin:
-              process.env.PUBLIC_ORIGIN?.trim() || config.auth?.baseUrl || "",
-          }),
-        ]
-      : []),
-    // The fleet tool, told about a withdrawal. The one door a `fleet.*` row goes through.
-    ...(fleetNotifier ? [createFleetDoor(fleetNotifier)] : []),
-  ],
-  // The outbox and the adapter each take a line-writer so their tests can read them; here the
-  // writer is the process log, so their one-line reports come out in the same shape as everything
-  // else instead of as bare sentences between JSON objects.
-  log: (message) => log.error("notification_outbox", { message }),
+  sockets: channelEvents,
+  config,
+  partners: partnerRuntime.connections,
+  alimtalk: config.partners.alimtalk,
+  fleetNotifier,
 });
 /** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
 const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
+/**
+ * A finished turn's roster row, on every open tab — and a notification for a person who has no tab
+ * at all. The same announcement for a routine's answer and a room's, so the two cannot drift.
+ */
+const announceFinished = (event: ChannelActivityEvent) => {
+  channelEvents.deliver(event);
+  noticeFinished(event);
+};
 const channelStore = createChannelStore(
   database,
   agentProfileStore,
@@ -373,12 +258,21 @@ const loadAgentsForActor = withGrantedSkills(
   createRuntimeAgentLoader(database, agentVault),
   database,
 );
-await recordTenantPackage(database, tenantPackage);
-// The rows that predate the envelope, sealed before anybody can sign in. See auth/token-encryption.ts.
-await sealStoredTokens(database, config.tokenEncryptionKey);
+await reconcileBeforeServing({
+  database,
+  devNoAuth: config.devNoAuth,
+  tenantPackage,
+  tokenEncryptionKey: config.tokenEncryptionKey,
+});
 const auth = config.auth
   ? createAuth(config, database, fleetNotifier)
   : undefined;
+/** Who is asking, for the two doors `requireUser` never sees: the runtime and the screen socket. */
+const actors = createRequestActors({
+  devNoAuth: config.devNoAuth,
+  auth,
+  roles: roleRepository,
+});
 /*
  * Long tool results go on file on the Bot's computer and reach the model as a preview and a
  * path (computer/spillover.ts). One for the process, because what is already on file is
@@ -473,150 +367,28 @@ const repeatDetector = createRepeatDetector(
  *
  * In this process because that is where the socket is: a demonstration belongs to one person
  * driving one browser, and both ends of that live here. It names each press by asking the computer
- * what is at the point, which is the whole difference between a trace worth writing up and a list
- * of coordinates. See `demonstration.ts`.
+ * what is at the point. See `demonstration.ts` and `live-screen.ts`.
  */
 const demonstrations = createDemonstrationRecorder({
-  namePoint: async (botId, point) => {
-    if (!config.computer) return null;
-    const response = await fetch(
-      `${config.computer.baseUrl.replace(/\/$/, "")}/describe-point`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          /*
-           * THE HEADER, NOT A QUERY. `agent-computer` reads the Bot from `x-openbot-bot-id` and
-           * falls back to a default when it is absent — so a query string is not a different Bot,
-           * it is silently the wrong one. Measured: every press came back unnameable, because every
-           * lookup was asking about a blank page belonging to nobody.
-           */
-          "x-openbot-bot-id": botId,
-          ...(config.computer.token
-            ? { authorization: `Bearer ${config.computer.token}` }
-            : {}),
-        },
-        body: JSON.stringify(point),
-        // A name is a nicety. A lookup that hangs must not sit in a map for the rest of the session.
-        signal: AbortSignal.timeout(3_000),
-      },
-    );
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      element?: { role?: unknown; name?: unknown } | null;
-    };
-    const element = body.element;
-    return element &&
-      typeof element.role === "string" &&
-      typeof element.name === "string"
-      ? { role: element.role, name: element.name }
-      : null;
-  },
+  namePoint: describePointOn(config.computer),
 });
 
-/**
- * The owner's own sentence about what not to be asked, judged against one action.
- *
- * Given to the gateway as one function, so the gateway knows nothing about where an instruction is
- * kept or how it is judged. Read per action rather than cached: it is edited on a screen, and an
- * edit that took effect on the next restart would be a boundary somebody believes they tightened.
- *
- * `OPENAI_BASE_URL` is where everything else in this deployment reaches a model, and the key is
- * resolved per call for the same reason the runtime's is — revoking a credential then takes effect
- * on the next action rather than on the next restart.
- */
-/**
- * Server-side model calls land in the same ledger as Bot turns, tagged by purpose.
- *
- * The per-Bot monthly cost is a sum over `model.usage` rows; a deployment whose auto-review burns
- * tokens invisibly would undercount its own KPI. Counts only, never content.
- */
-const recordModelUsage =
-  (source: "auto-review" | "write-up") =>
-  (usage: {
-    model: string;
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  }) => {
-    void recordAuditEvent(bootAuditStore, {
-      eventType: "model.usage",
-      targetType: "model",
-      payload: { ...usage, source },
-    }).catch(() => undefined);
-  };
-
-/** Everything the judge and the probe both need, so the probe measures the real call. */
-const reviewCall = {
-  baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
-  model: tenantPackage.model.reviewModel,
-  apiKey: () =>
-    resolveModelApiKey({
-      encryptionKey: config.keyEncryptionKey,
-      reader: credentialStore,
-      provider: tenantPackage.model.provider,
-      keyId: tenantPackage.model.credentialSecretRef,
-      environment: process.env,
-    }),
-  // The deployment's own assertion that its model reasons, which is what decides whether an effort
-  // is sent at all. See `model.yaml supports_effort`, and the note in auto-review.ts.
-  supportsEffort: tenantPackage.model.supportsEffort,
-};
-
-const reviewModel = createModelAutoReviewer({
-  ...reviewCall,
-  onUsage: recordModelUsage("auto-review"),
+/** The auto-review judge, its probe and a demonstration's write-up. See server-model-calls.ts. */
+const modelCalls = createServerModelCalls({
+  database,
+  auditStore: bootAuditStore,
+  credentials: credentialStore,
+  encryptionKey: config.keyEncryptionKey,
+  endpoint: config.model,
+  model: tenantPackage.model,
 });
-
-/**
- * Whether this deployment can auto-review at all, measured rather than assumed.
- *
- * Started here so the answer is usually already in hand by the time a browser asks, and not awaited:
- * a probe that could delay the port opening would make a model having a bad minute into a deployment
- * that does not boot. Its cost is one trivial completion per process. See `createAutoReviewProbe`.
+/*
+ * Whether this deployment can auto-review at all, started here so the answer is usually already in
+ * hand by the time a browser asks, and not awaited: a probe that could delay the port opening would
+ * make a model having a bad minute into a deployment that does not boot. Its cost is one trivial
+ * completion per process.
  */
-const autoReviewCapable = createAutoReviewProbe({
-  ...reviewCall,
-  onUsage: recordModelUsage("auto-review"),
-});
-void autoReviewCapable().catch(() => false);
-
-/**
- * A finished recording, written up as a procedure.
- *
- * The deployment's own model rather than the review one: this runs once, with the person watching
- * and knowing they asked for it, so a slow careful answer is the right trade — the opposite of the
- * judgement that sits in front of every action a Bot takes.
- */
-const writeUpDemonstration = createWriteUp({
-  baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
-  model: tenantPackage.model.defaultModel,
-  apiKey: () =>
-    resolveModelApiKey({
-      encryptionKey: config.keyEncryptionKey,
-      reader: credentialStore,
-      provider: tenantPackage.model.provider,
-      keyId: tenantPackage.model.credentialSecretRef,
-      environment: process.env,
-    }),
-  onUsage: recordModelUsage("write-up"),
-});
-
-const autoReviewFor = async (botId: string, subject: ReviewSubject) => {
-  const [row] = await database
-    .select({ instruction: agentProfiles.autoReview })
-    .from(agentProfiles)
-    .where(eq(agentProfiles.agentId, botId));
-  // No row and no instruction are the same answer: there is nothing to judge, so a person is asked.
-  return row?.instruction ? reviewModel(row.instruction, subject) : null;
-};
-
-/**
- * Where vendors send people back after a consent, derived from the one public URL every real
- * deployment already declares. No new fleet configuration: BETTER_AUTH_URL is required wherever
- * sign-in works, and sign-in is required wherever plugins are reachable.
- */
-const pluginPublicUrl = config.auth?.baseUrl;
+void modelCalls.autoReviewCapable().catch(() => false);
 
 /**
  * The OAuth applications LAF registered once for the whole fleet, as one lookup.
@@ -638,14 +410,16 @@ const pluginStore = createPluginStore({
   standing: standingApprovals,
   // The same instruction, the same counter and the same registry the computer gets. A boundary that
   // held for a click and not for a call to somebody else's server was one boundary written twice.
-  autoReview: autoReviewFor,
+  autoReview: modelCalls.autoReviewFor,
   repeat: repeatDetector,
   /*
    * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
    * public URL, and self-registration then simply does not happen — registering a redirect URI
    * that resolves to nothing would leave behind a client that can never complete a consent flow.
    */
-  redirectUri: pluginPublicUrl ? redirectUriFor(pluginPublicUrl) : undefined,
+  redirectUri: config.auth?.baseUrl
+    ? redirectUriFor(config.auth.baseUrl)
+    : undefined,
   // The vault holds no client for a shared-application entry and never will, so a refresh that
   // looked only there would report "connect it again" at a connection nothing is wrong with.
   sharedClient: sharedOAuthClients,
@@ -656,79 +430,14 @@ const pluginStore = createPluginStore({
   deploymentKeyTransports: publicDataRuntime.transports,
 });
 
-/*
- * Record which boundary this process started with.
- *
- * The trail records the boundary a process starts with, so later audit reads can distinguish the
- * configured default from any administrator-updated policy that was persisted before restart.
- * Not awaited and never fatal: the row is a note for a reader, not something the server depends on.
- */
-void recordAuditEvent(bootAuditStore, {
-  eventType: "computer.policy_loaded",
-  targetType: "policy",
-  payload: {
-    ...policyStore.get(),
-    source:
-      policySource === "the database"
-        ? "an administrator, saved in this deployment"
-        : config.computer?.policy
-          ? "configuration"
-          : "the built-in default",
-    note:
-      policySource === "the database"
-        ? "Set while running and kept. A restart returns to this."
-        : "The deployment default. Anything an administrator sets from here is kept.",
-  },
-}).catch(() => undefined);
-
-/*
- * Record that every Bot shares the account's one computer.
- *
- * The sharing is a product decision (computer/assignment.ts), not an accident of configuration,
- * but it must still be visible in the trail rather than inferred: sessions, files and logins are
- * common to the roster, and a reader of the audit log has to be told that.
- */
-void recordAuditEvent(bootAuditStore, {
-  eventType: "computer.isolation_loaded",
-  targetType: "computer",
-  payload: {
-    isolation: "one shared computer",
-    /*
-     * A code. This was a 200-character English paragraph, on the one row whose entire content is a
-     * sentence — and the audit page drew no `note` at all, so the arrangement this row exists to
-     * state was legible only to somebody reading the database. The surface says it in Korean now,
-     * and draws it.
-     */
-    note: ONE_SHARED_COMPUTER,
-  },
-}).catch(() => undefined);
-
-/**
- * One Bot's endpoint must not take down the platform.
- *
- * Restarting a remote agent while a run is in flight resets the socket. The rejection reaches the top
- * of the process, and Bun kills the whole server: every other person's conversation, every other Bot
- * and the admin surface go with it, because somebody redeployed their own agent.
- *
- * That blast radius is created by design the moment people can register their own endpoints,
- * so it belongs to that feature. A remote agent is untrusted infrastructure: it will restart, it will
- * time out, it will close a stream halfway through, and none of that is exceptional.
- *
- * Logged loudly rather than swallowed. A process that hides unhandled rejections is worse than one
- * that dies, so this prints the full reason and keeps serving; what it must never do is stay quiet.
- */
-process.on("unhandledRejection", (reason) => {
-  // `describeFailure` rather than `reason.message`: a rejected Drizzle promise lands here too, and
-  // its message is the statement and its parameters.
-  log.error("unhandled_rejection", {
-    reason: describeFailure(reason),
-    code:
-      reason && typeof reason === "object" && "code" in reason
-        ? String((reason as { code: unknown }).code)
-        : undefined,
-    note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
-  });
+recordStartingArrangement({
+  auditStore: bootAuditStore,
+  policy: policyStore.get(),
+  source: policySource,
+  configured: Boolean(config.computer?.policy),
 });
+
+keepServingThroughUnhandledRejections();
 
 /**
  * The watch on Bot streams, built once and shared by every run.
@@ -745,14 +454,6 @@ const stallGuard = createStallGuard({
 });
 
 /**
- * The only path to an acting call.
- *
- * Built here rather than inline in `createApp`'s arguments because it has a second caller now: an
- * unattended run executes a Bot's tools through this exact object, so a routine's click is judged
- * by the same policy, written to the same audit trail and held for the same approvals as one
- * somebody watched.
- */
-/**
  * Which business sites this person has signed into on a Bot's browser.
  *
  * Built before the gateway because the gateway writes through it: every navigation that lands on a
@@ -761,6 +462,14 @@ const stallGuard = createStallGuard({
  */
 const siteConnections = createSiteConnectionStore(database);
 
+/**
+ * The only path to an acting call.
+ *
+ * Built here rather than inline in `createApp`'s arguments because it has a second caller: an
+ * unattended run executes a Bot's tools through this exact object, so a routine's click is judged
+ * by the same policy, written to the same audit trail and held for the same approvals as one
+ * somebody watched.
+ */
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
@@ -779,7 +488,7 @@ const computerGateway = computerClient
       policy: () => policyStore.get(),
       approvals,
       standing: standingApprovals,
-      autoReview: autoReviewFor,
+      autoReview: modelCalls.autoReviewFor,
       repeat: repeatDetector,
       /*
        * Bookkeeping on the success path of somebody's actual work, so it swallows its own failures
@@ -792,47 +501,26 @@ const computerGateway = computerClient
     })
   : undefined;
 
-// One Bot asking another: the same loader, model and keys the runtime uses, resolved per call so
-// a revoked key or a deleted coworker takes effect on the next question rather than on restart.
+/**
+ * The same agents, keys and model every server-side run path resolves — a coworker's answer, a
+ * routine, a room turn — resolved per call, so a revoked key or a deleted coworker takes effect on
+ * the next question rather than on restart.
+ */
+const resolveAgentsFor = (actor: AgentActor) =>
+  resolveRuntimeAgents(
+    () => loadAgentsForActor(actor),
+    tenantPackage.model,
+    stallGuard,
+    config.botTimeZone,
+    resultSpill,
+  );
+
+// One Bot asking another: the same loader, model and keys the runtime uses.
 const coworkerCall = createCoworkerCall({
-  resolveAgents: (actor) =>
-    resolveRuntimeAgents(
-      () => loadAgentsForActor(actor),
-      tenantPackage.model,
-      stallGuard,
-      botTimeZone(),
-      resultSpill,
-    ),
+  resolveAgents: resolveAgentsFor,
   auditStore: bootAuditStore,
   ledger: runLedger,
-  /**
-   * The answering Bot's own copy of what it was asked, written where that person reads it.
-   *
-   * The names are looked up rather than passed through, because the heading is what a person sees
-   * and an id is not a name. Both Bots are in this person's roster by construction — the call
-   * resolved the target from it — and `get` is scoped to the actor, so a Bot they cannot see is a
-   * Bot this cannot name.
-   */
-  recordExchange: async (exchange) => {
-    const actor = { id: exchange.actorId, role: "user" as const };
-    const [caller, target] = await Promise.all([
-      agentProfileStore.get(actor, exchange.callerId).catch(() => null),
-      agentProfileStore.get(actor, exchange.targetId).catch(() => null),
-    ]);
-    await appendToSoloConversation(database, {
-      agentId: exchange.targetId,
-      userId: exchange.actorId,
-      // Two names and an arrow: a fact, not a sentence. See appendToSoloConversation.
-      heading: `${caller?.name ?? exchange.callerId} → ${target?.name ?? exchange.targetId}`,
-      // The question quoted line by line, so a multi-line ask stays one block rather than
-      // becoming a quote and then loose prose.
-      body: `${exchange.question
-        .split("\n")
-        .map((line) => `> ${line}`)
-        .join("\n")}\n\n${exchange.answer}`,
-      at: exchange.at,
-    });
-  },
+  recordExchange: recordCoworkerExchange(database, agentProfileStore),
 });
 
 /**
@@ -845,15 +533,12 @@ const coworkerCall = createCoworkerCall({
  */
 const botLane = createBotLane();
 
-/** The same agents, keys and model every server-side run path resolves. */
-const resolveAgentsFor = (actor: { id: string; role: "admin" | "user" }) =>
-  resolveRuntimeAgents(
-    () => loadAgentsForActor(actor),
-    tenantPackage.model,
-    stallGuard,
-    botTimeZone(),
-    resultSpill,
-  );
+// The Bot's tools, on the server, through the same gateway and grants the browser uses — for a
+// routine and a room alike.
+const unattendedTools = createUnattendedTools({
+  ...(computerGateway ? { gateway: computerGateway } : {}),
+  pluginStore,
+});
 
 /**
  * Where a routine that did not finish is marked: the Bot's conversation, with the roster row moved
@@ -867,14 +552,7 @@ const markRoutineFailure = createRoutineFailureDelivery(database, (event) =>
 // Instructions on a clock, running through the same server-side path a coworker answer does.
 const routineService = createRoutineService({
   database,
-  resolveAgents: (actor) =>
-    resolveRuntimeAgents(
-      () => loadAgentsForActor(actor),
-      tenantPackage.model,
-      stallGuard,
-      botTimeZone(),
-      resultSpill,
-    ),
+  resolveAgents: resolveAgentsFor,
   // The trail with the outbox listening: a `routine.ran` row that says `ok: false` becomes a
   // `run.failed` notification, the same way the computer's help and secret rows become one.
   auditStore: withOutboxWatch(bootAuditStore, notificationOutbox),
@@ -882,16 +560,9 @@ const routineService = createRoutineService({
   lane: botLane,
   // And the answer lands in the Bot's own conversation, where a person already reads — plus a
   // notification when there is nobody connected to read it, which for a routine is the normal case.
-  deliver: createRoutineDelivery(database, (event) => {
-    channelEvents.deliver(event);
-    noticeFinished(event);
-  }),
+  deliver: createRoutineDelivery(database, announceFinished),
   deliverFailure: markRoutineFailure,
-  // The Bot's tools, on the server, through the same gateway and grants the browser uses.
-  tools: createUnattendedTools({
-    ...(computerGateway ? { gateway: computerGateway } : {}),
-    pluginStore,
-  }),
+  tools: unattendedTools,
 });
 
 /*
@@ -908,64 +579,23 @@ void reportInterruptedRuns({
   markRoutine: markRoutineFailure,
 });
 
-/**
- * The runtime's own thread routes, with the thread they are about to answer for read first.
- *
- * CopilotKit's local thread endpoints reach the runner through SYNCHRONOUS methods —
- * `getThreadMessages` returns a `Message[]`, and the handler maps it straight into a `Response` —
- * so a read that has to reach Postgres cannot happen inside them. The runner used to sidestep that
- * by loading every thread in the deployment at boot and answering from memory. This is the
- * alternative: one read, for the one thread this request names, taken here where awaiting is
- * allowed. `/threads` itself takes a summary read that touches no message body.
- */
-/**
- * Who the priming middlewares below are reading for, or a refusal.
- *
- * `resolveRequestActor` rather than `identifyActor`: this is the read that decides WHOSE thread is
- * about to be served, and the anonymous fallback would answer that question with an actor who owns
- * nothing — which reads as "not yours" for a person whose session simply could not be checked. The
- * routes are already behind `requireUser` (see app.ts), so an unauthenticated caller never arrives;
- * this is the transient case, and it is refused rather than guessed at.
- */
-const primingActor = async (request: Request): Promise<{ id: string } | null> =>
-  resolveRequestActor(request).catch(() => null);
-
-const copilotEndpoint = new Hono()
-  .use("/api/copilotkit/threads", async (context, next) => {
-    if (context.req.method === "GET") {
-      const actor = await primingActor(context.req.raw);
-      if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
-      await lafRunner.primeThreadList(actor.id);
-    }
-    return next();
-  })
-  .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
-    const actor = await primingActor(context.req.raw);
-    if (!actor) return context.json({ error: "laf:unauthenticated" }, 401);
-    /*
-     * REFUSED HERE, not merely left unprimed.
-     *
-     * `getThreadMessages` reads the vendored runner's live copy as well as the primed one, and that
-     * copy is a process-wide singleton — so a thread of somebody else's that has been run on this
-     * VM since boot would be answered out of memory however carefully this middleware declined to
-     * prime it. The request has to stop.
-     */
-    const mine = await lafRunner.prime(context.req.param("threadId"), actor.id);
-    if (!mine) return context.json({ error: "laf:thread_not_found" }, 404);
-    return next();
-  })
-  .route(
-    "/",
-    mountCopilotRuntime(
-      tenantPackage.model,
-      loadAgentsForActor,
-      identifyActor,
-      stallGuard,
-      lafRunner,
-      "/api/copilotkit",
-      resultSpill,
-    ),
-  );
+/** The runtime's thread routes, each reading the thread it answers for first. See thread-priming.ts. */
+const copilotEndpoint = primeThreadRoutes({
+  runner: lafRunner,
+  actorOf: actors.resolveOrNull,
+}).route(
+  "/",
+  mountCopilotRuntime(
+    tenantPackage.model,
+    loadAgentsForActor,
+    actors.identify,
+    stallGuard,
+    lafRunner,
+    config.botTimeZone,
+    "/api/copilotkit",
+    resultSpill,
+  ),
+);
 
 /**
  * The row a looked-at screen leaves, from the same trail every other computer row lands in. Built
@@ -1027,17 +657,11 @@ const app = createApp(
     lane: botLane,
     ledger: runLedger,
     resolveAgents: resolveAgentsFor,
-    tools: createUnattendedTools({
-      ...(computerGateway ? { gateway: computerGateway } : {}),
-      pluginStore,
-    }),
+    tools: unattendedTools,
     emit: (frame) => channelEvents.deliverRoom(frame),
     // The roster row on every OTHER tab, after the message that moved it has committed — and a
     // notification for a member who has no tab at all. See `createFinishedNotice`.
-    announce: (event) => {
-      channelEvents.deliver(event);
-      noticeFinished(event);
-    },
+    announce: announceFinished,
     // A room holds while the person answers, because in a room the person is there. See the module.
     awaitApproval: createApprovalWaiter(approvals),
     // Each member's turn on the trail: which round, why it spoke, what came of it.
@@ -1047,78 +671,19 @@ const app = createApp(
   standingApprovals,
   tenantPackage.model.supportsEffort,
   demonstrations,
-  writeUpDemonstration,
+  modelCalls.writeUp,
   agentMemoryStore,
-  /*
-   * The OAuth connect flow: where vendors send people back, and whether the person a consent was
-   * started for still has access when the callback lands. This fork has no removal ledger, so
-   * "still has access" is what sign-in itself would answer: the user row exists, and the address
-   * is still on the allow-list when one is configured.
-   */
-  pluginPublicUrl
-    ? {
-        publicUrl: pluginPublicUrl,
-        appUrl: config.auth?.trustedOrigins[0],
-        encryptionKey: config.keyEncryptionKey,
-        personHasAccess: async (userId: string) => {
-          const [person] = await database
-            .select({ email: users.email })
-            .from(users)
-            .where(eq(users.id, userId))
-            .limit(1);
-          if (!person) return false;
-          const allowed = config.auth?.allowedEmails ?? [];
-          return allowed.length === 0 || allowed.includes(person.email);
-        },
-        sharedClient: sharedOAuthClients,
-        /*
-         * The fleet's relay, when this deployment is on one. Absent on a laptop, and then every
-         * vendor is told this deployment's own callback — which is what a client registered against
-         * `http://localhost:3001` expects and the only thing that can work there.
-         */
-        ...(config.connectors.relay
-          ? {
-              relay: {
-                url: config.connectors.relay.url,
-                slug: config.connectors.relay.slug,
-              },
-            }
-          : {}),
-      }
-    : undefined,
+  // The OAuth connect flow: where vendors send people back, and who still has access. See the module.
+  connectConfigFor({ config, database, sharedClient: sharedOAuthClients }),
   // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's
   // own review model; see the probe above.
-  autoReviewCapable,
-  /*
-   * What `/health` asks. The three things a deployment is made of, each answered by the same route
-   * the product itself uses, so a check cannot pass against a path nothing else takes.
-   *
-   * The computer is included only when one is configured: a deployment without it is not degraded,
-   * it is a deployment without a browser.
-   */
-  {
-    database: async () => {
-      await database.execute(sql`select 1`);
-      return true;
-    },
-    agentBot: async () => {
-      const response = await fetch(
-        new URL("/health", config.managedAgentAgUiUrl),
-        // Its own bound as well as the route's: the route stops waiting after two seconds, but only
-        // this stops the socket, and a health poll every ten seconds must not leave one behind.
-        { signal: AbortSignal.timeout(2_000) },
-      );
-      return response.ok;
-    },
-    ...(computerClient
-      ? {
-          computer: async () =>
-            // The id is a label on the answer, not a route: `status` asks the computer's own
-            // /health, which belongs to no Bot.
-            (await computerClient.status("health")).state === "ready",
-        }
-      : {}),
-  },
+  modelCalls.autoReviewCapable,
+  // What `/health` asks: the database, `agent-bot`, and the computer when there is one.
+  deploymentHealthProbes({
+    database,
+    agentBotUrl: config.managedAgentAgUiUrl,
+    computer: computerClient,
+  }),
   /*
    * Taking your data with you, and leaving.
    *
@@ -1149,16 +714,13 @@ const app = createApp(
    *
    * The metric reads the trail rather than the outbox on purpose (see approval-metrics.ts), and it
    * is resolved per request rather than captured, so the window a caller asks for is the window it
-   * measures. `BOT_TIME_ZONE` decides what "night" is, the same clock the Bot's own browser and
-   * prompt are given — the VM may be anywhere and the person is in Korea.
+   * measures. The Bot's own clock decides what "night" is — the VM may be anywhere and the person
+   * is in Korea.
    */
   {
     outbox: notificationOutbox,
     approvalMetrics: (days: number) =>
-      readApprovalMetrics(database, {
-        days,
-        timeZone: process.env.BOT_TIME_ZONE ?? "",
-      }),
+      readApprovalMetrics(database, { days, timeZone: config.botTimeZone }),
   },
   // Which business sites this person has signed into on a Bot's browser. The same store the
   // gateway writes through above, so the card and the morning routine agree about one row.
@@ -1182,96 +744,18 @@ const app = createApp(
   },
 );
 
-/**
- * The live screen, proxied.
- *
- * Proxied rather than connected directly. `agent-computer` authenticates its callers with a
- * shared token, not with a person's session, and it must never be reachable from a browser. So the
- * socket terminates here, behind the same session guard as every other route, and this process opens
- * a second socket inward carrying the token.
- *
- * Not a Hono route because an upgrade is not a request/response: Bun hands it over before Hono sees a
- * body, so it is handled in `fetch` ahead of the app.
- */
-const toStreamUrl = (baseUrl: string, botId: string) =>
-  // The Bot travels in the query, because a websocket upgrade carries no custom header for the
-  // computer to read and every call it serves is per Bot. The secret travels the same way and for the
-  // same reason, this socket is the one a person can type into, so it is the last thing that should
-  // be reachable without it.
-  `${baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/stream?bot=${encodeURIComponent(botId)}&token=${encodeURIComponent(config.computer?.token ?? "")}`;
-
-/**
- * A refusal from the upgrade path, as a fact code and nothing else.
- *
- * Written by hand because an upgrade is handled in `fetch`, ahead of Hono, so `context.json` is not
- * available here. Same shape as every other refusal in this server: a code the surface owns the
- * words for, never a sentence meant for a screen.
- */
-const fact = (code: string, status: number) =>
-  new Response(JSON.stringify({ error: code, code }), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-
-/**
- * Which Bot's screen. The Bot is named in the path and its computer is located the same way every
- * other call locates it, so the live stream cannot point at a different Bot's browser.
- */
-const streamPathBotId = (pathname: string): string | null => {
-  const match = pathname.match(/^\/api\/computers\/([^/]+)\/stream$/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
-};
-
-/**
- * The rule, with this deployment's tables behind it. See auth/stream-access.ts.
- *
- * Whose the Bot is, through the same lookup `requireUser` hands every route — not the profile
- * store's `get`, which answers what the person may SEE and let a public Bot's socket open for
- * anybody signed in.
- */
-const streamAccessFor = (
-  botId: string,
-  actor: { id: string; role: UserRole } | null,
-) => streamBotAccess(botId, actor, roleRepository.botOwner);
-
-/** What each proxied socket carries: where to connect inward, and the socket once opened. */
-type StreamData = {
-  upstream: string;
-  inward?: WebSocket;
-  /**
-   * Who opened it, with their role. Resolved at the upgrade — the only moment a session cookie is
-   * in hand — and carried so `open` can write the row once the socket actually exists, rather than
-   * at the upgrade, where a refused upgrade would leave a row saying a screen was watched.
-   */
-  viewer: ScreenViewer;
-  /**
-   * Which Bot's browser this socket drives.
-   *
-   * Carried so a demonstration can be recorded from the messages passing through. The proxy is
-   * otherwise byte-for-byte and has no reason to know — see the `message` handler for the one line
-   * that reads it, and `demonstration.ts` for why that line is where teaching happens.
-   */
-  botId: string;
-};
-
-/**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
- */
-type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
-
-const isProxiedStream = (data: SocketData): data is StreamData =>
-  typeof (data as StreamData).upstream === "string";
-
-// Hono owns the socket's data once it has upgraded it; this hands its own back to it.
-const asChannelSocket = (ws: { data: SocketData }) =>
-  ws as unknown as ChannelSocket;
+/** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
+const liveScreen = createLiveScreen({
+  computer: config.computer,
+  trustedOrigins: config.trustedOrigins,
+  actorOf: actors.resolveOrNull,
+  botOwner: roleRepository.botOwner,
+  screenViews,
+  demonstrations,
+});
 
 const server = serve<SocketData>({
-  port,
+  port: config.port,
   /*
    * Bun's default cuts a connection that has been quiet for ten seconds, which is shorter than a
    * model thinking. A Bot's run streams over SSE and a coworker being asked answers over one long
@@ -1282,158 +766,20 @@ const server = serve<SocketData>({
    */
   idleTimeout: 240,
   async fetch(request, server) {
-    const url = new URL(request.url);
-    const streamBotId = streamPathBotId(url.pathname);
-    if (
-      streamBotId !== null &&
-      request.headers.get("upgrade")?.toLowerCase() === "websocket"
-    ) {
-      if (!config.computer) {
-        return new Response("No computer is configured.", { status: 503 });
-      }
-      /*
-       * Where the socket was opened from, checked before anything else and before the session.
-       *
-       * This is the socket a person's clicks and keystrokes travel down, into a browser holding
-       * their real logins. It checked nothing but the cookie — and every deployment of this product
-       * is a name under one registrable domain, so `SameSite=Lax` sends that cookie on a socket
-       * opened from another customer's page. An upgrade with no `Origin` at all is refused too: a
-       * browser always sends one on a handshake, and nothing but a browser drives this.
-       */
-      if (!upgradeOriginAllowed(request.headers, config.trustedOrigins)) {
-        return fact(ORIGIN_REFUSED, 403);
-      }
-      /*
-       * The session guard AND the Bot, applied by hand because middleware does not run on an
-       * upgrade. The person was already resolved here and the answer was thrown away — see
-       * `streamBotAllowed`, which is the whole check now.
-       */
-      const actor = await resolveRequestActor(request).catch(() => null);
-      const access = await streamAccessFor(streamBotId, actor);
-      if (access === "bad_id") {
-        return fact("laf:bot_id_invalid", 400);
-      }
-      // `|| !actor` says nothing the rule did not; it is here so the compiler knows it too.
-      if (access === "unauthenticated" || !actor) {
-        return fact("laf:unauthenticated", 401);
-      }
-      if (access === "not_found") {
-        return fact("laf:bot_not_found", 404);
-      }
-      let upstream: string;
-      try {
-        upstream = toStreamUrl(config.computer.baseUrl, streamBotId);
-      } catch (error) {
-        // Said out loud rather than falling back to another Bot's computer, which is the failure this
-        // whole path exists to prevent.
-        return new Response(
-          error instanceof Error
-            ? error.message
-            : "That Bot's computer could not be reached.",
-          { status: 502 },
-        );
-      }
-      if (
-        server.upgrade(request, {
-          data: {
-            upstream,
-            botId: streamBotId,
-            viewer: { id: actor.id, role: actor.role },
-          },
-        })
-      ) {
-        return undefined as unknown as Response;
-      }
-      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    const streamBotId = liveScreen.botOf(request);
+    if (streamBotId !== null) {
+      return liveScreen.upgrade(request, server, streamBotId);
     }
     return app.fetch(request, { server });
   },
-  websocket: {
-    open(ws) {
-      if (!isProxiedStream(ws.data)) {
-        channelSocket.open(asChannelSocket(ws));
-        return;
-      }
-      // Once per socket, here and not per frame: the session is the fact. Not awaited — the
-      // screen opens whether or not the trail is reachable, as every other computer row does.
-      void screenViews.opened(ws.data.botId, ws.data.viewer);
-      const inward = new WebSocket(ws.data.upstream);
-      ws.data.inward = inward;
-      // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
-      // should be dropped, not queued, because a stale frame is worse than a missing one.
-      inward.onmessage = (event) => {
-        try {
-          ws.send(String(event.data));
-        } catch {
-          inward.close();
-        }
-      };
-      inward.onclose = () => ws.close();
-      inward.onerror = () => ws.close();
-    },
-    message(ws, raw) {
-      if (!isProxiedStream(ws.data)) {
-        channelSocket.message(asChannelSocket(ws), raw);
-        return;
-      }
-      const text = String(raw);
-      /*
-       * WHERE TEACHING HAPPENS, and the only place it could.
-       *
-       * Every click and keystroke a person makes in a Bot's browser passes through this line on its
-       * way there. When they are showing the Bot how a task is done, that is the demonstration —
-       * and nothing else in this process ever sees these messages.
-       *
-       * Before the forward, never instead of it: the recorder is told and the message goes on
-       * regardless. It cannot throw and does not wait; see `observe`.
-       */
-      if (demonstrations.recording(ws.data.botId)) {
-        try {
-          demonstrations.observe(ws.data.botId, JSON.parse(text));
-        } catch {
-          // Not JSON, so not an input message this understands. Forwarded all the same.
-        }
-      }
-      if (ws.data.inward?.readyState === 1) ws.data.inward.send(text);
-    },
-    close(ws, code, reason) {
-      if (!isProxiedStream(ws.data)) {
-        channelSocket.close(asChannelSocket(ws), code, reason);
-        return;
-      }
-      ws.data.inward?.close();
-    },
-  },
+  websocket: liveScreen.websocket(channelSocket),
 });
 
-if (config.devNoAuth) {
-  // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
-  log.warn("dev_no_auth", {
-    actor: DEV_ACTOR.email,
-    role: "administrator",
-    note: "LAF_DEV_NO_AUTH is on: every request is treated as this person. Local development only.",
-  });
-}
-
-/*
- * The one line an operator reads first after a restart: which build, which model, how many core
- * tools a Bot is offered, and where the browser is. `tools` counts the catalogue in `shared/tools`
- * — the computer, self and skill tools every Bot can be handed — not the connected-service tools,
- * which are per person and per run. `server.port` rather than `port`, because a test starts this
- * process on port 0 and reads the port it was given from here.
- */
-log.info("boot", {
-  ...buildOf(),
-  model: tenantPackage.model.defaultModel,
-  reviewModel: tenantPackage.model.reviewModel,
-  supportsEffort: tenantPackage.model.supportsEffort,
-  tools: COMPUTER_TOOLS.length + SELF_TOOLS.length + SKILL_TOOLS.length,
+sayBooted({
+  config,
+  model: tenantPackage.model,
   port: server.port,
-  computer: config.computer ? "one shared computer" : "none",
   fleetWebhook: Boolean(fleetNotifier),
-  supportWebhook: Boolean(supportWebhookUrl),
-  stallTimeoutMs: config.agentStallTimeoutMs,
-  retentionDays: retentionDays(),
 });
 
 /*
@@ -1450,52 +796,13 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.exit(0);
   });
 }
-/*
- * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
- * wall-clock times, not intervals — so a shorter tick would only mean more queries finding
- * nothing. It was once shared with the watch poller's tick, which is gone.
- */
-routineService.start(60_000);
 
-/*
- * The retention sweep, on the same shape of clock as the routine tick and for the same reason: one
- * process on one VM, and nothing to install.
- *
- * SIX HOURS, NOT TWENTY-FOUR. A day-long interval on a machine that is restarted most days is a
- * sweep that never runs — the timer is reset by every boot and never reaches its deadline. Six
- * hours means the deployment prunes even if somebody redeploys twice a day, and the work is a
- * handful of deletes against an indexed timestamp.
- *
- * `AUDIT_RETENTION_DAYS=0` switches it off, tick included, and then nothing here is scheduled at all.
- */
-const retention = createRetentionJob({
+startBackgroundWork({
   database,
-  days: retentionDays(),
-  log: (message) => log.info("retention", { message }),
+  routines: routineService,
+  auditRetentionDays: config.auditRetentionDays,
+  // Only with a fleet: on a laptop there is nothing to tell.
+  fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
+  publicData: publicDataRuntime,
+  pluginStore,
 });
-void retention.runOnce().catch((error) => {
-  log.warn("retention_first_sweep_failed", { reason: describeFailure(error) });
-});
-retention.start(6 * 60 * 60_000);
-
-/*
- * Withdrawals the fleet has not taken yet, offered again.
- *
- * A withdrawal writes its notice into the outbox inside its own transaction and offers it at once
- * (account/deletion.ts); this is the rest of the retry. At boot, because a process that died between
- * a deletion's commit and its delivery left the row undelivered, and the point of the row is that a
- * restart picks it up. On a tick, because a fleet that was down should be caught up without waiting
- * for the next person to leave. Only with a fleet; on a laptop there is nothing to tell.
- */
-if (fleetNotifier) {
-  void notificationOutbox.redeliver();
-  setInterval(() => void notificationOutbox.redeliver(), 5 * 60_000).unref();
-}
-
-/*
- * The public-data entry, reconciled to the key this boot was given: the row, its two tools and a
- * grant on each for every Bot on the machine — or, with the key gone, every one of those taken
- * back. Once, at boot, because the key is fleet configuration and only changes with a restart.
- * Never fatal: a store that could not be written leaves the tools missing, which the log says.
- */
-void publicDataRuntime.reconcile(pluginStore, "deployment");

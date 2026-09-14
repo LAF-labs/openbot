@@ -315,7 +315,7 @@ describe("model credential resolution", () => {
         },
         provider: "openai",
         keyId: "openai-api-key",
-        environment: { OPENAI_API_KEY: "environment-openai-key" },
+        configuredKey: "environment-openai-key",
       }),
     ).resolves.toBe("stored-openai-key");
   });
@@ -327,7 +327,7 @@ describe("model credential resolution", () => {
         reader: { readModelSecret: async () => null },
         provider: "openai",
         keyId: "openai-api-key",
-        environment: { OPENAI_API_KEY: " environment-openai-key " },
+        configuredKey: " environment-openai-key ",
       }),
     ).resolves.toBe("environment-openai-key");
   });
@@ -339,7 +339,7 @@ describe("model credential resolution", () => {
         reader: { readModelSecret: async () => null },
         provider: "openai",
         keyId: "openai-api-key",
-        environment: {},
+        configuredKey: undefined,
       }),
     ).resolves.toBeNull();
   });
@@ -353,7 +353,7 @@ describe("model credential resolution", () => {
         },
         provider: "openai",
         keyId: "openai-api-key",
-        environment: { OPENAI_API_KEY: "environment-openai-key" },
+        configuredKey: "environment-openai-key",
       }),
     ).rejects.toThrow("Credential envelope is invalid");
   });

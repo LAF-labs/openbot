@@ -21,7 +21,11 @@ import {
   requiredString,
 } from "../partner-tools";
 import { normalizeRecipient } from "./connect";
-import { SolapiError, sendTemplateMessage, solapiSettings } from "./solapi";
+import {
+  SolapiError,
+  type SolapiSettings,
+  sendTemplateMessage,
+} from "./solapi";
 import {
   missingVariables,
   STANDARD_TEMPLATES,
@@ -150,7 +154,8 @@ function sendArguments(args: Record<string, unknown>) {
 
 export function createAlimtalkTools(
   partners: PartnerConnections,
-  environment: Record<string, string | undefined> = process.env,
+  /** LAF's 솔라피 account as `config.ts` parsed it, or null when this deployment holds none. */
+  configured: SolapiSettings | null,
 ) {
   return partnerTransport({
     tools: ALIMTALK_TOOLS,
@@ -184,7 +189,7 @@ export function createAlimtalkTools(
 
       if (toolName !== "alimtalk_send") refuse("laf:alimtalk_unknown_tool");
 
-      const settings = solapiSettings(environment);
+      const settings = configured;
       if (!settings) refuse("laf:alimtalk_not_configured");
 
       const connection = await partners.find(PROVIDER, actorId);

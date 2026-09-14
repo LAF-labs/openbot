@@ -249,7 +249,8 @@ export async function resolveModelApiKey(input: {
   reader: ModelCredentialSecretReader;
   provider: "openai";
   keyId: string;
-  environment: Record<string, string | undefined>;
+  /** `OPENAI_API_KEY` as `config.ts` read it: spent only when the vault holds no key. */
+  configuredKey: string | undefined;
 }) {
   const stored = await input.reader.readModelSecret({
     provider: input.provider,
@@ -259,8 +260,7 @@ export async function resolveModelApiKey(input: {
     return decryptSecret(input.encryptionKey, stored.encryptedValue);
   }
 
-  const environmentKey = input.environment.OPENAI_API_KEY?.trim();
-  return environmentKey || null;
+  return input.configuredKey?.trim() || null;
 }
 
 export function createCredentialStore(

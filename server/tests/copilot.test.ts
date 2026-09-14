@@ -3,7 +3,6 @@ import { HttpAgent } from "@ag-ui/client";
 import { BASE_KO } from "../../shared/prompt";
 import {
   botPromptMessage,
-  botTimeZone,
   buildAgents,
   createRequestAgents,
   promptMessageId,
@@ -343,14 +342,8 @@ describe("the composed prompt", () => {
     expect(coworker).toContain("툴이 하나도 없다");
   });
 
-  test("reads the zone from the environment, and shrugs off a bad one", () => {
-    expect(botTimeZone({})).toBe("Asia/Seoul");
-    expect(botTimeZone({ BOT_TIME_ZONE: "Europe/Berlin" })).toBe(
-      "Europe/Berlin",
-    );
-    // A typo in a deployment's environment must not stop every Bot answering.
-    expect(botTimeZone({ BOT_TIME_ZONE: "Mars/Olympus" })).toBe("Asia/Seoul");
-  });
+  // Where the zone comes from — `BOT_TIME_ZONE`, and a bad one shrugged off — is config.ts's now,
+  // and `config.test.ts` says so.
 });
 
 describe("what reaches the endpoint", () => {

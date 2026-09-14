@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
-import { createHealthRoute, type HealthProbes } from "../src/health";
+import {
+  createHealthRoute,
+  deploymentHealthProbes,
+  type HealthProbes,
+} from "../src/health";
 import { testEnvironment } from "./support/environment";
 
 const app = createApp(
@@ -264,5 +268,73 @@ describe("authentication availability", () => {
     );
 
     expect(response.status).toBe(204);
+  });
+});
+
+/**
+ * The probes a real deployment hands the route, which were three closures inside `main.ts` until
+ * 2026-09-14 and so were checked by nothing short of a booted process.
+ */
+describe("a deployment's probes", () => {
+  const database = {
+    execute: async () => [],
+  } as unknown as Parameters<typeof deploymentHealthProbes>[0]["database"];
+
+  test("ask agent-bot's own /health, beside the AG-UI path it answers on", async () => {
+    let answer = 200;
+    const asked: string[] = [];
+    const agentBot = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (request) => {
+        asked.push(new URL(request.url).pathname);
+        return new Response(null, { status: answer });
+      },
+    });
+    try {
+      const probes = deploymentHealthProbes({
+        database,
+        agentBotUrl: new URL(`http://127.0.0.1:${agentBot.port}/ag-ui`),
+        computer: undefined,
+      });
+      expect(await probes.agentBot?.()).toBe(true);
+      answer = 503;
+      expect(await probes.agentBot?.()).toBe(false);
+      expect(asked).toEqual(["/health", "/health"]);
+      expect(await probes.database?.()).toBe(true);
+    } finally {
+      agentBot.stop(true);
+    }
+  });
+
+  test("leave the computer out when there is none, and ask its own /health when there is", async () => {
+    const withoutComputer = deploymentHealthProbes({
+      database,
+      agentBotUrl: new URL("http://127.0.0.1:1/ag-ui"),
+      computer: undefined,
+    });
+    // A deployment without a browser is not a degraded one.
+    expect(Object.keys(withoutComputer).sort()).toEqual([
+      "agentBot",
+      "database",
+    ]);
+
+    const labels: string[] = [];
+    let state = "ready";
+    const withComputer = deploymentHealthProbes({
+      database,
+      agentBotUrl: new URL("http://127.0.0.1:1/ag-ui"),
+      computer: {
+        status: async (label: string) => {
+          labels.push(label);
+          return { botId: label, state };
+        },
+      } as unknown as Parameters<typeof deploymentHealthProbes>[0]["computer"],
+    });
+    expect(await withComputer.computer?.()).toBe(true);
+    state = "unreachable";
+    expect(await withComputer.computer?.()).toBe(false);
+    // A label on the answer, not a Bot: the computer's /health belongs to nobody.
+    expect(labels).toEqual(["health", "health"]);
   });
 });

@@ -7,6 +7,7 @@ import {
   notificationFrame,
 } from "../src/notifications/in-app";
 import { createWebhookAdapter } from "../src/notifications/notify";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import type {
   EnqueueInput,
   NotificationOutbox,
@@ -96,7 +97,7 @@ describe("the alimtalk door", () => {
     const said: string[] = [];
     const adapter = createAlimtalkAdapter({
       partners: NOBODY_CONNECTED,
-      environment: {},
+      settings: null,
       log: (message) => said.push(message),
     });
 
@@ -113,7 +114,7 @@ describe("the alimtalk door", () => {
     const said: string[] = [];
     const adapter = createAlimtalkAdapter({
       partners: NOBODY_CONNECTED,
-      environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+      settings: solapiSettings({ LAF_ALIMTALK_API_KEY: "key:secret" }),
       log: (message) => said.push(message),
     });
 
@@ -127,7 +128,7 @@ describe("the alimtalk door", () => {
     const said: string[] = [];
     const adapter = createAlimtalkAdapter({
       partners: NOBODY_CONNECTED,
-      environment: { LAF_ALIMTALK_API_KEY: "key:secret" },
+      settings: solapiSettings({ LAF_ALIMTALK_API_KEY: "key:secret" }),
       log: (message) => said.push(message),
     });
 
