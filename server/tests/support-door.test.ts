@@ -55,8 +55,42 @@ describe("the body", () => {
       text: "리뷰 요약이 어제부터 안 됩니다",
       route: "/channel/abc",
       failureCode: "laf:turn_rate_limited",
+      diagnostics: null,
       at: "2026-09-06T09:00:00.000Z",
     });
+  });
+
+  test("says how much diagnostic detail the row holds, as counts, and where the rest is", () => {
+    const stored = {
+      feedbackId: "feedback-2",
+      text: "봇이 답을 안 해요",
+      diagnostics: { events: 12, failures: 5, failureCodes: 2, checksDown: 1 },
+    };
+    // A row read back is JSON: whatever else came to be stored beside the counts must not cross.
+    (stored.diagnostics as Record<string, unknown>).events_detail = [
+      { event: "run_failed", bot: "bot-owner-1" },
+    ];
+    const body = supportAlertBody(
+      stored,
+      "https://kim.agent.laf-co.com",
+      "2026-09-06T09:00:00.000Z",
+    );
+
+    expect(body.text).toBe(
+      [
+        "[LAF] 문의·의견 · https://kim.agent.laf-co.com",
+        "봇이 답을 안 해요",
+        "진단 정보: 기록 12개 · 최근 실패 5번(2종) · 멈춘 검사 1개 — 전체는 VM의 laf_feedback feedback-2",
+      ].join("\n"),
+    );
+    expect(body.feedback.diagnostics).toEqual({
+      events: 12,
+      failures: 5,
+      failureCodes: 2,
+      checksDown: 1,
+    });
+    expect(JSON.stringify(body)).not.toContain("bot-owner-1");
+    expect(JSON.stringify(body)).not.toContain("run_failed");
   });
 
   test("says nothing about the screen when nothing was attached", () => {

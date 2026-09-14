@@ -2414,4 +2414,33 @@ export const ko: Record<string, string> = {
   "A request for a secret was lost when the computer restarted":
     "컴퓨터가 다시 시작되면서 비밀값 요청이 사라짐",
   "A frame on the page could not be read": "페이지 안의 문서 하나를 읽지 못함",
+  // 문의·의견 — 진단 정보 같이 보내기: 서버가 모은 것을 보여 주고, 보여 준 그대로 보낸다.
+  "Send diagnostic details too": "진단 정보 같이 보내기",
+  "The app version, whether the server is working, recent failure codes and your own Bots' recent records.":
+    "앱 버전, 서버 상태, 최근 실패 코드, 내 봇의 최근 기록을 보냅니다.",
+  "Gathering the diagnostic details…": "진단 정보를 모으는 중…",
+  "The diagnostic details could not be gathered.":
+    "진단 정보를 모으지 못했습니다.",
+  "See what will be sent": "보낼 진단 정보 보기",
+  "App version": "앱 버전",
+  Server: "서버 상태",
+  Working: "정상",
+  "Partly not working": "일부 멈춤",
+  Database: "데이터베이스",
+  "Bot service": "봇 서버",
+  "The Bots' computer": "봇의 컴퓨터",
+  "{name}: working": "{name} 정상",
+  "{name}: not working": "{name} 멈춤",
+  "Failures in the last {days} days": "최근 {days}일 동안의 실패",
+  None: "없음",
+  "{code}, {count} times": "{code} {count}번",
+  "Recent records": "최근 기록",
+  "{count} records": "{count}개",
+  "{seconds}s": "{seconds}초",
+  "Only names, codes and times. Never a conversation, anything you typed, an address or an email.":
+    "이름·코드·시간만 담깁니다. 대화 내용, 입력한 글, 주소, 이메일은 담기지 않습니다.",
+  "Exactly as it will be sent": "보내는 그대로 보기",
+  "The diagnostic details went with it.": "진단 정보도 함께 보냈습니다.",
+  "The diagnostic details have changed since they were shown. Look at them again, then send.":
+    "보여 드린 뒤로 진단 정보가 바뀌었습니다. 다시 확인하고 보내 주세요.",
 };

@@ -94,6 +94,7 @@ import { createSuggestionDismissalStore } from "../src/routines/suggestions";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
 import { readInsights } from "../src/insights/read";
+import { createDiagnosticsSource } from "../src/support/diagnostics";
 import { createFeedbackStore } from "../src/support/feedback";
 import { createPackageStatusReader } from "../src/tenant-package";
 import { credentialVaultStub } from "./support/credentials";
@@ -327,7 +328,12 @@ function deployment() {
       auditStore,
       ownerOf: async (botId) => (await lookupBotOwner(database, botId)) ?? null,
     }),
-    { feedback: createFeedbackStore(database), auditStore, outbox },
+    {
+      feedback: createFeedbackStore(database),
+      auditStore,
+      outbox,
+      diagnostics: createDiagnosticsSource({ database, lines: () => [] }),
+    },
     (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
   );
   return { app, routineService };
@@ -718,6 +724,8 @@ const B_ALLOWED = [
   "GET /api/routines/suggestions",
   "GET /api/sandboxed/published",
   "GET /api/sites/connections",
+  // What the 문의·의견 box would attach: the asking person's own facts, and the deployment's build and health.
+  "GET /api/support/diagnostics",
   "GET /api/version",
   "GET /connected",
   "GET /health",

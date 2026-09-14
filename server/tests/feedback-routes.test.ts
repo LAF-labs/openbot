@@ -8,6 +8,10 @@ import type {
   NotificationOutbox,
   NotificationRecord,
 } from "../src/notifications/outbox";
+import type {
+  DiagnosticBundle,
+  DiagnosticsSource,
+} from "../src/support/diagnostics";
 import {
   FEEDBACK_MAX_LENGTH,
   type FeedbackInput,
@@ -30,10 +34,45 @@ const PERSON = {
   role: "user",
 } as const;
 
-function surface(options: { outbox?: boolean; told?: string[] } = {}) {
+/** A bundle as `diagnostics.ts` assembles one: a Bot id, a code and a timing are what it carries. */
+const BUNDLE: DiagnosticBundle = {
+  assembledAt: "2026-09-06T08:59:00.000Z",
+  version: { version: "edge", revision: "eeea985" },
+  health: { status: "degraded", checks: { database: "ok", agentBot: "down" } },
+  failureWindowDays: 7,
+  failures: [
+    {
+      code: "laf:turn_unreachable",
+      count: 3,
+      lastAt: "2026-09-06T08:58:00.000Z",
+    },
+  ],
+  events: [
+    {
+      at: "2026-09-06T08:58:00.000Z",
+      source: "run",
+      event: "run_failed",
+      run: "run-owner-1",
+      bot: "bot-owner-1",
+      code: "laf:turn_unreachable",
+      ms: 1_200,
+    },
+  ],
+};
+
+function surface(
+  options: { outbox?: boolean; told?: string[]; diagnostics?: boolean } = {},
+) {
   const rows: AuditEventInput[] = [];
   const kept: FeedbackInput[] = [];
   const written: EnqueueInput[] = [];
+  const assembledFor: Array<Parameters<DiagnosticsSource["assemble"]>> = [];
+  const diagnostics: DiagnosticsSource = {
+    assemble: async (...args) => {
+      assembledFor.push(args);
+      return BUNDLE;
+    },
+  };
   const auditStore: AuditStore = {
     insert: async (event) => void rows.push(event),
   };
@@ -78,11 +117,16 @@ function surface(options: { outbox?: boolean; told?: string[] } = {}) {
         feedback,
         auditStore,
         ...(options.outbox === false ? {} : { outbox }),
+        ...(options.diagnostics ? { diagnostics } : {}),
       },
       requireUser,
+      {
+        version: { version: "edge", revision: "eeea985" },
+        health: async () => BUNDLE.health,
+      },
     ),
   );
-  return { app, rows, kept, written };
+  return { app, rows, kept, written, assembledFor };
 }
 
 const post = (app: Hono<{ Variables: AppVariables }>, body: unknown) =>
@@ -214,6 +258,7 @@ describe("what the route says back", () => {
       id: "feedback-1",
       receivedAt: "2026-09-06T09:00:00.000Z",
       told: ["support-webhook"],
+      withDiagnostics: false,
     });
     // The outbox row is the telling: the support kind, this person, nobody's Bot.
     expect(written).toHaveLength(1);
@@ -228,6 +273,7 @@ describe("what the route says back", () => {
     expect(rows[0]?.payload).toEqual({
       length: "잘 쓰고 있습니다".length,
       withScreen: false,
+      withDiagnostics: false,
       told: ["support-webhook"],
     });
     expect(JSON.stringify(rows)).not.toContain("잘 쓰고 있습니다");
@@ -247,5 +293,115 @@ describe("what the route says back", () => {
     expect((await response.json()).told).toEqual([]);
     expect(kept).toHaveLength(1);
     expect(rows[0]?.payload.told).toEqual([]);
+  });
+});
+
+/**
+ * 진단 정보 같이 보내기: shown first, then sent by the id of what was shown.
+ *
+ * The allow-list and whose events are whose are `diagnostics.test.ts` and
+ * `diagnostics-feedback.integration.test.ts`. This is the route's share: the bundle it stores is the
+ * one it handed this person, the client cannot hand it one, and the operator's webhook gets counts.
+ */
+describe("the diagnostic details", () => {
+  const preview = async (app: Hono<{ Variables: AppVariables }>) => {
+    const response = await app.request("/api/support/diagnostics");
+    return {
+      status: response.status,
+      body: (await response.json()) as {
+        id: string;
+        diagnostics: DiagnosticBundle;
+      },
+    };
+  };
+
+  test("are assembled for the person asking, with the deployment's build and health report", async () => {
+    const { app, assembledFor } = surface({ diagnostics: true });
+    const { status, body } = await preview(app);
+
+    expect(status).toBe(200);
+    expect(body.id).toBeString();
+    expect(body.diagnostics).toEqual(BUNDLE);
+    expect(assembledFor).toEqual([
+      [
+        PERSON.id,
+        {
+          version: { version: "edge", revision: "eeea985" },
+          health: BUNDLE.health,
+        },
+      ],
+    ]);
+  });
+
+  test("go with the message exactly as shown, and the operator's webhook is told how much", async () => {
+    const { app, kept, written, rows } = surface({
+      diagnostics: true,
+      told: ["support-webhook"],
+    });
+    const { body } = await preview(app);
+    const response = await post(app, {
+      text: "봇이 답을 안 해요",
+      diagnostics: { id: body.id },
+    });
+
+    expect(response.status).toBe(201);
+    expect((await response.json()).withDiagnostics).toBe(true);
+    expect(kept[0]?.diagnostics).toEqual(BUNDLE);
+    expect(written[0]?.support).toEqual({
+      feedbackId: "feedback-1",
+      text: "봇이 답을 안 해요",
+      diagnostics: { events: 1, failures: 3, failureCodes: 1, checksDown: 1 },
+    });
+    // Counts cross; the Bot, the run and the code stay in the row.
+    const telling = JSON.stringify(written);
+    for (const inside of [
+      "bot-owner-1",
+      "run-owner-1",
+      "laf:turn_unreachable",
+    ]) {
+      expect(telling).not.toContain(inside);
+    }
+    expect(rows[0]?.payload).toMatchObject({ withDiagnostics: true });
+  });
+
+  test("a bundle the client wrote itself, or an id it was never given, is refused before anything is kept", async () => {
+    const { app, kept, written, rows } = surface({ diagnostics: true });
+    const secret = "a-transcript-dressed-as-diagnostics";
+    const response = await post(app, {
+      text: "안 돼요",
+      diagnostics: { id: "made-up", events: [{ event: secret }] },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "laf:diagnostics_expired",
+      code: "laf:diagnostics_expired",
+    });
+    expect(kept).toEqual([]);
+    expect(written).toEqual([]);
+    expect(rows).toEqual([]);
+    expect(JSON.stringify({ kept, written, rows })).not.toContain(secret);
+  });
+
+  test("is sent once: the same id again is refused", async () => {
+    const { app, kept } = surface({ diagnostics: true });
+    const { body } = await preview(app);
+    expect(
+      (await post(app, { text: "하나", diagnostics: { id: body.id } })).status,
+    ).toBe(201);
+    expect(
+      (await post(app, { text: "둘", diagnostics: { id: body.id } })).status,
+    ).toBe(409);
+    expect(kept).toHaveLength(1);
+  });
+
+  test("a deployment that cannot assemble them says so with a code", async () => {
+    const { app } = surface();
+    const response = await app.request("/api/support/diagnostics");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "laf:diagnostics_unavailable",
+      code: "laf:diagnostics_unavailable",
+    });
   });
 });

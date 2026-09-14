@@ -64,7 +64,7 @@ import {
   describePointOn,
   type SocketData,
 } from "./live-screen";
-import { log } from "./log";
+import { log, recentLines } from "./log";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
 import { createDeploymentOutbox } from "./notifications/doors";
 import { withOutboxWatch } from "./notifications/from-audit";
@@ -94,6 +94,7 @@ import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
 import { createServerModelCalls } from "./server-model-calls";
+import { createDiagnosticsSource } from "./support/diagnostics";
 import { createFeedbackStore } from "./support/feedback";
 import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 
@@ -737,11 +738,16 @@ const app = createApp(
   // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
   createConsentStore(database),
   screenViews,
-  // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator.
+  // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator —
+  // and what its diagnostic details are read from: this process's log tail and the run ledger.
   {
     feedback: createFeedbackStore(database),
     auditStore: bootAuditStore,
     outbox: notificationOutbox,
+    diagnostics: createDiagnosticsSource({
+      database,
+      lines: recentLines.lines,
+    }),
   },
   // The fleet's counts, read per request over the window it asks for, in the Bot's own clock — the
   // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.

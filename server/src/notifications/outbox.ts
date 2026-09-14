@@ -37,6 +37,7 @@ import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
 import { lafNotifications } from "../db/schema";
 import type { RunOrigin } from "../runner/run-ledger";
+import type { DiagnosticsSummary } from "../support/diagnostics";
 import {
   acknowledgeFailureGroup,
   type FailureGroupFacts,
@@ -133,6 +134,11 @@ export type SupportFacts = {
   text: string;
   route?: string;
   failureCode?: string;
+  /**
+   * How much diagnostic detail the row holds, when the person attached some: counts, and only
+   * counts. The bundle names their Bots and runs, and it stays in `laf_feedback` on this VM.
+   */
+  diagnostics?: DiagnosticsSummary;
 };
 
 /**

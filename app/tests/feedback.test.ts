@@ -5,7 +5,9 @@ import { ko } from "../src/lib/i18n-ko";
 import {
   FEEDBACK_MAX_LENGTH,
   FEEDBACK_REFUSALS,
+  FeedbackRefusedError,
   feedbackBody,
+  fetchDiagnostics,
   screenFactsFor,
   sendFeedback,
 } from "../src/lib/support/feedback";
@@ -121,7 +123,99 @@ describe("sending", () => {
       id: "feedback-1",
       receivedAt: "2026-09-06T09:00:00.000Z",
       told: ["support-webhook"],
+      withDiagnostics: false,
     });
+  });
+
+  test("with the diagnostic details, sends the id of the bundle that was shown and nothing of it", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const receipt = await sendFeedback(
+      "안 돼요",
+      null,
+      stubFetch(async (url, init) => {
+        calls.push({ url: String(url), init });
+        return new Response(
+          JSON.stringify({
+            id: "feedback-2",
+            receivedAt: "2026-09-06T09:00:00.000Z",
+            told: [],
+            withDiagnostics: true,
+          }),
+          { status: 201 },
+        );
+      }),
+      "preview-1",
+    );
+
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      text: "안 돼요",
+      diagnostics: { id: "preview-1" },
+    });
+    expect(receipt.withDiagnostics).toBe(true);
+  });
+
+  test("a stale bundle is refused with its code, so the box can gather a new one", async () => {
+    const refused = await sendFeedback(
+      "x",
+      null,
+      stubFetch(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: "laf:diagnostics_expired",
+              code: "laf:diagnostics_expired",
+            }),
+            { status: 409 },
+          ),
+      ),
+      "preview-gone",
+    ).catch((error: unknown) => error);
+
+    expect(refused).toBeInstanceOf(FeedbackRefusedError);
+    expect((refused as FeedbackRefusedError).code).toBe(
+      "laf:diagnostics_expired",
+    );
+    expect((refused as FeedbackRefusedError).message).toBe(
+      "The diagnostic details have changed since they were shown. Look at them again, then send.",
+    );
+  });
+});
+
+describe("gathering the diagnostic details", () => {
+  test("asks the server, with the session, and hands back its id and its bundle", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const preview = await fetchDiagnostics(
+      stubFetch(async (url, init) => {
+        calls.push({ url: String(url), init });
+        return new Response(
+          JSON.stringify({ id: "preview-1", diagnostics: { events: [] } }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    expect(calls[0]?.url).toBe("/api/support/diagnostics");
+    expect(calls[0]?.init?.method ?? "GET").toBe("GET");
+    expect(calls[0]?.init?.credentials).toBe("include");
+    expect(preview.id).toBe("preview-1");
+  });
+
+  test("says it could not, rather than drawing nothing, when the server does not hand one over", async () => {
+    for (const answer of [
+      new Response(
+        JSON.stringify({
+          error: "laf:diagnostics_unavailable",
+          code: "laf:diagnostics_unavailable",
+        }),
+        { status: 503 },
+      ),
+      new Response("{}", { status: 200 }),
+    ]) {
+      await expect(
+        fetchDiagnostics(stubFetch(async () => answer)),
+      ).rejects.toThrow("The diagnostic details could not be gathered.");
+    }
+    expect(ko["The diagnostic details could not be gathered."]).toBeString();
   });
 
   test("says the limit, in Korean, when the server refuses the length", async () => {

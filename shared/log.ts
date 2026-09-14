@@ -211,10 +211,11 @@ function scrubValue(value: unknown, depth: number): unknown {
 function scrubFields(
   fields: Record<string, unknown>,
   depth: number,
+  keepReserved = false,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(fields)) {
-    if (depth === 0 && RESERVED.has(key)) continue;
+    if (depth === 0 && !keepReserved && RESERVED.has(key)) continue;
     const value =
       typeof raw === "string" && SECRET_KEY.test(key)
         ? REDACTED
@@ -251,6 +252,30 @@ export function logLine(
   });
 }
 
+/**
+ * A line read back: its fields, scrubbed AGAIN, or null for anything that is not a line of this shape.
+ *
+ * Again, because a line that leaves by a second door is judged by the rules in force the day it
+ * leaves, not the day it was written — a shape added to `SECRET_SHAPES` since then covers what was
+ * written before it. The four reserved keys are kept (they are the line), and nothing is added.
+ */
+export function readLogLine(line: string): LogFields | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const fields = parsed as Record<string, unknown>;
+  if (typeof fields.event !== "string" || typeof fields.at !== "string") {
+    return null;
+  }
+  return scrubFields(fields, 0, true);
+}
+
 export const consoleSink: LogSink = (level, line) => {
   if (level === "info") console.log(line);
   else if (level === "warn") console.warn(line);
@@ -270,6 +295,46 @@ export function createLogger(svc: string, sink: LogSink = consoleSink): Logger {
     sink(level, line);
   };
   return { svc, info: emit("info"), warn: emit("warn"), error: emit("error") };
+}
+
+/** The last lines a logger wrote, for a reader inside the same process. See `rememberLines`. */
+export type LineMemory = {
+  /** Hand this to `createLogger`: it keeps the line, then passes it on unchanged. */
+  sink: LogSink;
+  /** What is kept, oldest first, as a copy. */
+  lines: () => string[];
+};
+
+/**
+ * THE TAIL OF THIS PROCESS'S LOG, IN MEMORY.
+ *
+ * A line goes to stdout, where `docker compose logs` reads it and this process cannot. The 문의·의견
+ * box can attach a person's own recent events (`server/src/support/diagnostics.ts`), so the server's
+ * logger keeps what it wrote here as well — the same finished, scrubbed bytes, and nothing a line did
+ * not already say. Bounded twice, by lines and by characters, so a burst of long lines forgets the
+ * oldest rather than growing; and a restart forgets all of it, which is what a tail does too.
+ */
+export function rememberLines(
+  limits: { lines: number; chars: number },
+  next: LogSink = consoleSink,
+): LineMemory {
+  const kept: string[] = [];
+  let chars = 0;
+  return {
+    sink: (level, line) => {
+      // The console first: an operator's log must not depend on anything this memory does.
+      next(level, line);
+      kept.push(line);
+      chars += line.length;
+      while (
+        kept.length > limits.lines ||
+        (chars > limits.chars && kept.length > 1)
+      ) {
+        chars -= (kept.shift() as string).length;
+      }
+    },
+    lines: () => [...kept],
+  };
 }
 
 /**

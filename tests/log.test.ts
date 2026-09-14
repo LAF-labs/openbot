@@ -6,6 +6,8 @@ import {
   type LogLevel,
   logLine,
   REDACTED,
+  readLogLine,
+  rememberLines,
   scrubString,
 } from "../shared/log";
 
@@ -383,5 +385,65 @@ describe("the logger", () => {
     expect(buildOf({ BUILD_CHANNEL: "", GIT_SHA: "" })).toEqual({
       version: "source",
     });
+  });
+});
+
+describe("the tail a process keeps of its own log", () => {
+  test("passes every line on unchanged, and keeps the newest within both bounds", () => {
+    const passed: string[] = [];
+    const memory = rememberLines({ lines: 3, chars: 10_000 }, (_level, line) =>
+      passed.push(line),
+    );
+    const log = createLogger("server", memory.sink);
+    for (const n of [1, 2, 3, 4]) log.info("tick", { n });
+
+    expect(passed).toHaveLength(4);
+    expect(memory.lines()).toEqual(passed.slice(1));
+
+    // Characters bound it too: one long line pushes the older ones out, and is itself kept.
+    const wide = rememberLines({ lines: 100, chars: 300 }, () => {});
+    const wideLog = createLogger("server", wide.sink);
+    wideLog.info("short");
+    wideLog.info("long", { pad: "x".repeat(400) });
+    expect(wide.lines().map((line) => JSON.parse(line).event)).toEqual([
+      "long",
+    ]);
+  });
+
+  test("hands back a copy, so a reader cannot change what is kept", () => {
+    const memory = rememberLines({ lines: 5, chars: 10_000 }, () => {});
+    createLogger("server", memory.sink).info("kept");
+    memory.lines().pop();
+    expect(memory.lines()).toHaveLength(1);
+  });
+});
+
+describe("a line read back", () => {
+  test("is its fields with the four reserved keys, scrubbed again", () => {
+    // Written by a build that did not know this shape: the reader applies today's rules to it.
+    const old = JSON.stringify({
+      level: "error",
+      at: AT.toISOString(),
+      svc: "server",
+      event: "route_failed",
+      authorization: "Bearer abc.def",
+      reason: "GET https://shop.example.com/login?password=hunter2&next=/",
+    });
+    expect(readLogLine(old)).toEqual({
+      level: "error",
+      at: AT.toISOString(),
+      svc: "server",
+      event: "route_failed",
+      authorization: REDACTED,
+      reason: `GET https://shop.example.com/login?password=${REDACTED}&next=/`,
+    });
+  });
+
+  test("is nothing for what is not a line", () => {
+    expect(readLogLine("agent-bot listening on http://localhost:4200")).toBe(
+      null,
+    );
+    expect(readLogLine("[1,2]")).toBe(null);
+    expect(readLogLine(JSON.stringify({ level: "info", at: "x" }))).toBe(null);
   });
 });

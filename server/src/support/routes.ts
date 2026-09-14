@@ -1,25 +1,40 @@
 /**
  * `POST /api/support/feedback`: the 문의·의견 box, as the browser reaches it. And
- * `POST /api/support/help-opened`: the guide was opened.
+ * `GET /api/support/diagnostics`: what "진단 정보 같이 보내기" would attach, shown before it is.
+ * And `POST /api/support/help-opened`: the guide was opened.
  *
  * FACTS, NEVER SENTENCES. A refusal carries a code and the surface owns the words, the same
  * arrangement `account/routes.ts` and the consent call use. The answer to a message that landed is
- * three facts: the row's id, when it was received, and which doors told the operator — which is
- * what lets the box say 보냈습니다 as something the server said rather than something the box hoped.
+ * four facts: the row's id, when it was received, which doors told the operator, and whether the
+ * diagnostic details went with it — which is what lets the box say 보냈습니다 as something the
+ * server said rather than something the box hoped.
  *
  * WHAT THE SERVER KEEPS FROM THE BODY, AND WHAT IT DOES NOT. The text, and — only inside `screen`,
- * which is present only when the person ticked the box — a path and a failure code. Nothing else
- * is read. A client that sent a screenshot, a transcript or a Bot's last answer under any other key
- * would find none of it stored, because the shape of the row is the rule and the route never
- * copies the body into it. The tests send exactly that and assert it went nowhere.
+ * which is present only when the person ticked the box — a path and a failure code. And, only
+ * inside `diagnostics`, an ID: the bundle it names was assembled here and shown to this person by
+ * `GET /diagnostics`, and that is the bundle stored. Nothing else is read. A client that sent a
+ * screenshot, a transcript, a Bot's last answer or a bundle of its own under any key would find
+ * none of it stored, because the shape of the row is the rule and the route never copies the body
+ * into it. The tests send exactly that and assert it went nowhere.
  */
 
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { Build } from "../../../shared/log";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import type { HealthReport } from "../health";
 import { isCatalogueKey } from "../insights/catalogue-key";
 import type { NotificationOutbox } from "../notifications/outbox";
+import {
+  createDiagnosticsShelf,
+  DIAGNOSTICS_EXPIRED,
+  DIAGNOSTICS_UNAVAILABLE,
+  type DiagnosticBundle,
+  type DiagnosticsShelf,
+  type DiagnosticsSource,
+  summariseDiagnostics,
+} from "./diagnostics";
 import { FEEDBACK_MAX_LENGTH, type FeedbackStore } from "./feedback";
 
 export type SupportService = {
@@ -27,6 +42,20 @@ export type SupportService = {
   auditStore: AuditStore;
   /** Absent on a deployment without one; the row is kept and `told` is empty. */
   outbox?: NotificationOutbox;
+  /** Where a person's diagnostic details are read from. Absent, the box cannot attach any. */
+  diagnostics?: DiagnosticsSource;
+};
+
+/**
+ * The two deployment-wide facts a bundle carries, handed over by `createApp` from the routes that
+ * already answer them — the same build `GET /api/version` reads and the same cached report `GET
+ * /health` answers — so the bundle cannot disagree with either.
+ */
+export type SupportDeployment = {
+  version: Build;
+  health: () => Promise<HealthReport>;
+  /** Injected by tests; one per mounted router otherwise. */
+  shelf?: DiagnosticsShelf;
 };
 
 /** A path, not a URL: the query and the fragment go, and it has to start at the root. */
@@ -50,14 +79,41 @@ function screenFailure(value: unknown): string | undefined {
 export function createSupportRoutes(
   service: SupportService,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  deployment?: SupportDeployment,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+  const shelf = deployment?.shelf ?? createDiagnosticsShelf();
+
+  /**
+   * The bundle this person would attach, assembled now and held under an id.
+   *
+   * A read, and a read of their own facts only (`diagnostics.ts`). Asked when the box is ticked,
+   * never when the dialog opens: nothing is gathered for somebody who did not ask.
+   */
+  routes.get("/diagnostics", requireUser, async (context) => {
+    if (!service.diagnostics || !deployment) {
+      return context.json(
+        { error: DIAGNOSTICS_UNAVAILABLE, code: DIAGNOSTICS_UNAVAILABLE },
+        503,
+      );
+    }
+    const actor = context.var.actor;
+    const bundle = await service.diagnostics.assemble(actor.id, {
+      version: deployment.version,
+      health: await deployment.health(),
+    });
+    return context.json({
+      id: shelf.hold(actor.id, bundle),
+      diagnostics: bundle,
+    });
+  });
 
   routes.post("/feedback", requireUser, async (context) => {
     const actor = context.var.actor;
     const body = (await context.req.json().catch(() => null)) as {
       text?: unknown;
       screen?: unknown;
+      diagnostics?: unknown;
     } | null;
 
     const text = typeof body?.text === "string" ? body.text.trim() : "";
@@ -78,6 +134,27 @@ export function createSupportRoutes(
       );
     }
 
+    /*
+     * ASKED FOR AND NOT FOUND IS A REFUSAL, NOT A MESSAGE WITHOUT IT. The person ticked the box and
+     * read what would go; sending the words alone would say 보냈습니다 over something they believe
+     * was attached. Refused before anything is written, so pressing again after the box shows the
+     * new bundle sends one message, not two. And taken off the shelf as it is found, so a second
+     * press that raced the first cannot attach the same bundle to a second row.
+     */
+    let bundle: DiagnosticBundle | null = null;
+    if (body?.diagnostics !== undefined && body.diagnostics !== null) {
+      const named = (body.diagnostics as { id?: unknown }).id;
+      const id = typeof named === "string" ? named : "";
+      bundle = id ? shelf.find(actor.id, id) : null;
+      if (!bundle) {
+        return context.json(
+          { error: DIAGNOSTICS_EXPIRED, code: DIAGNOSTICS_EXPIRED },
+          409,
+        );
+      }
+      shelf.release(id);
+    }
+
     const screen =
       body?.screen && typeof body.screen === "object"
         ? (body.screen as { route?: unknown; failureCode?: unknown })
@@ -90,12 +167,16 @@ export function createSupportRoutes(
       text,
       ...(route ? { route } : {}),
       ...(failureCode ? { failureCode } : {}),
+      ...(bundle ? { diagnostics: bundle } : {}),
     });
 
     /*
      * The telling, after the row. `enqueue` never throws and answers null when nothing could be
      * written; either way the message is already kept, so the worst this can do is leave `told`
      * empty — which is the truth.
+     *
+     * THE BUNDLE ITSELF STAYS HERE. The webhook is somebody else's chat server; what crosses to it
+     * is how much was attached — counts — and the operator reads the rest on this VM, in the row.
      */
     const notice = service.outbox
       ? await service.outbox.enqueue({
@@ -108,6 +189,7 @@ export function createSupportRoutes(
             text,
             ...(route ? { route } : {}),
             ...(failureCode ? { failureCode } : {}),
+            ...(bundle ? { diagnostics: summariseDiagnostics(bundle) } : {}),
           },
         })
       : null;
@@ -123,12 +205,18 @@ export function createSupportRoutes(
       payload: {
         length: text.length,
         withScreen: screen !== null,
+        withDiagnostics: bundle !== null,
         told,
       },
     }).catch(() => undefined);
 
     return context.json(
-      { id: receipt.id, receivedAt: receipt.createdAt.toISOString(), told },
+      {
+        id: receipt.id,
+        receivedAt: receipt.createdAt.toISOString(),
+        told,
+        withDiagnostics: bundle !== null,
+      },
       201,
     );
   });

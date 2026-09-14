@@ -60,7 +60,11 @@ import {
   NOT_FOUND,
   refusalBody,
 } from "./failure-text";
-import { createHealthRoute, type HealthProbes } from "./health";
+import {
+  createHealthRoute,
+  type HealthProbes,
+  type HealthReport,
+} from "./health";
 import type { InsightsReport } from "./insights/report";
 import { createInsightsRoutes } from "./insights/routes";
 import { log } from "./log";
@@ -1041,9 +1045,17 @@ export function createApp(
     app.route("/api", createAccountRoutes(accountService, requireUser));
 
   // A person writing to the operator. Under its own prefix: it is neither about the account nor
-  // about a Bot, and a message to whoever runs the product should not read as either.
+  // about a Bot, and a message to whoever runs the product should not read as either. The build and
+  // the health report its diagnostic details carry are the ones `/api/version` and `/health` answer.
   if (support)
-    app.route("/api/support", createSupportRoutes(support, requireUser));
+    app.route(
+      "/api/support",
+      createSupportRoutes(support, requireUser, {
+        version: build,
+        health: async () =>
+          (await (await health.request("/")).json()) as HealthReport,
+      }),
+    );
 
   if (threadIdentity) {
     app.route("/api/threads", createThreadRoutes(threadIdentity, requireUser));

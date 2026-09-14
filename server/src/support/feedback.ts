@@ -30,6 +30,7 @@ import type {
   NotificationRecord,
   SupportFacts,
 } from "../notifications/outbox";
+import type { DiagnosticBundle, DiagnosticsSummary } from "./diagnostics";
 
 /**
  * How much one message may hold. The launch plan's figure.
@@ -47,6 +48,8 @@ export type FeedbackInput = {
   text: string;
   route?: string;
   failureCode?: string;
+  /** The bundle the person was shown and chose to attach (`diagnostics.ts`). */
+  diagnostics?: DiagnosticBundle;
 };
 
 /** The two facts the route answers with, and the box says as 보냈습니다. */
@@ -70,6 +73,7 @@ export function createFeedbackStore(database: Database): FeedbackStore {
           text: input.text,
           ...(input.route ? { route: input.route } : {}),
           ...(input.failureCode ? { failureCode: input.failureCode } : {}),
+          ...(input.diagnostics ? { diagnostics: input.diagnostics } : {}),
         })
         .returning({ id: lafFeedback.id, createdAt: lafFeedback.createdAt });
       if (!row) throw new Error("laf:feedback_not_recorded");
@@ -88,6 +92,8 @@ export type SupportAlertBody = {
     text: string;
     route: string | null;
     failureCode: string | null;
+    /** How much diagnostic detail is in the row, when some was attached. Counts, never contents. */
+    diagnostics: DiagnosticsSummary | null;
     at: string;
   };
 };
@@ -97,7 +103,8 @@ export type SupportAlertBody = {
  *
  * The message is on its own line under the heading so a chat client shows it whole, and the two
  * screen facts — when the person attached them — sit on one line after it, as facts: a path and a
- * code, which is all there is.
+ * code, which is all there is. The diagnostic details, when attached, are a line of counts and
+ * where the rest is: the bundle names this person's Bots and runs, and it does not leave the VM.
  */
 export function supportAlertBody(
   facts: SupportFacts,
@@ -108,10 +115,25 @@ export function supportAlertBody(
     facts.route ? `화면: ${facts.route}` : null,
     facts.failureCode ? `마지막 실패: ${facts.failureCode}` : null,
   ].filter((part): part is string => part !== null);
+  // Field by field rather than the object whole: the row's subject is JSON read back, and only the
+  // four counts may cross whatever else a stored row came to carry.
+  const counts: DiagnosticsSummary | null = facts.diagnostics
+    ? {
+        events: facts.diagnostics.events,
+        failures: facts.diagnostics.failures,
+        failureCodes: facts.diagnostics.failureCodes,
+        checksDown: facts.diagnostics.checksDown,
+      }
+    : null;
   const text = [
     `[LAF] 문의·의견 · ${origin || "(origin unset)"}`,
     facts.text,
     ...(where.length > 0 ? [where.join(" · ")] : []),
+    ...(counts
+      ? [
+          `진단 정보: 기록 ${counts.events}개 · 최근 실패 ${counts.failures}번(${counts.failureCodes}종) · 멈춘 검사 ${counts.checksDown}개 — 전체는 VM의 laf_feedback ${facts.feedbackId}`,
+        ]
+      : []),
   ].join("\n");
   return {
     text,
@@ -122,6 +144,7 @@ export function supportAlertBody(
       text: facts.text,
       route: facts.route ?? null,
       failureCode: facts.failureCode ?? null,
+      diagnostics: counts,
       at,
     },
   };

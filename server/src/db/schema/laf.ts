@@ -571,6 +571,13 @@ export const lafFeedback = pgTable(
     route: text("route"),
     /** The last turn-failure code that screen had drawn, when they chose to say so. */
     failureCode: text("failure_code"),
+    /**
+     * The diagnostic details, when they ticked 진단 정보 같이 보내기 and were shown them first: the
+     * build, the health report, their turns' failure counts and their own recent events, as
+     * `support/diagnostics.ts` assembles them — ids, codes, timings, never a message or anything
+     * typed. The full bundle stays in this row; the alert webhook is told only how much there is.
+     */
+    diagnostics: jsonb("diagnostics"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

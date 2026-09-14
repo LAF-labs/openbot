@@ -1,5 +1,5 @@
 /**
- * The 문의·의견 box's call, and the exact shape of what it sends.
+ * The 문의·의견 box's calls, and the exact shape of what it sends.
  *
  * THE BODY IS BUILT HERE AND NOWHERE ELSE, so that "send what is on screen too" means one thing
  * that can be read in one place: the path of the screen and the code of the last failure it drew.
@@ -7,9 +7,14 @@
  * body and says so. The server keeps only these keys whatever arrives (`support/routes.ts`), but
  * a client that never sends more is the half of that promise this file owns.
  *
+ * "SEND DIAGNOSTIC DETAILS TOO" SENDS AN ID, NOT THE DETAILS. The server assembles the bundle and
+ * hands it over to be SHOWN (`fetchDiagnostics`); what goes back with the message is the id of the
+ * one that was shown, and the server stores that one. A browser that could send the bundle could
+ * send anything under its name.
+ *
  * 보냈습니다 IS A READING OF THE SERVER'S ANSWER. The receipt carries the row's id, when it was
- * received and which doors told the operator; the dialog draws those, and draws nothing on a
- * request that did not come back 201.
+ * received, which doors told the operator and whether the details went with it; the dialog draws
+ * those, and draws nothing on a request that did not come back 201.
  */
 import { t } from "@/lib/i18n";
 import type { RememberedFailure } from "./last-failure";
@@ -26,6 +31,7 @@ export type ScreenFacts = {
 export type FeedbackBody = {
   text: string;
   screen?: ScreenFacts;
+  diagnostics?: { id: string };
 };
 
 export type FeedbackReceipt = {
@@ -33,7 +39,32 @@ export type FeedbackReceipt = {
   receivedAt: string;
   /** Which doors told the operator. Empty is honest: the row is kept and nobody was paged. */
   told: string[];
+  /** Whether the diagnostic details went with it, as the server says. */
+  withDiagnostics: boolean;
 };
+
+/**
+ * One event in the bundle: when, which record it came from, its name, and facts that are ids,
+ * codes and numbers (`server/src/support/diagnostics.ts` decides which).
+ */
+export type DiagnosticEvent = {
+  at: string;
+  source: "log" | "run";
+  event: string;
+  [fact: string]: string | number | boolean;
+};
+
+/** The bundle as the server assembled it. Drawn, never built, by the browser. */
+export type DiagnosticBundle = {
+  assembledAt: string;
+  version: { version: string; revision?: string; channel?: string };
+  health: { status: "ok" | "degraded"; checks: Record<string, "ok" | "down"> };
+  failureWindowDays: number;
+  failures: Array<{ code: string; count: number; lastAt: string }>;
+  events: DiagnosticEvent[];
+};
+
+export type DiagnosticsPreview = { id: string; diagnostics: DiagnosticBundle };
 
 /**
  * The refusals the route can answer with, in the English `t()` reads as a key.
@@ -44,7 +75,20 @@ export const FEEDBACK_REFUSALS: Record<string, string> = {
   "laf:feedback_empty": "Write something first.",
   "laf:feedback_too_long":
     "That is longer than {limit} characters. Shorten it a little.",
+  "laf:diagnostics_expired":
+    "The diagnostic details have changed since they were shown. Look at them again, then send.",
 };
+
+/** The code a refused send answered with, for a caller that has to act on one of them. */
+export class FeedbackRefusedError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "FeedbackRefusedError";
+    this.code = code;
+  }
+}
 
 export function screenFactsFor(
   pathname: string,
@@ -56,20 +100,26 @@ export function screenFactsFor(
 export function feedbackBody(
   text: string,
   screen: ScreenFacts | null,
+  diagnosticsId: string | null = null,
 ): FeedbackBody {
-  return { text: text.trim(), ...(screen ? { screen } : {}) };
+  return {
+    text: text.trim(),
+    ...(screen ? { screen } : {}),
+    ...(diagnosticsId ? { diagnostics: { id: diagnosticsId } } : {}),
+  };
 }
 
 export async function sendFeedback(
   text: string,
   screen: ScreenFacts | null,
   fetchImpl: typeof fetch = fetch,
+  diagnosticsId: string | null = null,
 ): Promise<FeedbackReceipt> {
   const response = await fetchImpl("/api/support/feedback", {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(feedbackBody(text, screen)),
+    body: JSON.stringify(feedbackBody(text, screen, diagnosticsId)),
   });
   const body = (await response.json().catch(() => null)) as Record<
     string,
@@ -78,7 +128,8 @@ export async function sendFeedback(
   if (!response.ok) {
     const code = typeof body?.error === "string" ? body.error : "";
     const known = FEEDBACK_REFUSALS[code];
-    throw new Error(
+    throw new FeedbackRefusedError(
+      code,
       known
         ? t(known, {
             limit:
@@ -102,5 +153,28 @@ export async function sendFeedback(
     told: Array.isArray(body.told)
       ? body.told.filter((door): door is string => typeof door === "string")
       : [],
+    withDiagnostics: body.withDiagnostics === true,
   };
+}
+
+/** The bundle the box would attach, assembled by the server and held there under the id it returns. */
+export async function fetchDiagnostics(
+  fetchImpl: typeof fetch = fetch,
+): Promise<DiagnosticsPreview> {
+  const response = await fetchImpl("/api/support/diagnostics", {
+    credentials: "include",
+  });
+  const body = (await response.json().catch(() => null)) as {
+    id?: unknown;
+    diagnostics?: unknown;
+  } | null;
+  if (
+    !response.ok ||
+    typeof body?.id !== "string" ||
+    !body.diagnostics ||
+    typeof body.diagnostics !== "object"
+  ) {
+    throw new Error(t("The diagnostic details could not be gathered."));
+  }
+  return { id: body.id, diagnostics: body.diagnostics as DiagnosticBundle };
 }
