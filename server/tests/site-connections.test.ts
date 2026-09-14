@@ -362,9 +362,25 @@ describe("the moments a sign-in changes", () => {
       lastSeenAt: string;
     };
     if (!again) throw new Error("the second sign-in wrote no connection");
-    // The second session began at the second sign-in: the look itself, which its row follows by the
-    // moment it took to write.
-    expect(secondLapse.signedInSince).toBe(again.lastSeenAt);
+    /*
+     * The second session began at the second sign-in: the look itself, which its row follows by the
+     * moment it took to write.
+     *
+     * NOT BY EQUALITY, BECAUSE THERE ARE TWO CLOCKS AND THE STORE TAKES NEITHER. `lastSeenAt` is this
+     * process's `new Date()` at the look; the trail row the session start is read back from is
+     * stamped by Postgres's `now()`, and `sessionStart` keeps the row's time unless it is later than
+     * the look. So `toBe` held only while the database's clock was not behind this one by more than
+     * the write took. It was 9 ms behind when measured (2026-09-14); under load the row once came
+     * back 31 ms before the look, and with this process's clock set 31 ms ahead the old assertion
+     * fails every time — the clamp has nothing to clamp. What does not depend on the clocks is the
+     * clamp: never after the look. What this test is for is which sign-in: within the second this
+     * file already allows the two clocks to disagree by, less than the 1.2 s between the sign-ins, so
+     * the first can never pass for the second.
+     */
+    const began = Date.parse(secondLapse.signedInSince);
+    const lookedAt = Date.parse(again.lastSeenAt);
+    expect(began).toBeLessThanOrEqual(lookedAt);
+    expect(lookedAt - began).toBeLessThan(1_000);
     expect(secondSignIn.getTime() - Date.parse(again.lastSeenAt)).toBeLessThan(
       1_000,
     );
