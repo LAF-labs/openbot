@@ -17,7 +17,12 @@ import { parse } from "yaml";
 const root = join(import.meta.dir, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
-type Step = { name?: string; uses?: string; run?: string; with?: unknown };
+type Step = {
+  name?: string;
+  uses?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+};
 const workflow = parse(read(".github/workflows/images.yml")) as {
   jobs: Record<string, { steps: Step[] }>;
 };
@@ -39,20 +44,26 @@ describe("the deploy bundle's legal pages", () => {
     expect(build).toBeGreaterThan(render);
   });
 
-  test("with the Bun the checks run, pinned the same way", () => {
+  test("with the Bun the checks run, pinned the same way, and no cache in a run that publishes", () => {
     const pinned = (list: Step[]) =>
       list.find((step) => step.uses?.startsWith("oven-sh/setup-bun@"));
     const here = steps.findIndex((step) =>
       step.uses?.startsWith("oven-sh/setup-bun@"),
     );
+    const checked = pinned(checks.jobs.static?.steps ?? []);
     expect(here).toBeGreaterThan(-1);
     expect(here).toBeLessThan(render);
-    expect(steps[here]?.uses).toBe(
-      pinned(checks.jobs.static?.steps ?? [])?.uses,
+    expect(steps[here]?.uses).toBe(checked?.uses);
+    expect(steps[here]?.with?.["bun-version"]).toBe(
+      checked?.with?.["bun-version"],
     );
-    expect(steps[here]?.with).toEqual(
-      pinned(checks.jobs.static?.steps ?? [])?.with,
-    );
+    /*
+     * The one way this step differs from the checks', on purpose. setup-bun caches by default, and a
+     * cache a pull request's run wrote must never be restored into a job that pushes images — the
+     * push that added this step without the line failed zizmor (cache-poisoning, 2026-09-15), and
+     * release.yml carries the same line for the same reason.
+     */
+    expect(steps[here]?.with?.["no-cache"]).toBe(true);
   });
 
   test("are copied by the Dockerfile, which still runs nothing", () => {
