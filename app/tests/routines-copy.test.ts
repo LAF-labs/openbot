@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ko } from "../src/lib/i18n-ko";
-import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
+import { ROUTINE_REFUSALS, runShape } from "../src/lib/routines/queries";
 
 /**
  * The routines API's refusals, which the Routines page renders straight into the create and delete
@@ -46,5 +46,30 @@ describe("the routines refusal copy", () => {
 
     expect(codes.size).toBeGreaterThan(0);
     expect([...codes].sort()).toEqual(Object.keys(ROUTINE_REFUSALS).sort());
+  });
+});
+
+/**
+ * The one line under a routine's run in its history, which reads the run's turns, tools and time.
+ *
+ * The counts went through `t()` and the time did not: the seconds were glued on as `${seconds}s`,
+ * so a Korean screen read "2턴 · 도구 1개 · 21s" — seen in a screenshot taken for a grant
+ * application on 2026-09-15, not by any test, because `runShape` takes `t` as an argument and the
+ * coverage test only sees literal calls.
+ */
+describe("a routine run's one line", () => {
+  const korean = (source: string, params?: Record<string, string | number>) =>
+    Object.entries(params ?? {}).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+      ko[source] ?? source,
+    );
+
+  test("reads whole in Korean, the seconds included", () => {
+    const steps = [
+      { ms: 12_400, text: 1, calls: [{ name: "computer_snapshot", ok: true }] },
+      { ms: 8_900, text: 1, calls: [] },
+    ];
+
+    expect(runShape(steps, korean)).toBe("2턴 · 도구 1개 · 21초");
   });
 });

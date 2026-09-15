@@ -55,7 +55,8 @@ export function runShape(
       ? t("1 turn")
       : t("{count} turns", { count: steps.length }),
     tools === 1 ? t("1 tool") : t("{count} tools", { count: tools }),
-    `${seconds}s`,
+    // Through `t()` like the counts: glued on as `${seconds}s`, a Korean screen read "21s".
+    t("{seconds}s", { seconds }),
   ];
   return parts.join(" · ");
 }
