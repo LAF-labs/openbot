@@ -326,6 +326,12 @@ body {
    * hand; this one was worse, because nobody wrote it at all.
    */
   --spacing-row: var(--sand-row-height);
+  /*
+   * THE TITLE ROW'S 44px, as `h-titlebar`. Named for the trial's label, which is centred in that
+   * row's height (`components/layout/trial-banner.tsx`) and would otherwise have been the next
+   * `h-[var(--sand-titlebar-block)]` for the drift test to count.
+   */
+  --spacing-titlebar: var(--sand-titlebar-block);
 
   /*
    * THE TWO ELEVATIONS THIS DESIGN HAS, AND WHY THEY ARE NOT `shadow-md`.

@@ -6,7 +6,7 @@ import {
   type ReviewSubject,
 } from "./computer/auto-review";
 import type { ModelUsage } from "./computer/model-call";
-import { createWriteUp } from "./computer/write-up";
+import { createWriteUp, type WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import {
   type ModelCredentialSecretReader,
@@ -15,6 +15,10 @@ import {
 import type { Database } from "./db/client";
 import { agentProfiles } from "./db/schema";
 import type { TenantPackage } from "./tenant-package";
+import {
+  type DailyBudget,
+  DailyBudgetReachedError,
+} from "./usage/daily-budget";
 
 /**
  * The model calls this server makes on its own account, rather than a Bot's.
@@ -33,8 +37,13 @@ export function createServerModelCalls(input: {
   encryptionKey: string;
   endpoint: DeploymentConfig["model"];
   model: TenantPackage["model"];
+  /**
+   * A free trial's day, which these calls draw on as much as a Bot's turns do: their rows are in the
+   * same sum. Absent — every deployment that is not a trial — nothing is judged.
+   */
+  dailyBudget?: DailyBudget;
 }) {
-  const { endpoint, model } = input;
+  const { endpoint, model, dailyBudget } = input;
 
   /**
    * Server-side model calls land in the same ledger as Bot turns, tagged by purpose.
@@ -79,6 +88,13 @@ export function createServerModelCalls(input: {
     onUsage: recordModelUsage("auto-review"),
   });
 
+  const writeUp = createWriteUp({
+    baseUrl: endpoint.baseUrl,
+    model: model.defaultModel,
+    apiKey,
+    onUsage: recordModelUsage("write-up"),
+  });
+
   return {
     /**
      * The owner's own sentence about what not to be asked, judged against one action.
@@ -94,7 +110,15 @@ export function createServerModelCalls(input: {
         .from(agentProfiles)
         .where(eq(agentProfiles.agentId, botId));
       // No row and no instruction are the same answer: there is nothing to judge, so a person is asked.
-      return row?.instruction ? reviewModel(row.instruction, subject) : null;
+      if (!row?.instruction) return null;
+      /*
+       * A SPENT DAY IS NOT JUDGED, WHICH MEANS A PERSON IS ASKED — the same answer as no instruction
+       * at all (self-serve contract §4.6). The boundary gives way in the only direction it may: an
+       * action is never let past unseen because a judgement could not be afforded. Asked after the
+       * row, so a Bot with no instruction costs the database nothing extra.
+       */
+      if (await dailyBudget?.reachedToday()) return null;
+      return reviewModel(row.instruction, subject);
     },
 
     /**
@@ -112,12 +136,17 @@ export function createServerModelCalls(input: {
      * The deployment's own model rather than the review one: this runs once, with the person watching
      * and knowing they asked for it, so a slow careful answer is the right trade — the opposite of the
      * judgement that sits in front of every action a Bot takes.
+     *
+     * On a free trial's spent day it is REFUSED with the fact a Bot's run ends on
+     * (`laf:daily_budget_reached`), thrown as the refusal `app.ts` answers with — the recording
+     * survives, and pressing again after midnight works. An empty recording is left to the route's
+     * own answer, which comes first and costs nothing.
      */
-    writeUp: createWriteUp({
-      baseUrl: endpoint.baseUrl,
-      model: model.defaultModel,
-      apiKey,
-      onUsage: recordModelUsage("write-up"),
-    }),
+    writeUp: (async (recording) => {
+      if (recording.steps.length > 0 && (await dailyBudget?.reachedToday())) {
+        throw new DailyBudgetReachedError();
+      }
+      return writeUp(recording);
+    }) satisfies WriteUp,
   };
 }

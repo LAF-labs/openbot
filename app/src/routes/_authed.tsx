@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ConnectionNotice } from "../components/layout/connection-notice";
+import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
@@ -73,6 +74,11 @@ function AuthedShell() {
 
   return (
     <>
+      {/*
+       * A free trial's countdown, on every signed-in screen — Settings and the first run included,
+       * because it is the only place the end date is ever said. Draws nothing off a trial.
+       */}
+      <TrialBanner />
       <ConnectionNotice />
       <Outlet />
     </>

@@ -13,8 +13,11 @@ import {
   type RoutineNote,
 } from "../../shared/prompt";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
-import type { StallGuard } from "./channels/stall-guard";
+import { type AuditStore, recordAuditEvent } from "./audit";
+import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
+import { type DailyBudget, withDailyBudget } from "./usage/daily-budget";
+import { modelUsageOf } from "./usage/model-usage";
 
 /**
  * The CopilotKit runtime, in the one mode this product has.
@@ -257,6 +260,26 @@ function isHttpUrl(value: string) {
 }
 
 /**
+ * What every run is metered by and judged against, at the seam they all share.
+ *
+ * Both halves are about the same number — a day's tokens — and both have to reach chat, a room's
+ * turn, a routine and one Bot asking another alike, which is why they ride here rather than on any
+ * one of those paths.
+ */
+export type RunMeter = {
+  /**
+   * Where each turn's `model.usage` row is written: one per usage event the Bot's stream reports.
+   * Absent writes nothing, which is what a test that builds agents alone wants.
+   */
+  auditStore?: AuditStore;
+  /**
+   * A free trial's day, judged before each run leaves (`usage/daily-budget.ts`). Absent — every
+   * deployment that is not a trial — nothing is judged and nothing is asked.
+   */
+  dailyBudget?: DailyBudget;
+};
+
+/**
  * Build the AG-UI agent map the runtime serves.
  *
  * Keyed by the registry id, which is what the browser sends as the agent name, so the two cannot
@@ -271,11 +294,13 @@ export function buildAgents(
   timeZone: string = DEFAULT_TIME_ZONE,
   /** Files long tool results on the Bot's computer. Absent — no computer — forwards them whole. */
   spill?: ResultSpill,
+  /** The trail each run's cost lands on, and a trial's day. See {@link RunMeter}. */
+  meter?: RunMeter,
 ): Record<string, AbstractAgent> {
   return Object.fromEntries(
     agents.map((agent) => [
       agent.id,
-      buildAgent(agent, model, stallGuard, timeZone, spill),
+      buildAgent(agent, model, stallGuard, timeZone, spill, meter),
     ]),
   );
 }
@@ -286,6 +311,7 @@ function buildAgent(
   stallGuard: StallGuard | undefined,
   timeZone: string,
   spill: ResultSpill | undefined,
+  meter: RunMeter | undefined,
 ): AbstractAgent {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -294,6 +320,7 @@ function buildAgent(
     timeZone,
     ...(stallGuard ? { stallGuard } : {}),
     ...(spill ? { spill } : {}),
+    ...(meter ? { meter } : {}),
   });
 }
 
@@ -334,24 +361,71 @@ function filedToolResult(
  * The stall watch goes on the fetch rather than into this middleware, because the middleware works
  * in AG-UI events and a stall is the absence of one. The thing that has to be watched is the
  * response body, and the fetch is where this deployment still holds it.
+ *
+ * A TRIAL'S DAY IS JUDGED ON THE FETCH TOO, around the watch, for a different reason: the judgement
+ * reads the database, and a middleware answers synchronously with an Observable — building one here
+ * would take `rxjs`, which this workspace does not depend on. The fetch is already asynchronous, it
+ * is called once per run, and it is where the stall guard already ends a run with one RUN_ERROR. A
+ * refused run never reaches the endpoint (`usage/daily-budget.ts`).
+ *
+ * WHAT A RUN COST IS WRITTEN HERE, by a subscriber on the agent. Subscribers ride along when the
+ * runtime copies an agent to run it (`AbstractAgent.clone`) and every path calls `runAgent`, so this
+ * sees a chat turn, a room's, a routine's and a coworker's alike — which the runner the chat endpoint
+ * drives, where the row used to be written, never could.
  */
 function remoteAgentWithPrompt(
   agent: RegisteredRemoteAgent,
   /** Whether this deployment's model takes an effort setting. See `RuntimeModel.supportsEffort`. */
   supportsEffort: boolean,
-  options: { timeZone: string; stallGuard?: StallGuard; spill?: ResultSpill },
+  options: {
+    timeZone: string;
+    stallGuard?: StallGuard;
+    spill?: ResultSpill;
+    meter?: RunMeter;
+  },
 ) {
-  const { timeZone, stallGuard, spill } = options;
+  const { timeZone, stallGuard, spill, meter } = options;
+  const watched = stallGuard?.watch({ id: agent.id, name: agent.name });
+  const reach: AgentFetch | undefined = meter?.dailyBudget
+    ? withDailyBudget(
+        meter.dailyBudget,
+        watched ?? ((url, requestInit) => fetch(url, requestInit)),
+      )
+    : watched;
   const remote = new HttpAgent({
     url: agent.endpoint,
     agentId: agent.id,
     // The customer's own key, if their agent sits behind one. `HttpAgentConfig` is
     // `{ url, headers?, fetch? }`, verified against @ag-ui/client 0.0.57.
     ...(agent.headers ? { headers: agent.headers } : {}),
-    ...(stallGuard
-      ? { fetch: stallGuard.watch({ id: agent.id, name: agent.name }) }
-      : {}),
+    ...(reach ? { fetch: reach } : {}),
   });
+  const auditStore = meter?.auditStore;
+  if (auditStore) {
+    remote.subscribe({
+      /*
+       * Written and not awaited: a subscriber is awaited between events, so a slow insert here would
+       * be a slow answer on somebody's screen, and metering must never be able to break the turn it
+       * measures. Counts only — the payload is what the runner's row always carried.
+       */
+      onCustomEvent: ({ event, input }) => {
+        for (const usage of modelUsageOf([event])) {
+          void recordAuditEvent(auditStore, {
+            eventType: "model.usage",
+            targetType: "agent",
+            targetId: agent.id,
+            payload: {
+              runId: input.runId,
+              threadId: input.threadId,
+              botId: agent.id,
+              ...usage,
+              source: "bot-turn",
+            },
+          }).catch(() => undefined);
+        }
+      },
+    });
+  }
   remote.use((input, next) => {
     const forwarded =
       typeof input.forwardedProps === "object" && input.forwardedProps !== null
@@ -435,6 +509,7 @@ export async function resolveRuntimeAgents(
   stallGuard?: StallGuard,
   timeZone: string = DEFAULT_TIME_ZONE,
   spill?: ResultSpill,
+  meter?: RunMeter,
 ): Promise<Record<string, AbstractAgent>> {
   const registered = await loadAgents();
   /*
@@ -446,7 +521,7 @@ export async function resolveRuntimeAgents(
    * A run against a Bot that does not exist still fails where it always did, by name.
    */
   if (registered.length === 0) return {};
-  return buildAgents(registered, model, stallGuard, timeZone, spill);
+  return buildAgents(registered, model, stallGuard, timeZone, spill, meter);
 }
 
 /** Who is asking. Agent visibility is decided per person, so a run has to know this first. */
@@ -476,6 +551,7 @@ export function createRequestAgents(
   stallGuard?: StallGuard,
   timeZone: string = DEFAULT_TIME_ZONE,
   spill?: ResultSpill,
+  meter?: RunMeter,
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
@@ -485,6 +561,7 @@ export function createRequestAgents(
       stallGuard,
       timeZone,
       spill,
+      meter,
     );
   };
 }
@@ -513,6 +590,8 @@ export function mountCopilotRuntime(
   basePath = "/api/copilotkit",
   /** Files long tool results on the Bot's computer. See computer/spillover.ts. */
   spill?: ResultSpill,
+  /** The trail each run's cost lands on, and a trial's day. The same one every other path is given. */
+  meter?: RunMeter,
 ) {
   const agents = createRequestAgents(
     identifyActor,
@@ -521,6 +600,7 @@ export function mountCopilotRuntime(
     stallGuard,
     timeZone,
     spill,
+    meter,
   );
 
   const runtime = new CopilotRuntime({

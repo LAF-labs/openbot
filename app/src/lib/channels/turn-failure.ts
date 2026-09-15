@@ -25,6 +25,7 @@ import { activeLocale, t } from "@/lib/i18n";
  */
 export const TURN_FAILURE_CODES = [
   "laf:turn_budget_spent",
+  "laf:turn_daily_budget_reached",
   "laf:turn_failed",
   "laf:turn_interrupted",
   "laf:turn_model_failed",
@@ -108,6 +109,12 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
    */
   "laf:turn_budget_spent":
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
+  /*
+   * A free trial's day is spent, so the server refused the run before it left (self-serve contract
+   * §4.6). The same words `stopped-turn.ts` uses, one Korean entry for both.
+   */
+  "laf:turn_daily_budget_reached":
+    "Today's free trial allowance is used up. It opens again at midnight, Korean time.",
   "laf:turn_failed": "No answer came back.",
   /*
    * The server restarted while this ran. Not a fault of the model's and not the person's: the run
@@ -208,6 +215,9 @@ export function liveTurnFailureCode(
     return "laf:turn_tool_failed";
   }
   if (said.includes("laf:tool_budget_spent")) return "laf:turn_budget_spent";
+  if (said.includes("laf:daily_budget_reached")) {
+    return "laf:turn_daily_budget_reached";
+  }
   // The stall guard sends its fact now; the two substrings are the English sentence it sent before.
   if (
     said.includes("laf:agent_stalled") ||

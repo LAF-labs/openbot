@@ -99,6 +99,7 @@ import { createServerModelCalls } from "./server-model-calls";
 import { createDiagnosticsSource } from "./support/diagnostics";
 import { createFeedbackStore } from "./support/feedback";
 import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
+import { dailyBudgetFor } from "./usage/daily-budget";
 
 /*
  * The server: the one process a deployment runs (docs/laf/deployment-model.md), started by
@@ -118,7 +119,7 @@ import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 const config = loadConfig();
 const database = createDatabase(config.databaseUrl);
 /*
- * The boot audit store, built first because the runner tees model usage into it.
+ * The boot audit store, built first because every run's model usage is written into it (`runMeter`).
  *
  * Not awaited and never fatal anywhere it is used: a deployment must not fail to start because
  * its audit trail is unavailable.
@@ -140,11 +141,18 @@ if (!fleetNotifier) sayFleetIsUnconfigured();
 const runLedger = createRunLedger(database);
 // The durable runner every turn goes through. Built before the app because construction adjudicates
 // the runs the last process left open; it reads no conversation until one is asked for.
-const lafRunner = await LafPostgresRunner.create(
-  database,
-  runLedger,
-  bootAuditStore,
-);
+const lafRunner = await LafPostgresRunner.create(database, runLedger);
+/**
+ * What every run is metered by, and on a free trial judged against — one object, handed to every
+ * path that builds agents (the chat endpoint below, and `resolveAgentsFor` for rooms, routines and
+ * coworkers), so no path can be counted or refused differently from another. The judge exists only
+ * on a trial: see `usage/daily-budget.ts`.
+ */
+const dailyBudget = dailyBudgetFor(config.trial, database);
+const runMeter = {
+  auditStore: bootAuditStore,
+  ...(dailyBudget ? { dailyBudget } : {}),
+};
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -405,6 +413,7 @@ const modelCalls = createServerModelCalls({
   encryptionKey: config.keyEncryptionKey,
   endpoint: config.model,
   model: tenantPackage.model,
+  ...(dailyBudget ? { dailyBudget } : {}),
 });
 /*
  * Whether this deployment can auto-review at all, started here so the answer is usually already in
@@ -537,6 +546,7 @@ const resolveAgentsFor = (actor: AgentActor) =>
     stallGuard,
     config.botTimeZone,
     resultSpill,
+    runMeter,
   );
 
 // One Bot asking another: the same loader, model and keys the runtime uses.
@@ -618,6 +628,7 @@ const copilotEndpoint = primeThreadRoutes({
     config.botTimeZone,
     "/api/copilotkit",
     resultSpill,
+    runMeter,
   ),
 );
 
@@ -779,6 +790,8 @@ const app = createApp(
     readInsights(database, { days, timeZone: config.botTimeZone }),
   // Whether the person behind each session is still let in, asked by `requireUser` on every request.
   sessionRevocation,
+  // A free trial's day, for `/api/me` to say whether it is spent — the judge the runs are refused by.
+  dailyBudget,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

@@ -34,6 +34,16 @@ const DEVICE_SCOPED = [
    * is looking at it, and the alternative is re-picking the same Bot every single visit.
    */
   "components/connections/site-rows.tsx",
+  /*
+   * That this TAB already started the sign-in `/sign?via=` named (`viaToStart`, 2026-09-15).
+   *
+   * A DECISION, and the argument is that it is not a person's state at all: it is the loop guard on
+   * a press the screen makes by itself, and it has to outlive exactly one thing — a refused start
+   * coming back to the same screen — which is what `sessionStorage` lasts. Another tab, another
+   * device or the next launch starting once more is the promise ("once per tab", self-serve contract
+   * §4.6), not drift, and nothing a Bot does reads it.
+   */
+  "routes/sign.tsx",
 ];
 
 /**

@@ -96,6 +96,13 @@ export const BUNDLE_FILES = [
   "agent-computer/seccomp_profile.json",
   "scripts/upgrade.sh",
   "scripts/restore.sh",
+  /*
+   * The legal pages, which are RENDERED before the build (`app/scripts/render-legal.ts`) and are in
+   * no commit — so a rebuild from git finds nothing here, which is right: no revision old enough to
+   * have no bundle image had them. Listed because the Dockerfile copies it, and the local build below
+   * renders it first.
+   */
+  "deploy/legal/",
 ] as const;
 
 /**
@@ -1237,6 +1244,17 @@ async function main(): Promise<number> {
       say(`Building the five images from this checkout as :${toTag}`);
       const built = clock();
       mkdirSync(join(work, "logs"), { recursive: true });
+      // What images.yml does before the bundle's build: deploy/Dockerfile copies the rendered pages.
+      const legal = await run([
+        "bun",
+        "app/scripts/render-legal.ts",
+        "deploy/legal",
+      ]);
+      if (legal.code !== 0) {
+        throw new Error(
+          `Rendering the legal pages failed:\n${legal.stderr.trim().slice(-1500)}`,
+        );
+      }
       for (const [image, dockerfile] of Object.entries(IMAGES)) {
         const one = clock();
         const log = join(work, "logs", `build-${image}.log`);

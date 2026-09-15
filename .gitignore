@@ -18,5 +18,9 @@ desktop/src-tauri/gen/
 # Model eval reports: local measurements, one file per run
 evals/reports/
 
+# The legal pages the deploy bundle carries, rendered from app/src/legal/*.md before the image build
+# (app/scripts/render-legal.ts). The markdown is the source; a committed copy would be a second one.
+deploy/legal/
+
 # Agent worktrees are full checkouts of this repository; tools walking the tree must not see them.
 .claude/worktrees/

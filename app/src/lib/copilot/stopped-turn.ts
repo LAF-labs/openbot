@@ -55,6 +55,13 @@ export const MODEL_FAILURES: Record<string, string> = {
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
   "laf:agent_stalled":
     "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.",
+  /*
+   * The one a run ends on before it started: a free trial's day was spent, and the server refused
+   * the run without sending it (`server/src/usage/daily-budget.ts`). Not "ask again" — the day opens
+   * at midnight in Seoul, and that is the sentence. `turn-failure.ts`, which the chat reads, says it too.
+   */
+  "laf:daily_budget_reached":
+    "Today's free trial allowance is used up. It opens again at midnight, Korean time.",
 };
 
 /**

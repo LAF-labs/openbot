@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseEvent } from "@ag-ui/client";
-import { modelUsageOf } from "../src/runner/laf-runner";
+import { modelUsageOf } from "../src/usage/model-usage";
 
 const event = (value: unknown, name = "laf.model.usage") =>
   ({ type: "CUSTOM", name, value }) as unknown as BaseEvent;

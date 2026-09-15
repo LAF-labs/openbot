@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
@@ -31,21 +31,85 @@ const ENTRANCE_SECONDS = 0.4;
 const ENTRANCE_STAGGER_SECONDS = 0.08;
 const ENTRANCE_OFFSET = "translateY(12px)";
 
+/** The doors `?via=` may name: the three a person picks between, never the broker itself. */
+const VIA_DOORS: readonly SignInProvider[] = ["kakao", "naver", "google"];
+
+/** Where a tab remembers that `?via=` already started a sign-in in it. */
+export const VIA_STARTED_KEY = "laf.sign.via-started";
+
+/**
+ * The door to start on arrival, or none — and the promise that it happens once per tab.
+ *
+ * `/sign?via=google` is the front door's hand-off to a new trial (self-serve contract §3-11, §4.6):
+ * the person signed in there a moment ago, their broker session is alive, and pressing the same
+ * button again here is the click the flow promises not to ask for. But a start that is refused comes
+ * BACK to this screen, often with `?via=` still on it, and a screen that started on every arrival
+ * would bounce between the broker and here with no way out. So:
+ *
+ *   - only a door this deployment offers, since starting one it does not is a refusal made on purpose;
+ *   - never on an arrival carrying a refusal, and never again in that tab once one has been seen;
+ *   - never twice in one tab, remembered in `sessionStorage` BEFORE the start leaves, because a start
+ *     that navigates away cannot write anything afterwards;
+ *   - and not at all where the tab cannot remember — a promise of "once" nothing can keep is a loop.
+ *
+ * `via` is taken as whatever the address said and checked here, not trusted from `validateSearch`.
+ * MEASURED: the router merges the root route's search — which validates nothing — into this one, so
+ * `/sign?via=github` reached the screen as `via: "github"` past a validator that had dropped it, and
+ * a start went to the broker asking for a door that does not exist.
+ */
+export function viaToStart(input: {
+  via: unknown;
+  isOffered: boolean;
+  isRefusedOnArrival: boolean;
+  storage: Pick<Storage, "getItem" | "setItem"> | null;
+}): SignInProvider | null {
+  const { storage } = input;
+  const via = VIA_DOORS.find((door) => door === input.via);
+  if (!via || !storage) return null;
+  try {
+    if (storage.getItem(VIA_STARTED_KEY) !== null) return null;
+    if (input.isRefusedOnArrival) {
+      storage.setItem(VIA_STARTED_KEY, via);
+      return null;
+    }
+    if (!input.isOffered) return null;
+    storage.setItem(VIA_STARTED_KEY, via);
+    return via;
+  } catch {
+    return null;
+  }
+}
+
+/** This tab's `sessionStorage`, or nothing where the browser refuses it (a private window may). */
+function tabMemory(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export const Route = createFileRoute("/sign")({
   /**
    * `redirect` is where they were going; `error` is the code a refused sign-in came back with. Only
    * the code: better-auth's `error_description` beside it is a provider's prose and is never read.
    * The router's parser turns `error=123` into a number, so anything present is kept as text — an
    * unknown code draws the generic sentence, which is still a refusal said out loud.
+   *
+   * `via` is the door the front door asks this screen to open on arrival, and only one of the three
+   * a person could have pressed; anything else is dropped rather than passed on. See `viaToStart`.
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { redirect?: string; error?: string } => ({
+  ): { redirect?: string; error?: string; via?: SignInProvider } => ({
     ...(typeof search.redirect === "string"
       ? { redirect: search.redirect }
       : {}),
     ...(search.error !== undefined && search.error !== null
       ? { error: String(search.error) }
+      : {}),
+    ...(VIA_DOORS.includes(search.via as SignInProvider)
+      ? { via: search.via as SignInProvider }
       : {}),
   }),
   beforeLoad: async ({ context, search }) => {
@@ -123,7 +187,8 @@ const PROVIDER_BUTTONS: Array<{
 ];
 
 function SignScreen() {
-  const arrival = refusalOnArrival(Route.useSearch());
+  const search = Route.useSearch();
+  const arrival = refusalOnArrival(search);
   const wanted = arrival.redirect;
   const [pendingProvider, setPendingProvider] = useState<SignInProvider | null>(
     null,
@@ -176,6 +241,25 @@ function SignScreen() {
       setPendingProvider(null);
     }
   }
+
+  /*
+   * THE FRONT DOOR'S HAND-OFF, PRESSED ONCE FOR THE PERSON. On mount only: the provider list is
+   * already loaded by the route, the arrival is what it is, and the decision — including remembering
+   * it in the tab — is `viaToStart`'s, so a second mount (a refused start coming back, or React's
+   * development double-mount) finds the tab already remembers and starts nothing.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: decided once per arrival, by design.
+  useEffect(() => {
+    const door = viaToStart({
+      via: search.via,
+      isOffered: VIA_DOORS.some(
+        (named) => named === search.via && offered(named),
+      ),
+      isRefusedOnArrival: arrival.code !== null,
+      storage: tabMemory(),
+    });
+    if (door) void handleSignIn(door);
+  }, []);
 
   const prefersReducedMotion = useReducedMotion();
   const hidden = {

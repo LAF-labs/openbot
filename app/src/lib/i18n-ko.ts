@@ -2448,4 +2448,13 @@ export const ko: Record<string, string> = {
   "The diagnostic details went with it.": "진단 정보도 함께 보냈습니다.",
   "The diagnostic details have changed since they were shown. Look at them again, then send.":
     "보여 드린 뒤로 진단 정보가 바뀌었습니다. 다시 확인하고 보내 주세요.",
+  // 무료 체험 — 배너와 하루 예산. 문장은 셀프서브 계약 §9·§11의 것 그대로다.
+  "Free trial D-{days} · ends {date}": "무료 체험 D-{days} · {date}에 끝나요",
+  "Before it ends, you can download everything from Settings → My data.":
+    "끝나기 전에 설정 → 내 데이터에서 전부 내려받을 수 있어요.",
+  "The free trial ends at midnight tonight.":
+    "오늘 밤 12시에 무료 체험이 끝나요.",
+  "The free trial has ended.": "무료 체험이 끝났어요.",
+  "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
+    "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
 };

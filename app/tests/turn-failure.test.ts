@@ -252,3 +252,24 @@ describe("a failure that keeps happening", () => {
     ).toBeNull();
   });
 });
+
+describe("a trial's spent day", () => {
+  /*
+   * The server refuses a run before it leaves (`laf:daily_budget_reached`, self-serve contract §4.6),
+   * and the chat reads it through this file, not through `stopped-turn.ts`: without a code here the
+   * refusal would say "No answer came back." — true, and exactly the sentence that sends somebody to
+   * ask again into a day that only opens again at midnight.
+   */
+  it("is its own sentence live, and the same one after a reload", async () => {
+    const { MODEL_FAILURES } = await import("@/lib/copilot/stopped-turn");
+    expect(liveTurnFailureCode("laf:daily_budget_reached")).toBe(
+      "laf:turn_daily_budget_reached",
+    );
+    expect(TURN_FAILURE_SENTENCES["laf:turn_daily_budget_reached"]).toBe(
+      MODEL_FAILURES["laf:daily_budget_reached"],
+    );
+    expect(ko[MODEL_FAILURES["laf:daily_budget_reached"] as string]).toBe(
+      "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+    );
+  });
+});

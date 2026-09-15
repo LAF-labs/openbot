@@ -117,6 +117,11 @@ export const ENVIRONMENT = {
   LAF_ALIMTALK_FROM: "compose",
   // How long the trail is kept.
   AUDIT_RETENTION_DAYS: "compose",
+  // A free trial: that it is one, when it ends, how long it is kept after, and what a day may spend.
+  LAF_PLAN: "compose",
+  LAF_TRIAL_ENDS_AT: "compose",
+  LAF_TRIAL_HOLD_DAYS: "compose",
+  LAF_DAILY_TOKEN_BUDGET: "compose",
 } as const satisfies Record<string, VariableSource>;
 
 export type VariableName = keyof typeof ENVIRONMENT;
@@ -132,6 +137,21 @@ export const TENANT_PACKAGE_VARIABLES = [
   "BOT_MODEL",
   "BOT_MODEL_EFFORT",
   "REVIEW_MODEL",
+] as const satisfies readonly VariableName[];
+
+/**
+ * A free trial's lines in `.env`, in the order the self-serve contract's table gives them (§4.5).
+ *
+ * A wire contract with laf-control rather than a private spelling: the fleet writes these at
+ * provision and pushes them again (`laf trial extend`, `laf trial budget`), and its
+ * `PUSHED_ENV_NAMES` owns the same four. `server/tests/trial-env-contract.test.ts` holds compose and
+ * `.env.example` to this list.
+ */
+export const TRIAL_VARIABLES = [
+  "LAF_PLAN",
+  "LAF_TRIAL_ENDS_AT",
+  "LAF_TRIAL_HOLD_DAYS",
+  "LAF_DAILY_TOKEN_BUDGET",
 ] as const satisfies readonly VariableName[];
 
 export type DeploymentConfig = {
@@ -341,6 +361,26 @@ export type DeploymentConfig = {
   partners: {
     /** 카카오 알림톡, through 솔라피's agency API. Null when this VM holds no key. */
     alimtalk: SolapiSettings | null;
+  };
+  /**
+   * A free trial, as the fleet provisioned it. Absent on every deployment that is not one — which
+   * is every VM made before self-serve, every paid one, and a laptop — and then nothing is judged
+   * and no banner is drawn.
+   *
+   * `endsAt` is kept as the string `.env` carries rather than as a `Date`: `GET /api/me` says it
+   * back, and "the four values equal the `.env`" is how an operator reads that a push arrived
+   * (self-serve contract §13.3). It is validated as one instant in UTC before it gets here.
+   *
+   * What a day may spend is judged by `usage/daily-budget.ts` against the Seoul day; `holdDays` is a
+   * fact for the surface. See {@link trialConfig} for why the four travel together or not at all.
+   */
+  trial?: {
+    /** ISO-8601 in UTC: the fleet writes 23:59:59 in Seoul on the trial's last day. */
+    endsAt: string;
+    /** How long a stopped trial is kept before it is destroyed. */
+    holdDays: number;
+    /** Tokens a Seoul day may spend across every Bot on this VM, checked before each run starts. */
+    dailyTokenBudget: number;
   };
 };
 
@@ -999,6 +1039,112 @@ function tenantPackageVariables(
   );
 }
 
+/** One instant in UTC as the fleet writes it: seconds, optional milliseconds, and `Z`. */
+const UTC_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?Z$/;
+
+/**
+ * Whether `value` names a moment that exists, read the way it is written.
+ *
+ * `Date.parse` alone is not the check: it rolls `2026-02-30` over into March and calls that fine, so
+ * the parts are put back together and compared. A date a person mistyped would otherwise draw a
+ * countdown to a day nobody chose.
+ */
+function isUtcInstant(value: string): boolean {
+  const parts = UTC_INSTANT.exec(value);
+  if (!parts) return false;
+  const [year, month, day, hour, minute, second] = parts
+    .slice(1, 7)
+    .map(Number) as [number, number, number, number, number, number];
+  const at = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return (
+    at.getUTCFullYear() === year &&
+    at.getUTCMonth() === month - 1 &&
+    at.getUTCDate() === day &&
+    at.getUTCHours() === hour &&
+    at.getUTCMinutes() === minute &&
+    at.getUTCSeconds() === second
+  );
+}
+
+/** A whole number of at least one, digits only, or a refusal naming the variable and its unit. */
+function positiveWhole(
+  environment: Environment,
+  name: VariableName,
+  unit: string,
+): number {
+  const raw = optional(environment, name) ?? "";
+  const value = Number(raw);
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(value)) {
+    throw new Error(
+      `${name} must be a whole number of ${unit}, at least 1, written in digits alone (it is '${raw}')`,
+    );
+  }
+  return value;
+}
+
+/**
+ * A free trial, or a refusal to start over half of one.
+ *
+ * ALL FOUR OR NONE (self-serve contract §4.5), the rule every half-configured thing in this file
+ * keeps. The fleet writes the four together at provision and pushes them together, so any other
+ * shape is a mistake somewhere, and each half is a promise nothing keeps: an end date with no budget
+ * is a trial that can spend without limit, a budget or a date on a VM that is not a trial limits and
+ * counts down to nothing, and a date the surface cannot read counts towards the wrong day.
+ *
+ * `LAF_PLAN` HAS ONE VALUE. Unset is not a trial; `trial` is one; anything else is refused rather than
+ * read as unset, because "not a trial" is the reading with no budget — a typo would be the expensive
+ * direction, found on an invoice.
+ *
+ * A BUDGET OF ONE IS A BUDGET, and it is how an operator proves a push reached the server (the first
+ * run of the day is refused). Zero is refused rather than read: elsewhere in this file zero means
+ * "switched off", and a trial whose budget an operator believed was off would be one refusing every
+ * question.
+ */
+function trialConfig(environment: Environment): DeploymentConfig["trial"] {
+  const plan = optional(environment, "LAF_PLAN");
+  const lines = [
+    "LAF_TRIAL_ENDS_AT",
+    "LAF_TRIAL_HOLD_DAYS",
+    "LAF_DAILY_TOKEN_BUDGET",
+  ] as const;
+  const present = lines.filter((name) => optional(environment, name));
+
+  if (!plan) {
+    if (present.length === 0) return undefined;
+    throw new Error(
+      `${present.join(", ")} ${present.length === 1 ? "is" : "are"} set but LAF_PLAN is not: these lines belong to a free trial, and on a deployment that is not one they limit nothing and count down to nothing. Set LAF_PLAN=trial with all of them, or remove them`,
+    );
+  }
+  if (plan !== "trial") {
+    throw new Error(
+      `LAF_PLAN is '${plan}', and the only plan this deployment knows is 'trial'. Remove the line on a deployment that is not a trial; anything else is refused rather than read as no trial, which is the reading with no budget`,
+    );
+  }
+  const missing = lines.filter((name) => !present.includes(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `LAF_PLAN=trial needs LAF_TRIAL_ENDS_AT, LAF_TRIAL_HOLD_DAYS and LAF_DAILY_TOKEN_BUDGET together, and ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing: a trial with no end never ends on screen, and one with no budget spends without limit`,
+    );
+  }
+
+  const endsAt = optional(environment, "LAF_TRIAL_ENDS_AT") ?? "";
+  if (!isUtcInstant(endsAt)) {
+    throw new Error(
+      `LAF_TRIAL_ENDS_AT must be one instant in UTC, written like 2026-09-29T14:59:59Z — the end of the trial's last day in Seoul (it is '${endsAt}')`,
+    );
+  }
+  return {
+    endsAt,
+    holdDays: positiveWhole(environment, "LAF_TRIAL_HOLD_DAYS", "days"),
+    dailyTokenBudget: positiveWhole(
+      environment,
+      "LAF_DAILY_TOKEN_BUDGET",
+      "tokens",
+    ),
+  };
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -1044,5 +1190,6 @@ export function loadConfig(
     tenantPackageVariables: tenantPackageVariables(environment),
     botTimeZone: botTimeZone(environment),
     auditRetentionDays: retentionDays(environment),
+    trial: trialConfig(environment),
   };
 }

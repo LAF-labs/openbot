@@ -68,6 +68,12 @@ export const TURN_FAILURE_CODES = {
   toolFailed: "laf:turn_tool_failed",
   /** The question cost what one question may (agent-bot's token budget). Carrying on is a new one. */
   budgetSpent: "laf:turn_budget_spent",
+  /**
+   * A free trial's day was spent before this run started, so it never left the server
+   * (`usage/daily-budget.ts`). Not a fault and not the question: the day opens again at midnight in
+   * Seoul, which is the one thing worth telling somebody about to ask again.
+   */
+  dailyBudgetReached: "laf:turn_daily_budget_reached",
 } as const;
 
 export type TurnFailureCode =
@@ -121,6 +127,9 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   }
   if (said.includes("laf:tool_budget_spent")) {
     return TURN_FAILURE_CODES.budgetSpent;
+  }
+  if (said.includes("laf:daily_budget_reached")) {
+    return TURN_FAILURE_CODES.dailyBudgetReached;
   }
 
   /*

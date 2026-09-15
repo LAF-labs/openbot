@@ -19,8 +19,18 @@
   dead host forever, with the front door, which is where they would be told the new address,
   unreachable from inside it. No `home`, no button.
 
+  A FREE TRIAL THAT ENDED IS NOT DOWN, IT IS KEPT. Its machine is stopped for thirty days and then
+  destroyed (self-serve contract §9), and "check your network, it will connect by itself" is false
+  twice over to the person looking at it. The product cannot say anything while its machine is off,
+  so for an address that is a fleet deployment this page asks the front door
+  (`/entry/dest-status?origin=`, §4.1) and, when the answer is `held`, says the trial ended and until
+  when it is kept. Any other answer — or none — leaves the ordinary card. Only a customer's own
+  address is ever asked about: `https://<ten base32 characters>.agent.laf-co.com`, the shape the front
+  door itself accepts, so nothing else this window opens is reported anywhere. The probe keeps going
+  either way, so a trial an operator resumes opens by itself.
+
   Styled in the file: the shell serves this page itself, outside the app's build, so the app's
-  Tailwind pipeline never sees it.
+  Tailwind pipeline never sees it. The script is named by hash in `tauri.conf.json`'s policy.
 -->
 <style>
   :root { color-scheme: light dark; --fg: #1a1a1a; --muted: #6b6b6b; --bg: #f7f7f5; --line: #e2e2de; --accent: #1a1a1a; --accent-fg: #ffffff; }
@@ -40,13 +50,19 @@
 </head>
 <body>
 <main>
-  <h1>서버에 연결할 수 없어요</h1>
-  <p>LAF Agent는 서버에 접속해서 동작합니다. 네트워크 연결을 확인해 주세요.<br>연결되면 자동으로 이어집니다.</p>
-  <p class="origin" id="origin"></p>
-  <p class="status" id="status"></p>
-  <button id="retry" type="button">다시 시도</button>
+  <div id="unreachable">
+    <h1>서버에 연결할 수 없어요</h1>
+    <p>LAF Agent는 서버에 접속해서 동작합니다. 네트워크 연결을 확인해 주세요.<br>연결되면 자동으로 이어집니다.</p>
+    <p class="origin" id="origin"></p>
+    <p class="status" id="status"></p>
+    <button id="retry" type="button">다시 시도</button>
+  </div>
+  <div id="held" hidden>
+    <h1>무료 체험이 끝났어요</h1>
+    <p id="held-until"></p>
+  </div>
   <button id="home" type="button" class="secondary" hidden>기본 주소로 열기</button>
-  <p class="en">Can't reach the server. Retrying automatically.</p>
+  <p class="en" id="en">Can't reach the server. Retrying automatically.</p>
 </main>
 <script>
   const params = new URLSearchParams(location.search);
@@ -71,6 +87,30 @@
   if (home && home !== origin) {
     homeButton.hidden = false;
     homeButton.addEventListener("click", () => location.replace(home));
+  }
+  // A customer's own address, and nothing else: the shape the front door answers for.
+  const FLEET_DEPLOYMENT = /^https:\/\/[a-z2-7]{10}\.agent\.laf-co\.com$/;
+  const DEST_STATUS = "https://agent.laf-co.com/entry/dest-status?origin=";
+  async function askTheFrontDoor() {
+    if (!origin || !FLEET_DEPLOYMENT.test(origin)) return;
+    try {
+      const response = await fetch(DEST_STATUS + encodeURIComponent(origin), { cache: "no-store" });
+      if (!response.ok) return;
+      const answer = await response.json();
+      const until = /^(\d{4})-(\d{2})-(\d{2})$/.exec(answer?.holdUntil || "");
+      if (answer?.state !== "held" || !until) return;
+      const month = Number(until[2]);
+      const day = Number(until[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return;
+      document.getElementById("held-until").textContent =
+        `만든 봇과 대화는 ${month}월 ${day}일까지 보관합니다. 이어서 쓰려면 문의해 주세요.`;
+      document.getElementById("en").textContent =
+        `This free trial has ended. Its Bots and conversations are kept until ${until[0]}.`;
+      document.getElementById("unreachable").hidden = true;
+      document.getElementById("held").hidden = false;
+    } catch {
+      // No answer, or not one this page can read: the ordinary card is still true.
+    }
   }
   const INTERVAL_MS = 3000;
   let checking = false;
@@ -100,6 +140,7 @@
   }
   retry.addEventListener("click", probe);
   probe();
+  askTheFrontDoor();
   setInterval(probe, INTERVAL_MS);
 </script>
 </body>

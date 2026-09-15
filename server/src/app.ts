@@ -94,6 +94,7 @@ import {
 import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
 import { createSupportRoutes, type SupportService } from "./support/routes";
 import type { PackageStatusReader } from "./tenant-package";
+import type { DailyBudget } from "./usage/daily-budget";
 
 /*
  * What the routes written inline below refuse with.
@@ -385,6 +386,14 @@ export function createApp(
    * suites that stub a session without a sign-in list leave it out.
    */
   sessionAdmission?: SessionAdmission,
+  /**
+   * A free trial's day, for `/api/me` to say whether today's is spent. Last, like everything new.
+   *
+   * The same judge the runs are refused by (`usage/daily-budget.ts`), so this cannot say a day is
+   * open while every question is being refused, or the other way round. Absent on a deployment that
+   * is not a trial, which then says nothing about a trial at all.
+   */
+  dailyBudget?: DailyBudget,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -611,9 +620,27 @@ export function createApp(
     const agreed = consent
       ? await consent.read(actor.id).catch(() => null)
       : null;
+    /*
+     * A free trial's four facts, and no sentence (self-serve contract §4.6): when it ends, how long
+     * it is kept after, the day's budget, and whether today's is spent. `endsAt` is the `.env` value
+     * as written, so reading these four back is how an operator sees a push arrived. Absent — the
+     * key, not an empty trial — on every deployment that is not one, and the judge is not asked.
+     */
+    const trial = config.trial
+      ? {
+          trial: {
+            endsAt: config.trial.endsAt,
+            holdDays: config.trial.holdDays,
+            dailyTokenBudget: config.trial.dailyTokenBudget,
+            budgetReachedToday: dailyBudget
+              ? await dailyBudget.reachedToday()
+              : false,
+          },
+        }
+      : {};
     return context.json({
       user: { ...actor, onboarded },
-      deployment: await capabilities(),
+      deployment: { ...(await capabilities()), ...trial },
       ...(consent
         ? {
             consent: {

@@ -32,7 +32,6 @@ import {
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
 import { eq } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "../audit";
 import { TURN_FAILURE_CODES } from "../channels/turn-failures";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadRuns } from "../db/schema";
@@ -95,47 +94,6 @@ export function mergeKeepingStoredOnly(
     insertAfter += 1;
   }
   return result;
-}
-
-/**
- * The usage the Bot's stream reported, shaped for the trail.
- *
- * Counts only, with non-numbers read as zero rather than trusted: the event crossed a service
- * boundary, and a ledger row that throws on a malformed count is a run that fails on metering.
- */
-export function modelUsageOf(events: ReadonlyArray<BaseEvent>): Array<{
-  model: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  /**
-   * Prompt tokens the provider served from its cache, only where the endpoint said so.
-   *
-   * Absent rather than zero otherwise: the monthly cost is a sum over these rows, and a row that
-   * says "0 cached" for an endpoint that never reports the number would make a prompt that caches
-   * perfectly indistinguishable from one that never does.
-   */
-  cachedPromptTokens?: number;
-}> {
-  const found: ReturnType<typeof modelUsageOf> = [];
-  for (const raw of events) {
-    const event = raw as BaseEvent & { name?: string; value?: unknown };
-    if (String(event.type) !== "CUSTOM" || event.name !== "laf.model.usage")
-      continue;
-    const value = (event.value ?? {}) as Record<string, unknown>;
-    const count = (key: string) =>
-      typeof value[key] === "number" ? (value[key] as number) : 0;
-    found.push({
-      model: typeof value.model === "string" ? value.model : "unknown",
-      promptTokens: count("promptTokens"),
-      completionTokens: count("completionTokens"),
-      totalTokens: count("totalTokens"),
-      ...(typeof value.cachedPromptTokens === "number"
-        ? { cachedPromptTokens: value.cachedPromptTokens }
-        : {}),
-    });
-  }
-  return found;
 }
 
 /**
@@ -258,7 +216,6 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   private constructor(
     private readonly database: Database,
     private readonly ledger: RunLedger,
-    private readonly auditStore: AuditStore | null,
     /** What boot found still running. Read once by `reportInterruptedRuns`, never added to. */
     private readonly interrupted: readonly InterruptedRun[],
   ) {
@@ -267,11 +224,15 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     super({ onConcurrentRun: "supersede" });
   }
 
-  /** Async because boot adjudicates the runs the last process left open. It reads no messages. */
+  /**
+   * Async because boot adjudicates the runs the last process left open. It reads no messages.
+   *
+   * No audit store any more: the one row this class wrote there was a turn's `model.usage`, and it
+   * is written at the seam every run shares now (`copilot.ts`). This runner only ever saw chat.
+   */
   static async create(
     database: Database,
     ledger: RunLedger,
-    auditStore: AuditStore | null = null,
   ): Promise<LafPostgresRunner> {
     /*
      * Boot reconciliation: a run still `running` now cannot still be running,
@@ -298,7 +259,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         note: "These runs were still `running` when the last process died; nothing is known about how they ended.",
       });
     }
-    return new LafPostgresRunner(database, ledger, auditStore, reconciled);
+    return new LafPostgresRunner(database, ledger, reconciled);
   }
 
   /**
@@ -594,44 +555,20 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           ...outcome,
           eventCount: events.length,
         });
-        await this.recordUsage(runId, threadId, agentId, events);
+        /*
+         * NOT THE TURN'S TOKEN COUNTS, which were written here until 2026-09-15 on the claim that
+         * this tee was the one place every run's events pass through — chat, rooms and routines
+         * alike. It was not: only the chat endpoint drives this runner, while a room's turn, a
+         * routine and one Bot asking another run their agents directly, and their usage reached no
+         * row at all. Found while building a trial's daily budget on these rows; `copilot.ts`, where
+         * every run does pass, writes them now.
+         */
       }
     } catch (error) {
       log.error("run_end_not_persisted", {
         thread: threadId,
         reason: describeFailure(error),
       });
-    }
-  }
-
-  /**
-   * The turn's token counts, out of the stream and into the trail.
-   *
-   * The Bot service reports what a turn cost as a CUSTOM `laf.model.usage` event — the only
-   * channel it has, since it holds no server URL and no database on purpose — and this tee is the
-   * one place every run's events already pass through, whatever surface started the run: chat,
-   * rooms and routines alike. The per-Bot monthly cost KPI is a sum over these rows.
-   */
-  private async recordUsage(
-    runId: string,
-    threadId: string,
-    agentId: string | null,
-    events: BaseEvent[],
-  ): Promise<void> {
-    if (!this.auditStore) return;
-    for (const usage of modelUsageOf(events)) {
-      await recordAuditEvent(this.auditStore, {
-        eventType: "model.usage",
-        targetType: "agent",
-        targetId: agentId ?? undefined,
-        payload: {
-          runId,
-          threadId,
-          ...(agentId ? { botId: agentId } : {}),
-          ...usage,
-          source: "bot-turn",
-        },
-      }).catch(() => undefined);
     }
   }
 }

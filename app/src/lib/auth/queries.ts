@@ -45,7 +45,46 @@ export type Deployment = {
    * rather than writing five into its own prose.
    */
   seats: number;
+  /**
+   * A free trial, as the server described it — absent on every deployment that is not one, and then
+   * no banner exists to draw. See `components/layout/trial-banner.tsx`.
+   */
+  trial?: Trial;
 };
+
+/** A free trial's four facts (`GET /api/me` → `deployment.trial`, self-serve contract §4.6). */
+export type Trial = {
+  /** ISO-8601 in UTC: the end of the trial's last day in Seoul. */
+  endsAt: string;
+  /** How long a stopped trial is kept before it is destroyed. */
+  holdDays: number;
+  /** What a Seoul day may spend, in tokens. */
+  dailyTokenBudget: number;
+  /** Whether today's is spent: the next question will be refused until midnight in Seoul. */
+  budgetReachedToday: boolean;
+};
+
+/**
+ * A trial out of what the server sent, or none.
+ *
+ * All four or nothing, like the server's own reading of `.env`: a banner drawn from half a trial
+ * would count down to a date nobody set, and a missing key is exactly what a deployment that is not
+ * a trial sends.
+ */
+export function parseTrial(value: unknown): Trial | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { endsAt, holdDays, dailyTokenBudget, budgetReachedToday } =
+    value as Record<string, unknown>;
+  if (
+    typeof endsAt !== "string" ||
+    typeof holdDays !== "number" ||
+    typeof dailyTokenBudget !== "number" ||
+    typeof budgetReachedToday !== "boolean"
+  ) {
+    return undefined;
+  }
+  return { endsAt, holdDays, dailyTokenBudget, budgetReachedToday };
+}
 
 /** The signed-in person, and what the deployment they are on can do. */
 export type CurrentUser = AuthenticatedUser & { deployment: Deployment };
@@ -146,10 +185,11 @@ async function currentUser(): Promise<CurrentUserResult> {
 
   const body = (await response.json()) as {
     user: Omit<AuthenticatedUser, "consentRequired">;
-    deployment?: Partial<Deployment>;
+    deployment?: Partial<Omit<Deployment, "trial">> & { trial?: unknown };
     /** Two facts and no verdict; the verdict is drawn here. Absent when nothing records it. */
     consent?: { version: string | null; current: string };
   };
+  const trial = parseTrial(body.deployment?.trial);
   // Absent reads as yes, field by field, matching the server's own default: a server that does not
   // say is far more likely to be one that has both than one that has neither, and the failure of
   // guessing wrong here is a control that is missing rather than a control that lies.
@@ -167,6 +207,7 @@ async function currentUser(): Promise<CurrentUserResult> {
         typeof body.deployment?.seats === "number" && body.deployment.seats > 0
           ? body.deployment.seats
           : DEFAULT_BOT_SEATS,
+      ...(trial ? { trial } : {}),
     },
   };
 }

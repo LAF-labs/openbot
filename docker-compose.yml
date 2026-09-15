@@ -259,6 +259,15 @@ services:
       # docs/laf/redesign-2026-09.md §7-7); 0 keeps everything and switches the nightly sweep off.
       # The notification outbox rides the same sweep on a fixed thirty days of its own.
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-}
+      # A free trial, written by the fleet at provision and pushed again by `laf trial extend` and
+      # `laf trial budget` — all four or none, and the server refuses to start on any other shape.
+      # Unset on every deployment that is not a trial. Passed here because a push that restarts the
+      # server restarts nothing a name compose does not hand over (laf-control README §3.8's scar).
+      # What each one does: .env.example, and docs/laf/data-lifecycle.md for the trial itself.
+      LAF_PLAN: ${LAF_PLAN:-}
+      LAF_TRIAL_ENDS_AT: ${LAF_TRIAL_ENDS_AT:-}
+      LAF_TRIAL_HOLD_DAYS: ${LAF_TRIAL_HOLD_DAYS:-}
+      LAF_DAILY_TOKEN_BUDGET: ${LAF_DAILY_TOKEN_BUDGET:-}
     logging: *logging
     depends_on:
       postgres:

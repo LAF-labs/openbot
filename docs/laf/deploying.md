@@ -221,7 +221,8 @@ spends twenty minutes on vite.
 **The fifth image is the deploy bundle.** `ghcr.io/laf-labs/openbot-deploy`
 holds, under `/deploy/`, exactly what a VM needs on disk and nothing else:
 `docker-compose.yml`, `scripts/upgrade.sh`, `scripts/restore.sh`,
-`.env.example` and `VERSION`. `deploy/Dockerfile` builds it from `scratch` —
+`.env.example`, `VERSION` — and `legal/`, which is for the front door rather
+than a VM (below). `deploy/Dockerfile` builds it from `scratch` —
 28KB, never run, only ever `docker create`d and `docker cp`'d out, which is
 why the three lines above start nothing — and it rides the same tag as the
 other four, so `IMAGE_TAG` names one consistent set of five. Until then a VM
@@ -237,6 +238,21 @@ This is also the contract the external control plane (separate repository)
 holds with this one: extract the bundle, write `.env` (the required values
 are all in `.env.example`), `pull`, `up`, wait for healthy. Nothing else here
 is load-bearing for unattended provisioning.
+
+**`legal/` is the terms and the privacy policy as static pages** —
+`terms.html`, `privacy.html`, and `version`, one line holding the version both
+documents carry (`LEGAL_VERSION`). Before anybody has an account there is no VM
+to read the documents on, so the front door serves `/legal/terms`,
+`/legal/privacy` and `/privacy.html` from the bundle of the channel it runs, and
+closes sign-up when `version` is missing (self-serve contract §4.1). They are
+rendered from `app/src/legal/*.md` **by the workflow, before the build** —
+`bun app/scripts/render-legal.ts deploy/legal` in the `deploy` job — because
+`deploy/Dockerfile` executes nothing and only copies. The renderer imports
+nothing outside Bun, so the job installs no dependencies, and it escapes
+everything the documents do not write as markdown: markup in a document is text
+on the page. A local `docker build -f deploy/Dockerfile .` needs the same line
+first and fails without it, on purpose; `scripts/upgrade-e2e.ts --to local`
+runs it for you. The output is ignored by git: the markdown is the source.
 
 Recommended VM for one person: **1 OCPU / 6GB + a 4GB swapfile** (measured:
 the whole stack idles at 1.1GB; Chromium spikes are what the swap absorbs).
@@ -295,6 +311,31 @@ by compose; `.env.example` lists all of them.
 Remove `LAF_DEV_NO_AUTH` while you are in there. It is refused in
 production, so leaving it in is a failed start rather than a security hole, but
 a failed start at 2am is still a bad trade for a line nobody needed.
+
+**A free trial is four more lines, and a deployment stood up by hand has none
+of them.** The fleet writes them when somebody signs up at the front door and
+pushes them again to extend a trial or change its budget (self-serve contract
+§4.5); compose hands all four to the server:
+
+```
+LAF_PLAN=trial
+LAF_TRIAL_ENDS_AT=2026-09-29T14:59:59Z   # the end of the last day, 23:59:59 in Seoul, in UTC
+LAF_TRIAL_HOLD_DAYS=30                   # kept this long after it stops, then destroyed
+LAF_DAILY_TOKEN_BUDGET=3000000           # what one Seoul day may spend, across every Bot here
+```
+
+All four or none: `LAF_PLAN=trial` with any of the others missing or malformed
+refuses to start by name, and so does any of the three without it. On a trial
+the app draws a countdown on every signed-in screen, and every run — chat, a
+room, a routine, one Bot asking another — is judged before it leaves: once the
+day's `model.usage` rows reach the budget, the run is refused with
+`laf:daily_budget_reached`, which the screen says in Korean, until midnight in
+Seoul. The judgement is made when a run starts, so a day can overrun by what the
+runs already streaming go on to spend, each bounded by agent-bot's 600,000-token
+question budget. To see what a VM was given, sign in and read
+`GET /api/me` → `deployment.trial` — the four values as `.env` wrote them, plus
+`budgetReachedToday`. A budget of `1` is how a push is proven to have arrived:
+the next question is refused.
 
 **OAuth is the only way in.** There is no email-and-password path, so a
 deployment with no provider configured is one nobody can sign into — including
@@ -844,6 +885,22 @@ bunx tauri signer generate -w <somewhere-private>/laf-agent.key
 then replace the secrets and the `pubkey` in `tauri.conf.json` in the same
 change — a release signed by a key the config does not name builds and
 publishes fine and is then rejected by every installed app.
+
+**A remembered trial that has ended.** When the window cannot reach the
+deployment it remembers, it shows its own page, `desktop/public/index.html`.
+For an address that is a fleet deployment — `https://<ten base32
+characters>.agent.laf-co.com`, and nothing else — that page asks the front
+door `GET https://agent.laf-co.com/entry/dest-status?origin=<origin>`, and on
+`{"state":"held","holdUntil":"YYYY-MM-DD"}` says the free trial ended and until
+when its Bots and conversations are kept, instead of telling somebody to check a
+network that is fine. Any other answer, or none, leaves the ordinary card. The
+page's origin is the shell's own (`tauri://localhost`, `http://tauri.localhost`
+on Windows), so the front door's answer must carry
+`Access-Control-Allow-Origin` for it to be readable; without that header the
+page cannot read it and stays on the ordinary card. The script is named by
+hash in `tauri.conf.json`'s policy (`tests/desktop-shell.test.ts` recomputes
+it), so an edit to the page and its hash land together, and the sentence ships
+with the next desktop release.
 
 ### An advisory the shell's lockfile carries, and Tauri's pin holds
 

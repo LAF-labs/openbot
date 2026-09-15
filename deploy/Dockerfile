@@ -17,7 +17,8 @@
 # its own `.env`, which the copy never touches. What goes in is exactly what the fleet tool and a
 # person on the VM reference: the compose file, `scripts/upgrade.sh` and `scripts/restore.sh`
 # (`laf restore` runs the latter; the nightly backup script is the fleet's own and is not here),
-# `.env.example` for the names a `.env` may carry, and VERSION for reading what a VM runs.
+# `.env.example` for the names a `.env` may carry, VERSION for reading what a VM runs, and `legal/`
+# for the front door, which takes the legal pages from the bundle of the channel it runs.
 #
 # FROM scratch, because it holds files and no runtime. `docker create` still refuses an image with
 # no command, so a CMD is set that nothing ever executes. VERSION is written by a COPY heredoc and
@@ -39,6 +40,12 @@ COPY agent-computer/seccomp_profile.json /deploy/agent-computer/
 # deployment directory, and a checkout on a filesystem that dropped the bit would ship one that
 # `Permission denied`s.
 COPY --chmod=755 scripts/upgrade.sh scripts/restore.sh /deploy/scripts/
+# The terms and the privacy policy as static pages — `terms.html`, `privacy.html` and `version` —
+# which the front door serves before anybody has an account (self-serve contract §4.1). RENDERED
+# BEFORE THIS BUILD, not in it: images.yml runs `bun app/scripts/render-legal.ts deploy/legal` first,
+# because nothing here may execute anything. A build without that step fails on this line, which is
+# the point — a bundle with no `legal/version` is one the front door closes sign-up for.
+COPY deploy/legal/ /deploy/legal/
 # The channel is the one this build was made FOR: `edge` from main, `vX.Y.Z` from a tag. `:stable`
 # is only ever an alias minted onto one of those in the merge job, so a VM on IMAGE_TAG=stable reads
 # here what stable resolved to — which is the question.
