@@ -586,7 +586,7 @@ export function createApp(
   // authentication slice is built. It is checked first so a machine with the flag set does not also
   // need Google credentials configured just to boot.
   const requireUser = config.devNoAuth
-    ? createDevRequireUser()
+    ? createDevRequireUser(roleRepository?.botOwner)
     : auth && roleRepository
       ? createRequireUser(auth, roleRepository, sessionAdmission)
       : authenticationUnavailable;

@@ -1,7 +1,12 @@
 import type { MiddlewareHandler } from "hono";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
-import type { AppVariables, AuthenticatedActor } from "./guards";
+import {
+  type AppVariables,
+  type AuthenticatedActor,
+  actorMayDriveBot,
+  type BotOwnerLookup,
+} from "./guards";
 
 /**
  * A signed-in person, without signing in. Local development only.
@@ -82,12 +87,24 @@ export function devAuthEnabled(
   return enabled;
 }
 
-/** A guard that admits everybody as {@link DEV_ACTOR}. Only ever mounted when devAuthEnabled(). */
-export function createDevRequireUser(): MiddlewareHandler<{
+/**
+ * A guard that admits everybody as {@link DEV_ACTOR}. Only ever mounted when devAuthEnabled().
+ *
+ * It answers whose Bot it is the way `createRequireUser` does, with the same predicate. Until
+ * 2026-09-16 it set the actor alone and the administrator exception in `actorMayDriveBot` let the
+ * fixed administrator through anyway; when that exception went, every Bot-scoped route answered 404
+ * to the developer's own Bots, because `requireBotAccess` reads a missing answer as "not here".
+ */
+export function createDevRequireUser(
+  botOwner?: BotOwnerLookup,
+): MiddlewareHandler<{
   Variables: AppVariables;
 }> {
   return async (context, next) => {
     context.set("actor", DEV_ACTOR);
+    context.set("mayDriveBot", async (botId: string) =>
+      actorMayDriveBot(DEV_ACTOR, botOwner ? await botOwner(botId) : undefined),
+    );
     await next();
   };
 }

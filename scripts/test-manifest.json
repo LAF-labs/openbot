@@ -201,6 +201,7 @@
   "server/tests/deployment-admission.integration.test.ts",
   "server/tests/dev-actor.integration.test.ts",
   "server/tests/dev-auth-refusal.test.ts",
+  "server/tests/dev-require-user.test.ts",
   "server/tests/diagnostics-feedback.integration.test.ts",
   "server/tests/diagnostics.test.ts",
   "server/tests/effort-on-the-wire.integration.test.ts",
