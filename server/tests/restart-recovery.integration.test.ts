@@ -225,10 +225,18 @@ function outboxWithDoors() {
   return { outbox, took, asked };
 }
 
-/** The rows the outbox wrote for one person, once the fire-and-forget enqueue has landed. */
+/**
+ * The rows the outbox wrote for one person, once the fire-and-forget enqueue has landed.
+ *
+ * `delivered` waits for the doors as well: the outbox inserts the row, THEN hands it to the doors
+ * and records which took it in a second statement, so a row can be read between the two with
+ * `deliveredVia` still empty. The CI run of 2026-09-16 read exactly that and failed "[] is not
+ * [socket, webhook]" on a delivery that happened milliseconds later.
+ */
 async function notificationsFor(
   userId: string,
   expected: number,
+  options: { delivered?: boolean } = {},
 ): Promise<(typeof lafNotifications.$inferSelect)[]> {
   const deadline = Date.now() + 5_000;
   for (;;) {
@@ -236,7 +244,10 @@ async function notificationsFor(
       .select()
       .from(lafNotifications)
       .where(eq(lafNotifications.userId, userId));
-    if (rows.length >= expected || Date.now() > deadline) return rows;
+    const settled =
+      rows.length >= expected &&
+      (!options.delivered || rows.every((row) => row.deliveredAt !== null));
+    if (settled || Date.now() > deadline) return rows;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
@@ -466,7 +477,9 @@ describe("a routine that does not finish", () => {
     });
 
     // The outbox: one row, the facts of the run, through two doors and never the phone.
-    const [notification] = await notificationsFor(owner.id, 1);
+    const [notification] = await notificationsFor(owner.id, 1, {
+      delivered: true,
+    });
     expect(notification).toMatchObject({
       kind: "run.failed",
       botId,
@@ -520,7 +533,9 @@ describe("a routine that does not finish", () => {
     expect(failures.map((failure) => failure.code)).toEqual([
       TURN_FAILURE_CODES.unreachable,
     ]);
-    const [notification] = await notificationsFor(owner.id, 1);
+    const [notification] = await notificationsFor(owner.id, 1, {
+      delivered: true,
+    });
     expect(notification?.subject).toMatchObject({
       kind: "run",
       label: "재고 확인",
@@ -596,7 +611,9 @@ describe("a run the server restarted under", () => {
     // Two: the orphan has nobody to tell and is not news.
     expect(told).toBe(2);
 
-    const notifications = await notificationsFor(owner.id, 2);
+    const notifications = await notificationsFor(owner.id, 2, {
+      delivered: true,
+    });
     expect(notifications).toHaveLength(2);
     const byOrigin = Object.fromEntries(
       notifications.map((row) => [
