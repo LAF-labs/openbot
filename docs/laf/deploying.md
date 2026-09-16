@@ -498,10 +498,30 @@ same upgrade without any of that: no dump to go back to, no waiting, and no
 check — so an upgrade that left the deployment answering 503 finishes looking
 exactly like one that worked.
 
-The dump lands in `/var/backups/laf` (`BACKUP_DIR` moves it), beside a file
-recording what was running **by digest**. That file is not a nicety: a
-deployment on `IMAGE_TAG=stable` cannot recover its previous version from
-`.env` after the pull, because `stable` has already moved.
+**A version is chosen in `.env`, and only there.** To move a deployment to
+another release — or from `stable` to a pinned `vX.Y.Z`, or back — set the
+`IMAGE_TAG` line of `.env` first, then run the script. An `IMAGE_TAG` in the
+environment that disagrees with `.env` is refused before anything is touched,
+with the three steps to do instead. Compose takes the environment's value over
+`.env`'s, so `IMAGE_TAG=v0.3.2 scripts/upgrade.sh` — the script's own
+documented usage until 2026-09-16 — moved the deployment for that one run: the
+next `docker compose up -d`, anybody's, read `.env` and put the old images back
+over a schema the run had already migrated. One that agrees with `.env` is let
+through. The script reads `.env` the way compose does, measured against
+compose 5.1.1: the last `IMAGE_TAG` line, with or without `export`, spaces,
+quotes, a Windows line ending or an inline comment; set but empty in the
+environment, the value is `stable`, and so is a `.env` that names none.
+
+The dump lands in `/var/backups/laf` (`BACKUP_DIR` moves it), beside a record
+of what was running when the run began: `VERSION` as the run found it, and for
+every container the image it was created from, that image's
+`org.opencontainers.image.revision` (the commit `images.yml` stamps on each
+build) and its image id — asked of the containers, not of the tags, because a
+pull done earlier and never started has already moved the tag. Compose's own
+`images` table is there too; it was all the file held, and a tag and a short
+image id are not a version. The record is not a nicety: a deployment on
+`IMAGE_TAG=stable` cannot recover its previous version from `.env` after the
+pull, because `stable` has already moved.
 
 Nothing pulls on its own. There is no `pull_policy: always` in the compose file
 on purpose, so a reboot or an unrelated `up -d` re-runs what is already on the
@@ -512,8 +532,9 @@ running; the pull happens before anything is replaced; only `up -d` moves
 anything; and the script never writes `.env` — compose reads it, the script
 reads one line of it. `tests/upgrade-script.test.ts` drills all of that with a
 fake `docker` on PATH (the call order, the bytes of `.env` before and after,
-the words it prints), and each case below was also run against a real compose
-stack on 2026-09-10:
+the tag each pull and `up -d` would take, the words it prints, and the printed
+rollback run as printed), and each case below was also run against a real
+compose stack on 2026-09-10:
 
 - **The pull fails** (a registry that refuses, a token that expired, no
   network). Nothing was stopped or replaced; every container keeps the id it
@@ -539,19 +560,39 @@ stack on 2026-09-10:
   not answering. The script prints the three commands that say which
   dependency is down, and the way back.
 
-The way back is printed by both failures and has two steps, and the second is
-the *safe* restore:
+The way back is printed by both failures, under what the record says ran, and
+has two steps; the second is the *safe* restore:
 
 ```
-IMAGE_TAG=<previous version> docker compose pull && docker compose up -d
+# in .env, the IMAGE_TAG line:  IMAGE_TAG=<version>
+export IMAGE_TAG=<version>; docker compose pull && docker compose up -d
 scripts/restore.sh <dump> --replace       # only if the rollback does not come up clean
 ```
 
-The version to name is read from the inventory file beside the dump (a
-deployment on `stable` cannot read it from `.env`), or is `.env`'s own value
-when it is a pinned `vX.Y.Z`. The restore line is the one in "Restoring"
-below: beside the live database first, every table's row count on both
-sides, and the swap only after the name is typed. It used to print
+The first step pins the version in `.env` **and** exports it, and the script
+says so. The `.env` line is what keeps the rollback: every later
+`docker compose up -d` reads it, and while it still names the version that
+failed, the next one puts the failed images back. The `export` makes the pull
+and the `up -d` both take the version, whatever the shell had exported before.
+Until 2026-09-16 the script printed the tag written in front of the pull alone,
+and a variable written in front of a command reaches that command only: the
+pull took the old version, then the `up -d` read `.env` and restarted the
+images that had just failed (audit 2026-09-16, R6 F6; reproduced with compose
+5.1.1). The test now runs the printed line through a fake `docker` that
+resolves the tag the way compose does, and holds the `up -d` to the old
+version.
+
+`<version>` is filled in when the record says it: the release every one of the
+deployment's containers was created from — what a pinned deployment ran,
+whatever `.env` names now — or, on `stable`, `VERSION`'s channel when its
+revision is every running image's revision, which holds when the bundle was not
+refreshed ahead of the run. Otherwise the script prints `vX.Y.Z`, which no image
+carries, so the line fails at the pull and replaces nothing, and the revision
+printed above it is what to look the release up by. An `:edge` build has no
+tag of its own, so once `edge` has moved it cannot be pulled back. The restore
+line is the one in "Restoring" below: beside the live database first, every
+table's row count on both sides, and the swap only after the name is typed. It
+used to print
 `zcat dump | psql openbot` — the form `restore.sh`'s own header calls
 dangerous, and without `--clean` in the dump it half-applies on top of the
 live rows. Measured 2026-09-10, the printed line run as printed against a
@@ -584,9 +625,10 @@ their real shapes), `pull`, `up -d`, the honest `/health`. It seeds it through
 the front door as a signed-in person — two Bots, a room with a few messages, a
 routine that has run, the Bot's browser opened once, a site connection, and the
 trail all of that leaves — and photographs every table. Then it re-extracts the
-TO tag's bundle over the directory as `laf upgrade` does and runs
-`scripts/upgrade.sh` as written, while `/`, `/health` and `/api/capabilities`
-are asked every 0.25 s from outside. What it holds the upgrade to:
+TO tag's bundle over the directory as `laf upgrade` does, sets the TO tag in
+`.env` as a person moving a VM must, and runs `scripts/upgrade.sh` as written,
+while `/`, `/health` and `/api/capabilities` are asked every 0.25 s from
+outside. What it holds the upgrade to:
 
 - **Every row that existed is still there, unchanged**, column by column over
   the columns both schemas have. Allowed to move, each with its reason in the

@@ -13,9 +13,9 @@
  *  2. Seeds it through the front door as a signed-in person — two Bots, a room with a few messages
  *     answered by a fake model, a routine that has run, the Bot's browser opened once, a site
  *     connection, and the trail all of that leaves — then photographs every table.
- *  3. Re-extracts the TO tag's bundle over the directory, as `laf upgrade` does, and runs
- *     `scripts/upgrade.sh` as written, while `/`, `/health` and `/api/capabilities` are asked every
- *     0.25 s from outside.
+ *  3. Re-extracts the TO tag's bundle over the directory, as `laf upgrade` does, sets the TO tag in
+ *     `.env` — the one place a version is chosen — and runs `scripts/upgrade.sh` as written, while
+ *     `/`, `/health` and `/api/capabilities` are asked every 0.25 s from outside.
  *  4. Asserts: every row that existed is still there with the same content, the migrations were
  *     applied once, /health is ok, the person is still signed in, the API is the new build, one
  *     turn answers through the fake model, the Bot's browser answers and opens the profile the old
@@ -1723,6 +1723,22 @@ async function main(): Promise<number> {
       "the copy never writes the directory's own .env",
     );
 
+    /*
+     * THE TO TAG GOES IN .env FIRST, as it must for a person moving a VM to another version:
+     * `upgrade.sh` refuses an IMAGE_TAG in its environment that disagrees with .env (audit
+     * 2026-09-16, R6 F6). This run used to export the TO tag and leave .env naming the FROM tag —
+     * the shape that moved a deployment for one run, until the next `up -d` read .env and moved it
+     * back. What the upgrade is held to below is that it leaves this .env exactly as it found it.
+     */
+    const envPath = join(deployment, ".env");
+    writeFileSync(
+      envPath,
+      readFileSync(envPath, "utf8").replace(
+        /^IMAGE_TAG=.*$/m,
+        `IMAGE_TAG=${toTag}`,
+      ),
+    );
+    const envPinned = envHash();
     composeEnv.IMAGE_TAG = toTag;
     if (local) {
       const config = await run(
@@ -1819,8 +1835,8 @@ async function main(): Promise<number> {
     say("Checking");
     report.check(
       ".env untouched by the upgrade",
-      envHash() === envBefore,
-      "byte for byte, before the bundle and after upgrade.sh",
+      envHash() === envPinned,
+      "byte for byte, from the TO tag being set in it to after upgrade.sh",
     );
 
     const after = await photograph(psql);
