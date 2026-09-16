@@ -14,7 +14,9 @@
  * pages are long enough that a template string here would bury the one page that matters. Each is
  * served at `/sites/<name>`; a `-quiet` sibling, where one exists, is what the same address serves
  * once `setQuiet(true)` has been called — the morning on which nothing came in, at the same URL a
- * routine would open on any other morning. No real customer's data is in any of them.
+ * routine would open on any other morning. No real customer's data is in any of them. Two files
+ * there are not job pages and are not on that list: the form sent by GET and the page it lands on,
+ * served at `/get-form` and `/landed`.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -301,6 +303,93 @@ const PW_HTML = `<!doctype html>
   </form>
 </body></html>`;
 
+/** Where a box is drawn: its accessible name, and a point inside it in viewport pixels. */
+type DrawnBox = { name: string; x: number; y: number };
+
+/**
+ * The boxes on `/takeover`, by the name each reaches the tree with and a point a person's click can
+ * land on — through `/human/click` or the live screen, which address a page by pixel.
+ *
+ * NONE OF THEM IS MARKED OR NAMED AS A SECRET. No password type, no `autocomplete` token, no word any
+ * list carries (the audit's own box was 승인번호, which is a listed word now, so it would prove the
+ * list and not the following). What keeps a person's typing out of a later look is that a person
+ * typed it, and nothing else.
+ */
+export const TAKEOVER_BOXES = {
+  /** `/human/type`, one block. */
+  typed: { name: "고객 확인 값", x: 170, y: 115 },
+  /** `/human/key`, one key at a time. */
+  keyed: { name: "접수 키", x: 170, y: 165 },
+  /** The live screen's `text`: a paste, or a finished Korean word. */
+  pasted: { name: "가맹 코드", x: 170, y: 215 },
+  /** The live screen's key events, one down and one up per character. */
+  pressed: { name: "발급 문자", x: 170, y: 265 },
+  /** Renames itself on the first keystroke, so neither its name nor its ref finds it afterwards. */
+  renames: { name: "상점 값", x: 170, y: 315 },
+  /** Inside a frame from another origin, the way a payment window is. */
+  framed: { name: "결제창 확인 값", x: 180, y: 405 },
+} as const satisfies Record<string, DrawnBox>;
+
+/** What `TAKEOVER_BOXES.renames` is called once it holds anything. */
+export const TAKEOVER_RENAMED = "상점 값 (입력됨)";
+
+/** A box on `/takeover` nobody but the Bot types into, and the button beside it. */
+export const TAKEOVER_BOT_BOX = "봇 메모";
+export const TAKEOVER_BUTTON = "다음 단계";
+
+/** How long `/slow-no-content` takes to answer, and where the link to it is drawn on `/takeover`. */
+export const SLOW_NO_CONTENT_MS = 3_000;
+export const TAKEOVER_SLOW_LINK = { x: 40, y: 527 } as const;
+
+/** A box drawn at `y`, absolutely, so its point never moves with the page's text. */
+const drawnBox = (label: string, y: number, extra = "") =>
+  `<input type="text" aria-label="${label}" ${extra} style="position:absolute;left:20px;top:${y - 15}px;width:300px;height:30px">`;
+
+/**
+ * The page a person takes the wheel on, served at `/takeover`. `frameOrigin` is the other origin the
+ * payment-window frame comes from — the same server under the name `localhost`, which the browser
+ * keeps in a process of its own.
+ */
+const takeoverHtml = (frameOrigin: string) => `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>본인 확인</title></head>
+<body>
+  <h1 style="position:absolute;left:20px;top:0;margin:0;font-size:20px">본인 확인</h1>
+  ${drawnBox(TAKEOVER_BOXES.typed.name, TAKEOVER_BOXES.typed.y)}
+  ${drawnBox(TAKEOVER_BOXES.keyed.name, TAKEOVER_BOXES.keyed.y)}
+  ${drawnBox(TAKEOVER_BOXES.pasted.name, TAKEOVER_BOXES.pasted.y)}
+  ${drawnBox(TAKEOVER_BOXES.pressed.name, TAKEOVER_BOXES.pressed.y)}
+  ${drawnBox(
+    TAKEOVER_BOXES.renames.name,
+    TAKEOVER_BOXES.renames.y,
+    `oninput="this.setAttribute('aria-label', '${TAKEOVER_RENAMED}')"`,
+  )}
+  ${drawnBox(TAKEOVER_BOT_BOX, 365)}
+  <iframe src="${frameOrigin}/takeover-frame" title="결제창" style="position:absolute;left:20px;top:380px;width:400px;height:80px;border:0"></iframe>
+  <button type="button" style="position:absolute;left:20px;top:480px" onclick="document.title = '눌림'">${TAKEOVER_BUTTON}</button>
+  <a href="/slow-no-content" style="position:absolute;left:20px;top:${TAKEOVER_SLOW_LINK.y - 7}px;font-size:14px">천천히 끝나는 링크</a>
+</body></html>`;
+
+const TAKEOVER_FRAME_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>결제창</title></head>
+<body style="margin:0">
+  <input type="text" aria-label="${TAKEOVER_BOXES.framed.name}" style="position:absolute;left:10px;top:10px;width:300px;height:30px">
+</body></html>`;
+
+/**
+ * The box on `/get-form` (`fixtures/get-form.html`), and where it is drawn.
+ *
+ * THE BOX'S VALUE LEAVES IN THE ADDRESS. A GET form puts every field in the query, so the page it
+ * lands on is `/landed?step=2&pin=<what was typed>` — and that address was on every result the Bot
+ * was handed afterwards (audit R3-03: `/key`, the next snapshot's `url` and `tabs`, `/read`).
+ * `/to-hang` has the same form for a page that never arrives; this one arrives at once
+ * (`fixtures/landed.html`) and says nothing about what it was sent. `step` is a value nobody typed,
+ * which has to survive.
+ */
+export const GET_FORM_BOX = { name: "간편 확인 값", x: 170, y: 115 } as const;
+
+/** What `/landed` says: that it arrived, and nothing it was sent. */
+export const LANDED_TEXT = "접수되었습니다";
+
 /**
  * Serve it, and say where.
  *
@@ -388,6 +477,14 @@ export function serveFixture(port = 0) {
         return new Response(null, { status: 204 });
       }
       /*
+       * The same, after a while: a tab whose next document is on its way for that long, and then the
+       * page it never left — still holding whatever a person typed into it in the meantime.
+       */
+      if (path === "/slow-no-content") {
+        await Bun.sleep(SLOW_NO_CONTENT_MS);
+        return new Response(null, { status: 204 });
+      }
+      /*
        * A SITE THAT SIGNS YOU IN AND REMEMBERS IT, which is the whole of what a shared profile is
        * for. `/sign-in?as=…` sets an EXPIRING cookie — a session cookie is dropped on restart by
        * design (profiles.ts) and would make this a test of Chromium's restart behaviour rather than
@@ -428,6 +525,21 @@ export function serveFixture(port = 0) {
         return new Response(PW_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+      if (path === "/takeover") {
+        return new Response(takeoverHtml(`http://localhost:${url.port}`), {
+          headers: html,
+        });
+      }
+      if (path === "/takeover-frame") {
+        return new Response(TAKEOVER_FRAME_HTML, { headers: html });
+      }
+      // Files rather than strings, like the job pages, but not on that list: nobody's job opens them.
+      if (path === "/get-form" || path === "/landed") {
+        return new Response(
+          Bun.file(join(FIXTURES_DIR, `${path.slice(1)}.html`)),
+          { headers: html },
+        );
       }
       /*
        * A button that changes its own label after a while — "저장" becomes "결제하기" — and reports

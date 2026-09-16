@@ -10,6 +10,7 @@
 import type { ElementHandle, Frame, Page } from "playwright";
 import { isTextEntryRole, parseAriaSnapshot } from "./aria-snapshot";
 import type { BotSession, SecretField } from "./sessions";
+import { digestOf, keepTyped } from "./typed-values";
 import { within } from "./within";
 
 /**
@@ -33,8 +34,17 @@ const SECRET_INPUT_SELECTOR = [
 /** How many marked inputs one snapshot joins, across every frame. A login form has one or two. */
 const SECRET_INPUT_LIMIT = 20;
 
-/** How many fields a session follows. Each is a live handle into the page. */
-const SECRET_FIELD_LIMIT = 8;
+/**
+ * How many fields a session follows. Each is a live handle into the page, and each is looked for at
+ * every snapshot (`typedIntoRefs`).
+ *
+ * Twenty-four, not the eight it was while only `computer_request_secret` filled these: a person
+ * holding the wheel types into every box of the form in front of them, and a Korean checkout is card
+ * number in four boxes, expiry in two, CVC, the card password's first two digits and a birth date —
+ * nine on one page before 본인인증 asks for five more. A box pushed off the end is a box whose value
+ * the next look shows, so the list is sized for the form, not for the typical login.
+ */
+const SECRET_FIELD_LIMIT = 24;
 
 /**
  * How long a join may wait on one element — or on one frame. They answer in milliseconds or not at
@@ -227,14 +237,13 @@ export async function secretSignals(
       const value = fieldAnswers[index];
       if (value === undefined) return;
       if (value === null) {
-        // The node left the page, or the page left the browser: the secret went with it.
-        session.secretFields = session.secretFields.filter(
-          (kept) => kept !== field,
-        );
-        void field.handle.dispose().catch(() => undefined);
+        // The node left the page, or the page left the browser: the secret went with it — or into
+        // the address the page left for, which is why its digest is kept (`typed-values.ts`).
+        letGo(session, field);
         return;
       }
       if (value) into.values.push(value);
+      field.digest = digestOf(value) ?? field.digest;
     });
     into.refs.push(...(await Promise.all(refReads)).flat());
     frames = frames.filter((_, index) => frameAnswers[index] === undefined);
@@ -337,25 +346,55 @@ async function refNamesNode(
   );
 }
 
-/** Follow a field a person just typed a secret into, from the next snapshot on. */
+/** Stop following one field, keeping the digest of what it held. */
+function letGo(session: BotSession, field: SecretField): void {
+  session.secretFields = session.secretFields.filter((kept) => kept !== field);
+  if (session.lastTyped === field) session.lastTyped = undefined;
+  keepTyped(session, field.digest);
+  void field.handle.dispose().catch(() => undefined);
+}
+
+/**
+ * Follow a field a person just typed into, from the next snapshot on — and say which record follows it.
+ *
+ * `known` is what the caller already has: the frame the field is in, and the digest of what was
+ * typed. With no handle — the page left on the keystroke — there is no field to follow, and the
+ * digest is what is kept, for the address the page left for.
+ */
 export function rememberSecretField(
   session: BotSession,
   handle: ElementHandle | null,
   ref: string,
-): void {
-  if (!handle) return;
-  session.secretFields.push({ handle, ref });
-  while (session.secretFields.length > SECRET_FIELD_LIMIT) {
-    void session.secretFields
-      .shift()
-      ?.handle.dispose()
-      .catch(() => undefined);
+  known: { frame?: Frame; digest?: string | undefined } = {},
+): SecretField | null {
+  if (!handle) {
+    keepTyped(session, known.digest);
+    return null;
   }
+  const field: SecretField = {
+    handle,
+    ref,
+    ...(known.frame ? { frame: known.frame } : {}),
+    ...(known.digest ? { digest: known.digest } : {}),
+  };
+  session.secretFields.push(field);
+  while (session.secretFields.length > SECRET_FIELD_LIMIT) {
+    const oldest = session.secretFields[0];
+    if (oldest) letGo(session, oldest);
+  }
+  return field;
 }
 
-/** Let every followed field go: the browser they lived in is gone. */
+/**
+ * Let every followed field go, and everything known about what was typed: the tabs they lived in,
+ * and every address that could carry it, are gone.
+ */
 export function forgetSecretFields(session: BotSession): void {
   for (const field of session.secretFields.splice(0)) {
     void field.handle.dispose().catch(() => undefined);
   }
+  session.lastTyped = undefined;
+  session.typedDigests = [];
+  session.ownDigests = [];
+  session.typedBlind = new WeakMap();
 }

@@ -24,6 +24,7 @@ import {
   WHILE_ARRIVING_MS,
 } from "./page-arrival";
 import { settleIfLoading, titleOf } from "./page-text";
+import { typedIntoBlind } from "./person-typing";
 import type { TabSummary } from "./profiles";
 import {
   SECRET_JOIN_TIMEOUT_MS,
@@ -239,6 +240,11 @@ export async function snapshotPage(
     const arrival = arrivalOf(target);
     if (arrival) return stillArriving(session, target, tabs, arrival);
   }
+  /*
+   * The same answer for a document a person typed into while it would not say where
+   * (`person-typing.ts`): the box is somewhere on it, unfollowed, until the document is gone.
+   */
+  const unverified = !typedInto.complete || typedIntoBlind(session, target);
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
@@ -247,7 +253,7 @@ export async function snapshotPage(
       labels: marks.labels,
       values: marks.values,
       refs: [...marks.refs, ...typedInto.refs],
-      ...(typedInto.complete ? {} : { unverified: true }),
+      ...(unverified ? { unverified: true } : {}),
     }),
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.

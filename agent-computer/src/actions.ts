@@ -13,6 +13,7 @@ import { log } from "./log";
 import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json, RequestInvalidError } from "./respond";
 import { type BotSession, withNotes } from "./sessions";
+import { digestOf, keepOwn } from "./typed-values";
 
 export type ActionBody = {
   ref?: unknown;
@@ -105,6 +106,8 @@ async function performAction(
     if (typeof text !== "string") throw new RequestInvalidError("text");
     const field = await resolveRef(session, target, ref, expected);
     await holdToLabel(field, body.element);
+    // The Bot's own words, never blanked from an address it sends them in (`typed-values.ts`).
+    keepOwn(session, digestOf(text));
     // `fill` rather than keystrokes: it clears the field first, which is what "put this value in
     // this box" means. Typing into a field a previous attempt half-filled otherwise appends, and the
     // form ends up with "AlicAlice" in it. Its failure is the element's, and says nothing else:

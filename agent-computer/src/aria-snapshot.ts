@@ -171,6 +171,11 @@ export function comparableValue(value: string): string {
  * 패스워드 is here because it was not: the word Korean sites write in place of 비밀번호 was in
  * neither list, and the one page the auditor built used exactly that word. The word is not what
  * fixes that page — identity is — it is what keeps the last net from missing the commonest case.
+ *
+ * 승인번호, 인증코드, 주민등록번호 and PIN for the same reason (audit R3-01, 2026-09-16): a parser
+ * dry-run kept all four boxes' values, and the audit's takeover reproduction typed into a box called
+ * 승인번호. What fixes a takeover is following the box a person typed into (`person-typing.ts`);
+ * these keep the last net from missing the boxes a Korean checkout and 본인인증 actually ask for.
  */
 const SECRET_LABEL_WORDS = [
   "비밀번호",
@@ -193,12 +198,32 @@ const SECRET_LABEL_WORDS = [
   "cvv",
   "보안코드",
   "보안 코드",
+  "승인번호",
+  "승인 번호",
+  "인증코드",
+  "인증 코드",
+  "주민등록번호",
+  "주민등록 번호",
+  "주민번호",
 ];
 
+/**
+ * Words that mean a secret only standing on their own. PIN is inside Shipping, Spinner and opinion,
+ * so it matches with no letter on either side; a digit may sit beside it, because that is how a
+ * PIN's length is written (PIN4, PIN 6자리), and so may Hangul (PIN번호) or an underscore (pin_code).
+ */
+const SECRET_LABEL_WHOLE_WORDS = ["pin"];
+
+const escapedWord = (word: string): string =>
+  word.replace(/[^\p{L}\p{N} ]/gu, (character) => `\\${character}`);
+
 const SECRET_LABEL = new RegExp(
-  SECRET_LABEL_WORDS.map((word) =>
-    word.replace(/[^\p{L}\p{N} ]/gu, (character) => `\\${character}`),
-  ).join("|"),
+  [
+    ...SECRET_LABEL_WORDS.map(escapedWord),
+    ...SECRET_LABEL_WHOLE_WORDS.map(
+      (word) => `(?<![a-z])${escapedWord(word)}(?![a-z])`,
+    ),
+  ].join("|"),
   "iu",
 );
 

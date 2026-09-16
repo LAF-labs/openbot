@@ -33,6 +33,12 @@ export const PAGE_LOADING: NoteCode = "laf:page_loading";
 type Followed = {
   session: CDPSession;
   arriving?: { url: string; since: number };
+  /**
+   * How many documents the tab has committed since it was followed. `Page.frameNavigated` is sent for
+   * a new document only — a `pushState` is `Page.navigatedWithinDocument` (measured 2026-09-16) — so
+   * this moves exactly when everything typed into the page before is gone.
+   */
+  documents: number;
 };
 
 const followed = new WeakMap<Page, Followed>();
@@ -65,7 +71,7 @@ export function followArrivals(page: Page): void {
       // The browser's answer, not the document's: it comes back while a document is on its way.
       const { targetInfo } = await session.send("Target.getTargetInfo");
       const main = targetInfo.targetId;
-      const tab: Followed = { session };
+      const tab: Followed = { session, documents: 0 };
       const ended = () => {
         tab.arriving = undefined;
       };
@@ -76,7 +82,9 @@ export function followArrivals(page: Page): void {
         tab.arriving = { url: event.url, since: Date.now() };
       });
       session.on("Page.frameNavigated", (event) => {
-        if (!event.frame.parentId) ended();
+        if (event.frame.parentId) return;
+        tab.documents += 1;
+        ended();
       });
       session.on("Page.frameStoppedLoading", (event) => {
         if (event.frameId === main) ended();
@@ -103,6 +111,14 @@ export function arrivalOf(page: Page): Arrival | undefined {
   return arriving
     ? { origin: originOf(arriving.url), since: arriving.since }
     : undefined;
+}
+
+/**
+ * Which of the tab's documents is on it now, as a count that only moves when one is replaced — or
+ * undefined for a tab not followed, which a caller must read as "cannot tell".
+ */
+export function documentOf(page: Page): number | undefined {
+  return followed.get(page)?.documents;
 }
 
 /** The fact for a result: the page is still loading, from where, and for how long so far. */

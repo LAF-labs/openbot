@@ -22,6 +22,7 @@ import { arrivalNote } from "./page-arrival";
 import { readSettledPageText, titleOf } from "./page-text";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
+import { keepOwnAddress } from "./typed-values";
 
 /** A navigation this process stopped: where it was going, where it was sent from, and why. */
 type RefusedHop = {
@@ -266,6 +267,12 @@ export const navigate: BotRoute = async (
       startedAt,
     );
   }
+  /*
+   * The Bot's own address is never blanked on the way back (`typed-values.ts`): it wrote every
+   * value in it, and an address that came back blanked would tell it which of its guesses was what a
+   * person typed.
+   */
+  keepOwnAddress(session, asked.url);
   // The `Referer` a hop stopped last time was carrying, when the gateway asks for that hop now.
   // Only a web address the floor allows; anything else is dropped rather than sent.
   const referer =

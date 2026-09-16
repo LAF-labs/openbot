@@ -343,6 +343,22 @@ describe("what a secret field's value becomes", () => {
       "cvv",
       "보안코드",
       "보안 코드",
+      // The four the audit's parser dry-run found keeping their values (R3-01, 2026-09-16).
+      "승인번호",
+      "카드 승인 번호",
+      "인증코드",
+      "인증 코드 입력",
+      "주민등록번호 뒷자리",
+      "주민등록 번호",
+      "주민번호",
+      "PIN",
+      "pin",
+      "간편결제 PIN",
+      "PIN번호",
+      "PIN 6자리",
+      "PIN4",
+      "Card PIN:",
+      "pin_code",
     ]) {
       expect([label, isSecretLabel(label)]).toEqual([label, true]);
     }
@@ -352,9 +368,35 @@ describe("what a secret field's value becomes", () => {
       "검색",
       "주문번호",
       "우편번호",
+      "승인 요청 사유",
+      // PIN only on its own: inside another word it is a shipping address, a spinner, an opinion.
+      "Shipping address",
+      "Spinner",
+      "Your opinion",
+      "Pinterest 계정",
+      "PINs and needles",
     ]) {
       expect([label, isSecretLabel(label)]).toEqual([label, false]);
     }
+  });
+
+  test("the audit's four labels lose their values, as the tree writes them", () => {
+    const VALUES = ["SEC-APPROVAL-1111", "CODE-2222", "1234567", "0412"];
+    const { elements } = parseAriaSnapshot(`- generic [ref=e1]:
+  - textbox "승인번호" [ref=e2]: ${VALUES[0]}
+  - textbox "인증코드" [ref=e3]: ${VALUES[1]}
+  - textbox "주민등록번호 뒷자리" [ref=e4]: ${VALUES[2]}
+  - textbox "PIN" [ref=e5]: ${VALUES[3]}
+  - textbox "Shipping address" [ref=e6]: 서울시 중구`);
+    const written = JSON.stringify(elements);
+    for (const value of VALUES) expect(written).not.toContain(value);
+    expect(elements.map((element) => element.value)).toEqual([
+      "",
+      "",
+      "",
+      "",
+      "서울시 중구",
+    ]);
   });
 });
 

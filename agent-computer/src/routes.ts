@@ -36,6 +36,7 @@ import type { StreamData } from "./live-screen";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
 import { fact } from "./respond";
+import { withoutTypedAddresses } from "./typed-values";
 
 /** Every route that names a Bot, by `METHOD /path`. A method the table does not list is a 404. */
 const BOT_ROUTES = new Map<string, BotRoute>([
@@ -154,7 +155,18 @@ export function computerFetch(computer: Computer) {
     }
 
     const route = BOT_ROUTES.get(`${request.method} ${url.pathname}`);
-    if (route) return route({ request, url, botId, session }, computer);
+    if (route) {
+      /*
+       * AND NO ADDRESS LEAVES CARRYING WHAT A PERSON TYPED. A form sent by GET puts its boxes in the
+       * address it lands on, and that address rode out on every answer after it (audit R3-03). The
+       * one place every Bot route's answer passes is here, so this is where it is blanked — and an
+       * answer from a Bot nobody has typed for goes out untouched. See `typed-values.ts`.
+       */
+      return withoutTypedAddresses(
+        session,
+        await route({ request, url, botId, session }, computer),
+      );
+    }
 
     return fact("laf:computer_route_unknown");
   };

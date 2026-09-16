@@ -7,9 +7,12 @@
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
+import { inTurn, settleTyping } from "./person-typing";
 import { locateRef, onElement, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
+import { digestOf } from "./typed-values";
+import { within } from "./within";
 
 // Who has the wheel. Polled by the surface alongside the screen, so the person sees the Bot ask
 // for help without having to reload anything.
@@ -88,14 +91,21 @@ export const supplySecret: BotRoute = async (
      * while the value is the one thing this process must not keep. The element itself is
      * neither: it is where the secret is, until the page is gone. The short wait is for a page
      * that left on the keystroke — the value left with it, and the person is waiting.
+     *
+     * AND A DIGEST OF THE VALUE, which is not the value: the page this box is on may send it
+     * away in an address — a form sent by GET — after the box itself is gone (audit R3-03), and
+     * the digest is how that address is blanked (`typed-values.ts`).
      */
-    rememberSecretField(
-      session,
-      await field
-        .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
-        .catch(() => null),
-      pending.ref,
-    );
+    const handle = await field
+      .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
+      .catch(() => null);
+    const frame = handle
+      ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
+      : null;
+    rememberSecretField(session, handle, pending.ref, {
+      ...(frame ? { frame } : {}),
+      digest: digestOf(text),
+    });
     const characters = text.length;
     // Cleared only after it actually landed, so a failure leaves the request open and the person
     // can try again rather than being told to start over.
@@ -115,7 +125,14 @@ export const supplySecret: BotRoute = async (
 export const takeControl: BotRoute = ({ session }) =>
   json(session.control.take());
 
-// `reason` is dropped on release: it described the thing the person was asked to do, and once
-// they have done it, leaving it set would have the surface still showing the old request.
-export const releaseControl: BotRoute = ({ session }) =>
-  json(session.control.release());
+/*
+ * `reason` is dropped on release: it described the thing the person was asked to do, and once
+ * they have done it, leaving it set would have the surface still showing the old request.
+ *
+ * Every box the person typed into is read once more first, in turn behind their last keystroke: the
+ * Bot acts next, and the Bot's Enter is what sends a form carrying the last thing they typed.
+ */
+export const releaseControl: BotRoute = async ({ session }) => {
+  await inTurn(session, () => settleTyping(session, { every: true }));
+  return json(session.control.release());
+};

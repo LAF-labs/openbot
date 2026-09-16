@@ -19,6 +19,32 @@ export function json(body: unknown): Response {
   return write(body, 200);
 }
 
+/**
+ * The same answer, its JSON body passed through `change`: the same status, the same code. For a
+ * filter every answer passes on its way out (`withoutTypedAddresses`), which must not become a second
+ * place an answer is written.
+ */
+export async function rewritten(
+  answer: Response,
+  change: (body: unknown) => unknown,
+): Promise<Response> {
+  if (!answer.headers.get("content-type")?.startsWith("application/json")) {
+    return answer;
+  }
+  const text = await answer.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Nothing here writes a body that does not parse; if one ever does, it goes out as it came.
+    return new Response(text, {
+      status: answer.status,
+      headers: answer.headers,
+    });
+  }
+  return write(change(body), answer.status);
+}
+
 /** A request's JSON body, or null for one that has none or cannot be read. */
 export async function bodyOf<T>(request: Request): Promise<T | null> {
   return (await request.json().catch(() => null)) as T | null;

@@ -9,12 +9,13 @@
  * `/live` stays absent. A page served by this process can only be opened by putting the secret in a
  * URL, where it lands in history and logs. The React app is the guarded way to watch a Bot.
  */
-import type { WebSocketHandler } from "bun";
+import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { Page } from "playwright";
 import type { ScreenCode } from "./codes";
 import type { Computer } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { log } from "./log";
+import { followTyping, inTurn, settleTyping } from "./person-typing";
 import { type InputMessage, startScreencast } from "./screencast";
 import type { BotSession } from "./sessions";
 
@@ -50,6 +51,50 @@ export async function stopViewer(session: BotSession): Promise<void> {
   await current?.cast.stop();
 }
 
+/**
+ * One piece of a person's input, applied to the tab being cast — after the pieces before it.
+ *
+ * IN TURN, BECAUSE OF THE QUESTION BEFORE A KEYSTROKE. The box a keystroke lands in is asked of the
+ * page before the keystroke is sent (`person-typing.ts`), and two pieces whose questions came back
+ * out of order would reach the page out of order — 한 and 글, sent a syllable at a time, landing as
+ * 글한. Until 2026-09-16 each message went straight to Chrome as it arrived, which kept the order and
+ * followed no box.
+ */
+async function applyInput(
+  ws: ServerWebSocket<StreamData>,
+  session: BotSession,
+  message: InputMessage,
+): Promise<void> {
+  const viewer = session.viewer;
+  if (!viewer) return;
+  // Asked again, in turn: the wheel can be handed back while this waits behind the input before it.
+  if (!session.control.humanMayDrive()) {
+    ws.send(screenError(TAKE_CONTROL_FIRST));
+    return;
+  }
+  try {
+    if (message.type === "text") {
+      await followTyping(session, viewer.page, message.text);
+    } else if (message.type === "key" && message.event === "down") {
+      await followTyping(session, viewer.page);
+    } else if (message.type === "mouse" && message.event === "pressed") {
+      // A press can send the form the last box is in: what that box holds is read before it goes.
+      await settleTyping(session);
+    }
+    await viewer.cast.send(message);
+  } catch (error) {
+    // Reported rather than swallowed. A dispatch that fails means the person's input did nothing,
+    // and they must not be left believing it landed.
+    // The input's TYPE (a click, a key) and never its content: a keystroke on the live screen
+    // is what somebody typed into a browser holding their logins.
+    log.error("screencast_input_failed", {
+      input: message.type,
+      reason: error,
+    });
+    ws.send(screenError("laf:input_not_applied"));
+  }
+}
+
 export function liveScreen({
   profiles,
   sessions,
@@ -80,7 +125,12 @@ export function liveScreen({
           const previous = session.viewer;
           const cast = await startScreencast(target, send);
           casting = target;
-          session.viewer = { socket: ws, cast, follow: previous?.follow };
+          session.viewer = {
+            socket: ws,
+            cast,
+            page: target,
+            follow: previous?.follow,
+          };
           // The old cast stops after the replacement is running, so the screen does not go blank.
           await previous?.cast.stop().catch(() => undefined);
         };
@@ -115,19 +165,7 @@ export function liveScreen({
         ws.send(screenError(TAKE_CONTROL_FIRST));
         return;
       }
-      try {
-        await session.viewer.cast.send(message);
-      } catch (error) {
-        // Reported rather than swallowed. A dispatch that fails means the person's input did nothing,
-        // and they must not be left believing it landed.
-        // The input's TYPE (a click, a key) and never its content: a keystroke on the live screen
-        // is what somebody typed into a browser holding their logins.
-        log.error("screencast_input_failed", {
-          input: message.type,
-          reason: error,
-        });
-        ws.send(screenError("laf:input_not_applied"));
-      }
+      await inTurn(session, () => applyInput(ws, session, message));
     },
 
     async close(ws) {

@@ -1,14 +1,14 @@
 /**
  * What this process holds for each Bot besides its browser: who has the wheel, which snapshot its
- * refs belong to, the facts waiting to be told, the fields a person typed a secret into, the
- * navigation in flight and the person watching.
+ * refs belong to, the facts waiting to be told, the fields a person typed into and what is known of
+ * what they typed (never the value), the navigation in flight and the person watching.
  *
  * Per Bot, and resolved once per request, so there is no path where one Bot's call reaches
  * another's. Profiles are isolated, but this process is not a security boundary.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ElementHandle } from "playwright";
+import type { ElementHandle, Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
 import {
   type Control,
@@ -39,8 +39,19 @@ export type ComputerNote = { code: NoteCode } & Record<string, unknown>;
  */
 const MAX_NOTES = 8;
 
-/** A field a person typed a secret into. See `BotSession.secretFields`. */
-export type SecretField = { handle: ElementHandle; ref: string };
+/** A field a person typed into. See `BotSession.secretFields`. */
+export type SecretField = {
+  handle: ElementHandle;
+  /** The ref it was last known by, or empty until a look finds it (`typedIntoRefs`). */
+  ref: string;
+  /**
+   * The frame it is in, where that is known, so a person's next keystroke can ask that frame alone
+   * whether it is landing in the same box.
+   */
+  frame?: Frame;
+  /** A keyed digest of what it held when last read, never what it held (`typed-values.ts`). */
+  digest?: string;
+};
 
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
 export type BotSession = {
@@ -60,13 +71,39 @@ export type BotSession = {
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**
-   * The fields a person typed a secret into: the node itself, and the ref it was last known by.
+   * The fields a person typed into: the node itself, and the ref it was last known by.
    *
    * Identity, not description: whatever the page calls the box and whatever its markup says, the
-   * value in THIS node is the one `computer_request_secret` promised the model would never see.
-   * Followed at every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
+   * value in THIS node is one the model was promised it would never see — typed through
+   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Followed at
+   * every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
    */
   secretFields: SecretField[];
+  /**
+   * Keyed digests of what a person typed whose box is gone, or that arrived as one block — so an
+   * address carrying it is blanked after the page it was typed on has left (`typed-values.ts`).
+   * Never the values.
+   */
+  typedDigests: string[];
+  /**
+   * Keyed digests of what the Bot itself put into a box or an address. Never blanked: the Bot knows
+   * them already, and blanking one it chose would tell it the guess was what a person typed.
+   */
+  ownDigests: string[];
+  /** The box a person's last keystroke landed in, for the next keystroke to be compared with. */
+  lastTyped?: SecretField;
+  /**
+   * The tabs a person typed into while the page would not say where the typing went, and which of
+   * each tab's documents it was (`documentOf`). That document shows no box's contents until it is
+   * gone (`person-typing.ts`).
+   */
+  typedBlind: WeakMap<Page, number | undefined>;
+  /**
+   * A person's input, applied one piece at a time in the order it arrived. Finding the box a
+   * keystroke lands in is a question to the page, and two keystrokes whose questions answered out of
+   * order would reach the page out of order.
+   */
+  personInput: Promise<void>;
   /**
    * The `/navigate` in flight, while it is: which tab's frame it drives, which host it was judged
    * for, and what the guard stopped on its way.
@@ -80,6 +117,8 @@ export type BotSession = {
   viewer?: {
     socket: unknown;
     cast: Screencast;
+    /** The tab being cast, which is the tab the person's input goes to. */
+    page: Page;
     /** Stops the loop that keeps the cast pointed at whatever page the Bot is actually on. */
     follow?: ReturnType<typeof setInterval>;
   };
@@ -186,6 +225,10 @@ export function createSessions(directories: {
         snapshotId: 0,
         notes: restored.secretLost ? [{ code: "laf:secret_request_lost" }] : [],
         secretFields: [],
+        typedDigests: [],
+        ownDigests: [],
+        typedBlind: new WeakMap(),
+        personInput: Promise.resolve(),
       };
       sessions.set(botId, created);
       return created;

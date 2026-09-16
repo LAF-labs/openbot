@@ -6,13 +6,16 @@
  * usable while they hold the wheel.
  *
  * Nothing a person types here reaches the model. It goes from their keyboard to this browser and
- * stops. That is what makes a password or a one-time code safe to enter during a takeover: not a
- * filter that strips it out afterwards, but a path the model is not on. The same reason the value is
- * never returned and never logged below.
+ * stops. That is what makes a password or a one-time code safe to enter during a takeover — and a
+ * path is not enough on its own: the value sits in the page afterwards, where the Bot's next look
+ * used to read it back out of any box the page had not marked (audit R3-01, 2026-09-16). So the box
+ * a keystroke lands in is followed from that keystroke on (`person-typing.ts`), the way a box
+ * `computer_request_secret` filled is. The value is never returned and never logged below.
  */
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
+import { followTyping, inTurn, settleTyping } from "./person-typing";
 import { VIEWPORT } from "./profiles";
 import {
   bodyOf,
@@ -22,6 +25,7 @@ import {
   json,
   RequestInvalidError,
 } from "./respond";
+import type { BotSession } from "./sessions";
 
 export const HUMAN_INPUT = new Set([
   "/human/click",
@@ -39,6 +43,7 @@ export const HUMAN_INPUT = new Set([
  * rather than window coordinates.
  */
 async function performHumanInput(
+  session: BotSession,
   target: Page,
   action: string,
   body: Record<string, unknown>,
@@ -59,12 +64,15 @@ async function performHumanInput(
 
   if (action === "/human/click") {
     const { x, y } = at();
+    // A press can send the form the last box is in: what that box holds is read before it goes.
+    await settleTyping(session);
     await target.mouse.click(x, y);
     return { action: "human_click", url: target.url() };
   }
 
   if (action === "/human/type") {
     if (typeof body.text !== "string") throw new RequestInvalidError("text");
+    await followTyping(session, target, body.text);
     // `insertText` rather than per-key typing: a person pasting a one-time code should not have it
     // arrive one character at a time into a field that reformats as you go.
     await target.keyboard.insertText(body.text);
@@ -80,6 +88,7 @@ async function performHumanInput(
     if (typeof body.key !== "string" || !body.key) {
       throw new RequestInvalidError("key");
     }
+    await followTyping(session, target);
     await target.keyboard.press(body.key);
     return { action: "human_key", key: body.key, url: target.url() };
   }
@@ -96,13 +105,20 @@ export const humanInput: BotRoute = async (
 ) => {
   if (!session.control.humanMayDrive()) return fact(TAKE_CONTROL_FIRST);
   const body = await bodyOf<Record<string, unknown>>(request);
-  try {
-    const target = await profiles.page(botId);
-    return json(await performHumanInput(target, url.pathname, body ?? {}));
-  } catch (error) {
-    // A malformed input is the caller's, and a 400 — not the browser failing, which it used to be
-    // reported as because the check was thrown from inside the input.
-    if (error instanceof RequestInvalidError) return invalid(error.field);
-    return browserFailed(error);
-  }
+  // In turn with the live screen's input, so the two doors cannot reorder one person's typing.
+  return inTurn(session, async () => {
+    // Asked again: the wheel can be handed back while this waits behind the input before it.
+    if (!session.control.humanMayDrive()) return fact(TAKE_CONTROL_FIRST);
+    try {
+      const target = await profiles.page(botId);
+      return json(
+        await performHumanInput(session, target, url.pathname, body ?? {}),
+      );
+    } catch (error) {
+      // A malformed input is the caller's, and a 400 — not the browser failing, which it used to be
+      // reported as because the check was thrown from inside the input.
+      if (error instanceof RequestInvalidError) return invalid(error.field);
+      return browserFailed(error);
+    }
+  });
 };

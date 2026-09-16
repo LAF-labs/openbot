@@ -1,0 +1,16 @@
+<!doctype html>
+<!--
+  A form sent by GET, whose box nothing marks: no password type, no autocomplete token, and a name no
+  secret-word list carries. Enter in the box lands on /landed?step=2&pin=<what was typed>.
+  The box's name and position are GET_FORM_BOX in ../fixture-site.ts.
+-->
+<html lang="ko">
+<head><meta charset="utf-8"><title>간편 확인</title></head>
+<body>
+  <form action="/landed" method="get">
+    <input type="hidden" name="step" value="2">
+    <input type="text" name="pin" aria-label="간편 확인 값" style="position:absolute;left:20px;top:100px;width:300px;height:30px">
+    <button type="submit" style="position:absolute;left:20px;top:160px">보내기</button>
+  </form>
+</body>
+</html>
