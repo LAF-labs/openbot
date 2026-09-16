@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   type ApprovalTier,
   answerApproval,
+  answerProblem,
   closeQuestion,
   describeSubject,
   questionOn,
@@ -75,7 +76,9 @@ export function ApprovalRequest({
           setProblem(null);
           return;
         }
-        setProblem(t("That answer could not be recorded. Try again."));
+        // A refusal is said as what it is. "Try again" in front of one — a 403 that no press gets
+        // past — was this card's answer to every failure (audit R5-06).
+        setProblem(answerProblem(result));
         return;
       }
       // Taken down here rather than waiting for the call to notice, so the buttons stop being

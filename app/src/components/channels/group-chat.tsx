@@ -11,7 +11,6 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { readApprovals } from "@/lib/approvals";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
@@ -84,12 +83,12 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     [agentProfiles, hiddenProfiles],
   );
   /*
-   * Answering is the owner's alone — `POST /api/approvals/:botId/:approvalId` is admin-only, and
-   * deliberately so. Drawn for everybody, the card gave every other member of the room two buttons
-   * that could only ever fail, on a question they cannot do anything about.
+   * EVERY WAITING QUESTION IS DRAWN, FOR WHOEVER IS LOOKING. A room has one person — the one who
+   * made it (`channels/conversations.ts`) — and only Bots they could see when they did, and
+   * answering is decided by whose Bot it is (`POST /api/approvals/:botId/:approvalId`). This drew
+   * the cards for an administrator alone, back when that route wanted the role as well; for anybody
+   * else a member held its turn for ten minutes with nothing on the screen at all (audit R5-06).
    */
-  const { data: currentUser } = useQuery(currentUserQueryOptions());
-  const mayAnswer = currentUser?.role === "admin";
   /** Stable across renders, so the effects below do not restart on every parent render. */
   const memberIdsKey = channel.agentIds.join(",");
   const memberIds = useMemo(
@@ -524,7 +523,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       notice={
         <>
           <RoomApprovals
-            approvals={mayAnswer ? room.approvals : []}
+            approvals={room.approvals}
             onAnswered={(approvalId) =>
               setRoom((state) => withoutApproval(state, approvalId))
             }

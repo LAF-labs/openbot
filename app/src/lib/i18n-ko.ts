@@ -266,6 +266,10 @@ export const ko: Record<string, string> = {
   "Deny: {question}": "거부: {question}",
   "That answer could not be recorded. Try again.":
     "답을 기록하지 못했습니다. 다시 시도해 주세요.",
+  // 거절된 답 — 다시 눌러도 같은 답이 오므로 "다시 시도"를 붙이지 않는다 (감사 R5-06).
+  "That answer could not be recorded.": "답을 기록하지 못했습니다.",
+  "This Bot is no longer here, so its question cannot be answered.":
+    "이 봇은 이제 없어서 질문에 답할 수 없습니다.",
   "{count} times within a few minutes": "몇 분 사이에 {count}회",
   "{minutes}m left": "{minutes}분 남음",
   "{name} is waiting for your answer: {question}":

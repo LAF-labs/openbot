@@ -19,6 +19,7 @@
  * are chosen here, once, for every card that asks. See `describeSubject`.
  */
 import { t } from "@/lib/i18n";
+import { refusalText } from "@/lib/refusals";
 
 /**
  * How long the surface holds a tool call open for an answer, and how often it looks.
@@ -510,11 +511,19 @@ export async function readApprovals(
  * is broken and there is nothing to retry, so a card that hears it should come down rather than sit
  * there with an error beside two buttons that will never work again.
  *
+ * `retryable` says whether pressing again could go differently: nothing came back, or the server
+ * broke on the way. Anything else it answered is a refusal — signed out, a Bot that is not this
+ * person's or is not there any more — and is told the same however often it is pressed; `code` is
+ * its fact. Measured 2026-09-16 (audit R5-06): every refusal was read as "not gone", and the card
+ * said "다시 시도해 주세요" in front of a 403 no press could get past.
+ *
  * No prose crosses this boundary. The server's sentences are English, and a component that rendered
  * them would show a Korean reader English no matter what the dictionary said — so this reports what
- * happened and the surface owns the words.
+ * happened, and `answerProblem` below is where it becomes words.
  */
-export type ApprovalAnswerResult = { ok: true } | { ok: false; gone: boolean };
+export type ApprovalAnswerResult =
+  | { ok: true }
+  | { ok: false; gone: boolean; retryable: boolean; code?: string };
 
 export async function answerApproval(
   botId: string,
@@ -531,18 +540,68 @@ export async function answerApproval(
    */
   tier: ApprovalTier = "once",
 ): Promise<ApprovalAnswerResult> {
+  let response: Response;
   try {
-    const response = await fetch(`/api/approvals/${botId}/${approvalId}`, {
+    response = await fetch(`/api/approvals/${botId}/${approvalId}`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ granted, tier }),
     });
-    if (response.ok) return { ok: true };
-    return { ok: false, gone: response.status === 409 };
   } catch {
-    return { ok: false, gone: false };
+    // It never arrived, so nothing was recorded and another press is a fresh attempt.
+    return { ok: false, gone: false, retryable: true };
   }
+  if (response.ok) return { ok: true };
+  if (response.status === 409) {
+    return { ok: false, gone: true, retryable: false };
+  }
+  // A server that broke or is restarting (the front door's 503) may well take the next press.
+  if (response.status >= 500) {
+    return { ok: false, gone: false, retryable: true };
+  }
+  const body = (await response.json().catch(() => null)) as {
+    code?: unknown;
+  } | null;
+  return {
+    ok: false,
+    gone: false,
+    retryable: false,
+    ...(typeof body?.code === "string" ? { code: body.code } : {}),
+  };
+}
+
+/**
+ * The refusals an answer can meet beyond the session guard's own (`ACCESS_REFUSALS`), by code.
+ *
+ * `t()` on a variable, so `approval-answers.test.tsx` walks this table for its Korean.
+ */
+export const ANSWER_REFUSALS: Record<string, string> = {
+  // The ownership guard's fact. "Not yours" and "not here" are one answer on purpose
+  // (`server/src/auth/guards.ts`), and for the person a question was raised for it is the second:
+  // the Bot was deleted while it waited.
+  "laf:bot_not_found":
+    "This Bot is no longer here, so its question cannot be answered.",
+};
+
+/**
+ * What a card says when an answer did not go through — the same words on a conversation's line and
+ * in a room, so one press means one thing on both.
+ *
+ * "Try again" only where another press can go differently. Saying it in front of a refusal is how a
+ * working feature comes to look broken; the refusal is said as what it is instead.
+ */
+export function answerProblem(
+  result: Extract<ApprovalAnswerResult, { ok: false }>,
+): string {
+  if (result.retryable) {
+    return t("That answer could not be recorded. Try again.");
+  }
+  return refusalText(
+    ANSWER_REFUSALS,
+    result.code,
+    t("That answer could not be recorded."),
+  );
 }
 
 /**

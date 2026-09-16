@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   alwaysLabel,
@@ -7,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import {
   type ApprovalTier,
   answerApproval,
+  answerProblem,
   describeSubject,
 } from "@/lib/approvals";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import type { RoomApproval } from "@/lib/channels/room-events";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
@@ -80,8 +83,16 @@ function RoomApprovalCard({
    * single string put one member's failure under another member's name — then cleared it the moment
    * anything else succeeded.
    */
-  const [problem, setProblem] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const timeLeft = useCountdown(approval.expiresAt);
+  /*
+   * WHERE AN ALLOWANCE IS TAKEN BACK, SAID ONLY TO WHOEVER CAN GO THERE — the line-level card's rule.
+   * This card could name Boundaries to everybody while only an administrator was shown it at all;
+   * the room's own person answers now, whatever their role (audit R5-06), and Boundaries still
+   * sends everybody but an administrator home.
+   */
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const mayEditBoundaries = currentUser?.role === "admin";
 
   const answer = async (granted: boolean, tier: ApprovalTier = "once") => {
     setAnswering(true);
@@ -98,7 +109,8 @@ function RoomApprovalCard({
       onAnswered(approval.approvalId);
       return;
     }
-    setProblem(true);
+    // The same words the line-level card uses: "try again" only where another press can help.
+    setProblem(answerProblem(result));
   };
 
   // The sentence is written here from the facts the server sent, exactly as the line-level card
@@ -118,9 +130,13 @@ function RoomApprovalCard({
       </p>
       <p className="mt-1 text-muted-foreground text-xs">
         {approval.scope
-          ? t(
-              "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
-            )
+          ? mayEditBoundaries
+            ? t(
+                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
+              )
+            : t(
+                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.",
+              )
           : t(
               "Asked because of this rule. Allowing covers this one action.",
             )}{" "}
@@ -185,7 +201,7 @@ function RoomApprovalCard({
       </div>
       {problem ? (
         <p className="mt-2 text-destructive text-xs" role="alert">
-          {t("That answer could not be recorded. Try again.")}
+          {problem}
         </p>
       ) : null}
     </div>

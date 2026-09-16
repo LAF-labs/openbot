@@ -173,17 +173,22 @@ document.body.append(cardsHost);
 const cardsRoot = createRoot(cardsHost);
 await act(async () => {
   cardsRoot.render(
-    createElement(RoomApprovals, {
-      approvals: bots.map((bot, index) => ({
-        approvalId: `room-${index}`,
-        memberId: bot.id,
-        memberName: bot.name,
-        subject: OPENING_A_PAGE,
-        rule: "browser.host == 'example.com'",
-        expiresAt: "",
-      })),
-      onAnswered: () => {},
-    }),
+    // Under a query client, as in the app: a card asks who is looking before it names Boundaries.
+    createElement(
+      QueryClientProvider,
+      { client: new QueryClient() },
+      createElement(RoomApprovals, {
+        approvals: bots.map((bot, index) => ({
+          approvalId: `room-${index}`,
+          memberId: bot.id,
+          memberName: bot.name,
+          subject: OPENING_A_PAGE,
+          rule: "browser.host == 'example.com'",
+          expiresAt: "",
+        })),
+        onAnswered: () => {},
+      }),
+    ),
   );
 });
 await settle(50);

@@ -109,6 +109,7 @@ import { createPackageStatusReader } from "../src/tenant-package";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 import { testEnvironment } from "./support/environment";
+import { A_CLICK } from "./support/subjects";
 
 const database = createDatabase(
   process.env.DATABASE_URL ??
@@ -373,7 +374,7 @@ function deployment() {
     (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
     admission,
   );
-  return { app, routineService };
+  return { app, routineService, approvals };
 }
 
 type App = ReturnType<typeof createApp>;
@@ -392,7 +393,14 @@ type Cell = {
 
 let app: App;
 let routineService: ReturnType<typeof deployment>["routineService"];
+let approvals: ReturnType<typeof deployment>["approvals"];
 let routineOfA = "";
+/**
+ * A question A's Bot is waiting on, raised afresh for every person, so the answering door is pressed
+ * on a real question rather than on an id that names nothing: the owner's cell is then an answer
+ * given, which is the whole of what that door is for.
+ */
+let approvalOfA = "";
 let matrix: Cell[] = [];
 
 /**
@@ -439,6 +447,7 @@ function concrete(method: string, template: string): string {
   return (
     template
       .replace(/:botId|:agentId/g, bot)
+      .replace(/:approvalId/g, approvalOfA)
       .replace(/:credentialId/g, NO_SUCH_UUID)
       .replace(/:id(?=\/|$)/g, () =>
         template.startsWith("/api/routines/:id") ? routineOfA : NOBODY,
@@ -474,6 +483,10 @@ function bodyFor(method: string, template: string): unknown {
       return { kind: "skill", ref: `nothing-${run}`, agentId: BOT_A };
     case "POST /api/channels":
       return { agentIds: [BOT_A] };
+    case "POST /api/approvals/:botId/:approvalId":
+      // A real answer, and a No: it gets as far as the registry for whoever the guard lets through,
+      // and it widens nothing on the way.
+      return { granted: false };
     case "POST /api/me/first-task":
       // A chip pressed on A's Bot: the owner's press is a row, the colleague's is a Bot not there.
       return {
@@ -556,6 +569,17 @@ async function restore() {
     .update(agentProfiles)
     .set({ deletedAt: null })
     .where(eq(agentProfiles.agentId, BOT_A_DOOMED));
+  // A question for this person to meet, whether or not the last one was answered. The registry is
+  // this process's memory, as on a deployment; nothing here reaches the database.
+  const question = await approvals.request({
+    botId: BOT_A,
+    actor: A.id,
+    rule: "true",
+    subject: A_CLICK,
+    fingerprint: `matrix-${randomUUID()}`,
+    target: { type: "computer", id: BOT_A },
+  });
+  approvalOfA = question.id;
   const still = await database
     .select({ id: lafRoutines.id })
     .from(lafRoutines)
@@ -634,7 +658,7 @@ beforeAll(async () => {
     })),
   );
 
-  ({ app, routineService } = deployment());
+  ({ app, routineService, approvals } = deployment());
 });
 
 afterAll(async () => {
@@ -806,6 +830,9 @@ const A_ALLOWED = [
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
+  // Answering the question their own Bot raised — a No, on a real question. It was an
+  // administrator's alone until 2026-09-16, which left a `user`'s Bot asking nobody at all.
+  "POST /api/approvals/:botId/:approvalId",
   "POST /api/channels",
   "POST /api/components/:name/call",
   "POST /api/components/:name/decision",
@@ -866,7 +893,6 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "POST /api/routines/:id/run",
   // Its browser: what it is looking at, and every way of pressing something in it.
   "DELETE /api/computers/:botId/demonstration",
-  "GET /api/computers/:botId/computers",
   "GET /api/computers/:botId/control",
   "GET /api/computers/:botId/demonstration",
   "GET /api/computers/:botId/read",
@@ -881,8 +907,9 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "POST /api/computers/:botId/human/:kind",
   "POST /api/computers/:botId/scroll",
   "POST /api/computers/:botId/snapshot",
-  // The questions its boundary raised, and what it may spend.
+  // The questions its boundary raised — reading them and answering them — and what it may spend.
   "GET /api/approvals/:botId",
+  "POST /api/approvals/:botId/:approvalId",
   "DELETE /api/plugins/grants",
   "POST /api/plugins/grants",
   "GET /api/plugins/for/:agentId",
@@ -903,13 +930,16 @@ const ADMIN_ALLOWED = [
   "GET /api/admin/package",
   "GET /api/admin/status",
   "GET /api/approvals/standing",
+  // The Computers page's list: what the deployment's one browser holds, at an address that names no
+  // Bot (2026-09-16 — it was `computers/:botId/computers`, pressed with a Bot id nobody has).
+  "GET /api/computers",
   "GET /api/computers/policy",
   "GET /api/sandboxed",
   "PUT /api/computers/policy",
 ]
-  // Applied to the WHOLE list, not only to A's half: three of the administrator's own doors take a
-  // Bot id too (`computers/:botId/computers`, its reset, and the grant verbs), and a Bot id that
-  // is not theirs closes those exactly like the rest.
+  // Applied to the WHOLE list, not only to A's half: two of the administrator's own doors take a
+  // Bot id too (the computer's reset, and the grant verbs), and a Bot id that is not theirs closes
+  // those exactly like the rest.
   .filter((cell) => !NAMES_SOMEBODY_ELSES_BOT.includes(cell))
   .sort();
 
@@ -1159,6 +1189,8 @@ describe("the matrix", () => {
       "GET /api/admin/package",
       "GET /api/admin/status",
       "GET /api/approvals/standing",
+      // What the deployment's one browser holds, which the Computers page lists and resets from.
+      "GET /api/computers",
       // The gateway's rules for the whole deployment — read and changed while it runs.
       "GET /api/computers/policy",
       "PUT /api/computers/policy",
@@ -1248,17 +1280,76 @@ describe("the matrix", () => {
   test("the owner is refused the administrator's doors with 403, not with the Bot's 404", () => {
     // Their own Bot exists and they know it; what they lack is the role. The order of the two
     // guards decides which answer they get, and it must not leak the other way round for B.
-    for (const template of [
-      "GET /api/computers/:botId/computers",
-      "POST /api/computers/:botId/computers/reset",
-      "POST /api/approvals/:botId/:approvalId",
-    ]) {
+    // One such door is left: resetting empties the browser profile EVERY Bot on the deployment
+    // signs in through, which is not one Bot's business even when the Bot on the row is yours.
+    for (const template of ["POST /api/computers/:botId/computers/reset"]) {
       const owner = cellsOf("A").find((cell) => keyOf(cell) === template);
       const colleague = cellsOf("B").find((cell) => keyOf(cell) === template);
       expect([template, owner?.status, colleague?.status]).toEqual([
         template,
         403,
         404,
+      ]);
+    }
+  });
+
+  /*
+   * THE COMPUTERS PAGE'S LIST, ONE PERSON AT A TIME (audit R3-04, R5-02).
+   *
+   * The page asked `GET /api/computers/shared/computers`; `shared` is no Bot's id, and once the
+   * ownership guard lost its administrator exception that was 404 `laf:bot_not_found` for the
+   * administrator too — a load error, no rows, and no Reset button. The list names no Bot now, so
+   * the only question in front of it is the role, and the administrator here owns no Bot at all.
+   */
+  test("the Computers page's list names no Bot: 401 signed out, 403 without the role, 200 for the administrator", () => {
+    const cell = (who: Person) =>
+      cellsOf(who).find(
+        (candidate) => keyOf(candidate) === "GET /api/computers",
+      );
+    expect([cell("anonymous")?.status, cell("anonymous")?.code]).toEqual([
+      401,
+      "laf:unauthenticated",
+    ]);
+    expect([cell("removed")?.status, cell("removed")?.code]).toEqual([
+      401,
+      SESSION_REVOKED,
+    ]);
+    for (const who of ["A", "B"] as const) {
+      expect([who, cell(who)?.status, cell(who)?.code]).toEqual([
+        who,
+        403,
+        "laf:admin_required",
+      ]);
+    }
+    expect(cell("admin")?.status).toBe(200);
+    // And the old address is not a door any more, for anybody.
+    expect(
+      matrix.filter(
+        (candidate) =>
+          candidate.template.startsWith("/api/computers/:botId/computers") &&
+          candidate.method === "GET",
+      ),
+    ).toEqual([]);
+  });
+
+  /*
+   * ANSWERING IS THE OWNER'S, AND ONLY THE OWNER'S (audit R1-02, R3-06, R5-06).
+   *
+   * It needed ownership AND the administrator's role, so A — the owner, with the `user` role — was
+   * told 403 about their own Bot's question, and the administrator 404: nobody on the deployment
+   * could answer it, and every ask on it ran out its ten minutes. The same predicate every other
+   * door a Bot id opens asks is the whole of the rule now.
+   */
+  test("the owner answers their own Bot's question; the colleague and the administrator are told it is not there", () => {
+    const template = "POST /api/approvals/:botId/:approvalId";
+    const cell = (who: Person) =>
+      cellsOf(who).find((candidate) => keyOf(candidate) === template);
+    expect(cell("A")?.status).toBe(200);
+    for (const who of ["B", "admin"] as const) {
+      expect([who, cell(who)?.status, cell(who)?.code]).toEqual([
+        who,
+        404,
+        "laf:bot_not_found",
       ]);
     }
   });

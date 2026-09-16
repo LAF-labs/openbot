@@ -58,6 +58,8 @@ An administrator runs the deployment, not somebody's Bots. They keep every door 
 - the audit trail (`GET /api/admin/audit-events`), `/api/admin/metrics/approvals` and insights —
   Bot **ids**, never a title or a transcript;
 - the gateway's deployment-wide rules (`GET`/`PUT /api/computers/policy`);
+- what the deployment's one browser holds (`GET /api/computers`, the Computers page). Resetting it
+  is still pressed from a row and goes through that row's Bot, so it needs a row whose Bot is theirs;
 - every standing allowance on every Bot (`GET /api/approvals/standing`, `DELETE
   /api/approvals/standing/:id`);
 - removing a person (`POST /api/admin/users/:id/delete`), which still takes their Bots, their

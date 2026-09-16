@@ -65,6 +65,14 @@ const PERMISSIVE: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
  */
 const SECRET = "hunter2-Zx9-BANKPASS";
 
+/** What the computer says it holds: one Bot, with a tab open. */
+const LISTED = {
+  botId: "bot-1",
+  running: true,
+  startedAt: "2026-09-16T09:00:00.000Z",
+  egress: null,
+};
+
 function fakeClient() {
   const calls: string[] = [];
   /** What `humanInput` was actually handed, which is the whole question in one of these tests. */
@@ -103,7 +111,11 @@ function fakeClient() {
     requestControl: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
     takeControl: async () => ({ holder: "human" as const, url: SNAPSHOT.url }),
     releaseControl: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
-    computers: async () => ({ computers: [] }),
+    // One row, so a list that came back is told apart from a list that was never asked for.
+    computers: async () => {
+      calls.push("computers");
+      return { computers: [LISTED] };
+    },
     requestSecret: async (input: SecretRequest) => {
       calls.push("requestSecret");
       sentToComputer.push(input);
@@ -143,6 +155,11 @@ function surface(
    * 500 body is allowed to say. Every acting route writes an audit row before it answers.
    */
   auditFailure?: Error,
+  /**
+   * Whose Bots the actor may drive. `bot-1` unless a test says otherwise — the Computers page's
+   * list is pressed by an administrator who owns none, which is the arrangement that broke it.
+   */
+  drives: (botId: string) => boolean = (botId) => botId === "bot-1",
 ) {
   const rows: AuditEventInput[] = [];
   const auditStore: AuditStore = {
@@ -179,7 +196,7 @@ function surface(
     next,
   ) => {
     context.set("actor", actor);
-    context.set("mayDriveBot", async (botId) => botId === "bot-1");
+    context.set("mayDriveBot", async (botId) => drives(botId));
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();
@@ -419,6 +436,61 @@ describe("wiping a computer", () => {
       (await app.request("/bot-1/computers/stop", { method: "POST" })).status,
     ).toBe(200);
     expect(calls).toEqual(["stopComputer"]);
+  });
+});
+
+/**
+ * THE COMPUTERS PAGE'S LIST, AT AN ADDRESS THAT NAMES NO BOT.
+ *
+ * Measured 2026-09-16 (audit R3-04, R5-02): the page asked `GET /shared/computers`, a Bot id no
+ * `agents` row has, and once `397213f` took the administrator exception out of the ownership guard
+ * that answered 404 `laf:bot_not_found` to everybody. The page drew a load error whose retry could
+ * never work, and no rows — so the Reset button, one of the two doors that empty the deployment's
+ * browser profile, was never drawn. The list is the computer's, not a Bot's, so its address names
+ * none, and the administrator below owns no Bot at all.
+ */
+describe("the computers the Computers page lists", () => {
+  test("are read at an address that names no Bot, by an administrator who owns none", async () => {
+    const { app, calls, rows } = surface(
+      ADMIN,
+      PERMISSIVE,
+      undefined,
+      () => false,
+    );
+
+    const response = await app.request("/");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      isolation: "shared",
+      computers: [LISTED],
+    });
+    expect(calls).toEqual(["computers"]);
+    // A read: nobody is recorded as having looked, and no Bot is invented to record it against.
+    expect(rows).toEqual([]);
+  });
+
+  test("are refused to somebody who is not an administrator, before the computer is asked", async () => {
+    const { app, calls } = surface(STAFF);
+
+    const response = await app.request("/");
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "laf:admin_required",
+      code: "laf:admin_required",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test("are no longer read through a Bot's address", async () => {
+    // The door the page used to knock on, and the same door through a Bot that IS the caller's:
+    // a list of every Bot's browser was never that Bot's business, so neither address opens it.
+    const { app, calls } = surface(ADMIN);
+
+    expect((await app.request("/shared/computers")).status).toBe(404);
+    expect((await app.request("/bot-1/computers")).status).toBe(404);
+    expect(calls).toEqual([]);
   });
 });
 
@@ -838,7 +910,7 @@ describe("the whole surface", () => {
     ["POST", "/bot-1/scroll", { deltaY: 100 }],
     ["GET", "/bot-1/control"],
     ["POST", "/bot-1/control/request", { reason: "stuck" }],
-    ["GET", "/bot-1/computers"],
+    ["GET", "/"],
     ["POST", "/bot-1/computers/stop"],
     ["POST", "/bot-1/computers/reset"],
     ["POST", "/bot-1/control/take", { teaching: true }],
@@ -866,12 +938,13 @@ describe("the whole surface", () => {
   /**
    * Which of them an ordinary member of staff may not have.
    *
-   * `GET /:botId/computers` joined the list with the ownership guard: it lists what the container
-   * holds — every Bot's browser, not this Bot's — and the only page that reads it is the admin one.
+   * `GET /` is the list of what the container holds — every Bot's browser, not one Bot's — and the
+   * only page that reads it is the admin one. It sat at `/:botId/computers` until 2026-09-16, where
+   * the ownership guard in front of it turned the page's made-up Bot id into a 404 for everybody.
    */
   const ADMIN_ONLY = new Set([
     "POST /bot-1/computers/reset",
-    "GET /bot-1/computers",
+    "GET /",
     "GET /policy",
     "PUT /policy",
   ]);

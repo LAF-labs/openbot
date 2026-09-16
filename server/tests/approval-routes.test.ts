@@ -162,16 +162,26 @@ const answer =
     });
 
 describe("answering a question", () => {
-  test("somebody who is not the owner cannot spend an approval", async () => {
+  /*
+   * THE OWNER ANSWERS, WHATEVER THEIR ROLE.
+   *
+   * Measured 2026-09-16 (audit R1-02, R3-06, R5-06): the route asked for the Bot's owner and then
+   * for an administrator as well, so a Bot whose owner has the `user` role could raise a question
+   * nobody on the deployment could answer — its owner got 403, and after `397213f` the
+   * administrator got 404. Every such ask expired after ten minutes. This case used to assert that
+   * 403, under a name that said the person was not the owner; the stub below says they are.
+   */
+  test("its owner answers it without an administrator's role", async () => {
     const rowsSink: AuditEventInput[] = [];
     const approvals = createApprovalRegistry();
-    const asBystander: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    const answered: string[] = [];
+    const asOwner: MiddlewareHandler<{ Variables: AppVariables }> = async (
       context,
       next,
     ) => {
       context.set("actor", BYSTANDER);
-      // THEIR Bot: the ownership guard lets them through, and it is answering that is refused.
-      // A Bot that was not theirs would be 404 before this handler — see the last describe.
+      // THEIR Bot, and a role that opens no administrator's door. A Bot that was not theirs would
+      // be 404 before this handler — see the last describe.
       context.set("mayDriveBot", async (botId) => botId === "bot-1");
       await next();
     };
@@ -181,7 +191,9 @@ describe("answering a question", () => {
       createApprovalRoutes(
         approvals,
         { insert: async (event) => void rowsSink.push(event) },
-        asBystander,
+        asOwner,
+        undefined,
+        (approvalId) => void answered.push(approvalId),
       ),
     );
     const pending = await approvals.request({
@@ -197,7 +209,17 @@ describe("answering a question", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ granted: true }),
     });
-    expect(response.status).toBe(403);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: pending.id,
+      granted: true,
+      answeredBy: BYSTANDER.id,
+    });
+    // Recorded under the person who answered, and the notice that was waiting on it put away.
+    expect(rowsSink.map((row) => row.eventType)).toEqual(["approval.granted"]);
+    expect(rowsSink[0]?.actorUserId).toBe(BYSTANDER.id);
+    expect(answered).toEqual([pending.id]);
   });
 
   test("records the answer under the person who gave it and lets the action run", async () => {
@@ -515,9 +537,10 @@ describe("taking an allowance back", () => {
     expect(last?.payload.scope).toBe("host=example.com");
   });
 
-  test("neither list nor withdrawal is open to somebody who is not the owner", async () => {
-    // The same rule answering has. This list is where a boundary has been stood down, so reading it
-    // is reading which parts of the policy are not in force.
+  test("neither list nor withdrawal is open to somebody who is not an administrator", async () => {
+    // NOT the rule answering has, since 2026-09-16: answering is the Bot's owner's, and this is the
+    // deployment's list of where a boundary has been stood down, on every Bot at once — reading it
+    // is reading which parts of the policy are not in force anywhere.
     const approvals = createApprovalRegistry();
     const standing = createStandingApprovalStore();
     const asBystander: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -802,9 +825,9 @@ describe("the Bot an approval address names", () => {
  * Measured 2026-09-10 (audit A8): the list answered any signed-in person about any Bot, so a
  * colleague naming the owner's Bot read what it was about to do — the URL, the host, the tool, the
  * scope — while it waited for the owner's answer. Both routes refuse a Bot that is not the caller's
- * with the same 404 the rest of the product gives, before the question is looked up and before the
- * administrator check, so the refusal confirms neither that the Bot exists nor that a question is
- * waiting on it.
+ * with the same 404 the rest of the product gives, before the question is looked up, so the refusal
+ * confirms neither that the Bot exists nor that a question is waiting on it. Whose Bot it is is the
+ * whole of the rule: no role widens it and, since 2026-09-16, none narrows it either.
  */
 describe("a Bot that is not the caller's", () => {
   /** The same registry the question was raised on, reached by somebody whose Bot it is not. */

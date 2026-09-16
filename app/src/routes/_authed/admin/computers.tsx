@@ -30,9 +30,6 @@ type ComputerProfile = {
   egress: string | null;
 };
 
-/** API placeholder id; the list endpoint returns all computers. */
-const COMPUTER_ID = "shared";
-
 export const Route = createFileRoute("/_authed/admin/computers")({
   component: ComputersPage,
 });
@@ -55,7 +52,14 @@ function ComputersPage() {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch(`/api/computers/${COMPUTER_ID}/computers`, {
+      /*
+       * AN ADDRESS THAT NAMES NO BOT. This asked `/api/computers/shared/computers`, filling the Bot
+       * id with a word no Bot has; once the ownership guard stopped letting an administrator past
+       * on role alone, that was a 404 for everybody, and this page drew a load error and no rows —
+       * so no Reset button either (audit R3-04, R5-02, 2026-09-16). Stop and reset below still go
+       * through a row's own Bot, which is a real one.
+       */
+      const response = await fetch("/api/computers", {
         credentials: "include",
       });
       if (!response.ok) {

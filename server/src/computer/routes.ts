@@ -390,30 +390,26 @@ export function createComputerRoutes(
   );
 
   /**
-   * The computers, for the admin surface.
+   * The computers, for the admin surface: `GET /api/computers`.
    *
-   * Not per-Bot in the path the way the acting routes are: this asks the computer what it holds, and
-   * it holds a list. `:botId` is still there because every route under this router has it and the
-   * gateway wants somebody to attribute the call to.
+   * AN ADDRESS THAT NAMES NO BOT, because the answer is not a Bot's. It was `/:botId/computers`, and
+   * the Computers page filled the parameter with `"shared"` — an id no `agents` row has — which the
+   * ownership guard answered 404 once `397213f` took its administrator exception away. The page
+   * showed a load error whose retry could never work, and no rows, so its Reset button was never
+   * drawn (audit R3-04, R5-02, 2026-09-16). The id was said to be there because the gateway wanted
+   * somebody to attribute the call to; `computers()` never took one. A read, so no row is written,
+   * and the container answers `/computers` without a Bot header.
    *
-   * AN ADMINISTRATOR'S, in the declaration and not only in the comment. It answers with every
-   * Bot's browser on the container — not this Bot's — and sat behind `requireUser` alone, so the
-   * ownership guard in front of it would have let any member of staff read the whole machine's
-   * roster through their own Bot's id. The admin page is the only reader.
+   * AN ADMINISTRATOR'S, in the declaration: it answers with every Bot's browser on the deployment,
+   * not the asker's. The page is the only reader.
    */
-  routes.get(
-    "/:botId/computers",
-    requireUser,
-    requireBotAccess(),
-    requireAdminRoute,
-    async (context) => {
-      try {
-        return context.json(await gateway.computers());
-      } catch (error) {
-        return failed(context, error);
-      }
-    },
-  );
+  routes.get("/", requireUser, requireAdminRoute, async (context) => {
+    try {
+      return context.json(await gateway.computers());
+    } catch (error) {
+      return failed(context, error);
+    }
+  });
 
   /** Stop the browser, keep the logins. */
   routes.post(
@@ -431,6 +427,12 @@ export function createComputerRoutes(
    * this destroys every login on the one computer all of this account's Bots share, with no undo,
    * and it sat behind the same guard as reading a screenshot. Nothing about it is a Bot's own
    * business, so it is not a Bot's own decision either.
+   *
+   * STILL ADDRESSED THROUGH A BOT, unlike the list above, and a real one: the Computers page presses
+   * it from a row, with that row's Bot. The container refuses every call but `/health` and
+   * `/computers` that does not say which Bot is asking, and drops that Bot's own state with the
+   * profile, so there is no honest Bot-less form of this call. The trail names the person who
+   * pressed it (`actor`) beside the Bot on the row — never an id invented to fill the parameter.
    */
   routes.post(
     "/:botId/computers/reset",

@@ -18,11 +18,7 @@ import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import {
-  requireAdmin,
-  requireAdminRoute,
-  requireBotAccess,
-} from "../auth/guards";
+import { requireAdminRoute, requireBotAccess } from "../auth/guards";
 import {
   type ApprovalRegistry,
   type PendingApproval,
@@ -72,9 +68,10 @@ export function createApprovalRoutes(
   /**
    * What this deployment has stopped asking about.
    *
-   * The owner's, like answering: this is the list of places a boundary has been stood down, and it
-   * names the Bot, the rule and the scope. `GET /api/approvals/:botId` next door is the Bot's
-   * driver's (see below); this one names every Bot at once, so it is narrower still.
+   * The administrator's, and NOT like answering, which is each Bot's owner's (below): this is the
+   * list of places a boundary has been stood down, and it names the Bot, the rule and the scope.
+   * `GET /api/approvals/:botId` next door is the Bot's driver's; this one names every Bot at once,
+   * so it is narrower still.
    */
   routes.get("/standing", requireUser, requireAdminRoute, async (context) => {
     const botId = context.req.query("bot");
@@ -148,24 +145,23 @@ export function createApprovalRoutes(
   });
 
   /**
-   * Answering is deciding for the deployment, so it is the owner's alone: in
-   * this build every administrator is the owner, and nobody else's yes can
-   * spend a Bot's approval. Routing a question to a named approver other than
-   * the owner is a later, multi-person feature — until then the narrow rule is
-   * the honest one.
+   * Answering is the Bot's owner's: the person the question was raised for, and the one its notice
+   * reaches (the outbox names the run's own actor, never a role). Nobody else's yes can spend a
+   * Bot's approval; routing a question to a named approver other than the owner is a later,
+   * multi-person feature.
    *
-   * The ownership guard sits in front of the administrator check so that a Bot that is not yours
-   * is "not here" before it is "not yours to answer for" — the same order as the computer's reset.
+   * OWNERSHIP IS THE WHOLE OF THE RULE — `requireBotAccess`, the predicate every other door a Bot id
+   * opens asks. This handler used to require the administrator's role as well, on the reasoning
+   * that "every administrator is the owner"; once `397213f` took the administrator exception out of
+   * the ownership guard, the pair admitted nobody to a `user`'s Bot. Its owner was told 403, the
+   * administrator 404, and every ask on it ran out its ten minutes (audit R1-02, R3-06, R5-06,
+   * 2026-09-16). A Bot that is not yours is still "not here", before the question is looked up.
    */
   routes.post(
     "/:botId/:approvalId",
     requireUser,
     requireBotAccess(),
     async (context) => {
-      const denied = requireAdmin(context);
-      if (denied) {
-        return denied;
-      }
       const body = (await context.req.json().catch(() => null)) as Record<
         string,
         unknown
