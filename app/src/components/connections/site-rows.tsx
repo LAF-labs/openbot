@@ -35,10 +35,11 @@ import {
  * browser is put in front of them, they sign in, they hand it back, and the session lives in the
  * browser profile from then on.
  *
- * WHICH BOT IS ASKED ONCE, AT THE TOP. A browser profile is per Bot, so every row in this section
- * is about one of them; asking on each row would be fifteen copies of one decision. The choice is
- * remembered, because a person who keeps their logins on one Bot should not re-pick it every time
- * they open this screen.
+ * AND ONE LOGIN COVERS EVERY BOT (2026-09-16). There is one browser profile on a deployment, so the
+ * person authorises 배민 once rather than once per Bot — which is the whole reason the decision was
+ * made. The picker at the top chooses who DRIVES the login, not where the session lands; asking on
+ * each row would be fifteen copies of one decision, and the choice is remembered so a person does
+ * not re-pick it every time they open this screen.
  */
 
 /** Where a site's row is, before anything the person just did. */
@@ -57,7 +58,7 @@ const refusalText = (outcome: OpenSiteOutcome): string => {
   return t("The Bot's browser could not be reached.");
 };
 
-/** Which Bot's browser this person last used here. */
+/** Which Bot this person last drove a login with. The browser behind it is every Bot's. */
 const REMEMBERED_BOT = "laf.connections.bot";
 
 const rememberedBot = (): string | null => {
@@ -215,11 +216,11 @@ export const SiteRows = ({
   );
 
   if (bots.length === 0) {
-    /* A site is connected on a Bot's browser, so with no Bots there is nothing to connect it on.
+    /* A site is connected by driving a Bot's browser, so with no Bots there is nobody to drive it.
        Said as a fact, with the thing to do next, rather than as an error. */
     return (
       <p className="mt-4 text-muted-foreground text-sm">
-        {t("Make a Bot first — a site is connected on a Bot's own browser.")}
+        {t("Make a Bot first — a site is connected on the browser they share.")}
       </p>
     );
   }
@@ -238,7 +239,14 @@ export const SiteRows = ({
     }
     if (state === "connected") {
       return {
-        text: t("Connected · on {name}'s browser · last seen {date}", {
+        /*
+         * NOT "on {name}'s browser" ANY MORE. There is one browser on this account and every Bot
+         * signs in through it (2026-09-16), so naming the Bot on the row said the login was that
+         * Bot's — and the next question a person asks is which of their five they have to run the
+         * routine on. The Bot that last looked is still in the row; it is just not what the sentence
+         * is about.
+         */
+        text: t("Connected · every Bot shares it · {name} last looked {date}", {
           name: nameOf(row?.botId ?? null),
           date: asDate(row?.lastSeenAt ?? null),
         }),
@@ -263,13 +271,18 @@ export const SiteRows = ({
 
   return (
     <>
+      {/*
+       * WHICH BOT OPENS IT, NOT WHOSE BROWSER IT IS. The picker still matters — somebody has to
+       * drive, and the audit row is keyed on whoever did — but it stopped being a choice about where
+       * the login lands the day the profile became the account's.
+       */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <span className="text-muted-foreground text-sm">
-          {t("Which Bot's browser?")}
+          {t("Which Bot should open it?")}
         </span>
         <Select onValueChange={handleChoose} value={bot?.id ?? ""}>
           <SelectTrigger
-            aria-label={t("Which Bot's browser?")}
+            aria-label={t("Which Bot should open it?")}
             className="w-56"
           >
             <SelectValue>{bot?.name ?? ""}</SelectValue>
@@ -304,7 +317,7 @@ export const SiteRows = ({
               {...(state !== "not_connected"
                 ? {
                     confirmText: t(
-                      "Turn this site off? The Bot will stop using it. It stays signed in on the Bot's browser until you log out on the site itself.",
+                      "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.",
                     ),
                   }
                 : {})}

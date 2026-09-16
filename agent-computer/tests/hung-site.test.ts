@@ -431,9 +431,9 @@ describe.skipIf(!HAS_BROWSER)("following a tab between documents", () => {
       expect(read.result).toMatchObject({ text: "", arriving: { origin } });
       expect(read.ms).toBeLessThan(LOOK_BOUND_MS);
 
-      const session = createSessions(() =>
-        join(tmpdir(), "laf-arrival-unused"),
-      ).sessionFor("arrival-bot");
+      const session = createSessions({
+        stateDirectoryFor: () => join(tmpdir(), "laf-arrival-unused"),
+      }).sessionFor("arrival-bot");
       const look = await timed(snapshotPage(session, page, async () => []));
       expect(look.result.elements).toEqual([]);
       expect(session.notes).toMatchObject([

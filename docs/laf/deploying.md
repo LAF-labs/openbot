@@ -600,6 +600,12 @@ are asked every 0.25 s from outside. What it holds the upgrade to:
   **and opens the profile the old computer wrote** (as root, on any image from
   before 2026-09-13); a routine seeded before the upgrade runs after it and
   answers through the model.
+- **Upgrading across 2026-09-16, the logins did not start over.** The computer's
+  log carries one `profile_adopted` line naming the per-Bot profile it took over
+  as the deployment's and how many it left where they were; a site that was
+  signed in on that one is still signed in, for every Bot, and one that was
+  signed in only on a profile that was left behind asks for a login once. The
+  same line reaches the first Bot to open a page, as `laf:profile_adopted`.
 - **The dump `upgrade.sh` took is a way back**: `restore.sh --dry-run` on it
   opens nothing, and restored beside the live database it holds every table with
   the row counts the photograph had.
@@ -731,9 +737,11 @@ document promised is discovered on the day it matters.
   A5 §5), and better-auth's `sessions.token`, which is still **in plaintext**.
   A dump is a credential file and is handled as one: `umask 077` on disk, a write-only door to the
   bucket, thirty days and gone.
-- **Not in it — the Bot's browser profiles** (`agent-profiles`, one Chromium
-  directory per Bot; 67MB for three Bots on the development machine). This is
-  where a Bot's logins live — 스마트스토어, 홈택스, the bank — as cookies, not
+- **Not in it — the browser profile the Bots share** (`agent-profiles`, one
+  Chromium directory for the whole deployment since 2026-09-16; it was one per
+  Bot before, 67MB for three Bots on the development machine, and an upgraded
+  machine still carries those alongside it until somebody resets). This is
+  where the person's logins live — 스마트스토어, 홈택스, the bank — as cookies, not
   rows, and no SQL reaches them. They are left out **on purpose**: the dump is
   not encrypted at rest, so a tar of the profiles beside it would put the
   session cookies of a business's bank in a bucket for thirty days, which is a

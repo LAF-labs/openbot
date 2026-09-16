@@ -39,12 +39,17 @@ export const Route = createFileRoute("/_authed/admin/computers")({
 
 function ComputersPage() {
   const [computers, setComputers] = useState<ComputerProfile[] | null>(null);
-  /** Whether each Bot has an isolated browser profile. */
+  /**
+   * What the computer says about how much the Bots share.
+   *
+   * `"per-bot"` is still in the shape because it is in the wire's, and an older container is
+   * allowed to say it; nothing draws it any more. See the banner below.
+   */
   const [isolation, setIsolation] = useState<"per-bot" | "shared" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /** Bot id currently running a stop/reset request. */
   const [busy, setBusy] = useState<string | null>(null);
-  /** Reset deletes the browser profile, so it requires confirmation. */
+  /** Reset deletes the one browser profile every Bot shares, so it requires confirmation. */
   const [confirming, setConfirming] = useState<string | null>(null);
   const nameFor = useBotNames();
 
@@ -126,7 +131,7 @@ function ComputersPage() {
   return (
     <PageShell
       description={t(
-        "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.",
+        "The one browser your Bots share, and the profile it keeps. That profile is what makes them still signed in tomorrow, and resetting it signs every one of them out.",
       )}
       title={t("Computers")}
     >
@@ -139,6 +144,13 @@ function ComputersPage() {
         </p>
       ) : null}
 
+      {/*
+       * ONE BANNER, BECAUSE THERE IS ONE ANSWER. The other branch drew "Each Bot has a computer of
+       * its own: its own container, its own files and its own browser profile." — which this
+       * deployment could never say, and, from 2026-09-16, no deployment this repository can produce
+       * can say either. A screen that can draw a claim the product cannot back is a control that
+       * saves and does nothing, one paragraph further on.
+       */}
       {isolation === "shared" ? (
         <p className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span className="font-medium">
@@ -146,12 +158,6 @@ function ComputersPage() {
           </span>{" "}
           {t(
             "They share its logins, its files and its session, so a Bot can reach what another signed into. That is the design — one computer per account — and what keeps a Bot in bounds is the boundary in front of it, not a separate computer.",
-          )}
-        </p>
-      ) : isolation === "per-bot" ? (
-        <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
-          {t(
-            "Each Bot has a computer of its own: its own container, its own files and its own browser profile.",
           )}
         </p>
       ) : null}
@@ -192,14 +198,18 @@ function ComputersPage() {
                        * around it had no `t()` at all — a template literal is invisible to the
                        * coverage walk, which is exactly how they survived.
                        */}
+                      {/*
+                       * "running" is this Bot having a tab open, not a browser of its own: there is
+                       * one browser and it closes once the last Bot's tabs do.
+                       */}
                       {computer.running
-                        ? t("Browser running since {time}", {
+                        ? t("A tab open since {time}", {
                             time: new Date(
                               computer.startedAt ?? "",
                             ).toLocaleTimeString(activeLocale),
                           })
                         : t(
-                            "No browser running. It starts when the Bot next needs it.",
+                            "No tab open. One opens when this Bot next needs it.",
                           )}
                       {" · "}
                       {computer.egress
@@ -218,7 +228,7 @@ function ComputersPage() {
                     >
                       {busy === computer.botId
                         ? t("Working…")
-                        : t("Stop browser")}
+                        : t("Close its tabs")}
                     </Button>
                     <Button
                       disabled={busy === computer.botId}
@@ -249,10 +259,18 @@ function ComputersPage() {
        * that destroys something, and a destructive button drawn in a wash so pale it reads as
        * disabled.
        */}
+      {/*
+       * THE DIALOG NAMES WHAT GOES, WHICH IS NOT THE BOT ON THE ROW. It used to say "Reset
+       * {name}'s computer?" and describe one Bot being signed out, from a row among several
+       * identical-looking ones — and since 2026-09-16 there is one profile and pressing it signs
+       * every Bot out of everything. The row somebody pressed it from decides who is recorded as
+       * asking; it does not decide whose logins go, and a dialog that implied otherwise would be the
+       * screen lying about the most destructive button on it.
+       */}
       <ConfirmDialog
         confirmLabel={t("Reset it")}
         description={t(
-          "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.",
+          "Your Bots share one browser, so this signs all of them out of every service they had logged into and starts clean. This cannot be undone.",
         )}
         onConfirm={() => {
           if (confirming) void run(confirming, "reset");
@@ -263,9 +281,7 @@ function ComputersPage() {
         open={confirming !== null}
         pending={busy === confirming}
         pendingLabel={t("Resetting…")}
-        title={t("Reset {name}'s computer?", {
-          name: confirming ? nameFor(confirming) : "",
-        })}
+        title={t("Reset the computer every Bot shares?")}
       />
 
       {/*
@@ -276,10 +292,10 @@ function ComputersPage() {
        */}
       <p className="mt-4 text-muted-foreground text-sm">
         {t(
-          "Stop closes the browser and keeps its logins: the next thing the Bot does starts it again where it left off.",
+          "Stop closes that Bot's tabs and keeps the logins: the next thing it does opens a page again where it left off.",
         )}{" "}
         {t(
-          "Reset deletes the profile, so the Bot is signed out of everything and starts clean.",
+          "Reset deletes the one profile they all share, so every Bot is signed out of everything and starts clean.",
         )}{" "}
         {t("Both are recorded in Audit.")}{" "}
         <Link className="underline" to="/admin/audit">

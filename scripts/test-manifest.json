@@ -23,6 +23,7 @@
   "agent-computer/tests/navigation-guard.test.ts",
   "agent-computer/tests/sandbox.test.ts",
   "agent-computer/tests/secret-snapshot.test.ts",
+  "agent-computer/tests/shared-profile.test.ts",
   "agent-computer/tests/workspace.test.ts",
   "app/src/components/channels/composer/draft.test.ts",
   "app/src/components/channels/composer/queue.test.ts",

@@ -110,24 +110,41 @@ export function withNotes(
 /**
  * Every Bot's session, keyed by its id.
  *
- * `directoryFor` is the Bot's profile directory, where who had the wheel is written between lives
- * of this process. A function rather than a path so the layout stays profiles.ts's to decide.
+ * `stateDirectoryFor` is where who had the wheel is written between lives of this process. Functions
+ * rather than paths so the layout stays profiles.ts's to decide — and it is no longer the profile
+ * directory: the profile is the deployment's and control is one Bot's, so five Bots writing
+ * `control.json` into one directory would each answer "is a person driving" for all of them.
+ *
+ * `legacyStateDirectoryFor` is where it used to be, read when the new place has nothing. A container
+ * upgraded while somebody held the wheel must not hand it back to the Bot on the way through:
+ * `createControl`'s default holder is the Bot, so a control file this process cannot find is a
+ * control file that silently makes control looser.
  */
-export function createSessions(directoryFor: (botId: string) => string) {
+export function createSessions(directories: {
+  stateDirectoryFor: (botId: string) => string;
+  legacyStateDirectoryFor?: (botId: string) => string;
+}) {
   const sessions = new Map<string, BotSession>();
 
   /** Where a Bot's control state is kept between lives of this process. */
   const controlFileFor = (botId: string): string =>
-    join(directoryFor(botId), "control.json");
+    join(directories.stateDirectoryFor(botId), "control.json");
 
-  const readControlFile = (botId: string): unknown => {
+  const readAt = (path: string): unknown => {
     try {
-      return JSON.parse(readFileSync(controlFileFor(botId), "utf8"));
+      return JSON.parse(readFileSync(path, "utf8"));
     } catch {
       // No file is the ordinary case: a Bot that has never been driven. An unreadable one is treated
       // the same way, because the fail-safe below only ever makes control stickier, never looser.
       return null;
     }
+  };
+
+  const readControlFile = (botId: string): unknown => {
+    const current = readAt(controlFileFor(botId));
+    if (current !== null) return current;
+    const legacy = directories.legacyStateDirectoryFor?.(botId);
+    return legacy === undefined ? null : readAt(join(legacy, "control.json"));
   };
 
   /**
@@ -177,6 +194,21 @@ export function createSessions(directoryFor: (botId: string) => string) {
     /** The session if this process already has one. Never creates one, so never reads the disk. */
     existing(botId: string): BotSession | undefined {
       return sessions.get(botId);
+    },
+
+    /**
+     * The Bot whose `/navigate` is driving this frame, if one is.
+     *
+     * The browser belongs to every Bot now, so a hop the navigation guard stopped arrives with a
+     * frame id and no name on it. A Bot with a navigation in flight on that exact frame is the one
+     * exact answer available: it asked for this page and it is waiting for the verdict. Everything
+     * else `index.ts` has to work out for itself, and says so.
+     */
+    botNavigating(frameId: string): string | undefined {
+      for (const [botId, session] of sessions) {
+        if (session.navigating?.frameId === frameId) return botId;
+      }
+      return undefined;
     },
 
     /** Forget a Bot's session without writing anything. See `/computers/reset`. */

@@ -560,7 +560,9 @@ export const DECISIONS: Record<string, string> = {
   "computer.secret_requested": "The Bot asked for a secret",
   "computer.secret_supplied": "A person supplied a secret",
   "computer.reset": "The computer was reset",
-  // Written when deleting a Bot could not wipe its browser: the logins are still on disk.
+  // A deleted Bot let go of the shared computer: its tabs closed, the account's logins stayed.
+  "computer.released": "A deleted Bot let go of the computer",
+  // Written when deleting a Bot could not reach its browser at all.
   "computer.reset_failed": "The computer could not be reset",
   "computer.stopped": "A person pressed stop",
   // Not "Blocked". Nothing refused this; the Bot did the same thing again and the trail is saying so.
@@ -831,6 +833,8 @@ export const COMPUTER_FACTS: Record<string, string> = {
   "laf:frame_opaque": "A frame on the page could not be read",
   "laf:page_loading":
     "The page was still loading, so nothing on it could be read",
+  "laf:profile_adopted":
+    "The Bots now share one browser, which took over the profile last used",
 };
 
 /**
@@ -910,6 +914,7 @@ export const EVENTS: Record<string, string> = {
   "approval.standing_revoked": "A standing allowance",
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
+  "computer.released": "The computer",
   "computer.reset_failed": "The computer",
   "site.signed_in": "A site's sign-in",
   "site.login_lapsed": "A site's sign-in",

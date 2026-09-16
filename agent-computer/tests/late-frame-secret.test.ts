@@ -76,9 +76,9 @@ describe.skipIf(!HAS_BROWSER)("a frame that arrives during the look", () => {
       document.body.append(frame);
     });
     const seen = releasedOnTheTree(page);
-    const session = createSessions((botId) =>
-      join(profilesDir, botId),
-    ).sessionFor("late-frame-bot");
+    const session = createSessions({
+      stateDirectoryFor: (botId: string) => join(profilesDir, botId),
+    }).sessionFor("late-frame-bot");
 
     const shot = await snapshotPage(session, page, async () => []);
 

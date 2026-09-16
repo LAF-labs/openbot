@@ -44,6 +44,21 @@ export const DOWNLOAD_BODY = "날짜,금액\n2026-09-01,12000\n";
 
 const FIXTURES_DIR = join(import.meta.dir, "fixtures");
 
+/** The cookie `/sign-in` sets and `/whoami` reads. A real login on a real site is this, with steps. */
+export const SESSION_COOKIE = "laf_fixture_session";
+
+/** What `/whoami` puts on the page when nobody is signed in. Measured against, so it is exported. */
+export const SIGNED_OUT_TEXT = "로그인해 주세요";
+
+/** What it says when somebody is. The name follows, so a read says WHOSE session the browser holds. */
+export const signedInAs = (who: string): string => `로그인됨: ${who}`;
+
+const SIGNED_IN_HTML = (who: string) =>
+  `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>로그인 완료</title></head><body><h1>${signedInAs(who)}</h1></body></html>`;
+
+const WHOAMI_HTML = (who: string | null) =>
+  `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>내 정보</title></head><body><h1>${who ? signedInAs(who) : SIGNED_OUT_TEXT}</h1></body></html>`;
+
 /**
  * The pages under `fixtures/`, by the name they are served under at `/sites/<name>`.
  *
@@ -371,6 +386,33 @@ export function serveFixture(port = 0) {
       // A navigation that ends with no document at all: the browser stays on the page it was on.
       if (path === "/no-content") {
         return new Response(null, { status: 204 });
+      }
+      /*
+       * A SITE THAT SIGNS YOU IN AND REMEMBERS IT, which is the whole of what a shared profile is
+       * for. `/sign-in?as=…` sets an EXPIRING cookie — a session cookie is dropped on restart by
+       * design (profiles.ts) and would make this a test of Chromium's restart behaviour rather than
+       * of whose cookie jar it is — and `/whoami` reads it back and puts the name on the page, so a
+       * second Bot's `computer_read` is the measurement.
+       */
+      if (path === "/sign-in") {
+        const who = url.searchParams.get("as") ?? "";
+        return new Response(SIGNED_IN_HTML(who), {
+          headers: {
+            ...html,
+            "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(who)}; Path=/; Max-Age=3600`,
+          },
+        });
+      }
+      if (path === "/whoami") {
+        const cookie = request.headers.get("cookie") ?? "";
+        const held = cookie
+          .split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith(`${SESSION_COOKIE}=`));
+        const who = held
+          ? decodeURIComponent(held.slice(SESSION_COOKIE.length + 1))
+          : null;
+        return new Response(WHOAMI_HTML(who), { headers: html });
       }
       if (path === "/frame") {
         return new Response(FRAME_HTML, {

@@ -173,16 +173,24 @@ export const auditEventTypes = [
    */
   "approval.standing_granted",
   "approval.standing_revoked",
-  // The computer itself being stopped or wiped. `reset` destroys every login the Bot had, which is
-  // both the recovery path and the most consequential button on the admin page, so who pressed it and
-  // when is exactly the sort of thing an investigator needs and nothing else records.
+  // The computer itself being stopped or wiped. `reset` destroys every login on the one browser this
+  // account's Bots share, which is both the recovery path and the most consequential button on the
+  // admin page, so who pressed it and when is exactly the sort of thing an investigator needs and
+  // nothing else records.
   "computer.stopped",
   "computer.reset",
   /*
-   * A reset that was asked for and did not happen. Written by the hook that wipes a deleted Bot's
-   * computer (computer/release.ts): the Bot is gone from the roster either way, so a trail that
-   * showed only the `computer.reset` rows would read as though every deleted Bot's logins had been
-   * wiped, and the one that was not is the row an investigator needs.
+   * A deleted Bot letting go of the computer (computer/release.ts). Its tabs close and the logins
+   * stay, because since 2026-09-16 they are the account's rather than that Bot's — so this row is
+   * what stops the trail implying the opposite. Before then the same hook reset the profile and wrote
+   * `computer.reset`; a trail spanning the change shows both, which is the truth of it.
+   */
+  "computer.released",
+  /*
+   * A release that was asked for and did not happen — the computer could not be reached at all. The
+   * Bot is gone from the roster either way, so a trail that showed only the rows above would read as
+   * though every deleted Bot's browser had been tidied up, and the one that was not is the row an
+   * investigator needs.
    */
   "computer.reset_failed",
   /**

@@ -24,7 +24,7 @@
  * last seen alive. A look that changes nothing writes nothing: the thousandth morning a routine finds
  * 배민 still signed in is not news, and a trail of them would bury the two that are.
  */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { type AuditStore, createAuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { auditEvents, lafSiteConnections } from "../db/schema";
@@ -32,7 +32,15 @@ import { log } from "../log";
 
 export type SiteConnection = {
   siteId: string;
-  /** Whose browser the session was last seen in. A browser profile is per Bot. */
+  /**
+   * Which Bot last saw the site signed in — NOT whose login it is.
+   *
+   * There is one browser profile on a deployment and every Bot is signed in through it
+   * (`agent-computer/src/profiles.ts`, 2026-09-16), so a session belongs to the account. This is the
+   * Bot that last looked, which is worth keeping because it is what the audit rows are keyed on and
+   * what answers "who was using 배민 when it lapsed". The surface must not turn it into "이 봇이
+   * 로그인한 사이트": the card says the account's Bots share it.
+   */
   botId: string;
   connectedAt: string;
   lastSeenAt: string;
@@ -53,11 +61,18 @@ export type SiteConnectionStore = {
    * a site nobody ever connected is not news; a login wall on one they did is the whole reason this
    * flag exists, and it is what explains a routine that came back empty.
    *
-   * AND ONLY WHEN IT IS THE SESSION'S OWN BROWSER THAT SAW THE WALL. A profile is per Bot, so a
-   * second Bot visiting the site on its never-signed-in profile sees the wall every time and says
-   * nothing about the session in the first Bot's browser. Measured 2026-09-10 (audit A9, F4): Bot
-   * A signs in, Bot B's routine runs, the card says 다시 로그인 필요; A visits, it says connected;
-   * B runs again — several flips a day, and a person re-logging into a session that never expired.
+   * ANY BOT MAY REPORT THE WALL, BECAUSE THE SESSION IS THE ACCOUNT'S (2026-09-16). This used to be
+   * scoped to the Bot that signed in, and it had to be: profiles were per Bot, so a second Bot
+   * visiting the site on its never-signed-in profile saw the wall every time and said nothing about
+   * the session in the first Bot's browser. Measured 2026-09-10 (audit A9, F4): Bot A signs in, Bot
+   * B's routine runs, the card says 다시 로그인 필요; A visits, it says connected; B runs again —
+   * several flips a day, and a person re-logging into a session that never expired.
+   *
+   * One profile ends both halves of that. There is no never-signed-in profile for B to look at any
+   * more — B meets the wall only when the account's session really has run out — and keeping the
+   * scope would now be the opposite bug: the card would go on claiming a live 배민 login because the
+   * Bot that first signed in has not looked since Tuesday. So the lapse is matched on the person and
+   * the site, and the Bot that saw it is recorded rather than required.
    */
   record(input: {
     userId: string;
@@ -135,8 +150,14 @@ export function createSiteConnectionStore(
    *
    * `connected_at` is the first sign-in ever and never moves, so a site that has lapsed and been
    * signed into again would report its first March login as the start of September's session. The
-   * start of THIS session is the last `site.signed_in` this Bot's browser wrote for the site; a
-   * session older than those rows has only `connected_at` to go on, and gets it.
+   * start of THIS session is the last `site.signed_in` written for the site; a session older than
+   * those rows has only `connected_at` to go on, and gets it.
+   *
+   * WHICHEVER BOT WROTE IT (2026-09-16). The lookup was scoped to the Bot, which was right when each
+   * one had a profile: the session began when THAT browser signed in. There is one browser now, so a
+   * lapse Bot B reported would have found none of Bot A's sign-in rows and called the session as old
+   * as `connected_at` — months, on a login three days old. The question the row answers is "how long
+   * did this account's 배민 session last", and that has one answer per site.
    *
    * AND NEVER LATER THAN IT WAS LAST SEEN. The row is written a moment after the look it records,
    * stamped by the database, while the connection's clocks are the look's own — so a session seen
@@ -146,7 +167,6 @@ export function createSiteConnectionStore(
   const sessionStart = async (
     userId: string,
     siteId: string,
-    botId: string,
     connectedAt: Date,
     lastSeenAt: Date,
   ): Promise<Date> => {
@@ -159,7 +179,6 @@ export function createSiteConnectionStore(
           eq(auditEvents.targetType, "site"),
           eq(auditEvents.targetId, siteId),
           eq(auditEvents.actorUserId, userId),
-          sql`${auditEvents.payload}->>'bot' = ${botId}`,
         ),
       )
       .orderBy(desc(auditEvents.createdAt))
@@ -187,11 +206,10 @@ export function createSiteConnectionStore(
          */
         const { before, after } = await database.transaction(
           async (transaction) => {
-            // Only the browser the session lives in can report it gone. See `record` above.
+            // The person and the site, not the Bot: one browser, one session. See `record` above.
             const own = and(
               eq(lafSiteConnections.userId, userId),
               eq(lafSiteConnections.siteId, siteId),
-              eq(lafSiteConnections.botId, botId),
             );
             const [held] = await transaction
               .select()
@@ -201,7 +219,10 @@ export function createSiteConnectionStore(
             if (!held || held.needsLogin) return { before: held, after: held };
             const [marked] = await transaction
               .update(lafSiteConnections)
-              .set({ needsLogin: true })
+              // The Bot that met the wall becomes the one the row names, so `botId` stays "who last
+              // looked" on the lapse path as well as the sign-in path rather than meaning two
+              // different things depending on which way the flag moved.
+              .set({ needsLogin: true, botId })
               .where(own)
               .returning();
             return { before: held, after: marked };
@@ -214,7 +235,6 @@ export function createSiteConnectionStore(
               await sessionStart(
                 userId,
                 siteId,
-                botId,
                 before.connectedAt,
                 before.lastSeenAt,
               )

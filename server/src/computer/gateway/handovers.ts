@@ -118,10 +118,11 @@ export function createHandovers(deps: {
     },
 
     /**
-     * Wipe a computer's profile.
+     * Wipe the computer's profile.
      *
-     * The most destructive button we have. Every login the Bot had is gone and no undo exists, so the
-     * row is written whatever happens next.
+     * The most destructive button we have. Every login on the one browser this account's Bots share
+     * is gone — not just the Bot on the row somebody pressed it from — and no undo exists, so the row
+     * is written whatever happens next, and it says which of those two it was.
      */
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
       const result = await as(botId).resetComputer();
@@ -130,7 +131,8 @@ export function createHandovers(deps: {
         botId,
         actor,
         computerId,
-        reason: "every saved login on this computer was deleted",
+        reason:
+          "every saved login on this account's one computer was deleted, for all of its Bots",
       });
       return result;
     },

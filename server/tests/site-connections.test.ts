@@ -163,13 +163,19 @@ describe("the 사이트 연결 store", () => {
   });
 
   /*
-   * ANOTHER BOT'S WALL IS NOT THIS SESSION EXPIRING (audit 2026-09-10, A9 F4). A browser profile
-   * is per Bot, so Bot B visiting 배민 on its own never-signed-in profile sees the login wall every
-   * time — and the row, which says the session lives in Bot A's browser, was flipped to
-   * 다시 로그인 필요 by it. Measured: A signs in, B's routine runs, the card says log in again; A
-   * visits, the card says connected; B runs again, and so on, several times a day.
+   * ANY BOT'S WALL IS THE SESSION EXPIRING, BECAUSE THE SESSION IS THE ACCOUNT'S (2026-09-16).
+   *
+   * This test used to assert the opposite, and it was right to: a browser profile was per Bot, so
+   * Bot B visiting 배민 on its own never-signed-in profile saw the login wall every time and flipped
+   * a row describing the session in Bot A's browser (audit 2026-09-10, A9 F4 — measured: A signs in,
+   * B's routine runs, the card says log in again; A visits, the card says connected; B runs again,
+   * several times a day).
+   *
+   * One profile ends both halves of that. B has no never-signed-in profile to look at any more, so
+   * the flapping cannot happen; and keeping the scope would now be the opposite bug — the card going
+   * on claiming a live 배민 login because the Bot that first signed in has not looked since Tuesday.
    */
-  test("a login wall seen by another Bot's browser does not flip the connection", async () => {
+  test("a login wall seen by any Bot is the one session expiring", async () => {
     const userId = await createUser();
     await store.record({
       userId,
@@ -178,7 +184,7 @@ describe("the 사이트 연결 store", () => {
       signedIn: true,
     });
 
-    // Bot B, on its own profile, which was never signed in.
+    // Bot B, on the SAME profile: what it sees is what the account's session is.
     const seenByB = await store.record({
       userId,
       siteId: "baemin-ceo",
@@ -186,12 +192,14 @@ describe("the 사이트 연결 store", () => {
       signedIn: false,
     });
 
-    expect(seenByB).toBeNull();
+    expect(seenByB?.needsLogin).toBe(true);
+    // And the row now names the Bot that looked, so `botId` means the same thing whichever way the
+    // flag moved: who last looked, never whose login it is.
     expect(
       (await store.list(userId)).map((row) => [row.botId, row.needsLogin]),
-    ).toEqual([["bot-a", false]]);
+    ).toEqual([["bot-b", true]]);
 
-    // The browser the session lives in seeing the wall is the session expiring.
+    // A second look at the same wall is not a second lapse, whoever takes it.
     const seenByA = await store.record({
       userId,
       siteId: "baemin-ceo",
@@ -319,7 +327,7 @@ describe("the moments a sign-in changes", () => {
     expect(began).toBeLessThan(Date.parse(refreshed.lastSeenAt));
   });
 
-  test("another Bot's browser meeting the wall writes nothing, because nothing about the session changed", async () => {
+  test("another Bot meeting the wall is the lapse, and the row says which Bot found it", async () => {
     const userId = await createUser();
     await store.record({
       userId,
@@ -334,9 +342,23 @@ describe("the moments a sign-in changes", () => {
       signedIn: false,
     });
 
-    expect((await siteRows(userId)).map((row) => row.eventType)).toEqual([
+    const rows = await siteRows(userId);
+    expect(rows.map((row) => row.eventType)).toEqual([
       "site.signed_in",
+      "site.login_lapsed",
     ]);
+    /*
+     * AND THE SESSION IS DATED FROM A'S SIGN-IN, NOT FROM `connected_at`. The lookup was scoped to
+     * the Bot too; left that way, a lapse B reported would have found none of A's rows and called a
+     * three-day-old login as old as the first connection ever.
+     */
+    const lapse = rows[1]?.payload as Record<string, string>;
+    expect(lapse.bot).toBe("bot-b");
+    const signedIn = rows[0];
+    if (!signedIn) throw new Error("the sign-in wrote no row");
+    expect(Date.parse(lapse.signedInSince as string)).toBeGreaterThanOrEqual(
+      signedIn.createdAt.getTime() - 1_000,
+    );
   });
 
   test("after signing in again, the next lapse is counted from the second sign-in, not the first", async () => {

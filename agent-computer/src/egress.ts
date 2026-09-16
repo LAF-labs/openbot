@@ -1,14 +1,22 @@
 /**
- * Where a Bot's traffic leaves from.
+ * Where this computer's traffic leaves from.
  *
- * Per-Bot egress identity makes traffic attributable to the Bot that caused it. With a distinct
- * upstream proxy per Bot, the far side sees a different address for each Bot and can enforce network
- * rules alongside application policy.
+ * ONE ADDRESS FOR THE DEPLOYMENT, NOT ONE PER BOT — and that is a loss, recorded here rather than
+ * discovered. `EGRESS_PROXY_<BOT>` used to give each Bot its own upstream proxy, so the far side saw
+ * a different address per Bot and could allow-list or attribute by it. Sharing one browser profile
+ * (2026-09-16, `profiles.ts`) means sharing one Chromium — a user-data directory admits one process
+ * — and a proxy is chosen once, at launch, for the browser. There is no longer anything for a
+ * per-Bot proxy to attach to.
  *
- * This does not anonymise anything and it is not a security boundary by itself. It
- * gives the far side a stable, per-Bot address to allow-list or attribute, which is what a security
- * team actually asks for. A Bot with no proxy configured goes out directly, which is the right default
- * for a laptop and the wrong one for a deployment that cares.
+ * So `EGRESS_PROXY_DEFAULT` is the whole of the configuration now, and a deployment that still names
+ * a per-Bot variable is TOLD, at launch, that it is not being honoured. Silently browsing somebody's
+ * bank from an address their security team did not choose is precisely the failure this warning
+ * exists to prevent; `ignoredEgressVariables` is what the boot line reads.
+ *
+ * This does not anonymise anything and it is not a security boundary by itself. It gives the far
+ * side a stable address to allow-list, which is what a security team actually asks for. No proxy
+ * configured means going out directly, which is the right default for a laptop and the wrong one for
+ * a deployment that cares.
  *
  * This module has no Playwright import, so proxy parsing tests can run outside the browser image.
  */
@@ -20,26 +28,38 @@ export type Egress = {
   password?: string;
 };
 
+/** The one variable a shared browser can honour. */
+const DEFAULT_VARIABLE = "EGRESS_PROXY_DEFAULT";
+
 /**
- * The environment variable naming a Bot's proxy.
+ * Every `EGRESS_PROXY_*` this deployment sets that the browser cannot honour any more.
  *
- * Upper-cased with anything unusual replaced, because a bot id is a free-form string and an
- * environment variable name is not. `sales-bot` reads `EGRESS_PROXY_SALES_BOT`.
+ * Names only. The values are proxy URLs and a proxy URL routinely carries a password, so nothing
+ * that reads this — a log line, a boot announcement — can leak one by accident.
  */
-export function egressVariableFor(botId: string): string {
-  return `EGRESS_PROXY_${botId.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}`;
+export function ignoredEgressVariables(
+  env: Record<string, string | undefined>,
+): string[] {
+  return Object.keys(env)
+    .filter(
+      (name) =>
+        name.startsWith("EGRESS_PROXY_") &&
+        name !== DEFAULT_VARIABLE &&
+        !!env[name]?.trim(),
+    )
+    .sort();
 }
 
 /**
- * Resolve a Bot's proxy from the environment, or null for direct.
+ * The proxy the deployment's browser leaves through, or null for direct.
  *
- * `EGRESS_PROXY_<BOT>` names one Bot's proxy; `EGRESS_PROXY_DEFAULT` covers the rest.
+ * Reads `EGRESS_PROXY_DEFAULT` and nothing else. A per-Bot variable is not consulted, not merged and
+ * not quietly promoted to the default: see the header.
  */
-export function egressFor(
-  botId: string,
+export function deploymentEgress(
   env: Record<string, string | undefined>,
 ): Egress | null {
-  const raw = env[egressVariableFor(botId)] ?? env.EGRESS_PROXY_DEFAULT;
+  const raw = env[DEFAULT_VARIABLE];
   if (!raw?.trim()) return null;
 
   // Credentials commonly arrive inside the URL, which is how proxies are handed out. They are split
@@ -67,16 +87,15 @@ export function egressFor(
 }
 
 /**
- * The label for a Bot's egress, for people and for the admin list.
+ * The label for that egress, for people and for the admin list.
  *
  * Host only. A proxy URL routinely carries a password, and this string is rendered in a browser and
  * returned by an API.
  */
-export function egressLabel(
-  botId: string,
+export function deploymentEgressLabel(
   env: Record<string, string | undefined>,
 ): string | null {
-  const proxy = egressFor(botId, env);
+  const proxy = deploymentEgress(env);
   if (!proxy) return null;
   try {
     // `||` handles bare `proxy.internal:8080`, which URL parses as a scheme plus path and an empty

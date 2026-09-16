@@ -1,5 +1,5 @@
 /**
- * The Bot's browser, and the profile that outlives it.
+ * The Bot's browser, and the profile the whole deployment shares.
  *
  * A persistent profile lets a Bot remain signed in across process and container restarts.
  *
@@ -20,23 +20,47 @@
  *     reproduce here. The defensive sweep below stays anyway, because it is three lines and the
  *     failure it prevents is "the computer never comes back".
  *
- * One profile per Bot. Two Bots sharing a profile share their logins, which makes "this Bot may reach
- * Salesforce" unenforceable: whatever one signs into, the other is signed into. Each Bot gets its own
- * directory, so its cookies and its storage are its own.
+ * ONE PROFILE FOR THE DEPLOYMENT, NOT ONE PER BOT (decided 2026-09-16, reversing what this comment
+ * said before). A deployment is one person's machine — `docs/laf/deployment-model.md`, and its second
+ * invariant already says a profile is "편의이자 감사 단위이지, 경계가 아니다": a convenience and an
+ * audit unit, never a boundary. The person's reason is the one that decided it: they should authorise
+ * a site once, not once per Bot. So every Bot opens the same Chromium user-data directory, and a site
+ * one Bot signed into is signed in for the others — which is what the product has promised on the
+ * onboarding screen the whole time ("봇들은 진짜 브라우저 하나를 함께 씁니다").
  *
- * A profile is not a container. Two Bots in this process are isolated from each other's cookies, not
- * from each other's kernel, filesystem or memory.
+ * WHAT THAT TRADED AWAY, said plainly rather than left for somebody to find:
+ *
+ *   - "This Bot may reach Salesforce and that one may not" is no longer enforceable by the profile.
+ *     It never was a boundary, but it WAS a speed bump, and the speed bump is gone: whatever one Bot
+ *     signs into, the others are signed into. What keeps a Bot in bounds is the boundary in front of
+ *     it — the policy, the approval, the standing allowance — and nothing else.
+ *   - ONE BROWSER, SO ONE EGRESS. A profile directory can only be opened by one Chromium at a time,
+ *     so sharing the cookie jar means sharing the process, and a proxy is chosen once at launch.
+ *     `EGRESS_PROXY_<BOT>` cannot be honoured by a browser that belongs to every Bot; only
+ *     `EGRESS_PROXY_DEFAULT` is read now, and `egress.ts` warns at launch when a per-Bot variable is
+ *     set so a deployment is never quietly browsing from an address it did not choose.
+ *   - Resetting is the whole computer's. `/computers/reset` empties the one profile every Bot uses,
+ *     so it signs ALL of them out. `computer-routes.ts` and the app's words say so.
+ *
+ * WHAT DID NOT CHANGE. Each Bot still keeps its own TABS — `owners` below — because two Bots can act
+ * at once (`server/src/runner/bot-lane.ts` queues per Bot, not per account) and sharing one tab would
+ * put one Bot's click on the other's page and each one's snapshot stale under the other. Sharing
+ * logins is the decision; sharing the thing being looked at is not.
+ *
+ * A profile is not a container. Two Bots in this process are isolated from each other's kernel,
+ * filesystem or memory by nothing at all, and now from each other's cookies by nothing either.
  *
  * Container-per-Bot needs something privileged to create containers, and the API server must never be
  * that: access to the Docker socket is unrestricted root on the host. Stop and reset are
  * operations this process applies to its own browser, so the same design works under Compose,
  * Kubernetes or ECS, where the orchestrator's own restart policy brings a process back.
  */
-import { readdir, rm } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
+import { isBotId } from "./authorisation";
 import { keepChildProcesses } from "./child-processes";
-import { egressFor, egressLabel } from "./egress";
+import { deploymentEgress, deploymentEgressLabel } from "./egress";
 import { log } from "./log";
 import { titleOf } from "./page-text";
 
@@ -101,7 +125,7 @@ export function botUserAgent(version: string): string {
 
 /** One tab in a Bot's browser, as the snapshot lists them. */
 export type TabSummary = {
-  /** Position in the browser's own list, which is what `computer_switch_tab` takes. */
+  /** Position in the Bot's own list, which is what `computer_switch_tab` takes. */
   index: number;
   title: string;
   url: string;
@@ -118,11 +142,12 @@ export class TabError extends Error {
 }
 
 /**
- * How long a Bot's browser may sit untouched before it is closed.
+ * How long a Bot may leave its tabs untouched before they are closed.
  *
- * Ten minutes. Five Bots on a 6GB VM is five Chromiums, and four of them are usually asleep between
- * a routine at nine and one at noon. Closing an idle one costs the next call a cold start and gives
- * the machine back ~300MB; the cookies are on the volume, so nothing is signed out by it.
+ * Ten minutes. Four of five Bots are usually asleep between a routine at nine and one at noon, and a
+ * tab nobody is looking at still costs a renderer; closing them costs the next call a page load and
+ * gives the machine its memory back. The cookies are on the volume and the profile is shared, so
+ * nothing is signed out by it — and when the last Bot's tabs go, so does the browser.
  */
 const IDLE_CLOSE_MS = 10 * 60_000;
 
@@ -153,10 +178,9 @@ const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
  *
  * `--disk-cache-size` bounds the one thing in the profile that grows for ever. Without it Chromium
  * sizes its cache from the free space on the volume and the agent-profiles volume is the same disk
- * as Postgres; 100MB per Bot is enough that a portal's images survive between turns and small
- * enough that five Bots cannot fill a 40GB box. Compose left a note saying this belonged to the
- * browser wave because the args are a literal list here rather than read from the environment: it
- * is still a literal list, because a cache size is not a thing a deployment tunes.
+ * as Postgres; 100MB is enough that a portal's images survive between turns and small enough that it
+ * cannot fill a 40GB box. It used to be 100MB per Bot, because there used to be a profile per Bot;
+ * one profile means one cache, so the same number now bounds the whole deployment.
  *
  * THERE IS NO `--no-sandbox` HERE ANY MORE, AND THERE MUST NOT BE. It was the first flag in this
  * list from the day the image existed, and with the Dockerfile naming no `USER` it meant the one
@@ -207,11 +231,15 @@ export type BotBrowser = {
 
 export type ProfileSummary = {
   botId: string;
-  /** Whether a browser is running for this Bot right now. */
+  /** Whether this Bot has a tab open in the deployment's browser right now. */
   running: boolean;
-  /** When this Bot's browser was last started, or null if it is not running. */
+  /** When this Bot's first tab was opened, or null if it has none. */
   startedAt: string | null;
-  /** The proxy its traffic leaves through, by host only. Never the credentials. */
+  /**
+   * The proxy the browser's traffic leaves through, by host only. Never the credentials.
+   *
+   * The same answer for every Bot, and that is the point: one profile is one browser is one proxy.
+   */
   egress: string | null;
 };
 
@@ -255,9 +283,9 @@ export type ClosableContext = Pick<BrowserContext, "close"> & {
  * THE EXIT IS WAITED FOR, NOT ASSUMED. This used to sleep two seconds flat, on the stated grounds
  * that a persistent context exposes no exit signal — but `context.browser()` is not null in this
  * Playwright version (measured), so `disconnected` is exactly that signal. It matters more now that
- * a browser also closes on its own after ten idle minutes: returning from a close before the process
- * has released the profile directory is how two Chromiums end up on one user-data-dir, and the
- * second one comes up in a state where every call hangs until its timeout.
+ * a browser also closes on its own once every Bot has gone idle: returning from a close before the
+ * process has released the profile directory is how two Chromiums end up on one user-data-dir, and
+ * the second one comes up in a state where every call hangs until its timeout.
  *
  * AND THE CLOSE ITSELF IS BOUNDED, which it was not. `context.close()` was awaited without a limit
  * on the assumption that a browser asked to exit exits; a Chromium wedged mid-navigation does not,
@@ -335,10 +363,163 @@ async function browserPidOf(context: BrowserContext): Promise<number | null> {
   }
 }
 
+/**
+ * The file that records which directory under the profiles root the deployment's browser opens.
+ *
+ * A pointer rather than a fixed path, because an upgrade adopts a directory that already exists and
+ * already holds somebody's logins. Written once, read every boot after: two boots must not disagree
+ * about where the cookies are.
+ */
+const POINTER_FILE = "profile.json";
+
+/**
+ * The directory the shared profile gets when there is no per-Bot profile to take over.
+ *
+ * A dot in the name, deliberately: `isBotId` refuses any id with a dot in it, so no Bot anybody
+ * creates can ever be called this and no per-Bot directory can ever collide with it. `bot.state`
+ * below is dot-named for the same reason.
+ */
+const DEFAULT_PROFILE_DIR = "shared.profile";
+
+/** Where per-Bot state that is NOT the cookie jar lives: who has the wheel (`sessions.ts`). */
+const STATE_DIR = "bot.state";
+
+/**
+ * What a Chromium user-data directory has in it.
+ *
+ * Asked so that a directory holding nothing but `control.json` — a Bot that was driven before its
+ * browser ever started — is not adopted as somebody's profile and reported as their logins.
+ */
+const PROFILE_MARKERS = ["Default", "Local State"];
+
+/** Which directory the deployment's browser opens, and what taking it over cost. */
+export type ProfileAdoption = {
+  /** The directory the shared profile lives in, by name under the profiles root. */
+  directory: string;
+  /** The per-Bot profile it was taken over from, or null when a fresh one was made. */
+  adoptedFrom: string | null;
+  /** How many other per-Bot profiles were left exactly where they are. */
+  kept: number;
+};
+
+const isAdoption = (value: unknown): value is ProfileAdoption =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as ProfileAdoption).directory === "string" &&
+  (value as ProfileAdoption).directory.length > 0;
+
+/**
+ * When a profile was last used, as well as the filesystem can say.
+ *
+ * The cookie database first: it is rewritten whenever a login changes, which is the closest thing on
+ * disk to "this is the profile the person was actually using". The directory's own mtime is the
+ * fallback, and it moves for any write at all — enough to order two profiles, not enough to be
+ * trusted on its own.
+ */
+async function profileUsedAt(dir: string): Promise<number> {
+  const candidates = [
+    join(dir, "Default", "Cookies"),
+    join(dir, "Default"),
+    join(dir, "Local State"),
+    dir,
+  ];
+  let newest = 0;
+  for (const path of candidates) {
+    const info = await stat(path).catch(() => null);
+    if (info) newest = Math.max(newest, info.mtimeMs);
+  }
+  return newest;
+}
+
+async function looksLikeProfile(dir: string): Promise<boolean> {
+  for (const marker of PROFILE_MARKERS) {
+    if (await stat(join(dir, marker)).catch(() => null)) return true;
+  }
+  return false;
+}
+
+/**
+ * Which directory the deployment's browser opens — TAKING OVER A PERSON'S LOGINS RATHER THAN
+ * THROWING THEM AWAY.
+ *
+ * A machine upgrading into this change has a directory per Bot, each with cookies in it, and the
+ * cheap thing to do would be to start a clean shared profile and let the person sign into their
+ * bank, 홈택스 and 스마트스토어 again on the strength of a version bump. So instead: the profile that
+ * was used most recently BECOMES the shared one, in place, and the rest are left exactly where they
+ * are — untouched, not merged and not deleted, because merging two Chromium profiles is not a thing
+ * that can be done safely and deleting them is the person's call, not an upgrade's. The choice is
+ * written to the pointer file so every later boot agrees with this one, and `laf:profile_adopted`
+ * puts it in front of the Bot that caused the first launch.
+ *
+ * `kept` counts what was left behind, so "why is 배민 still asking me to log in" has an answer: it is
+ * signed in in one of those, and the way to move it is to sign in once on the shared browser.
+ */
+export async function resolveProfile(root: string): Promise<ProfileAdoption> {
+  const pointed = await readFile(join(root, POINTER_FILE), "utf8")
+    .then((text) => JSON.parse(text) as unknown)
+    .catch(() => null);
+  if (isAdoption(pointed)) {
+    // Field by field rather than handed back whole: the file also carries `at`, and a caller that
+    // compared two resolutions would be comparing timestamps.
+    return {
+      directory: pointed.directory,
+      adoptedFrom: pointed.adoptedFrom ?? null,
+      kept: typeof pointed.kept === "number" ? pointed.kept : 0,
+    };
+  }
+
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const candidates: { name: string; usedAt: number }[] = [];
+  for (const entry of entries) {
+    // Only a directory a Bot could have been called: `bot.state` and `shared.profile` carry a dot
+    // and so can never be one, and neither can a stray file.
+    if (!entry.isDirectory() || !isBotId(entry.name)) continue;
+    const dir = join(root, entry.name);
+    if (!(await looksLikeProfile(dir))) continue;
+    candidates.push({ name: entry.name, usedAt: await profileUsedAt(dir) });
+  }
+  // Newest first, and by name when two are the same age, so an upgrade run twice on one machine
+  // picks the same directory both times.
+  candidates.sort(
+    (a, b) => b.usedAt - a.usedAt || a.name.localeCompare(b.name),
+  );
+
+  const [newest] = candidates;
+  const adoption: ProfileAdoption = newest
+    ? {
+        directory: newest.name,
+        adoptedFrom: newest.name,
+        kept: candidates.length - 1,
+      }
+    : { directory: DEFAULT_PROFILE_DIR, adoptedFrom: null, kept: 0 };
+  await writePointer(root, adoption);
+  return adoption;
+}
+
+/**
+ * The decision, written down.
+ *
+ * Best effort: a root that cannot be written to is a broken deployment already, and refusing to give
+ * anybody a browser over it would turn "the pointer did not save" into "nothing works". The
+ * resolution above is deterministic anyway, so the next boot reaches the same answer by itself.
+ */
+async function writePointer(
+  root: string,
+  adoption: ProfileAdoption,
+): Promise<void> {
+  await writeFile(
+    join(root, POINTER_FILE),
+    JSON.stringify({ ...adoption, at: new Date().toISOString() }),
+    "utf8",
+  ).catch((error: unknown) => {
+    log.error("profile_pointer_not_saved", { reason: error });
+  });
+}
+
 /** What the process around this wants to know about a page the moment it exists. */
 export type ProfileOptions = {
   /**
-   * Every page this Bot gets, the first one and every one a site opens afterwards.
+   * Every page a Bot gets, the first one and every one a site opens afterwards.
    *
    * The hook is how dialogs and downloads are heard: both are per-page listeners, and a `_blank`
    * link means the page a Bot is about to act on is one nothing has attached to yet. Kept as a
@@ -349,12 +530,20 @@ export type ProfileOptions = {
   /**
    * The browser, the moment it exists and before its first page is handed out.
    *
-   * What goes here has to cover EVERY page a Bot will ever have, including the ones a site opens by
-   * itself: something attached to a page misses the popup the next click opens. Awaited, so nothing
-   * is navigated before it is in place, and a hook that throws fails the launch — the browser is
-   * closed rather than handed out without it.
+   * NAMES NO BOT, because the browser belongs to none of them. What goes here has to cover EVERY
+   * page EVERY Bot will ever have, including the ones a site opens by itself: something attached to
+   * a page misses the popup the next click opens, and something attached per Bot would miss the
+   * other four. Awaited, so nothing is navigated before it is in place, and a hook that throws fails
+   * the launch — the browser is closed rather than handed out without it.
    */
-  onContext?: (botId: string, context: BrowserContext) => Promise<void> | void;
+  onContext?: (context: BrowserContext) => Promise<void> | void;
+  /**
+   * Told once, when an existing per-Bot profile was taken over as the deployment's.
+   *
+   * Given the Bot whose call caused the first launch, because that is who is owed the explanation:
+   * it is about to be looking at somebody else's cookie jar, on purpose.
+   */
+  onProfileAdopted?: (botId: string, adoption: ProfileAdoption) => void;
   /** Overridable so a test does not have to wait ten minutes to watch a browser close. */
   idleCloseMs?: number;
   now?: () => number;
@@ -377,45 +566,65 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    */
   let chromiumVersion = PINNED_CHROMIUM_VERSION;
 
-  /** One running browser per Bot. */
-  const live = new Map<
-    string,
-    {
-      context: BrowserContext;
-      page: Page;
-      startedAt: string;
-      /** When this Bot last had a call. See IDLE_CLOSE_MS. */
-      usedAt: number;
-      /** The browser process, for the close that has to end it. See closeAndWait. */
-      pid: number | null;
-    }
-  >();
-  /** Launches in flight, so a cold computer is started once however many callers ask at once. */
-  const starting = new Map<string, Promise<Page>>();
+  /** Which directory the browser opens. Resolved once, on the first launch. */
+  let adoption: ProfileAdoption | null = null;
+  /** So the adoption is announced to one Bot, once, and not on every relaunch after an idle close. */
+  let adoptionTold = false;
+
+  /** The one browser this deployment has, while it is running. */
+  let shared: {
+    context: BrowserContext;
+    startedAt: string;
+    /** The browser process, for the close that has to end it. See closeAndWait. */
+    pid: number | null;
+  } | null = null;
+
+  /** The launch in flight, so a cold computer is started once however many Bots ask at once. */
+  let starting: Promise<BrowserContext> | null = null;
   /**
-   * Closes in flight, so a launch cannot start on a profile a browser is still letting go of.
+   * The close in flight, so a launch cannot start on a profile a browser is still letting go of.
    *
-   * The idle sweep made this necessary: a close now happens on a timer rather than only when
-   * somebody presses Stop, so a call can arrive in the middle of one. Two Chromiums on a single
-   * user-data-dir do not fail loudly — the second comes up and then hangs on everything, which is
-   * indistinguishable from a broken site until you look at the process list.
+   * Two Chromiums on a single user-data-dir do not fail loudly — the second comes up and then hangs
+   * on everything, which is indistinguishable from a broken site until you look at the process list.
+   * It mattered when each Bot had its own directory and it matters more now that they all have this
+   * one.
    */
-  const closing = new Map<string, Promise<void>>();
+  let closing: Promise<void> | null = null;
 
-  /** Close this Bot's context, and make the wait for it visible to anything that wants to launch. */
-  const closeContext = (
-    botId: string,
-    context: BrowserContext,
-    pid: number | null,
-  ) => {
-    const done = closeAndWait(context, { pid }).finally(() => {
-      if (closing.get(botId) === done) closing.delete(botId);
-    });
-    closing.set(botId, done);
-    return done;
-  };
+  /**
+   * Which Bot each open tab belongs to.
+   *
+   * The cookie jar is shared and the tabs are not. Without this, one Bot's `/snapshot` would describe
+   * whatever page another Bot happened to open last, and `computer_switch_tab` would hand it the
+   * wheel of a tab it never opened.
+   */
+  const owners = new Map<Page, string>();
 
-  const directoryFor = (botId: string): string => join(root, botId);
+  /** Each Bot's current tab, and when it last did anything. See IDLE_CLOSE_MS. */
+  const live = new Map<string, { page: Page; usedAt: number; since: string }>();
+
+  const profileDirectory = (): string =>
+    join(root, adoption?.directory ?? DEFAULT_PROFILE_DIR);
+
+  /**
+   * Where this Bot's own state goes — who has the wheel, and nothing else.
+   *
+   * NOT the profile directory any more, and that is the whole point of it having a name of its own:
+   * `control.json` is per Bot and the cookies are not, so writing one inside the other would have
+   * five Bots overwriting each other's answer to "is a person driving right now".
+   */
+  const stateDirectoryFor = (botId: string): string =>
+    join(root, STATE_DIR, botId);
+
+  /**
+   * Where a Bot's control state was kept before the profile was shared.
+   *
+   * Read-only, and only as a fallback (`sessions.ts`). A person holding the wheel when the container
+   * was upgraded must not have it handed back to the Bot by the upgrade: `createControl`'s default
+   * holder is the Bot, so a control file this process cannot find is a control file that silently
+   * makes control looser — the one direction `restoredControl` exists to refuse.
+   */
+  const legacyStateDirectoryFor = (botId: string): string => join(root, botId);
 
   const sweepLocks = async (dir: string): Promise<void> => {
     await Promise.all(
@@ -425,150 +634,243 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     );
   };
 
+  /** This Bot's open tabs, in the browser's own order. */
+  const pagesOf = (botId: string): Page[] =>
+    (shared?.context.pages() ?? []).filter(
+      (page) => !page.isClosed() && owners.get(page) === botId,
+    );
+
+  /** Mark a tab as this Bot's, and stop saying so once it is closed. */
+  const own = (botId: string, page: Page): void => {
+    owners.set(page, botId);
+    page.once("close", () => {
+      if (owners.get(page) === botId) owners.delete(page);
+    });
+  };
+
+  /** Note that this Bot has a tab, without moving `since` if it already had one. */
+  const touch = (botId: string, page: Page): Page => {
+    const existing = live.get(botId);
+    live.set(botId, {
+      page,
+      usedAt: now(),
+      since: existing?.since ?? new Date().toISOString(),
+    });
+    return page;
+  };
+
+  /** Close this Bot's tabs and forget it is here. Says whether it had any. */
+  const closeTabsOf = async (botId: string): Promise<boolean> => {
+    const pages = pagesOf(botId);
+    live.delete(botId);
+    for (const page of pages) owners.delete(page);
+    await Promise.all(pages.map((page) => page.close().catch(() => undefined)));
+    return pages.length > 0;
+  };
+
+  /** Close the browser itself, and make the wait for it visible to anything that wants to launch. */
+  const closeBrowser = (): Promise<void> => {
+    const running = shared;
+    shared = null;
+    live.clear();
+    owners.clear();
+    if (!running) return Promise.resolve();
+    const done = closeAndWait(running.context, { pid: running.pid }).finally(
+      () => {
+        if (closing === done) closing = null;
+      },
+    );
+    closing = done;
+    return done;
+  };
+
+  /** Once nobody has a tab, nobody needs a browser: ~300MB back until the next call. */
+  const closeIfUnused = async (): Promise<void> => {
+    if (live.size === 0 && shared) await closeBrowser();
+  };
+
+  /**
+   * The deployment's browser, started if it is not running.
+   *
+   * Started on first use rather than at boot, and re-created if it died: a crashed Chromium would
+   * otherwise leave this process alive and answering the same error for every request until the
+   * container restarts. This turns that into one slow request instead of an outage.
+   */
+  const browserFor = async (botId: string): Promise<BrowserContext> => {
+    const running = starting;
+    if (running) return running;
+    if (shared?.context.browser()?.isConnected()) return shared.context;
+    if (shared) {
+      // Half-dead: the browser went away and left its tabs behind. Dropped rather than repaired,
+      // because a context whose browser has gone is not usable for anything.
+      await shared.context.close().catch(() => undefined);
+      shared = null;
+      live.clear();
+      owners.clear();
+    }
+
+    const launch = (async () => {
+      /*
+       * A browser that is still letting go of this profile gets to finish first. The sweep of
+       * singleton locks below assumes no browser of ours is running on this directory, and that is
+       * only true once the close has actually completed.
+       */
+      await closing?.catch(() => undefined);
+      adoption ??= await resolveProfile(root);
+      const dir = profileDirectory();
+      await sweepLocks(dir);
+      const proxy = deploymentEgress(process.env);
+      const context = await chromium.launchPersistentContext(dir, {
+        args: LAUNCH_ARGS,
+        // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
+        chromiumSandbox: true,
+        viewport: VIEWPORT,
+        locale: LOCALE,
+        timezoneId: botTimeZone(),
+        userAgent: botUserAgent(chromiumVersion),
+        // A download with nowhere to go is refused by Chromium before anything here hears about
+        // it, so this is the switch that makes 세금계산서 PDF a thing a Bot can fetch at all. Where
+        // the file lands is decided by the `download` listener the page hook attaches.
+        acceptDownloads: true,
+        // This process owns shutdown. Playwright's signal handlers kill Chromium immediately on
+        // SIGTERM, before pending cookie writes have time to flush.
+        handleSIGTERM: false,
+        handleSIGINT: false,
+        handleSIGHUP: false,
+        ...(proxy ? { proxy } : {}),
+      });
+      const reported = context.browser()?.version();
+      if (reported && reported !== chromiumVersion) {
+        log.warn("chromium_version_drifted", {
+          pinned: chromiumVersion,
+          actual: reported,
+          note: "the user agent this container claims is now the browser's own version",
+        });
+        chromiumVersion = reported;
+      }
+      // Before any page is handed out, because the first thing done with a page is a navigation.
+      try {
+        await options.onContext?.(context);
+      } catch (error) {
+        await closeAndWait(context).catch(() => undefined);
+        throw error;
+      }
+      shared = {
+        context,
+        startedAt: new Date().toISOString(),
+        pid: await browserPidOf(context),
+      };
+      /*
+       * A TAB A SITE OPENED BELONGS TO THE BOT WHOSE CLICK OPENED IT.
+       *
+       * 네이버 opens half its links with `target=_blank`. Without this the Bot clicked, the page it
+       * asked for opened in a tab nothing here held a handle to, and both the Bot and the person
+       * watching the screencast went on looking at the page they had left — the click "worked" and
+       * nothing about the answer was true. Adopting the newest page is what a person does: the tab
+       * that just opened is the one they are looking at.
+       *
+       * WHOSE it is now has to be worked out rather than assumed, because the browser is everyone's.
+       * `opener()` is the browser's own answer to "which page opened this one", so the new tab lands
+       * with the Bot that clicked the link and in nobody else's list. A tab we opened ourselves has
+       * already been claimed by the time this resolves, and is left alone.
+       */
+      context.on("page", (opened) => {
+        void (async () => {
+          if (owners.has(opened)) return;
+          const opener = await opened.opener().catch(() => null);
+          if (owners.has(opened)) return;
+          const botOf = opener ? owners.get(opener) : undefined;
+          // Not ours to hand to anybody: a tab with no opener we did not open. Left unowned rather
+          // than guessed at — a page in the wrong Bot's list is a click landing on a stranger's page.
+          if (!botOf) return;
+          own(botOf, opened);
+          touch(botOf, opened);
+          options.onPage?.(botOf, opened);
+        })();
+      });
+      if (adoption.adoptedFrom && !adoptionTold) {
+        adoptionTold = true;
+        log.info("profile_adopted", {
+          adopted: adoption.adoptedFrom,
+          kept: adoption.kept,
+          note: "the Bots share one browser profile; the rest were left where they are",
+        });
+        options.onProfileAdopted?.(botId, adoption);
+      }
+      return context;
+    })();
+
+    starting = launch;
+    try {
+      return await launch;
+    } finally {
+      // Cleared whether it worked or not so a failed launch does not pin future calls to a rejected
+      // promise.
+      starting = null;
+    }
+  };
+
   const profiles = {
     /**
-     * The Bot's page, starting its browser if it is not running.
+     * The Bot's page, starting the deployment's browser if it is not running.
      *
-     * Started on first use rather than at boot, and re-created if it died: a crashed Chromium would
-     * otherwise leave this process alive and answering the same error for every request until the
-     * container restarts. This turns that into one slow request instead of an outage.
+     * The browser is shared and the tab is not: whatever the other Bots are looking at, this returns
+     * a tab of this Bot's own, opened on the same cookie jar.
      */
     async page(botId: string): Promise<Page> {
-      /*
-       * One launch at a time per Bot. Calls that arrive during a launch wait for that launch instead
-       * of starting another browser against the same profile directory.
-       */
-      const launching = starting.get(botId);
-      if (launching) return launching;
+      const context = await browserFor(botId);
 
       const existing = live.get(botId);
-      if (existing?.context.browser()?.isConnected()) {
-        /*
-         * A closed tab is not a dead browser. Somebody's `_blank` window being closed used to take
-         * the whole context down with it and start a cold Chromium, because the only page this map
-         * held was the closed one. Falling back to whatever is still open is what a person does
-         * when they close a tab.
-         */
-        if (existing.page.isClosed()) {
-          const open = existing.context
-            .pages()
-            .filter((candidate) => !candidate.isClosed());
-          const last = open[open.length - 1];
-          if (last) existing.page = last;
-        }
-        if (!existing.page.isClosed()) {
-          existing.usedAt = now();
-          return existing.page;
-        }
+      if (existing && !existing.page.isClosed()) {
+        existing.usedAt = now();
+        return existing.page;
       }
-      if (existing) {
-        // Half-dead: the browser went away, or its page did. Dropped rather than repaired, because a
-        // context whose browser has gone is not usable for anything.
-        await existing.context.close().catch(() => undefined);
-        live.delete(botId);
-      }
+      /*
+       * A closed tab is not a dead Bot. Somebody's `_blank` window being closed used to take the
+       * whole context down with it and start a cold Chromium, because the only page this map held
+       * was the closed one. Falling back to whatever else this Bot still has open is what a person
+       * does when they close a tab.
+       */
+      const open = pagesOf(botId);
+      const last = open[open.length - 1];
+      if (last) return touch(botId, last);
 
-      const launch = (async () => {
-        const dir = directoryFor(botId);
-        /*
-         * A browser that is still letting go of this profile gets to finish first. The sweep of
-         * singleton locks below assumes no browser of ours is running on this directory, and that is
-         * only true once the close has actually completed.
-         */
-        await closing.get(botId)?.catch(() => undefined);
-        await sweepLocks(dir);
-        const proxy = egressFor(botId, process.env);
-        const context = await chromium.launchPersistentContext(dir, {
-          args: LAUNCH_ARGS,
-          // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
-          chromiumSandbox: true,
-          viewport: VIEWPORT,
-          locale: LOCALE,
-          timezoneId: botTimeZone(),
-          userAgent: botUserAgent(chromiumVersion),
-          // A download with nowhere to go is refused by Chromium before anything here hears about
-          // it, so this is the switch that makes 세금계산서 PDF a thing a Bot can fetch at all. Where
-          // the file lands is decided by the `download` listener the page hook attaches.
-          acceptDownloads: true,
-          // This process owns shutdown. Playwright's signal handlers kill Chromium immediately on
-          // SIGTERM, before pending cookie writes have time to flush.
-          handleSIGTERM: false,
-          handleSIGINT: false,
-          handleSIGHUP: false,
-          ...(proxy ? { proxy } : {}),
-        });
-        const reported = context.browser()?.version();
-        if (reported && reported !== chromiumVersion) {
-          log.warn("chromium_version_drifted", {
-            pinned: chromiumVersion,
-            actual: reported,
-            note: "the user agent this container claims is now the browser's own version",
-          });
-          chromiumVersion = reported;
-        }
-        // Before any page is handed out, because the first thing done with a page is a navigation.
-        try {
-          await options.onContext?.(botId, context);
-        } catch (error) {
-          await closeAndWait(context).catch(() => undefined);
-          throw error;
-        }
-        // Persistent contexts open with a page already; reuse it rather than leaving an extra blank tab.
-        const page = context.pages()[0] ?? (await context.newPage());
-        const entry = {
-          context,
-          page,
-          startedAt: new Date().toISOString(),
-          usedAt: now(),
-          pid: await browserPidOf(context),
-        };
-        live.set(botId, entry);
-        /*
-         * THE NEWEST PAGE BECOMES THE ONE THE BOT IS ON.
-         *
-         * 네이버 opens half its links with `target=_blank`. Without this the Bot clicked, the page it
-         * asked for opened in a tab nothing here held a handle to, and both the Bot and the person
-         * watching the screencast went on looking at the page they had left — the click "worked" and
-         * nothing about the answer was true. Adopting the newest page is what a person does: the tab
-         * that just opened is the one they are looking at.
-         */
-        context.on("page", (opened) => {
-          const current = live.get(botId);
-          if (current?.context !== context) return;
-          current.page = opened;
-          current.usedAt = now();
-          options.onPage?.(botId, opened);
-        });
-        options.onPage?.(botId, page);
-        return page;
-      })();
-
-      starting.set(botId, launch);
-      try {
-        return await launch;
-      } finally {
-        // Cleared whether it worked or not so a failed launch does not pin future calls to a rejected
-        // promise.
-        starting.delete(botId);
-      }
+      /*
+       * A persistent context opens with a page already. The first Bot to ask takes it rather than
+       * leaving a blank tab behind that belongs to nobody and shows up in nobody's list.
+       */
+      const spare = context
+        .pages()
+        .find((page) => !page.isClosed() && !owners.has(page));
+      const page = spare ?? (await context.newPage());
+      own(botId, page);
+      touch(botId, page);
+      options.onPage?.(botId, page);
+      return page;
     },
 
-    /** Where this Bot's profile lives, so what must survive a restart can be written beside it. */
-    directoryFor,
+    /** Where the deployment's one browser profile is, for anything that has to look at it. */
+    profileDirectory,
+
+    /** Where this Bot's own state goes. NOT the profile: see the comment on the definition. */
+    stateDirectoryFor,
+
+    /** Where it used to go, for reading only. See the comment on the definition. */
+    legacyStateDirectoryFor,
 
     /**
      * Every tab this Bot has open, in the browser's own order.
      *
      * Reported on every snapshot rather than only when asked: a Bot that cannot see that a second
      * tab exists cannot decide to go to it, and the tab a click opened is usually the one holding
-     * the answer.
+     * the answer. Another Bot's tabs are not in this list — they are on the same browser, not in
+     * this Bot's hands.
      */
     async tabs(botId: string): Promise<TabSummary[]> {
       const running = live.get(botId);
       if (!running) return [];
-      const pages = running.context.pages().filter((page) => !page.isClosed());
       return Promise.all(
-        pages.map(async (page, index) => ({
+        pagesOf(botId).map(async (page, index) => ({
           index,
           // A page that navigates while we are describing it costs its title, not the list — and a
           // tab between documents has none, never Playwright's `Loading <address>` (see `titleOf`).
@@ -585,8 +887,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       if (!running) {
         throw new TabError("laf:tab_missing");
       }
-      const pages = running.context.pages().filter((page) => !page.isClosed());
-      const wanted = pages[index];
+      const wanted = pagesOf(botId)[index];
       if (!wanted) {
         throw new TabError("laf:tab_missing");
       }
@@ -599,44 +900,36 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     },
 
     /**
-     * Close the browsers nobody has used for a while.
+     * Close the tabs nobody has used for a while, and the browser once nobody has any.
      *
-     * Cookies are on the volume, so this signs nothing out: the next call starts the browser again
-     * with the same logins. Exposed as well as swept on a timer so a test can move the clock instead
-     * of waiting.
+     * Cookies are on the volume, so this signs nothing out: the next call opens a tab again with the
+     * same logins. Exposed as well as swept on a timer so a test can move the clock instead of
+     * waiting.
      */
     async closeIdle(): Promise<string[]> {
       const deadline = now() - idleCloseMs;
-      const stale = [...live.entries()].filter(
-        ([, entry]) => entry.usedAt <= deadline,
-      );
-      for (const [botId] of stale) live.delete(botId);
-      await Promise.all(
-        stale.map(([botId, entry]) =>
-          closeContext(botId, entry.context, entry.pid),
-        ),
-      );
+      const stale = [...live.entries()]
+        .filter(([, entry]) => entry.usedAt <= deadline)
+        .map(([botId]) => botId);
+      for (const botId of stale) await closeTabsOf(botId);
       if (stale.length) {
-        log.info("computer_idle_closed", {
-          bots: stale.map(([botId]) => botId),
-          idleCloseMs,
-        });
+        log.info("computer_idle_closed", { bots: stale, idleCloseMs });
       }
-      return stale.map(([botId]) => botId);
+      await closeIfUnused();
+      return stale;
     },
 
     /**
-     * Close this Bot's browser without touching what it knows.
+     * Close this Bot's tabs without touching what the browser knows.
      *
-     * Gracefully, so Chromium flushes its profile. This is what "kill" means for a Bot's computer: the
-     * browser stops, the login survives, and the next request starts it again where it left off.
+     * This is what "kill" means for a Bot's computer: its tabs go, the logins stay, and the next
+     * request opens a page again on the same profile. The browser itself only goes when the last
+     * Bot's tabs have — stopping one Bot must not take the page another Bot is mid-way through.
      */
     async stop(botId: string): Promise<boolean> {
-      const existing = live.get(botId);
-      if (!existing) return false;
-      live.delete(botId);
-      await closeContext(botId, existing.context, existing.pid);
-      return true;
+      const had = await closeTabsOf(botId);
+      await closeIfUnused();
+      return had;
     },
 
     /**
@@ -645,90 +938,146 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
      * A navigation that ran out its deadline is the caller. Two steps, each bounded, cheapest
      * first: close the tab and open another in the same browser, which keeps the logins in memory
      * and costs nothing visible; and if the browser will not even do that, it is the browser that
-     * is wedged, so it is closed — killed, if it will not close — and the next call starts a fresh
-     * one on the same profile. Measured 2026-09-06: without this, one site that never finished
-     * loading kept a Bot's browser dead for the rest of the day.
+     * is wedged — for every Bot, now that there is one of it — so it is closed, killed if it will
+     * not close, and the next call starts a fresh one on the same profile. Measured 2026-09-06:
+     * without this, one site that never finished loading kept a Bot's browser dead for the rest of
+     * the day.
      *
      * Says which step it took, so the caller can put that in front of the Bot.
      */
     async recycle(botId: string): Promise<"page" | "browser" | "none"> {
       const existing = live.get(botId);
-      if (!existing) return "none";
-      // Held before `newPage`, because the `page` listener moves `existing.page` to the new tab.
+      const context = shared?.context;
+      if (!existing || !context) return "none";
+      // Held before `newPage`, because the entry below moves to the new tab.
       const stuck = existing.page;
       const fresh = await Promise.race([
-        existing.context.newPage().catch(() => null),
+        context.newPage().catch(() => null),
         wait(RECYCLE_STEP_MS).then(() => null),
       ]);
       if (fresh && live.get(botId) === existing) {
-        // `context.on("page")` has already adopted it; this only covers the race where it has not.
+        own(botId, fresh);
         existing.page = fresh;
         existing.usedAt = now();
+        options.onPage?.(botId, fresh);
         // Not awaited: a tab that will not close must not hold the one that just opened hostage.
+        owners.delete(stuck);
         void stuck.close().catch(() => undefined);
         return "page";
       }
       log.warn("computer_recycled_browser", { bot: botId });
-      await profiles.stop(botId);
+      await closeBrowser();
       return "browser";
     },
 
     /**
-     * Forget everything this Bot knows and start over.
+     * Forget every login on this computer and start over.
      *
-     * The browser is closed before the directory is deleted: deleting a profile
-     * out from under a running Chromium is how you get a browser that is alive, writing to files that
-     * no longer exist, and reporting success. Nothing is recreated here, the next request starts a
-     * clean browser, which is the same path as a first ever start and so needs no second code path.
+     * IT IS THE DEPLOYMENT'S PROFILE, SO IT IS EVERY BOT'S LOGINS. There is one cookie jar and this
+     * empties it; the Bot on the header is who asked, not whose logins go. The route's answer says
+     * so and the app's words say so, because a button labelled as one Bot's that signs out five is
+     * the screen lying about what it just did.
+     *
+     * The browser is closed before the directory is deleted: deleting a profile out from under a
+     * running Chromium is how you get a browser that is alive, writing to files that no longer
+     * exist, and reporting success. Nothing is recreated here, the next request starts a clean
+     * browser, which is the same path as a first ever start and so needs no second code path.
+     *
+     * EVERY PROFILE GOES, NOT ONLY THE SHARED ONE. An upgraded machine still has the per-Bot
+     * directories this change left in place, cookies and all (see `resolveProfile`). A reset that
+     * emptied one of them and left four sitting on the volume would be the most dangerous kind of
+     * half-true: somebody presses it precisely because they want the logins gone.
      */
     async reset(botId: string): Promise<void> {
-      await this.stop(botId);
-      await rm(directoryFor(botId), { recursive: true, force: true });
+      await closeBrowser();
+      const entries = await readdir(root, { withFileTypes: true }).catch(
+        () => [],
+      );
+      await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory() && entry.name !== STATE_DIR)
+          .map((entry) =>
+            rm(join(root, entry.name), { recursive: true, force: true }).catch(
+              () => undefined,
+            ),
+          ),
+      );
+      // Its own state too, which used to go because it lived inside the directory above. Only this
+      // Bot's: another Bot's control file says a PERSON is driving, and losing it hands their
+      // browser back to a Bot (`control.ts`, `restoredControl`) — the one direction that is never
+      // safe to be careless in.
+      await rm(stateDirectoryFor(botId), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+      // A clean machine points at the default again: there is nothing left to have adopted.
+      adoption = { directory: DEFAULT_PROFILE_DIR, adoptedFrom: null, kept: 0 };
+      adoptionTold = true;
+      await writePointer(root, adoption);
     },
 
     /**
-     * Every Bot that has a computer, whether or not one is running.
+     * Every Bot this computer holds something for, whether or not it has a tab open.
      *
-     * Read from disk rather than from memory, because a Bot's computer exists as long as its profile
-     * does: after a restart nothing is running and every login is still there, and an admin page that
-     * listed only live browsers would show an empty screen and imply the logins were gone.
+     * Read from disk rather than from memory, because after a restart nothing is open and everything
+     * is still there: an admin page that listed only the Bots with a live tab would show an empty
+     * screen and imply the logins were gone. `isBotId` is what separates a Bot's directory from the
+     * two the layout owns — both of those carry a dot, which no Bot id may.
      */
     async known(): Promise<string[]> {
-      const onDisk = await readdir(root, { withFileTypes: true }).catch(
-        () => [],
-      );
+      const [atRoot, withState] = await Promise.all([
+        readdir(root, { withFileTypes: true }).catch(() => []),
+        readdir(join(root, STATE_DIR), { withFileTypes: true }).catch(() => []),
+      ]);
+      const directories = (entries: typeof atRoot) =>
+        entries
+          .filter((e) => e.isDirectory() && isBotId(e.name))
+          .map((e) => e.name);
       return [
         ...new Set([
-          ...onDisk.filter((e) => e.isDirectory()).map((e) => e.name),
+          ...directories(atRoot),
+          ...directories(withState),
           ...live.keys(),
         ]),
       ].sort();
     },
 
-    /** What the admin surface lists. Running or not, because a Bot that has a profile has a computer. */
+    /** What the admin surface lists. Tabs open or not, because every Bot has the one computer. */
     summary(botIds: string[]): ProfileSummary[] {
       const known = new Set([...botIds, ...live.keys()]);
+      // One browser, one proxy: the same answer on every row, which is the honest one now.
+      const egress = deploymentEgressLabel(process.env);
       return [...known].sort().map((botId) => {
         const running = live.get(botId);
         return {
           botId,
           running: Boolean(running),
-          startedAt: running?.startedAt ?? null,
-          egress: egressLabel(botId, process.env),
+          startedAt: running?.since ?? null,
+          egress,
         };
       });
     },
 
     /**
-     * Close every browser, for shutdown.
+     * Close the browser, for shutdown.
      *
-     * `docker stop` and a Kubernetes eviction both send SIGTERM and then wait. Closing the contexts
+     * `docker stop` and a Kubernetes eviction both send SIGTERM and then wait. Closing the context
      * here gives Chromium the chance to flush its profile within that grace period.
      */
     async closeAll(): Promise<void> {
-      const contexts = [...live.values()];
-      live.clear();
-      await Promise.all(contexts.map((c) => closeAndWait(c.context)));
+      await closeBrowser();
+    },
+
+    /**
+     * The Bots with a tab open right now.
+     *
+     * For the one question the navigation guard cannot answer on its own: a refused hop carries a
+     * frame id, and when exactly one Bot has anything open, every frame in the browser is that Bot's
+     * (see `index.ts`). A fact, not a guess — which is why it is a count rather than "the Bot that
+     * acted most recently".
+     */
+    liveBots(): string[] {
+      return [...live.keys()];
     },
   };
 

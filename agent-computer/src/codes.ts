@@ -125,6 +125,10 @@ export const COMPUTER_CODES = {
   "laf:download_too_large": { note: true },
   "laf:download_failed": { note: true },
   "laf:secret_request_lost": { note: true },
+  // An upgrade from a profile per Bot took over the most recently used one as the deployment's
+  // shared browser; `adopted` and `kept` ride beside it. Once, to the Bot whose call started the
+  // first browser after the upgrade (profiles.ts, `resolveProfile`).
+  "laf:profile_adopted": { note: true },
   // A frame the page text could not include, on the `frames` of a read.
   "laf:frame_opaque": { note: true },
   // The tab's document is on its way and answers nothing until it arrives, so a look carries only what

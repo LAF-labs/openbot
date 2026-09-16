@@ -395,18 +395,24 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     expect(clicked.body.error).toBe("laf:stale_refs");
   }, 30_000);
 
+  /*
+   * BESIDE THE PROFILE, NOT INSIDE IT (2026-09-16). Who has the wheel is one Bot's and the cookie
+   * jar is the deployment's, so `control.json` moved to `bot.state/<bot>/`: five Bots writing it
+   * into one profile directory would each be answering "is a person driving" for all of them.
+   */
   test("who has the wheel is written down where a restart can find it", async () => {
+    const controlFile = join(profilesDir, "bot.state", BOT, "control.json");
     const taken = await post("/control/take", {});
     expect(taken.status).toBe(200);
-    const saved = JSON.parse(
-      await readFile(join(profilesDir, BOT, "control.json"), "utf8"),
-    ) as { holder: string };
+    const saved = JSON.parse(await readFile(controlFile, "utf8")) as {
+      holder: string;
+    };
     expect(saved.holder).toBe("human");
 
     await post("/control/release", {});
-    const back = JSON.parse(
-      await readFile(join(profilesDir, BOT, "control.json"), "utf8"),
-    ) as { holder: string };
+    const back = JSON.parse(await readFile(controlFile, "utf8")) as {
+      holder: string;
+    };
     expect(back.holder).toBe("bot");
   }, 30_000);
 

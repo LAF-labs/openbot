@@ -462,19 +462,31 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
 });
 
 describe.skipIf(!HAS_BROWSER)("a reset", () => {
-  test("closes the browser and takes the Bot's directory with it, for good", async () => {
+  test("closes the browser and takes the shared profile with it, for good", async () => {
     const opened = await post("/navigate", {
       url: onLoopback("/before-reset"),
     });
     expect(opened.status).toBe(200);
-    expect(existsSync(join(profilesDir, BOT))).toBe(true);
+    /*
+     * ONE PROFILE, NOT ONE PER BOT (2026-09-16). This used to look for `<profilesDir>/<BOT>` and it
+     * was right to: the cookie jar was the Bot's. It is the deployment's now, so the directory the
+     * browser opened is the shared one and the answer says whose logins a reset takes.
+     */
+    expect(existsSync(join(profilesDir, "shared.profile"))).toBe(true);
+    expect(existsSync(join(profilesDir, BOT))).toBe(false);
 
     const reset = await post("/computers/reset", {});
-    expect(reset.body).toEqual({ reset: true, botId: BOT });
+    expect(reset.body).toEqual({
+      reset: true,
+      botId: BOT,
+      scope: "deployment",
+    });
 
-    // Measured before the fix: `control.json` was written back into the deleted directory, and
-    // `/computers` went on listing the Bot.
-    expect(existsSync(join(profilesDir, BOT))).toBe(false);
+    // Measured before the fix that came first: `control.json` was written back into the deleted
+    // directory, and `/computers` went on listing the Bot. Both still have to be true of the shared
+    // profile — and the Bot's own state, which now lives outside it, has to go with it.
+    expect(existsSync(join(profilesDir, "shared.profile"))).toBe(false);
+    expect(existsSync(join(profilesDir, "bot.state", BOT))).toBe(false);
     const listed = (await (
       await fetch(`${base}/computers`, {
         headers: { "x-openbot-computer-token": TOKEN },

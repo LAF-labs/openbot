@@ -650,11 +650,22 @@ export function createComputerClient(options: ComputerClientOptions) {
         };
       },
 
-      /** Delete the profile. Every login the Bot had goes with it. */
-      async resetComputer(): Promise<{ reset: boolean; botId: string }> {
+      /**
+       * Delete the profile. EVERY login on this account's computer goes with it, not this Bot's.
+       *
+       * There is one browser profile per deployment and every Bot signs in through it, so `botId` on
+       * the answer is who asked and `scope` says whose logins went. Optional on the type because an
+       * older container does not send it, and an absent field must not be read as "just this Bot's".
+       */
+      async resetComputer(): Promise<{
+        reset: boolean;
+        botId: string;
+        scope?: "deployment";
+      }> {
         return (await post("/computers/reset", {})) as {
           reset: boolean;
           botId: string;
+          scope?: "deployment";
         };
       },
 

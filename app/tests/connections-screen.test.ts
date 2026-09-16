@@ -215,8 +215,10 @@ describe("what the switch starts", () => {
         "Disconnect this? The Bot will not be able to use this account any more.",
       ],
       [
+        // Plural, since 2026-09-16: one browser profile per deployment, so turning a site off stops
+        // every Bot using it and the shared browser stays signed in for all of them.
         "components/connections/site-rows.tsx",
-        "Turn this site off? The Bot will stop using it. It stays signed in on the Bot's browser until you log out on the site itself.",
+        "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.",
       ],
     ] as const) {
       expect(read(file)).toContain(confirmation);

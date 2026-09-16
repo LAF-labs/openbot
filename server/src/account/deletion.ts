@@ -104,7 +104,13 @@ export type DeletionResult = {
   /** The name in the trail from here on. */
   pseudonym: string;
   counts: DeletionCounts;
-  /** Which Bots' browser profiles were wiped, and whether the computer could be reached at all. */
+  /**
+   * Whether the deployment's one browser profile was wiped, and whether a computer was reachable.
+   *
+   * Still lists of Bot ids, and they hold at most one: the id is WHICH Bot the reset was addressed
+   * through, not whose logins went — there is one profile and all of them go together. Both empty
+   * with a computer configured means there was no Bot left to address it with.
+   */
   computers: { reset: string[]; failed: string[]; configured: boolean };
 };
 
@@ -209,26 +215,37 @@ export function createAccountDeletion(
       /*
        * THE COOKIES ON DISK, BEFORE THE ROWS THAT NAME THEM.
        *
-       * A Bot's Chromium profile lives in the `agent-profiles` volume under the Bot's id and holds
-       * the person's logins to their bank, their marketplace and their tax office. No amount of
-       * deleting rows touches it. `computers/reset` is the call that does, and it is addressed
-       * per Bot through `forBot`, which sets `x-openbot-bot-id` — a query string would silently
-       * reset the DEFAULT profile, which is somebody else's or nobody's (CLAUDE.md).
+       * The Chromium profile in the `agent-profiles` volume holds the person's logins to their bank,
+       * their marketplace and their tax office. No amount of deleting rows touches it.
+       * `computers/reset` is the call that does.
        *
-       * First, because after the rows are gone there is no list of Bot ids left to reset.
+       * ONCE, NOT ONCE PER BOT. There is one profile on a deployment and every Bot shares it
+       * (`agent-computer/src/profiles.ts`, 2026-09-16), so the loop this used to be would have wiped
+       * the same directory five times and written "five profiles wiped" about one. It is still
+       * addressed through `forBot`, which sets `x-openbot-bot-id`: the header says who asked and the
+       * computer still refuses without it — a query string would silently name the DEFAULT profile,
+       * which is somebody else's or nobody's (CLAUDE.md).
+       *
+       * First, because after the rows are gone there is no Bot id left to address it with.
+       *
+       * AND WHEN THEY HAVE NO BOTS LEFT, NOTHING HERE CAN ADDRESS IT. Deleting a Bot stopped wiping
+       * the profile on the same day, for the same reason (`computer/release.ts`), so somebody who
+       * deletes all their Bots and then withdraws leaves a profile behind. What takes it is the VM:
+       * the fleet notice below carries `remainingAccounts`, and the machine — volume and all — is
+       * destroyed when that reaches zero. The audit row says which of the two happened rather than
+       * claiming a wipe either way.
        */
       const reset: string[] = [];
       const failed: string[] = [];
-      if (computerClient) {
-        for (const botId of botIds) {
-          try {
-            await computerClient.forBot(botId).resetComputer();
-            reset.push(botId);
-          } catch {
-            // Recorded, not thrown. A computer that is down must not leave the account half-deleted
-            // — the rows still have to go, and the trail has to say the profile did not.
-            failed.push(botId);
-          }
+      const [through] = botIds;
+      if (computerClient && through) {
+        try {
+          await computerClient.forBot(through).resetComputer();
+          reset.push(through);
+        } catch {
+          // Recorded, not thrown. A computer that is down must not leave the account half-deleted
+          // — the rows still have to go, and the trail has to say the profile did not.
+          failed.push(through);
         }
       }
 
@@ -593,13 +610,16 @@ export function createAccountDeletion(
                 configured: Boolean(computerClient),
                 reset: reset.length,
                 failed: failed.length,
-                // Said out loud: a deployment with no computer configured did not wipe a profile
-                // volume that may still be sitting on the host.
-                note: computerClient
-                  ? failed.length === 0
-                    ? "every profile wiped"
-                    : "some profiles could not be wiped"
-                  : "no computer configured, no profile wiped",
+                // Said out loud rather than inferred from two counts: a deployment with no computer
+                // configured, and a person with no Bots left to address one through, both leave a
+                // profile volume that may still be sitting on the host.
+                note: !computerClient
+                  ? "no computer configured, no profile wiped"
+                  : botIds.length === 0
+                    ? "no Bot left to address the computer through; the profile goes with the VM"
+                    : failed.length === 0
+                      ? "the shared profile was wiped"
+                      : "the shared profile could not be wiped",
               },
             },
           },

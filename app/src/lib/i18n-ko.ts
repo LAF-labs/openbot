@@ -425,10 +425,8 @@ export const ko: Record<string, string> = {
   Drawing: "그리는 중",
   Duplicate: "복제",
   "Duplicating…": "복제 중…",
-  "Each Bot has a computer of its own: its own container, its own files and its own browser profile.":
-    "각 봇이 자기 컴퓨터를 가집니다 — 자기 컨테이너, 자기 파일, 자기 브라우저 프로필.",
-  "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.":
-    "각 봇의 브라우저와 그 프로필. 프로필이 있어서 봇이 내일도 로그인 상태로 남습니다 — 초기화하면 모든 곳에서 로그아웃됩니다.",
+  "The one browser your Bots share, and the profile it keeps. That profile is what makes them still signed in tomorrow, and resetting it signs every one of them out.":
+    "봇들이 함께 쓰는 브라우저 하나와 그 프로필. 프로필이 있어서 봇들이 내일도 로그인 상태로 남습니다 — 초기화하면 봇 전부가 로그아웃됩니다.",
   Edit: "수정",
   "Edit description": "설명 수정",
   "Edit profile": "프로필 편집",
@@ -480,8 +478,8 @@ export const ko: Record<string, string> = {
   "It answered: {events}": "응답함: {events}",
   "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.":
     "이 배포에서 제거됩니다. 그리던 봇들도 더 이상 그릴 수 없으며, 되돌릴 수 없습니다.",
-  "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.":
-    "프로필이 삭제되어, 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
+  "Your Bots share one browser, so this signs all of them out of every service they had logged into and starts clean. This cannot be undone.":
+    "봇들은 브라우저 하나를 함께 씁니다. 초기화하면 봇 전부가 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
   Jellyfish: "해파리",
   "Keys and tokens held for this deployment.": "이 배포가 보관 중인 키와 토큰.",
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
@@ -540,7 +538,8 @@ export const ko: Record<string, string> = {
   "Remove {name}": "{name} 제외",
   "Reply: {text}": "답장: {text}",
   "Reset it": "초기화",
-  "Reset {name}'s computer?": "{name}의 컴퓨터를 초기화할까요?",
+  "Reset the computer every Bot shares?":
+    "봇들이 함께 쓰는 컴퓨터를 초기화할까요?",
   "Resetting…": "초기화 중…",
   "Review receipts, categorise expenses and prepare reimbursement reports. Flag anything that looks duplicated or out of policy rather than filing it.":
     "영수증을 검토하고 지출을 분류해 정산 보고서를 준비해줘. 중복이거나 규정에 안 맞아 보이면 그냥 처리하지 말고 표시해줘.",
@@ -585,7 +584,7 @@ export const ko: Record<string, string> = {
     "메일을 내가 봐야 할 것, 미뤄도 될 것, 잡음으로 분류해줘. 답장이 필요한 건 내 말투로 초안을 써두되, 묻지 않고 보내지는 마.",
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
-  "Stop browser": "브라우저 정지",
+  "Close its tabs": "이 봇의 탭 닫기",
   Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",
@@ -675,6 +674,8 @@ export const ko: Record<string, string> = {
   "The computer could not be reset.": "컴퓨터를 초기화하지 못했습니다.",
   "The computer could not be reset": "컴퓨터를 초기화하지 못함",
   "The computer was reset": "컴퓨터를 초기화함",
+  // 봇을 지웠을 때. 브라우저는 계정의 것이고 로그인은 남는다 — 지운 것은 그 봇의 탭과 운전대뿐이다.
+  "A deleted Bot let go of the computer": "지운 봇이 컴퓨터에서 손을 뗌",
   "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했습니다.",
   "The computers could not be reached.": "컴퓨터에 닿지 못했습니다.",
   "The connection could not be removed. Please try again.":
@@ -1402,9 +1403,10 @@ export const ko: Record<string, string> = {
   "Site connections": "사이트 연결",
   "The sites you work in every day. No keys and no developer registration: you sign in once on a Bot's own browser, hand it back, and it stays signed in.":
     "매일 들어가는 사이트들입니다. API 키도, 개발자 등록도 필요 없습니다. 봇의 브라우저에 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
-  "Make a Bot first — a site is connected on a Bot's own browser.":
-    "먼저 봇을 만들어 주세요. 사이트 연결은 봇의 브라우저에 로그인하는 일입니다.",
-  "Which Bot's browser?": "어느 봇의 브라우저에 로그인할까요?",
+  "Make a Bot first — a site is connected on the browser they share.":
+    "먼저 봇을 만들어 주세요. 사이트 연결은 봇들이 함께 쓰는 브라우저에 로그인하는 일입니다.",
+  // 로그인은 계정의 것이다. 고르는 것은 "누가 여느냐"이지 "어디에 로그인되느냐"가 아니다.
+  "Which Bot should open it?": "어느 봇이 열까요?",
   "Needs signing in again": "다시 로그인 필요",
   "Not connected yet": "아직 연결 안 됨",
   "A joint certificate or simple authentication is yours to do, and the Bot cannot keep it: you authenticate each time and hand the browser back.":
@@ -1603,12 +1605,12 @@ export const ko: Record<string, string> = {
     "브라우저 상태를 읽지 못했습니다 — 다시 확인해 주세요.",
   "That could not be turned off. Please try again.":
     "끄지 못했습니다. 다시 시도해 주세요.",
-  "Connected · on {name}'s browser · last seen {date}":
-    "연결됨 · {name}의 브라우저 · 마지막 확인 {date}",
+  "Connected · every Bot shares it · {name} last looked {date}":
+    "연결됨 · 모든 봇이 함께 씀 · {name}이(가) {date}에 확인",
   "You authenticate each time — the Bot cannot keep this one.":
     "인증은 매번 직접 하셔야 합니다 — 봇이 대신 보관할 수 없습니다.",
-  "Turn this site off? The Bot will stop using it. It stays signed in on the Bot's browser until you log out on the site itself.":
-    "이 사이트를 끌까요? 봇은 더 이상 쓰지 않습니다. 사이트에서 직접 로그아웃하기 전까지 봇의 브라우저에는 로그인이 남아 있습니다.",
+  "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.":
+    "이 사이트를 끌까요? 봇들은 더 이상 쓰지 않습니다. 사이트에서 직접 로그아웃하기 전까지 봇들이 함께 쓰는 브라우저에는 로그인이 남아 있습니다.",
   "Connected · {name} · KakaoTalk is still reviewing the messages":
     "연결됨 · {name} · 카카오가 메시지 서식을 심사 중입니다",
   "Connected · {name} · connected on {date}": "연결됨 · {name} · {date}에 연결",
@@ -1747,15 +1749,15 @@ export const ko: Record<string, string> = {
   "Secret is required.": "비밀값을 입력해 주세요.",
 
   // 아직 `t()`로 감싸이지 않은 화면들의 문장. 감싸는 순간 한국어가 되도록 미리 둔다.
-  "Browser running since {time}": "{time}부터 브라우저 실행 중",
-  "No browser running. It starts when the Bot next needs it.":
-    "실행 중인 브라우저가 없습니다. 봇이 다음에 필요할 때 시작합니다.",
+  "A tab open since {time}": "{time}부터 탭이 열려 있음",
+  "No tab open. One opens when this Bot next needs it.":
+    "열려 있는 탭이 없습니다. 이 봇이 다음에 필요할 때 열립니다.",
   "Leaves through {egress}": "{egress}(으)로 나갑니다",
   "Leaves directly": "바로 나갑니다",
-  "Stop closes the browser and keeps its logins: the next thing the Bot does starts it again where it left off.":
-    "정지는 브라우저를 닫고 로그인은 그대로 둡니다. 봇이 다음 일을 할 때 있던 자리에서 다시 켜집니다.",
-  "Reset deletes the profile, so the Bot is signed out of everything and starts clean.":
-    "초기화는 프로필을 지웁니다. 봇은 모든 곳에서 로그아웃되고 깨끗한 상태로 시작합니다.",
+  "Stop closes that Bot's tabs and keeps the logins: the next thing it does opens a page again where it left off.":
+    "정지는 그 봇의 탭만 닫고 로그인은 그대로 둡니다. 봇이 다음 일을 할 때 있던 자리에서 페이지가 다시 열립니다.",
+  "Reset deletes the one profile they all share, so every Bot is signed out of everything and starts clean.":
+    "초기화는 봇들이 함께 쓰는 프로필 하나를 지웁니다. 봇 전부가 모든 곳에서 로그아웃되고 깨끗한 상태로 시작합니다.",
   "Both are recorded in Audit.": "둘 다 감사 기록에 남습니다.",
   "Nothing is published, so no Bot is told about this.":
     "게시된 것이 없어 어떤 봇도 이것을 알지 못합니다.",
@@ -2419,6 +2421,8 @@ export const ko: Record<string, string> = {
   "A frame on the page could not be read": "페이지 안의 문서 하나를 읽지 못함",
   "The page was still loading, so nothing on it could be read":
     "페이지가 아직 열리는 중이라 내용을 읽지 못함",
+  "The Bots now share one browser, which took over the profile last used":
+    "봇들이 브라우저 하나를 함께 쓰게 되면서, 가장 최근에 쓰던 프로파일을 이어받음",
   // 문의·의견 — 진단 정보 같이 보내기: 서버가 모은 것을 보여 주고, 보여 준 그대로 보낸다.
   "Send diagnostic details too": "진단 정보 같이 보내기",
   "The app version, whether the server is working, recent failure codes and your own Bots' recent records.":
