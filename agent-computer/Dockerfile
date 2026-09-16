@@ -2,7 +2,7 @@
 #
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
-FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
 
 # Bun, taken from the official image at the exact version the rest of the repository builds with.
 #
