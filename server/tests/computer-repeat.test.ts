@@ -407,4 +407,56 @@ describe("the fingerprint an audit row carries", () => {
   test("is null when the call named nothing", async () => {
     expect(fingerprintOf({ tool: "computer_scroll" })).toBeNull();
   });
+
+  test("names an address without its query or fragment, which is where a secret rides", async () => {
+    // Audit R3-03 (2026-09-16): a form sent by GET lands on an address carrying what was typed into
+    // it, an OAuth return carries its code, and this string goes onto a row kept for a year.
+    expect(
+      fingerprintOf({
+        tool: "computer_navigate",
+        targetUrl:
+          "https://shop.example/landed?step=2&pin=SEC-GETFORM-7788#code=OAUTH-CODE-4410",
+      }),
+    ).toBe("computer_navigate url=https://shop.example/landed");
+  });
+});
+
+describe("an address, counted", () => {
+  test("two that differ only in their query are still two calls", async () => {
+    // The fingerprint leaves the query out; the count must not, or a Bot reading pages one to five
+    // of its orders is asked whether it is going round in circles.
+    const detector = createRepeatDetector({ now: clock().now });
+    for (const page of [1, 2, 3, 4, 5]) {
+      expect(
+        await detector.observe("sales-bot", {
+          tool: "computer_navigate",
+          targetUrl: `https://shop.example/orders?page=${page}`,
+        }),
+      ).toMatchObject({
+        count: 1,
+        fingerprint: "computer_navigate url=https://shop.example/orders",
+      });
+    }
+    // The same address, query and all, is the same call.
+    expect(
+      await detector.observe("sales-bot", {
+        tool: "computer_navigate",
+        targetUrl: "https://shop.example/orders?page=5",
+      }),
+    ).toMatchObject({ count: 2 });
+  });
+
+  test("a fragment tells two addresses apart as well", async () => {
+    const detector = createRepeatDetector({ now: clock().now });
+    await detector.observe("sales-bot", {
+      tool: "computer_navigate",
+      targetUrl: "https://shop.example/app#/orders",
+    });
+    expect(
+      await detector.observe("sales-bot", {
+        tool: "computer_navigate",
+        targetUrl: "https://shop.example/app#/reviews",
+      }),
+    ).toMatchObject({ count: 1 });
+  });
 });

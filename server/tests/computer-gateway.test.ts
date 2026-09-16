@@ -1079,6 +1079,61 @@ describe("a Bot going in circles", () => {
 });
 
 /**
+ * AN ADDRESS CARRYING WHAT SOMEBODY TYPED, AND THE ROWS THAT NAME IT.
+ *
+ * The trail promises its rows never carry a query string, and `write` kept that promise alone: audit
+ * R3-03 (2026-09-16) dry-ran `approval.requested` and `computer.action_repeated` with a query-string
+ * address and both kept `?pin=…&code=OAUTH-…` — the address a form sent by GET lands on, and the one
+ * an OAuth return does, in an append-only table for a year.
+ */
+describe("an address carrying what somebody typed", () => {
+  const LANDED =
+    "https://shop.example/landed?step=2&pin=SEC-GETFORM-7788#code=OAUTH-CODE-4410";
+  const CARRIED = ["SEC-GETFORM-7788", "OAUTH-CODE-4410", "step=2"];
+
+  test("the question the boundary stops to ask about it is recorded without the query", async () => {
+    const { gateway, rows } = await gatewayWith({
+      deny: [],
+      ask: ['tool.name == "computer_navigate"'],
+      allow: ["true"],
+    });
+
+    await expect(
+      gateway.navigate("default", "bot-1", ACTOR, LANDED),
+    ).rejects.toThrow(ActionNeedsApprovalError);
+
+    const asked = rows.find((row) => row.eventType === "approval.requested");
+    expect(asked?.payload.page).toBe("https://shop.example/landed");
+    for (const carried of CARRIED) {
+      expect(JSON.stringify(rows)).not.toContain(carried);
+    }
+  });
+
+  test("going round in circles on it is recorded without the query, in the page and the fingerprint", async () => {
+    const { gateway, rows } = await gatewayWith(
+      PERMISSIVE,
+      createRepeatDetector({ thresholds: [2] }),
+    );
+
+    await gateway.navigate("default", "bot-1", ACTOR, LANDED);
+    await gateway.navigate("default", "bot-1", ACTOR, LANDED);
+
+    const repeated = rows.find(
+      (row) => row.eventType === "computer.action_repeated",
+    );
+    expect(repeated?.payload).toMatchObject({
+      action: "computer_navigate",
+      page: "https://shop.example/landed",
+      fingerprint: "computer_navigate url=https://shop.example/landed",
+      count: 2,
+    });
+    for (const carried of CARRIED) {
+      expect(JSON.stringify(rows)).not.toContain(carried);
+    }
+  });
+});
+
+/**
  * What a second server process may decide.
  *
  * The snapshot cache lives in the process that took it. A deployment behind a load balancer routes

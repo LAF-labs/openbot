@@ -25,6 +25,8 @@
  * What the count is still wrong about is in `policy.ts` beside the field a rule reads: the caps
  * below, the sliding window, and the fact that only the computer gateway counts.
  */
+import { createHash } from "node:crypto";
+import { pageForTrail } from "./gateway/addresses";
 
 /**
  * How long a call stays counted.
@@ -207,6 +209,7 @@ export function createRepeatDetector(
 
       const now = clock();
       const cutoff = now - windowMs;
+      const key = countingKeyOf(call, fingerprint);
 
       let history = perBot.get(botId);
       if (!history) {
@@ -220,12 +223,12 @@ export function createRepeatDetector(
       history.lastSeen = now;
       const calls = history.calls;
 
-      let entry = calls.get(fingerprint);
+      let entry = calls.get(key);
       if (!entry) {
         if (calls.size >= maxKeysPerBot) forgetExpiredCalls(calls, cutoff);
         if (calls.size >= maxKeysPerBot) return untracked(fingerprint);
         entry = { at: [], reported: new Set<number>() };
-        calls.set(fingerprint, entry);
+        calls.set(key, entry);
       }
 
       trimToWindow(entry.at, cutoff);
@@ -274,6 +277,12 @@ export function createRepeatDetector(
  *
  * Readable, because it goes on the audit row as-is. An investigator reading "the same action 25
  * times" needs to be told which action without going and decoding a hash.
+ *
+ * AND SO AN ADDRESS WITHOUT ITS QUERY OR FRAGMENT, the way every row in the trail has it
+ * (`pageForTrail`). The address was whole here until audit R3-03 (2026-09-16): a form sent by GET
+ * lands on `?pin=<what was typed>`, an OAuth return on `?code=…`, and this string was written into a
+ * `computer.action_repeated` row as it stood. What tells two such addresses apart is kept, as a
+ * digest, in the key the count is held under ({@link countingKeyOf}) — never here.
  */
 export function fingerprintOf(call: RepeatedCall): string | null {
   const parts: string[] = [];
@@ -285,10 +294,41 @@ export function fingerprintOf(call: RepeatedCall): string | null {
   add("ref", call.ref);
   add("key", call.key);
   add("file", call.filePath);
-  add("url", call.targetUrl);
+  add(
+    "url",
+    call.targetUrl === undefined ? undefined : pageForTrail(call.targetUrl),
+  );
 
   if (parts.length === 0) return null;
   return [normalize(call.tool) || call.tool, ...parts].join(" ");
+}
+
+/**
+ * What a call's count is held under: its fingerprint, and a digest of the part of its address the
+ * fingerprint leaves out.
+ *
+ * THE FINGERPRINT ALONE WOULD OVERCOUNT. Without the query, a Bot reading `?page=1` to `?page=5` of its
+ * orders is five of the same call, and the shipped `repeat.count >= 5` rule asks a person whether it
+ * is going round in circles — the false alarm the whole design of this module is careful about. The
+ * digest keeps those five apart without keeping what the query said: a key is in memory for one
+ * window and never leaves this process, and it still does not have to hold a one-time code to count.
+ */
+function countingKeyOf(call: RepeatedCall, fingerprint: string): string {
+  const rest = addressRestOf(call.targetUrl);
+  if (!rest) return fingerprint;
+  const digest = createHash("sha256").update(rest).digest("base64url");
+  return `${fingerprint} #${digest.slice(0, 22)}`;
+}
+
+/** An address's query and fragment, as written — the part `pageForTrail` drops. */
+function addressRestOf(url: string | undefined): string {
+  if (url === undefined) return "";
+  try {
+    const parsed = new URL(normalize(url));
+    return `${parsed.search}${parsed.hash}`;
+  } catch {
+    return "";
+  }
 }
 
 /**

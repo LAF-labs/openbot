@@ -230,8 +230,9 @@ export async function writeRepeat(
       actor: entry.actor.id,
       // The page, for a browser action only. A file call has nothing to do with whatever the browser
       // happens to be showing, and naming a host on that row sends a reader somewhere irrelevant, the
-      // same trap `describeRefusal` avoids.
-      ...(entry.filePath ? {} : { page: entry.pageUrl }),
+      // same trap `describeRefusal` avoids. Without its query, as `write` has it: this row kept
+      // `?pin=…` whole until audit R3-03 (2026-09-16).
+      ...(entry.filePath ? {} : { page: pageForTrail(entry.pageUrl) }),
       fingerprint: entry.fingerprint,
       count: entry.count,
     },
@@ -333,7 +334,9 @@ export async function writeApprovalEvent(
        */
       subject: entry.approval.subject,
       ...(entry.toolName ? { action: entry.toolName } : {}),
-      ...(entry.pageUrl ? { page: entry.pageUrl } : {}),
+      // Without its query, like every other row here (R3-03): the address a question is asked about
+      // is as often as not the one a form sent by GET, or an OAuth return, just landed on.
+      ...(entry.pageUrl ? { page: pageForTrail(entry.pageUrl) } : {}),
       ...(entry.filePath ? { file: entry.filePath } : {}),
       // An empty reason is the judge having failed rather than having decided, and the two are said
       // differently: "could not be reached" is somebody's provider being down, not their rule being
