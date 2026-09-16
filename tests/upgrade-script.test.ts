@@ -65,6 +65,8 @@ const { IMAGE_TAG: _exported, ...inherited } = process.env;
 type Scenario = {
   /** What the shimmed `pg_dump` prints; empty is the "database answered nothing" case. */
   dump?: string;
+  /** A file the shimmed `pg_dump` prints instead — for a dump the size a real deployment's is. */
+  dumpFile?: string;
   pullFails?: boolean;
   migrateFails?: boolean;
   healthy?: boolean;
@@ -118,7 +120,7 @@ case "$*" in
   "compose pull"*|"compose up"*) echo "$2 $tag\${IMAGE_TAG+ (shell)}" >> "${tags}" ;;
 esac
 case "$*" in
-  "compose exec -T postgres pg_dump"*) printf '%s' '${dump}'; exit 0 ;;
+  "compose exec -T postgres pg_dump"*) ${scenario.dumpFile ? `cat '${scenario.dumpFile}'` : `printf '%s' '${dump}'`}; exit 0 ;;
   "compose ps -aq") printf 'c-server\\nc-web\\nc-postgres\\n'; exit 0 ;;
   "container inspect --format "*" c-server c-web c-postgres")
     echo "server ghcr.io/laf-labs/openbot-server:${running.tag} revision=${running.revision} image=sha256:5e1"
@@ -328,6 +330,33 @@ describe("scripts/upgrade.sh", () => {
     expect(Buffer.compare(result.env, envBytes)).toBe(0);
     // The dump it took is named, so the run left something behind and says what.
     expect(result.err).toContain(space.backups);
+  });
+
+  test("a dump the size of a real deployment's is taken for a dump, not refused as empty", () => {
+    /*
+     * MEASURED 2026-09-16, by the first run of upgrade-e2e.yml: every upgrade of a deployment with
+     * data in it stopped here, "The dump is empty", 0.2 s in. The check read the dump's head through
+     * `gzip -dc | head -c 4096 | grep -q`, under `set -o pipefail`: `head` stops reading at 4 KB,
+     * `gzip` is killed by SIGPIPE on its next write, and pipefail reports the pipeline as failed
+     * although `grep` matched. A dump of a few lines never fills the pipe, so every case above
+     * passed; a real one always does.
+     */
+    const body = join(mkdtempSync(join(tmpdir(), "laf-upgrade-dump-")), "d");
+    writeFileSync(
+      body,
+      dumpText + "INSERT INTO audit_events VALUES (1, 'row');\n".repeat(80_000),
+    );
+    expect(statSync(body).size).toBeGreaterThan(3_000_000);
+    const space = deployment({ dumpFile: body, healthy: true });
+    const result = run(space);
+
+    expect(result.err).not.toContain("The dump is empty");
+    expect(result.code).toBe(0);
+    expect(result.verbs).toContain("compose pull");
+    const written = gunzipSync(
+      readFileSync(join(space.backups, result.dumps[0] as string)),
+    );
+    expect(written.length).toBe(statSync(body).size);
   });
 
   test("an empty dump refuses before the pull", () => {

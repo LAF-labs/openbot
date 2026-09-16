@@ -174,10 +174,20 @@ docker compose exec -T postgres pg_dump -U openbot openbot | gzip >"$dump"
 # nothing in twenty bytes of header and trailer, so the `-s` test this used to be was green on it
 # (measured 2026-09-10, by the test that first exercised this line). The proof is the one
 # restore.sh asks of a dump before it will touch it: the first lines say what pg_dump says.
-if ! gzip -dc "$dump" 2>/dev/null | head -c 4096 | grep -q 'PostgreSQL database dump'; then
+#
+# READ INTO A VARIABLE FIRST, the way restore.sh does, and matched without a pipe. This was
+# `gzip -dc | head -c 4096 | grep -q` under pipefail, and `head` stopping at 4 KB kills `gzip` with
+# SIGPIPE on its next write: the pipeline failed although `grep` matched, so every deployment with
+# a real database was refused as "empty" (measured 2026-09-16 by the first upgrade-e2e.yml run; the
+# fake dumps here were a few lines and never filled the pipe).
+dump_head="$(gzip -dc "$dump" 2>/dev/null | head -c 4096 || true)"
+case "$dump_head" in
+*'PostgreSQL database dump'*) ;;
+*)
   echo "The dump is empty. Refusing to upgrade over a backup that would restore nothing." >&2
   exit 1
-fi
+  ;;
+esac
 ls -l "$dump"
 
 # WHAT IS RUNNING, AND WHICH BUILD IT IS, before the pull moves what the tags point at.
