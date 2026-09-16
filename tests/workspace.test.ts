@@ -63,7 +63,7 @@ describe("LAF Agent workspace", () => {
         readFileSync(join(repositoryRoot, path), "utf8").includes("bun.lock"),
       );
 
-    // Two today. Asserted so this does not quietly pass by matching nothing.
+    // Four today. Asserted so this does not quietly pass by matching nothing.
     expect(dockerfiles.length).toBeGreaterThan(0);
 
     for (const dockerfile of dockerfiles) {

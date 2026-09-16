@@ -59,9 +59,12 @@ Three things follow, and each is a bug that existed before it:
 what a webview cannot do itself (a dock badge, a native notification). The
 SPA feature-detects `window.__TAURI__` and stays a plain web app without it.
 
-`csp` is `null` deliberately: the page is served by the origin, which is the
-one that must set a CSP. A shell CSP of `'self'` — what the previous, local
-shell had — would block the origin's own scripts.
+`csp` governs only the one page the shell serves itself, `public/index.html`,
+shown when the deployment cannot be reached; the origin's pages carry the front
+door's own policy (`app/Caddyfile`). It names that page's inline script by hash
+and holds the front door's floor — nothing frames the page, no plugin runs,
+nothing is evaluated. It was `null` until 2026-09-13, which left that page with
+no policy at all.
 
 ## What the shell adds
 
@@ -78,8 +81,11 @@ call the notification plugin's own binding; it comes through a command of the
 shell's so that the tray's mute cannot be routed around, and so the notice's
 destination is recorded somewhere the shell can act on it.
 
-**All four are declared twice, and both declarations are load-bearing.**
-`build.rs` names them in the app manifest, and `capabilities/default.json`
+**The three that are the shell's own commands — `set_badge`, `open_external`
+and `post_notice` — are declared twice, and both declarations are
+load-bearing.** The notification plugin, which the page still asks for
+permission, is a plugin and is granted by `notification:default` alone.
+`build.rs` names the three in the app manifest, and `capabilities/default.json`
 grants the resulting `allow-*` permissions. Tauri refuses an app command
 arriving from a **remote** origin unless it is in both — and this window's URL
 is always a remote origin. Measured 2026-09 in a real bundle: without the app

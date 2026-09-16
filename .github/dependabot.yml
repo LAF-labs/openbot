@@ -10,7 +10,7 @@ version: 2
 # for fifteen days. The manifest ecosystem was `npm`, and the only lockfile here is `bun.lock`,
 # which Dependabot's npm updater does not read. `bun` is the ecosystem that does. Alerts and
 # security updates are a repository setting, not a line here; both are on, and
-# `tests/dependabot.test.ts` reads this file against the Dockerfiles so a new image cannot be
+# `tests/dockerfiles.test.ts` reads this file against the Dockerfiles so a new image cannot be
 # added without the entry that re-pins its base.
 #
 # Weekly and grouped, on purpose. Ungrouped, a monorepo this size opens a dozen pull requests every

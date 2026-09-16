@@ -52,7 +52,7 @@ server/           Hono API, boundaries, rooms, routines, the computer gateway
 agent-bot/        The AG-UI endpoint every Bot a person creates runs on
 agent-computer/   The Bot's browser (Playwright), in a container
 desktop/          Tauri shell — a window onto the origin, no product logic
-tenant/laf/       The package: model, brand, agents, channels
+tenant/laf/       The package: model.yaml and brand.yaml
 docs/laf/         Our decisions. Everything else in docs/ is upstream's.
 ```
 
@@ -76,7 +76,9 @@ DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 root. It did not until 2026-09-03, and sixty-four errors were waiting: fixtures
 missing required fields, stubs cast to `never` so their callbacks took `any`,
 assertions on fields that two migrations ago stopped existing — `undefined`
-matching `undefined`, green for months. Never narrow an `include` back to `src`.
+matching `undefined`, green for months. At the root it covers `scripts` and
+`evals` too, the gate's own runner among them. Never narrow an `include` back to
+`src`, or the root's back to `tests`.
 
 `test:ci` reads `DATABASE_URL` for its server and credentials and then never
 hands it to a test — see below. It also refuses to pass below a floor of tests,
@@ -99,9 +101,11 @@ restarting the container changes nothing. `docker compose build agent-computer`
 first. And it refuses to start without `COMPUTER_TOKEN`, which compose does not
 supply on its own.
 
-Deployments never build: CI publishes all four images to GHCR (`images.yml`)
-and compose pulls them by `IMAGE_TAG` (stable/edge/vX.Y.Z). Local `compose up`
-may pull too — build first when you need your local edits in the container.
+Deployments never build: CI publishes the four runtime images (server, web,
+agent-bot, agent-computer) and the `openbot-deploy` bundle to GHCR
+(`images.yml`), and compose pulls the four by `IMAGE_TAG` (stable/edge/vX.Y.Z).
+Local `compose up` may pull too — build first when you need your local edits in
+the container.
 
 ## Rules
 
@@ -193,10 +197,10 @@ last.** A rung is skipped only with a reason written down.
 
 `test:ci` runs them in `<name>_test` on the server `DATABASE_URL` names,
 creating and migrating it if it is absent. The database you develop against is
-never written to — two files delete rows by identity rather than by what they
-made (the boundary policy row, every Google Drive connector instance), and
-against a live database that is somebody's afternoon. Run the gate twice at once
-by giving each worktree `LAF_TEST_DB_SUFFIX`; they land in different databases.
+never written to — one file deletes a row by identity rather than by what it
+made (the boundary policy row), and against a live database that is somebody's
+afternoon. Run the gate twice at once by giving each worktree
+`LAF_TEST_DB_SUFFIX`; they land in different databases.
 
 The old rule still holds inside that database, because the tests still share it
 with each other: clean up your rows, scope every cleanup to what the test
@@ -219,7 +223,8 @@ normal case, since the test database starts empty.
 ## Things that are not in this repository
 
 The business plans, the milestone execution notes and the working log live in
-`~/laf/` — **outside any repository**, because this one is public. Never commit
-them and never move them in "temporarily". `~/laf/activity.md` is the running
-log; prepend an entry after finishing a piece of work, newest first, with a
-Dubai-time heading, what changed, and the files touched.
+`~/laf/` — **outside any repository**, because this one was public until
+2026-09-10 and may be again. Never commit them and never move them in
+"temporarily". `~/laf/activity.md` is the running log; prepend an entry after
+finishing a piece of work, newest first, with a Dubai-time heading, what
+changed, and the files touched.

@@ -144,7 +144,7 @@ $(green "Ready. http://localhost:$APP_PORT")
 
 Next steps:
 
-  - Direct Bot chat:       http://localhost:$APP_PORT/bot
+  - Talk to a Bot:         http://localhost:$APP_PORT/channel/new
   - Coworkers:             http://localhost:$APP_PORT/agents
   - Audit trail:           http://localhost:$APP_PORT/admin/audit
   - Boundaries/policy:     http://localhost:$APP_PORT/admin/boundaries

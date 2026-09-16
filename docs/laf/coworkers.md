@@ -10,7 +10,7 @@ A coworker is a Bot with a durable profile and standing role. The role is sent w
 | Profile              | `agent_profiles`                | Name, title, role, avatar seed, owner, and soft deletion.             |
 | Personal roster      | `agent_preferences`             | Per-user hidden state.                                                |
 | Channel              | `channels`                      | Conversation membership and coworker binding.                         |
-| Thread mapping       | `intelligence_channel_mappings` | Channel-to-thread mapping (name predates the fork; threads are local). |
+| Thread mapping       | `channel_threads`               | Channel-to-thread mapping, per person (threads are local).            |
 
 Every coworker is owned by the person who made it. The tenant package used to ship a few that
 were public and ownerless; it ships none.
@@ -42,9 +42,9 @@ everyone signed in, and `canManageAgent` refuses to let anybody edit or delete i
 product. **This package ships none**, so in practice every Bot on a deployment is
 `remote_ag_ui`, made by a person, visible only to them, and answered by `agent-bot`.
 
-The rule is written once, in `server/src/agents/profile-policy.ts`: `canSeeAgent` as a predicate,
-`visibleToActor` as a WHERE clause for the reads, `agentHiddenFrom` for the doors handed a Bot id
-in a request body. Filtering happens in the query, never in JavaScript after the row is read.
+The rule is written once, in `server/src/agents/profile-policy.ts`: `canSeeAgent` as a predicate
+and `visibleToActor` as a WHERE clause for the reads. Filtering happens in the query, never in
+JavaScript after the row is read.
 
 Driving a Bot — reading its screen, pressing its controls, answering its questions, spending what
 its tools hold — is decided by `actorMayDriveBot` (`auth/guards.ts`), and since 2026-09-16 it gives

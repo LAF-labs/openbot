@@ -144,7 +144,8 @@ This is enforced three ways, and each catches what the others cannot:
 2. `tests/log-discipline.test.ts` refuses a `console.*` call anywhere in the three service
    sources, so a line cannot bypass the scrubbing. The files still on `console` are listed there
    with a ceiling each — they belong to workstreams landing at the same time, and their
-   injectable `log` is already pointed at the process log from `server/src/index.ts`.
+   injectable `log` is already pointed at the process log where `server/src/main.ts` assembles the
+   process (`server/src/boot/background.ts`, `server/src/notifications/doors.ts`).
 3. `server/tests/log-hygiene.integration.test.ts` starts the real server and the real Bot
    service as subprocesses against a fake provider, drives one turn through the API with a
    canary key in the environment (`sk-canary-…`), a canary message naming a password, and a

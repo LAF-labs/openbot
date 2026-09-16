@@ -76,17 +76,21 @@ decided. The gateway keys it on the tool plus the ref, key, file path, or target
 window that defaults to three minutes and is set by `COMPUTER_REPEAT_WINDOW_MS`. Crossing 3, 10, or
 25 writes one `computer.action_repeated` row each; the detector itself never refuses anything, so
 `repeat.count >= 10` in `deny` is what stops a Bot going in circles. The count is held in memory by
-the one server process, which is the whole of it on a deployment shaped like this one, and it
-covers the browser and the workspace only: a call to another server's tools over MCP always reports
-one.
+the one server process, which is the whole of it on a deployment shaped like this one. A call to
+another server's tools over MCP goes through the same counter, keyed on the tool alone — its
+arguments are not in the key — and crossing a threshold writes `mcp.call_repeated`.
 
 Rules use CEL expressions plus case-insensitive `contains()` and `matches()`.
 Rules are evaluated in three lists, in order: `deny`, then `ask`, then `allow`.
 The policy engine fails closed: a missing or empty policy permits nothing, a
 broken deny rule denies, a broken ask rule asks, and a broken allow rule does not
-permit. LAF Agent's shipped startup default is explicit: `deny: []`, `ask: []` and
-`allow: ["true"]`, unless `AGENT_COMPUTER_POLICY` or a saved administrator policy
-replaces it. A malformed configured policy stops server startup.
+permit. LAF Agent's shipped startup default (`server/src/computer/default-policy.ts`)
+is explicit: `deny` refuses typing into a password or secret field; `ask` stops for
+pressing a button whose label says money, sending, deleting or confirming, pressing
+anything on a bank or payment site, uploading a file, and the fifth identical call
+in a row; and `allow: ["true"]` permits the rest — unless `AGENT_COMPUTER_POLICY` or
+a saved administrator policy replaces it. A malformed configured policy stops server
+startup.
 
 An `ask` match stops the action and puts it in front of a person in the
 conversation, then carries on with the same call if they allow it. The pending
@@ -94,8 +98,9 @@ question lives in the server process, is bound to a fingerprint of the exact
 action it was raised for, and is single use, so an approval cannot be replayed
 against a different one. Answering writes `approval.granted` or `approval.denied`
 under the answering person's own actor, separately from the action row, and the
-question itself writes `approval.requested` when it is raised. In `dry-run` an
-ask is recorded and interrupts nobody.
+question itself writes `approval.requested` when it is raised. There is no
+`dry-run`: every policy enforces, and a policy that still says `"mode": "dry-run"`
+is read as enforced.
 
 The same three lists judge a Bot's MCP tool calls, `ask` included: a rule such as
 `intent == "write_tool" && mcp.server == "jira"` stops the call and asks rather
@@ -122,10 +127,12 @@ A question expires after ten minutes either way.
 
 Every Bot of an account shares the computer at `AGENT_COMPUTER_URL` — the account's desk, by decision (`server/src/computer/assignment.ts`). Files, logins and browser sessions carry between Bots; the boundary is the gateway in front of the computer, not the roster. Five Bots per person, `BOT_SEATS_PER_ACCOUNT`, enforced where a Bot is created so a sixth fails to exist rather than existing and failing to reach a computer.
 
-Within the one container each Bot gets its own Chromium profile. Which Bot a request is for comes
-from the `x-openbot-bot-id` header, and the computer **falls back to a default profile** when the
-header is absent — so a caller that leaves it off is not talking to no Bot, it is silently talking to
-the wrong one, on a blank page belonging to nobody.
+Within the one container every Bot shares one Chromium profile, one per deployment, so a site one
+Bot signed into is signed in for all of them; each Bot keeps only its own tabs. Which Bot a request
+is for comes from the `x-openbot-bot-id` header, and the computer **refuses a request without it**
+(400 `laf:bot_header_missing`) on every route but `/health` and `/computers`. It used to fall back to
+a default profile, which put a caller that left the header off on the wrong Bot, on a blank page
+belonging to nobody.
 
 ## Human control and secrets
 
@@ -154,7 +161,7 @@ audit fingerprint. A test serialises a whole record and asserts the password is 
 A coworker is a durable Bot profile:
 
 - `agents` stores runtime identity and endpoint/key reference.
-- `agent_profiles` stores name, title, role, owner, visibility, and deletion state.
+- `agent_profiles` stores name, title, role, owner, and deletion state.
 - `agent_preferences` stores per-user roster state.
 
 A channel is a conversation and a thread mapping. Most hold one coworker; a room holds several, and
@@ -188,10 +195,12 @@ MCP servers and skills share the plugin grant table, but they have different own
 - MCP tools are admin-governed because they can reach external systems with stored credentials.
 - Skills are reusable instructions. A person can create personal skills and attach them only to Bots they own. Administrators create deployment skills.
 
-The curated MCP catalogue is frozen in code (`server/src/plugins/catalogue.ts`) and has two entries:
-**Notion** and **Google Drive**. Both are connected as the person asking rather than with a token an
+The curated MCP catalogue is frozen in code (`server/src/plugins/catalogue.ts`) and has nine entries.
+Seven — **Notion**, **Google Drive**, **Google Sheets**, **Gmail**, **Google Calendar**, **Google
+Business Profile** and **Cafe24** — are connected as the person asking rather than with a token an
 administrator pastes — each person consents for themselves and every call runs on their own grant, so
-two people asking the same question get the answers their own accounts can see.
+two people asking the same question get the answers their own accounts can see. The other two,
+**카카오 알림톡** and **나라장터·기업마당**, run on an account or key the fleet holds.
 
 - Notion is the vendor's hosted MCP server. The deployment registers its own OAuth client on first
   connect (RFC 7591), so there is no console paperwork, and Notion has no scope strings at all —

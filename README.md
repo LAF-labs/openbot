@@ -40,7 +40,7 @@ sentence that is not yet true.
 
 **One VM per person, one computer on it.** However many Bots you make, they share
 that computer — its files, its logins, its browser sessions — and nobody else's
-Bots are on it. Each Bot gets its own browser profile inside it, but the thing
+Bots are on it. The Bots share one browser profile inside it, and the thing
 that keeps a Bot in bounds is the gateway in front of the computer, not a
 separate computer. That decision shapes the code, and it is written down in
 [`docs/laf/deployment-model.md`](docs/laf/deployment-model.md).
@@ -78,7 +78,7 @@ architecture, kept and still running.
 | **Teaching by demonstration** | Do the task once in the Bot's browser. It is written up as a procedure you edit, name, and invoke with `/`. It never records what you typed. |
 | **Routines** | An instruction, a Bot and a clock. It runs with its tools, through the same gateway, and reports back into its own conversation. |
 | **Rooms** | Several Bots in one conversation, with the turn running on the server — a tab that closes mid-turn no longer kills it. |
-| **Connected as the person asking** | Notion and Google Drive, each person consenting for themselves, so two people asking the same question get the answers their own accounts can see. |
+| **Connected as the person asking** | Notion, Google Drive, Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, each person consenting for themselves, so two people asking the same question get the answers their own accounts can see. |
 | **Effort** | The one model setting, per Bot, carried into every run — chat, rooms and routines. |
 | **Korean first** | Every user-facing string, enforced by a test. |
 | **One VM per person** | The deployment decides the architecture, not the other way round. |
@@ -142,13 +142,13 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
 | `/welcome`                    | First run: it ends with one Bot of your own.                                            |
 | `/`                           | The roster, and the composer that starts a conversation with any of them.               |
-| `/agents`                     | Your Bots, the public ones to explore, and the button that makes a new one.             |
+| `/agents`                     | Your Bots, and the button that makes a new one.                                         |
 | `/channel/new`                | Start a conversation, with one Bot or several.                                          |
 | `/channel/:id`                | Talk to a Bot, watch its screen, take the wheel, answer what it asks.                   |
 | `/skills`                     | Skills — including the ones recorded by showing a Bot how a task is done.               |
 | `/routines`                   | An instruction, a Bot and a clock. Create, enable, run now, and read what happened.     |
 | `/settings`                   | Your preferences.                                                                       |
-| `/settings/connected-accounts`| Connect and disconnect Notion and Google Drive as yourself.                             |
+| `/settings/connected-accounts`| Connections: every service and site a Bot works with, switched on and off in one list.  |
 | `/admin`                      | Where the operator surfaces below are listed.                                           |
 | `/admin/boundaries`           | Configure browser/file/MCP action policy.                                               |
 | `/admin/audit`                | Review permitted, refused, and failed actions.                                          |
@@ -168,7 +168,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
-- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork) and Google Drive (read-only, via an admin-registered OAuth client). Each person consents for themselves and calls run on their own grant, so two people asking the same question get the answers their own accounts can see. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
+- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, plus 카카오 알림톡 and 나라장터·기업마당 on an account or key the fleet holds. For the first seven, each person consents for themselves and calls run on their own grant, so two people asking the same question get the answers their own accounts can see. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
 - **Show it once**: drive the Bot's browser through a task yourself and the demonstration is written up as a procedure you edit, name and invoke with `/`. The recorder keeps that typing happened and into which field — never a value, passwords included, and a test serialises the whole record to prove it.
 - **Routines and rooms run on the server**: a routine fires on its clock with the Bot's tools underneath the same gateway, and a room with several Bots takes its turn server-side, so closing the window does not end either.
@@ -184,7 +184,6 @@ Any AG-UI endpoint can be a Bot.
 From `/agents`, create a coworker with:
 
 - name, title, and role description;
-- private or public visibility;
 - optional AG-UI endpoint;
 - optional write-only authorization header.
 

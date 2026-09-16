@@ -19,12 +19,13 @@ in `.env.example` but in no table here is read by nothing.
 
 ## Required API server variables
 
-The server refuses to start without these three (`server/src/config.ts`).
+The server refuses to start without these four (`server/src/config.ts`).
 
 | Variable                      | Meaning                                                                                               |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | PostgreSQL connection string.                                                                         |
 | `KEY_ENCRYPTION_KEY`          | Base64-encoded 32-byte key for encrypted stored credentials. Generate with `openssl rand -base64 32`. |
+| `LAF_TOKEN_ENCRYPTION_KEY`    | 32 bytes as 64 hex characters; the tokens a sign-in stores are sealed under it. Required on every deployment, sign-in or not — only a test run (`NODE_ENV=test`) starts without it — and `.env.example`'s all-zero key is refused under `NODE_ENV=production`. Generate with `openssl rand -hex 32`. |
 | `MANAGED_AGENT_AG_UI_URL`     | Default AG-UI endpoint for coworkers created in the product. Must be HTTP(S).                         |
 
 Threads and memory live in this deployment's own PostgreSQL and there is no other option. Four
@@ -40,7 +41,7 @@ they are gone.
 | `TENANT_PACKAGE_DIR`            | `../tenant/laf`        | Tenant package directory, resolved from `server/`.                                                                                   |
 | `OPENAI_API_KEY`                | unset                  | Model key, when no stored credential answers for the package's `credential_secret_ref`. Resolved per call, so revoking one takes effect on the next action rather than the next restart. |
 | `OPENAI_BASE_URL`               | `https://api.openai.com/v1` | OpenAI-compatible endpoint the key is spent against. Moves the whole deployment. See below.                                      |
-| `AGENT_STALL_TIMEOUT_MS`        | `0` (watchdog off)     | How long a Bot's stream may say nothing before the deployment ends the turn. Refuses to start on anything that is not a whole number ≥ 0. |
+| `AGENT_STALL_TIMEOUT_MS`        | `60000` (1 min)        | How long a Bot's stream may say nothing before the deployment ends the turn. `0` switches the watchdog off. Refuses to start on anything that is not a whole number ≥ 0. |
 | `BOT_SEATS_PER_ACCOUNT`         | `5`                    | Bots one person may have. Enforced where a Bot is created, so a sixth fails to exist rather than existing with no computer to reach.  |
 | `LAF_NOTIFY_WEBHOOK_URL`        | unset                  | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                                                                |
 | `PUBLIC_ORIGIN`                 | unset                  | The address this deployment answers as, scheme included. Caddy's certificate and the API's cookie origin come from it, and it is what the fleet identifies this customer by. Required once `LAF_FLEET_WEBHOOK_URL` is set. |
@@ -143,24 +144,26 @@ What `agent-computer` reads of its own (`agent-computer/src/`):
 | `COMPUTER_TOKEN`         | —             | Required. It **refuses to start without it**, and compose does not supply one on its own.                  |
 | `PORT`                   | `4100`        | Listening port.                                                                                            |
 | `NAVIGATION_TIMEOUT_MS`  | `30000`       | How long a page load may take.                                                                             |
-| `ACTION_TIMEOUT_MS`      | `10000`       | How long one click, type or read may take.                                                                 |
+| `ACTION_TIMEOUT_MS`      | `10000`       | How long one click, type or read may take. `docker-compose.yml` does not pass it, so a compose deployment keeps the default. |
 | `WORKSPACE_DIR`          | `/workspace`  | The Bots' shared folder of files.                                                                          |
-| `PROFILES_DIR`           | `/profiles`   | Where each Bot's Chromium profile lives.                                                                   |
-| `COMPUTER_BOT_ID`        | `shared`      | The profile used when a request carries no `x-openbot-bot-id` header. There is always a fallback, so a caller that omits the header is silently on the wrong Bot rather than on none. |
-| `EGRESS_PROXY_DEFAULT`   | unset         | Proxy for every Bot without one of its own.                                                                |
-| `EGRESS_PROXY_<BOT_ID>`  | unset         | One Bot's proxy. The Bot id is uppercased with non-alphanumerics turned into `_`, so `sales-bot` reads `EGRESS_PROXY_SALES_BOT`. |
+| `PROFILES_DIR`           | `/profiles`   | Where the deployment's one Chromium profile lives. Every Bot uses it, so a site one Bot signed into is signed in for all of them. |
+| `EGRESS_PROXY_DEFAULT`   | unset         | The one proxy the browser, and so every Bot, leaves through. `docker-compose.yml` does not pass it, so a compose deployment goes out directly. |
+
+There is no per-Bot proxy: one browser means one proxy, chosen at launch, and an
+`EGRESS_PROXY_<BOT_ID>` is not read — only named in a warning at boot. There is no fallback Bot
+either: a request without `x-openbot-bot-id` is refused with 400 `laf:bot_header_missing`.
 
 Proxy credentials may appear in proxy URLs, but the computer strips them before reporting proxy status.
 
 ## Bot endpoint
 
 `agent-bot` is the AG-UI endpoint every Bot a person creates runs on. It reads four variables
-(`agent-bot/src/index.ts`):
+(`agent-bot/src/provider.ts`, `agent-bot/src/server.ts`):
 
 | Variable          | Default                       | Meaning                                                                     |
 | ----------------- | ----------------------------- | ----------------------------------------------------------------------------- |
 | `PORT`            | `4200`                        | Listening port. It reads the shared `../.env`, where `PORT` is the API server's, so start it by hand with the override — see [development](development.md). |
-| `BOT_MODEL`       | `gpt-5.5`                     | The model, sent verbatim, because an endpoint names its own catalogue.       |
+| `BOT_MODEL`       | none — **refuses to start without it** | The model, sent verbatim, because an endpoint names its own catalogue. The fallback in the tenant package's `model.yaml` is the API server's, not this service's: set it in `.env`, which compose passes through. |
 | `OPENAI_BASE_URL` | OpenAI                        | The endpoint that answers. Same value as the API server's, deliberately.     |
 | `OPENAI_API_KEY`  | unset                         | The key spent against it.                                                    |
 

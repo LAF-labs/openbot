@@ -4,12 +4,11 @@
  * Two separate guarantees live here.
  *
  * **The run never touches the database the application is using.** The suite writes to a real
- * Postgres, and some of it deletes rows by identity rather than by what it created — the boundary
- * policy row (`policy-durability.integration.test.ts`), every Google Drive connector instance
- * (`connector-admin.integration.test.ts`). Pointed at a developer's own database those deletions
- * land on their work, and nothing says so. So `DATABASE_URL` as given is read for its server and
- * its credentials and then never handed to a test: the tests run in `<name>_test` on the same
- * server, created here if it is absent and migrated exactly the way CI migrates.
+ * Postgres, and some of it deletes a row by identity rather than by what it created — the boundary
+ * policy row (`policy-durability.integration.test.ts`). Pointed at a developer's own database that
+ * deletion lands on their work, and nothing says so. So `DATABASE_URL` as given is read for its
+ * server and its credentials and then never handed to a test: the tests run in `<name>_test` on the
+ * same server, created here if it is absent and migrated exactly the way CI migrates.
  * `LAF_TEST_DB_SUFFIX` names a second one, so two worktrees can run the gate at the same time
  * without sharing a database.
  *

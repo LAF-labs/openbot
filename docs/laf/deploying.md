@@ -384,8 +384,8 @@ reached at all. It used to be the whole answer, and the fleet measured what that
 meant: an image built for `google` drew a Google button on a VM whose `.env`
 said `laf`, and the button posted into a callback the deployment had never
 registered. Images built before this date still behave that way, which is why
-a rehearsal against the fleet's broker runs on `IMAGE_TAG=edge` until a newer
-`:stable` is cut.
+a rehearsal against the fleet's broker ran on `IMAGE_TAG=edge` until v0.5.0
+(2026-09-15) moved `:stable` past it.
 
 Then:
 
@@ -674,19 +674,23 @@ empty tables. The `:edge` run came first and failed on a single column —
 boot — which is why that column is on the list; nothing a person wrote moved in
 either run.
 
-What the first runs found, and the script keeps reporting until it is not true:
+What the first runs found, against `:stable` at v0.4.5. Both are answered
+from v0.5.0 (2026-09-15) on; the script still reports the first for a `--from`
+older than that:
 
-- **There is no `openbot-deploy:stable`.** The bundle was first published
-  2026-09-10, after v0.4.5, so on a VM that follows `:stable` the three
-  `docker create` / `cp` / `rm` lines above fail with `not found` — the first
-  step of standing one up, and of `laf upgrade`. The driver rebuilds the
-  directory from git at the commit `:stable`'s images carry, which is what a VM
-  cloned then holds, and says so. The next release tag mints it.
-- **`:stable`'s compose file never passes `LAF_TOKEN_ENCRYPTION_KEY`**, which
-  the new server refuses to start without. A VM whose `.env` was written for
-  `:stable` need not have the line, and must gain it before this upgrade. The
-  run's own `.env` carries it from the start, so this is read from the two
-  compose files, not measured as a failed start.
+- **There was no `openbot-deploy:stable`.** The bundle was first published
+  2026-09-10, after v0.4.5, so on a VM that followed that `:stable` the three
+  `docker create` / `cp` / `rm` lines above failed with `not found` — the first
+  step of standing one up, and of `laf upgrade`. For a release with no bundle,
+  the driver rebuilds the directory from git at the commit its images carry,
+  which is what a VM cloned then holds, and says so. v0.5.0 is the first
+  release tag whose `images.yml` publishes the bundle as `:stable`.
+- **v0.4.5's compose file never passed `LAF_TOKEN_ENCRYPTION_KEY`**, which
+  every server from v0.5.0 on refuses to start without; v0.5.0's compose file
+  passes it. A VM whose `.env` was written for v0.4.5 or earlier need not have
+  the line, and must gain it before upgrading. The run's own `.env` carries it
+  from the start, so this was read from the two compose files, not measured as
+  a failed start.
 
 ### What a VM runs
 
@@ -749,7 +753,7 @@ document promised is discovered on the day it matters.
   while the browser runs is a set of half-written SQLite files. Encrypting the
   backups is a fleet decision (`laf-control`, where the script lives) and has
   not been taken. **So a restore onto a new VM means every site is signed in
-  again, by hand, once per Bot.** On the same VM (the rollback case above) the
+  again, by hand, once.** On the same VM (the rollback case above) the
   profiles are untouched and the logins survive — only the rows move back in
   time. Either way `scripts/restore.sh --replace` marks every row of
   `laf_site_connections` as needing a login, because a restored row saying

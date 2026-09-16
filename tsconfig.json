@@ -4,13 +4,17 @@
     "types": ["bun"]
   },
   /*
-   * The tests that belong to no workspace.
+   * The code that belongs to no workspace.
    *
    * `tests/` sits above every package — it is the suite that asserts about the repository itself:
    * the compose file, the desktop shell's manifest, the tenant package, the tool catalogue. Every
    * workspace has a `typecheck` script and `bun run --filter '*' typecheck` runs all of them, so
    * this directory was the one part of the tree that `tsc` had never been pointed at. It is now,
    * from the root script.
+   *
+   * `scripts/` and `evals/` sit there too. With `tests` alone they were checked only where a test
+   * happened to import them, which left eight files checked by nothing — among them the gate's own
+   * runner, `scripts/test-ci.ts`, and the model eval, `evals/run.ts`.
    */
-  "include": ["tests"]
+  "include": ["tests", "scripts", "evals"]
 }

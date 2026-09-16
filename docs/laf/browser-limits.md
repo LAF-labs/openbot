@@ -146,7 +146,7 @@
 | 대화 화면 첫 메시지에 ~6s가 앞에 붙는다 | **사실이 아니었다.** 진짜 앱(`vite dev`)을 Playwright로 몰아 Enter부터 요청마다 찍었다: Enter → `POST /api/channels` 201 **31–47ms** → 이동 57–76ms → connect 40ms → 이력 35ms → **run 요청 165ms**(새 채널) / 244·245·251ms(기존 채널) / 371ms(방금 켠 dev 서버). 그 뒤는 모델이다: RUN_FINISHED **4.6–7.5s**(`glm-5.3-flash`, 첫 글자 2.5s). 표의 "6.2s"는 답이 끝나 저장되기까지의 모델 시간이지 화면의 시간이 아니다. 고칠 것 없음 | 5회(새 채널 1, 기존 3, 콜드 1) |
 
 파트너 grant·승인 순서·화면 패널 문장·0.5초 타이핑은 각각 `partner-grants-new-bot.test.ts`,
-`plugin-call-validation.test.ts`, `screen-problems.test.ts`, `composer-first-keystrokes.test.ts`가
+`plugin-call-validation.test.ts`, `screen-problems.test.ts`, `composer-first-keystrokes.test.tsx`가
 잡는다.
 
 ### 다섯 봇의 브라우저가 한꺼번에 멈춘다 — W1-d가 남긴 사실 (2026-09-14)
