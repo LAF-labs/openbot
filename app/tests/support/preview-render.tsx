@@ -112,62 +112,74 @@ await page.unmount();
 const { RoomApprovals } = await import(
   "../../src/components/channels/room-approvals"
 );
+// The room card reads whether its Bot may be driven through a query, so it needs a client of its
+// own here, the same way `korean-render.tsx` mounts it.
+const { QueryClient, QueryClientProvider } = await import(
+  "@tanstack/react-query"
+);
 const roomHost = document.createElement("div");
 document.body.append(roomHost);
 const roomRoot = createRoot(roomHost);
 const member = { memberId: "bot-1", memberName: "초롱", expiresAt: "" };
 await act(async () => {
   roomRoot.render(
-    createElement(RoomApprovals, {
-      approvals: [
-        {
-          ...member,
-          approvalId: "room-alimtalk",
-          rule: "laf:external",
-          subject: toolSubject("kakao-alimtalk", "alimtalk_send"),
-          preview: [
-            { field: "recipients", values: ["01011112222"] },
-            { field: "template", values: ["laf_reservation"] },
-            {
-              field: "text",
-              values: ["[미소상회]\n예약이 확정되었습니다."],
-            },
-          ],
-        },
-        {
-          ...member,
-          approvalId: "room-event",
-          rule: "laf:external",
-          subject: toolSubject("google-calendar", "create_event"),
-          preview: [
-            { field: "title", values: ["상견례"] },
-            { field: "starts", values: ["2026-09-20T12:00:00+09:00"] },
-            { field: "attendees", values: ["stranger@evil.example"] },
-          ],
-        },
-        {
-          ...member,
-          approvalId: "room-order",
-          rule: "laf:external",
-          subject: toolSubject("cafe24", "update_order_status"),
-          preview: [
-            { field: "order", values: ["20260916-0000012"] },
-            { field: "status", values: ["N30"] },
-          ],
-        },
-        {
-          ...member,
-          approvalId: "room-reply",
-          rule: "laf:external",
-          subject: toolSubject("google-business-profile", "reply_to_review"),
-          preview: [
-            { field: "review", values: ["accounts/1/locations/2/reviews/abc"] },
-            { field: "text", values: ["방문해 주셔서 감사합니다!"] },
-          ],
-        },
-      ],
-      onAnswered: () => {},
-    }),
+    createElement(
+      QueryClientProvider,
+      { client: new QueryClient() },
+      createElement(RoomApprovals, {
+        approvals: [
+          {
+            ...member,
+            approvalId: "room-alimtalk",
+            rule: "laf:external",
+            subject: toolSubject("kakao-alimtalk", "alimtalk_send"),
+            preview: [
+              { field: "recipients", values: ["01011112222"] },
+              { field: "template", values: ["laf_reservation"] },
+              {
+                field: "text",
+                values: ["[미소상회]\n예약이 확정되었습니다."],
+              },
+            ],
+          },
+          {
+            ...member,
+            approvalId: "room-event",
+            rule: "laf:external",
+            subject: toolSubject("google-calendar", "create_event"),
+            preview: [
+              { field: "title", values: ["상견례"] },
+              { field: "starts", values: ["2026-09-20T12:00:00+09:00"] },
+              { field: "attendees", values: ["stranger@evil.example"] },
+            ],
+          },
+          {
+            ...member,
+            approvalId: "room-order",
+            rule: "laf:external",
+            subject: toolSubject("cafe24", "update_order_status"),
+            preview: [
+              { field: "order", values: ["20260916-0000012"] },
+              { field: "status", values: ["N30"] },
+            ],
+          },
+          {
+            ...member,
+            approvalId: "room-reply",
+            rule: "laf:external",
+            subject: toolSubject("google-business-profile", "reply_to_review"),
+            preview: [
+              {
+                field: "review",
+                values: ["accounts/1/locations/2/reviews/abc"],
+              },
+              { field: "text", values: ["방문해 주셔서 감사합니다!"] },
+            ],
+          },
+        ],
+        onAnswered: () => {},
+      }),
+    ),
   );
 });
 const roomCards = cardsIn(roomHost);
