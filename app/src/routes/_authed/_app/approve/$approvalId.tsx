@@ -13,6 +13,7 @@ import {
   readApprovals,
   watchQuestions,
 } from "@/lib/approvals";
+import { callPreviewOf } from "@/lib/call-preview";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
 import { needsYouTitle } from "@/lib/notifications/use-bot-notifications";
@@ -159,10 +160,13 @@ function ApprovePage() {
     // A question already decided is not a question. The server keeps its record for the rest of the
     // ten minutes, so this is the ordinary case for a notice somebody comes back to late.
     if (!waiting || waiting.granted !== undefined || isSettled) return;
+    // Read as a pause reply's is: the list arrived as JSON, and only what can be vouched for is drawn.
+    const preview = callPreviewOf(waiting.preview);
     openQuestion(key, {
       approvalId: waiting.id,
       botId: waiting.botId,
       subject: waiting.subject,
+      ...(preview ? { preview } : {}),
       rule: waiting.rule,
       scope: waiting.scope,
       expiresAt: waiting.expiresAt,

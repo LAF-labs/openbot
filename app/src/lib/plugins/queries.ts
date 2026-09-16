@@ -8,6 +8,7 @@ import {
   pauseFrom,
   waitForApproval,
 } from "@/lib/approvals";
+import type { CallPreview } from "@/lib/call-preview";
 import { activeConversationHeaders } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { inShell } from "@/lib/notifications/shell";
@@ -27,7 +28,10 @@ export type PluginTool = {
   /** True when the definition changed after consent; refused until approved. */
   needsReview: boolean;
   reviewReason: string | null;
-  /** Non-null when the declaration stops every call for a person. */
+  /**
+   * Non-null when the declaration stops a call for a person — each one, until that person answers
+   * with 이 도구 항상 허용, which lets that Bot's later calls go without asking.
+   */
   guard: "money" | "external" | "destructive" | "unannotated" | null;
 };
 
@@ -530,6 +534,8 @@ export async function callPluginTool(
     botId: agentId,
     // The facts, not a sentence: `describeSubject` writes the Korean on the card.
     subject: outcome.subject,
+    // What the call will send, drawn under the question. The answer is bound to exactly this call.
+    ...(outcome.preview ? { preview: outcome.preview } : {}),
     rule: outcome.rule,
     scope: outcome.scope,
     expiresAt: outcome.expiresAt,
@@ -583,6 +589,8 @@ type AwaitingApproval = {
   approvalId: string;
   /** What is being asked about, in facts. Undefined when the reply carried none we recognise. */
   subject: AskSubject | undefined;
+  /** What the call will send, already checked by `pauseFrom`. Absent for a call that sends nothing. */
+  preview?: CallPreview | undefined;
   rule: string | null;
   /** What "always" would cover here — always a tool, for a call to somebody else's server. */
   scope?: AllowanceScope | undefined;

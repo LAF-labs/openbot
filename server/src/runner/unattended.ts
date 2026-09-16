@@ -466,7 +466,7 @@ export async function runUnattended(
         id: randomUUID(),
         role: "tool",
         toolCallId: call.id,
-        content: JSON.stringify(outcome),
+        content: JSON.stringify(forTheModel(outcome)),
       });
     }
 
@@ -514,6 +514,18 @@ export async function runUnattended(
 /* ------------------------------------------------------------------------------------------ */
 
 /**
+ * An outcome as the model reads it: everything but the preview drawn for a person.
+ *
+ * The preview is the call's own arguments — a recipient, a mail body — cut for a card. The model
+ * wrote them; echoed back into its context they are up to a thousand characters on every later
+ * turn of the run, for nothing it can act on. The room's relay reads the outcome before this does,
+ * so the card still gets it.
+ */
+function forTheModel({ preview: _forThePerson, ...said }: ToolOutcome) {
+  return said;
+}
+
+/**
  * The same envelope the browser hands the model when a gateway call does not go through.
  *
  * A refusal is final and says which rule; a question is a pause with the words a person would be
@@ -533,6 +545,10 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       // The facts, for the room's card to say in Korean. It was the server's English sentence, which
       // a Korean-speaking member then read out into the room.
       subject: error.subject,
+      // What an outward call will send, for the same card. Only a tool call has one.
+      ...(error instanceof PluginNeedsApprovalError && error.preview
+        ? { preview: error.preview }
+        : {}),
       rule: error.rule,
       // Carried so a room can offer the wider button too. Undefined where the question had no
       // derivable scope, which the room reads the same way the one-to-one card does.

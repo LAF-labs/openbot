@@ -11,6 +11,7 @@ import {
   callPluginTool,
   type GrantedPlugins,
 } from "@/lib/plugins/queries";
+import { toolLabel } from "@/lib/plugins/tool-labels";
 
 /**
  * Runtime-discovered MCP tools granted to the active Bot. Registration controls what is offered;
@@ -132,6 +133,8 @@ function PluginTool({
 
   const [serverId, ...rest] = toolRef.split("/");
   const bareName = rest.join("/");
+  // The line under the approval card names the tool the way the card does, where it has a name.
+  const lineLabel = toolLabel(toolRef) ?? bareName;
 
   useFrontendTool({
     name,
@@ -185,7 +188,7 @@ function PluginTool({
           <ToolLine
             detail={outcome.reason}
             failed={!outcome.refused}
-            label={bareName}
+            label={lineLabel}
             refused={outcome.refused}
           />
         );
@@ -201,7 +204,7 @@ function PluginTool({
           <ToolLine
             detail={serverId}
             failed={result?.isError}
-            label={bareName}
+            label={lineLabel}
             running={status !== "complete"}
           >
             {result ? (

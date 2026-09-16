@@ -1,3 +1,10 @@
+import type { CallPreview } from "../computer/approvals";
+import {
+  previewList,
+  previewOf,
+  previewText,
+  previewValue,
+} from "./call-preview";
 import type { McpCallResult, McpTool } from "./mcp";
 import {
   asResult,
@@ -21,7 +28,8 @@ import {
  *
  * `create_event` is guarded in the catalogue entry as `external`, and that is not over-caution:
  * Google mails every attendee an invitation, so the effect of the call leaves this deployment for
- * somebody else's inbox.
+ * somebody else's inbox. The card that asks shows the title, the time and who is invited
+ * ({@link previewCall}).
  */
 
 const DEFAULT_EVENTS = 10;
@@ -96,6 +104,45 @@ type CalendarEvent = {
 const whenOf = (edge: CalendarEvent["start"]): string =>
   edge?.dateTime ?? edge?.date ?? "?";
 
+/**
+ * An invitation's arguments, read once for both the request and the card that asks about it.
+ *
+ * One reading so the two cannot disagree: the guests a person is shown are the guests Google is
+ * told to mail. Only strings are guests, and a blank one is nobody.
+ */
+function eventOf(args: Record<string, unknown>) {
+  return {
+    summary: stringArg(args, "summary"),
+    start: stringArg(args, "start"),
+    end: stringArg(args, "end"),
+    description: stringArg(args, "description"),
+    location: stringArg(args, "location"),
+    attendees: Array.isArray(args.attendees)
+      ? args.attendees
+          .filter((address): address is string => typeof address === "string")
+          .map((address) => address.trim())
+          .filter((address) => address !== "")
+      : [],
+  };
+}
+
+/** What an invitation would be, for the card. A listing sends nothing. */
+export function previewCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): CallPreview | null {
+  if (toolName !== "create_event") return null;
+  const event = eventOf(args);
+  return previewOf([
+    ...previewValue("title", event.summary),
+    ...previewValue("starts", event.start),
+    ...previewValue("ends", event.end),
+    ...previewList("attendees", event.attendees),
+    ...previewValue("location", event.location),
+    ...previewText("text", event.description),
+  ]);
+}
+
 export async function callTool(
   connection: RestConnection,
   toolName: string,
@@ -144,18 +191,13 @@ export async function callTool(
   }
 
   if (toolName === "create_event") {
-    const summary = stringArg(args, "summary");
-    const start = stringArg(args, "start");
-    const end = stringArg(args, "end");
+    const event = eventOf(args);
+    const { summary, start, end, description, location } = event;
     if (!summary || !start || !end) {
       return failure("제목과 시작·종료 시각이 모두 필요합니다.");
     }
 
-    const attendees = Array.isArray(args.attendees)
-      ? args.attendees
-          .filter((address): address is string => typeof address === "string")
-          .map((email) => ({ email }))
-      : [];
+    const attendees = event.attendees.map((email) => ({ email }));
 
     const result = await vendorRequest("Google Calendar", connection, {
       url: events,
@@ -168,12 +210,8 @@ export async function callTool(
       },
       body: {
         summary,
-        ...(stringArg(args, "description")
-          ? { description: stringArg(args, "description") }
-          : {}),
-        ...(stringArg(args, "location")
-          ? { location: stringArg(args, "location") }
-          : {}),
+        ...(description ? { description } : {}),
+        ...(location ? { location } : {}),
         /*
          * The time zone travels with the time, and it is the offset the caller wrote rather than a
          * zone name we chose. An RFC3339 string carries its own offset, and adding a `timeZone`

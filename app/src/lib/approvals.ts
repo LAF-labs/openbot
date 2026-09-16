@@ -18,7 +18,9 @@
  * IT IS ALSO WHERE THE QUESTION BECOMES A SENTENCE. The server sends what the action is; the words
  * are chosen here, once, for every card that asks. See `describeSubject`.
  */
+import { type CallPreview, callPreviewOf } from "@/lib/call-preview";
 import { t } from "@/lib/i18n";
+import { serviceLabel, toolLabel } from "@/lib/plugins/tool-labels";
 import { refusalText } from "@/lib/refusals";
 
 /**
@@ -123,6 +125,11 @@ export type PendingApproval = {
   rule: string;
   /** What is about to happen, in facts. `describeSubject` turns it into a sentence. */
   subject: AskSubject;
+  /**
+   * What an outward call will send. Typed as the server sends it, and read through
+   * `callPreviewOf` before it is drawn: this arrives as JSON like everything else here.
+   */
+  preview?: unknown;
   /** Absent when nothing durable could be derived; the card then offers "this once" alone. */
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer. See `OpenQuestion.threadId`. */
@@ -288,14 +295,19 @@ function actionPhrase(subject: AskSubject): Phrase {
           }
         : { key: "It wants to upload the file {path}.", params: { path } };
     }
-    case "call_tool":
+    case "call_tool": {
+      // By the names a person knows them by, where this surface has one: "지메일의 ‘메일 보내기’",
+      // not "gmail의 ‘send_message’" (audit R4-14). An unnamed tool keeps its own name.
+      const server = subject.tool?.server ?? "";
+      const tool = subject.tool?.name ?? "";
       return {
         key: "It wants to use the “{tool}” tool on {server}.",
         params: {
-          tool: subject.tool?.name ?? "",
-          server: subject.tool?.server ?? "",
+          tool: toolLabel(`${server}/${tool}`) ?? tool,
+          server: serviceLabel(server) ?? server,
         },
       };
+    }
     default:
       return host
         ? { key: "It wants to do something on {host}.", params: { host } }
@@ -395,12 +407,15 @@ export function pauseFrom(
   body: Record<string, unknown> | null,
 ): Omit<OpenQuestion, "botId"> | null {
   if (body?.awaitingApproval !== true) return null;
+  // What an outward call will send, checked entry by entry. Absent leaves the card as it was.
+  const preview = callPreviewOf(body.preview);
   return {
     approvalId: typeof body.approvalId === "string" ? body.approvalId : "",
     // Undefined where the reply carried no subject or one this build does not recognise. The card
     // then says it is being asked about something it cannot name, which is the honest failure: the
     // alternative is a sentence somebody consents to that describes an action nobody sent.
     subject: askSubjectOf(body.subject),
+    ...(preview ? { preview } : {}),
     rule: typeof body.rule === "string" ? body.rule : null,
     scope: allowanceScopeOf(body.scope),
     // The conversation the question came from, when the server said so. The third button is drawn
@@ -419,6 +434,8 @@ export type OpenQuestion = {
   botId: string;
   /** What it is about, in facts. Undefined when the reply did not carry a subject we understand. */
   subject: AskSubject | undefined;
+  /** What an outward call will send, already checked. The card draws it under the question. */
+  preview?: CallPreview | undefined;
   rule: string | null;
   /** What answering "always" would cover, or undefined when only this once is on offer. */
   scope?: AllowanceScope | undefined;

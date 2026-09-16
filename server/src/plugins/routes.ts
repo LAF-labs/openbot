@@ -1223,6 +1223,9 @@ export function createPluginRoutes(
             awaitingApproval: true,
             approvalId: error.approvalId,
             subject: error.subject,
+            // What the call will send, for the card on this call's own line. Absent when it sends
+            // nothing; see `computer/approvals.ts` CallPreview.
+            preview: error.preview,
             rule: error.rule,
             scope: error.scope,
             threadId: error.threadId,

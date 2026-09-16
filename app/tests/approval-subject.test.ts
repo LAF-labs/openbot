@@ -159,7 +159,9 @@ describe("saying what a Bot is about to do", () => {
       tool: { server: "notion", name: "create_page", guard: "external" },
       reason: "guard_floor",
     });
-    expect(tool).toContain("notion");
+    // The service by the name the 연결 screen gives it rather than its id (audit R4-14); a tool this
+    // surface has no name for keeps its own.
+    expect(tool).toContain("Notion");
     expect(tool).toContain("create_page");
     // The guard is said as well as the tool: a person deciding about an outward-facing call is
     // deciding about something the tool's name alone does not tell them.

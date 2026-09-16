@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { recordAuditEvent, TOOL_REPORTED_ERROR } from "../audit";
-import type { AskSubject } from "../computer/approvals";
+import type { AskSubject, CallPreview } from "../computer/approvals";
 import { fingerprintOf } from "../computer/approvals";
 import {
   evaluateActionPolicy,
@@ -206,6 +206,8 @@ export function createCallPath(
     args: Record<string, unknown>;
     rule: string;
     subject: AskSubject;
+    /** What the call will send, for the card. On the question only — never on the row below. */
+    preview: CallPreview | undefined;
     verdict: PolicyDecision;
     forcedAsk: boolean;
   }): Promise<SettledAllowed> {
@@ -214,6 +216,7 @@ export function createCallPath(
         botId: question.botId,
         actorId: question.actorId,
         subject: question.subject,
+        preview: question.preview,
         action: question.ref,
         fingerprint: fingerprintOf({
           botId: question.botId,
@@ -281,7 +284,8 @@ export function createCallPath(
         approval: settled.approvalId,
         rule: settled.approval.rule,
         // The facts, not a sentence: the card is Korean, the trail is queried, and one field cannot
-        // be both. See AskSubject.
+        // be both. See AskSubject. The preview is left off on purpose: who a mail goes to and what
+        // it says were shown to a person, and are not the trail's to keep (see CallPreview).
         subject: settled.approval.subject,
         server: question.serverId,
         tool: question.toolName,
@@ -298,6 +302,32 @@ export function createCallPath(
       },
     });
     throw new PluginNeedsApprovalError(settled.approval);
+  }
+
+  /**
+   * What an outward call would send, for the card that asks about it, or undefined.
+   *
+   * Asked of the transport, because only the adapter knows which argument is the recipient and
+   * which the body, and it builds its preview from the same reading as its request. Asked with the
+   * arguments the fingerprint is taken over, so the card shows the call the answer will be bound to.
+   *
+   * A preview that throws is a bug in the adapter that wrote it, and it does not get to decide
+   * whether a person is asked: the question goes out without one — which is what every question
+   * was until 2026-09-16 — and the line says which tool's preview broke.
+   */
+  function previewFor(
+    entry: CatalogueEntry | null,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): CallPreview | undefined {
+    try {
+      return (
+        context.transportFor(entry).previewCall?.(toolName, args) ?? undefined
+      );
+    } catch (error) {
+      log.error("tool_preview_failed", { tool: toolName, reason: error });
+      return undefined;
+    }
   }
 
   return {
@@ -431,8 +461,9 @@ export function createCallPath(
        * contract), because the definition the declaration lives in is pinned
        * by hash above. Curated servers keep the reviewed catalogue's word.
        * The guard is the contract's floor: for money, external, destructive
-       * and undeclared tools, a person answers for the exact call, every
-       * time, whatever the written policy says short of deny.
+       * and undeclared tools the call stops for a person whatever the written
+       * policy says short of deny — unless that person already answered with
+       * an allowance for the tool, which `settle` honours.
        */
       const declared =
         entry === null && advertised.length > 0
@@ -682,6 +713,9 @@ export function createCallPath(
                 repeatCount: repetition.count,
                 floorAsks,
               }),
+              // Whatever asked — the floor, a written rule, a repeat — the person answering is
+              // looking at the same call, so they are shown the same thing.
+              preview: previewFor(entry, toolName, args),
               verdict,
               forcedAsk: floorAsks,
             })

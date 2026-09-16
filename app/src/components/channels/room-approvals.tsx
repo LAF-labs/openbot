@@ -4,6 +4,7 @@ import {
   alwaysLabel,
   duringLabel,
 } from "@/components/channels/allowance-label";
+import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
 import {
   type ApprovalTier,
@@ -128,6 +129,15 @@ function RoomApprovalCard({
           question,
         })}
       </p>
+      {/* The same preview the line-level card draws, for the same call. See approval-request.tsx. */}
+      <CallPreviewList
+        preview={approval.preview}
+        toolRef={
+          approval.subject?.tool
+            ? `${approval.subject.tool.server}/${approval.subject.tool.name}`
+            : undefined
+        }
+      />
       <p className="mt-1 text-muted-foreground text-xs">
         {approval.scope
           ? mayEditBoundaries

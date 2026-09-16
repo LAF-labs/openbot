@@ -16,7 +16,7 @@
  * one, a reconnecting tab is right as soon as one arrives, and the browser needs no reassembly.
  */
 
-import type { AskSubject } from "../computer/approvals";
+import type { AskSubject, CallPreview } from "../computer/approvals";
 
 export const ROOM_FRAME_KINDS = [
   "room.turn",
@@ -83,6 +83,8 @@ export type RoomFrame =
       approvalId: string;
       /** What is being asked about, in facts; the card composes the Korean. Null when unknown. */
       subject: AskSubject | null;
+      /** What an outward call will send, drawn under the question. Absent for everything else. */
+      preview?: CallPreview;
       rule: string;
       /** What "always" would cover; absent means the room's card offers "this once" alone. */
       scope?: { kind: "host" | "file" | "tool"; value: string };

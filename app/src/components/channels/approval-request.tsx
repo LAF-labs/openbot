@@ -4,6 +4,7 @@ import {
   alwaysLabel,
   duringLabel,
 } from "@/components/channels/allowance-label";
+import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
 import {
   type ApprovalTier,
@@ -118,6 +119,15 @@ export function ApprovalRequest({
       <p className="text-sm" id={questionId}>
         {question}
       </p>
+      {/* What an outward call will send, so the yes is given about the call it is bound to. */}
+      <CallPreviewList
+        preview={asking.preview}
+        toolRef={
+          asking.subject?.tool
+            ? `${asking.subject.tool.server}/${asking.subject.tool.name}`
+            : undefined
+        }
+      />
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {asking.rule ? (
           <span className="break-all font-mono text-muted-foreground text-xs">

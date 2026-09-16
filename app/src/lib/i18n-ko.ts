@@ -102,6 +102,35 @@ export const ko: Record<string, string> = {
   "It wants to do something on {host}.": "{host}에서 무언가 하려 합니다.",
   "It wants to use the “{tool}” tool on {server}.":
     "{server}의 ‘{tool}’ 도구를 쓰려 합니다.",
+  // 밖으로 나가는 호출의 카드가 보여 주는 것(감사 R4-01). 서버는 사실만 보내고 이름표는 여기서 붙는다.
+  "What it will send": "보낼 내용",
+  To: "받는 사람",
+  "Invitations to": "초대 메일 받는 사람",
+  Subject: "제목",
+  Event: "일정",
+  Starts: "시작",
+  Ends: "종료",
+  Where: "장소",
+  Template: "서식",
+  Content: "내용",
+  Review: "리뷰",
+  "Order number": "주문번호",
+  "Change to": "바꿀 상태",
+  "and {count} more": "외 {count}명",
+  "(the rest is not shown)": "(이하 생략)",
+  "Booking confirmation": "예약 확정 안내",
+  // 카페24 주문 상태 코드 중 이 제품의 툴 설명이 직접 부르는 것들.
+  "Awaiting payment": "입금 전",
+  "Preparing the item": "상품 준비",
+  Shipping: "배송 중",
+  Delivered: "배송 완료",
+  // 카드와 툴 줄에서 도구를 부르는 이름(감사 R4-14): 'alimtalk_send'가 아니라 '알림톡 보내기'.
+  "Send an email": "메일 보내기",
+  "Add a calendar event": "일정 만들기",
+  "Reply to a review": "리뷰에 답글 달기",
+  "Change an order's status": "주문 상태 바꾸기",
+  "Send a KakaoTalk notification": "알림톡 보내기",
+  "Overwrite cells in a sheet": "시트 칸 덮어쓰기",
   "It wants to list what is in the workspace.":
     "작업 공간에 무엇이 있는지 보려 합니다.",
   "It wants to list what is in {path}.":

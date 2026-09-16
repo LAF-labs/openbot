@@ -100,11 +100,17 @@ export type ApprovalSubject = {
  * Why a call must stop for a person even when the written policy allows it.
  *
  * `money` and `external` are the plugin contract's x-laf/effect classes: actions whose target lives
- * in their arguments, which no scope decided in advance can cover. `destructive` is the server's own
- * declaration. `unannotated` is a tool that declared nothing — treated as the most dangerous thing
- * it could have said. Defined here rather than in `plugins/laf-contract.ts` because it travels on
- * the approval, and the surface phrases it; the contract module re-exports it under its own name so
- * there is one list rather than two that agree by hand.
+ * in their arguments, which is why an `external` call carries a {@link CallPreview} of them to the
+ * card. `destructive` is the server's own declaration. `unannotated` is a tool that declared
+ * nothing — treated as the most dangerous thing it could have said.
+ *
+ * A floor asks; it does not forbid a wider answer. A person who presses 이 도구 항상 허용 on one of
+ * these has let that Bot's later calls of that tool go without asking, whatever their arguments —
+ * what the button says, kept by the owner's decision of 2026-09-16 (`settle.ts`).
+ *
+ * Defined here rather than in `plugins/laf-contract.ts` because it travels on the approval, and the
+ * surface phrases it; the contract module re-exports it under its own name so there is one list
+ * rather than two that agree by hand.
  */
 export type AskGuard = "money" | "external" | "destructive" | "unannotated";
 
@@ -172,6 +178,64 @@ export type AskSubject = {
   reason: AskReason;
 };
 
+/**
+ * One thing an outward call carries, named by what it is rather than by the argument it came in.
+ *
+ * A closed list because the surface writes a label for each (`app/src/lib/call-preview.ts`), and a
+ * value arriving under a name it has no word for is dropped there rather than drawn unlabelled.
+ */
+export type CallPreviewField =
+  /** The addresses or phone numbers a message goes to. */
+  | "recipients"
+  /** The addresses an invitation is mailed to. Not `recipients`: the event is the thing sent. */
+  | "attendees"
+  | "subject"
+  /** An event's own name. */
+  | "title"
+  | "starts"
+  | "ends"
+  | "location"
+  /** The 알림톡 template's code. The card names the ones it knows. */
+  | "template"
+  /** The words that leave: a mail's body, a published reply, the message a customer will read. */
+  | "text"
+  /** Which review a reply is published under. */
+  | "review"
+  | "order"
+  /** The status an order is about to be moved to, as the vendor's own code. */
+  | "status";
+
+export type CallPreviewEntry = {
+  field: CallPreviewField;
+  /** What the call carries for it — one value, or several for a list — each cut to its bound. */
+  values: string[];
+  /** How many values the call carried, present only when that is more than are shown. */
+  total?: number;
+  /** Present when a value was cut short, so the card never passes a fragment off as the whole. */
+  cut?: true;
+};
+
+/**
+ * WHAT AN OUTWARD CALL WILL SEND, FOR THE PERSON ASKED TO LET IT.
+ *
+ * Measured 2026-09-16 (audit R4-01): the question for an 알림톡, a mail, an invitation, a review
+ * reply or an order status change carried `{ server, name, guard }` and nothing else, so the "yes"
+ * that the fingerprint binds to one exact set of arguments was given without seeing any of them.
+ * The transport that knows the arguments writes this beside the question (`VendorTransport
+ * .previewCall`), from the same arguments the fingerprint is taken over and the vendor is sent.
+ *
+ * Facts, bounded, and never a secret: who, what, when, cut to a size a card can hold
+ * (`plugins/call-preview.ts`). The surface writes the words around them.
+ *
+ * NOT ON {@link AskSubject}, AND THAT IS THE POINT. The subject is copied into the audit trail when
+ * the question is raised and again when it is answered, into a standing allowance's row, into the
+ * notification outbox and in front of the auto-review model. A recipient and a message body belong
+ * in none of those — the trail records that typing happened, never what was typed, and an audit row
+ * is forever. So the preview lives on the question itself, which is in memory for ten minutes and
+ * is handed only to the surfaces that draw the card.
+ */
+export type CallPreview = CallPreviewEntry[];
+
 export type PendingApproval = {
   id: string;
   botId: string;
@@ -181,6 +245,8 @@ export type PendingApproval = {
   rule: string;
   /** What is about to happen, in facts. The sentence is the surface's. See {@link AskSubject}. */
   subject: AskSubject;
+  /** What an outward call will send, where the call has one. Never written down; see the type. */
+  preview?: CallPreview;
   /**
    * What the question is about, in the terms the audit trail files things under.
    *
@@ -239,6 +305,8 @@ export type PresentedApproval = {
   botId: string;
   rule: string;
   subject: AskSubject;
+  /** What the call will send, so the card can show it. Handed to nothing but a card's surfaces. */
+  preview?: CallPreview;
   /** What "always" would cover, so the surface can say so on the button rather than beside it. */
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer, so the card knows to draw that button. */
@@ -255,6 +323,7 @@ export function presentable(approval: PendingApproval): PresentedApproval {
     botId: approval.botId,
     rule: approval.rule,
     subject: approval.subject,
+    ...(approval.preview ? { preview: approval.preview } : {}),
     ...(approval.scope ? { scope: approval.scope } : {}),
     ...(approval.threadId ? { threadId: approval.threadId } : {}),
     requestedAt: approval.requestedAt,
@@ -340,6 +409,8 @@ export type ApprovalRegistry = {
     actor: string;
     rule: string;
     subject: AskSubject;
+    /** What an outward call will send, for the card. See {@link CallPreview}. */
+    preview?: CallPreview;
     fingerprint: string;
     /** What answering "always" would cover. Omitted where nothing about the action is durable. */
     scope?: AllowanceScope;
@@ -524,6 +595,7 @@ export function createApprovalRegistry(
         actor: input.actor,
         rule: input.rule,
         subject: input.subject,
+        ...(input.preview ? { preview: input.preview } : {}),
         fingerprint: input.fingerprint,
         ...(input.scope ? { scope: input.scope } : {}),
         ...(input.threadId ? { threadId: input.threadId } : {}),

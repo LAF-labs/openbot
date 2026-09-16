@@ -22,7 +22,7 @@
  * an approval that does not fit its action is a fact to report, not a thing to keep asking about.
  */
 
-import type { AskSubject } from "../computer/approvals";
+import type { AskSubject, CallPreview } from "../computer/approvals";
 import type { AllowanceScope } from "../computer/standing-approvals";
 import type { ToolOutcome, UnattendedToolkit } from "../runner/unattended";
 import type { ApprovalWaiter } from "./wait-for-approval";
@@ -32,6 +32,8 @@ export type RoomQuestion = {
   approvalId: string;
   /** What is being asked about, in facts. The room's card writes the Korean. See AskSubject. */
   subject: AskSubject | null;
+  /** What an outward call will send, for the same card. See CallPreview. */
+  preview?: CallPreview;
   rule: string;
   /** What "always" would cover, so a room's card offers the same three answers a chat's does. */
   scope?: AllowanceScope;
@@ -55,6 +57,7 @@ function questionOf(outcome: ToolOutcome): RoomQuestion | null {
     // Null rather than an invented one: a card with nothing to say says the little it knows, and a
     // shape guessed at here would be a sentence about an action nobody described.
     subject: isSubject(outcome.subject) ? outcome.subject : null,
+    ...(isPreview(outcome.preview) ? { preview: outcome.preview } : {}),
     rule: typeof outcome.rule === "string" ? outcome.rule : "",
     ...(isScope(outcome.scope) ? { scope: outcome.scope } : {}),
     ...(typeof outcome.threadId === "string" && outcome.threadId
@@ -72,6 +75,29 @@ function isSubject(value: unknown): value is AskSubject {
     typeof kind === "string" &&
     typeof intent === "string" &&
     typeof reason === "string"
+  );
+}
+
+/**
+ * The outcome map is loosely typed, so the preview is checked before it is passed on as one.
+ *
+ * All or nothing: every entry a field name and a list of strings. A shape that fails this came
+ * from somewhere other than the call path, and a card is better with no preview than with a
+ * guessed-at one; the room's own surface checks each entry again on arrival.
+ */
+function isPreview(value: unknown): value is CallPreview {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+      const { field, values } = entry as Record<string, unknown>;
+      return (
+        typeof field === "string" &&
+        Array.isArray(values) &&
+        values.every((one) => typeof one === "string")
+      );
+    })
   );
 }
 

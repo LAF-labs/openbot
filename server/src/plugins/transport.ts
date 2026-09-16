@@ -1,3 +1,4 @@
+import type { CallPreview } from "../computer/approvals";
 import * as cafe24Rest from "./cafe24-rest";
 import type { CatalogueEntry } from "./catalogue";
 import * as gmailRest from "./gmail-rest";
@@ -83,8 +84,9 @@ export type VendorTransport = {
    * credential is chosen and before consent; a transport that sent anything from here would be
    * acting on a call nobody has agreed to. The connection carries no token for that reason.
    *
-   * Optional: MCP has nothing to check without asking the server, and the REST adapters validate
-   * where they build the request. Absent means "nothing this side can know in advance".
+   * Optional: MCP has nothing to check without asking the server. Gmail checks its recipient and
+   * subject here as well as where it builds the mail; the other REST adapters validate only where
+   * they build the request. Absent means "nothing this side can know in advance".
    */
   validateArgs?(
     connection: {
@@ -96,6 +98,22 @@ export type VendorTransport = {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void>;
+  /**
+   * What this call would send, for the person about to be asked whether it may. Null when the tool
+   * sends nothing outward.
+   *
+   * On the transport for the reason `validateArgs` is: the adapter is the only code that knows
+   * which argument is the recipient and which is the body, and a preview written anywhere else
+   * would drift from the request the adapter actually builds. Each adapter builds both from one
+   * reading of the arguments.
+   *
+   * SAME RULES AS `validateArgs`: no side effects, no vendor, no row, and only after the arguments
+   * have passed it. Optional, and absent for MCP, whose arguments mean whatever the server says.
+   */
+  previewCall?(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): CallPreview | null;
 };
 
 /**

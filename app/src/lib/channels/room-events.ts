@@ -5,6 +5,7 @@ import {
   allowanceScopeOf,
   askSubjectOf,
 } from "@/lib/approvals";
+import { type CallPreview, callPreviewOf } from "@/lib/call-preview";
 import type { RoomFrame } from "./room-frames";
 
 /**
@@ -50,6 +51,8 @@ export type RoomApproval = {
   memberName: string;
   /** What it is about, in facts. The card writes the Korean; see `lib/approvals.ts`. */
   subject: AskSubject | undefined;
+  /** What an outward call will send, already checked. See `lib/call-preview.ts`. */
+  preview?: CallPreview;
   rule: string;
   /** When it stops being answerable, for the countdown on the card. Empty when unknown. */
   expiresAt: string;
@@ -120,6 +123,7 @@ export function applyRoomFrame(
     // a subject this surface cannot vouch for should reach a card — one would be a button whose
     // words it had to guess at, the other a sentence about an action nobody described.
     const scope = allowanceScopeOf(frame.scope);
+    const preview = callPreviewOf(frame.preview);
     return {
       ...state,
       approvals: [
@@ -129,6 +133,7 @@ export function applyRoomFrame(
           memberName,
           approvalId,
           subject: askSubjectOf(frame.subject),
+          ...(preview ? { preview } : {}),
           rule,
           ...(scope ? { scope } : {}),
           ...(typeof frame.threadId === "string" && frame.threadId

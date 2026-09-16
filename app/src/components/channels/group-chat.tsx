@@ -12,6 +12,7 @@ import {
 } from "@/components/channels/transcript-messages";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { readApprovals } from "@/lib/approvals";
+import { callPreviewOf } from "@/lib/call-preview";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
   type AgentChannel,
@@ -208,16 +209,22 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     const open = lists.flatMap((list, at) =>
       (list ?? [])
         .filter((approval) => approval.granted === undefined)
-        .map((approval) => ({
-          approvalId: approval.id,
-          memberId: ids[at] ?? approval.botId,
-          // Never the raw id: "a4f1c… is waiting for your answer" tells a person nothing.
-          memberName: memberNames.get(ids[at] ?? "") ?? t("A Bot"),
-          // The facts the card writes its sentence from, and the clock it counts down.
-          subject: approval.subject,
-          rule: approval.rule,
-          expiresAt: approval.expiresAt,
-        })),
+        .map((approval) => {
+          // What the call will send, checked the way a frame's is: a room opened after the question
+          // was raised shows the same card as one that saw it arrive.
+          const preview = callPreviewOf(approval.preview);
+          return {
+            approvalId: approval.id,
+            memberId: ids[at] ?? approval.botId,
+            // Never the raw id: "a4f1c… is waiting for your answer" tells a person nothing.
+            memberName: memberNames.get(ids[at] ?? "") ?? t("A Bot"),
+            // The facts the card writes its sentence from, and the clock it counts down.
+            subject: approval.subject,
+            ...(preview ? { preview } : {}),
+            rule: approval.rule,
+            expiresAt: approval.expiresAt,
+          };
+        }),
     );
     setRoom((state) => mergeApprovals(state, open));
   }, [memberIds, memberNames]);

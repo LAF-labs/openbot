@@ -453,6 +453,8 @@ export function createRoomService(options: RoomServiceOptions) {
                   memberName: member.name,
                   approvalId: question.approvalId,
                   subject: question.subject,
+                  // Written to the room's open sockets and nowhere else; a frame is never stored.
+                  ...(question.preview ? { preview: question.preview } : {}),
                   rule: question.rule,
                   ...(question.scope ? { scope: question.scope } : {}),
                   ...(question.threadId ? { threadId: question.threadId } : {}),

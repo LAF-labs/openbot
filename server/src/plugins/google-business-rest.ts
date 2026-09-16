@@ -1,3 +1,5 @@
+import type { CallPreview } from "../computer/approvals";
+import { previewOf, previewText, previewValue } from "./call-preview";
 import type { McpCallResult, McpTool } from "./mcp";
 import {
   asResult,
@@ -22,7 +24,8 @@ import {
  *
  * `reply_to_review` is guarded in the catalogue entry as `external`. A reply is published under the
  * business's name where anybody searching for the shop reads it, and there is no version of that a
- * person should discover afterwards.
+ * person should discover afterwards — so the card that asks shows the words that will be published
+ * ({@link previewCall}).
  *
  * OPERATIONAL NOTE, because it looks like a bug otherwise: Google gates these APIs behind a quota
  * request per project, and an ungated project is refused with a 403 whose message names the API.
@@ -123,6 +126,24 @@ type Review = {
  */
 export function isResourceName(value: string): boolean {
   return /^accounts\/[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/.test(value);
+}
+
+/**
+ * Which review a reply goes under and what it will say, for the card. A listing publishes nothing.
+ *
+ * The review is named by the resource name the model was handed, because the review's own words
+ * would take a request to fetch and a preview reaches no vendor. The reply is read exactly as the
+ * request reads it.
+ */
+export function previewCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): CallPreview | null {
+  if (toolName !== "reply_to_review") return null;
+  return previewOf([
+    ...previewValue("review", stringArg(args, "review")),
+    ...previewText("text", stringArg(args, "comment")),
+  ]);
 }
 
 /** Google's star rating enum as the number a person actually reads. */

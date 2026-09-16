@@ -3,13 +3,22 @@
  *
  * TWO TOOLS AND ONE OF THEM ASKS. Listing is a read of this deployment's own rows and asks nobody.
  * Sending reaches somebody else's phone — a customer of the business, not the person who owns the
- * Bot — and that is an external effect in the contract's own vocabulary, so a person answers for the
- * exact message, every time, whatever the written policy says (`plugins/laf-contract.ts`).
+ * Bot — and that is an external effect in the contract's own vocabulary, so whatever the written
+ * policy says the send stops for a person, and the card shows them the number and the message the
+ * customer will read ({@link sendPreview}). Pressing 이 도구 항상 허용 there lets that Bot's later
+ * sends go without asking, as the button says (`plugins/laf-contract.ts`).
  *
  * A TEMPLATE THAT IS NOT APPROVED CANNOT BE SENT, and the refusal is ours rather than the vendor's.
  * 카카오 would refuse it too, with a sentence about a template mismatch that tells a shop owner
  * nothing; refusing here says which template and that it is still being inspected.
  */
+import type { CallPreview } from "../../computer/approvals";
+import {
+  previewList,
+  previewOf,
+  previewText,
+  previewValue,
+} from "../call-preview";
 import {
   type PartnerConnections,
   PartnerRefusedError,
@@ -108,8 +117,8 @@ export const ALIMTALK_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
      *
      * A message to a customer is the business speaking to somebody who is not in this room. It
      * cannot be recalled, it arrives with the shop's name on it, and the number came from a model.
-     * So the boundary stops and a person reads the exact call — the same treatment a custom server's
-     * tool gets for declaring the same thing.
+     * So the boundary stops for a person — the stop a custom server's tool gets for declaring the
+     * same thing — and here, unlike there, the card shows the number and the filled-in message.
      */
     annotations: { "x-laf/effect": "external" },
   },
@@ -152,6 +161,32 @@ function sendArguments(args: Record<string, unknown>) {
   return { entry, to, supplied };
 }
 
+/**
+ * The approved body with this call's blanks written into it: the message a customer is sent.
+ *
+ * Every blank is present by the time this runs — `sendArguments` refused otherwise — and the
+ * values are the ones sent: `supplied` is the very map the send hands 솔라피 as `variables`.
+ */
+function filledIn(content: string, supplied: Record<string, string>): string {
+  return content.replace(/#\{[^}]+\}/g, (blank) => supplied[blank] ?? blank);
+}
+
+/**
+ * The number that will ring and what it will say, for the card that asks about the send.
+ *
+ * Built from the same reading of the arguments as the send itself, so the number is the one that
+ * will actually be dialled — digits only, as `normalizeRecipient` leaves it — and the text is the
+ * approved template with this call's blanks in it.
+ */
+function sendPreview(args: Record<string, unknown>): CallPreview | null {
+  const { entry, to, supplied } = sendArguments(args);
+  return previewOf([
+    ...previewList("recipients", [to]),
+    ...previewValue("template", entry.code),
+    ...previewText("text", filledIn(entry.content, supplied)),
+  ]);
+}
+
 export function createAlimtalkTools(
   partners: PartnerConnections,
   /** LAF's 솔라피 account as `config.ts` parsed it, or null when this deployment holds none. */
@@ -165,6 +200,8 @@ export function createAlimtalkTools(
       // has already refused it by the time this runs.
       if (toolName === "alimtalk_send") sendArguments(args);
     },
+    preview: ({ toolName, args }) =>
+      toolName === "alimtalk_send" ? sendPreview(args) : null,
     run: async ({ toolName, args, actorId }) => {
       if (toolName === "alimtalk_templates") {
         const rows = await partners.templatesFor(actorId);

@@ -24,6 +24,7 @@
 import type {
   ApprovalRegistry,
   AskSubject,
+  CallPreview,
   PendingApproval,
 } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
@@ -41,6 +42,11 @@ export type SettleInput = {
   actorId: string;
   /** What is about to happen, in facts. Goes on the approval and on the caller's audit row. */
   subject: AskSubject;
+  /**
+   * What an outward call will send, for the card. Goes on the approval and NOWHERE else: not on
+   * a row, not on an allowance, not in front of the judge below. See {@link CallPreview}.
+   */
+  preview?: CallPreview | undefined;
   /** The tool about to run, for the judge. `computer_click`, or an MCP tool's reference. */
   action: string;
   /**
@@ -82,9 +88,10 @@ export type SettleInput = {
    * A floor that asks whatever the policy allowed, short of `deny`.
    *
    * The plugin contract's guards — money, external, destructive, and a tool that declared nothing —
-   * where a person answers for the exact call because its target lives in its arguments and no scope
-   * decided in advance can cover it. Expressed as an input rather than as a second sequence beside
-   * this one, which is what it was.
+   * where the call's target lives in its arguments, so a person is asked about it with those
+   * arguments in front of them (the preview above) rather than a written rule or a model deciding.
+   * An allowance a person granted for the tool still answers, as below. Expressed as an input
+   * rather than as a second sequence beside this one, which is what it was.
    */
   forcedAsk?: boolean;
 };
@@ -225,10 +232,15 @@ export async function settle(
    *
    * NOT ON A GUARD FLOOR, and the exception is the whole reason the floor exists. A tool declared to
    * move money, to send something outward or to destroy something is one whose target lives in its
-   * arguments, and the contract's promise is that a person answers for the exact call. A model
-   * reading the owner's standing sentence is not a person seeing the call. A standing allowance
-   * still gets past a floor, because that is a person's own deliberate decision about that named
-   * tool and it is what this path already did — but nothing new is waved through by a judge.
+   * arguments, and the contract's promise is that a person — never a model — decides about it. A
+   * model reading the owner's standing sentence is not a person seeing the call. A standing
+   * allowance still gets past a floor, because that is a person's own deliberate decision about that
+   * named tool, made on a card about it — for the catalogue's outward tools, one that showed them the
+   * call it was pressed on; the owner kept it that way on 2026-09-16 — but nothing new is waved
+   * through by a judge.
+   *
+   * The judge is handed the subject and never the preview: the words a call would send are exactly
+   * where an instruction planted in a mail or a web page would be written.
    */
   const reviewed =
     presented?.ok || already || !mayStand || floorAsks || !deps.autoReview
@@ -269,6 +281,7 @@ export async function settle(
     actor: input.actorId,
     rule: input.rule,
     subject: input.subject,
+    ...(input.preview ? { preview: input.preview } : {}),
     fingerprint: input.fingerprint,
     // Absent where the deployment has turned allowances off: the card then offers two buttons and
     // the answering route has nothing to grant, without either of them knowing why. The thread

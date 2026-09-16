@@ -3,6 +3,7 @@ import type { AuditStore } from "../audit";
 import type {
   ApprovalRegistry,
   AskSubject,
+  CallPreview,
   PendingApproval,
 } from "../computer/approvals";
 import type { ReviewSubject, ReviewVerdict } from "../computer/auto-review";
@@ -67,7 +68,10 @@ export type ToolRecord = {
   /** True when the definition changed after consent; the tool is paused until reviewed. */
   needsReview: boolean;
   reviewReason: string | null;
-  /** Set on custom servers whose declaration stops every call for a person. */
+  /**
+   * Set on custom servers whose declaration stops a call for a person — each one, until that person
+   * answers with an allowance for the tool.
+   */
   guard: LafGuard | null;
 };
 
@@ -205,6 +209,8 @@ export class PluginNeedsApprovalError extends Error {
   readonly approvalId: string;
   /** What is being asked about, in facts. The sentence is composed where it is read. */
   readonly subject: AskSubject;
+  /** What an outward call will send, for the card. Undefined for a call that sends nothing. */
+  readonly preview: CallPreview | undefined;
   /** The rule that asked, so the surface can name the boundary the way a refusal does. */
   readonly rule: string;
   /**
@@ -225,6 +231,7 @@ export class PluginNeedsApprovalError extends Error {
     this.name = "PluginNeedsApprovalError";
     this.approvalId = approval.id;
     this.subject = approval.subject;
+    this.preview = approval.preview;
     this.rule = approval.rule;
     this.scope = approval.scope;
     this.threadId = approval.threadId;

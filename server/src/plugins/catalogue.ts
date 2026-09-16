@@ -219,7 +219,16 @@ export type CatalogueEntry = {
    */
   writeTools: readonly string[];
   /**
-   * Tools a person answers for every time, whatever the written boundary says short of `deny`.
+   * Tools that stop for a person whatever the written boundary says short of `deny`.
+   *
+   * WHAT THE STOP IS, AS OF 2026-09-16. The call waits on a card; for an `external` tool the card
+   * shows what the call will send — recipients, subject or template, the text, the time, the order
+   * and status (`VendorTransport.previewCall`). Unless the deployment has turned allowances off
+   * (`settleWithoutAsking`), the card also offers 이 도구 항상 허용, and a person who presses it lets
+   * that Bot's later calls of that tool go without asking, whatever their arguments, until it is
+   * taken back. That is what the button says, and the owner decided on
+   * 2026-09-16 that it stays so. What a floor does not allow is a written rule or the Bot's own
+   * review instruction waving a call through with nobody having looked (`computer/settle.ts`).
    *
    * WHY THIS IS HERE AND NOT ON THE TOOL. A custom server declares its own risk with annotations and
    * is believed, because the definition it declared is pinned by hash (docs/laf/mcp-contract.md).
@@ -458,7 +467,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     /*
      * `external`, not merely a write. An event lands on a calendar other people read, and Google
      * mails every attendee it is given — so the effect of this call leaves the deployment for
-     * somebody else's inbox, which is the one thing a person should be asked about every time.
+     * somebody else's inbox. The person is asked with the title, the time and the guests on the
+     * card; 이 도구 항상 허용 there lets that Bot's later invitations go without asking.
      */
     guardedTools: Object.freeze({ create_event: "external" as const }),
     relay: true,
@@ -536,7 +546,9 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     writeTools: Object.freeze(["update_order_status"]),
     /*
      * `external`: changing an order's status is what tells the buyer their parcel shipped. The
-     * effect is a message to somebody who is not in this room, so a person answers for it each time.
+     * effect is a message to somebody who is not in this room, so a person is asked, with the order
+     * and the new status on the card; 이 도구 항상 허용 there lets that Bot's later changes go
+     * without asking.
      */
     guardedTools: Object.freeze({ update_order_status: "external" as const }),
     relay: true,
@@ -632,7 +644,9 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     /*
      * `external`, and it is the plainest case of it in the catalogue: the message arrives on a
      * customer's phone with the shop's name on it, it cannot be recalled, and the number came from
-     * a model. A person answers for the exact message, every time.
+     * a model. So a person is asked with the number and the filled-in message on the card. Pressing
+     * 이 도구 항상 허용 there lets that Bot's later 알림톡 go without asking, to any number, as the
+     * button says — kept that way by the owner's decision of 2026-09-16.
      */
     guardedTools: Object.freeze({ alimtalk_send: "external" as const }),
     docsUrl: "https://developers.solapi.com/references/kakao",

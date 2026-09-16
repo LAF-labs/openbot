@@ -29,7 +29,13 @@ export type LafGuard = AskGuard;
 export type LafClassification = {
   /** What the policy engine is told; the honest read/write split. */
   effect: "read" | "write";
-  /** Non-null means a person answers for this exact call, every time. */
+  /**
+   * Non-null means the call stops for a person whatever the written policy allows, short of deny.
+   *
+   * Not "every time": a person who answers with 이 도구 항상 허용 lets that Bot's later calls of the
+   * tool go without asking, as the button says — the owner kept that on 2026-09-16. What a guard
+   * does rule out is a written rule or a model's review letting the call past with nobody asked.
+   */
   guard: LafGuard | null;
 };
 

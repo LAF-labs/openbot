@@ -9,8 +9,9 @@
  * THE ANNOTATIONS ARE THE POINT. Every tool here declares what it does in the same vocabulary a
  * custom server declares it in (docs/laf/mcp-contract.md): `x-laf/effect: external` for a message
  * that leaves the business, `readOnlyHint` for a listing. The declaration is what
- * {@link ./laf-contract#classifyDeclaredTool} turns into a guard floor, and the floor is what makes
- * a person answer for the exact call however permissive the written policy is.
+ * {@link ./laf-contract#classifyDeclaredTool} turns into a guard floor, and the floor is what stops
+ * the call for a person however permissive the written policy is — with the message itself on the
+ * card, from the connector's own `preview`.
  *
  * A CATALOGUE ENTRY USUALLY HAS NO FLOOR, AND THESE DO. `call.ts` reads a first-party entry's tools
  * as the reviewed catalogue's word and sets no guard, which is right for a vendor whose tool list
@@ -19,6 +20,7 @@
  * word for them INCLUDES the floor, and {@link partnerToolGuard} is what says so at both places the
  * guard is computed.
  */
+import type { CallPreview } from "../computer/approvals";
 import { classifyDeclaredTool, type LafGuard } from "./laf-contract";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import { PluginRefusedError } from "./store";
@@ -55,6 +57,16 @@ export type PartnerToolValidate = (input: {
 }) => Promise<void> | void;
 
 /**
+ * What a call would send, for the card that asks about it; null for a tool that sends nothing.
+ *
+ * Pure in the same way as {@link PartnerToolValidate}, and asked only after it passed.
+ */
+export type PartnerToolPreview = (input: {
+  toolName: string;
+  args: Record<string, unknown>;
+}) => CallPreview | null;
+
+/**
  * The guard a partner tool's own declaration asks for, or null when it declares a plain read.
  *
  * Derived from the annotations rather than written beside them, so there is one source: a tool whose
@@ -82,10 +94,12 @@ export function partnerTransport(input: {
    * approvals on an 알림톡 that could never go out. See `VendorTransport.validateArgs`.
    */
   validate?: PartnerToolValidate;
+  /** What a call would send, for the person asked about it. See `VendorTransport.previewCall`. */
+  preview?: PartnerToolPreview;
   /** The fact a call with nobody attributed to it is refused with. */
   anonymousFact: string;
 }): VendorTransport {
-  const { validate } = input;
+  const { validate, preview } = input;
   return {
     listNeedsCredential: false,
     listTools: async () =>
@@ -105,6 +119,12 @@ export function partnerTransport(input: {
               botId: connection.botId ?? "",
             });
           },
+        }
+      : {}),
+    ...(preview
+      ? {
+          previewCall: (toolName: string, args: Record<string, unknown>) =>
+            preview({ toolName, args }),
         }
       : {}),
     callTool: async (connection, toolName, args): Promise<McpCallResult> => {

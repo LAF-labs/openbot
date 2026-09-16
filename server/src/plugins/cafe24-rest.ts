@@ -1,3 +1,5 @@
+import type { CallPreview } from "../computer/approvals";
+import { previewOf, previewValue } from "./call-preview";
 import type { McpCallResult, McpTool } from "./mcp";
 import {
   asResult,
@@ -22,7 +24,8 @@ import {
  *
  * `update_order_status` is the one write, and it is guarded in the catalogue entry as `external`
  * rather than merely marked a write: changing an order to 배송중 is what tells the buyer their
- * parcel shipped, and the buyer is not in the room.
+ * parcel shipped, and the buyer is not in the room. The card that asks names the order and the
+ * status ({@link previewCall}).
  */
 
 /**
@@ -162,6 +165,21 @@ type Article = {
 
 /** Every Cafe24 call carries the version header; nothing here sends a request without it. */
 const HEADERS = { "x-cafe24-api-version": API_VERSION };
+
+/**
+ * Which order and which status, for the card. The status travels as Cafe24's own code; the card
+ * names the codes it knows. Every other tool here reads or lists, and sends nobody anything.
+ */
+export function previewCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): CallPreview | null {
+  if (toolName !== "update_order_status") return null;
+  return previewOf([
+    ...previewValue("order", stringArg(args, "orderId")),
+    ...previewValue("status", stringArg(args, "status")),
+  ]);
+}
 
 export async function callTool(
   connection: RestConnection,

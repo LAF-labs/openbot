@@ -71,6 +71,8 @@ export type RoomFrame =
        * and a card must not compose a sentence out of a shape it did not recognise.
        */
       subject: unknown;
+      /** What an outward call will send. `unknown` for the same reason; read by `callPreviewOf`. */
+      preview?: unknown;
       rule: string;
       /** When the question stops being answerable, for the countdown on the card. */
       expiresAt?: string;

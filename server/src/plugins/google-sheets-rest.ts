@@ -17,7 +17,8 @@ import {
  * thing it wants a Bot to put a row into — the day's orders, a call log, a stock count. A read-only
  * Sheets connector answers questions about a sheet nobody can then update, which is half of the one
  * job people ask for. The write half is what the boundary is for: `update_sheet_values` overwrites
- * and is guarded in the catalogue entry, so a person answers for it every time.
+ * and is guarded in the catalogue entry, so it stops for a person — unless they answered an earlier
+ * one with 이 도구 항상 허용, which covers the later ones as the button says.
  *
  * The tool names are this repository's own, because Google publishes no MCP server for Sheets whose
  * names could be matched. They are stable from here on: a grant is stored as
