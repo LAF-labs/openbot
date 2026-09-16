@@ -100,22 +100,44 @@ export const ADMIN_REQUIRED = "laf:admin_required";
  *
  * The rule `plugins/skills-and-grants.ts` wrote for tool calls, carried to every other door a Bot
  * id opens — the computer, its approvals, its routines, its live screen — so that they cannot
- * disagree. An administrator may; the owner may; a Bot nobody made is every signed-in person's,
- * because the only way it holds anything is an administrator giving it "for everybody here"; and
- * a Bot this deployment does not have is nobody's.
+ * disagree. The owner may; a Bot nobody made is every signed-in person's; a Bot this deployment
+ * does not have is nobody's.
  *
- * SEEING IS NOT DRIVING, and this predicate is the second of the two. The profile store's `get`
- * used to let a `public` Bot through to anybody signed in, which was right for a roster and wrong
- * for the live-screen socket that used it: being able to see a Bot is not being able to type into
- * the browser holding its owner's logins. `public` is gone (migration 0042) and the two rules now
- * agree about everybody but an administrator, who may still drive a Bot they can no longer see —
- * deliberately, so that an approval on a deployment can still be answered.
+ * NO ADMINISTRATOR EXCEPTION, since 2026-09-16. There was one, and it was the last place a role
+ * reached past ownership. Driving is the STRONGER half of the pair this predicate used to be the
+ * lenient side of: seeing somebody's Bot shows you its title, and driving it types into the
+ * browser holding their bank and marketplace logins, answers the questions their boundary raises,
+ * and spends the credentials their tools sit behind. Keeping the exception here while closing the
+ * roster would have left the bigger door open and called the job done. The owner's rule is about
+ * the account and not about the list: "모든 봇은 해당 계정 소유인 거고 다른 계정이랑은 전혀
+ * 관계없는건데?"
+ *
+ * WHAT AN OPERATOR CAN STILL DO, written down because the honest answer is "less", and somebody
+ * will want it when a colleague's Bot is sitting on a question at six in the evening:
+ *
+ *   - READ what happened — the audit trail (`/api/admin/audit-events`) records the question being
+ *     raised and every action around it, `/api/admin/metrics/approvals` counts them, and insights
+ *     aggregates. None of that names a Bot's title or its transcript; it names ids.
+ *   - Change the DEPLOYMENT's rules: `GET`/`PUT /api/computers/policy` is what the gateway
+ *     enforces everywhere, and `GET /api/approvals/standing` lists every place a boundary has been
+ *     stood down, on every Bot, with `DELETE /api/approvals/standing/:id` to put one back. Those
+ *     name no Bot in the path and stay an administrator's.
+ *   - REMOVE THE PERSON. `POST /api/admin/users/:id/delete` still takes their Bots with them —
+ *     rows, browsers and the logins in them — because `account/deletion.ts` reads `owner_user_id`
+ *     off the table and asks no predicate at all.
+ *   - Restart the VM, from outside this process. The pending-question registry is in memory by
+ *     decision (docs/laf/deployment-model.md), so a restart drops every open question on every Bot
+ *     and the runs waiting on them fail. A blunt, deployment-wide lever, and still there.
+ *
+ * What an operator can no longer do is the targeted thing: see the question on somebody's Bot,
+ * answer it for them, stop or reset that Bot's computer, or open its screen. The person whose Bot
+ * it is answers it — they are the one the question was raised for, and they are told (the
+ * notification outbox reaches the run's own actor, never a role).
  */
 export function actorMayDriveBot(
   actor: { id: string; role: UserRole },
   owner: BotOwner,
 ): boolean {
-  if (actor.role === "admin") return true;
   if (owner === undefined) return false;
   return owner === null || owner === actor.id;
 }
@@ -215,8 +237,12 @@ export function createRequireUser(
       role,
     };
     context.set("actor", actor);
+    /*
+     * No short-circuit on the role. This used to answer `true` for an administrator without asking
+     * the table at all, which is the same exception `actorMayDriveBot` carried and a second place
+     * to have to remember to close. One lookup, one predicate.
+     */
     context.set("mayDriveBot", async (botId: string) => {
-      if (actor.role === "admin") return true;
       const owner = roleRepository.botOwner
         ? await roleRepository.botOwner(botId)
         : undefined;
@@ -237,8 +263,7 @@ export async function mayDriveBot(
   context: Context<{ Variables: AppVariables }>,
   botId: string,
 ): Promise<boolean> {
-  const actor = context.var.actor;
-  if (actor.role === "admin") return true;
+  // The role decides nothing here either — see `actorMayDriveBot`.
   const ask = context.var.mayDriveBot;
   return ask ? ask(botId) : false;
 }

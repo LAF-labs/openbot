@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { count, desc, eq } from "drizzle-orm";
-import { agentHiddenFrom } from "../agents/profile-policy";
 import type { AgentActor } from "../agents/profile-types";
 import {
   actorMayDriveBot,
@@ -172,19 +171,18 @@ function refuseBlank(name: string, instruction: string): void {
  * the refusal is the same 404 the rest of the product gives for a Bot that is not yours,
  * which a Bot that does not exist — a foreign-key failure and a 500, before — now shares.
  *
- * NOT THERE IS NOT THERE FOR AN ADMINISTRATOR EITHER. `actorMayDriveBot` lets an administrator
- * through to any id, which is right for a Bot that exists; for one that does not it let the
- * insert reach the foreign key, and audit A1-2 measured exactly that as the local
- * administrator — a 500, and the instruction's text in the operator log.
+ * NOT THERE IS NOT THERE FOR AN ADMINISTRATOR EITHER, and 2026-09-16 is when that became true
+ * of the predicate rather than of an extra clause here. `actorMayDriveBot` used to let an
+ * administrator through to any id at all; an administrator could plant a standing instruction on a
+ * colleague's Bot — unattended, on that Bot's computer, with that person's logins — and it would
+ * show up in the owner's own list of routines as something they never wrote. This function briefly
+ * carried a second check of its own to close that. It does not need one now: driving and seeing are
+ * both ownership, so `actorMayDriveBot` is again the whole of the rule, and one rule asked once is
+ * the point.
  *
- * AND NEITHER IS A PRIVATE BOT SOMEBODY ELSE MADE (2026-09-16). `actorMayDriveBot` reads no
- * visibility at all — deliberately, and it stays that way — so it was the whole of the check and
- * an administrator with an id could plant a standing instruction on a colleague's private Bot: a
- * routine that runs unattended, on that Bot's computer, with that person's logins, and appears in
- * their list of routines as something they never wrote. An id is not permission. Both questions
- * are asked, because they are different questions: may this actor drive the Bot, and is this Bot
- * one they may see at all. The refusal is the same 404 either way, so which of the two refused is
- * not a fact about somebody else's roster that a caller can probe for.
+ * `owner === undefined` is still asked separately, because a Bot that does not EXIST would
+ * otherwise let the insert reach the foreign key — audit A1-2 measured that as the local
+ * administrator: a 500, and the instruction's text in the operator log.
  */
 async function refuseSomebodyElsesBot(
   database: Database,
@@ -192,11 +190,7 @@ async function refuseSomebodyElsesBot(
   agentId: string,
 ): Promise<void> {
   const owner = await lookupBotOwner(database, agentId);
-  if (
-    owner === undefined ||
-    !actorMayDriveBot(actor, owner) ||
-    (await agentHiddenFrom(database, actor, agentId))
-  ) {
+  if (owner === undefined || !actorMayDriveBot(actor, owner)) {
     throw new RoutineError("There is no such Bot.", 404, BOT_NOT_FOUND);
   }
 }

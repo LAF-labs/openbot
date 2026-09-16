@@ -1,5 +1,4 @@
 import { eq, isNull, or, type SQL } from "drizzle-orm";
-import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";
 import type { AgentActor, AgentProfile } from "./profile-types";
 
@@ -49,36 +48,6 @@ export function visibleToActor(actor: AgentActor): SQL | undefined {
     isNull(agentProfiles.ownerUserId),
     eq(agentProfiles.ownerUserId, actor.id),
   );
-}
-
-/**
- * The same question asked of one id, for the doors that decide about a Bot without loading it.
- *
- * Most reads carry the clause above into a query they were making anyway. A handful are handed a
- * Bot id in a request body and read nothing else about it — `routines/store.ts` is the one — and
- * those need the rule as an answer rather than as a clause.
- *
- * PHRASED AS "HIDDEN", NOT AS "VISIBLE", and the difference is a Bot with no profile row at all.
- * That is an `agents` row nobody ever made a Bot of, and the ownership rule in auth/guards.ts
- * already decides it; asking a *profile* rule about a Bot that has no profile and reading the empty
- * answer as "not visible" refused exactly the Bot a deployment ships for everybody. Measured the
- * first time this was written the other way round: most of the routine suite went red on a Bot that
- * is nobody's by design. So this answers only the question it can answer — is there a profile here
- * that belongs to somebody else — and leaves the rest to the rule that owns it. A deleted Bot is
- * likewise not this function's refusal; `lookupBotOwner` already reads one as a Bot that is not
- * there.
- */
-export async function agentHiddenFrom(
-  executor: Pick<Database, "select">,
-  actor: AgentActor,
-  agentId: string,
-): Promise<boolean> {
-  const [row] = await executor
-    .select({ ownerUserId: agentProfiles.ownerUserId })
-    .from(agentProfiles)
-    .where(eq(agentProfiles.agentId, agentId))
-    .limit(1);
-  return row !== undefined && !canSeeAgent(actor, row);
 }
 
 export function canManageAgent(

@@ -824,53 +824,77 @@ const A_ALLOWED = [
 ].sort();
 
 /**
- * The doors that NAME A's Bot, which an administrator no longer reaches (2026-09-16).
+ * The doors that NAME A's Bot, none of which an administrator reaches any more (2026-09-16).
  *
  * Every cell in this matrix presses `:agentId`/`:botId` against `BOT_A`, which is A's, and the
  * routine cells against the routine driving it. Measured on the rehearsal deployment: the
  * administrator's Bots page listed three Bots, two of them somebody else's, with the titles and
- * roles their owners had written. A Bot now belongs to the account that made it and to nobody
- * else — there is no `public` marking left to be an exception — so these fifteen answer the
- * administrator exactly what they answer the colleague: 404, the roster's own code.
+ * roles their owners had written.
  *
- * WHAT IS NOT ON THIS LIST IS THE POINT. The administrator keeps every `/api/admin/*` door, the
- * audit table, the approval metrics and the deletion of a person; and they keep every door that
- * DRIVES a Bot rather than naming it — `/api/computers/:botId/*`, `/api/approvals/:botId`,
- * `/api/plugins/for/:agentId`, `/api/components/for-agent/:agentId`, the grant verbs — because
- * that is `actorMayDriveBot`, a separate rule which reads ownership on its own terms (audit A8,
- * `auth/guards.ts`) and which this change deliberately left alone. Seeing a Bot and using one are
- * two questions.
+ * TWO RULES WENT, IN THAT ORDER. The roster's first — a Bot belongs to the account that made it,
+ * and the `public` marking that used to say otherwise is dropped (migration 0042). Then the drive
+ * rule, `actorMayDriveBot`, which had kept an administrator exception of its own and is the reason
+ * this list doubled: driving somebody's Bot is the stronger half of seeing it. It types into the
+ * browser holding their bank and marketplace logins, answers the questions their boundary raises,
+ * spends the credentials their tools sit behind, and takes the wheel of a session they are in the
+ * middle of. Closing the roster and leaving that open would have been the smaller half of the job.
+ *
+ * WHAT IS NOT ON THIS LIST IS THE POINT, and it is what an operator still runs a deployment with:
+ * every `/api/admin/*` door, the audit table, the approval metrics, the package and status reads,
+ * the deployment-wide computer policy (`GET`/`PUT /api/computers/policy`, which names no Bot), and
+ * removing a person — which still takes their Bots, their browsers and their logins with them,
+ * because `account/deletion.ts` reads `owner_user_id` off the table and asks no predicate at all.
  */
 const NAMES_SOMEBODY_ELSES_BOT = [
+  // The roster and what hangs off a profile.
   "DELETE /api/agents/:agentId",
-  "DELETE /api/routines/:id",
-  "DELETE /api/routines/:id/notepad",
   "GET /api/agents/:agentId",
   "GET /api/agents/:agentId/memories",
-  "GET /api/routines/:id/notepad",
-  "GET /api/routines/:id/runs",
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
   // A room made around A's Bot, and the intro chip pressed on it: both take the id in a body.
   "POST /api/channels",
   "POST /api/me/first-task",
-  // A standing instruction planted on it, and the three verbs that manage one.
+  // A standing instruction planted on it, and the verbs that manage one.
+  "DELETE /api/routines/:id",
+  "DELETE /api/routines/:id/notepad",
+  "GET /api/routines/:id/notepad",
+  "GET /api/routines/:id/runs",
   "POST /api/routines",
   "POST /api/routines/:id/enabled",
   "POST /api/routines/:id/run",
-];
-
-/** The administrator: what the owner has on Bots they can see, and the deployment's own. */
-const ADMIN_ALLOWED = [
-  ...A_ALLOWED.filter((cell) => !NAMES_SOMEBODY_ELSES_BOT.includes(cell)),
-  "DELETE /api/components/:name/functions/:function",
-  // Grant and revoke on A's Bot, of a skill nobody wrote: an administrator may put anything on
-  // any Bot, so the name is accepted and resolves to nothing. The owner is refused the skill (403,
-  // which is why neither is on A's list) and the colleague the Bot (404, asserted with the other
-  // doors a body opens).
+  // Its browser: what it is looking at, and every way of pressing something in it.
+  "DELETE /api/computers/:botId/demonstration",
+  "GET /api/computers/:botId/computers",
+  "GET /api/computers/:botId/control",
+  "GET /api/computers/:botId/demonstration",
+  "GET /api/computers/:botId/read",
+  "GET /api/computers/:botId/screenshot",
+  "GET /api/computers/:botId/status",
+  "POST /api/computers/:botId/computers/reset",
+  "POST /api/computers/:botId/computers/stop",
+  "POST /api/computers/:botId/control/release",
+  "POST /api/computers/:botId/control/request",
+  "POST /api/computers/:botId/control/take",
+  "POST /api/computers/:botId/files/list",
+  "POST /api/computers/:botId/human/:kind",
+  "POST /api/computers/:botId/scroll",
+  "POST /api/computers/:botId/snapshot",
+  // The questions its boundary raised, and what it may spend.
+  "GET /api/approvals/:botId",
   "DELETE /api/plugins/grants",
   "POST /api/plugins/grants",
+  "GET /api/plugins/for/:agentId",
+  "GET /api/components/for-agent/:agentId",
+  "POST /api/components/:name/call",
+  "POST /api/components/:name/decision",
+];
+
+/** The administrator: what anybody has on their own Bots, and the deployment's own doors. */
+const ADMIN_ALLOWED = [
+  ...A_ALLOWED,
+  "DELETE /api/components/:name/functions/:function",
   "DELETE /api/plugins/servers/:id",
   "DELETE /api/sandboxed/:name",
   "GET /api/admin/audit-events",
@@ -879,12 +903,15 @@ const ADMIN_ALLOWED = [
   "GET /api/admin/package",
   "GET /api/admin/status",
   "GET /api/approvals/standing",
-  "GET /api/computers/:botId/computers",
   "GET /api/computers/policy",
   "GET /api/sandboxed",
-  "POST /api/computers/:botId/computers/reset",
   "PUT /api/computers/policy",
-].sort();
+]
+  // Applied to the WHOLE list, not only to A's half: three of the administrator's own doors take a
+  // Bot id too (`computers/:botId/computers`, its reset, and the grant verbs), and a Bot id that
+  // is not theirs closes those exactly like the rest.
+  .filter((cell) => !NAMES_SOMEBODY_ELSES_BOT.includes(cell))
+  .sort();
 
 describe("the matrix", () => {
   /*
@@ -1120,8 +1147,9 @@ describe("the matrix", () => {
    * The operational screens, named one at a time rather than left to the list above.
    *
    * An administrator still has to be able to account for what ran on the deployment and to remove
-   * a person who is leaving. Narrowing what they may SEE of somebody's roster must not take any of
-   * that with it, and a list of sixty sorted strings is not where a reader would notice if it had.
+   * a person who is leaving. Closing what they may see AND what they may drive must not take any
+   * of that with it, and a list of sixty sorted strings is not where a reader would notice if it
+   * had. Every door here names no Bot: they are about the deployment, which is what the role is.
    */
   test("keeps every door an administrator operates the deployment through", () => {
     for (const template of [
@@ -1131,14 +1159,9 @@ describe("the matrix", () => {
       "GET /api/admin/package",
       "GET /api/admin/status",
       "GET /api/approvals/standing",
+      // The gateway's rules for the whole deployment — read and changed while it runs.
       "GET /api/computers/policy",
       "PUT /api/computers/policy",
-      // And the doors that DRIVE a Bot rather than name it: `actorMayDriveBot`, unchanged.
-      "GET /api/computers/:botId/computers",
-      "GET /api/computers/:botId/read",
-      "GET /api/computers/:botId/screenshot",
-      "GET /api/approvals/:botId",
-      "POST /api/computers/:botId/computers/reset",
     ]) {
       const cell = cellsOf("admin").find(
         (candidate) => keyOf(candidate) === template,
@@ -1149,13 +1172,48 @@ describe("the matrix", () => {
      * Removing a person is pressed against an id that names nobody (it is destructive, and the
      * sweep has only these four people), so what it can show here is that the administrator gets
      * past the guard and is told the person is not there — not the 403 of a door closed to them.
-     * That the removal really does take a person's invisible Bots with it is measured against the
-     * real tables in `account-lifecycle.integration.test.ts`.
+     * That the removal really does take a person's Bots with it, browsers included, is measured
+     * against the real tables in `account-lifecycle.integration.test.ts`.
      */
     const removal = cellsOf("admin").find(
       (candidate) => keyOf(candidate) === "POST /api/admin/users/:id/delete",
     );
     expect(removal?.status).toBe(404);
+  });
+
+  /**
+   * And the doors that reach INTO a Bot are shut, with the same 404 the colleague gets.
+   *
+   * These are the twenty-three that closed when `actorMayDriveBot` lost its administrator
+   * exception. A 404 and not a 403: which of "not yours" and "not here" it is would itself be a
+   * fact about somebody else's roster.
+   */
+  test("and shuts every door that reaches into a Bot that is not theirs", () => {
+    for (const template of [
+      "GET /api/computers/:botId/read",
+      "GET /api/computers/:botId/screenshot",
+      "POST /api/computers/:botId/scroll",
+      "POST /api/computers/:botId/control/take",
+      "POST /api/computers/:botId/computers/reset",
+      "GET /api/approvals/:botId",
+      "POST /api/plugins/grants",
+      "GET /api/plugins/for/:agentId",
+      "POST /api/components/:name/call",
+    ]) {
+      const admin = cellsOf("admin").find(
+        (candidate) => keyOf(candidate) === template,
+      );
+      const colleague = cellsOf("B").find(
+        (candidate) => keyOf(candidate) === template,
+      );
+      // The same answer as the colleague's, which is the whole of what changed.
+      expect([template, admin?.status, admin?.code]).toEqual([
+        template,
+        colleague?.status,
+        colleague?.code,
+      ]);
+      expect(admin?.status).toBe(404);
+    }
   });
 
   /**
@@ -1210,26 +1268,31 @@ describe("the live screen, against the real tables", () => {
   const whose = (botId: string) => lookupBotOwner(database, botId);
 
   /**
-   * DRIVING IS STILL THE ADMINISTRATOR'S, and this is the one place the two rules now differ.
+   * SEEING AND DRIVING NOW AGREE, and this socket is the clearest case for why they had to.
    *
-   * A colleague's Bot is invisible to an administrator everywhere else — it is off their roster and
-   * refused by id on every door that names one — and this socket still opens on it. That is not an
-   * oversight: `actorMayDriveBot` is a separate predicate that reads ownership on its own terms
-   * (auth/guards.ts), so that an approval raised on a deployment can still be answered by whoever
-   * runs it. Seeing a Bot and driving one are different questions, and only the first one changed.
+   * It carries live frames of somebody's browser out and their keystrokes in, mid-task, with that
+   * person's logins loaded. An administrator exception survived here after the roster was closed,
+   * on the argument that an approval on a deployment should still be answerable; the owner's rule
+   * is about the account rather than about the list, so it went too (2026-09-16). What an operator
+   * does about a Bot of somebody else's that is stuck is written down in `auth/guards.ts`: read
+   * the trail, and if it comes to it, remove the person — which takes their Bots with them.
    */
-  test("opens for the owner, and for an administrator on a Bot that is not theirs", async () => {
+  test("opens for the owner, and for nobody else — an administrator included", async () => {
     await expect(streamBotAccess(BOT_A, A, whose)).resolves.toBe("allowed");
-    await expect(streamBotAccess(BOT_A, ADMIN, whose)).resolves.toBe("allowed");
+    await expect(streamBotAccess(BOT_A, ADMIN, whose)).resolves.toBe(
+      "not_found",
+    );
   });
 
-  test("a colleague may not open it, and a Bot the deployment ships is not a way in", async () => {
+  test("a colleague may not open it, and neither may an administrator", async () => {
     // The hole this pair exists for: `agentProfileStore.get` let a `public` Bot through to anybody
-    // signed in, and the socket their keystrokes travel down opened on it. Whose a Bot is never
-    // read from a roster. `BOT_SHIPPED` has no owner, so it IS everybody's to drive — which is the
-    // rule, not a leak, and is asserted below rather than here.
+    // signed in, and the socket their keystrokes travel down opened on it. Whose a Bot is is never
+    // read from a roster, and the answer no longer depends on a role at all.
     await expect(streamBotAccess(BOT_A, B, whose)).resolves.toBe("not_found");
     await expect(streamBotAccess(BOT_B, A, whose)).resolves.toBe("not_found");
+    await expect(streamBotAccess(BOT_B, ADMIN, whose)).resolves.toBe(
+      "not_found",
+    );
   });
 
   test("a Bot the deployment ships is every signed-in person's to drive", async () => {

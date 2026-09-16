@@ -515,7 +515,13 @@ describe("what a person may do over HTTP", () => {
     expect(response.status).toBe(403);
   });
 
-  test("an administrator may drive any Bot, including one somebody made", async () => {
+  test("an administrator may not drive a Bot somebody else made either", async () => {
+    /*
+     * This asserted the opposite until 2026-09-16: the role returned before the owner was read, so
+     * an administrator naming somebody's Bot could spend what it holds — the deployment's own key
+     * on a custom MCP server, that person's shop on a partner one. A Bot belongs to the account
+     * that made it, and a role is not a way into one.
+     */
     const asAdmin = routesAs({
       id: bob,
       email: "bob@example.test",
@@ -531,7 +537,12 @@ describe("what a person may do over HTTP", () => {
       }),
     });
 
-    expect(response.status).toBe(403);
+    // 404 and not the 403 above: the refusal is now about the Bot, before the tool is looked at,
+    // and it is the same answer an ordinary colleague gets.
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "laf:bot_not_found",
+    });
   });
 
   /*

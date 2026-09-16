@@ -51,9 +51,22 @@ describe("opening a Bot's live screen", () => {
     ).resolves.toBe("allowed");
   });
 
-  test("an administrator may watch any Bot that exists", async () => {
+  test("an administrator may not watch a Bot somebody made", async () => {
+    /*
+     * This asserted the opposite until 2026-09-16, and this socket is the clearest case for why it
+     * changed: it carries live frames of somebody's browser out and their keystrokes in, mid-task,
+     * with that person's logins loaded. A Bot belongs to the account that made it; a role is not a
+     * way into one. The same "not_found" a colleague gets, because which of "not yours" and "not
+     * here" it is would itself be a fact about another person's roster.
+     */
     await expect(
       streamBotAccess("agent_owned", administrator, whose),
+    ).resolves.toBe("not_found");
+  });
+
+  test("and a Bot nobody made stays open to them, like anybody else", async () => {
+    await expect(
+      streamBotAccess("agent_shared", administrator, whose),
     ).resolves.toBe("allowed");
   });
 

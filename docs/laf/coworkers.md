@@ -46,10 +46,29 @@ The rule is written once, in `server/src/agents/profile-policy.ts`: `canSeeAgent
 `visibleToActor` as a WHERE clause for the reads, `agentHiddenFrom` for the doors handed a Bot id
 in a request body. Filtering happens in the query, never in JavaScript after the row is read.
 
-Seeing a Bot is a different question from driving one. `actorMayDriveBot` (`auth/guards.ts`)
-decides who may read a Bot's screen, press its controls and answer its approvals; it reads
-ownership on its own terms and still admits an administrator, so that an approval raised on a
-deployment can be answered by whoever runs it.
+Driving a Bot — reading its screen, pressing its controls, answering its questions, spending what
+its tools hold — is decided by `actorMayDriveBot` (`auth/guards.ts`), and since 2026-09-16 it gives
+the same answer: the owner, or a Bot nobody made. It had an administrator exception of its own
+after the roster was closed; driving is the stronger half of seeing, so it went too.
+
+## What an operator can still do
+
+An administrator runs the deployment, not somebody's Bots. They keep every door that names no Bot:
+
+- the audit trail (`GET /api/admin/audit-events`), `/api/admin/metrics/approvals` and insights —
+  Bot **ids**, never a title or a transcript;
+- the gateway's deployment-wide rules (`GET`/`PUT /api/computers/policy`);
+- every standing allowance on every Bot (`GET /api/approvals/standing`, `DELETE
+  /api/approvals/standing/:id`);
+- removing a person (`POST /api/admin/users/:id/delete`), which still takes their Bots, their
+  browsers and the logins in them.
+
+They cannot see or answer a question raised on somebody else's Bot, stop or reset its computer, or
+open its screen. If a colleague's Bot is stuck on a question, the person it belongs to answers it —
+they are who it was raised for and who is notified. Failing that, the levers are blunt and
+deployment-wide: restarting the VM drops every open question (the registry is in memory by
+decision, `docs/laf/deployment-model.md`) and the runs waiting on them fail; or the person is
+removed, and their Bots go with them.
 
 ## Channels
 

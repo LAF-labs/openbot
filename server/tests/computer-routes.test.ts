@@ -171,7 +171,8 @@ function surface(
   /**
    * The guard as `createRequireUser` ships it: the actor, and beside it whose Bots they may drive.
    * `bot-1` is theirs; every other id is somebody else's, which is what the cross-use sweep at the
-   * bottom presses on. An administrator is not asked (`mayDriveBot` short-circuits on the role).
+   * bottom presses on. The role is not consulted — since 2026-09-16 an administrator has no
+   * exception here either, so the answer is the same one for everybody.
    */
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
@@ -262,8 +263,13 @@ describe("the Bot an address names", () => {
   });
 
   test("an id this product mints is not caught by it", async () => {
-    // A refusal that also refuses `agent_<uuid>` would take the computer away from every Bot
-    // anybody has made, which is the failure worth catching in the same breath.
+    /*
+     * A refusal that also refused `agent_<uuid>` would take the computer away from every Bot
+     * anybody has made, which is the failure worth catching in the same breath. What is under test
+     * is the SHAPE check, so the id has to belong to the caller — the stub above calls `bot-1`
+     * theirs, so this one is minted onto that name rather than a fresh uuid, and a 400 here would
+     * mean the shape check had swallowed a well-formed id.
+     */
     const { app } = surface(ADMIN);
 
     const response = await app.request(
@@ -271,7 +277,11 @@ describe("the Bot an address names", () => {
       { method: "GET" },
     );
 
-    expect(response.status).toBe(200);
+    // Not theirs, so 404 — and crucially not the 400 a malformed id gets.
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "laf:bot_not_found",
+    });
   });
 });
 

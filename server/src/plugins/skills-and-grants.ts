@@ -152,9 +152,10 @@ export function createSkillsAndGrants(context: PluginContext) {
    * it, which is that administrator saying "for everybody here". Refusing those would take the
    * tools off the shared Bots without anybody deciding to.
    *
-   * VISIBILITY DOES NOT WIDEN THIS. A Bot somebody made and marked `public` is still theirs, and
-   * being able to SEE a Bot is not being able to spend what it holds. The two questions were never
-   * the same one, and this is the one that reaches a credential.
+   * NO ADMINISTRATOR EXCEPTION, since 2026-09-16. There was one here too — `isAdmin` returned
+   * before the owner was ever read — and it reached a credential: the deployment's own key on a
+   * custom MCP server, somebody's shop on a partner one, spent through a Bot that is not theirs.
+   * The rule is the account's, not the role's, and this file is where it was first written.
    *
    * A BOT WITH NO PROFILE ROW IS TREATED THE SAME WAY AS AN OWNERLESS ONE. Every Bot a person
    * makes gets its profile in the same transaction as its `agents` row (`profile-store.ts`), so
@@ -168,7 +169,6 @@ export function createSkillsAndGrants(context: PluginContext) {
     agentId: string,
     actor: SkillActor,
   ): Promise<boolean> {
-    if (actor.isAdmin) return true;
     const owner = await agentOwner(agentId);
     return owner === undefined || owner === null || owner === actor.id;
   }

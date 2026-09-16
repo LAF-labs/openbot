@@ -50,7 +50,14 @@ const ASKING: ActionPolicy = {
 /** The person whose turn raised the question. Not the person who answers it. */
 const DRIVER = { id: "dev-local-user" };
 
-/** Answering is the owner's: in this build that means an administrator. */
+/**
+ * The person who answers: the Bot's owner.
+ *
+ * The role is still `admin` because this file also presses the deployment-wide standing list,
+ * which is an administrator's door. It buys nothing on the Bot itself — since 2026-09-16 no role
+ * does — which is why the guard stub below has to say whose the Bot is, exactly as the real one
+ * would (`auth/guards.ts`).
+ */
 const MANAGER = {
   id: "manager-user",
   email: "manager@laf.test",
@@ -109,6 +116,20 @@ async function surface() {
     next,
   ) => {
     context.set("actor", MANAGER);
+    /*
+     * Their Bots — both of them. A stub that sets an actor and nothing else is read as "no Bot is
+     * theirs", which is what a real guard would say and what this one used to be spared by the
+     * admin bypass.
+     *
+     * `bot-2` is here because two tests below address a question raised on `bot-1` at `bot-2`, to
+     * show that the answer is filed against the Bot the QUESTION was about rather than the address
+     * it arrived at. That is a 409, and it only stays a 409 if both Bots are the caller's; whose a
+     * Bot is is asked first, and is its own describe at the bottom of this file.
+     */
+    context.set(
+      "mayDriveBot",
+      async (botId) => botId === "bot-1" || botId === "bot-2",
+    );
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();
