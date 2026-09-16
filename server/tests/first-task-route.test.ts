@@ -38,7 +38,6 @@ const visibleProfile = (id: string): AgentProfile => ({
   avatarSeed: "s:pebble.blue",
   effort: "balanced",
   autoReview: "",
-  visibility: "private",
   ownerUserId: PERSON.id,
   systemOwned: false,
   hidden: false,

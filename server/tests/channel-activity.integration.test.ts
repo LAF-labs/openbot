@@ -78,7 +78,6 @@ async function createAgent(owner: AgentActor, name = "Expense Manager") {
     name,
     title: "Finance Operations",
     roleDescription: "Review receipts.",
-    visibility: "private",
   });
   createdAgentIds.push(profile.id);
   return profile.id;

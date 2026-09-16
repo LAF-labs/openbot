@@ -104,10 +104,12 @@ export const ADMIN_REQUIRED = "laf:admin_required";
  * because the only way it holds anything is an administrator giving it "for everybody here"; and
  * a Bot this deployment does not have is nobody's.
  *
- * VISIBILITY DOES NOT WIDEN THIS. The profile store's `get` lets a `public` Bot through to anybody,
- * which is right for a roster and was wrong for the live-screen socket that used it: being able to
- * see a Bot is not being able to type into the browser holding its owner's logins. This predicate
- * never reads visibility at all.
+ * SEEING IS NOT DRIVING, and this predicate is the second of the two. The profile store's `get`
+ * used to let a `public` Bot through to anybody signed in, which was right for a roster and wrong
+ * for the live-screen socket that used it: being able to see a Bot is not being able to type into
+ * the browser holding its owner's logins. `public` is gone (migration 0042) and the two rules now
+ * agree about everybody but an administrator, who may still drive a Bot they can no longer see —
+ * deliberately, so that an approval on a deployment can still be answered.
  */
 export function actorMayDriveBot(
   actor: { id: string; role: UserRole },

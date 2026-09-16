@@ -211,7 +211,6 @@ describe("the route error boundary", () => {
       title: "Boundary",
       roleDescription: "Loses a race.",
       avatarSeed: BOT,
-      visibility: "private",
     });
     /*
      * The Bot is there when `create` asks whose it is, and gone by the time the insert names it —

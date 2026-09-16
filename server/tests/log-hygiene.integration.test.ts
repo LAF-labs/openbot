@@ -314,7 +314,6 @@ async function makeBot(name: string): Promise<string> {
       title: "Log hygiene",
       roleDescription:
         "Made by log-hygiene.integration.test.ts. Safe to delete.",
-      visibility: "private",
     }),
   });
   made.push(agent.id);

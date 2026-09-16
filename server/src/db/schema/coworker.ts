@@ -20,10 +20,16 @@ const createdAt = () =>
 const updatedAt = () =>
   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
-export const agentVisibility = pgEnum("agent_visibility", [
-  "public",
-  "private",
-]);
+/*
+ * THERE IS NO `agent_visibility` ANY MORE, and there was never a use for one.
+ *
+ * A Bot belonged to the account that made it and carried a `public`/`private` choice beside that,
+ * which is two answers to one question. The owner's words, 2026-09-16: "모든 봇은 해당 계정 소유인
+ * 거고 다른 계정이랑은 전혀 관계없는건데? 남이 만든 봇을 다른 계정이 볼 수 있는 구조라는거 자체가
+ * 잘못된 거임." So the column and its enum are gone (migration 0042) and the one rule left is
+ * ownership: `agent_profiles.owner_user_id`. A null owner is the deployment's own Bot — one a
+ * package shipped — and stays everybody's, which is the rule `auth/guards.ts` already used.
+ */
 
 /**
  * How hard a Bot thinks before it answers.
@@ -101,14 +107,15 @@ export const agentProfiles = pgTable(
      * picked anything for the copy.
      */
     presetId: text("preset_id"),
-    visibility: agentVisibility("visibility").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("agent_profiles_visibility_deleted_idx").on(
-      table.visibility,
+    // The index every roster read uses, now that whose it is decides who may see it. It replaced
+    // one on (visibility, deleted_at), which indexed a column that no longer exists.
+    index("agent_profiles_owner_deleted_idx").on(
+      table.ownerUserId,
       table.deletedAt,
     ),
   ],

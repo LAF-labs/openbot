@@ -125,7 +125,6 @@ export function agentFixture(
     avatarSeed: `s:${overrides.id}`,
     effort: "balanced",
     autoReview: "",
-    visibility: "private",
     endpoint: "http://bot.local",
     hasAuth: false,
     hidden: false,

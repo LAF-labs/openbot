@@ -93,7 +93,6 @@ async function createBot(owner: AgentActor, name: string) {
     name,
     title: "Coworker",
     roleDescription: "Answers questions.",
-    visibility: "private",
   });
   agentIds.push(profile.id);
   return profile.id;

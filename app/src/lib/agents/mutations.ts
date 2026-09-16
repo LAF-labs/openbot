@@ -1,11 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { t } from "../i18n";
-import {
-  type AgentEffort,
-  type AgentProfile,
-  type AgentVisibility,
-  agentKeys,
-} from "./queries";
+import { type AgentEffort, type AgentProfile, agentKeys } from "./queries";
 
 /**
  * What the agents API can refuse, in this surface's own words.
@@ -50,7 +45,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_name_invalid": "A Bot needs a name, of 80 characters or fewer.",
   "laf:agent_title_too_long": "A job title can be up to 120 characters.",
   "laf:agent_role_too_long": "A description can be up to 1,000 characters.",
-  "laf:agent_visibility_invalid": "Choose who can see this Bot.",
   "laf:agent_endpoint_refused": "That address cannot be used.",
   "laf:agent_avatar_invalid": "That face cannot be used.",
   "laf:agent_effort_invalid": "Choose how hard this Bot thinks.",
@@ -78,7 +72,6 @@ export type AgentInput = {
   name: string;
   title: string;
   roleDescription: string;
-  visibility: AgentVisibility;
   /** Where this coworker runs. Empty means the Bot in the box. */
   endpoint?: string;
   /** Write-only auth value; omitted when the user leaves the key field empty. */

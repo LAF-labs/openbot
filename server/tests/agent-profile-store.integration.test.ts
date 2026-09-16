@@ -94,7 +94,6 @@ async function createPackage() {
 
 async function createProfileFixture(options: {
   owner: AgentActor | null;
-  visibility?: "public" | "private";
   packageId?: string;
   name?: string;
   title?: string;
@@ -123,7 +122,6 @@ async function createProfileFixture(options: {
     title,
     roleDescription,
     avatarSeed,
-    visibility: options.visibility ?? "private",
   });
   return { agentId, name, title, roleDescription, avatarSeed };
 }
@@ -221,24 +219,67 @@ async function racePackageAttachment(
 }
 
 describe("agent profile store integration", () => {
-  test("lets an owner and admin get and list a private profile but hides it from another user", async () => {
+  /**
+   * A BOT BELONGS TO THE ACCOUNT THAT MADE IT, AND TO NOBODY ELSE.
+   *
+   * MEASURED on the rehearsal deployment 2026-09-16: signing in as the deployment's administrator
+   * listed three Bots, all of them marked private, two of them owned by somebody else on the same
+   * VM — with their titles and the roles their owners had written for them. `accessFilter` returned
+   * no WHERE clause at all for the role. The owner's decision went further than the role: "모든 봇은
+   * 해당 계정 소유인 거고 다른 계정이랑은 전혀 관계없는건데? 남이 만든 봇을 다른 계정이 볼 수 있는
+   * 구조라는거 자체가 잘못된 거임." There is no `public` any more to test the other side of.
+   *
+   * Both halves, because a list filtered while `get` stays open is the same leak behind one more
+   * request: a guessed or leaked id must not be enough.
+   */
+  test("hides a Bot from everybody but its owner, an administrator included", async () => {
     const owner = await createUser();
     const other = await createUser();
     const admin = await createUser("admin");
-    const source = await createProfileFixture({ owner, visibility: "private" });
+    const source = await createProfileFixture({ owner });
 
     expect((await profileById(owner, source.agentId)).id).toBe(source.agentId);
-    expect((await profileById(admin, source.agentId)).id).toBe(source.agentId);
-    expect(await store.get(other, source.agentId)).toBeNull();
     expectListed(await store.list(owner), source.agentId, true);
-    expectListed(await store.list(admin), source.agentId, true);
-    expectListed(await store.list(other), source.agentId, false);
+
+    for (const stranger of [other, admin]) {
+      // By id, not only by absence from a list.
+      expect(await store.get(stranger, source.agentId)).toBeNull();
+      expectListed(await store.list(stranger), source.agentId, false);
+      // And not through the hidden list either, which is the same read with one clause changed.
+      expectListed(await store.list(stranger, true), source.agentId, false);
+    }
+  });
+
+  test("leaves everybody their own Bots and the ones the deployment ships", async () => {
+    // The other half of the rule, and the one a filter written too wide would break. A Bot with no
+    // owner is the deployment's own — what a package ships — and is the single exception: it
+    // belongs to no person, so there is nobody for it to be private from.
+    const owner = await createUser();
+    const admin = await createUser("admin");
+    const theirs = await createProfileFixture({ owner: admin });
+    const mine = await createProfileFixture({ owner });
+    const deployments = await createProfileFixture({ owner: null });
+
+    for (const [actor, ids] of [
+      [admin, [theirs.agentId, deployments.agentId]],
+      [owner, [mine.agentId, deployments.agentId]],
+    ] as const) {
+      for (const agentId of ids) {
+        expect((await profileById(actor, agentId)).id).toBe(agentId);
+        expectListed(await store.list(actor), agentId, true);
+      }
+    }
+    // And neither of them has the other's.
+    expect(await store.get(admin, mine.agentId)).toBeNull();
+    expect(await store.get(owner, theirs.agentId)).toBeNull();
   });
 
   test("stores hiding per user and moves the caller between default and hidden lists", async () => {
+    // On a Bot the deployment itself ships, because that is now the only kind two people can both
+    // see — and hiding has to stay a preference of theirs each rather than a fact about the Bot.
     const owner = await createUser();
     const other = await createUser();
-    const source = await createProfileFixture({ owner, visibility: "public" });
+    const source = await createProfileFixture({ owner: null });
 
     expectListed(await store.list(owner), source.agentId, true);
     expectListed(await store.list(owner, true), source.agentId, false);
@@ -270,7 +311,6 @@ describe("agent profile store integration", () => {
     const deploymentPackage = await createPackage();
     const source = await createProfileFixture({
       owner,
-      visibility: "private",
       configuration: { endpoint: "https://preserved.example.test/ag-ui" },
     });
     const oldTimestamp = new Date("2000-01-01T00:00:00.000Z");
@@ -287,7 +327,6 @@ describe("agent profile store integration", () => {
       name: "Renamed Assistant",
       title: "Updated Title",
       roleDescription: "Updated role description.",
-      visibility: "public",
       id: "forged-id",
       // The endpoint IS editable. A service moves host, and the alternative is deleting the
       // coworker and losing its conversations. It reaches here already validated by the same check
@@ -306,7 +345,6 @@ describe("agent profile store integration", () => {
       name: "Renamed Assistant",
       title: "Updated Title",
       roleDescription: "Updated role description.",
-      visibility: "public",
       ownerUserId: owner.id,
       avatarSeed: "r2c6",
       systemOwned: false,
@@ -332,7 +370,6 @@ describe("agent profile store integration", () => {
       title: "Updated Title",
       roleDescription: "Updated role description.",
       avatarSeed: "r2c6",
-      visibility: "public",
       deletedAt: null,
     });
     expect(canonical?.updatedAt.getTime()).toBeGreaterThan(
@@ -343,35 +380,41 @@ describe("agent profile store integration", () => {
     );
   });
 
-  test("rejects public non-owner mutation as unmanageable and inaccessible private mutation as absent", async () => {
+  /**
+   * The two refusals, and why they are different words.
+   *
+   * 403 is for a Bot somebody CAN see and may not change; 404 is for one that, as far as they are
+   * concerned, is not there. Getting that round the wrong way either hands a stranger the fact that
+   * an id names something, or tells somebody their own screen is broken.
+   *
+   * The 403 case used to be a `public` Bot they did not own. With that gone, the only Bot anybody
+   * sees that is not theirs is one the deployment ships — so that is what stands here now, and the
+   * 404 case is any Bot of somebody else's at all.
+   */
+  test("rejects a deployment Bot as unmanageable and somebody else's as absent", async () => {
     const owner = await createUser();
     const other = await createUser();
-    const publicSource = await createProfileFixture({
-      owner,
-      visibility: "public",
-    });
-    const privateSource = await createProfileFixture({
-      owner,
-      visibility: "private",
-    });
+    const deployments = await createProfileFixture({ owner: null });
+    const theirs = await createProfileFixture({ owner });
     const input: CreateAgentInput = {
       name: "Other Name",
       title: "Other Title",
       roleDescription: "Other role.",
-      visibility: "public",
     };
 
     await expect(
-      store.update(other, publicSource.agentId, input),
+      store.update(other, deployments.agentId, input),
     ).rejects.toBeInstanceOf(AgentNotManageableError);
-    await store.setHidden(other, publicSource.agentId, true);
-    expectListed(await store.list(other), publicSource.agentId, false);
-    expectListed(await store.list(other, true), publicSource.agentId, true);
+    // Seen, so it can be tidied off their own screen — a preference, not a change to the Bot.
+    await store.setHidden(other, deployments.agentId, true);
+    expectListed(await store.list(other), deployments.agentId, false);
+    expectListed(await store.list(other, true), deployments.agentId, true);
+
     await expect(
-      store.update(other, privateSource.agentId, input),
+      store.update(other, theirs.agentId, input),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
     await expect(
-      store.setHidden(other, privateSource.agentId, true),
+      store.setHidden(other, theirs.agentId, true),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
   });
 
@@ -386,7 +429,6 @@ describe("agent profile store integration", () => {
       name: "Protected Rename",
       title: "Protected Title",
       roleDescription: "Protected role.",
-      visibility: "public",
     };
 
     const profile = await profileById(owner, source.agentId);
@@ -417,7 +459,6 @@ describe("agent profile store integration", () => {
           name: "Racing Rename",
           title: "Racing Title",
           roleDescription: "Racing role.",
-          visibility: "public",
         }),
     );
 
@@ -440,7 +481,6 @@ describe("agent profile store integration", () => {
       deletedAt: null,
       roleDescription: source.roleDescription,
       title: source.title,
-      visibility: "private",
     });
   });
 
@@ -472,20 +512,30 @@ describe("agent profile store integration", () => {
     expect(profile?.deletedAt).toBeNull();
   });
 
-  test("allows an admin to update and soft delete a user-owned profile", async () => {
-    const owner = await createUser();
+  /**
+   * What `canManageAgent` still grants, and where it now runs out.
+   *
+   * The management rule itself is untouched — it still says an administrator manages a Bot that is
+   * not theirs — but it is asked SECOND. Every mutating verb loads the profile through the access
+   * filter first, so a Bot the administrator may not see is one they are never asked whether they
+   * may manage. What is left for the rule to grant is a Bot of their own, which they would manage
+   * as its owner anyway; what a package ships it refuses outright as `systemOwned`.
+   *
+   * The refusal is `AgentNotFoundError`, the same answer a stranger gets, and not a 403 that would
+   * confirm the id names something real.
+   */
+  test("lets an admin update and soft delete a Bot of their own", async () => {
     const admin = await createUser("admin");
-    const source = await createProfileFixture({ owner });
+    const source = await createProfileFixture({ owner: admin });
 
     const updated = await store.update(admin, source.agentId, {
       name: "Admin Rename",
       title: "Admin Title",
       roleDescription: "Admin role update.",
-      visibility: "private",
     });
     expect(updated).toMatchObject({
       name: "Admin Rename",
-      ownerUserId: owner.id,
+      ownerUserId: admin.id,
       title: "Admin Title",
     });
 
@@ -493,11 +543,41 @@ describe("agent profile store integration", () => {
     expect(await store.get(admin, source.agentId)).toBeNull();
   });
 
-  test("duplicates a profile as a caller-owned private agent with copied presentation fields", async () => {
+  test("refuses an admin every verb on a Bot they do not own, by id", async () => {
+    const owner = await createUser();
+    const admin = await createUser("admin");
+    const source = await createProfileFixture({ owner });
+    const input: CreateAgentInput = {
+      name: "Admin Rename",
+      title: "Admin Title",
+      roleDescription: "Admin role update.",
+    };
+
+    for (const attempt of [
+      () => store.update(admin, source.agentId, input),
+      () => store.softDelete(admin, source.agentId),
+      () => store.duplicate(admin, source.agentId),
+      () => store.setHidden(admin, source.agentId, true),
+      () => store.setPreferences(admin, source.agentId, { pinned: true }),
+    ]) {
+      await expect(attempt()).rejects.toBeInstanceOf(AgentNotFoundError);
+    }
+    // And the Bot is untouched: a refused duplicate must not have spent one of anybody's seats.
+    const [profile] = await database
+      .select()
+      .from(agentProfiles)
+      .where(eq(agentProfiles.agentId, source.agentId));
+    expect(profile).toMatchObject({
+      deletedAt: null,
+      ownerUserId: owner.id,
+      title: source.title,
+    });
+  });
+
+  test("duplicates a profile as a caller-owned agent with copied presentation fields", async () => {
     const owner = await createUser();
     const source = await createProfileFixture({
       owner,
-      visibility: "public",
       name: "Source Name",
       title: "Source Title",
       roleDescription: "Source role.",
@@ -515,7 +595,6 @@ describe("agent profile store integration", () => {
       title: source.title,
       roleDescription: source.roleDescription,
       avatarSeed: source.avatarSeed,
-      visibility: "private",
       ownerUserId: owner.id,
       systemOwned: false,
       hidden: false,
@@ -532,7 +611,7 @@ describe("agent profile store integration", () => {
 
   test("duplicates no channel membership or Intelligence mapping from the source", async () => {
     const owner = await createUser();
-    const source = await createProfileFixture({ owner, visibility: "public" });
+    const source = await createProfileFixture({ owner });
     const channelId = id("channel");
     await database.insert(channels).values({
       id: channelId,
@@ -580,7 +659,7 @@ describe("agent profile store integration", () => {
 
   test("soft deletes a profile from reads and lists while retaining its raw rows", async () => {
     const owner = await createUser();
-    const source = await createProfileFixture({ owner, visibility: "public" });
+    const source = await createProfileFixture({ owner });
 
     await store.softDelete(owner, source.agentId);
 
@@ -612,7 +691,6 @@ describe("agent profile store integration", () => {
         name,
         title: null,
         roleDescription: "This profile insert must fail.",
-        visibility: "public",
       } as unknown as CreateAgentInput),
     ).rejects.toThrow();
     const rows = await database
@@ -622,13 +700,12 @@ describe("agent profile store integration", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("creates a caller-owned remote AG-UI profile with the requested visibility", async () => {
+  test("creates a caller-owned remote AG-UI profile", async () => {
     const owner = await createUser();
     const input: CreateAgentInput = {
       name: `Created ${randomUUID()}`,
       title: "Created Title",
       roleDescription: "Created role description.",
-      visibility: "public",
     };
 
     const created = await store.create(owner, input);
@@ -639,7 +716,6 @@ describe("agent profile store integration", () => {
       title: input.title,
       roleDescription: input.roleDescription,
       avatarSeed: created.id,
-      visibility: "public",
       ownerUserId: owner.id,
       systemOwned: false,
       hidden: false,
@@ -681,7 +757,6 @@ describe("the preset a Bot was shaped from", () => {
       name: `Preset ${randomUUID()}`,
       title: "리뷰 답변",
       roleDescription: "새 리뷰마다 답을 준비한다.",
-      visibility: "private",
       presetId: "review-replies",
     });
     createdAgentIds.push(picked.id);
@@ -689,7 +764,6 @@ describe("the preset a Bot was shaped from", () => {
       name: `Blank ${randomUUID()}`,
       title: "",
       roleDescription: "",
-      visibility: "private",
     });
     createdAgentIds.push(blank.id);
 
@@ -703,7 +777,6 @@ describe("the preset a Bot was shaped from", () => {
       name: `Instant ${randomUUID()}`,
       title: "",
       roleDescription: "",
-      visibility: "private",
     });
     createdAgentIds.push(bot.id);
 
@@ -712,7 +785,6 @@ describe("the preset a Bot was shaped from", () => {
       name: bot.name,
       title: "정산 대조",
       roleDescription: "그날 매출과 입금을 맞춰 본다.",
-      visibility: "private",
       presetId: "settlement",
     });
     expect(await presetOf(bot.id)).toBe("settlement");
@@ -722,7 +794,6 @@ describe("the preset a Bot was shaped from", () => {
       name: "정산이",
       title: "정산 대조",
       roleDescription: "그날 매출과 입금을 맞춰 본다.",
-      visibility: "private",
     });
     expect(await presetOf(bot.id)).toBe("settlement");
 
@@ -731,7 +802,6 @@ describe("the preset a Bot was shaped from", () => {
       name: "정산이",
       title: "재고 확인",
       roleDescription: "떨어져 가는 것을 먼저 알려 준다.",
-      visibility: "private",
       presetId: "stock",
     });
     expect(await presetOf(bot.id)).toBe("stock");
@@ -743,7 +813,6 @@ describe("the preset a Bot was shaped from", () => {
       name: `Source ${randomUUID()}`,
       title: "리뷰",
       roleDescription: "리뷰를 본다.",
-      visibility: "private",
       presetId: "reviews",
     });
     createdAgentIds.push(source.id);
@@ -785,16 +854,13 @@ describe("the seat cap", () => {
 
     const seeded: string[] = [];
     for (let seat = 0; seat < 2; seat += 1) {
-      seeded.push(
-        (await createProfileFixture({ owner, visibility: "private" })).agentId,
-      );
+      seeded.push((await createProfileFixture({ owner })).agentId);
     }
 
     const input = {
       name: `Sixth ${randomUUID()}`,
       title: "One Too Many",
       roleDescription: "Should never come to exist.",
-      visibility: "private" as const,
     };
     await expect(capped.create(owner, input)).rejects.toThrow(RosterFullError);
 
@@ -872,15 +938,14 @@ describe("the seat cap", () => {
     );
 
     // The stranger fills their own two seats, and a Bot owned by nobody sits beside them.
-    await createProfileFixture({ owner: stranger, visibility: "private" });
-    await createProfileFixture({ owner: stranger, visibility: "public" });
-    await createProfileFixture({ owner: null, visibility: "public" });
+    await createProfileFixture({ owner: stranger });
+    await createProfileFixture({ owner: stranger });
+    await createProfileFixture({ owner: null });
 
     const created = await capped.create(owner, {
       name: `Mine ${randomUUID()}`,
       title: "",
       roleDescription: "",
-      visibility: "private",
     });
     createdAgentIds.push(created.id);
     expect(created.name).toContain("Mine");
@@ -917,8 +982,8 @@ describe("the seat cap", () => {
       seats,
     );
     // Two of three seats spoken for, so exactly one of the racers can be seated.
-    const source = await createProfileFixture({ owner, visibility: "private" });
-    await createProfileFixture({ owner, visibility: "private" });
+    const source = await createProfileFixture({ owner });
+    await createProfileFixture({ owner });
 
     try {
       const outcomes = await Promise.allSettled(
@@ -971,7 +1036,6 @@ describe("the seat cap", () => {
           name: `Racer ${randomUUID()}`,
           title: "Racing For The Last Seat",
           roleDescription: "Only one of these may come to exist.",
-          visibility: "private",
         }),
     );
 

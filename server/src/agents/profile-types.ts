@@ -1,4 +1,7 @@
-export type AgentVisibility = "public" | "private";
+/*
+ * There is no `AgentVisibility`. A Bot belongs to the account that made it and to nobody else;
+ * `ownerUserId` below is the whole of that, and `agents/profile-policy.ts` is where it is read.
+ */
 
 /**
  * How hard a Bot thinks before it answers.
@@ -32,7 +35,7 @@ export type AgentProfile = {
    * everything the policy stops. See `agentProfiles.autoReview`.
    */
   autoReview: string;
-  visibility: AgentVisibility;
+  /** Whose Bot this is, and therefore who may see it. Null is the deployment's own. */
   ownerUserId: string | null;
   systemOwned: boolean;
   hidden: boolean;
@@ -59,7 +62,7 @@ export type AgentPreferencePatch = {
 
 export type CreateAgentInput = Pick<
   AgentProfile,
-  "name" | "title" | "roleDescription" | "visibility"
+  "name" | "title" | "roleDescription"
 > & {
   /**
    * The AG-UI endpoint this Bot runs on, or undefined for the one in the box.

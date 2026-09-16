@@ -83,7 +83,6 @@ async function sharedConversation() {
     name: "매출봇",
     title: "Coworker",
     roleDescription: "Knows the numbers.",
-    visibility: "private",
   });
   madeBots.push(bot.id);
   const channel = await channelStore.create(OWNER, [bot.id]);

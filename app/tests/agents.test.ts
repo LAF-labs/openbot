@@ -31,7 +31,6 @@ describe("coworker form validation", () => {
       name: "초롱",
       title: "",
       roleDescription: "",
-      visibility: "private",
       endpoint: "",
       authValue: "",
     });
@@ -45,7 +44,6 @@ describe("coworker form validation", () => {
         name: "  Expense Manager  ",
         title: "Finance Operations",
         roleDescription: "Review receipts and prepare reimbursement reports.",
-        visibility: "private",
         endpoint: "",
         authValue: "",
       }).name,
@@ -57,7 +55,6 @@ describe("coworker form validation", () => {
       name: "Expense Manager",
       title: "Finance Operations",
       roleDescription: "Review receipts.",
-      visibility: "private" as const,
       authValue: "",
     };
     // Empty means the Bot in the box, which is what most people want first time.
@@ -82,7 +79,6 @@ describe("coworker form validation", () => {
       name: "Expense Manager",
       title: "Finance Operations",
       roleDescription: "Review receipts.",
-      visibility: "private" as const,
       endpoint: "",
       authValue: "",
     };
@@ -102,8 +98,8 @@ describe("coworker form validation", () => {
         roleDescription: "r".repeat(1001),
       }).success,
     ).toBe(false);
-    expect(
-      agentFormSchema.safeParse({ ...valid, visibility: "everyone" }).success,
-    ).toBe(false);
+    // A "who can see this" field used to be here and be rejected for anything but public/private.
+    // The form no longer collects one: a Bot is the account's that made it.
+    expect("visibility" in agentFormSchema.shape).toBe(false);
   });
 });

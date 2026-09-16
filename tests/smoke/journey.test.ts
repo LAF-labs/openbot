@@ -140,7 +140,6 @@ beforeAll(async () => {
       name: `Smoke ${Date.now()}`,
       title: "Smoke test",
       roleDescription: "Made by tests/smoke/journey.test.ts. Safe to delete.",
-      visibility: "private",
     }),
   });
   BOT = agent.id;

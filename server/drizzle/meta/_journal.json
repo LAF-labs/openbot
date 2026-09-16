@@ -295,6 +295,13 @@
       "when": 1789379606066,
       "tag": "0041_feedback_diagnostics",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789548249055,
+      "tag": "0042_drop_agent_visibility",
+      "breakpoints": true
     }
   ]
 }

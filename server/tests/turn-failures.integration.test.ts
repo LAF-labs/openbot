@@ -103,7 +103,6 @@ async function createAgent(owner: AgentActor) {
     name: "Disconnected Bot",
     title: "Dead endpoint",
     roleDescription: "Points nowhere.",
-    visibility: "private",
   });
   createdAgentIds.push(profile.id);
   return profile.id;

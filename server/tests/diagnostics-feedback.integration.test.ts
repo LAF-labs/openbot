@@ -131,7 +131,6 @@ async function seed(who: typeof A) {
     title: "Reviews",
     roleDescription: "Answers reviews.",
     avatarSeed: "seed",
-    visibility: "private",
   });
   await database.insert(channels).values({
     id: who.channel,

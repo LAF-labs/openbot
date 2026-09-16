@@ -206,8 +206,8 @@ export const lafThreadRuns = pgTable(
  * side to fail on.
  *
  * The creator is snapshotted (`createdById`, `createdByRole`) because the run needs an actor long
- * after the request that made the routine is gone: the Bot roster is loaded with the creator's own
- * visibility, so a routine cannot see a private coworker its author could not.
+ * after the request that made the routine is gone: the Bot roster is loaded as that person, so a
+ * routine can never reach a Bot its author could not.
  */
 export const lafRoutines = pgTable("laf_routines", {
   id: text("id").primaryKey(),

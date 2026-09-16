@@ -7,7 +7,7 @@ A coworker is a Bot with a durable profile and standing role. The role is sent w
 | Piece                | Table                           | Purpose                                                               |
 | -------------------- | ------------------------------- | --------------------------------------------------------------------- |
 | Runtime agent        | `agents`                        | AG-UI endpoint and optional key reference.                            |
-| Profile              | `agent_profiles`                | Name, title, role, avatar seed, owner, visibility, and soft deletion. |
+| Profile              | `agent_profiles`                | Name, title, role, avatar seed, owner, and soft deletion.             |
 | Personal roster      | `agent_preferences`             | Per-user hidden state.                                                |
 | Channel              | `channels`                      | Conversation membership and coworker binding.                         |
 | Thread mapping       | `intelligence_channel_mappings` | Channel-to-thread mapping (name predates the fork; threads are local). |
@@ -29,16 +29,27 @@ This standing role applies in every channel. Treat channel messages as task-spec
 
 The message is ordinary AG-UI system content, so it works with any AG-UI-compatible backend. Editing the role affects the next run.
 
-## Visibility
+## Who can see a Bot
 
-| Visibility | Who can see and run it      |
-| ---------- | --------------------------- |
-| `private`  | Owner and administrators.   |
-| `public`   | Everyone in the deployment. |
+A Bot belongs to the account that made it, and to nobody else. There is no second answer beside
+`agent_profiles.owner_user_id` — no visibility field, no `public`, and no role exception: an
+administrator does not see, name, address or reach another person's Bot by id. Migration 0042
+dropped the `visibility` column and the `agent_visibility` enum that used to say otherwise.
 
-Filtering happens in server/database queries. A Bot a package shipped (`built_in`) cannot be edited
-or deleted through the product; this package ships none, so in practice every Bot is
-`remote_ag_ui`, made by a person and answered by `agent-bot`.
+The one Bot that is not somebody's is one the deployment itself ships — `owner_user_id` null,
+which `agents.package_id` marks as `built_in`. It belongs to no person, so it is visible to
+everyone signed in, and `canManageAgent` refuses to let anybody edit or delete it through the
+product. **This package ships none**, so in practice every Bot on a deployment is
+`remote_ag_ui`, made by a person, visible only to them, and answered by `agent-bot`.
+
+The rule is written once, in `server/src/agents/profile-policy.ts`: `canSeeAgent` as a predicate,
+`visibleToActor` as a WHERE clause for the reads, `agentHiddenFrom` for the doors handed a Bot id
+in a request body. Filtering happens in the query, never in JavaScript after the row is read.
+
+Seeing a Bot is a different question from driving one. `actorMayDriveBot` (`auth/guards.ts`)
+decides who may read a Bot's screen, press its controls and answer its approvals; it reads
+ownership on its own terms and still admits an administrator, so that an approval raised on a
+deployment can be answered by whoever runs it.
 
 ## Channels
 
@@ -72,7 +83,6 @@ Create or edit one from `/agents` and set:
 - name;
 - title;
 - role description;
-- visibility;
 - optional endpoint;
 - optional authorization header.
 

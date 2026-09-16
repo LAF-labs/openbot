@@ -106,7 +106,6 @@ const agent = (id: string, name: string, title: string) => ({
   avatarSeed: id,
   effort: "balanced",
   autoReview: "",
-  visibility: "private",
   endpoint: null,
   hasAuth: false,
   hidden: false,

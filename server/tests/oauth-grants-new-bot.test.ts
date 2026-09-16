@@ -232,7 +232,6 @@ async function createBotThrough(app: App, userId: string): Promise<string> {
       name: "시트 담당",
       title: "Sheets",
       roleDescription: "Reads and appends the shop's order sheet.",
-      visibility: "private",
     }),
   });
   expect(answered.status).toBe(201);

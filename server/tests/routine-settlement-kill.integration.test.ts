@@ -131,7 +131,6 @@ async function morningRoutine() {
     name: "아침봇",
     title: "Coworker",
     roleDescription: "Reports every morning.",
-    visibility: "private",
   });
   made.agents.push(profile.id);
   const channel = await channelStore.create(owner, [profile.id]);

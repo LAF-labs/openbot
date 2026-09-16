@@ -227,7 +227,6 @@ beforeAll(async () => {
         title: id,
         roleDescription: "",
         avatarSeed: id,
-        visibility: "private",
       })
       .onConflictDoNothing();
   }
@@ -827,7 +826,6 @@ describe("a Bot made after the connect", () => {
         title: laterBot,
         roleDescription: "",
         avatarSeed: laterBot,
-        visibility: "private",
       })
       .onConflictDoNothing();
     expect(await granted(ref)).not.toContain(laterBot);

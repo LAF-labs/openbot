@@ -198,7 +198,6 @@ describe("channel activity delivery", () => {
       name: "Expense Manager",
       title: "Finance Operations",
       roleDescription: "Review receipts.",
-      visibility: "private",
     });
     createdAgentIds.push(profile.id);
     const channel = await store.create(owner, [profile.id]);

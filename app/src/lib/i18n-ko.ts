@@ -505,7 +505,6 @@ export const ko: Record<string, string> = {
   "Night Shift": "야간 근무",
   "No Bots on your team yet.": "아직 팀에 봇이 없습니다.",
   "No Bots yet.": "아직 봇이 없습니다.",
-  "No public Bots to explore yet.": "아직 둘러볼 공개 봇이 없습니다.",
   "No skills yet. Write one and any Bot you own can run it.":
     "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있습니다.",
   "Nobody matches that.": "일치하는 봇이 없습니다.",
@@ -527,8 +526,6 @@ export const ko: Record<string, string> = {
   "Polar bear": "북극곰",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
-  Private: "비공개",
-  Public: "공개",
   "Published, so every Bot may use it": "게시됨 — 모든 봇이 쓸 수 있음",
   "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
     "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
@@ -609,7 +606,6 @@ export const ko: Record<string, string> = {
     "직함은 120자까지 쓸 수 있습니다.",
   "A description can be up to 1,000 characters.":
     "설명은 1,000자까지 쓸 수 있습니다.",
-  "Choose who can see this Bot.": "이 봇을 누가 볼 수 있는지 골라 주세요.",
   "That address cannot be used.": "그 주소는 쓸 수 없습니다.",
   "That face cannot be used.": "그 얼굴은 쓸 수 없습니다.",
   "Choose how hard this Bot thinks.": "봇이 얼마나 깊이 생각할지 골라 주세요.",
@@ -969,9 +965,7 @@ export const ko: Record<string, string> = {
   "Preparing the request…": "요청 준비 중…",
   Pressed: "누름",
   Preview: "미리보기",
-  "Private, only you can see it": "비공개 — 나만 볼 수 있음",
   Provider: "제공자",
-  "Public, everybody can see it": "공개 — 모두 볼 수 있음",
   Publish: "게시",
   "Published components": "게시된 컴포넌트",
   Queued: "대기 중",
@@ -1037,7 +1031,6 @@ export const ko: Record<string, string> = {
     "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
   "Vendor documentation": "공급자 문서",
-  Visibility: "공개 범위",
   "Waiting for the Bot's screen…": "봇의 화면을 기다리는 중…",
   "Waiting on you": "당신을 기다리는 중",
   What: "무엇을",

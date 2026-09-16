@@ -524,7 +524,7 @@ export async function resolveRuntimeAgents(
   return buildAgents(registered, model, stallGuard, timeZone, spill, meter);
 }
 
-/** Who is asking. Agent visibility is decided per person, so a run has to know this first. */
+/** Who is asking. A Bot is its owner's alone, so a run has to know whose turn it is first. */
 export type IdentifyActor = (request: Request) => Promise<AgentActor>;
 
 /** Loads exactly the agents one person may see, already carrying their standing roles. */

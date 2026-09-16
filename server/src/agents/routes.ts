@@ -44,7 +44,6 @@ export type AgentInputRefusal =
   | "laf:agent_name_invalid"
   | "laf:agent_title_too_long"
   | "laf:agent_role_too_long"
-  | "laf:agent_visibility_invalid"
   | "laf:agent_endpoint_refused"
   | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
@@ -60,7 +59,6 @@ type AgentInputObject = {
   name?: unknown;
   title?: unknown;
   roleDescription?: unknown;
-  visibility?: unknown;
   endpoint?: unknown;
   avatarSeed?: unknown;
   effort?: unknown;
@@ -106,14 +104,6 @@ export function parseAgentInput(
     "laf:agent_role_too_long",
   );
   if (typeof roleDescription !== "string") return roleDescription;
-
-  if (typeof input.visibility !== "string") {
-    return { ok: false, code: "laf:agent_visibility_invalid" };
-  }
-  const visibility = input.visibility.trim();
-  if (visibility !== "public" && visibility !== "private") {
-    return { ok: false, code: "laf:agent_visibility_invalid" };
-  }
 
   // The endpoint is optional and checked. Absent means the Bot in the box, which is what most people
   // want on their first go. Present means this server will POST to an address a person chose, so it
@@ -212,7 +202,6 @@ export function parseAgentInput(
       name,
       title,
       roleDescription,
-      visibility,
       endpoint,
       auth,
       ...(avatarSeed === undefined ? {} : { avatarSeed }),
@@ -557,7 +546,6 @@ export function createAgentRoutes(
           name: name.value ?? current.name,
           title: title.value ?? current.title,
           roleDescription: roleDescription.value ?? current.roleDescription,
-          visibility: current.visibility,
           ...(patch.avatarSeed === undefined
             ? {}
             : { avatarSeed: patch.avatarSeed }),
@@ -912,7 +900,6 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     avatarSeed: agent.avatarSeed,
     effort: agent.effort,
     autoReview: agent.autoReview,
-    visibility: agent.visibility,
     hidden: agent.hidden,
     // ISO, not a boolean: the roster sorts pinned Bots among themselves by when they were pinned.
     pinnedAt: agent.pinnedAt?.toISOString() ?? null,

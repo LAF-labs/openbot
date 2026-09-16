@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { count, desc, eq } from "drizzle-orm";
+import { agentHiddenFrom } from "../agents/profile-policy";
 import type { AgentActor } from "../agents/profile-types";
 import {
   actorMayDriveBot,
@@ -175,6 +176,15 @@ function refuseBlank(name: string, instruction: string): void {
  * through to any id, which is right for a Bot that exists; for one that does not it let the
  * insert reach the foreign key, and audit A1-2 measured exactly that as the local
  * administrator — a 500, and the instruction's text in the operator log.
+ *
+ * AND NEITHER IS A PRIVATE BOT SOMEBODY ELSE MADE (2026-09-16). `actorMayDriveBot` reads no
+ * visibility at all — deliberately, and it stays that way — so it was the whole of the check and
+ * an administrator with an id could plant a standing instruction on a colleague's private Bot: a
+ * routine that runs unattended, on that Bot's computer, with that person's logins, and appears in
+ * their list of routines as something they never wrote. An id is not permission. Both questions
+ * are asked, because they are different questions: may this actor drive the Bot, and is this Bot
+ * one they may see at all. The refusal is the same 404 either way, so which of the two refused is
+ * not a fact about somebody else's roster that a caller can probe for.
  */
 async function refuseSomebodyElsesBot(
   database: Database,
@@ -182,7 +192,11 @@ async function refuseSomebodyElsesBot(
   agentId: string,
 ): Promise<void> {
   const owner = await lookupBotOwner(database, agentId);
-  if (owner === undefined || !actorMayDriveBot(actor, owner)) {
+  if (
+    owner === undefined ||
+    !actorMayDriveBot(actor, owner) ||
+    (await agentHiddenFrom(database, actor, agentId))
+  ) {
     throw new RoutineError("There is no such Bot.", 404, BOT_NOT_FOUND);
   }
 }

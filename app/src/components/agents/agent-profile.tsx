@@ -211,7 +211,6 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                 name: profile.name,
                 roleDescription: profile.roleDescription,
                 title: profile.title,
-                visibility: profile.visibility,
               },
             });
             // Left open on purpose — see `bot-intro-card.tsx`. One press applies; 완료 closes.
@@ -225,9 +224,11 @@ export function AgentProfile({ agentId }: { agentId: string }) {
          * THE NAME AND THE JOB, AND EDITING THEM IS A MENU ITEM.
          *
          * The whole pane used to be the form: a name field, a title field, a role field, a
-         * visibility select and — for anybody the deployment counts as an administrator, which on a
-         * one-person deployment is the shop owner — an AG-UI endpoint and a bearer token. Six
-         * controls in a 320px column, above the settings that are actually looked at.
+         * "who can see this Bot" select and — for anybody the deployment counts as an
+         * administrator, which on a one-person deployment is the shop owner — an AG-UI endpoint and
+         * a bearer token. Six controls in a 320px column, above the settings that are actually
+         * looked at. The select is gone for good now: a Bot is the account's that made it, so there
+         * was never a second answer for it to collect.
          */}
         {isEditing ? (
           <AgentFields
@@ -241,7 +242,6 @@ export function AgentProfile({ agentId }: { agentId: string }) {
                   name: values.name,
                   roleDescription: profile.roleDescription,
                   title: values.title,
-                  visibility: profile.visibility,
                 },
               });
               setEditingId(null);
@@ -509,7 +509,6 @@ function WorkStyleCard({
                   name: profile.name,
                   roleDescription: draft.trim(),
                   title: profile.title,
-                  visibility: profile.visibility,
                 },
               });
               flashSaved();
@@ -944,7 +943,6 @@ function AutoReviewCard({
                   name: profile.name,
                   roleDescription: profile.roleDescription,
                   title: profile.title,
-                  visibility: profile.visibility,
                 },
               });
               flashSaved();

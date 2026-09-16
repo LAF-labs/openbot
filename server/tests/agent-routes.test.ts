@@ -37,7 +37,6 @@ const validInput: CreateAgentInput = {
   title: "Finance Operations",
   roleDescription:
     "Review receipts, categorize expenses, and prepare reimbursement reports.",
-  visibility: "private",
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
@@ -49,7 +48,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     avatarSeed: "expense-manager",
     effort: "balanced",
     autoReview: "",
-    visibility: validInput.visibility,
     ownerUserId: actor.id,
     systemOwned: false,
     hidden: false,
@@ -91,7 +89,7 @@ function fakeStore(
     },
     async duplicate(receivedActor, id) {
       calls.push(["duplicate", receivedActor, id]);
-      return profile({ id: `${id}-copy`, visibility: "private" });
+      return profile({ id: `${id}-copy` });
     },
     async setHidden(receivedActor, id, hidden) {
       calls.push(["setHidden", receivedActor, id, hidden]);
@@ -153,10 +151,6 @@ describe("agent input parser", () => {
     ["title", "t".repeat(121), "laf:agent_title_too_long"],
     ["roleDescription", {}, "laf:agent_role_too_long"],
     ["roleDescription", "r".repeat(1001), "laf:agent_role_too_long"],
-    ["visibility", undefined, "laf:agent_visibility_invalid"],
-    ["visibility", 1, "laf:agent_visibility_invalid"],
-    ["visibility", "   ", "laf:agent_visibility_invalid"],
-    ["visibility", "friends", "laf:agent_visibility_invalid"],
   ])("rejects invalid %s values", (field, value, code) => {
     const parsed = parseAgentInput({ ...validInput, [field]: value });
     expect(parsed.ok).toBe(false);
@@ -193,8 +187,6 @@ describe("agent input parser", () => {
     ["title", ` ${"t".repeat(120)} `, "t".repeat(120)],
     ["roleDescription", "r", "r"],
     ["roleDescription", ` ${"r".repeat(1000)} `, "r".repeat(1000)],
-    ["visibility", " public ", "public"],
-    ["visibility", " private ", "private"],
   ])("accepts and trims boundary %s values", (field, value, trimmed) => {
     const result = parseAgentInput({ ...validInput, [field]: value });
 
@@ -210,7 +202,6 @@ describe("agent input parser", () => {
         name: "  Expense Manager  ",
         title: "  Finance Operations  ",
         roleDescription: "  Reviews receipts.  ",
-        visibility: " private ",
         id: "forged-agent",
         ownerUserId: "attacker",
         deletedAt: "now",
@@ -228,7 +219,6 @@ describe("agent input parser", () => {
         name: "Expense Manager",
         title: "Finance Operations",
         roleDescription: "Reviews receipts.",
-        visibility: "private",
         endpoint: "https://agents.example.com/ag-ui",
         avatarSeed: "r2c6",
       },
@@ -342,7 +332,6 @@ describe("agent lifecycle routes", () => {
             id: "system-agent",
             ownerUserId: null,
             systemOwned: true,
-            visibility: "public",
           }),
         ];
       },
@@ -360,7 +349,6 @@ describe("agent lifecycle routes", () => {
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
-          visibility: "private",
           hidden: false,
           pinnedAt: null,
           notify: true,
@@ -378,7 +366,6 @@ describe("agent lifecycle routes", () => {
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
-          visibility: "private",
           hidden: false,
           pinnedAt: null,
           notify: true,
@@ -396,7 +383,6 @@ describe("agent lifecycle routes", () => {
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
-          visibility: "public",
           hidden: false,
           pinnedAt: null,
           notify: true,
@@ -450,7 +436,6 @@ describe("agent lifecycle routes", () => {
       name: "  Expense Manager  ",
       title: "  Finance Operations  ",
       roleDescription: `  ${validInput.roleDescription}  `,
-      visibility: " private ",
       id: "forged-agent",
       ownerUserId: "attacker",
       deletedAt: "now",
@@ -485,10 +470,17 @@ describe("agent lifecycle routes", () => {
     ]);
   });
 
+  /*
+   * A NAME IS NOW THE WHOLE OF A BODY. This test used to assert a second half: that `{name}` alone
+   * was refused, because `visibility` said who may see the Bot and guessing that for somebody was
+   * not a thing this parser would do. There is no such field any more — a Bot is the account's that
+   * made it — so the only bad body left is one that is not an object, and the name-alone case is
+   * asserted for what it now is by the test below.
+   */
   test.each([
     ["POST", "/"],
     ["PATCH", "/agent-1"],
-  ])("requires a valid full JSON object for %s %s", async (method, path) => {
+  ])("requires a valid JSON object for %s %s", async (method, path) => {
     const store = fakeStore();
     const app = appFor(store);
     const malformed = await app.request(`http://laf.test${path}`, {
@@ -496,25 +488,10 @@ describe("agent lifecycle routes", () => {
       headers: { "content-type": "application/json" },
       body: "{",
     });
-    const partial = await app.request(`http://laf.test${path}`, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Only a name" }),
-    });
 
     expect(malformed.status).toBe(400);
     expect(await json(malformed)).toMatchObject({
       code: "laf:agent_input_not_object",
-    });
-    /*
-     * A name alone is still not a whole body — `visibility` says who may see the bot, and guessing
-     * that for somebody is not a thing this parser will do. What a name alone no longer fails on is
-     * the title and the description: those are the bot's job, and a bot may be made before its job
-     * is decided.
-     */
-    expect(partial.status).toBe(400);
-    expect(await json(partial)).toMatchObject({
-      code: "laf:agent_visibility_invalid",
     });
     expect(store.calls).toEqual([]);
   });
@@ -526,7 +503,7 @@ describe("agent lifecycle routes", () => {
     const response = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "새 봇", visibility: "private" }),
+      body: JSON.stringify({ name: "새 봇" }),
     });
 
     expect(response.status).toBe(201);
@@ -671,7 +648,6 @@ describe("how hard a Bot thinks", () => {
   test("is one of three, checked before it reaches the column", () => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       effort: "as hard as possible",
     });
     expect(parsed.ok).toBe(false);
@@ -682,7 +658,6 @@ describe("how hard a Bot thinks", () => {
     for (const effort of ["quick", "balanced", "thorough"] as const) {
       const parsed = parseAgentInput({
         name: "Analyst",
-        visibility: "private",
         effort,
       });
       expect(parsed.ok).toBe(true);
@@ -693,7 +668,7 @@ describe("how hard a Bot thinks", () => {
   test("is absent when nothing said, so the column's default stands", () => {
     // Not defaulted here. A second place that knows the default is a second place to get it wrong,
     // and an absent field on an update has to keep meaning "leave it alone".
-    const parsed = parseAgentInput({ name: "Analyst", visibility: "private" });
+    const parsed = parseAgentInput({ name: "Analyst" });
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.value.effort).toBeUndefined();
   });
@@ -701,7 +676,6 @@ describe("how hard a Bot thinks", () => {
   test("a blank one is refused rather than read as a default", () => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       effort: "",
     });
     expect(parsed.ok).toBe(false);
@@ -721,7 +695,6 @@ describe("the auto-review instruction", () => {
   test("goes through on the replacing input, which only a person posts to", () => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       autoReview: "Reading anything on our own site is fine.",
     });
     expect(parsed.ok).toBe(true);
@@ -735,7 +708,6 @@ describe("the auto-review instruction", () => {
   test("is bounded, because it is read on the path of every stopped action", () => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       autoReview: "x".repeat(1001),
     });
     expect(parsed.ok).toBe(false);
@@ -744,7 +716,6 @@ describe("the auto-review instruction", () => {
   test("an empty one is a real value, because clearing it is a thing people do", () => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       autoReview: "",
     });
     expect(parsed.ok).toBe(true);
@@ -752,7 +723,7 @@ describe("the auto-review instruction", () => {
   });
 
   test("absent leaves it alone", () => {
-    const parsed = parseAgentInput({ name: "Analyst", visibility: "private" });
+    const parsed = parseAgentInput({ name: "Analyst" });
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.value.autoReview).toBeUndefined();
   });
@@ -794,7 +765,6 @@ describe("the preset a Bot was shaped from", () => {
   test("goes through as a catalogue key on the replacing input", () => {
     const parsed = parseAgentInput({
       name: "Review Watch",
-      visibility: "private",
       presetId: "review-replies",
     });
     expect(parsed).toEqual({
@@ -803,7 +773,6 @@ describe("the preset a Bot was shaped from", () => {
         name: "Review Watch",
         title: "",
         roleDescription: "",
-        visibility: "private",
         endpoint: undefined,
         auth: undefined,
         presetId: "review-replies",
@@ -812,7 +781,7 @@ describe("the preset a Bot was shaped from", () => {
   });
 
   test("absent leaves it alone, which is every caller but the preset press", () => {
-    const parsed = parseAgentInput({ name: "Analyst", visibility: "private" });
+    const parsed = parseAgentInput({ name: "Analyst" });
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.value).not.toHaveProperty("presetId");
   });
@@ -829,7 +798,6 @@ describe("the preset a Bot was shaped from", () => {
   ])("anything that is not a key is refused by code: %s", (_label, value) => {
     const parsed = parseAgentInput({
       name: "Analyst",
-      visibility: "private",
       presetId: value,
     });
     expect(parsed).toEqual({ ok: false, code: "laf:agent_preset_invalid" });
@@ -844,7 +812,6 @@ describe("the preset a Bot was shaped from", () => {
         name: "Review Watch",
         title: "리뷰 답변",
         roleDescription: "새 리뷰마다 답을 준비한다.",
-        visibility: "private",
         presetId: "review-replies",
       }),
     });

@@ -192,7 +192,6 @@ async function seed() {
       title: `${OWNER_EMAIL} 비서`,
       roleDescription: "오늘 매출은 얼마인지 알려 줘",
       avatarSeed: "s:pebble.blue",
-      visibility: "private" as const,
       presetId: presets[index] ?? null,
       createdAt: at(1),
     })),
@@ -202,7 +201,6 @@ async function seed() {
       title: "",
       roleDescription: "",
       avatarSeed: "s:cloud.green",
-      visibility: "private" as const,
       presetId: "reviews",
       deletedAt: at(2),
       createdAt: daysAgo(30),
@@ -213,7 +211,6 @@ async function seed() {
       title: "",
       roleDescription: "",
       avatarSeed: "s:cloud.green",
-      visibility: "private" as const,
       createdAt: daysAgo(30),
     },
   ]);

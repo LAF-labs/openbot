@@ -161,7 +161,6 @@ async function createBotWithConversation(owner: AgentActor) {
     name: "아침봇",
     title: "Coworker",
     roleDescription: "Reports every morning.",
-    visibility: "private",
   });
   agentIds.push(profile.id);
   const channel = await channelStore.create(owner, [profile.id]);

@@ -173,7 +173,6 @@ async function hourlyRoutine() {
     name: "리뷰봇",
     title: "Coworker",
     roleDescription: "Checks reviews every hour.",
-    visibility: "private",
   });
   made.agents.push(profile.id);
   const channel = await channelStore.create(owner, [profile.id]);

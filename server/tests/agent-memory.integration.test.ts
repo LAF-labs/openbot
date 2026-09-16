@@ -59,15 +59,11 @@ async function createUser() {
   return { id, role: "user" } satisfies AgentActor;
 }
 
-async function createCoworker(
-  owner: AgentActor,
-  visibility: "public" | "private" = "private",
-) {
+async function createCoworker(owner: AgentActor) {
   const profile = await profileStore.create(owner, {
     name: "Expense Manager",
     title: "Finance Operations",
     roleDescription: "Keep the books straight.",
-    visibility,
   });
   createdAgentIds.push(profile.id);
   return profile;
@@ -123,11 +119,16 @@ describe("what a Bot remembers", () => {
    * asserted anyway because nothing enforces that yet — no allowlist gates sign-in — and because
    * the day one does, this test is what says the scoping was there all along rather than something
    * anybody has to go back and verify.
+   *
+   * The Bot used to be made `public` here so that the second person could see it at all. There is
+   * no such thing now — a Bot is its owner's — and the store below is addressed by id rather than
+   * through a roster, which is the stronger form of the same question: somebody holding the id
+   * still gets nothing of the owner's.
    */
   test("never carries one person's memory into another person's run", async () => {
     const owner = await createUser();
     const other = await createUser();
-    const bot = await createCoworker(owner, "public");
+    const bot = await createCoworker(owner);
 
     await memoryStore.remember(
       bot.id,
@@ -157,7 +158,7 @@ describe("what a Bot remembers", () => {
   test("forgetting one thing leaves the rest, and cannot be done by somebody else", async () => {
     const owner = await createUser();
     const other = await createUser();
-    const bot = await createCoworker(owner, "public");
+    const bot = await createCoworker(owner);
 
     const first = await memoryStore.remember(bot.id, owner.id, "Keep this.");
     const second = await memoryStore.remember(bot.id, owner.id, "Forget this.");

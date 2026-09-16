@@ -66,7 +66,6 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
         name: agent.name,
         title: agent.title,
         roleDescription: agent.roleDescription,
-        visibility: agent.visibility,
         ...patch,
       },
     });

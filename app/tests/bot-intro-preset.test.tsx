@@ -102,7 +102,6 @@ describe("the intro card's kind-of-work chips", () => {
       name: "초롱",
       title: t(preset?.title ?? ""),
       roleDescription: t(preset?.roleDescription ?? ""),
-      visibility: "private",
       presetId: preset?.id,
     });
 

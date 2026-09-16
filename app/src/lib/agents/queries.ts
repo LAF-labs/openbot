@@ -1,8 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 
-export type AgentVisibility = "public" | "private";
-
 /**
  * A coworker as the browser sees it.
  *
@@ -39,7 +37,6 @@ export type AgentProfile = {
    * rule deciding whether it gets asked about has no boundary at all.
    */
   autoReview: string;
-  visibility: AgentVisibility;
   /** Where this coworker runs. Null for the Bot in the box. */
   endpoint: string | null;
   /** Whether a key is set for it. Never the key itself. */

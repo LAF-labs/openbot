@@ -1,4 +1,4 @@
-import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
@@ -10,7 +10,7 @@ import {
 } from "../db/schema";
 import { log } from "../log";
 import { authFromConfiguration, storeAgentAuth } from "./auth-header";
-import { canManageAgent } from "./profile-policy";
+import { canManageAgent, visibleToActor } from "./profile-policy";
 import type {
   AgentActor,
   AgentPreferencePatch,
@@ -151,7 +151,6 @@ const joinedProjection = {
   avatarSeed: agentProfiles.avatarSeed,
   effort: agentProfiles.effort,
   autoReview: agentProfiles.autoReview,
-  visibility: agentProfiles.visibility,
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
   hiddenAt: agentPreferences.hiddenAt,
@@ -176,13 +175,15 @@ function joinedProfiles(executor: DatabaseExecutor, actor: AgentActor) {
     .leftJoin(deploymentPackages, eq(deploymentPackages.id, agents.packageId));
 }
 
+/**
+ * Which Bots this read may return: the ownership rule, and nothing about the role.
+ *
+ * It used to step aside for an administrator, and `visibleToActor` (profile-policy.ts) carries
+ * both the rule and the measurement that ended that. Every read below goes through it, which is
+ * what makes `get` and `getWithin` refuse a private Bot BY ID and not merely leave it off a list.
+ */
 function accessFilter(actor: AgentActor) {
-  if (actor.role === "admin") return undefined;
-
-  return or(
-    eq(agentProfiles.visibility, "public"),
-    eq(agentProfiles.ownerUserId, actor.id),
-  );
+  return visibleToActor(actor);
 }
 
 function mapProfile(
@@ -198,7 +199,6 @@ function mapProfile(
     avatarSeed: row.avatarSeed,
     effort: row.effort,
     autoReview: row.autoReview,
-    visibility: row.visibility,
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
     hidden: row.hiddenAt !== null,
@@ -431,7 +431,6 @@ export function createAgentProfileStore(
             ? {}
             : { autoReview: input.autoReview }),
           ...(input.presetId === undefined ? {} : { presetId: input.presetId }),
-          visibility: input.visibility,
         });
 
         const profile = await findAccessibleProfile(transaction, actor, id);
@@ -487,7 +486,6 @@ export function createAgentProfileStore(
             .set({
               title: input.title,
               roleDescription: input.roleDescription,
-              visibility: input.visibility,
               // Absent leaves the face alone. See CreateAgentInput.avatarSeed.
               ...(input.avatarSeed === undefined
                 ? {}
@@ -536,15 +534,16 @@ export function createAgentProfileStore(
           // A copy is the same colleague again, which includes how long it takes to answer.
           effort: source.effort,
           /*
-           * NOT COPIED. Everything else about a duplicate is the same colleague again, and this one
-           * is a standing permission to act without being seen — inheriting it silently would make
-           * "Duplicate" a way to widen a boundary by pressing a button labelled something else.
+           * NOT COPIED: `autoReview`, a standing permission to act without being seen —
+           * inheriting it silently would make "Duplicate" a way to widen a boundary by pressing a
+           * button labelled something else. Nor `presetId`, for a plainer reason: it records what a
+           * person picked, and nobody picked anything for the copy. Carried over, every duplicate
+           * would count as one more person choosing that kind of work.
            *
-           * Nor is `presetId`, for a plainer reason: it records what a person picked, and nobody
-           * picked anything for the copy. Carried over, every duplicate would count as one more
-           * person choosing that kind of work.
+           * The copy is the copier's, and `ownerUserId` above is now the whole of who may see it:
+           * duplicating somebody else's Bot is not a thing that can happen, because finding one to
+           * duplicate is not a thing that can happen.
            */
-          visibility: "private",
         });
 
         const duplicate = await findAccessibleProfile(

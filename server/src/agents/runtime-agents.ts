@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
 import type { Database } from "../db/client";
@@ -11,6 +11,7 @@ import {
 } from "../db/schema";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
 import { MAX_MEMORIES_CARRIED } from "./memory-store";
+import { visibleToActor } from "./profile-policy";
 import type { AgentActor } from "./profile-types";
 
 /**
@@ -116,38 +117,40 @@ async function selectMemories(
 }
 
 function selectActiveAgents(database: Database, actor: AgentActor) {
-  return database
-    .select({
-      id: agents.id,
-      name: agents.name,
-      type: agents.type,
-      configuration: agents.configuration,
-      title: agentProfiles.title,
-      roleDescription: agentProfiles.roleDescription,
-      // The one model setting a Bot carries into its own run. See RegisteredRemoteAgent.effort.
-      effort: agentProfiles.effort,
-    })
-    .from(agents)
-    .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
-    .where(
-      and(
-        isNull(agentProfiles.deletedAt),
-        actor.role === "admin"
-          ? undefined
-          : or(
-              eq(agentProfiles.visibility, "public"),
-              eq(agentProfiles.ownerUserId, actor.id),
-            ),
-      ),
-    );
+  return (
+    database
+      .select({
+        id: agents.id,
+        name: agents.name,
+        type: agents.type,
+        configuration: agents.configuration,
+        title: agentProfiles.title,
+        roleDescription: agentProfiles.roleDescription,
+        // The one model setting a Bot carries into its own run. See RegisteredRemoteAgent.effort.
+        effort: agentProfiles.effort,
+      })
+      .from(agents)
+      .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+      /*
+       * The rule from profile-policy.ts, not a second copy of it.
+       *
+       * It WAS a second copy — the same `or(...)` written out again, with its own `admin` bypass
+       * beside it — and two copies of an access rule are two things to remember to change. This
+       * one mounts every Bot it returns as a runnable AG-UI agent for the turn, so an administrator
+       * whose roster was unfiltered here could ask, run and brief a private Bot somebody else made.
+       */
+      .where(and(isNull(agentProfiles.deletedAt), visibleToActor(actor)))
+  );
 }
 
 /**
  * Deleted coworkers the caller still has history with.
  *
  * Registered so the runtime can restore the thread the person is reading. Membership of a channel
- * the agent worked in is what authorizes this, not the profile's visibility, which is why deleting
- * a coworker leaves its conversations readable instead of erasing them.
+ * the agent worked in is what authorizes this, not whose the Bot is, which is why deleting a
+ * coworker leaves its conversations readable instead of erasing them. It does not widen anything:
+ * a channel is only ever somebody's own, so the only deleted Bots this reaches are ones they
+ * already talked to.
  */
 function selectTombstoneAgents(database: Database, actor: AgentActor) {
   return database

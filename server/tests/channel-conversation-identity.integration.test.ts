@@ -81,10 +81,33 @@ async function createAgent(owner: AgentActor, name: string) {
     name,
     title: "Finance Operations",
     roleDescription: "Review receipts.",
-    visibility: "private",
   });
   createdAgentIds.push(profile.id);
   return profile.id;
+}
+
+/**
+ * A Bot the deployment ships: a profile with no owner, and the only kind two people can both see.
+ *
+ * Inserted rather than created through the store, because `create` makes the caller its owner.
+ */
+async function createDeploymentAgent(name: string) {
+  const agentId = `${testPrefix}-shipped-${randomUUID()}`;
+  await database.insert(agents).values({
+    id: agentId,
+    name,
+    type: "remote_ag_ui",
+    configuration: { endpoint: "https://managed.example.test/ag-ui" },
+  });
+  createdAgentIds.push(agentId);
+  await database.insert(agentProfiles).values({
+    agentId,
+    ownerUserId: null,
+    title: "Finance Operations",
+    roleDescription: "Review receipts.",
+    avatarSeed: agentId,
+  });
+  return agentId;
 }
 
 describe("a Bot has one conversation", () => {
@@ -118,18 +141,14 @@ describe("a Bot has one conversation", () => {
   });
 
   test("another person's conversation with the same Bot is not reused", async () => {
+    /*
+     * On a Bot the deployment ships, because that is the only kind two people can both reach now:
+     * a Bot somebody made is theirs alone, so `other` would simply be told it is not there. What is
+     * under test is unchanged — a solo conversation is keyed on (person, Bot), not on the Bot.
+     */
     const owner = await createUser();
     const other = await createUser();
-    const agentId = await createAgent(owner, "Shared Assistant");
-    // Reachable by both: a private Bot is only ever its owner's.
-    // `update` REPLACES the profile — it takes the whole `CreateAgentInput`, not a patch — so the
-    // other three fields have to be restated or the name and description go with the edit.
-    await profileStore.update(owner, agentId, {
-      name: "Shared Assistant",
-      title: "Finance Operations",
-      roleDescription: "Review receipts.",
-      visibility: "public",
-    });
+    const agentId = await createDeploymentAgent("Shared Assistant");
 
     const mine = await store.create(owner, [agentId]);
     createdChannelIds.push(mine.id);

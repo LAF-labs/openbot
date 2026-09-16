@@ -10,7 +10,10 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { createAgentProfileStore } from "../src/agents/profile-store";
+import {
+  AgentNotFoundError,
+  createAgentProfileStore,
+} from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import {
   ChannelMembershipError,
@@ -69,7 +72,9 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-async function createUser(): Promise<AgentActor> {
+async function createUser(
+  role: AgentActor["role"] = "user",
+): Promise<AgentActor> {
   const id = `${testPrefix}-user-${randomUUID()}`;
   await database.insert(users).values({
     id,
@@ -77,7 +82,7 @@ async function createUser(): Promise<AgentActor> {
     name: "Participants Test User",
   });
   createdUserIds.push(id);
-  return { id, role: "user" };
+  return { id, role };
 }
 
 async function createAgent(owner: AgentActor, name: string) {
@@ -85,7 +90,6 @@ async function createAgent(owner: AgentActor, name: string) {
     name,
     title: "Colleague",
     roleDescription: "Does a job.",
-    visibility: "private",
   });
   createdAgentIds.push(profile.id);
   return profile.id;
@@ -124,6 +128,40 @@ describe("adding a Bot to a conversation", () => {
     // A row still naming two people after a third joined is a row that lies.
     const reread = await store.get(owner, channel.id);
     expect(reread?.name).toBe(after?.name as string);
+  });
+
+  /**
+   * A room is the other way a Bot gets named, and the id travels in the body.
+   *
+   * `addParticipant` and `create` both resolve the Bot through `profileStore.getWithin`, so the
+   * visibility rule reaches them — but only if it is asked of the actor rather than of the role.
+   * An administrator who could add a colleague's private Bot to a room of their own would get its
+   * name in the roster row, its title in the room's prompt header, and its answers in a transcript
+   * that person never sees.
+   */
+  test("refuses a private Bot the actor does not own, an administrator included", async () => {
+    const owner = await createUser();
+    const stranger = await createUser();
+    const administrator = await createUser("admin");
+    const theirs = await createAgent(owner, "정산이");
+
+    for (const outsider of [stranger, administrator]) {
+      const own = await createAgent(outsider, "제 것");
+      const mine = await createAgent(outsider, "제 것 둘");
+      const channel = await store.create(outsider, [own, mine]);
+      createdChannelIds.push(channel.id);
+
+      // Into a room of their own, by id.
+      await expect(
+        store.addParticipant?.(outsider, channel.id, theirs),
+      ).rejects.toThrow(AgentNotFoundError);
+      // And a new room made around it, which is the same check one function earlier.
+      await expect(store.create(outsider, [theirs])).rejects.toThrow(
+        AgentNotFoundError,
+      );
+      const after = await store.get(outsider, channel.id);
+      expect(after?.agentIds).not.toContain(theirs);
+    }
   });
 
   test("refuses somebody already in it, with a code and no prose", async () => {

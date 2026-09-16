@@ -9,6 +9,7 @@ import {
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
+import type { AgentActor } from "../src/agents/profile-types";
 import type { AuditEventInput } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import {
@@ -701,15 +702,28 @@ describe("whose routine it is", () => {
     }
   });
 
-  async function botOwnedBySomebody() {
-    const userId = `routine-bot-owner-${randomUUID()}`;
-    const agentId = `routine-test-agent-${randomUUID()}`;
+  /** Somebody with an account here, so a foreign key on `created_by_id` has something to point at. */
+  async function personWhoLeft() {
+    const userId = `routine-staffer-${randomUUID()}`;
     await database.insert(users).values({
       id: userId,
       email: `${userId}@laf.test`,
-      name: "Routine Bot Owner",
+      name: "A Member Of Staff",
     });
     seededUserIds.push(userId);
+    return { id: userId, role: "user" as const };
+  }
+
+  /**
+   * A Bot and whoever owns it. A fresh person by default; pass an actor to make it theirs.
+   *
+   * It used to take a visibility as well, because a `public` Bot was how a test arranged for a
+   * second person to be able to reach one. There is no such arrangement any more — whose it is
+   * decides it — so the parameter that remains is whose.
+   */
+  async function botOwnedBy(actor?: { id: string; role: "admin" | "user" }) {
+    const owner = actor ?? (await personWhoLeft());
+    const agentId = `routine-test-agent-${randomUUID()}`;
     await database.insert(agents).values({
       id: agentId,
       name: "Morning Bot",
@@ -719,13 +733,12 @@ describe("whose routine it is", () => {
     seededAgentIds.push(agentId);
     await database.insert(agentProfiles).values({
       agentId,
-      ownerUserId: userId,
+      ownerUserId: owner.id,
       title: "Morning",
       roleDescription: "Opens the shop.",
       avatarSeed: agentId,
-      visibility: "private",
     });
-    return { agentId, owner: { id: userId, role: "user" as const } };
+    return { agentId, owner };
   }
 
   /*
@@ -738,7 +751,7 @@ describe("whose routine it is", () => {
    * name, the schedule and the cap, and took the Bot on trust.
    */
   test("a routine cannot be put on somebody else's Bot", async () => {
-    const { agentId, owner } = await botOwnedBySomebody();
+    const { agentId, owner } = await botOwnedBy();
     const { agents: roster } = fakeAgents("theirs");
     const { service } = serviceWith(
       roster,
@@ -751,20 +764,52 @@ describe("whose routine it is", () => {
       schedule: { kind: "interval", minutes: 30 } as const,
     };
 
-    await expect(service.create(STRANGER, planted)).rejects.toMatchObject({
-      status: 404,
-      code: "laf:bot_not_found",
-    });
-    // Nothing was written: an administrator, who sees every routine, sees none on that Bot.
-    expect(
-      (await service.list(ADMIN)).filter((row) => row.agentId === agentId),
-    ).toEqual([]);
+    /*
+     * AND NOT BY AN ADMINISTRATOR EITHER, since 2026-09-16.
+     *
+     * `actorMayDriveBot` was the whole of this check and it reads no visibility at all, so an
+     * administrator holding the id could plant a standing instruction on a colleague's private
+     * Bot — unattended, on that Bot's computer, with that person's logins — and it would appear in
+     * the owner's own list of routines as something they never wrote. The same 404 as the
+     * stranger's: which of the two rules refused is not a fact about somebody else's roster.
+     */
+    for (const who of [STRANGER, ADMIN]) {
+      await expect(service.create(who, planted)).rejects.toMatchObject({
+        status: 404,
+        code: "laf:bot_not_found",
+      });
+    }
+    // Nothing was written, by either of them.
+    const onThatBot = async (actor: AgentActor) =>
+      (await service.list(actor)).filter((row) => row.agentId === agentId);
+    expect(await onThatBot(ADMIN)).toEqual([]);
+    expect(await onThatBot(owner)).toEqual([]);
 
-    // The owner may, and so may an administrator — the same three answers that decide a Bot.
+    // The owner may, and the routine is theirs.
     const theirs = await service.create(owner, planted);
     expect(theirs.agentId).toBe(agentId);
-    const admins = await service.create(ADMIN, { ...planted, name: "admin" });
-    expect(admins.agentId).toBe(agentId);
+    // And it stays out of the administrator's list, which is the other half of the same rule: a
+    // routine row carries the name and the instruction its author wrote, beside the Bot's id.
+    expect(await onThatBot(ADMIN)).toEqual([]);
+  });
+
+  test("an administrator may still put one on a Bot of their own", async () => {
+    // The role is not revoked, it is simply asked about a Bot in front of them — and the only Bots
+    // in front of anybody now are their own and the ones the deployment itself ships.
+    const { agentId } = await botOwnedBy(ADMIN);
+    const { service } = serviceWith({}, () => new Date("2026-08-20T07:00:00Z"));
+
+    const planted = await service.create(ADMIN, {
+      agentId,
+      name: "on their own Bot",
+      instruction: "say the time",
+      schedule: { kind: "interval", minutes: 30 } as const,
+    });
+
+    expect(planted.agentId).toBe(agentId);
+    expect((await service.list(ADMIN)).map((row) => row.id)).toContain(
+      planted.id,
+    );
   });
 
   test("a routine cannot be put on a Bot that does not exist", async () => {
@@ -840,23 +885,32 @@ describe("whose routine it is", () => {
   });
 
   test("the owner of the Bot manages the routines that drive it", async () => {
-    // A routine outlives whoever typed it. Staff leave, and a shop owner locked out of the routines
-    // running on their own Bot has no way in that is not an administrator.
-    //
-    // Planted by an administrator, because that is now the only person other than the owner who
-    // can put a routine on this Bot — a member of staff planting one is the hole `create` closed.
-    // What is under test is unchanged: the routine is not the owner's by authorship, and it is
-    // theirs to manage all the same.
-    const { agentId, owner } = await botOwnedBySomebody();
+    /*
+     * A routine outlives whoever typed it. Staff leave, and a shop owner locked out of the routines
+     * running on their own Bot has no way in that is not an administrator.
+     *
+     * THE ROW IS MADE THE ONLY WAY ONE LIKE IT CAN NOW EXIST. Since a Bot is its owner's alone,
+     * nobody else can `create` a routine on it at all — not a colleague, not an administrator — so
+     * a routine on your Bot with somebody else's name on it is a row from before that rule, or one
+     * whose author has since been replaced. That is what the update below makes: the same row, with
+     * a departed member of staff as its author. What is under test is unchanged — the routine is
+     * not the owner's by authorship, and it is theirs to manage all the same.
+     */
+    const { agentId, owner } = await botOwnedBy();
+    const staffer = await personWhoLeft();
     const clock = new Date("2026-08-20T07:00:00Z");
     const { service } = serviceWith({}, () => clock);
-    const routine = await service.create(ADMIN, {
+    const routine = await service.create(owner, {
       agentId,
       name: "theirs to keep",
       instruction: "x",
       schedule: { kind: "interval", minutes: 30 },
     });
     if (!routine) throw new Error("not created");
+    await database
+      .update(lafRoutines)
+      .set({ createdById: staffer.id })
+      .where(eq(lafRoutines.id, routine.id));
 
     expect((await service.list(owner)).map((row) => row.id)).toEqual([
       routine.id,
@@ -867,13 +921,44 @@ describe("whose routine it is", () => {
     await service.remove(owner, routine.id);
   });
 
-  test("an administrator reaches all of them", async () => {
-    const { routine, service } = await madeByActor();
+  /**
+   * An administrator reaches their own routines, and no others.
+   *
+   * This asserted "all of them" and was the routine half of the leak the owner measured: `scopeOf`
+   * returned no clause at all for the role, so the administrator's screen listed every routine on
+   * the deployment — each one carrying the name and the standing instruction its author wrote,
+   * beside the id of the Bot it drives.
+   */
+  test("and none on a Bot somebody else owns — by id, not only by absence", async () => {
+    const { agentId, owner } = await botOwnedBy();
+    const { service } = serviceWith({}, () => new Date("2026-08-20T07:00:00Z"));
+    const routine = await service.create(owner, {
+      agentId,
+      name: "the owner's own",
+      instruction: "count the till",
+      schedule: { kind: "interval", minutes: 30 },
+    });
 
-    expect((await service.list(ADMIN)).map((row) => row.id)).toContain(
+    expect((await service.list(ADMIN)).map((row) => row.id)).not.toContain(
       routine.id,
     );
-    await service.remove(ADMIN, routine.id);
+    // The id in hand changes nothing: every verb answers the way it does for a routine that is
+    // not there, which is also what it answers a stranger.
+    for (const attempt of [
+      () => service.runs(ADMIN, routine.id),
+      () => service.setEnabled(ADMIN, routine.id, false),
+      () => service.runNow(ADMIN, routine.id),
+      () => service.remove(ADMIN, routine.id),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({
+        code: "laf:routine_not_found",
+        status: 404,
+      });
+    }
+    // Still armed, and still the owner's: a refused delete took nothing with it.
+    expect((await service.list(owner)).map((row) => row.id)).toEqual([
+      routine.id,
+    ]);
   });
 
   test("the list never carries the trigger token hash", async () => {

@@ -265,7 +265,6 @@ async function createBotThrough(app: App, userId: string): Promise<string> {
       name: "알림 담당",
       title: "Notifications",
       roleDescription: "Sends the shop's own template messages.",
-      visibility: "private",
     }),
   );
   expect(answered.status).toBe(201);

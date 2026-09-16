@@ -139,7 +139,7 @@ export function createApp(
   computerGateway?: ComputerGateway,
   /** What the gateway enforces, and what an administrator can change while running. */
   computerPolicy?: PolicyStore,
-  /** Bots as durable objects: profile, roster, visibility. */
+  /** Bots as durable objects: profile, roster, whose they are. */
   agentProfileStore?: AgentProfileStore,
   /** The durable channels a Bot runs in. */
   channelStore?: ChannelStore,

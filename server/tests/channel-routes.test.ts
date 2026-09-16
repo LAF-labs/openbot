@@ -448,7 +448,6 @@ async function createPersistentAgent(options: {
   id?: string;
   name: string;
   owner: AgentActor;
-  visibility?: "public" | "private";
 }) {
   const agentId = options.id ?? persistentId("agent");
   await database.insert(agents).values({
@@ -464,7 +463,6 @@ async function createPersistentAgent(options: {
     title: `${options.name} title`,
     roleDescription: `${options.name} role description`,
     avatarSeed: agentId,
-    visibility: options.visibility ?? "private",
   });
   return agentId;
 }
@@ -550,7 +548,6 @@ describe("channel store integration", () => {
     const agentId = await createPersistentAgent({
       name: "Public historical agent",
       owner: creator,
-      visibility: "public",
     });
     const created = await persistentStore.create(creator, [agentId]);
     createdChannelIds.push(created.id);

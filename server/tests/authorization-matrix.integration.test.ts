@@ -146,14 +146,21 @@ const PEOPLE = [A, B, ADMIN, REMOVED];
 const PEOPLE_IDS = PEOPLE.map((person) => person.id);
 const emailOf = (person: { id: string }) => `${person.id}@laf.test`;
 
-/** A's Bots: the one every cell names, one marked public, one for the delete cell to consume. */
+/** A's Bots: the one every cell names, and one for the delete cell to consume. */
 const BOT_A = `agent_a_${run}`;
-const BOT_A_PUBLIC = `agent_apub_${run}`;
 const BOT_A_DOOMED = `agent_adel_${run}`;
 const BOT_B = `agent_b_${run}`;
-/** An `agents` row with no profile: a Bot nobody made, which the rule says is everybody's. */
+/**
+ * A Bot the deployment itself ships: a profile with no owner.
+ *
+ * It replaced A's `public` Bot, which is the fixture this file used to keep for the one Bot two
+ * people could both see. There is no such marking any more — a Bot is the account's that made it —
+ * so the only Bot in front of more than one person is one in front of all of them.
+ */
+const BOT_SHIPPED = `agent_shipped_${run}`;
+/** An `agents` row with NO profile: not a Bot anybody made, which the rule says is everybody's. */
 const BOT_NOBODYS = `agent_nobody_${run}`;
-const SEEDED_BOTS = [BOT_A, BOT_A_PUBLIC, BOT_A_DOOMED, BOT_B, BOT_NOBODYS];
+const SEEDED_BOTS = [BOT_A, BOT_SHIPPED, BOT_A_DOOMED, BOT_B, BOT_NOBODYS];
 
 /** A well-formed id that names nothing, for the parameters that are keys into a table. */
 const NOBODY = `nobody-${run}`;
@@ -613,18 +620,17 @@ beforeAll(async () => {
   await database.insert(agentProfiles).values(
     (
       [
-        [BOT_A, A.id, "private"],
-        [BOT_A_PUBLIC, A.id, "public"],
-        [BOT_A_DOOMED, A.id, "private"],
-        [BOT_B, B.id, "private"],
+        [BOT_A, A.id],
+        [BOT_SHIPPED, null],
+        [BOT_A_DOOMED, A.id],
+        [BOT_B, B.id],
       ] as const
-    ).map(([agentId, ownerUserId, visibility]) => ({
+    ).map(([agentId, ownerUserId]) => ({
       agentId,
       ownerUserId,
       title: agentId,
       roleDescription: "For the matrix.",
       avatarSeed: agentId,
-      visibility,
     })),
   );
 
@@ -817,9 +823,47 @@ const A_ALLOWED = [
   "POST /api/routines/:id/run",
 ].sort();
 
-/** The administrator: everything the owner has on the owner's Bot, and the deployment's own. */
+/**
+ * The doors that NAME A's Bot, which an administrator no longer reaches (2026-09-16).
+ *
+ * Every cell in this matrix presses `:agentId`/`:botId` against `BOT_A`, which is A's, and the
+ * routine cells against the routine driving it. Measured on the rehearsal deployment: the
+ * administrator's Bots page listed three Bots, two of them somebody else's, with the titles and
+ * roles their owners had written. A Bot now belongs to the account that made it and to nobody
+ * else — there is no `public` marking left to be an exception — so these fifteen answer the
+ * administrator exactly what they answer the colleague: 404, the roster's own code.
+ *
+ * WHAT IS NOT ON THIS LIST IS THE POINT. The administrator keeps every `/api/admin/*` door, the
+ * audit table, the approval metrics and the deletion of a person; and they keep every door that
+ * DRIVES a Bot rather than naming it — `/api/computers/:botId/*`, `/api/approvals/:botId`,
+ * `/api/plugins/for/:agentId`, `/api/components/for-agent/:agentId`, the grant verbs — because
+ * that is `actorMayDriveBot`, a separate rule which reads ownership on its own terms (audit A8,
+ * `auth/guards.ts`) and which this change deliberately left alone. Seeing a Bot and using one are
+ * two questions.
+ */
+const NAMES_SOMEBODY_ELSES_BOT = [
+  "DELETE /api/agents/:agentId",
+  "DELETE /api/routines/:id",
+  "DELETE /api/routines/:id/notepad",
+  "GET /api/agents/:agentId",
+  "GET /api/agents/:agentId/memories",
+  "GET /api/routines/:id/notepad",
+  "GET /api/routines/:id/runs",
+  "POST /api/agents/:agentId/duplicate",
+  "POST /api/agents/:agentId/hide",
+  "POST /api/agents/:agentId/unhide",
+  // A room made around A's Bot, and the intro chip pressed on it: both take the id in a body.
+  "POST /api/channels",
+  "POST /api/me/first-task",
+  // A standing instruction planted on it, and the three verbs that manage one.
+  "POST /api/routines",
+  "POST /api/routines/:id/enabled",
+  "POST /api/routines/:id/run",
+];
+
+/** The administrator: what the owner has on Bots they can see, and the deployment's own. */
 const ADMIN_ALLOWED = [
-  ...A_ALLOWED,
+  ...A_ALLOWED.filter((cell) => !NAMES_SOMEBODY_ELSES_BOT.includes(cell)),
   "DELETE /api/components/:name/functions/:function",
   // Grant and revoke on A's Bot, of a skill nobody wrote: an administrator may put anything on
   // any Bot, so the name is accepted and resolves to nothing. The owner is refused the skill (403,
@@ -1027,6 +1071,122 @@ describe("the matrix", () => {
     expect(okCells("admin")).toEqual(ADMIN_ALLOWED);
   });
 
+  /**
+   * THE SCREEN THE OWNER MEASURED, read the way the Bots page reads it.
+   *
+   * Every other assertion here is about a status code, and a status code is what was already
+   * right: `GET /api/agents` answered the administrator 200 both before and after. What was wrong
+   * was the BODY — three Bots, all marked private, two of them somebody else's, with the titles and
+   * roles their owners had written. So this one presses the door and reads what came back.
+   */
+  test("the administrator's Bots page carries no Bot of somebody else's", async () => {
+    const response = await app.request("http://laf.local/api/agents", {
+      headers: { cookie: `session=${ADMIN.id}` },
+    });
+    const body = (await response.json()) as {
+      agents: Array<{ id: string; mine: boolean }>;
+    };
+    const listed = body.agents.map((agent) => agent.id);
+
+    expect(response.status).toBe(200);
+    /*
+     * MEASURED: before the change this page carried all four seeded profiles — BOT_A, BOT_A_DOOMED
+     * and BOT_B are A's and B's, and the administrator owns none of them and nothing else either.
+     * It now carries the Bot the deployment ships and nothing else, which is a filter rather than
+     * an empty page. (BOT_NOBODYS has no profile row and has never been on this list.)
+     */
+    expect(listed).toEqual([BOT_SHIPPED]);
+    // `mine` stays honest on the row that survives: on a roster, visible is not owned.
+    expect(body.agents[0]).toMatchObject({ mine: false });
+  });
+
+  test("and B's page carries their own Bot and the shipped one, and nothing of A's", async () => {
+    const response = await app.request("http://laf.local/api/agents", {
+      headers: { cookie: `session=${B.id}` },
+    });
+    const { agents: listed } = (await response.json()) as {
+      agents: Array<{ id: string; mine: boolean }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(listed.map((agent) => agent.id).sort()).toEqual(
+      [BOT_B, BOT_SHIPPED].sort(),
+    );
+    expect(listed.find((agent) => agent.id === BOT_B)?.mine).toBe(true);
+    expect(listed.find((agent) => agent.id === BOT_SHIPPED)?.mine).toBe(false);
+  });
+
+  /**
+   * The operational screens, named one at a time rather than left to the list above.
+   *
+   * An administrator still has to be able to account for what ran on the deployment and to remove
+   * a person who is leaving. Narrowing what they may SEE of somebody's roster must not take any of
+   * that with it, and a list of sixty sorted strings is not where a reader would notice if it had.
+   */
+  test("keeps every door an administrator operates the deployment through", () => {
+    for (const template of [
+      "GET /api/admin/audit-events",
+      "GET /api/admin/credentials",
+      "GET /api/admin/metrics/approvals",
+      "GET /api/admin/package",
+      "GET /api/admin/status",
+      "GET /api/approvals/standing",
+      "GET /api/computers/policy",
+      "PUT /api/computers/policy",
+      // And the doors that DRIVE a Bot rather than name it: `actorMayDriveBot`, unchanged.
+      "GET /api/computers/:botId/computers",
+      "GET /api/computers/:botId/read",
+      "GET /api/computers/:botId/screenshot",
+      "GET /api/approvals/:botId",
+      "POST /api/computers/:botId/computers/reset",
+    ]) {
+      const cell = cellsOf("admin").find(
+        (candidate) => keyOf(candidate) === template,
+      );
+      expect([template, (cell?.status ?? 0) < 400]).toEqual([template, true]);
+    }
+    /*
+     * Removing a person is pressed against an id that names nobody (it is destructive, and the
+     * sweep has only these four people), so what it can show here is that the administrator gets
+     * past the guard and is told the person is not there — not the 403 of a door closed to them.
+     * That the removal really does take a person's invisible Bots with it is measured against the
+     * real tables in `account-lifecycle.integration.test.ts`.
+     */
+    const removal = cellsOf("admin").find(
+      (candidate) => keyOf(candidate) === "POST /api/admin/users/:id/delete",
+    );
+    expect(removal?.status).toBe(404);
+  });
+
+  /**
+   * And the trail still says which Bot, which is the whole use of it.
+   *
+   * The audit reader reads `audit_events` and joins nothing, so it was never going to inherit the
+   * roster's rule — but "the administrator can no longer see that Bot" and "the administrator can
+   * no longer account for what that Bot did" are one careless join apart, and only one of them is
+   * what the owner asked for. An id, never a title.
+   */
+  test("the audit table still names a private Bot's id, and never its title", async () => {
+    await createAuditStore(database).insert({
+      eventType: "computer.action_failed",
+      targetType: "agent",
+      targetId: BOT_A,
+      payload: { reason: "for the matrix" },
+    });
+
+    const response = await app.request(
+      "http://laf.local/api/admin/audit-events?limit=100",
+      { headers: { cookie: `session=${ADMIN.id}` } },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain(BOT_A);
+    // `title` on A's private Bot is its id (the fixture above), so the assertion that would pass
+    // by accident is asserted against the roleDescription every seeded profile carries instead.
+    expect(body).not.toContain("For the matrix.");
+  });
+
   test("the owner is refused the administrator's doors with 403, not with the Bot's 404", () => {
     // Their own Bot exists and they know it; what they lack is the role. The order of the two
     // guards decides which answer they get, and it must not leak the other way round for B.
@@ -1049,20 +1209,35 @@ describe("the matrix", () => {
 describe("the live screen, against the real tables", () => {
   const whose = (botId: string) => lookupBotOwner(database, botId);
 
-  test("opens for the owner and for an administrator, on a private Bot and a public one", async () => {
-    for (const bot of [BOT_A, BOT_A_PUBLIC]) {
-      await expect(streamBotAccess(bot, A, whose)).resolves.toBe("allowed");
-      await expect(streamBotAccess(bot, ADMIN, whose)).resolves.toBe("allowed");
-    }
+  /**
+   * DRIVING IS STILL THE ADMINISTRATOR'S, and this is the one place the two rules now differ.
+   *
+   * A colleague's Bot is invisible to an administrator everywhere else — it is off their roster and
+   * refused by id on every door that names one — and this socket still opens on it. That is not an
+   * oversight: `actorMayDriveBot` is a separate predicate that reads ownership on its own terms
+   * (auth/guards.ts), so that an approval raised on a deployment can still be answered by whoever
+   * runs it. Seeing a Bot and driving one are different questions, and only the first one changed.
+   */
+  test("opens for the owner, and for an administrator on a Bot that is not theirs", async () => {
+    await expect(streamBotAccess(BOT_A, A, whose)).resolves.toBe("allowed");
+    await expect(streamBotAccess(BOT_A, ADMIN, whose)).resolves.toBe("allowed");
   });
 
-  test("a colleague may not open it, and a public Bot does not change that", async () => {
-    // The hole: `agentProfileStore.get` let a `public` Bot through to anybody signed in, and the
-    // socket their keystrokes travel down opened on it. Whose it is never reads visibility.
+  test("a colleague may not open it, and a Bot the deployment ships is not a way in", async () => {
+    // The hole this pair exists for: `agentProfileStore.get` let a `public` Bot through to anybody
+    // signed in, and the socket their keystrokes travel down opened on it. Whose a Bot is never
+    // read from a roster. `BOT_SHIPPED` has no owner, so it IS everybody's to drive — which is the
+    // rule, not a leak, and is asserted below rather than here.
     await expect(streamBotAccess(BOT_A, B, whose)).resolves.toBe("not_found");
-    await expect(streamBotAccess(BOT_A_PUBLIC, B, whose)).resolves.toBe(
-      "not_found",
-    );
+    await expect(streamBotAccess(BOT_B, A, whose)).resolves.toBe("not_found");
+  });
+
+  test("a Bot the deployment ships is every signed-in person's to drive", async () => {
+    for (const person of [A, B, ADMIN]) {
+      await expect(streamBotAccess(BOT_SHIPPED, person, whose)).resolves.toBe(
+        "allowed",
+      );
+    }
   });
 
   test("a Bot nobody made is every signed-in person's", async () => {

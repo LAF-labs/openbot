@@ -83,7 +83,6 @@ describe("the agent form", () => {
     name: "Sales Bot",
     title: "Sales",
     roleDescription: "Answers questions about pricing.",
-    visibility: "private",
   };
 
   test("an agent with no endpoint is valid, and runs on the Bot in the box", () => {
@@ -292,7 +291,6 @@ describe("the key a customer's agent sits behind", () => {
       name: "Sales Bot",
       title: "Sales",
       roleDescription: "Answers questions about pricing.",
-      visibility: "private",
     };
     // A newline here would let somebody inject a second header into every request this server makes.
     const parsed = parseAgentInput({
@@ -307,7 +305,6 @@ describe("the key a customer's agent sits behind", () => {
       name: "Sales Bot",
       title: "Sales",
       roleDescription: "Answers questions about pricing.",
-      visibility: "private",
       auth: { header: "Authorization", value: "   " },
     });
     expect(parsed.ok).toBe(true);

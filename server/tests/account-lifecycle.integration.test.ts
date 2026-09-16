@@ -5,6 +5,7 @@ import { createAccountDeletion } from "../src/account/deletion";
 import { createAccountExport } from "../src/account/export";
 import { pseudonymFor } from "../src/account/pseudonym";
 import { createRetentionJob } from "../src/account/retention";
+import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createAuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import {
@@ -91,7 +92,6 @@ async function makePerson(label: string): Promise<Person> {
     title: "Bookkeeping",
     roleDescription: "Keeps the books.",
     avatarSeed: "seed",
-    visibility: "private",
   });
   await database
     .insert(agentPreferences)
@@ -212,6 +212,8 @@ async function makePerson(label: string): Promise<Person> {
 
 let leaver: Person;
 let stayer: Person;
+/** A third person, removed by somebody else. Made inside the test that removes them. */
+let struck: Person | undefined;
 
 beforeAll(async () => {
   leaver = await makePerson("leaver");
@@ -220,7 +222,9 @@ beforeAll(async () => {
 
 /** Everything the stayer made. The leaver's rows are removed by the code under test. */
 afterAll(async () => {
-  for (const person of [stayer, leaver].filter(Boolean)) {
+  for (const person of [stayer, leaver, struck].filter(
+    (person): person is Person => Boolean(person),
+  )) {
     await database
       .delete(lafThreadMessages)
       .where(eq(lafThreadMessages.threadId, person.threadId));
@@ -470,6 +474,78 @@ describe("deletion", () => {
         .from(computerStandingApprovals)
         .where(eq(computerStandingApprovals.id, stayer.approvalId)),
     ).toHaveLength(1);
+  });
+
+  /**
+   * An administrator removes somebody whose Bots they cannot see.
+   *
+   * Since 2026-09-16 a private Bot is its owner's alone, the administrator included — and this is
+   * the path that must not have inherited that. Removing a person is not reading their roster: it
+   * is the one operation that has to reach every Bot they own, reset the Chromium profile holding
+   * their bank logins, and take the rows with it. `account/deletion.ts` finds those Bots by
+   * `ownerUserId` straight off the table, with no actor and no visibility clause, which is why it
+   * still works — and the first assertion here is the one that would go red if a later change
+   * "tidied" that read onto the profile store.
+   */
+  test("an administrator still removes the Bots of a person they cannot see", async () => {
+    struck = await makePerson("struck");
+    const administrator = { id: `acct-${suite}-admin`, role: "admin" as const };
+    const profiles = createAgentProfileStore(
+      database,
+      new URL("https://managed.example.test/ag-ui"),
+    );
+
+    // The premise: this Bot is invisible to the administrator doing the removing.
+    expect(await profiles.get(administrator, struck.botId)).toBeNull();
+    expect(
+      (await profiles.list(administrator)).map((profile) => profile.id),
+    ).not.toContain(struck.botId);
+
+    const wiped: string[] = [];
+    const deletion = createAccountDeletion({
+      database,
+      retireConnectionsFor: async () => ({ retired: 0 }),
+      computerClient: {
+        forBot: (id: string) => ({
+          resetComputer: async () => {
+            wiped.push(id);
+            return { reset: true, botId: id };
+          },
+        }),
+      } as never,
+    });
+
+    const result = await deletion.delete({
+      userId: struck.id,
+      by: administrator.id,
+    });
+
+    expect(result.deleted).toBe(true);
+    // The browser profile, addressed per Bot, exactly as for a person removing themselves.
+    expect(wiped).toEqual([struck.botId]);
+    expect(result.computers).toMatchObject({
+      reset: [struck.botId],
+      failed: [],
+    });
+    // And the rows are gone: the Bot, its profile, and the routine that drove it.
+    expect(
+      await database.select().from(agents).where(eq(agents.id, struck.botId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(agentProfiles)
+        .where(eq(agentProfiles.agentId, struck.botId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(lafRoutines)
+        .where(eq(lafRoutines.id, struck.routineId)),
+    ).toHaveLength(0);
+    expect(
+      await database.select().from(users).where(eq(users.id, struck.id)),
+    ).toHaveLength(0);
   });
 
   test("the trail keeps what happened under a pseudonym, and names nobody", async () => {

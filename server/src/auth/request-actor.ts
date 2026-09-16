@@ -27,7 +27,7 @@ export type RequestActors = {
 };
 
 /**
- * The authorization projection of the same person: agent visibility is decided from this.
+ * The authorization projection of the same person: which Bots are theirs is decided from this.
  *
  * THE FALLBACK IS NOT THE GUARD AND NEVER WAS. It used to be justified by `/info` answering an
  * anonymous deployment check; `/api/copilotkit/*` is behind `requireUser` now (app.ts), so no

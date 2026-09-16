@@ -70,7 +70,6 @@ beforeAll(async () => {
         title: id,
         roleDescription: "For a test.",
         avatarSeed: id,
-        visibility: "private",
       })
       .onConflictDoNothing();
   }

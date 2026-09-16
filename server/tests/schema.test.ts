@@ -7,7 +7,6 @@ import {
   agentPreferences,
   agentProfiles,
   agents,
-  agentVisibility,
   auditEvents,
   channelAgents,
   channelMemberships,
@@ -279,9 +278,6 @@ describe("LAF Agent database schema", () => {
       "agent_profiles",
       "agent_preferences",
     ]);
-    expect(agentVisibility.enumName).toBe("agent_visibility");
-    expect(agentVisibility.enumValues).toEqual(["public", "private"]);
-
     const profileConfig = getTableConfig(agentProfiles);
     const preferenceConfig = getTableConfig(agentPreferences);
 
@@ -335,12 +331,6 @@ describe("LAF Agent database schema", () => {
         // nobody recorded. Written by the person's create or PATCH, never by `update_profile`.
         name: "preset_id",
         notNull: false,
-        hasDefault: false,
-        primary: false,
-      },
-      {
-        name: "visibility",
-        notNull: true,
         hasDefault: false,
         primary: false,
       },
@@ -481,14 +471,22 @@ describe("LAF Agent database schema", () => {
       })),
     ).toEqual([
       {
-        name: "agent_profiles_visibility_deleted_idx",
-        columns: ["visibility", "deleted_at"],
+        name: "agent_profiles_owner_deleted_idx",
+        columns: ["owner_user_id", "deleted_at"],
         unique: false,
         method: "btree",
       },
     ]);
   });
 
+  /**
+   * 0000 still creates the visibility column, and that is not a mistake to fix.
+   *
+   * A migration is what a database that ran it actually did, so the ones already applied are never
+   * rewritten (see `0033_drop_tax_invoice.sql`). The column is dropped by 0042 instead, which the
+   * test below this one holds to. So this reads as history: 0000 made it, and something later has
+   * to unmake it.
+   */
   test("keeps the agent profile migration aligned with the schema", async () => {
     const migration = await readFile(
       new URL("../drizzle/0000_schema.sql", import.meta.url),
@@ -522,6 +520,34 @@ describe("LAF Agent database schema", () => {
     );
     expect(normalizedMigration).toContain(
       `CREATE INDEX "agent_profiles_visibility_deleted_idx" ON "agent_profiles" USING btree ("visibility","deleted_at")`,
+    );
+  });
+
+  /**
+   * And the migration that takes it away again, which is the half a fresh database depends on.
+   *
+   * A column removed from the schema with no migration behind it type-checks, passes every unit
+   * test, and then fails on a deployment that still has it — the mirror of the note below. The
+   * enum goes too: a type left behind is a `public`/`private` choice still sitting in the database
+   * for the next schema to pick up by accident.
+   */
+  test("ships the migration that drops the visibility column and its enum", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0042_drop_agent_visibility.sql", import.meta.url),
+      "utf8",
+    );
+    const normalized = migration.replace(/\s+/g, " ").trim();
+
+    expect(normalized).toContain(
+      `ALTER TABLE "agent_profiles" DROP COLUMN "visibility"`,
+    );
+    expect(normalized).toContain(`DROP TYPE "public"."agent_visibility"`);
+    // The roster's index moves with the rule it serves: whose the Bot is, not how it was marked.
+    expect(normalized).toContain(
+      `DROP INDEX "agent_profiles_visibility_deleted_idx"`,
+    );
+    expect(normalized).toContain(
+      `CREATE INDEX "agent_profiles_owner_deleted_idx" ON "agent_profiles" USING btree ("owner_user_id","deleted_at")`,
     );
   });
 

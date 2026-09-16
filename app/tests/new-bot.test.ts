@@ -165,8 +165,9 @@ describe("the input a press sends", () => {
     const input = agentInputFrom({ ...emptyAgentForm, name: nextBotName([]) });
     expect(input.title).toBe("");
     expect(input.roleDescription).toBe("");
-    // The server's default, and the only visibility this deployment has any use for.
-    expect(input.visibility).toBe("private");
+    // And no "who can see this" either: it is the account's Bot, so there was never a second
+    // answer for the form to collect or for a person to be asked for.
+    expect("visibility" in input).toBe(false);
     expect("auth" in input).toBe(false);
   });
 });

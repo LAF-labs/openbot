@@ -150,7 +150,6 @@ export function createAccountExport(database: Database): AccountExport {
             effort: agentProfiles.effort,
             autoReview: agentProfiles.autoReview,
             presetId: agentProfiles.presetId,
-            visibility: agentProfiles.visibility,
             deletedAt: agentProfiles.deletedAt,
           })
           .from(agents)
@@ -171,7 +170,6 @@ export function createAccountExport(database: Database): AccountExport {
         autoReview: row.autoReview,
         // Which preset they picked for it, if any: the deployment holds it, so it leaves with them.
         presetId: row.presetId,
-        visibility: row.visibility,
         deletedAt: row.deletedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

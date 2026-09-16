@@ -88,7 +88,6 @@ async function createBot(userId: string, hidden = false): Promise<string> {
     title: "Test",
     roleDescription: "For a grant to land on.",
     avatarSeed: "seed",
-    visibility: "private",
   });
   createdBotIds.push(botId);
   // `hidden` is a PREFERENCE row and deliberately not created: a Bot tidied off the home screen is

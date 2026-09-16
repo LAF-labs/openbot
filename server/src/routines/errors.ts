@@ -27,8 +27,8 @@ export class RoutineError extends Error {
  *
  * 404 rather than 403, and the choice follows `agents/routes.ts`: a Bot somebody cannot see is an
  * `AgentNotFoundError` and answers 404, and 403 there is reserved for a resource they CAN see and
- * may not change — a public Bot they do not own, or one a package shipped. A routine has no public
- * visibility, so the second case has no routine equivalent and every refusal here is the first one.
+ * may not change — which, since a Bot is its owner's alone, means one a package shipped. A routine
+ * is nobody's but its author's and its Bot's owner's, so every refusal here is the first case.
  * The webhook (`service.ts`, `trigger`) already argued it: one answer for a missing routine and a
  * wrong token, so a prober cannot tell which of the two it guessed.
  */
