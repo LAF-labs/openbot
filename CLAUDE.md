@@ -4,8 +4,9 @@
 
 LAF Agent is a **fork of CopilotKit's OpenBot** (`CopilotKit/openbot`, MIT),
 turned into an everyday agent for people who do not write software — small
-business owners and their staff, in Korean first. A person makes up to five
-Bots, each starting with nothing set, and shapes them by talking to them.
+business owners, in Korean first. A deployment belongs to one person, who makes
+up to five Bots, each starting with nothing set, and shapes them by talking to
+them.
 
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no
@@ -33,7 +34,12 @@ it is the decision record, and it is why:
 - **Upstream is synced by cherry-pick, never by merge.** Upstream's `#21`
   deletes the foundation everything under boundaries is built on. `472ad43`
   records that refusal; take security and protocol fixes only.
-- **Seats are counted per person.** Somebody else's Bots never take yours.
+- **One account per deployment, enforced in code.** Production refuses to
+  start unless the sign-in lines name exactly one address; sign-in refuses a
+  second person in every environment; an account the list no longer admits acts
+  on nothing, unattended paths included. The seats are that person's five Bots.
+  The invariant is the deployment's, not the VM's: a deployment may one day be a
+  slot on shared hardware.
 
 `docs/laf/deploying.md` is how one is actually stood up, including the three
 things that must be true before `docker compose up` can work and are not in

@@ -388,6 +388,9 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "그 일정으로는 실행되는 날이 없다. 요일을 다시 골라라.",
   "laf:routine_not_created":
     "루틴을 저장하지 못했다. 한 번만 다시 시도하고, 또 안 되면 사람에게 알려라.",
+  // 배포 하나에 계정 하나(2026-09-16): 명단에서 빠진 계정이 만든 루틴은 어느 문으로도 돌지 않는다.
+  "laf:routine_author_not_admitted":
+    "그 루틴은 이제 이곳을 쓸 수 없는 계정이 만든 것이라 돌지 않는다. 다시 시도하지 말고, 필요하면 새로 만들자고 사람에게 말해라.",
   "laf:agent_not_found": "그 봇을 찾을 수 없다.",
   "laf:no_bot_here": "이 대화에는 기억을 맡길 봇이 없다.",
   "laf:memory_empty": "적을 내용이 비어 있다.",

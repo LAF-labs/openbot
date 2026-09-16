@@ -1,15 +1,21 @@
 /**
  * Who may sign in at all.
  *
- * One VM belongs to one person (docs/laf/deployment-model.md), and until now nothing enforced
- * that: the only thing keeping a second account out was the OAuth consent screen still being in
- * test mode — a Google console setting, not a property of this deployment. This is the lock.
+ * A deployment belongs to one account (docs/laf/deployment-model.md, 2026-09-16: "1계정 1VM을
+ * 코드로 강제한다"). This is the address half of that lock; `auth/admission.ts` is the half that
+ * asks the database, and `config.ts` is where a production deployment is refused for not naming
+ * exactly one address.
  *
  * Semantics, chosen for the failure modes:
  *
- * - Unset means open. That is the behavior every existing deployment and local setup has today;
- *   an empty new variable must not lock anybody out of anything. The deployment closes the door
- *   by setting it, and `.env.example` says so where the variable is introduced.
+ * - ON A PRODUCTION DEPLOYMENT THE LIST IS ALWAYS A DOOR. `config.ts` refuses to start unless the two
+ *   lines name exactly one address together, and says the door is closed (`allowlistEnforced`) even
+ *   when that address is written only as the administrator — so a VM whose `.env` lost its
+ *   `SIGN_IN_ALLOWED_EMAILS` line no longer admits anybody the provider authenticates (audit
+ *   2026-09-16 R9-04).
+ * - Outside production, unset means open. A laptop and the test suites are not somebody's shop, and
+ *   an empty new variable must not lock a developer out of their own machine; the boot says so out
+ *   loud instead. There the allow variable alone arms the lock, as it always did.
  * - The admin list is always admitted. The lockout nobody can undo is the administrator listing
  *   everyone but themselves — recovering from it means editing the VM's .env over SSH, so it is
  *   cheaper to make the mistake impossible than to document the recovery.
@@ -17,26 +23,62 @@
  *   plus-stripping: those are Gmail conventions, not address semantics, and a lock that admits
  *   addresses it was never given is a worse surprise than one that wants the exact spelling.
  */
+
+/** The one spelling addresses are compared in — here, at boot, and against the database. */
+export function normalizeAddress(address: string): string {
+  return address.trim().toLowerCase();
+}
+
+/**
+ * Every address the two sign-in lines admit between them, each once.
+ *
+ * `config.ts` counts these to decide whether a production deployment names exactly one account, so
+ * the fleet writing the owner on both lines (`INITIAL_ADMIN_EMAILS` and `SIGN_IN_ALLOWED_EMAILS`) is
+ * one address, not two.
+ */
+export function admittedAddresses(options: {
+  allowedEmails: readonly string[];
+  initialAdminEmails: readonly string[];
+}): string[] {
+  return [
+    ...new Set(
+      [...options.allowedEmails, ...options.initialAdminEmails]
+        .map(normalizeAddress)
+        .filter((address) => address.length > 0),
+    ),
+  ];
+}
+
+export type SignInAllowlist = {
+  /** Whether the list is a door at all. False only outside production, with no allow variable. */
+  enforced: boolean;
+  /** What it admits, normalised. Read only when `enforced`; an open door admits everybody. */
+  addresses: readonly string[];
+  admits(email: string): boolean;
+};
+
 export function createSignInAllowlist(options: {
   allowedEmails: string[];
   initialAdminEmails: string[];
-}): { enforced: boolean; admits(email: string): boolean } {
-  const normalize = (address: string) => address.trim().toLowerCase();
-  const admitted = new Set(
-    [...options.allowedEmails, ...options.initialAdminEmails]
-      .map(normalize)
-      .filter((address) => address.length > 0),
-  );
-  // Only the allow variable arms the lock. Admin emails alone must not: they predate this lock,
-  // and arming on them would have turned every existing deployment exclusive on upgrade.
-  const enforced = options.allowedEmails.some(
-    (address) => address.trim().length > 0,
-  );
+  /**
+   * Whether the list closes the door, as `config.ts` decided it for this deployment — always true
+   * in production. Absent, for a caller that assembled the lists itself, the allow variable alone
+   * arms it: admin emails predate the lock, and arming on them outside production would have
+   * turned every laptop exclusive.
+   */
+  allowlistEnforced?: boolean;
+}): SignInAllowlist {
+  const addresses = admittedAddresses(options);
+  const enforced =
+    options.allowlistEnforced ??
+    options.allowedEmails.some((address) => address.trim().length > 0);
+  const admitted = new Set(addresses);
   return {
     enforced,
+    addresses,
     admits(email: string): boolean {
       if (!enforced) return true;
-      return admitted.has(normalize(email));
+      return admitted.has(normalizeAddress(email));
     },
   };
 }

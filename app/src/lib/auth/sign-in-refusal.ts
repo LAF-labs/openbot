@@ -28,6 +28,7 @@ export type SignInRefusal =
   | "cancelled"
   | "expired"
   | "not_admitted"
+  | "deployment_has_account"
   | "revoked"
   | "other_sign_in"
   | "email_missing"
@@ -148,6 +149,14 @@ const REFUSAL_BY_KEY: Readonly<
   signup_disabled: "not_admitted",
 
   /*
+   * A place that already belongs to an account (2026-09-16: one account per deployment, enforced in
+   * code). The same hook refuses a second person while their account is being made — with its own
+   * code, because on a laptop with no list, or a list naming two addresses, the person refused may
+   * be one the list admits, and "this account cannot sign in here" would not be the reason.
+   */
+  laf_deployment_has_account: "deployment_has_account",
+
+  /*
    * NOT A SIGN-IN THAT FAILED: A SESSION THAT WAS TAKEN AWAY. The server's guard answers
    * `laf:session_revoked` to a person struck off the list or removed by an administrator
    * (`server/src/auth/session-revocation.ts`), and the app brings them here with it
@@ -232,6 +241,10 @@ export function refusalSentence(refusal: SignInRefusal): string {
     case "not_admitted":
       return t(
         "This account cannot sign in here. Try again with the account this place was set up for.",
+      );
+    case "deployment_has_account":
+      return t(
+        "This place is already used by another account, and one place takes one account. Sign in with the account you first signed up with.",
       );
     case "revoked":
       return t(

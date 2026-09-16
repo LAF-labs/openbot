@@ -13,6 +13,7 @@ import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
 import { createAuditReader, createAuditStore } from "./audit";
 import { createAuth } from "./auth";
+import { createDeploymentAdmission } from "./auth/admission";
 import { createSignInAllowlist } from "./auth/allowlist";
 import { createRoleRepository } from "./auth/guards";
 import { createOnboardingStore } from "./auth/onboarding";
@@ -164,9 +165,9 @@ const agentVault = {
 /** What each Bot has learned about each person, and the rows that let them undo it. */
 const agentMemoryStore = createAgentMemoryStore(database);
 
-// Every Bot of an account shares the one computer at `baseUrl` — the account's desk, by decision
-// (see computer/assignment.ts). Built before the Bot store, which hands a deleted Bot's computer
-// to it.
+// Every Bot on the deployment shares the one computer at `baseUrl` and its one browser profile, by
+// decision (docs/laf/deployment-model.md). Built before the Bot store, which hands a deleted Bot's
+// computer to it.
 const computerClient = config.computer
   ? createComputerClient({
       baseUrl: config.computer.baseUrl,
@@ -179,8 +180,8 @@ const agentProfileStore = createAgentProfileStore(
   config.managedAgentAgUiUrl,
   agentVault,
   undefined,
-  // A deleted Bot's browser is closed and its profile — its logins — deleted, and the trail says
-  // so or says why not. Until 2026-09-13 the row went and the logins stayed (computer/release.ts).
+  // A deleted Bot's tabs are closed and the deployment's logins kept for the other Bots, and the
+  // trail says so or says why not (computer/release.ts).
   releaseComputerFor(computerClient, bootAuditStore),
 );
 // Read here rather than beside the row it writes below, because the package names the deployment
@@ -227,6 +228,21 @@ sayConnectors({
   dataGoKr: publicDataRuntime.configured,
 });
 /**
+ * The sign-in list this process booted with, and who it lets act (auth/admission.ts).
+ *
+ * ONE DEPLOYMENT, ONE ACCOUNT (docs/laf/deployment-model.md, 2026-09-16). Built once and handed to
+ * every path that acts for a person — the sign-in door, the sessions already issued, the routines,
+ * the outbox, the account deletion — so no two of them can read the list two ways. Before the
+ * outbox, which asks it about every person it is about to reach. No sign-in configured is an open
+ * door, as it always was: nobody can sign in there to be a second person.
+ */
+const signInList = config.auth ? createSignInAllowlist(config.auth) : undefined;
+const admission = createDeploymentAdmission({
+  database,
+  devNoAuth: config.devNoAuth,
+  ...(signInList ? { allowlist: signInList } : {}),
+});
+/**
  * One outbox for "somebody has to be told", and every door it goes out through. Built here, before
  * anything that raises a notification, because there is exactly one of these and the things that
  * write into it are spread across the process. See `notifications/doors.ts`.
@@ -238,6 +254,7 @@ const notificationOutbox = createDeploymentOutbox({
   partners: partnerRuntime.connections,
   alimtalk: config.partners.alimtalk,
   fleetNotifier,
+  admission,
 });
 /** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
 const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
@@ -278,11 +295,8 @@ const loadAgentsForActor = withGrantedSkills(
  * boot is the moment `laf member remove` takes effect, and handed to every place a session is read
  * or ended: both guards, the account deletion and the live screen.
  */
-const sessionRevocation = config.auth
-  ? createSessionRevocation({
-      database,
-      allowlist: createSignInAllowlist(config.auth),
-    })
+const sessionRevocation = signInList
+  ? createSessionRevocation({ database, allowlist: signInList })
   : undefined;
 await reconcileBeforeServing({
   database,
@@ -292,7 +306,7 @@ await reconcileBeforeServing({
   sessions: sessionRevocation,
 });
 const auth = config.auth
-  ? createAuth(config, database, fleetNotifier)
+  ? createAuth(config, database, fleetNotifier, admission)
   : undefined;
 // A person whose sessions end loses their activity sockets with them. See `ChannelEventHub.closeFor`.
 sessionRevocation?.onEnded((userId) => {
@@ -599,6 +613,8 @@ const routineService = createRoutineService({
   tools: unattendedTools,
   // The clock the Bots are told the time in, so a routine a Bot makes without a zone runs on it.
   timeZone: config.botTimeZone,
+  // A routine runs as its author; one the sign-in list no longer admits is run by no door.
+  admission,
 });
 
 /*
@@ -745,6 +761,10 @@ const app = createApp(
       ...(fleetNotifier ? { fleetNotices: notificationOutbox } : {}),
       // The cookies of somebody an administrator removed, remembered as revoked; their screens closed.
       ...(sessionRevocation ? { sessions: sessionRevocation } : {}),
+      // Whose logins the shared browser holds, so removing a leftover account keeps them — and the
+      // trail its released Bots are written to.
+      admission,
+      auditStore: bootAuditStore,
     }),
     auditStore: bootAuditStore,
   },

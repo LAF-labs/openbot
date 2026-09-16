@@ -23,8 +23,11 @@ export type RoutineTickerOptions = {
   database: Database;
   auditStore?: AuditStore;
   now: () => Date;
-  /** Runs a routine this ticker has claimed (`run.ts`). */
-  execute: (row: RoutineRow) => Promise<void>;
+  /**
+   * Runs a routine this ticker has claimed (`run.ts`), answering whether it ran — a routine whose
+   * author the deployment no longer admits is claimed for its window and not run.
+   */
+  execute: (row: RoutineRow) => Promise<boolean>;
 };
 
 export function createRoutineTicker(options: RoutineTickerOptions) {
@@ -117,8 +120,7 @@ async function attend(
 
   if (!(await withinGrace(options, row, schedule, at, next))) return false;
 
-  await options.execute(claimed);
-  return true;
+  return options.execute(claimed);
 }
 
 /**

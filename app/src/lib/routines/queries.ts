@@ -129,6 +129,13 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
   "laf:routine_schedule_unreachable": "That schedule never comes round.",
   "laf:routine_not_created": "The routine could not be made. Try again.",
   "laf:routine_trigger_token_missing": "That link is missing its key.",
+  /*
+   * "Run now" on a routine an account this place no longer admits wrote — one left from before a
+   * place had exactly one account. It does not run by any door, and the button says why rather than
+   * answering as if it had.
+   */
+  "laf:routine_author_not_admitted":
+    "This routine was made by an account that can no longer use this place, so it does not run. Make it again yourself if you still need it.",
 };
 
 export async function routineRequest(path: string, init?: RequestInit) {

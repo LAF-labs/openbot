@@ -1,3 +1,4 @@
+import type { DeploymentAdmission } from "../auth/admission";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import { createFleetDoor, type FleetNotifier } from "../fleet/notify";
@@ -41,10 +42,13 @@ export function createDeploymentOutbox(input: {
   alimtalk: DeploymentConfig["partners"]["alimtalk"];
   /** Absent on a deployment with no fleet webhook, which then has no fleet door either. */
   fleetNotifier: FleetNotifier | undefined;
+  /** Who may still be told anything: a person the sign-in list no longer admits is reached by no door. */
+  admission: Pick<DeploymentAdmission, "admitsPerson">;
 }): NotificationOutbox {
   const { notifications } = input.config;
   return createNotificationOutbox({
     database: input.database,
+    admission: input.admission,
     adapters: [
       createSocketAdapter(input.sockets),
       ...(notifications.webhookUrl

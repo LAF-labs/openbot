@@ -57,12 +57,14 @@
  * `docs/laf/data-lifecycle.md` says so in the person's own language rather than implying otherwise.
  */
 import { type AnyColumn, and, eq, inArray, or, sql } from "drizzle-orm";
-import { recordAuditEvent } from "../audit";
+import { type AuditStore, recordAuditEvent } from "../audit";
+import type { DeploymentAdmission } from "../auth/admission";
 import type {
   EndedSession,
   SessionRevocation,
 } from "../auth/session-revocation";
 import type { ComputerClient } from "../computer/client";
+import { releaseComputerFor } from "../computer/release";
 import type { Database } from "../db/client";
 import {
   accounts,
@@ -105,13 +107,20 @@ export type DeletionResult = {
   pseudonym: string;
   counts: DeletionCounts;
   /**
-   * Whether the deployment's one browser profile was wiped, and whether a computer was reachable.
+   * What became of the deployment's one browser, and whether a computer was reachable.
    *
-   * Still lists of Bot ids, and they hold at most one: the id is WHICH Bot the reset was addressed
-   * through, not whose logins went — there is one profile and all of them go together. Both empty
-   * with a computer configured means there was no Bot left to address it with.
+   * `reset` holds at most one Bot id: the id is WHICH Bot the reset was addressed through, not whose
+   * logins went — there is one profile and all of them go together. `released` is the other answer:
+   * each of the leaver's Bots let go of (tabs and wheel) while the profile, and the logins of the
+   * person who stays, were kept. `failed` is whichever of the two the computer did not do. All three
+   * empty with a computer configured means there was no Bot left to address it with.
    */
-  computers: { reset: string[]; failed: string[]; configured: boolean };
+  computers: {
+    reset: string[];
+    released: string[];
+    failed: string[];
+    configured: boolean;
+  };
 };
 
 export type AccountDeletionDependencies = {
@@ -162,7 +171,23 @@ export type AccountDeletionDependencies = {
    * delete rows and nothing else; `main.ts` always passes it.
    */
   sessions?: Pick<SessionRevocation, "ended">;
+  /**
+   * Who the deployment still lets act (`auth/admission.ts`), which decides whose the browser's
+   * logins are — and so whether this deletion may empty it. See `keepsTheProfile`.
+   *
+   * Absent, every account counts as the deployment's and the profile is emptied whenever an account
+   * with Bots leaves: what this path did before 2026-09-16. `main.ts` always passes it.
+   */
+  admission?: Pick<DeploymentAdmission, "admits" | "heldBySomebodyElse">;
+  /**
+   * Where the release of a leaver's Bots is written (`computer.released`), for the deletion that
+   * keeps the profile. Absent in the suites that only count rows; `main.ts` passes the boot store.
+   */
+  auditStore?: AuditStore;
 };
+
+/** Nothing to write to: the suites that pass no audit store read the result instead. */
+const NO_TRAIL: AuditStore = { insert: async () => undefined };
 
 export type AccountDeletion = {
   delete: (input: {
@@ -182,7 +207,12 @@ export function createAccountDeletion(
     computerClient,
     fleetNotices,
     sessions: sessionEnds,
+    admission,
   } = dependencies;
+  const releaseBot = releaseComputerFor(
+    computerClient,
+    dependencies.auditStore ?? NO_TRAIL,
+  );
 
   return {
     async delete({ userId, by }) {
@@ -200,6 +230,7 @@ export function createAccountDeletion(
           counts: {},
           computers: {
             reset: [],
+            released: [],
             failed: [],
             configured: Boolean(computerClient),
           },
@@ -215,9 +246,9 @@ export function createAccountDeletion(
       /*
        * THE COOKIES ON DISK, BEFORE THE ROWS THAT NAME THEM.
        *
-       * The Chromium profile in the `agent-profiles` volume holds the person's logins to their bank,
-       * their marketplace and their tax office. No amount of deleting rows touches it.
-       * `computers/reset` is the call that does.
+       * The Chromium profile in the `agent-profiles` volume holds logins to a bank, a marketplace
+       * and a tax office. No amount of deleting rows touches it. `computers/reset` is the call that
+       * does.
        *
        * ONCE, NOT ONCE PER BOT. There is one profile on a deployment and every Bot shares it
        * (`agent-computer/src/profiles.ts`, 2026-09-16), so the loop this used to be would have wiped
@@ -225,6 +256,11 @@ export function createAccountDeletion(
        * addressed through `forBot`, which sets `x-openbot-bot-id`: the header says who asked and the
        * computer still refuses without it — a query string would silently name the DEFAULT profile,
        * which is somebody else's or nobody's (CLAUDE.md).
+       *
+       * AND ONLY WHEN THE LOGINS IN IT ARE NOBODY ELSE'S — see `keepsTheProfile`. Removing a leftover
+       * account used to sign the deployment's own person out of every site, without asking them
+       * (audit 2026-09-16, R1-03). That leaver's Bots are let go of instead, one by one, the way a
+       * deleted Bot is (`computer/release.ts`), each with its `computer.released` row.
        *
        * First, because after the rows are gone there is no Bot id left to address it with.
        *
@@ -235,10 +271,12 @@ export function createAccountDeletion(
        * destroyed when that reaches zero. The audit row says which of the two happened rather than
        * claiming a wipe either way.
        */
+      const keepProfile = await keepsTheProfile(admission, person);
       const reset: string[] = [];
+      const released: string[] = [];
       const failed: string[] = [];
       const [through] = botIds;
-      if (computerClient && through) {
+      if (computerClient && through && !keepProfile) {
         try {
           await computerClient.forBot(through).resetComputer();
           reset.push(through);
@@ -246,6 +284,14 @@ export function createAccountDeletion(
           // Recorded, not thrown. A computer that is down must not leave the account half-deleted
           // — the rows still have to go, and the trail has to say the profile did not.
           failed.push(through);
+        }
+      }
+      if (computerClient && keepProfile) {
+        // Under the pseudonym when they are removing themselves: the rows are theirs to lose too.
+        const asked = { id: by === userId ? pseudonym : by };
+        for (const botId of botIds) {
+          if (await releaseBot(botId, asked)) released.push(botId);
+          else failed.push(botId);
         }
       }
 
@@ -609,17 +655,25 @@ export function createAccountDeletion(
               computers: {
                 configured: Boolean(computerClient),
                 reset: reset.length,
+                released: released.length,
                 failed: failed.length,
-                // Said out loud rather than inferred from two counts: a deployment with no computer
+                // Said out loud rather than inferred from the counts: a deployment with no computer
                 // configured, and a person with no Bots left to address one through, both leave a
-                // profile volume that may still be sitting on the host.
+                // profile volume that may still be sitting on the host — and a kept profile is a
+                // decision, not a failure to wipe one.
                 note: !computerClient
                   ? "no computer configured, no profile wiped"
                   : botIds.length === 0
-                    ? "no Bot left to address the computer through; the profile goes with the VM"
-                    : failed.length === 0
-                      ? "the shared profile was wiped"
-                      : "the shared profile could not be wiped",
+                    ? keepProfile
+                      ? "no Bot to release; the shared profile stays with the account this deployment still admits"
+                      : "no Bot left to address the computer through; the profile goes with the VM"
+                    : keepProfile
+                      ? failed.length === 0
+                        ? "the shared profile was kept for the account this deployment still admits; this account's Bots were released"
+                        : "the shared profile was kept for the account this deployment still admits; some of this account's Bots could not be released"
+                      : failed.length === 0
+                        ? "the shared profile was wiped"
+                        : "the shared profile could not be wiped",
               },
             },
           },
@@ -691,8 +745,46 @@ export function createAccountDeletion(
         deleted: true,
         pseudonym,
         counts,
-        computers: { reset, failed, configured: Boolean(computerClient) },
+        computers: {
+          reset,
+          released,
+          failed,
+          configured: Boolean(computerClient),
+        },
       };
     },
   };
+}
+
+/**
+ * WHETHER THE BROWSER'S LOGINS BELONG TO SOMEBODY WHO STAYS — decided before anything is deleted.
+ *
+ * The profile is the deployment's (deployment-model.md, 2026-09-16), and the logins in it are its
+ * admitted person's. So:
+ *
+ *   - the admitted person leaving empties it: they are theirs, and whoever else is left is a
+ *     leftover that acts on nothing;
+ *   - a leftover leaving while an account the deployment still admits stays KEEPS it: emptying it
+ *     would sign that person out of every site because somebody else's row was tidied away;
+ *   - a leftover leaving with nobody admitted left empties it too — the owner already withdrew or
+ *     has not signed up yet, and the next person the list admits must not find a stranger's
+ *     sessions waiting in their Bots' browser. This is also the last account leaving, whatever the
+ *     list says.
+ *
+ * Counted BEFORE the deletion, and against the list rather than the whole table: the count the
+ * fleet is told (`remainingAccounts`) is taken inside the transaction, after the row is gone, and
+ * answers a different question — whether the machine may be destroyed.
+ *
+ * With no admission handed in, every account is the deployment's and the profile is emptied: the
+ * behaviour before this function existed.
+ */
+async function keepsTheProfile(
+  admission: AccountDeletionDependencies["admission"],
+  person: { id: string; email: string },
+): Promise<boolean> {
+  if (!admission || admission.admits(person.email)) return false;
+  return admission.heldBySomebodyElse({
+    email: person.email,
+    userId: person.id,
+  });
 }

@@ -84,6 +84,14 @@ finish").
 - `seen_at` — 사람이 실제로 본 시각. 인앱 문에서 알림을 **눌렀을 때**, 또는 그 질문에
   **답했을 때** 찍힌다. 알림이 뜬 것은 배달이지 본 것이 아니다.
 
+**명단 밖의 사람에게는 어떤 문도 열리지 않는다 (2026-09-16).** 배포 하나에 계정은 하나다
+(`deployment-model.md`). 로그인 명단이 더는 허용하지 않는 사람 — 남은 계정 — 에게 가는 행은
+쓰이기는 하되 **소켓·웹훅·알림톡 어느 문에도 내놓지 않는다**(`notifications/outbox.ts`
+`deliver`, 판단은 `auth/admission.ts` 하나). 그 사람은 알림이 가리키는 것을 하나도 열 수 없고,
+알림톡은 그 사람이 연결해 둔 휴대폰으로 가기 때문이다. 확인할 수 없으면(조회 실패) 보내지
+않는다. 운영자에게 가는 `support.*`, 함대에게 가는 `fleet.*`는 사람에게 가는 행이 아니므로
+그대로다.
+
 ---
 
 ## 4. 인앱 문
@@ -124,15 +132,15 @@ POST /api/me/notifications/:id/seen      → 204 / 404 laf:notification_not_foun
 ## 5. KPI — 야간 승인 해소 시간
 
 ```
-GET /api/admin/metrics/approvals?days=30   (관리자)
+GET /api/admin/metrics/approvals?days=30   (관리 메뉴 — 이 배포의 한 사람)
 → { days, timeZone, count, medianSeconds, p90Seconds, nightMedianSeconds, unanswered }
 ```
 
 - **감사 기록에서 잰다. 아웃박스에서 재지 않는다.** `approval.requested` 행과
-  `approval.granted`/`approval.denied` 행을 payload 안의 승인 id로 잇는다. 두 행은
-  target도 actor도 다르고(묻은 사람과 답한 사람은 대개 다른 사람이다) 공유하는 것은
-  그 id뿐이다. 아웃박스는 배달되면서 고쳐지고 30일이면 지워지는 큐라서, 거기서 잰
-  숫자는 청소를 돌리면 좋아진다.
+  `approval.granted`/`approval.denied` 행을 payload 안의 승인 id로 잇는다. 한 배포에
+  사람은 하나지만 두 행은 따로 쓰인다 — 묻는 행은 봇이 멈춘 순간에, 답하는 행은 사람이
+  누른 순간에 — 그래서 둘을 확실히 잇는 것은 그 id뿐이다. 아웃박스는 배달되면서
+  고쳐지고 30일이면 지워지는 큐라서, 거기서 잰 숫자는 청소를 돌리면 좋아진다.
 - **밤은 `BOT_TIME_ZONE`(기본 `Asia/Seoul`)으로 22:00–07:00**이고, **질문이 열린
   시각**으로 판정한다. 새벽 2시에 열린 질문을 아침 9시에 답했다면 7시간짜리 야간이지
   낮 시간 답이 아니다.

@@ -56,7 +56,8 @@ describe("releasing a deleted Bot's computer", () => {
       store,
     );
 
-    await release("agent_7", ACTOR);
+    // And says it let go of the Bot, which is what a person being removed reports per Bot.
+    expect(await release("agent_7", ACTOR)).toBe(true);
 
     // Addressed as the Bot being deleted, which is what the header and the trail key on.
     expect(stopped).toEqual(["agent_7"]);
@@ -80,17 +81,34 @@ describe("releasing a deleted Bot's computer", () => {
       store,
     );
 
-    await expect(release("agent_9", ACTOR)).resolves.toBeUndefined();
+    // Resolved, never thrown — and not claimed as a release.
+    await expect(release("agent_9", ACTOR)).resolves.toBe(false);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.eventType).toBe("computer.reset_failed");
     expect(rows[0]?.targetId).toBe("agent_9");
+  });
+
+  test("a row that cannot be written does not turn a release into a failure", async () => {
+    // The tabs closed; losing the trail's line about it is a lost line, not a failed release.
+    const stopped: string[] = [];
+    const release = releaseComputerFor(
+      clientStop((id) => stopped.push(id)),
+      {
+        insert: async () => {
+          throw new Error("the audit store is down");
+        },
+      },
+    );
+
+    await expect(release("agent_5", ACTOR)).resolves.toBe(true);
+    expect(stopped).toEqual(["agent_5"]);
   });
 
   test("no computer configured is a no-op, with no row", async () => {
     const { store, rows } = fakeAudit();
     const release = releaseComputerFor(undefined, store);
 
-    await expect(release("agent_1", ACTOR)).resolves.toBeUndefined();
+    await expect(release("agent_1", ACTOR)).resolves.toBe(false);
     expect(rows).toEqual([]);
   });
 

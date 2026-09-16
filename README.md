@@ -263,8 +263,8 @@ A deployment can also sign people in through a shared OIDC broker instead of its
 Then set the three that decide who gets in and from where:
 
 - `TRUSTED_ORIGINS` — where the app is served from, `http://localhost:3010` locally. It defaults to `http://localhost:3000`, which is not where `start.sh` serves the app.
-- `INITIAL_ADMIN_EMAILS` — comma separated. An address listed here becomes an administrator the first time it signs in; everybody else becomes a user.
-- `SIGN_IN_ALLOWED_EMAILS` — comma separated, and the actual door: unset, anybody the provider authenticates gets an account. Admin emails are admitted on top of it, so listing staff cannot lock the owner out.
+- `INITIAL_ADMIN_EMAILS` — the address this deployment belongs to. It becomes the administrator of the 관리 menu the first time it signs in, and it is admitted even if the next line leaves it out.
+- `SIGN_IN_ALLOWED_EMAILS` — the door. A deployment belongs to exactly one account: with `NODE_ENV=production` the server refuses to start unless this line and `INITIAL_ADMIN_EMAILS` name one address between them, and sign-in refuses a second person in every environment. Unset on a laptop is an open door, and the boot says so.
 
 Remove `LAF_DEV_NO_AUTH`, then restart: the sign-in screen reads the providers from the running server. The app's generated config carries a copy written when it is built, from `AUTH_PROVIDERS` — or, with that unset locally, from whichever credentials are present alongside `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` — and that copy is only what the screen falls back to when the server cannot answer. Accounts, sessions and roles are stored in the same PostgreSQL database as everything else.
 

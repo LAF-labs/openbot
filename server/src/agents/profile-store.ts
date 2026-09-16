@@ -62,7 +62,8 @@ export type AgentProfileStore = {
   ): Promise<void>;
   /**
    * Retire a Bot: gone from the roster, its seat freed, and — through the hook the store was
-   * built with — its browser closed and its profile, logins included, deleted from the computer.
+   * built with — its tabs closed on the deployment's browser, whose logins stay for the other Bots
+   * (`computer/release.ts`).
    */
   softDelete(actor: AgentActor, id: string): Promise<void>;
 };
@@ -77,7 +78,7 @@ export type AgentProfileStore = {
 export type ComputerRelease = (
   agentId: string,
   actor: AgentActor,
-) => Promise<void>;
+) => Promise<unknown>;
 
 /*
  * Every refusal below carries a `laf:` code and the status it answers with — the shape
@@ -288,12 +289,12 @@ async function lockProfileReadRow(executor: DatabaseExecutor, id: string) {
  * transaction reads a table the first has already added to; released by the transaction ending,
  * whichever way it ends. Two owner ids that hash alike cost one of them a wait and nothing else.
  *
- * THIS PERSON'S BOTS. One VM per person is the deployment (docs/laf/deployment-model.md), so the
- * five seats are theirs and nobody else's Bots can take one. It counted every undeleted profile in
- * the deployment. Measured on a development machine: five profiles, two of them this person's, and
- * their sixth Bot refused with "all five seats are taken" — the other three were Bots a package had
- * shipped, owned by nobody, quietly holding seats. On a shared deployment it is worse: somebody
- * else making a Bot takes one of yours.
+ * THIS PERSON'S BOTS. A deployment belongs to one account (docs/laf/deployment-model.md), so the
+ * five seats are that person's. It counted every undeleted profile in the deployment. Measured on a
+ * development machine: five profiles, two of them this person's, and their sixth Bot refused with
+ * "all five seats are taken" — the other three were Bots a package had shipped, owned by nobody,
+ * quietly holding seats. A leftover account's Bots are counted against the leftover, so they do not
+ * hold this person's seats either.
  *
  * `owner_user_id` null is nobody's seat, and the equality excludes it, which is right — a Bot the
  * deployment shipped is not something this person chose to spend a seat on.
@@ -350,10 +351,10 @@ export function createAgentProfileStore(
   /**
    * What is done with a deleted Bot's computer once its row is gone.
    *
-   * MEASURED 2026-09-10 (audit A3): `DELETE /api/agents/:id` set `deleted_at` and nothing else.
-   * The Bot's Chromium stayed running, signed in, until the idle sweep found it, and its profile
-   * directory — 1.4MB of cookies for the person's bank and marketplace — stayed in the volume for
-   * ever. Deleting a Bot is, more often than not, how a person means to take those logins back.
+   * MEASURED 2026-09-10 (audit A3): `DELETE /api/agents/:id` set `deleted_at` and nothing else,
+   * and the Bot's Chromium stayed running until the idle sweep found it. Its tabs close now. Its
+   * logins do not go with it: since 2026-09-16 they are the deployment's, shared by every Bot the
+   * person has, and emptying them is a reset somebody confirms (`computer/release.ts`).
    * Absent on a deployment with no computer, where there is nothing to release.
    */
   released?: ComputerRelease,

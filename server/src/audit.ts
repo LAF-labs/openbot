@@ -305,6 +305,17 @@ export const auditEventTypes = [
    */
   "routine.caught_up",
   /**
+   * A routine was not run, because the person it runs as is no longer somebody this deployment
+   * admits (`routines/run.ts`, 2026-09-16).
+   *
+   * One deployment, one account: a person struck off the sign-in list lost their sessions and, until
+   * this row existed, nothing else — their routines went on firing on the deployment's shared
+   * browser. Written by whichever door reached the routine (`via`: the clock or the webhook, once
+   * per window the way `routine.skipped_missed` is; "run now", once per press), and never as a
+   * failed run: nobody is told about it, because the one person who would be is the one it is about.
+   */
+  "routine.skipped_not_admitted",
+  /**
    * A person emptied a routine's notepad — where it left off (`routines/notepad.ts`).
    *
    * A decision about what the routine does next, not housekeeping: its next run starts with no

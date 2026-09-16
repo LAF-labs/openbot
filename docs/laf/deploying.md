@@ -298,8 +298,8 @@ same change there fails the gate. -->
 | `AUTH_PROVIDERS` | which sign-ins this deployment offers, comma separated: `google`, `kakao`, `naver`, `laf` — see below |
 | `<PROVIDER>_OAUTH_CLIENT_ID`, `<PROVIDER>_OAUTH_CLIENT_SECRET` | the pair for each direct provider `AUTH_PROVIDERS` names — `GOOGLE`, `KAKAO`, `NAVER` |
 | `LAF_OIDC_ISSUER`, `LAF_OIDC_CLIENT_ID` | the broker's issuer and this deployment's public client id, when `AUTH_PROVIDERS` names `laf` |
-| `INITIAL_ADMIN_EMAILS` | who is an administrator on first sign-in |
-| `SIGN_IN_ALLOWED_EMAILS` | who may sign in at all. Unset means anyone the provider authenticates gets an account here, which on a one-person VM is the wrong default. It also decides who stays signed in: an address taken off it has every session it holds ended when the server starts with the new list, and any request it still makes is answered `401 laf:session_revoked` |
+| `INITIAL_ADMIN_EMAILS` | the address this deployment belongs to, the administrator of its 관리 menu from its first sign-in |
+| `SIGN_IN_ALLOWED_EMAILS` | who may sign in at all. A deployment belongs to exactly one account: the server refuses to start unless this line and `INITIAL_ADMIN_EMAILS` name one address between them (the same address on both is one). It also decides who stays signed in: an address taken off it has every session it holds ended when the server starts with the new list, any request it still makes is answered `401 laf:session_revoked`, and its routines and notifications stop |
 | `BOT_MODEL` | shipped set in `.env.example` and it must stay set: `agent-bot` refuses to start without it rather than answering on a model nobody chose. The fallback for the API server's own half is `tenant/laf/model.yaml`, and it is the only one in the repository |
 | `OPENAI_API_KEY` | the key for the endpoint `OPENAI_BASE_URL` names; the API server and `agent-bot` both spend it, and no Bot answers without one |
 

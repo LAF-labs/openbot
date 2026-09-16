@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { resolveTimeZone } from "../../../shared/prompt";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
+import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
@@ -14,7 +15,11 @@ import type { DeliverRoutineAnswer, DeliverRoutineFailure } from "./deliver";
 import { RoutineError } from "./errors";
 import { clearNotepad, readNotepad } from "./notepad";
 import { mine } from "./ownership";
-import { createRoutineRun, ROUTINE_RUN_TIMEOUT_MS } from "./run";
+import {
+  createRoutineRun,
+  ROUTINE_RUN_TIMEOUT_MS,
+  type RoutineRun,
+} from "./run";
 import { nextRunAt, scheduleOf } from "./schedule";
 import {
   createRoutine,
@@ -124,19 +129,28 @@ export type RoutineServiceOptions = {
    * Absent runs without serialisation, which is what a test that drives one routine wants.
    */
   lane?: BotLane;
+  /**
+   * Who this deployment still lets act (`auth/admission.ts`): a routine runs as its author, and an
+   * author the sign-in list no longer admits is not run by any door — see `run.ts`.
+   *
+   * Optional in the TYPE for the suites that drive a routine and nothing else; `main.ts` always
+   * passes it. A service without it runs every author, which is what a deployment did before
+   * 2026-09-16.
+   */
+  admission?: Pick<DeploymentAdmission, "admitsPerson">;
 };
 
 /** What firing a routine outside the clock needs: the table, the time, and the run. */
 type Firing = {
   database: Database;
   now: () => Date;
-  execute: (row: typeof lafRoutines.$inferSelect) => Promise<void>;
+  routine: RoutineRun;
 };
 
 export function createRoutineService(options: RoutineServiceOptions) {
   const { database } = options;
   const now = options.now ?? (() => new Date());
-  const execute = createRoutineRun({
+  const routine = createRoutineRun({
     ...options,
     now,
     runTimeoutMs: options.runTimeoutMs ?? ROUTINE_RUN_TIMEOUT_MS,
@@ -146,12 +160,12 @@ export function createRoutineService(options: RoutineServiceOptions) {
     now,
     timeZone: resolveTimeZone(options.timeZone),
   };
-  const firing: Firing = { database, now, execute };
+  const firing: Firing = { database, now, routine };
   const ticker = createRoutineTicker({
     database,
     auditStore: options.auditStore,
     now,
-    execute,
+    execute: (row) => routine.run(row, "clock"),
   });
 
   return {
@@ -261,13 +275,26 @@ async function runAheadOfTheClock(
 ): Promise<void> {
   const at = firing.now();
   const row = await mine(firing.database, actor, id);
+  /*
+   * Asked BEFORE the claim, and answered as a refusal. The person pressing is here and admitted —
+   * the routine is on their Bot — but its author is not, and a button that answered "ran" and did
+   * nothing is the control this product does not draw. Nothing moves: the clock is not the
+   * button's to push for a run that is not going to happen.
+   */
+  if (!(await firing.routine.authorAdmitted(row, "run_now"))) {
+    throw new RoutineError(
+      "This routine was made by an account this deployment no longer admits, so it does not run.",
+      409,
+      "laf:routine_author_not_admitted",
+    );
+  }
   const next = nextRunAt(scheduleOf(row), at);
   const [claimed] = await firing.database
     .update(lafRoutines)
     .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
     .where(eq(lafRoutines.id, id))
     .returning();
-  if (claimed) await firing.execute(claimed);
+  if (claimed) await firing.routine.run(claimed, "run_now");
 }
 
 /**
@@ -325,6 +352,16 @@ async function fireByWebhook(
     .returning();
   if (!claimed) return { ran: false, reason: "debounced" as const };
 
+  /*
+   * Asked AFTER the claim, unlike "run now": the caller is a machine holding a token, it may retry
+   * in a burst, and a declined window has to debounce like a run does or every retry writes another
+   * row. The claim is what makes the skip row one per window, as it is on the clock. The sender is
+   * told it did not run — a 202 here would be a receipt for nothing.
+   */
+  if (!(await firing.routine.authorAdmitted(claimed, "trigger"))) {
+    return { ran: false, reason: "not_admitted" as const };
+  }
+
   const trimmed = payload?.slice(0, TRIGGER_PAYLOAD_LIMIT).trim();
   /*
    * Claimed, and answered — the run goes on without the caller. A webhook sender gives a
@@ -333,15 +370,17 @@ async function fireByWebhook(
    * into the debounce, and logged the routine as failing. The claim above is the receipt:
    * exactly one run was bought, and `finished` is it, for whoever (a test) needs to wait.
    */
-  const finished = firing
-    .execute(
+  const finished = firing.routine
+    .run(
       trimmed
         ? {
             ...claimed,
             instruction: `${claimed.instruction}\n\n[Trigger payload]\n${trimmed}`,
           }
         : claimed,
+      "trigger",
     )
+    .then(() => undefined)
     .catch((error: unknown) => {
       console.error("[routines] a triggered run failed:", error);
     });

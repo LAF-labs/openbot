@@ -14,12 +14,24 @@ import {
 } from "../db/schema";
 import { countAccounts, type FleetNotifier } from "../fleet/notify";
 import { log } from "../log";
+import {
+  createDeploymentAdmission,
+  type DeploymentAdmission,
+} from "./admission";
 import { createSignInAllowlist } from "./allowlist";
 import { roleForEmail } from "./roles";
 import { tokenSealingHooks } from "./token-encryption";
 
 /** An email this deployment's sign-in list does not admit, refused at the door. */
 export const SIGN_IN_NOT_ADMITTED = "laf:sign_in_not_admitted";
+
+/**
+ * A second person, on a deployment that already belongs to an account it still admits — refused
+ * while the account is being made, in every environment (docs/laf/deployment-model.md, 2026-09-16).
+ * Its own fact rather than the list's: on a laptop with no list, and on a list naming two addresses,
+ * the person refused may well be one the list admits.
+ */
+export const DEPLOYMENT_HAS_ACCOUNT = "laf:deployment_has_account";
 
 /**
  * The fleet learns that this machine now has somebody on it.
@@ -60,19 +72,29 @@ export function createAuth(
    * reconciled. Absent on a laptop and on any deployment with no `LAF_FLEET_WEBHOOK_URL`.
    */
   fleet?: FleetNotifier,
+  /**
+   * Who the deployment still lets act, as `main.ts` built it for every other path — so the sign-in
+   * door and the routines cannot read the list two ways. Absent, it is built here from the same
+   * configuration; a test hands one in to hold two sign-ins at the same moment.
+   */
+  admission?: DeploymentAdmission,
 ) {
   const authConfig = config.auth;
   if (!authConfig) {
     throw new Error("Authentication is not configured.");
   }
 
-  const allowlist = createSignInAllowlist({
-    allowedEmails: authConfig.allowedEmails,
-    initialAdminEmails: authConfig.initialAdminEmails,
-  });
+  const door =
+    admission ??
+    createDeploymentAdmission({
+      database,
+      allowlist: createSignInAllowlist(authConfig),
+      devNoAuth: config.devNoAuth,
+    });
   /*
-   * Refused before anything is written. The OAuth dance has already happened by the time this runs;
-   * what is being refused is an account here.
+   * Refused before anything is written — or, for the race `admission.ts` describes, taken back out
+   * right after. The OAuth dance has already happened by the time this runs; what is being refused
+   * is an account here.
    *
    * A CODE, AND IN BOTH FIELDS, because better-auth sends this on by two different roads. Refusing a
    * NEW account, it redirects with the message as `?error=` (spaces made underscores — the sentence
@@ -82,11 +104,10 @@ export function createAuth(
    * raw JSON in the person's browser (measured 2026-09-14, wave 1 residue R1). With the code in both,
    * either road reaches the sign-in screen carrying the same fact, and the screen owns the words.
    */
-  const refuse = () => {
-    throw new APIError("FORBIDDEN", {
-      message: SIGN_IN_NOT_ADMITTED,
-      code: SIGN_IN_NOT_ADMITTED,
-    });
+  const refuse = (
+    code: typeof SIGN_IN_NOT_ADMITTED | typeof DEPLOYMENT_HAS_ACCOUNT,
+  ): never => {
+    throw new APIError("FORBIDDEN", { message: code, code });
   };
 
   return betterAuth({
@@ -169,12 +190,25 @@ export function createAuth(
       account: tokenSealingHooks(config.tokenEncryptionKey),
       user: {
         create: {
-          // The lock on the first visit: an unlisted email never becomes an account.
+          /*
+           * The lock on the first visit: an unlisted email never becomes an account, and neither
+           * does a second person on a deployment that already has its one. The list's refusal
+           * first, so an address it never named is told exactly that.
+           */
           before: async (user) => {
-            if (!allowlist.admits(user.email)) refuse();
+            if (!door.admits(user.email)) refuse(SIGN_IN_NOT_ADMITTED);
+            if (await door.heldBySomebodyElse({ email: user.email })) {
+              refuse(DEPLOYMENT_HAS_ACCOUNT);
+            }
             return { data: user };
           },
           after: async (user) => {
+            /*
+             * The same question once the row exists, one arrival at a time: two first sign-ins
+             * that looked at the same moment both passed the check above. Before the role and the
+             * fleet's notice, so an arrival that is taken back out was never announced as one.
+             */
+            if (!(await door.keepArrival(user))) refuse(DEPLOYMENT_HAS_ACCOUNT);
             await database
               .insert(userRoles)
               .values({
@@ -208,13 +242,15 @@ export function createAuth(
            * every request by the guards.
            */
           before: async (session) => {
-            if (!allowlist.enforced) return { data: session };
+            if (!door.enforced) return { data: session };
             const [account] = await database
               .select({ email: users.email })
               .from(users)
               .where(eq(users.id, session.userId))
               .limit(1);
-            if (!account || !allowlist.admits(account.email)) refuse();
+            if (!account || !door.admits(account.email)) {
+              refuse(SIGN_IN_NOT_ADMITTED);
+            }
             return { data: session };
           },
         },

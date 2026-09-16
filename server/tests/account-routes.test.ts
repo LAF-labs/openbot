@@ -47,7 +47,7 @@ function surface(actor: typeof OWNER | typeof ADMIN) {
         deleted: userId !== "already-gone",
         pseudonym: "deleted-abc",
         counts: { user: 1 },
-        computers: { reset: [], failed: [], configured: false },
+        computers: { reset: [], released: [], failed: [], configured: false },
       };
     },
   };

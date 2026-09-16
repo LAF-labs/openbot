@@ -6,7 +6,9 @@ import { createAccountExport } from "../src/account/export";
 import { pseudonymFor } from "../src/account/pseudonym";
 import { createRetentionJob } from "../src/account/retention";
 import { createAgentProfileStore } from "../src/agents/profile-store";
-import { createAuditStore } from "../src/audit";
+import { type AuditEventInput, createAuditStore } from "../src/audit";
+import { createDeploymentAdmission } from "../src/auth/admission";
+import { createSignInAllowlist } from "../src/auth/allowlist";
 import { createDatabase } from "../src/db/client";
 import {
   agentMemories,
@@ -32,12 +34,20 @@ import { appendMessages } from "../src/runner/thread-store";
 import { TEST_POOL } from "./support/database";
 
 /**
- * A person takes their data and leaves, WITH SOMEBODY ELSE STILL ON THE DEPLOYMENT.
+ * A person takes their data and leaves, WITH ANOTHER ACCOUNT STILL IN THE DATABASE.
  *
- * The second person is the whole point of this file. Every statement in `account/deletion.ts` is
- * narrowed by one person's id or by the ids of their Bots, and the way that goes wrong is not a
+ * A deployment belongs to one account (docs/laf/deployment-model.md, 2026-09-16), but it can still
+ * hold a second row: a leftover from before the rule, whose address the sign-in list no longer
+ * admits. That second row is the whole point of this file. Every statement in `account/deletion.ts`
+ * is narrowed by one person's id or by the ids of their Bots, and the way that goes wrong is not a
  * refusal — it is a delete that quietly takes one row too many. A test with one account cannot see
  * that; a test with two sees it as the second account's rows disappearing.
+ *
+ * And the browser, which is the deployment's and not the account's. Its logins are the admitted
+ * person's, so removing a leftover lets go of the leftover's Bots and keeps those logins; the
+ * profile is emptied only when the admitted person leaves, or when nobody the list admits is left.
+ * Until 2026-09-16 this file asserted the reset with the other account still here — the one call
+ * that signed the person who stayed out of their bank.
  *
  * AUDIT ROWS ARE NOT CLEANED UP, and cannot be: the table refuses DELETE, which is the property
  * `audit-append-only.integration.test.ts` exists to hold. They land in the disposable test database
@@ -214,6 +224,56 @@ let leaver: Person;
 let stayer: Person;
 /** A third person, removed by somebody else. Made inside the test that removes them. */
 let struck: Person | undefined;
+/** Made inside the tests that empty the browser. */
+const alsoMade: Person[] = [];
+
+/**
+ * The deployment as its sign-in list reads it: the people named here are the ones it admits, and
+ * every other row in this file is a leftover the list no longer admits.
+ */
+const admittedOnly = (...people: Array<Pick<Person, "email">>) =>
+  createDeploymentAdmission({
+    database,
+    allowlist: createSignInAllowlist({
+      allowedEmails: people.map((one) => one.email),
+      initialAdminEmails: [],
+    }),
+  });
+
+/**
+ * The computer as this path addresses it: `forBot(id)` sets `x-openbot-bot-id`, and each Bot can be
+ * let go of (tabs and wheel) or the whole profile emptied. What was asked is remembered, per verb.
+ */
+function computerThatRecords() {
+  const wiped: string[] = [];
+  const stopped: string[] = [];
+  const client = {
+    forBot: (id: string) => ({
+      resetComputer: async () => {
+        wiped.push(id);
+        return { reset: true, botId: id, scope: "deployment" as const };
+      },
+      stopComputer: async () => {
+        stopped.push(id);
+        return { stopped: true, wasRunning: true };
+      },
+    }),
+  };
+  return { client: client as never, wiped, stopped };
+}
+
+/** An audit store that keeps what it was handed, for the rows written beside the transaction. */
+function trailThatRecords() {
+  const rows: AuditEventInput[] = [];
+  return {
+    rows,
+    store: {
+      insert: async (event: AuditEventInput) => {
+        rows.push(event);
+      },
+    },
+  };
+}
 
 beforeAll(async () => {
   leaver = await makePerson("leaver");
@@ -222,7 +282,7 @@ beforeAll(async () => {
 
 /** Everything the stayer made. The leaver's rows are removed by the code under test. */
 afterAll(async () => {
-  for (const person of [stayer, leaver, struck].filter(
+  for (const person of [stayer, leaver, struck, ...alsoMade].filter(
     (person): person is Person => Boolean(person),
   )) {
     await database
@@ -302,41 +362,48 @@ describe("the export", () => {
 });
 
 describe("deletion", () => {
-  test("removes the person and leaves the other account alone", async () => {
+  test("removes the person and leaves the other account alone — its rows and its browser's logins", async () => {
     const retired: Array<{ userId: string; by: string }> = [];
-    const wiped: string[] = [];
+    const computer = computerThatRecords();
+    const trail = trailThatRecords();
     const deletion = createAccountDeletion({
       database,
       retireConnectionsFor: async (userId, by) => {
         retired.push({ userId, by });
         return { retired: 1 };
       },
-      // The shape of the client this path uses: `forBot(id)` sets `x-openbot-bot-id`, which is the
-      // difference between wiping this Bot's profile and wiping the default one.
-      computerClient: {
-        forBot: (id: string) => ({
-          resetComputer: async () => {
-            wiped.push(id);
-            return { reset: true, botId: id };
-          },
-        }),
-      } as never,
+      computerClient: computer.client,
+      auditStore: trail.store,
+      admission: admittedOnly(stayer),
     });
 
+    // The deployment's person removes the leftover (`POST /api/admin/users/:id/delete`).
     const result = await deletion.delete({
       userId: leaver.id,
-      by: leaver.id,
+      by: stayer.id,
     });
 
     expect(result.deleted).toBe(true);
     expect(result.pseudonym).toBe(pseudonymFor(leaver.id));
-    // The browser profile went first, addressed per Bot.
-    expect(wiped).toEqual([leaver.botId]);
+    /*
+     * THE PROFILE STAYS. It holds the logins of the person who is still here, and resetting it would
+     * sign them out of every site without asking. The leftover's Bot is let go of instead — its tabs
+     * and its wheel — and the trail says so, logins kept, in a row of its own.
+     */
+    expect(computer.wiped).toEqual([]);
+    expect(computer.stopped).toEqual([leaver.botId]);
     expect(result.computers).toEqual({
-      reset: [leaver.botId],
+      reset: [],
       failed: [],
+      released: [leaver.botId],
       configured: true,
     });
+    const released = trail.rows.filter(
+      (row) => row.eventType === "computer.released",
+    );
+    expect(released.map((row) => row.targetId)).toEqual([leaver.botId]);
+    expect(released[0]?.payload.loginsKept).toBe(true);
+    expect(released[0]?.actorUserId).toBe(stayer.id);
     // And the vault was retired through the store that owns it, under the pseudonym.
     expect(retired).toEqual([
       { userId: leaver.id, by: pseudonymFor(leaver.id) },
@@ -481,8 +548,8 @@ describe("deletion", () => {
    *
    * Since 2026-09-16 a private Bot is its owner's alone, the administrator included — and this is
    * the path that must not have inherited that. Removing a person is not reading their roster: it
-   * is the one operation that has to reach every Bot they own, reset the Chromium profile holding
-   * their bank logins, and take the rows with it. `account/deletion.ts` finds those Bots by
+   * is the one operation that has to reach every Bot they own, let go of those Bots on the
+   * deployment's browser, and take the rows with it. `account/deletion.ts` finds those Bots by
    * `ownerUserId` straight off the table, with no actor and no visibility clause, which is why it
    * still works — and the first assertion here is the one that would go red if a later change
    * "tidied" that read onto the profile store.
@@ -501,18 +568,13 @@ describe("deletion", () => {
       (await profiles.list(administrator)).map((profile) => profile.id),
     ).not.toContain(struck.botId);
 
-    const wiped: string[] = [];
+    const computer = computerThatRecords();
     const deletion = createAccountDeletion({
       database,
       retireConnectionsFor: async () => ({ retired: 0 }),
-      computerClient: {
-        forBot: (id: string) => ({
-          resetComputer: async () => {
-            wiped.push(id);
-            return { reset: true, botId: id };
-          },
-        }),
-      } as never,
+      computerClient: computer.client,
+      auditStore: trailThatRecords().store,
+      admission: admittedOnly(stayer),
     });
 
     const result = await deletion.delete({
@@ -521,10 +583,12 @@ describe("deletion", () => {
     });
 
     expect(result.deleted).toBe(true);
-    // The browser profile, addressed per Bot, exactly as for a person removing themselves.
-    expect(wiped).toEqual([struck.botId]);
+    // Their Bot, addressed by its id — let go of, since the account the logins belong to stays.
+    expect(computer.stopped).toEqual([struck.botId]);
+    expect(computer.wiped).toEqual([]);
     expect(result.computers).toMatchObject({
-      reset: [struck.botId],
+      reset: [],
+      released: [struck.botId],
       failed: [],
     });
     // And the rows are gone: the Bot, its profile, and the routine that drove it.
@@ -546,6 +610,80 @@ describe("deletion", () => {
     expect(
       await database.select().from(users).where(eq(users.id, struck.id)),
     ).toHaveLength(0);
+  });
+
+  test("the deployment's own person leaving empties the browser, leftover or not", async () => {
+    // Their logins are the ones in it; the leftover beside them acts on nothing and keeps nothing.
+    const owner = await makePerson("owner");
+    alsoMade.push(owner);
+    const computer = computerThatRecords();
+    const deletion = createAccountDeletion({
+      database,
+      retireConnectionsFor: async () => ({ retired: 0 }),
+      computerClient: computer.client,
+      auditStore: trailThatRecords().store,
+      // `stayer` is still in the database, and is not who this list admits.
+      admission: admittedOnly(owner),
+    });
+
+    const result = await deletion.delete({ userId: owner.id, by: owner.id });
+
+    expect(result.deleted).toBe(true);
+    expect(computer.wiped).toEqual([owner.botId]);
+    expect(computer.stopped).toEqual([]);
+    expect(result.computers).toEqual({
+      reset: [owner.botId],
+      failed: [],
+      released: [],
+      configured: true,
+    });
+    // The other row is untouched by any of it.
+    expect(
+      await database.select().from(users).where(eq(users.id, stayer.id)),
+    ).toHaveLength(1);
+    const [left] = await database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.actorUserId, pseudonymFor(owner.id)),
+          eq(auditEvents.eventType, "account.deleted"),
+        ),
+      );
+    expect((left?.payload as { by?: string } | undefined)?.by).toBe(
+      "themselves",
+    );
+  });
+
+  test("the last account the list admits leaving empties the browser too", async () => {
+    /*
+     * Nobody the deployment admits is left — its person already withdrew, or never signed up — so
+     * the logins in the browser are nobody's to keep, and the next person the list admits must not
+     * sign in to find a leftover's sessions waiting in their Bots' browser.
+     */
+    const last = await makePerson("last");
+    alsoMade.push(last);
+    const computer = computerThatRecords();
+    const deletion = createAccountDeletion({
+      database,
+      retireConnectionsFor: async () => ({ retired: 0 }),
+      computerClient: computer.client,
+      auditStore: trailThatRecords().store,
+      admission: admittedOnly({ email: `acct-${suite}-nobody@example.test` }),
+    });
+
+    const result = await deletion.delete({
+      userId: last.id,
+      by: `acct-${suite}-admin`,
+    });
+
+    expect(result.deleted).toBe(true);
+    expect(computer.wiped).toEqual([last.botId]);
+    expect(computer.stopped).toEqual([]);
+    expect(result.computers).toMatchObject({
+      reset: [last.botId],
+      released: [],
+    });
   });
 
   test("the trail keeps what happened under a pseudonym, and names nobody", async () => {
@@ -574,13 +712,23 @@ describe("deletion", () => {
     const payload = deletionRow?.payload as {
       by: string;
       counts: Record<string, number>;
-      computers: { configured: boolean; reset: number; note: string };
+      computers: {
+        configured: boolean;
+        reset: number;
+        released: number;
+        note: string;
+      };
     };
-    expect(payload.by).toBe("themselves");
+    // Removed by the deployment's person, who is named the way the trail names anybody in it.
+    expect(payload.by).toBe(pseudonymFor(stayer.id));
     expect(payload.counts.bots).toBe(1);
     // The count is a NUMBER, not "[REDACTED]": see why it is not called `credentials`.
     expect(payload.counts.vaultTokens).toBe(1);
-    expect(payload.computers).toMatchObject({ configured: true, reset: 1 });
+    expect(payload.computers).toMatchObject({
+      configured: true,
+      reset: 0,
+      released: 1,
+    });
   });
 
   test("says so rather than throwing when the account is already gone", async () => {

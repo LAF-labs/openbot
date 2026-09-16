@@ -16,6 +16,7 @@
  */
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from "../../shared/prompt";
 import { retentionDays } from "./account/retention";
+import { admittedAddresses } from "./auth/allowlist";
 import { devAuthEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
@@ -248,10 +249,16 @@ export type DeploymentConfig = {
     trustedOrigins: string[];
     initialAdminEmails: string[];
     /**
-     * Who may sign in. Empty means open — the pre-lock behavior every existing setup relies on.
-     * Set, it is the door: see auth/allowlist.ts. Admin emails are always admitted on top.
+     * Who may sign in: see auth/allowlist.ts. Admin emails are always admitted on top.
      */
     allowedEmails: string[];
+    /**
+     * Whether those two lines are a closed door. Always true in production, where a deployment that
+     * does not name exactly one address between them refuses to start (see {@link authConfig}) — so
+     * the one address closes the door even when it is written only as the administrator. Elsewhere,
+     * true once `SIGN_IN_ALLOWED_EMAILS` names anybody; unset leaves a laptop open, and says so.
+     */
+    allowlistEnforced: boolean;
   };
   /**
    * Local development only: admit everybody as a fixed administrator instead of requiring sign-in.
@@ -667,15 +674,71 @@ function authConfig(
             .map((name) => [name, providers[name]]),
         );
 
+  const initialAdminEmails = commaSeparated(
+    environment,
+    "INITIAL_ADMIN_EMAILS",
+  );
+  const allowedEmails = commaSeparated(environment, "SIGN_IN_ALLOWED_EMAILS");
   return {
     baseUrl,
     secret,
     providers: signIn,
     ...(lafOidc ? { lafOidc } : {}),
     trustedOrigins: trustedOrigins(environment),
-    initialAdminEmails: commaSeparated(environment, "INITIAL_ADMIN_EMAILS"),
-    allowedEmails: commaSeparated(environment, "SIGN_IN_ALLOWED_EMAILS"),
+    initialAdminEmails,
+    allowedEmails,
+    allowlistEnforced: signInLock(environment, {
+      allowedEmails,
+      initialAdminEmails,
+    }),
   };
+}
+
+/**
+ * Whether the sign-in list is a closed door — or, on a production deployment that names anything
+ * but one account, a refusal to start.
+ *
+ * ONE ACCOUNT PER DEPLOYMENT, BY THE OWNER'S DECISION (2026-09-16): "1계정 1VM을 코드로 강제한다."
+ * Every Bot on a deployment opens the same browser profile, so a second account's Bots would browse
+ * inside the first person's logins; the list used to fail open when unset and admit as many
+ * addresses as it was given (audit 2026-09-16 S1-1). So production counts the addresses the two
+ * lines admit together, compared the way the door compares them:
+ *
+ *   - none is a door open to anybody the sign-in provider authenticates. Refused.
+ *   - more than one is a second person. Refused, with the count and never the addresses — this
+ *     message lands in an operator's log, and the addresses are already in the `.env` beside it.
+ *   - one closes the door, even when `INITIAL_ADMIN_EMAILS` is the only line that names it.
+ *
+ * Outside production the old rule stands — the allow variable alone arms the lock — because a
+ * laptop and the test suites are not somebody's shop. An open door there is said once per load,
+ * next to the example-key warnings, rather than refused. Whether a second ACCOUNT can be made is
+ * not decided here in either case: the sign-in hook refuses that everywhere (`auth/admission.ts`).
+ */
+function signInLock(
+  environment: Environment,
+  lists: { allowedEmails: string[]; initialAdminEmails: string[] },
+): boolean {
+  if (environment.NODE_ENV === "production") {
+    const count = admittedAddresses(lists).length;
+    if (count === 0) {
+      throw new Error(
+        "A production deployment must name the one account it belongs to: set SIGN_IN_ALLOWED_EMAILS (or INITIAL_ADMIN_EMAILS) to that address. With neither, anybody the sign-in provider authenticates would get an account here, so the server refuses to start.",
+      );
+    }
+    if (count > 1) {
+      throw new Error(
+        `SIGN_IN_ALLOWED_EMAILS and INITIAL_ADMIN_EMAILS name ${count} addresses between them, and a deployment belongs to exactly one account: every Bot on it shares one browser and its logins. Leave only the address this deployment belongs to.`,
+      );
+    }
+    return true;
+  }
+  const enforced = lists.allowedEmails.length > 0;
+  if (!enforced) {
+    log.warn("sign_in_door_open", {
+      note: "SIGN_IN_ALLOWED_EMAILS is unset, so anybody the sign-in provider authenticates may make the first account here. Fine on a laptop; production refuses to start this way.",
+    });
+  }
+  return enforced;
 }
 
 function computerConfig(

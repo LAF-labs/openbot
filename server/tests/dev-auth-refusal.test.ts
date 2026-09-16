@@ -41,6 +41,9 @@ const production = (overrides: Record<string, string> = {}) =>
     // Every deployment carries one now, and production has no test key to fall back on.
     LAF_TOKEN_ENCRYPTION_KEY:
       "5c1e8a3f7b2d4e6a9c0b1d3f5e7a9c2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c",
+    // And names the one account it belongs to, which production refuses to start without
+    // (`one-account-config.test.ts`) — otherwise that refusal is what these assertions would meet.
+    SIGN_IN_ALLOWED_EMAILS: "owner@laf.test",
     ...overrides,
   });
 

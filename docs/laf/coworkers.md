@@ -51,9 +51,11 @@ its tools hold — is decided by `actorMayDriveBot` (`auth/guards.ts`), and sinc
 the same answer: the owner, or a Bot nobody made. It had an administrator exception of its own
 after the roster was closed; driving is the stronger half of seeing, so it went too.
 
-## What an operator can still do
+## The 관리 menu, and accounts left over
 
-An administrator runs the deployment, not somebody's Bots. They keep every door that names no Bot:
+A deployment belongs to one account (`docs/laf/deployment-model.md`, 2026-09-16), and that person
+is also the one who uses the 관리 menu. What the menu reaches is the deployment rather than a Bot —
+every door that names no Bot:
 
 - the audit trail (`GET /api/admin/audit-events`), `/api/admin/metrics/approvals` and insights —
   Bot **ids**, never a title or a transcript;
@@ -62,15 +64,15 @@ An administrator runs the deployment, not somebody's Bots. They keep every door 
   is still pressed from a row and goes through that row's Bot, so it needs a row whose Bot is theirs;
 - every standing allowance on every Bot (`GET /api/approvals/standing`, `DELETE
   /api/approvals/standing/:id`);
-- removing a person (`POST /api/admin/users/:id/delete`), which still takes their Bots, their
-  browsers and the logins in them.
+- removing an account left over from before the one-account rule
+  (`POST /api/admin/users/:id/delete`), which takes its Bots and its rows and lets go of those Bots
+  on the shared browser. The logins in that browser stay: they are the person's who stays.
 
-They cannot see or answer a question raised on somebody else's Bot, stop or reset its computer, or
-open its screen. If a colleague's Bot is stuck on a question, the person it belongs to answers it —
-they are who it was raised for and who is notified. Failing that, the levers are blunt and
-deployment-wide: restarting the VM drops every open question (the registry is in memory by
-decision, `docs/laf/deployment-model.md`) and the runs waiting on them fail; or the person is
-removed, and their Bots go with them.
+A leftover is a `users` row whose address the sign-in list no longer admits. It acts on nothing: it
+cannot sign in, its routines do not run by any door, and nothing is sent to it. Its Bots are still
+its own, so the deployment's person cannot see, drive or answer them either; removing the account
+is the lever. Restarting the VM drops every open question (the registry is in memory by decision,
+`docs/laf/deployment-model.md`) and the runs waiting on them fail.
 
 ## Channels
 
@@ -117,9 +119,9 @@ A coworker's role does not grant capabilities. Capabilities are governed separat
 
 - browser and file actions go through the computer gateway policy;
 - components are published deployment-wide and can be withheld per Bot;
-- MCP tools are granted per Bot by administrators;
+- MCP tools are granted per Bot, from the 관리 menu;
 - personal skills can be attached only to Bots the author owns;
-- deployment skills are managed by administrators.
+- deployment skills are managed from the 관리 menu.
 
 See [architecture.md](../architecture.md).
 

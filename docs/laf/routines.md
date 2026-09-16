@@ -261,9 +261,30 @@ say).
 
 ## Ownership
 
-A routine belongs to the **Bot's owner**, not only to whoever typed it. Staff
-leave, and a shop owner locked out of the routines running on their own Bot has
-no way in. The cap is counted per person.
+A routine belongs to the **Bot's owner**, not only to whoever typed it. On a
+deployment that belongs to one account those are the same person; the rule is
+for rows left over from before that — a routine on the owner's Bot whose author
+is an account the sign-in list no longer admits is still the owner's to see,
+pause and delete. The cap is counted per account.
+
+## Who it runs as
+
+A routine runs as its author, on the deployment's one browser. An author the
+sign-in list no longer admits acts on nothing (docs/laf/deployment-model.md,
+2026-09-16), so their routine is run by no door, and each door says so with a
+`routine.skipped_not_admitted` audit row carrying `via`:
+
+- **the clock** claims the window as usual and skips it — one row per window,
+  like a missed one;
+- **Run now** is refused with `409 laf:routine_author_not_admitted`, and the
+  routine's clock does not move — the page says why in Korean;
+- **the webhook** claims the window and answers
+  `{"ran":false,"reason":"not_admitted"}`, so a sender retrying in a burst writes
+  one row, not one per retry.
+
+A skipped routine is not a failed run: nothing is recorded in its history and
+nobody is notified. It is left as it is, and runs again if its author is
+admitted again.
 
 ## Limits
 

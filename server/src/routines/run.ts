@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
-import type { AuditStore } from "../audit";
+import { type AuditStore, recordAuditEvent } from "../audit";
+import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { ActionActor } from "../computer/gateway";
@@ -83,9 +84,28 @@ export type RoutineRunOptions = SettlementOptions & {
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   lane?: BotLane;
   runTimeoutMs: number;
+  admission?: Pick<DeploymentAdmission, "admitsPerson">;
 };
 
 type RoutineRow = typeof lafRoutines.$inferSelect;
+
+/** Which door fired a routine: the clock, a person's "run now", or a webhook. Said on a skip. */
+export type RoutineDoor = "clock" | "run_now" | "trigger";
+
+export type RoutineRun = {
+  /**
+   * Run a routine that has been claimed, unless its author may no longer act here. Whether it ran.
+   *
+   * Every door ends here, so this is where the author's admission is decided for all three — a
+   * door that asks first (to answer its caller truthfully) is asked again here, and passes.
+   */
+  run: (row: RoutineRow, door?: RoutineDoor) => Promise<boolean>;
+  /**
+   * Whether the routine's author is still somebody this deployment admits, with the
+   * `routine.skipped_not_admitted` row written when they are not.
+   */
+  authorAdmitted: (row: RoutineRow, door: RoutineDoor) => Promise<boolean>;
+};
 
 /** What asking the Bot came to, before any of it is written down. */
 type Attempt = Pick<
@@ -97,21 +117,76 @@ type Attempt = Pick<
 };
 
 /** What runs a routine that has been claimed: the clock's, Run now's and the webhook's. */
-export function createRoutineRun(
+export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
+  const authorAdmitted: RoutineRun["authorAdmitted"] = (row, door) =>
+    authorIsAdmitted(options, row, door);
+  return {
+    authorAdmitted,
+    async run(row, door = "clock") {
+      if (!(await authorAdmitted(row, door))) return false;
+      /*
+       * One unattended run per Bot at a time, through the lane every server-side path shares.
+       *
+       * The tick is sequential, but Run now is not the tick, a room turn is not either, and any two
+       * of those can name the same Bot. With one shared computer, two tool loops on one Bot drive
+       * one browser at once — each one's snapshot goes stale under the other, and a click meant for
+       * one page lands on the other's. A queue private to this service would not have seen the room.
+       */
+      await (options.lane
+        ? options.lane.run(row.agentId, () => executeNow(options, row))
+        : executeNow(options, row));
+      return true;
+    },
+  };
+}
+
+/**
+ * NOBODY THE DEPLOYMENT NO LONGER ADMITS ACTS THROUGH A ROUTINE.
+ *
+ * A routine runs as its author, on the deployment's one browser — which since 2026-09-16 is signed
+ * in as the deployment's person. Somebody struck off the sign-in list lost their sessions and kept
+ * everything that runs without one: their routines fired on the clock, on "run now" and on the
+ * webhook, as late as the audit that measured it (2026-09-16, R1-04). So the author is asked about
+ * before anything else happens, through the one answer every unattended path shares
+ * (`auth/admission.ts`), and a routine whose author is not admitted is not run — not failed, not
+ * delivered, not told to anybody — with a row saying which door it came through and why.
+ *
+ * The routine itself stays as it is: if the person is admitted again, it simply runs again. A
+ * routine with no author at all is not decided here; `askTheBot` fails it where its history is read.
+ *
+ * A lookup that fails counts as not admitted. An unattended run for somebody this deployment
+ * cannot confirm is the one that should not happen, and the window it loses is recorded.
+ */
+async function authorIsAdmitted(
   options: RoutineRunOptions,
-): (row: RoutineRow) => Promise<void> {
-  /*
-   * One unattended run per Bot at a time, through the lane every server-side path shares.
-   *
-   * The tick is sequential, but Run now is not the tick, a room turn is not either, and any two
-   * of those can name the same Bot. With one shared computer, two tool loops on one Bot drive one
-   * browser at once — each one's snapshot goes stale under the other, and a click meant for one
-   * page lands on the other's. A queue private to this service would not have seen the room.
-   */
-  return (row) =>
-    options.lane
-      ? options.lane.run(row.agentId, () => executeNow(options, row))
-      : executeNow(options, row);
+  row: RoutineRow,
+  door: RoutineDoor,
+): Promise<boolean> {
+  const author = row.createdById;
+  if (!author || !options.admission) return true;
+  const admitted = await options.admission
+    .admitsPerson(author)
+    .catch(() => null);
+  if (admitted) return true;
+  if (options.auditStore) {
+    await recordAuditEvent(options.auditStore, {
+      eventType: "routine.skipped_not_admitted",
+      targetType: "routine",
+      targetId: row.id,
+      payload: {
+        agentId: row.agentId,
+        name: row.name,
+        // Who it would have run as, in the payload as `routine.ran` carries it: nobody did this.
+        actor: author,
+        via: door,
+        // Said when the answer was not a "no" but no answer at all.
+        ...(admitted === null ? { unconfirmed: true } : {}),
+      },
+    }).catch(() => {
+      // Losing the row must not turn a skip into a run.
+    });
+  }
+  return false;
 }
 
 async function executeNow(
@@ -125,10 +200,9 @@ async function executeNow(
    *
    * `created_by_id` became a real reference with `on delete set null`, because the ownership rule
    * (`ownership.ts`) says a routine outlives the person who typed it. What it cannot outlive is the
-   * VISIBILITY that person had — the Bot roster is loaded with the creator's own, so a routine
-   * with no creator has nobody to load it as, and running it under anybody else would let it
-   * reach a private coworker its author could not. It stops instead, in the one place a person
-   * reads a routine's history.
+   * roster that person had — the Bots are loaded as the creator's own, so a routine with no
+   * creator has nobody to load them as, and running it under anybody else would hand it Bots its
+   * author never owned. It stops instead, in the one place a person reads a routine's history.
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author);

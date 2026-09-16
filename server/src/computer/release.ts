@@ -23,7 +23,6 @@
  * everything on.
  */
 import type { AgentActor } from "../agents/profile-types";
-import type { ComputerRelease } from "../agents/profile-store";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { describeFailure } from "../failure-text";
@@ -31,40 +30,46 @@ import { log } from "../log";
 import type { ComputerClient } from "./client";
 
 /**
- * The release a deployment hands its Bot store.
+ * Let go of one Bot on the deployment's browser, as `actor` asked. Whether its tabs were closed.
  *
- * Never throws. The Bot's row is already gone when this runs, so there is nobody to answer an
- * error to who could act on it; what happened is written down instead — a `computer.released` row
- * when the tabs closed, a `computer.reset_failed` row when the computer could not be reached at all,
- * so that the trail never shows a deleted Bot without saying what became of its browser.
+ * Assignable to the Bot store's `ComputerRelease` (`agents/profile-store.ts`), which ignores the
+ * answer; a person being removed (`account/deletion.ts`) reads it, to say which of their Bots were
+ * let go of.
+ */
+export type BotRelease = (
+  botId: string,
+  actor: Pick<AgentActor, "id">,
+) => Promise<boolean>;
+
+/**
+ * The release a deployment hands its Bot store — and its account deletion, for a leftover account
+ * removed while the deployment's person stays: that person's logins stay too, so the leaver's Bots
+ * are let go of exactly as a deleted Bot is.
+ *
+ * Never throws. The Bot's row is already gone, or about to be, when this runs, so there is nobody to
+ * answer an error to who could act on it; what happened is written down instead — a
+ * `computer.released` row when the tabs closed, a `computer.reset_failed` row when the computer could
+ * not be reached at all, so that the trail never shows a deleted Bot without saying what became of
+ * its browser.
  */
 export function releaseComputerFor(
   client: ComputerClient | undefined,
   auditStore: AuditStore,
-): ComputerRelease {
-  return async (botId: string, actor: AgentActor): Promise<void> => {
-    if (!client) return;
+): BotRelease {
+  return async (botId, actor) => {
+    if (!client) return false;
     // Attribution as the computer routes do it: the local fixture is not a person and does not
     // become the actor of a row. The FK on `actor_user_id` is the other reason.
     const actorUserId = actor.id === DEV_ACTOR.id ? undefined : actor.id;
-    try {
-      const result = await client.forBot(botId).stopComputer();
-      await recordAuditEvent(auditStore, {
-        eventType: "computer.released",
-        targetType: "computer",
-        targetId: botId,
-        ...(actorUserId ? { actorUserId } : {}),
-        payload: {
-          bot: botId,
-          actor: actor.id,
-          reason:
-            "the Bot was deleted; its tabs closed and the shared logins stayed, because they belong to the account and its other Bots",
-          wasRunning: result.wasRunning,
-          // Said as a fact rather than implied by the absence of a `computer.reset` row: an
-          // investigator reading this a month later must not have to know which release this was.
-          loginsKept: true,
-        },
+    const rowLost = (failure: unknown) => {
+      log.error("agent_computer_release_row_lost", {
+        bot: botId,
+        reason: describeFailure(failure),
       });
+    };
+    let wasRunning: boolean;
+    try {
+      ({ wasRunning } = await client.forBot(botId).stopComputer());
     } catch (error) {
       log.error("agent_computer_not_released", {
         bot: botId,
@@ -83,12 +88,29 @@ export function releaseComputerFor(
           actor: actor.id,
           reason: describeFailure(error),
         },
-      }).catch((failure: unknown) => {
-        log.error("agent_computer_release_row_lost", {
-          bot: botId,
-          reason: describeFailure(failure),
-        });
-      });
+      }).catch(rowLost);
+      return false;
     }
+    /*
+     * The tabs are closed whatever becomes of this row, so a row that cannot be written is logged as
+     * lost rather than recorded as a release that failed — which is what it used to become.
+     */
+    await recordAuditEvent(auditStore, {
+      eventType: "computer.released",
+      targetType: "computer",
+      targetId: botId,
+      ...(actorUserId ? { actorUserId } : {}),
+      payload: {
+        bot: botId,
+        actor: actor.id,
+        reason:
+          "the Bot was deleted; its tabs closed and the shared logins stayed, because they belong to the account and its other Bots",
+        wasRunning,
+        // Said as a fact rather than implied by the absence of a `computer.reset` row: an
+        // investigator reading this a month later must not have to know which release this was.
+        loginsKept: true,
+      },
+    }).catch(rowLost);
+    return true;
   };
 }

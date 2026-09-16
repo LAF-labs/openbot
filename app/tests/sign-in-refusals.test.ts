@@ -86,23 +86,38 @@ function callbackCodes(): string[] {
  * which is also what makes better-auth redirect a struck-off account's SESSION refusal here instead
  * of answering the callback with raw JSON (`server/tests/laf-oidc.integration.test.ts`).
  */
-const refusedEmailCode = (() => {
-  const source = readFileSync(
-    join(import.meta.dir, "../../server/src/auth/index.ts"),
-    "utf8",
-  );
-  const code = /export const SIGN_IN_NOT_ADMITTED = "([^"]+)"/.exec(
-    source,
+const signInSource = readFileSync(
+  join(import.meta.dir, "../../server/src/auth/index.ts"),
+  "utf8",
+);
+
+/**
+ * A code the sign-in hooks refuse with, read out of the server: exported under `name`, and thrown
+ * through the one `refuse` that puts it in both fields (`new APIError("FORBIDDEN", { message: code,
+ * code })`), which is what lets either road carry it here.
+ */
+const refusalCode = (name: string): string => {
+  const code = new RegExp(`export const ${name} = "([^"]+)"`).exec(
+    signInSource,
   )?.[1];
-  const refuses =
-    /new APIError\("FORBIDDEN", \{\s*message: SIGN_IN_NOT_ADMITTED,\s*code: SIGN_IN_NOT_ADMITTED,/.test(
-      source,
+  const inBothFields =
+    /new APIError\("FORBIDDEN", \{\s*message: code,\s*code,?\s*\}\)/.test(
+      signInSource,
     );
-  if (!code || !refuses) {
-    throw new Error("server/src/auth/index.ts no longer refuses");
+  const thrown = new RegExp(`refuse\\(${name}\\)`).test(signInSource);
+  if (!code || !inBothFields || !thrown) {
+    throw new Error(`server/src/auth/index.ts no longer refuses with ${name}`);
   }
   return code.split(" ").join("_");
-})();
+};
+
+const refusedEmailCode = refusalCode("SIGN_IN_NOT_ADMITTED");
+
+/**
+ * The deployment already belongs to somebody, and this is a second person (2026-09-16: one account per
+ * deployment, enforced in code). Refused while the account is being made, through the same `refuse`.
+ */
+const secondPersonCode = refusalCode("DEPLOYMENT_HAS_ACCOUNT");
 
 /**
  * A session TAKEN AWAY, as the server's guard answers it (`server/src/auth/session-revocation.ts`) and
@@ -234,6 +249,7 @@ const cases: Case[] = [
     ...new Set([
       ...callbackCodes(),
       refusedEmailCode,
+      secondPersonCode,
       revokedSessionCode,
       ...PROVIDER_CODES,
     ]),
@@ -397,6 +413,10 @@ describe("the codes a sign-in can come back with", () => {
     }
     expect(codes.length).toBeGreaterThan(25);
     expect(refusedEmailCode).toBe("laf:sign_in_not_admitted");
+    // A second person on a deployment that already has its one account: its own words, not the
+    // "not on the list" sentence, because the person may well be on it.
+    expect(secondPersonCode).toBe("laf:deployment_has_account");
+    expect(refusalForCode(secondPersonCode)).toBe("deployment_has_account");
     // The code the app brings a revoked session here with is the one the server answers.
     expect(revokedSessionCode).toBe("laf:session_revoked");
     expect(SESSION_REVOKED).toBe(revokedSessionCode);
@@ -416,6 +436,7 @@ describe("the codes a sign-in can come back with", () => {
       ...new Set([
         ...callbackCodes(),
         refusedEmailCode,
+        secondPersonCode,
         revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,
@@ -433,6 +454,7 @@ describe("the codes a sign-in can come back with", () => {
       [
         ...callbackCodes(),
         refusedEmailCode,
+        secondPersonCode,
         revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,

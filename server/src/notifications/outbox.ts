@@ -32,6 +32,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, like, sql } from "drizzle-orm";
+import type { DeploymentAdmission } from "../auth/admission";
 import type { TurnFailureCode } from "../channels/turn-failures";
 import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
@@ -303,11 +304,31 @@ export function createNotificationOutbox(input: {
   now?: () => Date;
   /** Where a failure to write goes. Injected so a test can read it. */
   log?: (message: string) => void;
+  /**
+   * Who this deployment still lets act (`auth/admission.ts`). A row addressed to anybody else is
+   * kept and offered to no door — see `deliver`. Optional in the TYPE for the suites that test the
+   * doors alone; `main.ts` always passes it.
+   */
+  admission?: Pick<DeploymentAdmission, "admitsPerson">;
 }): NotificationOutbox {
-  const { database } = input;
+  const { database, admission } = input;
   const adapters = input.adapters ?? [];
   const now = input.now ?? (() => new Date());
   const log = input.log ?? ((message: string) => console.error(message));
+
+  /**
+   * Whether the person a row is addressed to may still be reached about this deployment.
+   *
+   * A person struck off the sign-in list cannot open a single thing a notification points at, and
+   * their routines no longer run (`routines/run.ts`) — but a question, a boot's interrupted-run
+   * report or a row written before the removal would still buzz their webhook and send 알림톡 to
+   * the phone they connected (audit 2026-09-16, R1-04). A lookup that fails counts as no: a buzz
+   * that could not be checked is the one that should not go out, and the row stays in the list.
+   */
+  const recipientAdmitted = async (userId: string): Promise<boolean> => {
+    if (!admission) return true;
+    return admission.admitsPerson(userId).catch(() => false);
+  };
 
   const rowToRecord = (row: typeof lafNotifications.$inferSelect) =>
     ({
@@ -343,12 +364,13 @@ export function createNotificationOutbox(input: {
   ): Promise<NotificationRecord> => {
     // A support or fleet row goes only to a door that asked for it; every other row goes to every
     // door that did not ask for anything. See `NotificationAdapter.accepts`.
+    const toAPerson = !isSupportKind(record.kind) && !isFleetKind(record.kind);
     const doors = adapters.filter((adapter) =>
-      adapter.accepts
-        ? adapter.accepts(record.kind)
-        : !isSupportKind(record.kind) && !isFleetKind(record.kind),
+      adapter.accepts ? adapter.accepts(record.kind) : toAPerson,
     );
     if (doors.length === 0) return record;
+    // Nobody the deployment no longer admits is reached through any door; the row is kept as written.
+    if (toAPerson && !(await recipientAdmitted(record.userId))) return record;
     const outcomes = await Promise.allSettled(
       doors.map(async (adapter) => ({
         name: adapter.name,

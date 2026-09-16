@@ -35,6 +35,8 @@ export const ko: Record<string, string> = {
     "루틴은 이 봇이 일정에 따라 반복하는 작업입니다.",
   "A routine ran": "루틴이 실행됨",
   "A routine's window was skipped": "루틴 실행 시각을 건너뜀",
+  "Not run: its account can no longer use this place":
+    "실행 안 함: 이 루틴의 계정은 이제 이곳을 쓸 수 없음",
   "A skill": "스킬",
   "The Bot read a skill": "봇이 스킬을 읽음",
   "Reading a skill": "스킬 읽는 중",
@@ -2243,6 +2245,8 @@ export const ko: Record<string, string> = {
   "The routine could not be made. Try again.":
     "루틴을 만들지 못했습니다. 다시 시도해 주세요.",
   "That link is missing its key.": "이 링크에는 실행 키가 빠져 있습니다.",
+  "This routine was made by an account that can no longer use this place, so it does not run. Make it again yourself if you still need it.":
+    "이 루틴은 이제 이곳을 쓸 수 없는 계정이 만든 것이라 실행하지 않습니다. 계속 필요하면 직접 다시 만들어 주세요.",
   "That could not be read. Try again.":
     "요청을 읽지 못했습니다. 다시 시도해 주세요.",
   "Choose at least one Bot.": "봇을 하나 이상 골라 주세요.",
@@ -2317,6 +2321,9 @@ export const ko: Record<string, string> = {
     "로그인 시간이 지났거나 다른 창에서 시작한 로그인입니다. 여기서 다시 시작해 주세요.",
   "This account cannot sign in here. Try again with the account this place was set up for.":
     "이 계정으로는 이곳에 로그인할 수 없습니다. 이곳에 등록된 계정으로 다시 시도해 주세요.",
+  // 한 배포에 계정은 하나 (2026-09-16) — 이미 계정이 있는 곳에 두 번째 사람이 가입하려 할 때.
+  "This place is already used by another account, and one place takes one account. Sign in with the account you first signed up with.":
+    "이곳은 이미 다른 계정으로 쓰고 있습니다. 한 곳에는 한 계정만 쓸 수 있으니, 처음 가입한 계정으로 로그인해 주세요.",
   // 로그인이 실패한 게 아니라, 쓰던 세션을 회수당했을 때 (명단에서 빠졌거나 관리자가 계정을 지웠을 때).
   "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.":
     "이 계정의 권한이 회수되어 로그아웃되었습니다. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",

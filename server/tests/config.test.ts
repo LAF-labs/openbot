@@ -187,8 +187,10 @@ describe("deployment configuration", () => {
       },
       trustedOrigins: ["http://localhost:3000"],
       initialAdminEmails: ["admin@laf.test", "owner@laf.test"],
-      // Unset stays open: the lock arms only when a deployment sets SIGN_IN_ALLOWED_EMAILS.
+      // Unset stays open outside production: there the lock arms only when SIGN_IN_ALLOWED_EMAILS
+      // is set. Production refuses this environment outright (`one-account-config.test.ts`).
       allowedEmails: [],
+      allowlistEnforced: false,
     });
   });
 
