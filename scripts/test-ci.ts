@@ -234,15 +234,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * connection lines — rendered through the real route tree — and ten source walks rendered instead.
  * Measured app 768, re-raised to 3% under; the other three are not this change's to move.
  *
+ * RE-RAISED 2026-09-16, after the full audit found every floor stale — 27% under `server`, 16%
+ * under `app`, 30% under `agent-computer` and 48% under `root`, the last a hair from the "not a
+ * floor" line above — and after that day's fixes landed (one account per deployment, the takeover's
+ * typing, the outward-send preview, the Computers page, the routine's zone, the rollback line, the
+ * development guard). Now that the manifest catches a vanished file, a floor is the only thing that
+ * sees tests going missing INSIDE files, and at those margins a dozen gutted files passed. Measured
+ * server 2,497 / app 932 / agent-computer 261 / root 350, each re-raised to 3% under.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 1753, roots: ["server"] },
-  { name: "app", floor: 744, roots: ["app"] },
-  { name: "agent-computer", floor: 170, roots: ["agent-computer"] },
-  { name: "root", floor: 170, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2422, roots: ["server"] },
+  { name: "app", floor: 904, roots: ["app"] },
+  { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
+  { name: "root", floor: 339, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
