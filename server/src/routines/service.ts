@@ -1,5 +1,6 @@
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
+import { resolveTimeZone } from "../../../shared/prompt";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
@@ -106,6 +107,15 @@ export type RoutineServiceOptions = {
    * is an agent turn. See runner/unattended.ts for why the loop lives on the server.
    */
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  /**
+   * The zone a new daily routine is written in when it names none: `config.botTimeZone`, the clock
+   * every Bot is told the time in, so the "7시 반" a Bot heard is half past seven on that clock.
+   *
+   * Resolved as that clock is (`resolveTimeZone`): absent or unusable is Seoul, the Bot's own
+   * default — never UTC, which is what a zoneless schedule used to be stored as (see
+   * `parseSchedule`). Routines already stored keep the zone they have.
+   */
+  timeZone?: string;
   now?: () => Date;
   runTimeoutMs?: number;
   /**
@@ -131,7 +141,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
     now,
     runTimeoutMs: options.runTimeoutMs ?? ROUTINE_RUN_TIMEOUT_MS,
   });
-  const store: RoutineStore = { database, now };
+  const store: RoutineStore = {
+    database,
+    now,
+    timeZone: resolveTimeZone(options.timeZone),
+  };
   const firing: Firing = { database, now, execute };
   const ticker = createRoutineTicker({
     database,

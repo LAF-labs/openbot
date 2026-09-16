@@ -338,8 +338,16 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   // 자기 자신을 고치는 툴들이 되돌려받는 것. 핸들러 안의 영어 문장을 대신한다.
   "laf:profile_updated":
     "네 프로필을 고쳤다. 이것이 이제부터 네 상시 설정이다.",
+  /*
+   * 저장된 일정을 되풀이한다. `{schedule}`은 서버가 저장한 행에서 `routineSavedText`가 채운다 —
+   * 이 문장을 그대로 꺼내 쓰는 곳은 없다. "저장했다"만 말하던 때, 시간대 없이 만든 "매일 7시 반"이
+   * UTC로 저장돼 서울 16:30에 돌았고 봇은 사람에게 다 됐다고 말했다(감사 2026-09-16, R2 F1).
+   * 루틴 화면에는 일정을 고치는 칸이 없어서 "고칠 수 있다"도 사실이 아니었다 — 멈추거나 지운다.
+   */
   "laf:routine_saved":
-    "루틴을 저장했다. 이제부터 혼자 돈다. 사람은 루틴 화면에서 보고 고칠 수 있다.",
+    "루틴을 저장했다. 저장된 일정: {schedule}. 이제부터 이 일정대로 혼자 돈다. 사람에게 이 일정을 그대로 말해 확인받아라 — 사람이 말한 시각·요일·시간대와 다르면 이 루틴을 지우고 맞게 다시 만든다. 사람은 루틴 화면에서 보고 멈추거나 지울 수 있다.",
+  "laf:routine_saved_unread":
+    "루틴 저장 요청에 대한 답을 읽지 못해서, 저장됐는지도 어떤 일정으로 저장됐는지도 확인하지 못했다. 시각을 짐작해서 말하지 말고, 사람에게 루틴 화면에서 이 루틴이 있는지와 그 시각·요일을 확인해 달라고 말해라.",
   "laf:routine_deleted": "그 루틴을 지웠다.",
   "laf:routine_paused": "그 루틴을 멈췄다.",
   "laf:routine_resumed": "그 루틴을 다시 돌린다.",
@@ -659,6 +667,71 @@ export const TOOL_RESULT_KO: Record<string, string> = {
 /** 코드에 해당하는 모델용 문장. 모르는 코드는 그대로 돌려준다 — 사실은 사실이므로 삼키지 않는다. */
 export function toolResultText(code: string): string {
   return TOOL_RESULT_KO[code] ?? code;
+}
+
+/** 요일 이름, 0 = 일요일. 서버가 `dailyDays`에 저장하는 숫자와 같은 순서다. */
+const WEEKDAYS_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+/**
+ * 루틴을 저장한 봇이 읽는 문장 — 서버가 저장한 일정(시각·요일·시간대)을 그대로 되풀이한다.
+ *
+ * `saved`는 `POST /api/routines`가 돌려준 `routine`이다. 요청이 아니라 응답에서 읽는다: 봇이 보낸
+ * 것은 부탁한 일정이고, 시간대를 비워 보냈을 때 서버가 채운 배포의 시간대는 응답에만 있다.
+ * 모양이 어긋나면 일정을 지어내지 않고 `laf:routine_saved_unread`를 돌려준다 — 요일 목록이 없는
+ * 것을 "매일"로 읽으면 사람에게 거짓 일정을 확인받게 된다. 같은 응답에 한 번 실리는 트리거 토큰
+ * 같은 값은 읽지 않으므로 모델에게 가지 않는다.
+ */
+export function routineSavedText(saved: unknown): string {
+  const schedule = savedSchedule(saved);
+  if (schedule === undefined) {
+    return toolResultText("laf:routine_saved_unread");
+  }
+  // 함수로 바꾼다: 문자열로 넘기면 `$&` 같은 치환 기호가 해석된다.
+  return toolResultText("laf:routine_saved").replace(
+    "{schedule}",
+    () => schedule,
+  );
+}
+
+/** 저장된 행의 일정을 한 줄로: "매주 월·수·금 07:30 (시간대 Asia/Seoul)", "30분마다". 어긋나면 undefined. */
+function savedSchedule(saved: unknown): string | undefined {
+  if (!saved || typeof saved !== "object") return undefined;
+  const row = saved as Record<string, unknown>;
+
+  if (row.scheduleKind === "interval") {
+    const minutes = row.intervalMinutes;
+    return typeof minutes === "number" &&
+      Number.isInteger(minutes) &&
+      minutes > 0
+      ? `${minutes}분마다`
+      : undefined;
+  }
+  if (row.scheduleKind !== "daily") return undefined;
+
+  const time = row.dailyLocal;
+  if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    return undefined;
+  }
+  // null은 시간대가 생기기 전의 행이고, 그 행은 UTC로 돈다(`server/src/routines/schedule.ts`).
+  const zone = row.dailyTimeZone === null ? "UTC" : row.dailyTimeZone;
+  // IANA 이름에 쓰이는 글자만: 모델 앞에 서는 문장에 응답의 아무 문자열이나 넣지 않는다.
+  if (typeof zone !== "string" || !/^[A-Za-z][A-Za-z0-9_+/-]*$/.test(zone)) {
+    return undefined;
+  }
+  // null이나 빈 목록은 매일이다. 목록이 아닌 것은 모르는 것이지 매일이 아니다.
+  const days = row.dailyDays === null ? [] : row.dailyDays;
+  if (
+    !Array.isArray(days) ||
+    days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)
+  ) {
+    return undefined;
+  }
+  const kept = [...new Set(days as number[])].sort((a, b) => a - b);
+  const when =
+    kept.length === 0 || kept.length === 7
+      ? "매일"
+      : `매주 ${kept.map((day) => WEEKDAYS_KO[day]).join("·")}`;
+  return `${when} ${time} (시간대 ${zone})`;
 }
 
 /** 툴 결과에 얹혀 온 사실 하나. 코드와, 코드마다 다른 사실 몇 개. */

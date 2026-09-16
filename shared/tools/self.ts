@@ -93,7 +93,8 @@ export const MANAGE_ROUTINE: SelfTool = {
           },
           timeZone: {
             type: "string",
-            description: "그 시각이 쓰인 IANA 시간대. 예: Asia/Seoul",
+            description:
+              "사람이 다른 시간대를 말했을 때만, IANA 이름으로. 예: America/New_York. 빼면 네가 아는 지금 시각의 시간대로 저장된다",
           },
           days: {
             type: "array",

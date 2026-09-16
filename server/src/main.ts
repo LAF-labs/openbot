@@ -597,6 +597,8 @@ const routineService = createRoutineService({
   deliver: createRoutineDelivery(database, announceFinished),
   deliverFailure: markRoutineFailure,
   tools: unattendedTools,
+  // The clock the Bots are told the time in, so a routine a Bot makes without a zone runs on it.
+  timeZone: config.botTimeZone,
 });
 
 /*

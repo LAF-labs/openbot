@@ -356,7 +356,9 @@ describe("the catch-up grace", () => {
       agentId: botId,
       name: "아침 브리핑",
       instruction: "오늘 할 일 알려줘",
-      schedule: { kind: "daily", time: "07:30" },
+      // Named, because every instant below is read in UTC: a schedule that names no zone is written
+      // in the deployment's since 2026-09-16, and this test is about the grace, not the zone.
+      schedule: { kind: "daily", time: "07:30", timeZone: "UTC" },
     });
     if (!routine) throw new Error("not created");
 

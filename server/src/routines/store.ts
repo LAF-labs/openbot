@@ -15,6 +15,7 @@ import {
   nextRunAt,
   parseSchedule,
   type RoutineSchedule,
+  type StoredSchedule,
   scheduleOf,
 } from "./schedule";
 
@@ -49,6 +50,11 @@ export type RoutineInput = {
 export type RoutineStore = {
   database: Database;
   now: () => Date;
+  /**
+   * The zone a new daily routine is written in when it names none: the deployment's,
+   * `config.botTimeZone`. See `parseSchedule`.
+   */
+  timeZone: string;
 };
 
 type RoutineRow = typeof lafRoutines.$inferSelect;
@@ -117,7 +123,7 @@ export async function createRoutine(
   actor: AgentActor,
   input: RoutineInput,
 ) {
-  const schedule = parseSchedule(input.schedule);
+  const schedule = parseSchedule(input.schedule, store.timeZone);
   const name = input.name.trim();
   const instruction = input.instruction.trim();
   refuseBlank(name, instruction);
@@ -218,7 +224,7 @@ async function insertRoutine(
   made: {
     actor: AgentActor;
     input: RoutineInput;
-    schedule: RoutineSchedule;
+    schedule: StoredSchedule;
     name: string;
     instruction: string;
     triggerToken: string;
@@ -237,9 +243,10 @@ async function insertRoutine(
       scheduleKind: schedule.kind,
       intervalMinutes: schedule.kind === "interval" ? schedule.minutes : null,
       dailyLocal: schedule.kind === "daily" ? schedule.time : null,
-      dailyTimeZone:
-        schedule.kind === "daily" ? (schedule.timeZone ?? "UTC") : null,
-      dailyDays: schedule.kind === "daily" ? (schedule.days ?? []) : null,
+      // No fallback here: a parsed daily schedule always names its zone, and the one this line used
+      // to supply was UTC.
+      dailyTimeZone: schedule.kind === "daily" ? schedule.timeZone : null,
+      dailyDays: schedule.kind === "daily" ? schedule.days : null,
       enabled: true,
       createdById: actor.id,
       createdByRole: actor.role,

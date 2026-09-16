@@ -7,10 +7,15 @@ import {
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
+import { Hono, type MiddlewareHandler } from "hono";
+import ts from "typescript";
 import type { AgentActor } from "../src/agents/profile-types";
 import type { AuditEventInput } from "../src/audit";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
@@ -19,10 +24,13 @@ import {
   lafRoutines,
   users,
 } from "../src/db/schema";
+import { createRoutineRoutes } from "../src/routines/routes";
 import {
   createRoutineService,
   MAX_ROUTINES,
   nextRunAt,
+  RoutineError,
+  type RoutineServiceOptions,
 } from "../src/routines/service";
 import { TEST_POOL } from "./support/database";
 
@@ -129,11 +137,16 @@ function fakeAgents(reply: string, delayMs = 0) {
   return { agents: { [BOT_ID]: agent }, asked };
 }
 
-function serviceWith(agents: Record<string, AbstractAgent>, clock: () => Date) {
+function serviceWith(
+  agents: Record<string, AbstractAgent>,
+  clock: () => Date,
+  deployment: Pick<RoutineServiceOptions, "timeZone"> = {},
+) {
   const rows: AuditEventInput[] = [];
   /** What reached the person's conversation. A test that expects silence reads this. */
   const delivered: string[] = [];
   const service = createRoutineService({
+    ...deployment,
     database,
     resolveAgents: async () => agents,
     auditStore: {
@@ -235,6 +248,223 @@ describe("the schedule arithmetic", () => {
         afterShift,
       ).toISOString(),
     ).toBe("2026-11-02T14:00:00.000Z");
+  });
+});
+
+/**
+ * THE CLOCK THE BOT WAS READING. Audit 2026-09-16, R2 F1.
+ *
+ * The routines form fills in the browser's zone; a Bot's `manage_routine` sends "07:30" and nothing
+ * else, and that was stored as UTC — "매일 7시 반" ran at 16:30 in Seoul while the Bot told the
+ * person it was done. A daily schedule that names no zone is read in the deployment's zone now,
+ * `config.botTimeZone`, which is the clock every Bot is told the time in.
+ *
+ * New York below, on purpose: a zone that is neither the old UTC nor Seoul (the default the option
+ * falls back to) can only have come from what the service was handed.
+ */
+describe("a daily routine that names no zone", () => {
+  const NEW_YORK = { timeZone: "America/New_York" };
+  /** 05:00 UTC: 01:00 in New York (EDT), 14:00 in Seoul, 14:00 in Tokyo. */
+  const AT = new Date("2026-08-20T05:00:00Z");
+  const MORNING = {
+    agentId: BOT_ID,
+    name: "아침 브리핑",
+    instruction: "오늘 할 일 알려줘",
+  };
+
+  /** The routines API as the app — and so the Bot's tool — reaches it, signed in as ACTOR. */
+  const routesFor = (service: ReturnType<typeof serviceWith>["service"]) => {
+    const person: AuthenticatedActor = {
+      id: ACTOR.id,
+      email: `${ACTOR.id}@laf.test`,
+      role: ACTOR.role,
+    };
+    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", person);
+      await next();
+    };
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route("/api/routines", createRoutineRoutes(service, requireUser));
+    return app;
+  };
+
+  const storedZone = async (id: string) => {
+    const [row] = await database
+      .select({ zone: lafRoutines.dailyTimeZone })
+      .from(lafRoutines)
+      .where(eq(lafRoutines.id, id));
+    return row?.zone;
+  };
+
+  test("is stored in the deployment's zone, through the routines API", async () => {
+    const { service } = serviceWith({}, () => AT, NEW_YORK);
+    const response = await routesFor(service).request(
+      "http://laf.test/api/routines",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // Exactly what `manage_routine` sends for "매일 7시 반": a kind and a time.
+        body: JSON.stringify({
+          ...MORNING,
+          schedule: { kind: "daily", time: "07:30" },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    const { routine } = (await response.json()) as {
+      routine: Record<string, unknown> & { id: string; nextRunAt: string };
+    };
+    // THE SAVED SCHEDULE CARRIES A ZONE — and the time and the days beside it, which is what the
+    // Bot's tool reads back to repeat to the person.
+    expect(routine).toMatchObject({
+      scheduleKind: "daily",
+      dailyLocal: "07:30",
+      dailyTimeZone: "America/New_York",
+      dailyDays: [],
+    });
+    // 07:30 in New York in August is 11:30 UTC. A zoneless row meant 07:30 UTC.
+    expect(new Date(routine.nextRunAt).toISOString()).toBe(
+      "2026-08-20T11:30:00.000Z",
+    );
+    expect(await storedZone(routine.id)).toBe("America/New_York");
+  });
+
+  test("with no zone handed to the service it is Seoul, the Bot's own default clock — never UTC", async () => {
+    const { service } = serviceWith({}, () => AT);
+    const routine = await service.create(ACTOR, {
+      ...MORNING,
+      schedule: { kind: "daily", time: "07:30" },
+    });
+
+    expect(routine.dailyTimeZone).toBe("Asia/Seoul");
+    // 14:00 in Seoul, so the next 07:30 there is tomorrow's: 22:30 UTC today.
+    expect(routine.nextRunAt.toISOString()).toBe("2026-08-20T22:30:00.000Z");
+  });
+
+  test("a blank zone is no zone", async () => {
+    // A model fills an optional string with "" as readily as it leaves it out, and "" was refused
+    // as a zone this machine does not know.
+    const { service } = serviceWith({}, () => AT, NEW_YORK);
+    for (const timeZone of ["", "  "]) {
+      const routine = await service.create(ACTOR, {
+        ...MORNING,
+        schedule: { kind: "daily", time: "07:30", timeZone },
+      });
+      expect({ timeZone, stored: routine.dailyTimeZone }).toEqual({
+        timeZone,
+        stored: "America/New_York",
+      });
+    }
+  });
+
+  test("a zone the schedule names is kept, whatever the deployment's is", async () => {
+    const { service } = serviceWith({}, () => AT, NEW_YORK);
+    const routine = await service.create(ACTOR, {
+      ...MORNING,
+      schedule: { kind: "daily", time: "07:30", timeZone: "Asia/Tokyo" },
+    });
+
+    expect(routine.dailyTimeZone).toBe("Asia/Tokyo");
+    expect(routine.nextRunAt.toISOString()).toBe("2026-08-20T22:30:00.000Z");
+  });
+
+  test("a zone nobody knows is still refused, never replaced by the deployment's", async () => {
+    const { service } = serviceWith({}, () => AT, NEW_YORK);
+    const made = service.create(ACTOR, {
+      ...MORNING,
+      schedule: { kind: "daily", time: "07:30", timeZone: "Mars/Olympus" },
+    });
+
+    await expect(made).rejects.toBeInstanceOf(RoutineError);
+    await expect(made).rejects.toMatchObject({
+      status: 400,
+      code: "laf:routine_zone_unknown",
+    });
+  });
+
+  test("rows already stored keep their zone, and are re-armed on it", async () => {
+    /*
+     * A row from before zones (null, which has always meant UTC) and one that says UTC outright —
+     * both what a zoneless schedule produced until today. Neither is reinterpreted in the
+     * deployment's zone: turning either back on re-arms it at 07:30 UTC, and its column is
+     * untouched. A routine somebody has been receiving at 16:30 does not move under them.
+     */
+    const { service } = serviceWith({}, () => AT, { timeZone: "Asia/Seoul" });
+    const legacy = `routine_zoneless_${randomUUID()}`;
+    const utc = `routine_utc_${randomUUID()}`;
+    await database.insert(lafRoutines).values(
+      [
+        { id: legacy, dailyTimeZone: null },
+        { id: utc, dailyTimeZone: "UTC" },
+      ].map((row) => ({
+        ...row,
+        agentId: BOT_ID,
+        name: "예전 루틴",
+        instruction: "확인해줘",
+        scheduleKind: "daily" as const,
+        dailyLocal: "07:30",
+        dailyDays: [],
+        enabled: false,
+        createdById: ACTOR.id,
+        createdByRole: ACTOR.role,
+        nextRunAt: new Date("2026-08-01T07:30:00Z"),
+        createdAt: AT,
+        updatedAt: AT,
+      })),
+    );
+
+    for (const id of [legacy, utc]) {
+      const rearmed = await service.setEnabled(ACTOR, id, true);
+      expect({ id, next: rearmed.nextRunAt.toISOString() }).toEqual({
+        id,
+        next: "2026-08-20T07:30:00.000Z",
+      });
+    }
+    expect(await storedZone(legacy)).toBeNull();
+    expect(await storedZone(utc)).toBe("UTC");
+  });
+
+  test("the server hands the routine service the deployment's zone", () => {
+    /*
+     * The option is only as good as the one line that sets it. `main.ts` cannot be imported by a
+     * test — it starts the whole server — so the call is read out of its syntax tree: the options
+     * object `createRoutineService` is given must carry `timeZone: config.botTimeZone`, the value
+     * `config.ts` parsed once from BOT_TIME_ZONE and the Bot's clock is told.
+     */
+    const path = join(import.meta.dir, "../src/main.ts");
+    const source = ts.createSourceFile(
+      path,
+      readFileSync(path, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const handed: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(source) === "createRoutineService"
+      ) {
+        const [options] = node.arguments;
+        if (options && ts.isObjectLiteralExpression(options)) {
+          for (const property of options.properties) {
+            if (
+              ts.isPropertyAssignment(property) &&
+              property.name.getText(source) === "timeZone"
+            ) {
+              handed.push(property.initializer.getText(source));
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+
+    expect(handed).toEqual(["config.botTimeZone"]);
   });
 });
 

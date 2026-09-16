@@ -21,7 +21,13 @@ export type RoutineSchedule =
       kind: "daily";
       /** HH:MM on the wall clock of `timeZone`, not UTC. */
       time: string;
-      /** IANA zone the time is written in. Absent means UTC, which is how old rows read. */
+      /**
+       * IANA zone the time is written in.
+       *
+       * Absent (or blank) when a routine is made means the deployment's zone — see `parseSchedule`
+       * — so every row written since 2026-09-16 names one. A row from before zones has none and is
+       * read as UTC (`scheduleOf`), and so is a schedule handed to `nextRunAt` without one.
+       */
       timeZone?: string;
       /**
        * Which weekdays it may run on, 0 = Sunday. Absent or empty means every day.
@@ -31,6 +37,17 @@ export type RoutineSchedule =
        */
       days?: number[];
     };
+
+/**
+ * A schedule as a row keeps it: a daily one always names its zone and its days.
+ *
+ * What `parseSchedule` returns and `scheduleOf` reads back, so that nothing between the request and
+ * the insert can supply a zone of its own. `store.ts` did — `timeZone ?? "UTC"` — and that was half
+ * of what stored "매일 7시 반" as UTC.
+ */
+export type StoredSchedule =
+  | { kind: "interval"; minutes: number }
+  | { kind: "daily"; time: string; timeZone: string; days: number[] };
 
 /** Five minutes. Anything faster is polling, and polling is the watch service's job. */
 export const MIN_INTERVAL_MINUTES = 5;
@@ -135,8 +152,21 @@ export function nextRunAt(schedule: RoutineSchedule, from: Date): Date {
   );
 }
 
-/** The schedule a person sent, checked and normalised — or the refusal that says what is wrong. */
-export function parseSchedule(schedule: RoutineSchedule): RoutineSchedule {
+/**
+ * The schedule a person or a Bot sent, checked and normalised — or the refusal that says what is
+ * wrong.
+ *
+ * `deploymentZone` is the zone a daily time is read in when the schedule names none:
+ * `config.botTimeZone`, the clock every Bot is told the time in. It was UTC. The routines form always
+ * sends the browser's zone, but a Bot's `manage_routine` sends "07:30" and nothing else, so "매일 7시
+ * 반" was stored as 07:30 UTC and ran at 16:30 in Seoul while the Bot told the person it was done
+ * (audit 2026-09-16, R2 F1). The Bot heard "7시 반" on the deployment's clock; that is the clock the
+ * row gets. Rows already stored are not touched here — this runs when a routine is made.
+ */
+export function parseSchedule(
+  schedule: RoutineSchedule,
+  deploymentZone: string,
+): StoredSchedule {
   if (schedule.kind === "interval") {
     if (
       !Number.isInteger(schedule.minutes) ||
@@ -159,7 +189,7 @@ export function parseSchedule(schedule: RoutineSchedule): RoutineSchedule {
         "laf:routine_time_invalid",
       );
     }
-    const timeZone = schedule.timeZone ?? "UTC";
+    const timeZone = zoneNamedBy(schedule) ?? deploymentZone;
     if (!isKnownTimeZone(timeZone)) {
       throw new RoutineError(
         `This machine does not know the zone "${timeZone}".`,
@@ -193,10 +223,25 @@ export function parseSchedule(schedule: RoutineSchedule): RoutineSchedule {
   );
 }
 
+/**
+ * The zone a daily schedule names, or nothing when it names none.
+ *
+ * Blank is none: a model fills an optional string with "" as readily as it leaves the field out, and
+ * "" was refused as a zone this machine does not know. Anything else is handed on as written to be
+ * checked — a zone that is wrong is refused, never quietly swapped for the deployment's, because a
+ * Bot told "New York time" and stored on Seoul's is the same lie the other way round.
+ */
+function zoneNamedBy(schedule: { timeZone?: unknown }): string | undefined {
+  const zone = schedule.timeZone;
+  if (zone === undefined || zone === null) return undefined;
+  if (typeof zone === "string" && zone.trim() === "") return undefined;
+  return String(zone);
+}
+
 /** The schedule a stored routine row describes. */
 export function scheduleOf(
   row: typeof lafRoutines.$inferSelect,
-): RoutineSchedule {
+): StoredSchedule {
   if (row.scheduleKind !== "daily") {
     return { kind: "interval", minutes: row.intervalMinutes ?? 60 };
   }

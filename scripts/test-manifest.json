@@ -105,6 +105,7 @@
   "app/tests/router.test.ts",
   "app/tests/routine-form.test.ts",
   "app/tests/routine-notepad.test.tsx",
+  "app/tests/routine-saved.test.ts",
   "app/tests/routine-suggestions.test.tsx",
   "app/tests/routines-copy.test.ts",
   "app/tests/screen-problems.test.ts",

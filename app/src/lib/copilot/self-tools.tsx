@@ -1,5 +1,9 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { TOOL_RESULT_KO, toolResultText } from "@shared/prompt/tool-results.ko";
+import {
+  routineSavedText,
+  TOOL_RESULT_KO,
+  toolResultText,
+} from "@shared/prompt/tool-results.ko";
 import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -88,8 +92,11 @@ type RoutineArgs = {
  * The only checks here are the ones that decide WHICH URL to call: an id-less update has no route
  * to be sent to. Everything about whether the routine is well formed — a name, an instruction, a
  * schedule that ever comes round — is answered by the routines API, in codes.
+ *
+ * Exported so what a Bot is handed after a save is tested against this function, not a copy of it
+ * (`app/tests/routine-saved.test.ts`).
  */
-async function routineAction(
+export async function routineAction(
   args: RoutineArgs,
   botId: string,
   remember: (
@@ -113,11 +120,12 @@ async function routineAction(
   };
   const done = async (
     entry: { done: string; doing: string; note?: string },
-    code: string,
+    said: string,
   ) => {
     // The Routines screen and the Bot panel both read this list.
     await queryClient.invalidateQueries({ queryKey: routineKeys.all });
-    return say(entry, false, code);
+    remember(entry, false);
+    return said;
   };
 
   if (args.action === "create") {
@@ -140,9 +148,20 @@ async function routineAction(
         await codeOf(response, "laf:routine_incomplete"),
       );
     }
+    /*
+     * THE SCHEDULE AS THE SERVER KEPT IT, SAID BACK TO THE BOT.
+     *
+     * This answered "saved" and nothing else while a daily schedule with no zone was being stored as
+     * UTC: "매일 7시 반" ran at 16:30 in Seoul and the Bot told the person it was done (audit
+     * 2026-09-16, R2 F1). Read from the response, never from `args` — the request is what was asked
+     * for, and the zone the server filled in is only in what it answered.
+     */
+    const saved = (await response.json().catch(() => null)) as {
+      routine?: unknown;
+    } | null;
     return await done(
       line(t("Saving a routine"), t("Saved a routine"), name),
-      "laf:routine_saved",
+      routineSavedText(saved?.routine),
     );
   }
 
@@ -169,7 +188,7 @@ async function routineAction(
     }
     return await done(
       line(t("Deleting a routine"), t("Deleted a routine")),
-      "laf:routine_deleted",
+      answer("laf:routine_deleted"),
     );
   }
 
@@ -209,7 +228,7 @@ async function routineAction(
       args.enabled
         ? line(t("Resuming a routine"), t("Resumed a routine"))
         : line(t("Pausing a routine"), t("Paused a routine")),
-      args.enabled ? "laf:routine_resumed" : "laf:routine_paused",
+      answer(args.enabled ? "laf:routine_resumed" : "laf:routine_paused"),
     );
   }
 
