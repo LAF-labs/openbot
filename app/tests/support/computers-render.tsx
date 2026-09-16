@@ -8,11 +8,12 @@
  *
  * The server is stubbed the way the real one answers since `397213f`: the address the page used to
  * ask, `/api/computers/shared/computers`, is the ownership guard's 404, and the list is at
- * `/api/computers`. Its one argument is the Bot on the row. Prints one line,
- * `COMPUTERS_RENDER <json>`. Not a test file (no `.test.` in the name), so the runner never collects
- * it on its own — and nothing may import a value from it, which would run it: types only.
+ * `/api/computers`. Its two arguments are the viewer's Bot and one the list carries that the viewer
+ * may not drive. Prints one line, `COMPUTERS_RENDER <json>`. Not a test file (no `.test.` in the
+ * name), so the runner never collects it on its own — and nothing may import a value from it, which
+ * would run it: types only.
  *
- *     bun app/tests/support/computers-render.tsx agent_…
+ *     bun app/tests/support/computers-render.tsx agent_… agent_…
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
@@ -21,6 +22,8 @@ export type ComputersShown = {
   requests: string[];
   /** The row titles, as the list drew them. */
   rows: string[];
+  /** Each row's whole text, title first, in the same order. */
+  rowTexts: string[];
   /** Every button under the page's own pane before anything was pressed. */
   buttons: string[];
   /** Anything the page raised as an alert before anything was pressed. */
@@ -36,7 +39,11 @@ export type ComputersShown = {
 
 /** A Bot this account made, with a tab open on the deployment's one browser. */
 const RENDERED_BOT = process.argv[2] ?? "";
-if (!RENDERED_BOT) throw new Error("name the row's Bot as the one argument");
+/** Listed by the computer, and not the viewer's to drive: deleted, or somebody else's. */
+const ELSEWHERE_BOT = process.argv[3] ?? "";
+if (!RENDERED_BOT || !ELSEWHERE_BOT) {
+  throw new Error("name the viewer's Bot and one that is not theirs");
+}
 
 process.env.NODE_ENV = "test";
 GlobalRegistrator.register({ url: "http://localhost:3110/" });
@@ -76,6 +83,14 @@ const view = await mountApp({
             running: true,
             startedAt: "2026-09-16T09:00:00.000Z",
             egress: null,
+            mayDrive: true,
+          },
+          {
+            botId: ELSEWHERE_BOT,
+            running: false,
+            startedAt: null,
+            egress: null,
+            mayDrive: false,
           },
         ],
       });
@@ -119,9 +134,17 @@ await view.waitFor(
 );
 await view.settle(30);
 
-const rows = [...(main()?.querySelectorAll('[data-slot="item-title"]') ?? [])]
+const titles = [
+  ...(main()?.querySelectorAll('[data-slot="item-title"]') ?? []),
+];
+const rows = titles
   .map((title) => title.textContent?.trim() ?? "")
   .filter(Boolean);
+const rowTexts = titles.map(
+  (title) =>
+    title.closest('[data-slot="item-content"]')?.parentElement?.textContent ??
+    "",
+);
 const buttons = buttonsIn(main()).map(
   (button) => button.textContent?.trim() ?? "",
 );
@@ -156,6 +179,7 @@ await view.settle(30);
 const shown: ComputersShown = {
   requests: view.requests.map((request) => `${request.method} ${request.path}`),
   rows,
+  rowTexts,
   buttons,
   alerts,
   title,

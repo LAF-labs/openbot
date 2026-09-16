@@ -65,11 +65,18 @@ const PERMISSIVE: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
  */
 const SECRET = "hunter2-Zx9-BANKPASS";
 
-/** What the computer says it holds: one Bot, with a tab open. */
+/** What the computer says it holds: the caller's Bot with a tab open, and one that is nobody's here. */
 const LISTED = {
   botId: "bot-1",
   running: true,
   startedAt: "2026-09-16T09:00:00.000Z",
+  egress: null,
+};
+/** A Bot the container still lists after it was deleted (audit R3-09), or somebody else's. */
+const LISTED_ELSEWHERE = {
+  botId: "bot-gone",
+  running: false,
+  startedAt: null,
   egress: null,
 };
 
@@ -114,7 +121,7 @@ function fakeClient() {
     // One row, so a list that came back is told apart from a list that was never asked for.
     computers: async () => {
       calls.push("computers");
-      return { computers: [LISTED] };
+      return { computers: [LISTED, LISTED_ELSEWHERE] };
     },
     requestSecret: async (input: SecretRequest) => {
       calls.push("requestSecret");
@@ -463,11 +470,37 @@ describe("the computers the Computers page lists", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       isolation: "shared",
-      computers: [LISTED],
+      computers: [
+        { ...LISTED, mayDrive: false },
+        { ...LISTED_ELSEWHERE, mayDrive: false },
+      ],
     });
     expect(calls).toEqual(["computers"]);
     // A read: nobody is recorded as having looked, and no Bot is invented to record it against.
     expect(rows).toEqual([]);
+  });
+
+  /*
+   * WHETHER A ROW'S BUTTONS CAN WORK, SAID BY THE SERVER. Stop and reset go through the row's own Bot
+   * and its ownership guard. Measured 2026-09-16 in the real page against a real computer: a row for
+   * a Bot the administrator could not drive drew both buttons, and Reset on it was a 404 that the
+   * page then wiped off the screen by reading the list again — a press that did nothing and said
+   * nothing. The container keeps listing deleted Bots (audit R3-09), so on a one-person deployment
+   * that is every Bot its person has ever deleted.
+   */
+  test("say, row by row, whether the asker may drive that row's Bot", async () => {
+    const { app } = surface(ADMIN);
+
+    const response = await app.request("/");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      isolation: "shared",
+      computers: [
+        { ...LISTED, mayDrive: true },
+        { ...LISTED_ELSEWHERE, mayDrive: false },
+      ],
+    });
   });
 
   test("are refused to somebody who is not an administrator, before the computer is asked", async () => {

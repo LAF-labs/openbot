@@ -586,6 +586,8 @@ export const ko: Record<string, string> = {
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
   "Close its tabs": "이 봇의 탭 닫기",
+  "This is not one of your Bots, or it was deleted, so it cannot be stopped or reset from here.":
+    "내 봇이 아니거나 삭제된 봇이라 여기서 탭을 닫거나 초기화할 수 없습니다.",
   Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
   "Teddy bear": "곰인형",

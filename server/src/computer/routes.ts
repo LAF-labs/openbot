@@ -3,7 +3,11 @@ import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
-import { requireAdminRoute, requireBotAccess } from "../auth/guards";
+import {
+  mayDriveBot,
+  requireAdminRoute,
+  requireBotAccess,
+} from "../auth/guards";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { BOT_ID_INVALID, BotIdRefusedError, isBotId } from "./bot-id";
@@ -402,10 +406,25 @@ export function createComputerRoutes(
    *
    * AN ADMINISTRATOR'S, in the declaration: it answers with every Bot's browser on the deployment,
    * not the asker's. The page is the only reader.
+   *
+   * `mayDrive` ON EVERY ROW, because stop and reset are pressed from a row and go through that row's
+   * Bot and its ownership guard. The container lists Bots the asker cannot drive — somebody else's,
+   * and every Bot deleted since (audit R3-09) — and measured in the page on 2026-09-16, such a row
+   * drew both buttons and Reset on it was refused 404. The server says which rows can be acted on;
+   * the page draws no control that could only be refused.
    */
   routes.get("/", requireUser, requireAdminRoute, async (context) => {
     try {
-      return context.json(await gateway.computers());
+      const listed = await gateway.computers();
+      return context.json({
+        ...listed,
+        computers: await Promise.all(
+          listed.computers.map(async (computer) => ({
+            ...computer,
+            mayDrive: await mayDriveBot(context, computer.botId),
+          })),
+        ),
+      });
     } catch (error) {
       return failed(context, error);
     }

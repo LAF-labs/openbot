@@ -28,6 +28,12 @@ type ComputerProfile = {
   running: boolean;
   startedAt: string | null;
   egress: string | null;
+  /**
+   * Whether this viewer may act through the row's Bot, which is what stop and reset go through.
+   * False for somebody else's Bot and for one deleted since (the computer keeps listing those).
+   * Absent from a server that predates it, which is read as the old behaviour: both buttons.
+   */
+  mayDrive?: boolean;
 };
 
 export const Route = createFileRoute("/_authed/admin/computers")({
@@ -96,6 +102,13 @@ function ComputersPage() {
     async (botId: string, action: "stop" | "reset") => {
       setBusy(botId);
       setConfirming(null);
+      /*
+       * WHAT THE PRESS CAME TO, KEPT PAST THE RELOAD BELOW. `load` clears the page's problem when the
+       * list comes back — and it does come back — so a refused press set its sentence and lost it a
+       * moment later. Measured 2026-09-16: Reset refused 404 closed its dialog and left the page as
+       * it was, with nothing on it saying that nothing had happened.
+       */
+      let refused: string | null = null;
       try {
         const response = await fetch(
           `/api/computers/${encodeURIComponent(botId)}/computers/${action}`,
@@ -110,23 +123,21 @@ function ComputersPage() {
            * computer could not be stop." — a string built by concatenating a verb into a sentence
            * that needed its past participle, and untranslatable either way.
            */
-          setProblem(
-            refusalText(
-              SCREEN_PROBLEM_SAID,
-              body?.code,
-              action === "stop"
-                ? t("The browser could not be stopped.")
-                : t("The computer could not be reset."),
-            ),
+          refused = refusalText(
+            SCREEN_PROBLEM_SAID,
+            body?.code,
+            action === "stop"
+              ? t("The browser could not be stopped.")
+              : t("The computer could not be reset."),
           );
-        } else {
-          setProblem(null);
         }
       } catch {
-        setProblem(t("The computer could not be reached."));
+        refused = t("The computer could not be reached.");
       } finally {
         setBusy(null);
         await load();
+        // A press that worked leaves whatever the reload said, its own failure to load included.
+        if (refused) setProblem(refused);
       }
     },
     [load],
@@ -222,27 +233,41 @@ function ComputersPage() {
                           })
                         : t("Leaves directly")}
                     </ItemDescription>
+                    {/*
+                     * NO BUTTONS THAT COULD ONLY BE REFUSED. Both go through this row's Bot, and the
+                     * server says whether this person may act through it. The row stays — the
+                     * computer does hold it — and says why it has nothing to press.
+                     */}
+                    {computer.mayDrive === false ? (
+                      <p className="text-muted-foreground text-xs">
+                        {t(
+                          "This is not one of your Bots, or it was deleted, so it cannot be stopped or reset from here.",
+                        )}
+                      </p>
+                    ) : null}
                   </ItemContent>
-                  <ItemActions>
-                    <Button
-                      disabled={busy === computer.botId || !computer.running}
-                      onClick={() => void run(computer.botId, "stop")}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {busy === computer.botId
-                        ? t("Working…")
-                        : t("Close its tabs")}
-                    </Button>
-                    <Button
-                      disabled={busy === computer.botId}
-                      onClick={() => setConfirming(computer.botId)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {t("Reset")}
-                    </Button>
-                  </ItemActions>
+                  {computer.mayDrive === false ? null : (
+                    <ItemActions>
+                      <Button
+                        disabled={busy === computer.botId || !computer.running}
+                        onClick={() => void run(computer.botId, "stop")}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {busy === computer.botId
+                          ? t("Working…")
+                          : t("Close its tabs")}
+                      </Button>
+                      <Button
+                        disabled={busy === computer.botId}
+                        onClick={() => setConfirming(computer.botId)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {t("Reset")}
+                      </Button>
+                    </ItemActions>
+                  )}
                 </Item>
                 {index !== computers.length - 1 && <Separator />}
               </StaggerItem>
