@@ -129,7 +129,7 @@ jobs:
       # `actions-rust-lang`, not `dtolnay/rust-toolchain`: dtolnay force-pushes its `stable` branch, so
       # a commit pinned there stops belonging to any branch and zizmor's impostor-commit audit
       # failed every run from 2026-08-05 on. A tag on this action keeps its history.
-      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
       - name: Test the shell
@@ -173,7 +173,7 @@ jobs:
           # restored into a run that publishes.
           no-cache: true
 
-      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           target: ${{ matrix.targets }}
           cache: false
