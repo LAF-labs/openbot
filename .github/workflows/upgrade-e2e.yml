@@ -23,7 +23,7 @@ name: Upgrade e2e
 # ONE ARM64 RUNNER. Every customer VM is Ampere A1, so the arm64 halves of both sets of images are the
 # ones worth upgrading, and the runner is the cheapest Linux minute there is on the Free plan
 # ($0.005 against $0.006). The images are pulled, never built. What a run costs is under
-# "비공개 저장소의 CI 비용" in deploying.md.
+# "저장소 공개 여부와 CI 비용" in deploying.md.
 
 on:
   schedule:

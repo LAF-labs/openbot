@@ -32,14 +32,13 @@ name: Images
 #
 # Both architectures are built on NATIVE runners — amd64 on `ubuntu-latest`, arm64 on
 # `ubuntu-24.04-arm` — and merged into one manifest per image; QEMU emulation would turn the app
-# build into a half-hour job. arm64 is not optional: customer VMs are Ampere A1. The repository went
-# private on 2026-09-10 and stayed on that runner, because GitHub's runner reference lists
-# `ubuntu-24.04-arm` under "Standard GitHub-hosted runners for private repositories" (2 vCPU / 8 GB
-# there, against 4 / 16 GB for public ones) and says those runners "use your GitHub account's
+# build into a half-hour job. arm64 is not optional: customer VMs are Ampere A1. While the repository
+# was private (2026-09-10 to 2026-09-16) it stayed on that runner, because GitHub's runner reference
+# lists `ubuntu-24.04-arm` under "Standard GitHub-hosted runners for private repositories" (2 vCPU /
+# 8 GB there, against 4 / 16 GB for public ones) and says those runners "use your GitHub account's
 # allotment of free minutes, and are then charged at the per minute rates" — $0.005 a minute for
-# Linux arm64 against $0.006 for x64, so this is the cheapest leg here, not a premium one.
-# Measured 2026-09-01..10 on the public 4-vCPU runner: the four arm64 builds took ≈5 minutes a run;
-# the private runner has half the cores, so expect more. If the label is ever refused, the fallback
+# Linux arm64 against $0.006 for x64, the cheapest leg here. Public again, it is the free 4-vCPU
+# runner. Measured 2026-09-01..10 on that public runner: the four arm64 builds took ≈5 minutes a run. If the label is ever refused, the fallback
 # is `docker/setup-qemu-action` on `ubuntu-latest` — unmeasured, and the reason the native runner
 # was chosen in the first place.
 #   https://docs.github.com/en/actions/reference/runners/github-hosted-runners
@@ -78,8 +77,9 @@ on:
 permissions: {}
 
 # A burst of pushes to main publishes only the newest: the run for an older commit is cancelled when
-# a newer one queues, which is what a private repository on the Free plan can afford (a run here is
-# ≈13 Linux + 5 arm64 minutes, measured 2026-09-01..10). A cancelled run can leave a per-arch tag
+# a newer one queues — the channel only ever needs the newest, and it kept the repository inside the
+# Free plan's minutes while it was private (a run here is ≈13 Linux + 5 arm64 minutes, measured
+# 2026-09-01..10). A cancelled run can leave a per-arch tag
 # (`:edge-amd64`) ahead of the merged `:edge`, which is harmless: the manifest references digests,
 # not tags, and the newer run rewrites both halves and merges again. A tag is never cancelled — it
 # is its own group, and a release build must finish.

@@ -198,7 +198,9 @@ The updater's endpoint is the fleet's front door,
 `https://agent.laf-co.com/desktop/latest.json` — not a GitHub release. It was
 this repository's `releases/latest/download/latest.json` until the repository
 went private on 2026-09-10, after which that URL answered 404 to every installed
-app (anonymously, which is how an app asks) and no app could update. Apps built
+app (anonymously, which is how an app asks) and no app could update. The
+repository is public again since 2026-09-16; the door stays, so that a
+visibility change can never again stop updates. Apps built
 before the move still ask GitHub and never will update; they are reinstalled
 once from the door (docs/laf/installing.md). The pubkey in `tauri.conf.json` is the
 pair generated 2026-08-25 (key id `3E9A4235FEC7D535`); its private half and

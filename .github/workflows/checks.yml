@@ -14,7 +14,8 @@ name: Checks
 # on main and on tags, as the prerequisite of the build that moves `:edge` and `:stable`. Called
 # from a tag, the reference resolves at that tag, so what is checked is exactly what is about to be
 # published. (Until 2026-09-10 `ci.yml` ran them on main and tags as well — the same commit twice,
-# which a private repository on the Free plan's 2,000 minutes cannot afford; see ci.yml.)
+# which the repository, private on the Free plan's 2,000 minutes from 2026-09-10 to 2026-09-16,
+# could not afford; public again it could, and checking a commit once is still enough. See ci.yml.)
 
 on:
   workflow_call:

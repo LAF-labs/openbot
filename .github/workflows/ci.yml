@@ -6,9 +6,11 @@ name: CI
 # because a `v*` tag is what puts code in front of the whole fleet and for a while it was the one
 # ref nobody checked — but `images.yml` has gated on the checks since then, so the same commit was
 # checked twice. Measured 2026-09-01..10: 77 pushes to main, 4 Linux minutes each, 308 minutes, 62
-# of them for pushes that changed only documentation. A public repository could ignore that; a
-# private one on the Free plan's 2,000 minutes a month cannot. The README badge still points here
-# and reports the branches this runs on.
+# of them for pushes that changed only documentation. A public repository can ignore that; a
+# private one on the Free plan's 2,000 minutes a month cannot — this one was private from
+# 2026-09-10 to 2026-09-16 and spent nearly the whole month's minutes in that week, which is why it
+# is public again. Checking a commit once stays the rule. The README badge still points here and
+# reports the branches this runs on.
 
 on:
   pull_request:

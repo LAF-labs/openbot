@@ -3,11 +3,12 @@
  * `https://agent.laf-co.com/desktop/`, and the one way it gets there.
  *
  * WHY NOT GITHUB. The updater used to read this repository's
- * `releases/latest/download/latest.json`. The repository went private on
- * 2026-09-10 and that URL has answered 404 to anybody without an account ever
- * since — every installed app, and every person who has not bought anything
- * yet. So the tag build carries the signed files to the fleet's own front door,
- * the one address every installed app already trusts.
+ * `releases/latest/download/latest.json`. The repository was private from
+ * 2026-09-10 to 2026-09-16, and for that week the URL answered 404 to anybody
+ * without an account — every installed app, and every person who had not bought
+ * anything yet. So the tag build carries the signed files to the fleet's own
+ * front door, the one address every installed app already trusts, and a
+ * visibility change can no longer stop an update.
  *
  *   bun desktop/scripts/front-door.ts --from <artifacts> --stage <dir> [--version X.Y.Z]
  *                                     [--key <file> --known-hosts <file>]

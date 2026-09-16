@@ -10,7 +10,9 @@ name: Release
 # that day `releases/latest/download/latest.json` — the endpoint every installed app was built with —
 # answered 404 to anybody without an account: no app could update, and there was no public place to
 # download one. The updater now reads `https://agent.laf-co.com/desktop/latest.json`
-# (desktop/scripts/front-door.ts writes it; laf-control's `laf desktop door` built the door).
+# (desktop/scripts/front-door.ts writes it; laf-control's `laf desktop door` built the door). The
+# repository is public again since 2026-09-16, and the door stays: a visibility change must never
+# again be able to stop every installed app from updating.
 #
 # AND NO DRAFT RELEASE BESIDE IT, on purpose. Publishing the draft used to be the gate that offered
 # an update; nothing reads GitHub releases any more, so a draft would be a button that does nothing
@@ -31,15 +33,16 @@ name: Release
 # otherwise the installer replaces itself with the last published release the first time somebody
 # opens it, which was measured, not feared.
 #
-# WHY NOT EVERY PUSH TO MAIN: this is the most expensive run in the repository, and since 2026-09-10
-# the repository is private on GitHub's Free plan — 2,000 included minutes a month, with macOS
-# counted at ten times and Windows at twice the Linux rate. Measured 2026-09-01..10: the macOS leg
+# WHY NOT EVERY PUSH TO MAIN: this is the most expensive run in the repository, and from 2026-09-10
+# to 2026-09-16 the repository was private on GitHub's Free plan — 2,000 included minutes a month,
+# with macOS counted at ten times and Windows at twice the Linux rate. Public again, the minutes are
+# free; the trigger stays, because a shell that changes a few times a month needs no build per push. Measured 2026-09-01..10: the macOS leg
 # takes 10–13 minutes and the Windows leg 13–16, so one run is ≈130–160 weighted minutes, 7% of a
 # month, for a shell that is a window onto the origin and changes a few times a month, on a main
 # that moves several times a day. The shell's version and config (`tauri.conf.json`, `Cargo.toml`,
 # `Cargo.lock`, `package.json`) all live under `desktop/`, so `desktop/**` is the whole trigger;
 # everything else on main ships through the origin, which the installed app loads at launch. The
-# numbers are in docs/laf/deploying.md, "비공개 저장소의 CI 비용".
+# numbers are in docs/laf/deploying.md, "저장소 공개 여부와 CI 비용".
 #
 # The shell is a window onto the deployed origin (see desktop/README.md): there is no frontend to
 # build here and nothing native beyond Tauri itself, which is why a universal macOS binary is cheap

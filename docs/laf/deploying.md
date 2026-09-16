@@ -191,7 +191,7 @@ somebody ran Images by hand, and was measured twelve days and two sign-in
 changes behind main. A burst of pushes builds only the newest — the run for an
 older commit is cancelled — so `:edge` can trail main by one run while a burst
 settles. What each workflow costs, and why it runs when it does, is under
-"비공개 저장소의 CI 비용" at the end of this document.
+"저장소 공개 여부와 CI 비용" at the end of this document.
 
 **Nothing is published until the checks pass.** Every build in `images.yml`
 waits on `.github/workflows/checks.yml` — format, lint, types, the test floor
@@ -948,11 +948,20 @@ the alert ("vulnerable code is not actually used") is the owner's decision on
 GitHub. Revisit both — and take the ignore out — in the change that ships the
 shell for Linux or moves Tauri off `gtk` 0.18.
 
-## 비공개 저장소의 CI 비용
+## 저장소 공개 여부와 CI 비용
 
-2026-09-10에 이 저장소는 비공개가 됐다. 조직은 GitHub **Free** 플랜이고, 비공개
+**2026-09-16부터 이 저장소는 다시 공개다.** 비공개였던 2026-09-10–16 일주일 동안
+`openbot`이 쓴 Actions가 청구 API 기준 $11.48(전액 포함분 할인) — 포함분 2,000분
+(≈ $12)을 거의 다 썼고, 조직의 Actions 예산은 $0에 초과 사용 차단이라 넘는 순간
+검사·이미지·릴리스가 다음 달까지 멈출 참이었다. 오너 결정: "CI는 그냥 레포를
+퍼블릭으로 바꿔서 해결한다." 공개 저장소의 표준 러너는 무료이므로 아래 표와 추정은
+**비공개로 돌아가는 날 다시 읽을 숫자**로 남긴다. 워크플로가 도는 조건은 그대로 둔다
+— 같은 커밋을 한 번만 검사하고 셸은 `desktop/**`가 바뀔 때만 빌드하는 것은 공짜여도
+맞는 선택이다.
+
+2026-09-10에 이 저장소는 비공개가 됐었다. 조직은 GitHub **Free** 플랜이고, 비공개
 저장소의 Actions는 한 달 **2,000분**까지만 포함된다 — 공개 저장소일 때는 표준
-러너가 무제한 무료였다. GitHub 문서는 지금 OS별 배수 대신 SKU별 분당 단가로
+러너가 무제한 무료다. GitHub 문서는 지금 OS별 배수 대신 SKU별 분당 단가로
 적는다: Linux x64 `$0.006`, Linux arm64 `$0.005`, Windows `$0.010`, macOS
 `$0.062`. 예전 배수(Windows ×2, macOS ×10)와 같은 비율이라 아래 가중치는 그
 배수로 센다.

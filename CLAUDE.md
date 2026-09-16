@@ -223,8 +223,8 @@ normal case, since the test database starts empty.
 ## Things that are not in this repository
 
 The business plans, the milestone execution notes and the working log live in
-`~/laf/` — **outside any repository**, because this one was public until
-2026-09-10 and may be again. Never commit them and never move them in
+`~/laf/` — **outside any repository**, because this one is public (it was
+private only from 2026-09-10 to 2026-09-16). Never commit them and never move them in
 "temporarily". `~/laf/activity.md` is the running log; prepend an entry after
 finishing a piece of work, newest first, with a Dubai-time heading, what
 changed, and the files touched.
