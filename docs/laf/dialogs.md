@@ -76,7 +76,18 @@ for a failure.
   the action still applies; `onStale` refreshes what is behind the dialog once it has closed on a
   thing that was already gone. The dialog does the rest of this list.
 - `pressOnce` (`app/src/lib/press.ts`) is the press without the dialog: the re-check, the action,
-  and a failure turned into a Korean sentence. The re-checks themselves are in
+  and a failure turned into a Korean sentence. `usePress` beside it is the same press held for a
+  form dialog — `isRunning`, and the `failure` for its alert line. The re-checks themselves are in
   `app/src/lib/rechecks.ts`.
+- The two overlays drawn by hand use `useOverlayModal`: the app's root is inert while one is up,
+  and focus goes back to the opener — or to a fallback the overlay names, when the opener left.
+  Their Escape listens in the capture phase: a window listener added earlier (the side pane's)
+  would otherwise read `defaultPrevented` before the overlay set it, and close too.
 - `app/tests/support/confirm-dialog-render.tsx` presses the real popup in a process of its own and
   tries every way out while it runs; `confirm-dialog.test.tsx` holds what it finds.
+
+## What is not solved yet
+
+- **A delete that worked takes its opener with it.** Deleting a routine removes the row whose ⋯
+  opened the dialog, and focus falls to `<body>` when it closes. The page knows where focus should
+  go next (the next row, or the list); the dialog does not. Measured 2026-09-18.
