@@ -247,6 +247,7 @@ export async function mountApp(options: {
 
   const { routeTree } = await import("../../src/routeTree.gen");
   const { PageSkeleton } = await import("../../src/components/ui/skeleton");
+  const { router: appRouter } = await import("../../src/router");
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -258,6 +259,13 @@ export async function mountApp(options: {
     routeTree,
     history: createMemoryHistory({ initialEntries: [options.path] }),
     context: { queryClient },
+    /*
+     * The app's own error screen, as `router.tsx` sets it. Without it the router puts no catch
+     * boundary around a route, and a page that throws reaches whatever is above it — which is not
+     * what happens in the app, and a seam tested that way passed while the app's router caught the
+     * page one level below it (measured 2026-09-18).
+     */
+    defaultErrorComponent: appRouter.options.defaultErrorComponent,
     defaultPendingComponent: PageSkeleton,
     // Shown at once and released at once: the wait below reads its absence as "the route resolved".
     defaultPendingMs: 0,
