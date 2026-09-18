@@ -3,6 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { REACT_COMPILER_OPTIONS } from "./src/lib/build/react-compiler";
 import {
   lazyBoundaryOffences,
   lazyOnlyPackageOf,
@@ -149,7 +150,20 @@ export default defineConfig({
      * being fetched first.
      */
     tanstackRouter({ autoCodeSplitting: true }),
-    react(),
+    /*
+     * EVERY COMPONENT AND HOOK MEMOISED BY THE REACT COMPILER, IN DEVELOPMENT AND IN THE BUILD.
+     *
+     * After the router plugin, so the compiler sees each route's component in the module it was
+     * split into. Named by its package rather than imported: that name is how `@vitejs/plugin-react`
+     * recognises the compiler and pre-bundles `react/compiler-runtime` for the dev server. The
+     * options are shared with the check that counts what the compiler skipped
+     * (`src/lib/build/react-compiler.ts`).
+     */
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", REACT_COMPILER_OPTIONS]],
+      },
+    }),
     tailwindcss(),
     lazyBoundaries(),
   ],
