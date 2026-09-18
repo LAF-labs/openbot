@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { botAvatarParams } from "@/lib/avatar/bot-avatar";
 import {
   type AvatarEngine,
@@ -79,7 +79,16 @@ export const BotAvatar = ({
   const engineRef = useRef<AvatarEngine | null>(null);
   // What the engine should currently show, readable from the one-time mount effect below.
   const wanted = useRef({ state: engineState, shape: shapeId, paused });
-  wanted.current = { state: engineState, shape: shapeId, paused };
+  /*
+   * Brought up to date after each commit rather than while rendering. A render React discards —
+   * which concurrent rendering is allowed to do — would otherwise hand the visibility observer a
+   * `paused` that never reached the screen, and a ref written during render is what the React
+   * Compiler refuses to compile. A layout effect runs before anything can observe the frame, so
+   * the observer's next callback still reads what was drawn.
+   */
+  useLayoutEffect(() => {
+    wanted.current = { state: engineState, shape: shapeId, paused };
+  }, [engineState, shapeId, paused]);
 
   useEffect(() => {
     const body = bodyRef.current;
