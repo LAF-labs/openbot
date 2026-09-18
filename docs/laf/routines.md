@@ -146,8 +146,102 @@ writes a `routine.ran` row whichever way it went (with `failure` and
 `channelId` when it went badly, `failureGroup` when that failure was counted
 into a group, and `notepad` when the run changed its notepad),
 a late window that ran writes `routine.caught_up`, one that was let go writes
-`routine.skipped_missed`, and a person emptying a notepad writes
-`routine.notepad_cleared`.
+`routine.skipped_missed`, a person emptying a notepad writes
+`routine.notepad_cleared`, and the unread rule pausing a Bot's routines writes
+`routine.paused_unread` (below).
+
+## Editing
+
+`PATCH /api/routines/:id` changes a routine in place: any of `name`,
+`instruction` and `schedule`, with the validation and the refusal codes a new
+routine gets — a blank name or instruction, every schedule code, and the
+deployment's zone for a daily time that names none (a Bot hears "8시" on that
+clock). A body with none of the three is `400 laf:routine_nothing_to_change`.
+Ownership is the other verbs' (`404 laf:routine_not_found`).
+
+In place because the alternative was deleting it: a routine's id is what its
+run history, its notepad and its webhook token hang from, and "move my briefing
+to eight" used to be a delete and a create that lost all three. `created_by_id`
+is not touched — it is who the routine runs as.
+
+**The clock moves only when the schedule does.** A new schedule re-arms
+`next_run_at` from the moment of the edit; a new name or instruction leaves it
+alone, and a schedule sent back exactly as it is stored is no change — the form
+sends only what changed, and the server ignores an identical schedule too, so an
+hourly routine renamed at 05:40 still fires at 06:00.
+
+**The route reads three fields and drops the rest.** `enabled`, `keepRunning`,
+`agentId` or `autoReview` in the body change nothing: each is somebody's decision
+behind a door of its own, and a Bot's `manage_routine` posts here.
+
+On `/routines`, 수정 in a routine's ⋯ menu opens the create form in the same
+panel (`?edit=<id>`), filled in from the row, with the hour and minute read in
+the routine's own zone. The Bot is shown and not offered: a routine stays with
+the Bot whose history and conversation it belongs to.
+
+**The Bot's tool.** `manage_routine` has `create`, `list`, `update` and
+`delete`. `update` sends only the fields given — name, instruction, schedule
+through `PATCH`, and `enabled` through the switch's route — and says the stored
+name and schedule back. Which routine is `routineId`: its id, or its exact
+current name when one routine has it. `list` shows the Bot its own routines with
+ids, schedules and on/off, and a name that matches nothing or two routines is
+refused with that list rather than guessed at — no result a Bot was handed
+carried an id before, so an update "by id" was a guess. Every lookup is among the
+calling Bot's routines only: the API scopes by person, and a Bot must not reach a
+sibling Bot's routine. Nothing in the tool reaches keep-running.
+
+## Paused for going unread
+
+A routine that runs every day while nobody opens the conversation it delivers
+into spends the day's allowance and the shared model key on answers nobody
+reads, and nothing tells the person. The rule (`routines/unread.ts`), per Bot and
+per person: count the results that Bot's routines delivered into that person's
+conversation since they last opened it (`channel_memberships.last_read_at`; for
+one never opened, since they joined it). When there are **at least three** and
+the oldest has waited **a week**, the routines that delivered them are paused —
+`enabled = false`, `paused_reason = 'unread'`, `paused_at`. Both numbers, because
+either alone is wrong: three alone pauses a daily briefing after a long weekend,
+a week alone pauses a weekly report after the first one nobody opened.
+
+- **A delivery** is a run receipt that succeeded with something to say. The
+  settlement writes the receipt in the same transaction as the message, so it is
+  the delivery; `[SILENT]` and failed runs delivered nothing to read.
+- **Only routines the rule governs count** — on, and not `keep_running` — and
+  only those in the pile are paused, so a monitor on the same Bot that answers
+  `[SILENT]` until something happens keeps watching. A routine marked 계속
+  돌리기 is never paused, and its unread results are not evidence against its
+  siblings.
+- **Each routine counts from its last resume** (`resumed_at`) as well as from the
+  read mark. Turning a paused routine back on is not reading its conversation,
+  and without this the same pile would pause it again on the next tick.
+- **A Bot the person has no conversation with** delivered nowhere and is left
+  alone.
+
+**Where it runs.** On the clock, for the Bots with a routine due in that pass,
+before anything is claimed (`ticker.ts`): the run it saves is the one about to
+happen, and the claim asks for `enabled`, so a paused routine is simply not
+taken. The pause is a conditional UPDATE on `enabled AND NOT keep_running`, so a
+second sweep, or a person's switch in between, pauses nothing twice. Run now and
+the webhook are not swept: both are somebody asking for a run.
+
+**Telling the person, once per pause.** The sweep writes one
+`routine.paused_unread` trail row (Bot, person, conversation, routine ids, how
+many results were waiting and since when — never what they said), and the
+outbox watch turns it into one `routine.paused` notification carrying
+`pause: { reason, routineIds, count, unread, since }` and the conversation's
+`channelId` (`notifications/from-audit.ts`). Socket and webhook, never 알림톡.
+The page words it ("결과를 한동안 보지 않으셔서 루틴 {n}개를 멈췄어요"), lands the
+click on the conversation, and refetches the routine list so an open routines
+page shows the pause at once.
+
+**Answering it.** Only the person: `POST /api/routines/resume`
+`{ agentId, keepRunning }` turns back on every routine of that Bot the rule
+paused — and none they switched off themselves — re-armed from now, and with
+`keepRunning: true` exempts them for good (the banner's 다시 켜기 and 계속
+돌리기). `POST /api/routines/:id/keep-running` `{ keepRunning }` is the ⋯ menu's
+안 읽어도 계속 돌리기 for one routine. Any press of the enabled switch clears the
+reason — on is "run it", off is "I turned it off" — and switching back on from
+off records `resumed_at`.
 
 ## The notepad — where a routine left off
 
@@ -295,10 +389,12 @@ own English is a fallback for a code the app does not know.
 
 ## Surface
 
-`/routines` in the app: create, enable/disable (re-enabling re-arms from now —
-a routine paused for a week must not fire a backlog), run now, delete, and — in
-the expanded row — the notepad (read, clear) above the recent runs. API under
-`/api/routines`.
+`/routines` in the app: create, edit (수정, in the ⋯ menu), enable/disable
+(re-enabling re-arms from now — a routine paused for a week must not fire a
+backlog), run now, delete, keep running even if unread (⋯ menu), and — in the
+expanded row — the notepad (read, clear) above the recent runs. Routines the
+unread rule paused carry a line saying so, under a banner per Bot with 다시 켜기
+and 계속 돌리기. API under `/api/routines`.
 
 ## Suggestions
 
