@@ -53,8 +53,14 @@ import {
  * written after the commit. 333 of 342 compile. Eight of the nine left are more `finally` blocks —
  * in admin, Settings, the welcome screen and two cards on a Bot's profile — each an `ensure` away;
  * the ninth is `ChannelChat`.
+ *
+ * LOWERED TO 1 on 2026-09-18 with the dialog checklist: the eight `finally` blocks handed to
+ * `ensure`, and — hidden until those went, as the refs were last time — the conditionals inside a
+ * `try` in the Computers page's list read and the Boundaries page's reads, moved out of the
+ * components into functions that never throw. 343 of 344 compile. The one left is `ChannelChat`,
+ * which opts out on purpose (the reason is beside its directive).
  */
-const SKIPPED_CEILING = 9;
+const SKIPPED_CEILING = 1;
 
 const APP = join(import.meta.dir, "..");
 

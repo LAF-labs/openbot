@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { useSavedFlash } from "@/lib/saved-flash";
 import {
@@ -61,24 +62,26 @@ const ShopSettings = () => {
     if (saving || !isChanged) return;
     setProblem(null);
     setSaving(true);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so ShopSettings is left as written:
-    // the code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      const held = await saveShop(answer, queryClient);
-      // What the server holds now, which is what the screen should show from here on.
-      setKind(held.kind);
-      setPlaces([...held.places]);
-      flashSaved();
-    } catch (caught) {
-      setProblem(
-        caught instanceof Error
-          ? caught.message
-          : t("That was not saved. Try again."),
-      );
-    } finally {
-      setSaving(false);
-    }
+    // `try`…`catch`…`finally`: the `catch` as the promise's own and the `finally` through `ensure` —
+    // the React Compiler cannot compile the statement in a component.
+    await ensure(
+      () =>
+        saveShop(answer, queryClient)
+          .then((held) => {
+            // What the server holds now, which is what the screen should show from here on.
+            setKind(held.kind);
+            setPlaces([...held.places]);
+            flashSaved();
+          })
+          .catch((caught: unknown) => {
+            setProblem(
+              caught instanceof Error
+                ? caught.message
+                : t("That was not saved. Try again."),
+            );
+          }),
+      () => setSaving(false),
+    );
   };
 
   return (

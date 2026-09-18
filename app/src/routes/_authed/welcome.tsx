@@ -14,6 +14,7 @@ import { createBotNow, useSeats } from "@/lib/agents/new-bot";
 import { agreeToLegal } from "@/lib/auth/consent";
 import { authKeys, currentUserQueryOptions } from "@/lib/auth/queries";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import {
   type BusinessKindId,
@@ -104,21 +105,24 @@ function Welcome() {
     const answer = { kind, places };
     if (!sameShop(answer, saved)) {
       setSaving(true);
-      // React Compiler 1.0 cannot compile `try`…`finally` yet, so Welcome is left as written: the
-      // code is right, and the compiler cannot follow it. Counted in
-      // app/tests/react-compiler.test.ts.
-      try {
-        await saveShop(answer, queryClient);
-      } catch (caught) {
-        setProblem(
-          caught instanceof Error
-            ? caught.message
-            : t("That was not saved. Try again."),
-        );
-        return;
-      } finally {
-        setSaving(false);
-      }
+      // `try`…`catch`…`finally`: the `catch` as the promise's own and the `finally` through
+      // `ensure` — the React Compiler cannot compile the statement in a component.
+      const isSaved = await ensure(
+        () =>
+          saveShop(answer, queryClient).then(
+            () => true,
+            (caught: unknown) => {
+              setProblem(
+                caught instanceof Error
+                  ? caught.message
+                  : t("That was not saved. Try again."),
+              );
+              return false;
+            },
+          ),
+        () => setSaving(false),
+      );
+      if (!isSaved) return;
     }
     setStep(next);
   };
@@ -142,14 +146,16 @@ function Welcome() {
     if (agreeing) return;
     setAgreeing(true);
     setProblem(null);
-    try {
-      await agreeToLegal(queryClient);
-      setStep("kind");
-    } catch {
-      setProblem(t("Could not record your agreement. Try again."));
-    } finally {
-      setAgreeing(false);
-    }
+    // `try`…`catch`…`finally`, the same way as `handleAnswered` above.
+    await ensure(
+      () =>
+        agreeToLegal(queryClient)
+          .then(() => setStep("kind"))
+          .catch(() =>
+            setProblem(t("Could not record your agreement. Try again.")),
+          ),
+      () => setAgreeing(false),
+    );
   };
 
   const finish = async () => {

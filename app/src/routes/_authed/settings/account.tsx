@@ -17,6 +17,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 
@@ -61,6 +62,40 @@ export const confirms = (typed: string, address: string | null): boolean =>
   typed.trim().toLowerCase() === address.trim().toLowerCase() &&
   address.trim().length > 0;
 
+/**
+ * The deletion, asked: gone, or the sentence for why not and the address the server expects.
+ * Never throws. Out here because it holds the `try`, and a component holding one is left uncompiled.
+ */
+async function askToLeave(
+  typed: string,
+): Promise<{ isGone: true } | { error: string; expects?: string }> {
+  try {
+    const response = await fetch("/api/me/delete", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: typed }),
+    });
+    const body = (await response.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    if (!response.ok) {
+      const known =
+        typeof body?.code === "string"
+          ? ACCOUNT_REFUSALS[body.code]
+          : undefined;
+      return {
+        error: known ? t(known) : t("That did not go through. Try again."),
+        ...(typeof body?.expects === "string" ? { expects: body.expects } : {}),
+      };
+    }
+    return { isGone: true };
+  } catch {
+    return { error: t("That did not go through. Try again.") };
+  }
+}
+
 const AccountPage = () => {
   const [typed, setTyped] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -87,35 +122,20 @@ const AccountPage = () => {
   const handleDelete = async () => {
     setError(null);
     setIsDeleting(true);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so AccountPage is left as written: the
-    // code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      const response = await fetch("/api/me/delete", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ confirm: typed }),
-      });
-      const body = (await response.json().catch(() => null)) as Record<
-        string,
-        unknown
-      > | null;
-      if (!response.ok) {
-        if (typeof body?.expects === "string") setExpects(body.expects);
-        const known =
-          typeof body?.code === "string"
-            ? ACCOUNT_REFUSALS[body.code]
-            : undefined;
-        setError(known ? t(known) : t("That did not go through. Try again."));
-        return;
-      }
-      setIsGone(true);
-    } catch {
-      setError(t("That did not go through. Try again."));
-    } finally {
-      setIsDeleting(false);
-    }
+    // `try`…`catch`…`finally`: the `try`…`catch` in `askToLeave`, which never throws, and the
+    // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
+    await ensure(
+      async () => {
+        const answer = await askToLeave(typed);
+        if ("isGone" in answer) {
+          setIsGone(true);
+          return;
+        }
+        if (answer.expects !== undefined) setExpects(answer.expects);
+        setError(answer.error);
+      },
+      () => setIsDeleting(false),
+    );
   };
 
   if (isGone) {
