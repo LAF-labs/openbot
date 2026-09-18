@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { logLine } from "../../shared/log";
+import { readConnectionCheck } from "../../shared/support/connection-check";
 import {
   assembleDiagnostics,
   type DiagnosticBundle,
@@ -180,6 +181,36 @@ describe("a screen that failed, in the diagnostic details", () => {
     });
     // The person is how the line was found, not a fact it carries.
     expect(events.every((event) => !("user" in event))).toBe(true);
+  });
+
+  test("sits beside the window's connection check in one bundle, each exactly as it came", () => {
+    const connectionCheck = readConnectionCheck({
+      at: AT(19).toISOString(),
+      surface: "shell",
+      checks: [
+        { id: "server", state: "pass", reason: "answered", ms: 40 },
+        { id: "liveScreenSocket", state: "fail", reason: "closed_early" },
+      ],
+    });
+    if (!connectionCheck)
+      throw new Error("the check fixture is off its vocabulary");
+    const both = assembleDiagnostics({
+      lines: LOG,
+      ownership: OWNER,
+      runs: [],
+      failedRuns: [],
+      version: { version: "v0.5.1" },
+      health: { status: "ok", checks: { database: "ok" } },
+      now: AT(20),
+      connectionCheck,
+    });
+
+    expect(both.connectionCheck).toEqual(connectionCheck);
+    expect(both.events).toEqual(bundle().events);
+    const serialised = JSON.stringify(both);
+    expect(CANARIES.filter((canary) => serialised.includes(canary))).toEqual(
+      [],
+    );
   });
 
   test("is nobody's when the reader was not told who is asking", () => {

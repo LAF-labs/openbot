@@ -143,8 +143,17 @@ describe("the diagnostic details in the 문의·의견 box", () => {
     expect(shown.receipt).toContain("진단 정보도 함께 보냈습니다.");
   }, 120_000);
 
-  test("a part of the screen that failed is said in Korean — which part, what kind — and sent as it is", async () => {
+  test("a part of the screen that failed and the window's connection check are both said in Korean, and sent as they are", async () => {
     const withScreen = bundle({
+      // The two parts of a bundle the other package and this one each added, side by side.
+      connectionCheck: {
+        at: "2026-09-14T08:59:40.000Z",
+        surface: "shell",
+        checks: [
+          { id: "server", state: "pass", reason: "answered", ms: 40 },
+          { id: "liveScreenSocket", state: "fail", reason: "closed_early" },
+        ],
+      },
       events: [
         ...bundle().events,
         {
@@ -173,6 +182,16 @@ describe("the diagnostic details in the 문의·의견 box", () => {
       "screen_failed · 문제가 생긴 곳: 봇 목록 · TypeError",
     );
     expect(shown.preview).toContain("3개");
+    for (const said of [
+      "연결 점검",
+      "2개 중 1개에서 문제가 보였습니다.",
+      "봇 화면 실시간 연결",
+    ]) {
+      expect({ said, shown: shown.preview.includes(said) }).toEqual({
+        said,
+        shown: true,
+      });
+    }
     // Still no English of the box's own: the event name and the error's kind are facts.
     const facts = shown.preview
       .replace(/laf:[a-z_.:]+/g, "")
