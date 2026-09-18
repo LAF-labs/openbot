@@ -808,6 +808,12 @@ export const ko: Record<string, string> = {
   Done: "완료",
   Routines: "루틴",
   "New routine": "새 루틴",
+  // 수정: the same form, filled in from the routine, in the same panel.
+  "Edit routine": "루틴 수정",
+  "Its run history, its notepad and its webhook stay as they are.":
+    "실행 기록과 메모장, 웹훅은 그대로 남습니다.",
+  "A routine stays with the Bot it was made for.":
+    "루틴을 맡은 봇은 바꿀 수 없습니다.",
   "Create routine": "루틴 만들기",
   "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.":
     "봇이 시계에 맞춰 실행하는 지시 — 아침 다이제스트, 매일 점검, 주간 요약.",

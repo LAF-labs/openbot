@@ -1,13 +1,14 @@
 import { IconClockPlay, IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { RoutineNotepad } from "@/components/routines/notepad";
+import { RoutineForm } from "@/components/routines/routine-form";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,28 +17,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
 import { focusRing } from "@/components/ui/focus";
-import { Input } from "@/components/ui/input";
-import {
-  pageDescriptionClass,
-  pageTitleClass,
-} from "@/components/ui/page-header";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -47,7 +29,6 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import {
-  hourLabel,
   type Routine,
   type RoutineRun,
   routineKeys,
@@ -55,7 +36,6 @@ import {
   routineRequest,
   runShape,
   scheduleLabel,
-  weekdayNames,
   whenLabel,
 } from "@/lib/routines/queries";
 import { RUN_STOPPED } from "@/lib/work/stop-all";
@@ -139,6 +119,7 @@ function RunHistory({ routineId }: { routineId: string }) {
 
 function RoutineRow({ routine }: { routine: Routine }) {
   const queryClient = useQueryClient();
+  const navigate = Route.useNavigate();
   const agents = useQuery(agentListQueryOptions());
   const [showRuns, setShowRuns] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -309,6 +290,15 @@ function RoutineRow({ routine }: { routine: Routine }) {
             }
           />
           <DropdownMenuContent align="end">
+            {/*
+             * 수정 FIRST. It is the verb a person reaches for more often than the one below it, and
+             * the one below it is the only irreversible thing on the page.
+             */}
+            <DropdownMenuItem
+              onClick={() => void navigate({ search: { edit: routine.id } })}
+            >
+              {t("Edit")}
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setConfirmingDelete(true)}
               variant="destructive"
@@ -366,461 +356,68 @@ function RoutineRow({ routine }: { routine: Routine }) {
   );
 }
 
-function TriggerReveal({
-  routineId,
-  token,
-}: {
-  routineId: string;
-  token: string;
-}) {
-  const command = `curl -X POST ${window.location.origin}/api/routines/${routineId}/trigger -H "x-trigger-token: ${token}"`;
-  return (
-    <div className="rounded-lg border border-border bg-muted/60 p-3 text-xs">
-      <p className="font-medium">{t("Webhook trigger — shown only once")}</p>
-      <p className="mt-1 text-muted-foreground">
-        {t(
-          "Any system that POSTs this fires the routine (at most once per 30 seconds). The request body, if any, is handed to the Bot.",
-        )}
-      </p>
-      <code className="mt-2 block select-all break-all rounded bg-background p-2 font-mono text-xs">
-        {command}
-      </code>
-    </div>
-  );
-}
-
 /**
- * WRITING A ROUTINE, IN THE PANEL BESIDE THE LIST.
+ * 수정, in the same panel 새 루틴 opens in, on the routine the address names.
  *
- * ONE CREATION PATTERN FOR THE THREE SIBLING PAGES, AND THE CHOICE IS THE RIGHT-HAND PANEL.
- * Routines opened a card inline above the list, Skills slid a panel in from the right, and a Bot is
- * made with no form at all — three answers on three pages a person walks between in one session.
- *
- * The panel wins over a dialog for the reason `DetailPanel` already gives: it is a search parameter,
- * so writing a routine is a real navigation. It survives a reload, it can be linked to, Back closes
- * it, and the routines you already have stay on screen beside the one you are writing — which is
- * how anybody writes the second one. A dialog would take the list away and put the form somewhere
- * a URL cannot reach. Skills already made this bet and it is the same bet.
- *
- * THE FIELDS GO IN THE ORDER THE QUESTION IS ASKED: what is it called, what does it do, when does it
- * go. They used to run 이름 → 무엇을 → 언제 → **만들기** → 요일, with the day chips BELOW the button
- * that submits the form — so the last decision was offered after the press that ends the form.
+ * Read out of the list the page already holds rather than fetched on its own: the row that was
+ * pressed is in it, and one cache entry means the form and the row cannot show the same routine two
+ * ways. Keyed by the routine so a second 수정 on another row starts from that routine, not from
+ * whatever the first one had in its fields.
  */
-/** 매일, 특정 요일, N분마다. The first two are both `daily` rows; the middle one carries days. */
-type Repeat = "daily" | "weekly" | "interval";
-
-function repeatLabel(repeat: Repeat): string {
-  if (repeat === "weekly") return t("On certain days");
-  if (repeat === "interval") return t("Every N minutes");
-  return t("Every day");
-}
-
-/** What the form has to say back after a press, field by field. */
-type Problems = {
-  agent?: string;
-  days?: string;
-  instruction?: string;
-  minutes?: string;
-  name?: string;
-};
-
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-/** Five-minute steps: a routine wants a time of day, not a stopwatch. */
-const MINUTES = Array.from({ length: 12 }, (_, step) => step * 5);
-/** Monday to Friday, the one preset worth a button. `weekdayNames()` is indexed 0 = Sunday. */
-const WEEKDAYS = [1, 2, 3, 4, 5];
-
-function NewRoutine({ onDone }: { onDone: () => void }) {
-  const agents = useQuery(agentListQueryOptions());
-  const agentFieldId = useId();
-  const instructionId = useId();
-  const nameId = useId();
-  const repeatId = useId();
-  const [agentId, setAgentId] = useState("");
-  const [name, setName] = useState("");
-  const [instruction, setInstruction] = useState("");
-  /*
-   * THREE REPEATS, NOT TWO, BECAUSE THE THIRD ONE WAS ALREADY THERE AND UNNAMED.
-   *
-   * The stored shapes are `daily` and `interval`; a daily routine with a `days` restriction is what
-   * makes a weekly one, and the form never said so. It showed 매일 and then, underneath, seven day
-   * chips with none of them lit — which is a choice nobody was asked to make, offered in a state
-   * that reads as "none of these", on a schedule that runs every day. 특정 요일 is that third shape
-   * with a name, and the chips only exist inside it.
-   */
-  const [repeat, setRepeat] = useState<Repeat>("daily");
-  const [minutes, setMinutes] = useState("60");
-  /*
-   * The time is a wall clock in the reader's own zone, defaulted from their browser.
-   *
-   * This field was labelled "Time (UTC)" and defaulted to 22:30, which is 07:30 in Seoul — the
-   * value was right and the person had no way to know it. Nobody setting a morning routine should
-   * have to convert anything.
-   *
-   * TWO SELECTS RATHER THAN `<input type="time">`. The native control is formatted by the BROWSER's
-   * locale, not by the app's: measured in a Chrome running in English, the field said 07:30 AM
-   * directly above this form's own 매일 07:30 and a saved row's 평일 09:00. Three formats, one
-   * screen. An hour and a minute the app renders itself are the app's own words in both languages,
-   * and on a phone they are two taps rather than a spinner.
-   */
-  const [hour, setHour] = useState(7);
-  const [minute, setMinute] = useState(30);
-  const [timeZone] = useState(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-  );
-  /** Empty means every day, which is what the server stores for an unrestricted routine. */
-  const [days, setDays] = useState<number[]>([]);
-  /** Shown only after a press. Nothing is red before somebody has tried. */
-  const [problems, setProblems] = useState<Problems>({});
-
-  const [trigger, setTrigger] = useState<{
-    routineId: string;
-    token: string;
-  } | null>(null);
-
-  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-
-  /*
-   * The schedule, said back. Built from the same label the saved rows use, so what the form
-   * promises and what the list reports can never describe the same schedule differently.
-   */
-  const summarySentence = scheduleLabel({
-    agentId: "",
-    dailyDays: repeat === "weekly" ? days : [],
-    dailyLocal: time,
-    dailyTimeZone: timeZone,
-    enabled: true,
-    id: "",
-    instruction: "",
-    intervalMinutes: Number(minutes),
-    name: "",
-    scheduleKind: repeat === "interval" ? "interval" : "daily",
-  } as Routine);
-
-  const create = useMutation({
-    mutationFn: async () =>
-      routineRequest("/api/routines", {
-        method: "POST",
-        body: JSON.stringify({
-          agentId,
-          name,
-          instruction,
-          schedule:
-            repeat === "interval"
-              ? { kind: "interval", minutes: Number(minutes) }
-              : {
-                  kind: "daily",
-                  time,
-                  timeZone,
-                  // Omitted rather than empty: the server refuses an empty selection on purpose,
-                  // so "every day" has to be the absence of a restriction, not an empty one.
-                  ...(repeat === "weekly" && days.length > 0 ? { days } : {}),
-                },
-        }),
-      }),
-    onSuccess: (body) => {
-      const routine = body?.routine as
-        | { id: string; triggerToken?: string }
-        | undefined;
-      // The token exists only in this response; once this card is dismissed it is gone for good,
-      // which is the point of hashing it server-side.
-      if (routine?.triggerToken) {
-        setTrigger({ routineId: routine.id, token: routine.triggerToken });
-      } else {
-        onDone();
-      }
-    },
-  });
-
-  if (trigger) {
+const EditRoutine = ({ id, onDone }: { id: string; onDone: () => void }) => {
+  const routines = useQuery(routineListQueryOptions());
+  const routine = routines.data?.find((candidate) => candidate.id === id);
+  if (routines.isPending) {
     return (
-      <div className="mx-auto flex w-full max-w-xl flex-col gap-3 p-8">
-        <TriggerReveal routineId={trigger.routineId} token={trigger.token} />
-        <div className="flex justify-end">
-          <Button onClick={onDone} size="sm">
-            {t("Done")}
-          </Button>
-        </div>
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-8">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-20 w-full" />
       </div>
     );
   }
-
-  /*
-   * VALIDATED ON THE PRESS, WITH THE BUTTON LIVE THE WHOLE TIME.
-   *
-   * 루틴 만들기 opened disabled — a mid-grey filled pill, skipped by the tab order, with nothing
-   * anywhere on the form saying what was missing. A disabled primary action is a question with the
-   * answer hidden: the person can see the button and cannot find out what it wants. So the button
-   * is always pressable, and pressing it with an empty form says which field is empty, beside that
-   * field.
-   */
-  const check = (): boolean => {
-    const found: Problems = {};
-    if (!agentId) found.agent = t("Pick a Bot first.");
-    if (!name.trim()) found.name = t("Give the routine a name.");
-    if (!instruction.trim())
-      found.instruction = t("Say what the routine should do each time.");
-    if (repeat === "weekly" && days.length === 0)
-      found.days = t("Pick at least one day.");
-    if (repeat === "interval" && !(Number(minutes) >= 5))
-      found.minutes = t("Five minutes is the shortest gap.");
-    setProblems(found);
-    return Object.keys(found).length === 0;
-  };
-
-  return (
-    /*
-     * A FORM, NOT A CARD OF CONTROLS. Enter did nothing anywhere in it, and the only way out was the
-     * button that had opened it — a person who changed their mind had to scroll up and find it.
-     */
-    <form
-      className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (create.isPending) return;
-        if (!check()) return;
-        create.mutate();
-      }}
-    >
-      <header>
-        {/* h2: the page behind this panel already has the page's one h1. */}
-        <h2 className={pageTitleClass}>{t("New routine")}</h2>
-        <p className={`mt-1 ${pageDescriptionClass}`}>
-          {t(
-            "An instruction, a Bot, and a clock. You can change all of it later.",
-          )}
+  if (!routine) {
+    // Deleted in another window, or by its Bot, while the address still named it.
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col items-start gap-3 p-8">
+        <p className="text-muted-foreground text-sm" role="status">
+          {t("That routine is no longer there.")}
         </p>
-      </header>
-
-      <FieldGroup>
-        <Field data-invalid={Boolean(problems.name)}>
-          <FieldLabel htmlFor={nameId}>{t("Name")}</FieldLabel>
-          <Input
-            aria-invalid={Boolean(problems.name)}
-            autoFocus
-            id={nameId}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("Name, e.g. Morning review digest")}
-            value={name}
-          />
-          {problems.name ? (
-            <FieldError errors={[{ message: problems.name }]} />
-          ) : null}
-        </Field>
-
-        <Field data-invalid={Boolean(problems.instruction)}>
-          <FieldLabel htmlFor={instructionId}>
-            {t("What should it do?")}
-          </FieldLabel>
-          <Textarea
-            aria-invalid={Boolean(problems.instruction)}
-            id={instructionId}
-            onChange={(event) => setInstruction(event.target.value)}
-            placeholder={t(
-              "What should it do? e.g. Check the store reviews and summarize the new ones.",
-            )}
-            rows={3}
-            value={instruction}
-          />
-          {problems.instruction ? (
-            <FieldError errors={[{ message: problems.instruction }]} />
-          ) : null}
-        </Field>
-
-        <Field data-invalid={Boolean(problems.agent)}>
-          <FieldLabel htmlFor={agentFieldId}>{t("Which Bot")}</FieldLabel>
-          <Select
-            onValueChange={(value) => setAgentId(value ?? "")}
-            value={agentId}
-          >
-            <SelectTrigger
-              aria-invalid={Boolean(problems.agent)}
-              id={agentFieldId}
-            >
-              {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
-              <SelectValue placeholder={t("Which Bot")}>
-                {agents.data?.find((agent) => agent.id === agentId)?.name ??
-                  t("Which Bot")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {(agents.data ?? []).map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {problems.agent ? (
-            <FieldError errors={[{ message: problems.agent }]} />
-          ) : null}
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor={repeatId}>{t("When")}</FieldLabel>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              onValueChange={(value) => setRepeat((value ?? "daily") as Repeat)}
-              value={repeat}
-            >
-              <SelectTrigger className="w-36" id={repeatId}>
-                {/* The value is a code; the person reads the label. */}
-                <SelectValue>{repeatLabel(repeat)}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">{t("Every day")}</SelectItem>
-                <SelectItem value="weekly">{t("On certain days")}</SelectItem>
-                <SelectItem value="interval">{t("Every N minutes")}</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {repeat === "interval" ? (
-              <>
-                <Input
-                  aria-label={t("Minutes")}
-                  aria-invalid={Boolean(problems.minutes)}
-                  className="w-24"
-                  min={5}
-                  onChange={(event) => setMinutes(event.target.value)}
-                  type="number"
-                  value={minutes}
-                />
-                <span className="text-muted-foreground text-sm">
-                  {t("minutes")}
-                </span>
-              </>
-            ) : (
-              <>
-                <Select
-                  onValueChange={(value) => setHour(Number(value ?? "7"))}
-                  value={String(hour)}
-                >
-                  <SelectTrigger aria-label={t("Hour")} className="w-28">
-                    <SelectValue>{hourLabel(hour)}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HOURS.map((option) => (
-                      <SelectItem key={option} value={String(option)}>
-                        {hourLabel(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  onValueChange={(value) => setMinute(Number(value ?? "0"))}
-                  value={String(minute)}
-                >
-                  <SelectTrigger aria-label={t("Minutes")} className="w-24">
-                    <SelectValue>
-                      {t("{minutes} min", { minutes: minute })}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MINUTES.map((option) => (
-                      <SelectItem key={option} value={String(option)}>
-                        {t("{minutes} min", { minutes: option })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            )}
-          </div>
-          {problems.minutes ? (
-            <FieldError errors={[{ message: problems.minutes }]} />
-          ) : null}
-
-          {/*
-           * The chips belong to 특정 요일 and appear with it. Seven options that are all visible at
-           * once do not need a menu, and the point of the whole control is that a Monday-morning
-           * routine does not also go off on Sunday.
-           */}
-          {repeat === "weekly" ? (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {weekdayNames().map((label, index) => (
-                <Button
-                  aria-pressed={days.includes(index)}
-                  className="w-10"
-                  key={label}
-                  onClick={() =>
-                    setDays((current) =>
-                      current.includes(index)
-                        ? current.filter((day) => day !== index)
-                        : [...current, index].sort((a, b) => a - b),
-                    )
-                  }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {label}
-                </Button>
-              ))}
-              <Button
-                className="ms-1"
-                onClick={() => setDays(WEEKDAYS)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {t("Weekdays")}
-              </Button>
-            </div>
-          ) : null}
-          {problems.days ? (
-            <FieldError errors={[{ message: problems.days }]} />
-          ) : null}
-
-          {/* Said back in words, because a row of chips and a clock is not a sentence. */}
-          <p className="mt-1 text-muted-foreground text-sm">
-            {summarySentence}
-          </p>
-        </Field>
-      </FieldGroup>
-
-      {create.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {create.error.message}
-        </p>
-      ) : null}
-
-      <div className="flex gap-2">
-        <Button disabled={create.isPending} type="submit">
-          {create.isPending ? t("Creating…") : t("Create routine")}
-        </Button>
-        <Button onClick={onDone} type="button" variant="outline">
-          {t("Cancel")}
+        <Button onClick={onDone} size="sm" variant="outline">
+          {t("Close")}
         </Button>
       </div>
-    </form>
-  );
-}
+    );
+  }
+  return <RoutineForm key={routine.id} onDone={onDone} routine={routine} />;
+};
 
 function RoutinesPage() {
   const queryClient = useQueryClient();
-  const { new: isCreating } = Route.useSearch();
+  const { new: isCreating, edit: editingId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const routines = useQuery(routineListQueryOptions());
   const creating = isCreating === true;
+  const editing = typeof editingId === "string" && editingId.length > 0;
+  const handleDone = () => {
+    void navigate({ search: {} });
+    void queryClient.invalidateQueries({ queryKey: routineKeys.all });
+  };
 
   return (
     <DetailPanel
       detail={
         creating ? (
-          <NewRoutine
-            onDone={() => {
-              void navigate({ search: {} });
-              void queryClient.invalidateQueries({ queryKey: routineKeys.all });
-            }}
-          />
+          <RoutineForm onDone={handleDone} />
+        ) : editing ? (
+          <EditRoutine id={editingId} onDone={handleDone} />
         ) : null
       }
       // 400px like a Bot's profile, not 320: this is a form with a select, two more selects and
       // seven day chips on one line, and at 320 the chips wrapped to three rows.
       detailWidth={400}
       onClose={() => navigate({ search: {} })}
-      open={creating}
+      open={creating || editing}
     >
       <PageShell
         title={t("Routines")}
@@ -898,7 +495,7 @@ function RoutinesPage() {
  * Bots roster make. It survives a reload, it can be linked to, and Back closes it.
  */
 const routinesSearchSchema = z
-  .object({ new: z.boolean().optional() })
+  .object({ new: z.boolean().optional(), edit: z.string().optional() })
   /* `.catch({})` so an unknown parameter is ignored rather than throwing out of validateSearch and
    * taking the whole route down with it. */
   .catch({});

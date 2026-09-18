@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ko } from "../src/lib/i18n-ko";
+import { blankForm, scheduleFrom } from "../src/lib/routines/form";
 import { clockLabel, hourLabel } from "../src/lib/routines/queries";
 
 /**
@@ -22,11 +23,20 @@ import { clockLabel, hourLabel } from "../src/lib/routines/queries";
  * in the same order anyway.
  */
 
+/*
+ * The form lives in its own file since it began opening on an existing routine as well as a new one
+ * (2026-09-18); the row, and the menu that opens the form, stay on the page.
+ */
+const FORM = join(
+  import.meta.dir,
+  "../src/components/routines/routine-form.tsx",
+);
 const ROUTINES = join(
   import.meta.dir,
   "../src/routes/_authed/_app/routines.tsx",
 );
-const source = readFileSync(ROUTINES, "utf8");
+const source = readFileSync(FORM, "utf8");
+const page = readFileSync(ROUTINES, "utf8");
 
 describe("one clock, in the reader's own language", () => {
   test("a wall-clock time is written the way the language writes it", () => {
@@ -110,20 +120,28 @@ describe("the day chips", () => {
   });
 
   test("every day is still the ABSENCE of a restriction, never an empty list", () => {
-    // The server refuses an empty `days` on purpose, so 매일 has to send no `days` key at all.
-    expect(source).toContain(
-      '...(repeat === "weekly" && days.length > 0 ? { days } : {}),',
-    );
+    // The server refuses an empty `days` on purpose, so 매일 has to send no `days` key at all. The
+    // schedule is built by `scheduleFrom` since the form learned to edit, for a new routine and an
+    // edited one alike.
+    expect(source).toContain("schedule: scheduleFrom(form)");
+    const form = { ...blankForm("Asia/Seoul"), days: [1, 2] };
+    expect(scheduleFrom(form)).not.toHaveProperty("days");
+    expect(
+      scheduleFrom({ ...form, repeat: "weekly", days: [] }),
+    ).not.toHaveProperty("days");
+    expect(scheduleFrom({ ...form, repeat: "weekly" })).toMatchObject({
+      days: [1, 2],
+    });
   });
 });
 
 describe("the button that makes it", () => {
   test("is never disabled for want of a field", () => {
     /*
-     * `disabled={create.isPending}` and nothing else. The old `!canCreate ||` is what made the
+     * `disabled={save.isPending}` and nothing else. The old `!canCreate ||` is what made the
      * button open grey and unpressable with no way to find out why.
      */
-    expect(source).toContain("disabled={create.isPending}");
+    expect(source).toContain("disabled={save.isPending}");
     expect(source).not.toContain("disabled={!canCreate");
   });
 
@@ -151,28 +169,79 @@ describe("the button that makes it", () => {
 
 describe("the row", () => {
   test("shows both timings the server has been sending all along", () => {
-    expect(source).toContain('t("Next {when}"');
-    expect(source).toContain('t("Last {when}"');
-    expect(source).toContain('t("Not run yet")');
+    expect(page).toContain('t("Next {when}"');
+    expect(page).toContain('t("Last {when}"');
+    expect(page).toContain('t("Not run yet")');
   });
 
   test("names its switch for the routine, not for a state it may not be in", () => {
     // It read "'재고 확인' 켜짐" whether it was on or off.
-    expect(source).toContain('t("Scheduled runs for {name}"');
-    expect(source).not.toContain('t("{name} is on"');
+    expect(page).toContain('t("Scheduled runs for {name}"');
+    expect(page).not.toContain('t("{name} is on"');
   });
 
   test("keeps the destructive verb behind the ⋯ menu", () => {
-    const menu = source.indexOf('<DropdownMenuContent align="end">');
-    const del = source.indexOf('variant="destructive"', menu);
+    const menu = page.indexOf('<DropdownMenuContent align="end">');
+    const del = page.indexOf('variant="destructive"', menu);
     expect(menu).toBeGreaterThan(0);
-    expect(del - menu).toBeLessThan(400);
+    expect(del - menu).toBeLessThan(900);
     // And no bare trash icon beside the switch any more.
-    expect(source).not.toContain("IconTrash");
+    expect(page).not.toContain("IconTrash");
   });
 
   test("answers 지금 실행 while it is running", () => {
-    expect(source).toContain('t("Running now…")');
-    expect(source).toContain('t("Started. The answer lands below.")');
+    expect(page).toContain('t("Running now…")');
+    expect(page).toContain('t("Started. The answer lands below.")');
+  });
+});
+
+/**
+ * 수정, 2026-09-18. A routine could not be changed from this screen at all — the ⋯ menu held
+ * Delete and nothing else — so fixing a time meant deleting the routine, its history and its
+ * notepad, and writing it again.
+ */
+describe("editing a routine", () => {
+  test("the ⋯ menu offers 수정 above 삭제, and it opens the panel on that routine", () => {
+    const menu = page.indexOf('<DropdownMenuContent align="end">');
+    const edit = page.indexOf('{t("Edit")}', menu);
+    const del = page.indexOf('{t("Delete")}', menu);
+    expect(menu).toBeGreaterThan(0);
+    expect(edit).toBeGreaterThan(menu);
+    expect(edit).toBeLessThan(del);
+    expect(page).toContain("search: { edit: routine.id }");
+    expect(ko.Edit).toBe("수정");
+  });
+
+  test("the panel it opens is the same form, handed the routine", () => {
+    expect(page).toContain("<RoutineForm onDone={handleDone} />");
+    expect(page).toContain(
+      "<RoutineForm key={routine.id} onDone={onDone} routine={routine} />",
+    );
+    // An address naming a routine that is gone says so rather than drawing an empty form.
+    expect(page).toContain('t("That routine is no longer there.")');
+  });
+
+  test("saving an edit is a PATCH of what changed, and nothing changed is no request", () => {
+    expect(source).toContain('method: "PATCH"');
+    expect(source).toContain("JSON.stringify(routineChange(routine, form))");
+    expect(source).toContain(
+      "if (routine && Object.keys(routineChange(routine, form)).length === 0) {",
+    );
+  });
+
+  test("the Bot is shown and not offered, and the form says why", () => {
+    expect(source).toContain("disabled={isEditing}");
+    expect(source).toContain(
+      't("A routine stays with the Bot it was made for.")',
+    );
+    for (const sentence of [
+      "Edit routine",
+      "Its run history, its notepad and its webhook stay as they are.",
+      "A routine stays with the Bot it was made for.",
+      "Save changes",
+      "Saving…",
+    ]) {
+      expect(`${sentence}: ${sentence in ko}`).toBe(`${sentence}: true`);
+    }
   });
 });
