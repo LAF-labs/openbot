@@ -871,14 +871,21 @@ export function ChatTranscript({
   failures = EMPTY_FAILURES,
 }: ChatTranscriptProps) {
   /*
-   * NOT MEMOISED, AND THAT IS DELIBERATE. `useMemo` keyed on `messages` looks obviously right and
-   * silently broke the transcript: the agent hands back the SAME array and mutates it, so the
-   * dependency never changed, the cached items were kept forever and a reply never appeared. A Bot
-   * that answered looked like a Bot that had not.
+   * MEMOISED ON `messages`, WHICH IS SAFE ONLY BECAUSE NOTHING HANDS THIS THE AGENT'S OWN ARRAY.
+   *
+   * A `useMemo` keyed on `messages` once silently broke the transcript: the agent hands back the
+   * SAME array and mutates it, so the dependency never changed, the cached items were kept forever
+   * and a reply never appeared. A Bot that answered looked like a Bot that had not.
+   *
+   * The React Compiler memoises this line exactly that way. It is correct because every caller
+   * passes a new array whenever anything in it changed: `ChannelChat` copies the agent's on every
+   * render, and is left uncompiled so that the copy is always taken, and a room's messages are
+   * immutable state. A caller that passed a live CopilotKit array straight through would bring the
+   * bug back.
    *
    * It was never the expensive part either. Rebuilding this list is a flatMap over messages; the
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
-   * which is where the 25x came from. This runs per render and is not worth guarding.
+   * which is where the 25x came from.
    */
   const items = toVisibleChatItems(messages, messageTimes, speakers);
 
@@ -949,14 +956,11 @@ export function ChatTranscript({
   /*
    * One decider per mounted transcript, so opening a different channel starts the cascade over and
    * a message never inherits a delay from a conversation it was not in.
+   *
+   * State made once rather than a ref filled in on first render: the same one object for the life
+   * of the transcript, without reading a ref while rendering, which the React Compiler refuses.
    */
-  const delaysRef = useRef<ReturnType<typeof createFirstPaintDelays> | null>(
-    null,
-  );
-  if (delaysRef.current === null) {
-    delaysRef.current = createFirstPaintDelays();
-  }
-  const delays = delaysRef.current;
+  const [delays] = useState(createFirstPaintDelays);
 
   /*
    * Settled AFTER the render that first had items, not on mount: history arrives asynchronously, so
