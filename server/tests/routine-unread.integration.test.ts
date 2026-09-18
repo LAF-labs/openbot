@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent } from "@ag-ui/client";
-import { and, eq, inArray } from "drizzle-orm";
+import type { AbstractAgent, Message } from "@ag-ui/client";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
-import type { AuditEventInput } from "../src/audit";
+import { type AuditEventInput, createAuditStore } from "../src/audit";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
@@ -18,6 +18,8 @@ import {
   users,
 } from "../src/db/schema";
 import { createRoutineService } from "../src/routines/service";
+import { createBotLane } from "../src/runner/bot-lane";
+import { createWorkInFlight } from "../src/runner/in-flight";
 import {
   pauseUnreadRoutines,
   UNREAD_PAUSE_AFTER_MS,
@@ -750,5 +752,97 @@ describe("what a run's trail row says", () => {
       { delivered: true, silent: false },
       { delivered: false, silent: true },
     ]);
+  });
+});
+
+/**
+ * A RUN SOMEBODY STOPPED IS NOT A RESULT THEY DID NOT READ. 2026-09-18, on the day both landed.
+ *
+ * `모두 멈추기` settles a routine's run as stopped: not ok, no failure code, nothing delivered
+ * (`routines/settlement.ts`). The rule counts `routine.ran` rows that say `delivered: true`, so a
+ * stopped run can only move a routine toward a pause if its row said that — and a person who pressed
+ * stop on a routine would then have it paused a week later as though its results had piled up.
+ * Measured through the real stop and the real trail rather than a row written by hand.
+ */
+describe("a run stopped with 모두 멈추기", () => {
+  test("is not counted as a delivered result, so it does not move a routine toward the pause", async () => {
+    const { owner, botId } = await botWithConversation(daysAgo(30));
+    const routine = await routineOn(owner, botId, "주문 정리", {
+      kind: "interval",
+      minutes: 60,
+    });
+    // Two real results, both unread and over a week old: one short of the pause.
+    const real = new Date();
+    const before = (days: number) => new Date(real.getTime() - days * DAY);
+    await delivered(routine.id, before(10));
+    await delivered(routine.id, before(9));
+
+    // A Bot still thinking when the person stops everything.
+    let asked = 0;
+    let release: (() => void) | undefined;
+    const thinking = {
+      messages: [] as Message[],
+      setMessages(messages: Message[]) {
+        thinking.messages = [...messages];
+      },
+      addMessage(message: Message) {
+        thinking.messages.push(message);
+      },
+      async runAgent() {
+        asked += 1;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { result: undefined, newMessages: [] };
+      },
+      abortRun() {
+        release?.();
+      },
+    };
+    const bot = thinking as unknown as AbstractAgent;
+    const work = createWorkInFlight();
+    const service = createRoutineService({
+      database,
+      resolveAgents: async () => ({ [botId]: bot }),
+      // The real trail: the rule reads what `run-report.ts` actually wrote.
+      auditStore: createAuditStore(database),
+      tools: async () => ({ tools: [], execute: async () => ({ ok: true }) }),
+      lane: createBotLane(),
+      work,
+    });
+
+    const running = service.runNow(owner, routine.id);
+    const deadline = Date.now() + 5_000;
+    while (asked === 0 && Date.now() < deadline) await Bun.sleep(10);
+    for (const entry of work.of(owner.id)) await entry.stop();
+    await running;
+
+    const [ran] = await database
+      .select({ payload: auditEvents.payload })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "routine.ran"),
+          eq(auditEvents.targetId, routine.id),
+          gt(auditEvents.createdAt, before(1)),
+        ),
+      );
+    expect(ran?.payload).toMatchObject({ ok: false, stopped: true });
+    expect(ran?.payload).not.toHaveProperty("delivered");
+
+    // Two results, however old, are not a pile: the stop did not make it three.
+    expect(
+      await pauseUnreadRoutines({ database, botIds: [botId], now: real }),
+    ).toEqual([]);
+    expect((await stored(routine.id)).enabled).toBe(true);
+
+    // And a third real one is — which is what the stopped run was one short of being.
+    await delivered(routine.id, before(1));
+    const [pause] = await pauseUnreadRoutines({
+      database,
+      botIds: [botId],
+      now: real,
+    });
+    expect(pause?.unread).toBe(3);
   });
 });
