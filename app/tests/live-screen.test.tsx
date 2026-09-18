@@ -29,6 +29,8 @@ class FakeSocket {
   url: string;
   readyState = 0;
   isClosed = false;
+  /** Everything the screen sent up the socket, parsed. */
+  sent: Record<string, unknown>[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
@@ -48,6 +50,10 @@ class FakeSocket {
     this.isClosed = true;
     this.readyState = 3;
     this.onclose?.();
+  }
+
+  send(data: string) {
+    this.sent.push(JSON.parse(data) as Record<string, unknown>);
   }
 }
 
@@ -106,7 +112,9 @@ async function mountedScreen(driving: boolean) {
         await body();
       });
     },
-    status: () => host.querySelector('[role="status"]')?.textContent ?? null,
+    // The line is always there, empty while there is nothing to say; its words are what is read.
+    region: () => host.querySelector('[role="status"]'),
+    status: () => host.querySelector('[role="status"]')?.textContent || null,
     canvas: () => host.querySelector("canvas") as HTMLCanvasElement,
     unmount: async () => {
       await act(async () => {
@@ -128,10 +136,14 @@ describe("the live screen's socket", () => {
     await screen.act(() => sockets[0]?.open());
     expect(screen.canvas().dataset.connected).toBe("true");
     expect(screen.status()).toBeNull();
+    // Mounted before it has anything to say, so the cut is announced when it comes.
+    const region = screen.region();
+    expect(region).not.toBeNull();
 
     await screen.act(() => sockets[0]?.close());
     expect(screen.canvas().dataset.connected).toBe("false");
     expect(screen.status()).toBe(SAID);
+    expect(screen.region()).toBe(region);
     expect(ko[SAID]).toBe("실시간 화면이 끊겼습니다 — 다시 잇는 중");
 
     // Half a second, the same first step the roster's socket takes, then a new socket.
@@ -198,5 +210,106 @@ describe("the live screen's socket", () => {
     expect(sockets[0]?.isClosed).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(sockets.length).toBe(1);
+  });
+});
+
+/**
+ * THE WHEEL GOES TO THE BOT'S PAGE, AND ONLY THERE.
+ *
+ * It was React's `onWheel`, which React registers as passive: its `preventDefault` did nothing but
+ * log an error, and a notch over the Bot's screen scrolled the app under the overlay as well. What
+ * is held here is the registration itself — on the canvas, not passive — and what one notch sends;
+ * that the app stays still was measured in Chrome, where passive means something.
+ */
+describe("the wheel over the live screen", () => {
+  async function drivenWithFrame() {
+    const registered: { type: string; passive: unknown }[] = [];
+    const add = HTMLCanvasElement.prototype.addEventListener;
+    HTMLCanvasElement.prototype.addEventListener = function (
+      this: HTMLCanvasElement,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      registered.push({
+        type,
+        passive: typeof options === "object" ? options.passive : undefined,
+      });
+      add.call(this, type, listener, options);
+    } as typeof add;
+    const screen = await mountedScreen(true);
+    HTMLCanvasElement.prototype.addEventListener = add;
+    await screen.act(() => sockets[0]?.open());
+    /*
+     * The frame says how big the page is; the wheel's position is measured against it. Its picture
+     * does not decode here, which is fine: the size is kept before the decode is tried.
+     */
+    await screen.act(() =>
+      sockets[0]?.onmessage?.({
+        data: JSON.stringify({
+          type: "frame",
+          data: "bm90LWEtanBlZw==",
+          width: 1280,
+          height: 800,
+        }),
+      }),
+    );
+    const canvas = screen.canvas();
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 640, height: 400 }) as DOMRect;
+    return { screen, canvas, registered };
+  }
+
+  test("is listened for on the canvas itself, and not passively", async () => {
+    const { screen, registered } = await drivenWithFrame();
+    expect(registered.filter((entry) => entry.type === "wheel")).toEqual([
+      { type: "wheel", passive: false },
+    ]);
+    await screen.unmount();
+  });
+
+  test("a notch is refused to the app and sent to the Bot's page, where it was over it", async () => {
+    const { screen, canvas } = await drivenWithFrame();
+    const notch = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    // happy-dom's WheelEvent drops the pointer's position from its init; a browser's carries it.
+    Object.defineProperties(notch, {
+      clientX: { value: 320 },
+      clientY: { value: 100 },
+    });
+    await screen.act(() => {
+      canvas.dispatchEvent(notch);
+    });
+    expect(notch.defaultPrevented).toBe(true);
+    expect(sockets[0]?.sent).toEqual([
+      {
+        type: "wheel",
+        x: 640,
+        y: 200,
+        deltaX: 0,
+        deltaY: 120,
+        modifiers: 0,
+      },
+    ]);
+    await screen.unmount();
+  });
+
+  test("watching, not driving, the wheel is the app's to scroll with", async () => {
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    const notch = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    await screen.act(() => {
+      screen.canvas().dispatchEvent(notch);
+    });
+    expect(notch.defaultPrevented).toBe(false);
+    expect(sockets[0]?.sent).toEqual([]);
+    await screen.unmount();
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import {
   SCREEN_UNAVAILABLE,
   SCREEN_UNREACHABLE,
@@ -232,6 +233,40 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   );
 
   /**
+   * THE WHEEL, ON A LISTENER OF ITS OWN THAT MAY SAY NO.
+   *
+   * It was React's `onWheel`, and React registers wheel listeners as passive: its `preventDefault`
+   * blocked nothing and logged "Unable to preventDefault inside passive event listener invocation"
+   * on every notch. So a wheel over the Bot's screen scrolled the Bot's page AND the app under the
+   * overlay at once. Registered here with `passive: false`, the notch goes to the Bot's page only —
+   * refused to the app even before the first frame has said how big the page is.
+   */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!driving || !canvas) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const size = frameSize.current;
+      if (!size) return;
+      const point = pageCoordinates(
+        { naturalWidth: size.width, naturalHeight: size.height },
+        canvas.getBoundingClientRect(),
+        event,
+      );
+      if (!point) return;
+      send({
+        type: "wheel",
+        ...point,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        modifiers: modifierBits(event),
+      });
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [driving, send]);
+
+  /**
    * The keyboard field takes focus when control is handed over.
    *
    * It has to: the keystroke handlers moved off `window` and onto that element, and until it holds
@@ -342,32 +377,22 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
               onMouseMove: onMouse("moved"),
               onContextMenu: (event: React.MouseEvent) =>
                 event.preventDefault(),
-              onWheel: (event: React.WheelEvent<HTMLCanvasElement>) => {
-                const point = at(event);
-                if (!point) return;
-                event.preventDefault();
-                send({
-                  type: "wheel",
-                  ...point,
-                  deltaX: event.deltaX,
-                  deltaY: event.deltaY,
-                  modifiers: modifierBits(event),
-                });
-              },
+              // The wheel is not here: see the listener registered in the effect above.
             }
           : {})}
         aria-hidden={driving ? true : undefined}
         aria-label={driving ? undefined : t("The assistant's screen, live")}
         data-connected={connected}
       />
-      {lost && !connected ? (
-        <p
-          className="-translate-x-1/2 pointer-events-none absolute bottom-2 left-1/2 rounded-full bg-background/90 px-3 py-1 text-foreground text-xs shadow"
-          role="status"
-        >
-          {t("The live picture was cut off. Reconnecting…")}
-        </p>
-      ) : null}
+      {/* Mounted with the screen, so the cut is heard when it happens and not only seen. */}
+      <LiveRegion
+        as="p"
+        className="-translate-x-1/2 pointer-events-none absolute bottom-2 left-1/2 rounded-full bg-background/90 px-3 py-1 text-foreground text-xs shadow"
+      >
+        {lost && !connected
+          ? t("The live picture was cut off. Reconnecting…")
+          : null}
+      </LiveRegion>
       {driving ? (
         <textarea
           ref={keyboardRef}
