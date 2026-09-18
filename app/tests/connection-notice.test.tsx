@@ -110,11 +110,19 @@ describe("the connection notice", () => {
     await shell.act(() => sockets[0]?.onopen?.());
     expect(shell.host.textContent).toBe("");
     expect(shell.events.isSocketLost()).toBe(false);
+    // Mounted, empty, before there is anything to say: a region that arrives with its words is not
+    // announced, and this is the line somebody who cannot see the pill hears.
+    const region = shell.host.querySelector('[role="status"]');
+    expect(region).not.toBeNull();
+    expect(region?.textContent).toBe("");
 
     await shell.act(() => sockets[0]?.close());
     expect(shell.events.isSocketLost()).toBe(true);
     const notice = shell.host.querySelector('[role="status"]');
+    expect(notice).toBe(region);
     expect(notice?.textContent).toBe(SAID);
+    // And the pill is drawn, with its one thing to press.
+    expect(shell.host.textContent).toContain("Connection check");
     expect(ko[SAID]).toBe("서버와 연결이 끊겼습니다 — 다시 잇는 중");
 
     // The reconnect is the socket's own backoff: half a second, then the next socket.
@@ -124,7 +132,9 @@ describe("the connection notice", () => {
     expect(sockets.length).toBe(2);
     await shell.act(() => sockets[1]?.onopen?.());
     expect(shell.events.isSocketLost()).toBe(false);
-    expect(shell.host.querySelector('[role="status"]')).toBeNull();
+    // The pill is gone and the region is quiet again, still there for the next drop.
+    expect(shell.host.textContent).toBe("");
+    expect(shell.host.querySelector('[role="status"]')).toBe(region);
     await shell.unmount();
   });
 
@@ -154,7 +164,7 @@ describe("the connection notice", () => {
     const shell = await mountedShell();
     await shell.act(() => sockets[0]?.close());
     expect(shell.events.isSocketLost()).toBe(false);
-    expect(shell.host.querySelector('[role="status"]')).toBeNull();
+    expect(shell.host.textContent).toBe("");
     await shell.unmount();
   });
 });

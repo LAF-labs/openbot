@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
@@ -208,13 +209,20 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
           /* It saved as you typed, so the only honest confirmation is a quiet one that goes away. */
           <span className="text-foreground/70">{t("Saved")}</span>
         ) : updateAgent.error ? (
-          <span className="text-destructive" role="alert">
-            {updateAgent.error.message}
-          </span>
+          <span className="text-destructive">{updateAgent.error.message}</span>
         ) : (
           t("Nothing here is required. You can change all of it later.")
         )}
       </p>
+      {/*
+       * SAID AS WELL AS DRAWN. The line above changes its words in place and is not a live region, so
+       * a save that happened as somebody left the field was never heard. These two are mounted with
+       * the card and say only what changed: 저장됨 politely, a refusal as an alert.
+       */}
+      <LiveRegion className="sr-only">{saved ? t("Saved") : null}</LiveRegion>
+      <LiveRegion className="sr-only" tone="alert">
+        {saved ? null : updateAgent.error?.message}
+      </LiveRegion>
 
       <MascotPicker
         onOpenChange={setPickingFace}

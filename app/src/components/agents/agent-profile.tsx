@@ -6,6 +6,7 @@ import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
+import { LiveRegion } from "@/components/layout/live-region";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import {
@@ -533,16 +534,13 @@ function WorkStyleCard({
           </Button>
         </div>
       ) : null}
-      {saved ? (
-        <p className="text-muted-foreground text-sm" role="status">
-          {t("Saved")}
-        </p>
-      ) : null}
-      {updateAgent.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {updateAgent.error.message}
-        </p>
-      ) : null}
+      {/* Mounted with the card, so 저장됨 is heard when it is said (`LiveRegion`). */}
+      <LiveRegion as="p" className="text-muted-foreground text-sm">
+        {saved ? t("Saved") : null}
+      </LiveRegion>
+      <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+        {updateAgent.error?.message}
+      </LiveRegion>
     </section>
   );
 }
@@ -971,16 +969,13 @@ function AutoReviewCard({
           </Button>
         </div>
       ) : null}
-      {saved ? (
-        <p className="text-muted-foreground text-sm" role="status">
-          {t("Saved")}
-        </p>
-      ) : null}
-      {updateAgent.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {updateAgent.error.message}
-        </p>
-      ) : null}
+      {/* Mounted with the card, so 저장됨 is heard when it is said (`LiveRegion`). */}
+      <LiveRegion as="p" className="text-muted-foreground text-sm">
+        {saved ? t("Saved") : null}
+      </LiveRegion>
+      <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+        {updateAgent.error?.message}
+      </LiveRegion>
     </section>
   );
 }

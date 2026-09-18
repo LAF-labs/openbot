@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
+import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -760,6 +761,12 @@ function BoundariesPage() {
           )
         )}
       </p>
+      {/* The line above changes its words in place and is not live; the save is said here too. */}
+      <LiveRegion className="sr-only">
+        {!problem && saved
+          ? t("Saved. It applies to the next action any Bot takes.")
+          : null}
+      </LiveRegion>
     </PageShell>
   );
 }

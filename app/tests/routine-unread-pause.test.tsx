@@ -205,6 +205,27 @@ describe("the banner", () => {
     expect(view.host.textContent).not.toContain("Paused 2 routines");
   });
 
+  test("what 다시 켜기 did is said in a line that was there before, and outlives the banner", async () => {
+    server([pausedRoutine("a"), pausedRoutine("b")]);
+    const view = await mountedBanners();
+    // Mounted with the list, empty: a line that arrived with its words would not be announced.
+    const region = view.host.querySelector('[role="status"]');
+    expect(region).not.toBeNull();
+    expect(region?.textContent).toBe("");
+
+    const press = buttonNamed(view.host, "Turn back on");
+    if (!press) throw new Error("no 다시 켜기");
+    await view.press(press);
+    await view.settle(60);
+
+    // The banner went with the pause; the sentence is in the region that did not.
+    expect(view.host.querySelector('[role="status"]')).toBe(region);
+    expect(region?.textContent).toBe("Turned 리뷰봇's routines back on.");
+    expect(ko["Turned {name}'s routines back on."]).toBe(
+      "{name}의 루틴을 다시 켰어요.",
+    );
+  });
+
   test("계속 돌리기 says to keep them running from now on", async () => {
     const sent = server([pausedRoutine("a")]);
     const view = await mountedBanners();

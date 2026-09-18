@@ -18,6 +18,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Streamdown } from "streamdown";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import {
@@ -179,12 +180,12 @@ function splitSkillChip(
  */
 function Thinking() {
   return (
-    <p
-      className="tool-line-running text-muted-foreground text-sm"
-      // `status` rather than `alert`: this is progress, not something that interrupts what somebody
-      // is doing. The text says it, so a screen reader is told the same thing the shimmer implies.
-      role="status"
-    >
+    /*
+     * Not a live region itself: one mounted together with its words is not announced. The
+     * transcript says "Thinking" in its own always-mounted status line, politely — this is progress,
+     * not something that interrupts what somebody is doing.
+     */
+    <p className="tool-line-running text-muted-foreground text-sm">
       {t("Thinking")}
     </p>
   );
@@ -1043,6 +1044,20 @@ export function ChatTranscript({
               {announcement}
             </div>
             {/*
+             * WHAT THE TURN IS DOING, SAID. "생각하는 중" and "답을 기다리는 중" are drawn in the slot under
+             * the last message and come and go with the turn, and a status line mounted together with
+             * its words is not announced: somebody listening pressed send and heard nothing until the
+             * reply. The words are said here as well, in a region that is always mounted. The drawn
+             * lines are no longer live themselves, so nothing is said twice.
+             */}
+            <LiveRegion className="sr-only">
+              {awaitingAnswer
+                ? t("Waiting for your answer")
+                : !stoppedCode && waitingOnFirstToken
+                  ? t("Thinking")
+                  : null}
+            </LiveRegion>
+            {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
              * reads the scroller's context, so it re-renders whenever the scroll state moves and
              * memoising it would achieve nothing. Its child is what costs — markdown parsing and
@@ -1161,7 +1176,8 @@ export function ChatTranscript({
              * looks exactly like a Bot that has stalled.
              */}
             {awaitingAnswer ? (
-              <p className="text-muted-foreground text-sm" role="status">
+              // Said by the region at the top of the list, which was there before this line was.
+              <p className="text-muted-foreground text-sm">
                 {t("Waiting for your answer")}
               </p>
             ) : stoppedCode ? (

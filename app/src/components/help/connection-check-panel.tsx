@@ -6,6 +6,7 @@ import {
   IconLoader2,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
 import { activeLocale, t } from "@/lib/i18n";
@@ -273,13 +274,21 @@ export const ConnectionCheckPanel = ({
           {copyState === "copied" ? t("Copied to the clipboard") : t("Copy")}
         </Button>
       </div>
-      {copyState === "failed" ? (
-        <p className="text-destructive text-xs" role="alert">
-          {t(
-            "The result could not be copied. Select the text below and copy it.",
-          )}
-        </p>
-      ) : null}
+      {/*
+       * WHAT 복사 CAME TO, SAID. The refusal was a line mounted only once there was one, and the
+       * success was only ever the button's own label changing under the finger that pressed it.
+       * Both are regions mounted with the panel now; the progress line above always was one.
+       */}
+      <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
+        {copyState === "failed"
+          ? t(
+              "The result could not be copied. Select the text below and copy it.",
+            )
+          : null}
+      </LiveRegion>
+      <LiveRegion className="sr-only">
+        {copyState === "copied" ? t("Copied to the clipboard") : null}
+      </LiveRegion>
       {facts ? (
         <details
           className="rounded-md border border-border px-3 py-2 text-xs"

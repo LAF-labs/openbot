@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
@@ -31,29 +33,44 @@ export const UnreadPauseBanners = () => {
   const routines = useQuery(routineListQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const groups = unreadPausesByBot(routines.data ?? []);
-  if (groups.length === 0) return null;
+  /*
+   * WHAT A PRESS CAME TO, SAID WHERE IT OUTLIVES THE BANNER. A banner whose press worked is gone the
+   * moment the list comes back without its pause, and a line inside it would go with it — so the
+   * person who pressed 다시 켜기 heard nothing at all, only a banner that was no longer there. This
+   * region is mounted with the list, before there is anything to say.
+   */
+  const [said, setSaid] = useState<string | null>(null);
   return (
-    <div className="mb-6 flex flex-col gap-3">
-      {groups.map((group) => (
-        <UnreadPauseBanner
-          botName={
-            agents.data?.find((agent) => agent.id === group.agentId)?.name ??
-            t("This Bot")
-          }
-          group={group}
-          key={group.agentId}
-        />
-      ))}
-    </div>
+    <>
+      <LiveRegion className="sr-only">{said}</LiveRegion>
+      {groups.length === 0 ? null : (
+        <div className="mb-6 flex flex-col gap-3">
+          {groups.map((group) => (
+            <UnreadPauseBanner
+              botName={
+                agents.data?.find((agent) => agent.id === group.agentId)
+                  ?.name ?? t("This Bot")
+              }
+              group={group}
+              key={group.agentId}
+              onAnswered={setSaid}
+            />
+          ))}
+        </div>
+      )}
+    </>
   );
 };
 
 const UnreadPauseBanner = ({
   group,
   botName,
+  onAnswered,
 }: {
   group: UnreadPauseGroup;
   botName: string;
+  /** The sentence for what the press did, for the region that outlives this banner. */
+  onAnswered: (said: string) => void;
 }) => {
   const queryClient = useQueryClient();
   const resume = useMutation({
@@ -62,8 +79,16 @@ const UnreadPauseBanner = ({
         method: "POST",
         body: JSON.stringify({ agentId: group.agentId, keepRunning }),
       }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: routineKeys.all }),
+    onSuccess: (_answer, keepRunning) => {
+      onAnswered(
+        keepRunning
+          ? t("{name}'s routines will keep running, read or not.", {
+              name: botName,
+            })
+          : t("Turned {name}'s routines back on.", { name: botName }),
+      );
+      return queryClient.invalidateQueries({ queryKey: routineKeys.all });
+    },
   });
 
   return (
@@ -103,11 +128,10 @@ const UnreadPauseBanner = ({
       <p className="mt-2 text-muted-foreground text-xs">
         {t(UNREAD_PAUSE_SENTENCES.keepRunningHint)}
       </p>
-      {resume.error ? (
-        <p className="mt-2 text-destructive text-xs" role="alert">
-          {resume.error.message}
-        </p>
-      ) : null}
+      {/* A refusal keeps the banner, so its line is the banner's, mounted with it. */}
+      <LiveRegion as="p" className="mt-2 text-destructive text-xs" tone="alert">
+        {resume.error?.message}
+      </LiveRegion>
     </section>
   );
 };

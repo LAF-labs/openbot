@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
 import {
@@ -154,15 +155,13 @@ const ShopSettings = () => {
         >
           {saving ? t("Saving…") : t("Save")}
         </Button>
-        {problem ? (
-          <p className="text-destructive text-sm" role="alert">
-            {problem}
-          </p>
-        ) : isSaved ? (
-          <p className="text-muted-foreground text-sm" role="status">
-            {t("Saved")}
-          </p>
-        ) : null}
+        {/* Both mounted with the page, so what the press came to is heard when it is said. */}
+        <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+          {problem}
+        </LiveRegion>
+        <LiveRegion as="p" className="text-muted-foreground text-sm">
+          {!problem && isSaved ? t("Saved") : null}
+        </LiveRegion>
       </div>
     </PageShell>
   );

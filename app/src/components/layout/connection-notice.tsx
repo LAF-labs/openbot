@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { openConnectionCheck } from "@/components/help/connection-check-dialog";
+import { LiveRegion } from "@/components/layout/live-region";
 import {
   isSocketLost,
   SOCKET_LOST,
@@ -38,19 +39,32 @@ function subscribe(onChange: () => void): () => void {
  */
 export const ConnectionNotice = () => {
   const lost = useSyncExternalStore(subscribe, isSocketLost, () => false);
-  if (!lost) return null;
   return (
-    <div className="-translate-x-1/2 pointer-events-none fixed top-2 left-1/2 z-50 flex w-max max-w-[calc(100vw-1rem)] items-center gap-2 rounded-2xl bg-foreground px-3 py-1 text-background text-xs shadow-md">
-      <span role="status">
-        {t("The connection to the server was lost. Reconnecting…")}
-      </span>
-      <button
-        className="pointer-events-auto shrink-0 font-medium underline underline-offset-2"
-        onClick={openConnectionCheck}
-        type="button"
-      >
-        {t("Connection check")}
-      </button>
-    </div>
+    <>
+      {/*
+       * SAID, NOT ONLY SHOWN. The pill below is drawn only while the server is gone, and a status
+       * line that arrives with its words is not announced — so the loss was seen and never heard.
+       * This region is mounted with the shell and speaks when the socket drops.
+       */}
+      <LiveRegion className="sr-only">
+        {lost
+          ? t("The connection to the server was lost. Reconnecting…")
+          : null}
+      </LiveRegion>
+      {lost ? (
+        <div className="-translate-x-1/2 pointer-events-none fixed top-2 left-1/2 z-50 flex w-max max-w-[calc(100vw-1rem)] items-center gap-2 rounded-2xl bg-foreground px-3 py-1 text-background text-xs shadow-md">
+          <span>
+            {t("The connection to the server was lost. Reconnecting…")}
+          </span>
+          <button
+            className="pointer-events-auto shrink-0 font-medium underline underline-offset-2"
+            onClick={openConnectionCheck}
+            type="button"
+          >
+            {t("Connection check")}
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 };
