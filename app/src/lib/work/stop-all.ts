@@ -177,6 +177,29 @@ export function outcomeWithHeld(
   };
 }
 
+/** What a press came to. `reached` false is a server that did not answer at all. */
+export type Pressed = { reached: boolean; outcome: StopAllOutcome };
+
+/**
+ * One press of 모두 멈추기: this window's conversations first, then the server.
+ *
+ * THIS WINDOW FIRST, and it was measured the other way round: the server's stop closed the stream
+ * while this window was still waiting for the reply, and the conversation drew "답을 받지
+ * 못했습니다." in red under a turn the person had stopped. A conversation's own Stop marks the reply
+ * as no longer expected before it reaches the server; stopping it here first keeps that order. Then
+ * the server stops everything else — other windows' conversations, rooms, routines, coworkers.
+ *
+ * A server that does not answer is reported as such, with whatever this window stopped still said.
+ */
+export async function pressStopAll(doors: {
+  stopHere: () => { stopped: string[]; notStopped: string[] };
+  stopServer: () => Promise<StopAllResult>;
+}): Promise<Pressed> {
+  const here = doors.stopHere();
+  const server = await doors.stopServer().catch(() => null);
+  return { reached: server !== null, outcome: outcomeWithHeld(server, here) };
+}
+
 /** The lines to show for some counts: only the kinds there were, in the dialog's order. */
 export function workBreakdown(counts: WorkCounts): string[] {
   return WORK_KINDS.filter((kind) => counts[kind] > 0).map(

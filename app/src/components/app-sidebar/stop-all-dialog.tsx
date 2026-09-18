@@ -14,16 +14,13 @@ import { busyHeldChats, stopHeldChats } from "@/lib/copilot/held-chats";
 import { t } from "@/lib/i18n";
 import {
   describeWork,
-  outcomeWithHeld,
+  type Pressed,
+  pressStopAll,
   runningQueryOptions,
   runningWithHeld,
-  type StopAllOutcome,
   stopEverything,
   totalOf,
 } from "@/lib/work/stop-all";
-
-/** What a press came to. `reached` false is a server that did not answer at all. */
-type Pressed = { reached: boolean; outcome: StopAllOutcome };
 
 /**
  * `모두 멈추기`: how many things are going on, whether to stop them all, and what stopping came to.
@@ -33,11 +30,9 @@ type Pressed = { reached: boolean; outcome: StopAllOutcome };
  * button: this is the control for when something looks wrong, and the moment the server is slow to
  * answer is not a moment to refuse it.
  *
- * THE SERVER FIRST, THEN THIS WINDOW. The server stops every run on the wire and every conversation
- * whose next step is with a browser; then this window stops the conversation it holds, which also
- * cuts the step already under way. Stopped the other way round, this window's own stop would race
- * the server's for the same run and one of them would report it as not stopped. If the server does
- * not answer at all, this window still stops what it holds, and says only that much.
+ * THIS WINDOW FIRST, THEN THE SERVER — see `pressStopAll` for the order and the measurement behind
+ * it. A conversation both sides reached is counted once. If the server does not answer, what this
+ * window stopped is still stopped, and the dialog says only that much.
  *
  * WHAT IT NEVER CLAIMS. It does not undo anything, and says so before the press. Questions a Bot is
  * waiting on stay unanswered — stopping is neither yes nor no — which the server's module says.
@@ -55,14 +50,8 @@ export const StopAllDialog = ({
   /** The conversations this window has a turn in flight in, as of opening. */
   const [held, setHeld] = useState<string[]>([]);
   const stop = useMutation({
-    mutationFn: async (): Promise<Pressed> => {
-      const server = await stopEverything().catch(() => null);
-      const here = stopHeldChats();
-      return {
-        reached: server !== null,
-        outcome: outcomeWithHeld(server, here),
-      };
-    },
+    mutationFn: (): Promise<Pressed> =>
+      pressStopAll({ stopHere: stopHeldChats, stopServer: stopEverything }),
     onSettled: () => {
       // The roster's "working" line would otherwise go on saying so for up to a poll interval.
       void queryClient.invalidateQueries({ queryKey: workingKeys.all });

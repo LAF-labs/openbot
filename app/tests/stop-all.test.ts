@@ -9,8 +9,10 @@ import {
   outcomeWithHeld,
   parseRunning,
   parseStopAll,
+  pressStopAll,
   RUN_STOPPED,
   runningWithHeld,
+  type StopAllResult,
   totalOf,
   WORK_KINDS,
   WORK_LINES,
@@ -111,6 +113,59 @@ describe("what one press came to", () => {
     expect(
       outcomeWithHeld(null, { stopped: ["thread-1"], notStopped: [] }),
     ).toEqual({ stopped: { ...none, chat: 1 }, notStopped: none });
+  });
+});
+
+describe("one press", () => {
+  const server = (): StopAllResult => ({
+    stopped: { ...none, chat: 1, routine: 1 },
+    notStopped: none,
+    chats: { stopped: ["thread-1"], notStopped: [] },
+  });
+
+  test("stops this window's conversation before the server is asked", async () => {
+    /*
+     * MEASURED the other way round: the server's stop closed the stream while this window still
+     * awaited the reply, and the conversation drew "답을 받지 못했습니다." under a stopped turn.
+     */
+    const order: string[] = [];
+    await pressStopAll({
+      stopHere: () => {
+        order.push("here");
+        return { stopped: ["thread-1"], notStopped: [] };
+      },
+      stopServer: async () => {
+        order.push("server");
+        return server();
+      },
+    });
+    expect(order).toEqual(["here", "server"]);
+  });
+
+  test("adds up both sides, one conversation once", async () => {
+    expect(
+      await pressStopAll({
+        stopHere: () => ({ stopped: ["thread-1"], notStopped: [] }),
+        stopServer: async () => server(),
+      }),
+    ).toEqual({
+      reached: true,
+      outcome: { stopped: { ...none, chat: 1, routine: 1 }, notStopped: none },
+    });
+  });
+
+  test("a server that does not answer is said, and this window's stop still counts", async () => {
+    expect(
+      await pressStopAll({
+        stopHere: () => ({ stopped: ["thread-1"], notStopped: [] }),
+        stopServer: async () => {
+          throw new Error("/api/me/stop-all answered 502");
+        },
+      }),
+    ).toEqual({
+      reached: false,
+      outcome: { stopped: { ...none, chat: 1 }, notStopped: none },
+    });
   });
 });
 
