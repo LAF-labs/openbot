@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { shellVersion } from "@/lib/notifications/shell";
+import { refusedRequest } from "@/lib/refusals";
 
 /**
  * What this deployment is running, read from `GET /api/version`.
@@ -15,32 +16,45 @@ export type Build = {
   channel?: string;
 };
 
+/**
+ * The build, or a thrown failure carrying the server's facts when it could not say.
+ *
+ * THROWN, FOR THE LINE THAT DRAWS IT. Read as null, a failure and an answer were the same value, so
+ * the version line could only ever draw nothing — which on the one screen a person opens when
+ * something is wrong is a footer that silently lost its first fact. Thrown, the query knows it
+ * failed, and the line says so with a way to ask again (`VersionLine`).
+ */
+export async function fetchBuild(): Promise<Build> {
+  const response = await fetch("/api/version", { credentials: "include" });
+  if (!response.ok) {
+    throw await refusedRequest(response, "The build could not be read.");
+  }
+  const body = (await response.json()) as Partial<Build>;
+  // A body with no version is not a version, and nothing else here can stand in for one.
+  if (typeof body.version !== "string" || !body.version) {
+    throw new Error("The build answered without a version.");
+  }
+  return {
+    version: body.version,
+    ...(typeof body.revision === "string" && body.revision
+      ? { revision: body.revision }
+      : {}),
+    ...(typeof body.channel === "string" && body.channel
+      ? { channel: body.channel }
+      : {}),
+  };
+}
+
 /** Null when the server could not say — a footer with no version is honest; a made-up one is not. */
 export async function readBuild(): Promise<Build | null> {
-  try {
-    const response = await fetch("/api/version", { credentials: "include" });
-    if (!response.ok) return null;
-    const body = (await response.json()) as Partial<Build>;
-    if (typeof body.version !== "string" || !body.version) return null;
-    return {
-      version: body.version,
-      ...(typeof body.revision === "string" && body.revision
-        ? { revision: body.revision }
-        : {}),
-      ...(typeof body.channel === "string" && body.channel
-        ? { channel: body.channel }
-        : {}),
-    };
-  } catch {
-    return null;
-  }
+  return fetchBuild().catch(() => null);
 }
 
 /** Once per page load: a build does not change under a running page. */
 export const buildQueryOptions = () =>
   queryOptions({
     queryKey: ["build"],
-    queryFn: readBuild,
+    queryFn: fetchBuild,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });

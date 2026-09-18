@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { refusedRequest } from "@/lib/refusals";
 
 /**
  * A coworker as the browser sees it.
@@ -93,11 +94,16 @@ export function agentMemoriesQueryOptions(agentId: string) {
         `/api/agents/${encodeURIComponent(agentId)}/memories`,
         { credentials: "include" },
       );
-      // A deployment with nowhere to record memories answers 404, and a Bot that simply has not
-      // learned anything answers an empty list. Neither is an error worth a red screen.
-      if (response.status === 404) return [];
+      /*
+       * A 404 IS NOT AN EMPTY LIST, and it was read as one. A deployment with nowhere to record
+       * memories answers `laf:not_found` precisely so that a screen does NOT draw "nothing learned
+       * yet" for a Bot that cannot learn at all (`server/src/agents/routes.ts`); turned into `[]`
+       * here, the card said exactly that. The refusal goes up with its code, and the card says which
+       * of the two it is (`MemoriesCard`).
+       */
       if (!response.ok)
-        throw new Error(
+        throw await refusedRequest(
+          response,
           t("Could not load what this Bot knows. Refresh to try again."),
         );
       return ((await response.json()) as { memories: AgentMemory[] }).memories;
@@ -116,7 +122,10 @@ export function agentListQueryOptions(hidden = false) {
         },
       );
       if (!response.ok)
-        throw new Error(t("Could not load your Bots. Refresh to try again."));
+        throw await refusedRequest(
+          response,
+          t("Could not load your Bots. Refresh to try again."),
+        );
       return ((await response.json()) as { agents: AgentProfile[] }).agents;
     },
   });
@@ -130,7 +139,10 @@ export function agentQueryOptions(agentId: string) {
         credentials: "include",
       });
       if (!response.ok)
-        throw new Error(t("Could not load this Bot. Refresh to try again."));
+        throw await refusedRequest(
+          response,
+          t("Could not load this Bot. Refresh to try again."),
+        );
       return ((await response.json()) as { agent: AgentProfile }).agent;
     },
   });

@@ -1789,6 +1789,34 @@ export const ko: Record<string, string> = {
     "이 봇의 연결을 읽지 못했습니다. 새로고침해 주세요.",
   "That tool is not allowed here.": "이 도구는 여기서 쓸 수 없습니다.",
   "The server did not answer.": "서버가 응답하지 않았습니다.",
+  // 읽기의 다섯 상태(`lib/reading.ts`) 중 세 줄 — 전에 받은 것을 보여 주는 조용한 줄, 여기서는 가질 수
+  // 없는 것(다시 시도를 붙이지 않는다), 그리고 화면마다의 "불러오지 못했습니다".
+  "Could not refresh this. What you see is from before.":
+    "새로 불러오지 못했습니다. 지금 보이는 내용은 전에 받은 것입니다.",
+  "This account cannot see this here.": "이 계정으로는 여기서 볼 수 없습니다.",
+  "Bots are not offered here.": "여기서는 봇을 쓸 수 없습니다.",
+  "Routines are not offered here.": "여기서는 루틴을 쓸 수 없습니다.",
+  "Skills are not offered here.": "여기서는 스킬을 쓸 수 없습니다.",
+  "Connections are not offered here.": "여기서는 연결을 쓸 수 없습니다.",
+  "Your conversations could not be loaded.": "대화 목록을 불러오지 못했습니다.",
+  "This Bot is no longer here.": "이 봇은 이제 여기에 없습니다.",
+  "What it remembers could not be loaded.":
+    "기억하고 있는 것을 불러오지 못했습니다.",
+  "Bots here do not keep what they learn between conversations, so there is nothing to show.":
+    "여기의 봇은 대화가 끝나면 알게 된 것을 남기지 않아서, 보여 드릴 것이 없습니다.",
+  "You have not written a skill yet. Write one on Skills, and you can give it to this Bot here.":
+    "아직 쓴 스킬이 없습니다. 스킬 화면에서 하나 쓰면 여기서 이 봇에게 줄 수 있습니다.",
+  "The places could not be loaded.": "고를 곳을 불러오지 못했어요.",
+  "Today's usage could not be read.": "오늘 사용량을 읽지 못했습니다.",
+  "The version could not be read.": "버전을 확인하지 못했습니다.",
+  "This server does not say which version it is.":
+    "이 서버는 버전을 알려 주지 않습니다.",
+  "This account cannot see this Bot's screen.":
+    "이 계정으로는 이 봇의 화면을 볼 수 없습니다.",
+  "This place has no computer for its Bots, so there is no screen to show.":
+    "여기에는 봇이 쓰는 컴퓨터가 없어서, 보여 드릴 화면이 없습니다.",
+  "The picture is not updating. This is the last one that arrived.":
+    "화면이 새로 오지 않고 있습니다. 마지막으로 받은 화면입니다.",
 
   // 입력칸 옆에 그대로 붙는 문장. zod가 던지고 `field.tsx`가 그린다.
   "A command is required.": "명령을 입력해 주세요.",

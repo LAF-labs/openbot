@@ -113,6 +113,7 @@
   "app/tests/press.test.ts",
   "app/tests/query-client.test.ts",
   "app/tests/react-compiler.test.ts",
+  "app/tests/reading.test.ts",
   "app/tests/render-legal.test.ts",
   "app/tests/repair-history.test.ts",
   "app/tests/room-events.test.ts",

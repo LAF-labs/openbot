@@ -45,6 +45,43 @@ export function refusalText(
   return known ? t(known) : fallback;
 }
 
+/**
+ * A request the server refused, as something a query or a mutation can throw: this surface's own
+ * sentence as the message, and the server's two facts beside it.
+ *
+ * THE FACTS ARE WHAT A SCREEN DECIDES BY. Every read used to throw `new Error(sentence)`, which kept
+ * the words and dropped the code — so a screen could not tell "this place has no memory store"
+ * (`laf:not_found`, which retrying never fixes) from a dropped connection (which it does), and drew
+ * both the same way. `readingOf` (`lib/reading.ts`) reads `code` off whatever was thrown.
+ */
+export class RequestRefusedError extends Error {
+  readonly status: number;
+  /** The `laf:` fact the body carried, or null for a body with none — a proxy's page, a bare 500. */
+  readonly code: string | null;
+
+  constructor(message: string, status: number, code: string | null) {
+    super(message);
+    this.name = "RequestRefusedError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** A refused response read into that error. A body that is not JSON carries no code. */
+export async function refusedRequest(
+  response: Response,
+  message: string,
+): Promise<RequestRefusedError> {
+  const body = (await response.json().catch(() => null)) as {
+    code?: unknown;
+  } | null;
+  return new RequestRefusedError(
+    message,
+    response.status,
+    typeof body?.code === "string" ? body.code : null,
+  );
+}
+
 /** The same, read off a refused response's body. A body that is not JSON is the fallback. */
 export async function refusalFrom(
   response: Response,

@@ -1,6 +1,7 @@
 import type { RoutineNote } from "@shared/prompt/notepad.ko";
 import { queryOptions } from "@tanstack/react-query";
 import { activeLocale, t } from "@/lib/i18n";
+import { RequestRefusedError } from "@/lib/refusals";
 
 /** A standing instruction a Bot runs on a clock. */
 export type Routine = {
@@ -164,12 +165,15 @@ export async function routineRequest(path: string, init?: RequestInit) {
     unknown
   > | null;
   if (!response.ok) {
-    const known =
-      typeof body?.code === "string" ? ROUTINE_REFUSALS[body.code] : undefined;
+    const code = typeof body?.code === "string" ? body.code : null;
+    const known = code ? ROUTINE_REFUSALS[code] : undefined;
     // The code, and never the server's `error`, which is the code itself now — read as a fallback
     // it would print `laf:…`. `statusText` is "Internal Server Error", which says nothing either.
-    throw new Error(
+    // The code also travels on the error, for a read that has to tell "not here" from "not now".
+    throw new RequestRefusedError(
       known ? t(known) : t("That did not go through. Try again."),
+      response.status,
+      code,
     );
   }
   return body;

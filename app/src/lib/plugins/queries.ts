@@ -13,6 +13,7 @@ import { activeConversationHeaders } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { inShell } from "@/lib/notifications/shell";
 import { polled } from "@/lib/polling";
+import { refusedRequest } from "@/lib/refusals";
 
 /** A tool one server offers, as the Plugins page sees it. */
 export type PluginTool = {
@@ -214,7 +215,8 @@ export function pluginsPageQueryOptions() {
     queryKey: pluginKeys.page(),
     queryFn: async (): Promise<PluginsPage> => {
       const response = await fetch("/api/plugins", { credentials: "include" });
-      if (!response.ok) throw new Error("Plugins could not be loaded.");
+      if (!response.ok)
+        throw await refusedRequest(response, "Plugins could not be loaded.");
       return response.json();
     },
   });

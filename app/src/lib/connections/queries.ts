@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import type { AlimtalkStatus, PartnerId } from "@/lib/partners/queries";
+import { refusedRequest } from "@/lib/refusals";
 
 /**
  * The 연결 screen's one read.
@@ -115,7 +116,8 @@ export function connectionsOverviewQueryOptions(isWaiting = false) {
         credentials: "include",
       });
       if (!response.ok)
-        throw new Error(
+        throw await refusedRequest(
+          response,
           t("The connections could not be loaded. Refresh to try again."),
         );
       return response.json();
