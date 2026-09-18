@@ -143,6 +143,47 @@ describe("the diagnostic details in the 문의·의견 box", () => {
     expect(shown.receipt).toContain("진단 정보도 함께 보냈습니다.");
   }, 120_000);
 
+  test("a part of the screen that failed is said in Korean — which part, what kind — and sent as it is", async () => {
+    const withScreen = bundle({
+      events: [
+        ...bundle().events,
+        {
+          at: "2026-09-14T08:59:30.000Z",
+          source: "log",
+          event: "screen_failed",
+          level: "warn",
+          svc: "server",
+          section: "sidebar",
+          route: "/channel/$channelId",
+          kind: "TypeError",
+          fingerprint: "a41c09e2b7f3",
+          build: "v0.5.1",
+          revision: "eeea9853c2d1",
+          surface: "shell",
+        },
+      ],
+    });
+    const shown = await render({
+      bundles: [withScreen],
+      expireFirstSend: false,
+      message: "봇 목록이 안 보여요",
+    });
+
+    expect(shown.preview).toContain(
+      "screen_failed · 문제가 생긴 곳: 봇 목록 · TypeError",
+    );
+    expect(shown.preview).toContain("3개");
+    // Still no English of the box's own: the event name and the error's kind are facts.
+    const facts = shown.preview
+      .replace(/laf:[a-z_.:]+/g, "")
+      .replace(/\b[a-z]+(?:_[a-z]+)+\b/g, "")
+      .replace(/edge \(eeea985\)/g, "")
+      .replace(/\bTypeError\b/g, "");
+    expect(facts).not.toMatch(/[A-Za-z]{2,}/);
+    // The fold is the bundle, the screen's facts included, exactly.
+    expect(JSON.parse(shown.exact)).toEqual(withScreen);
+  }, 120_000);
+
   test("a bundle the server no longer holds is gathered again and shown before anything goes", async () => {
     const newer = bundle({
       failures: [

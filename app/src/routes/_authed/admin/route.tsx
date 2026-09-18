@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { ADMIN_NAV, AdminSidebar } from "@/components/admin/admin-sidebar";
 import { RailNav } from "@/components/layout/rail-nav";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import {
   ShellTitleBar,
   shellTopInset,
@@ -35,7 +36,10 @@ function RouteComponent() {
       <main className={cn("min-w-0 flex-1", shellTopInset())}>
         {/* Below `lg` the rail is not drawn. Nine links, so this one scrolls sideways. */}
         <RailNav className="lg:hidden" items={ADMIN_NAV} label={t("Admin")} />
-        <Outlet />
+        {/* The same seam as Settings, for the same reasons: one page at a time, rail outside. */}
+        <SectionBoundary className="py-16" section="admin_page">
+          <Outlet />
+        </SectionBoundary>
       </main>
     </SidebarProvider>
   );

@@ -12,9 +12,14 @@ import { ParticipantsMenu } from "@/components/channels/participants-menu";
 import { GroupChat } from "@/components/channels/group-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
+import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
+import {
+  type AgentChannel,
+  channelKeys,
+  channelQueryOptions,
+} from "@/lib/channels/queries";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
@@ -314,11 +319,25 @@ function RouteComponent() {
           </div>
         </div>
       </div>
-      <ChannelBody
-        channel={channel.data}
-        isPending={channel.isPending}
-        hasError={Boolean(channel.error)}
-      />
+      {/*
+       * THE CONVERSATION, BELOW ITS HEADER. The header stays out of it on purpose: it holds the two
+       * buttons that open the Bot's screen and its profile, and a conversation that failed is
+       * exactly when somebody wants to look at the Bot instead. The channel and the roster are read
+       * by the header too, so they are named for 다시 불러오기; the transcript has a seam of its own
+       * inside (`ConversationView`), and this one catches what is left — the chat underneath it, the
+       * room's turn-taking, the composer.
+       */}
+      <SectionBoundary
+        className="flex-1"
+        queryKeys={[channelKeys.detail(channelId), agentKeys.list()]}
+        section="conversation"
+      >
+        <ChannelBody
+          channel={channel.data}
+          isPending={channel.isPending}
+          hasError={Boolean(channel.error)}
+        />
+      </SectionBoundary>
     </DetailPanel>
   );
 }

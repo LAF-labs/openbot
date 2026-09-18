@@ -1,6 +1,7 @@
 import { IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect } from "react";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 
@@ -155,7 +156,15 @@ export function DetailPanel({
                   ease: EASE_OUT,
                 }}
               >
-                {detail}
+                {/*
+                 * INSIDE THE PANE, BELOW ITS CLOSE BUTTON. Everything that opens here — a Bot's
+                 * profile, its screen and routines — fails without taking the column beside it,
+                 * and the way out stays drawn above the failure. Here rather than at each caller,
+                 * so a pane nobody has written yet is covered too.
+                 */}
+                <SectionBoundary className="min-h-40" section="detail">
+                  {detail}
+                </SectionBoundary>
               </motion.div>
             ) : null}
           </AnimatePresence>

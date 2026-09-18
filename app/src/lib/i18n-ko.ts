@@ -2583,4 +2583,22 @@ export const ko: Record<string, string> = {
   "Rooms: {count}": "대화방 {count}개",
   "Routines: {count}": "루틴 {count}개",
   "Bots helping another Bot: {count}": "다른 봇 돕기 {count}개",
+  // 화면의 한 부분이 실패했을 때 그 자리에 남는 문장과 버튼 (`section-boundary.tsx`).
+  "This part of the screen ran into an unexpected problem.":
+    "화면의 이 부분에 예상하지 못한 문제가 생겼어요.",
+  Reload: "다시 불러오기",
+  "Reloading…": "다시 불러오는 중…",
+  // 진단 정보 미리보기 — 화면 오류 기록이 어느 부분의 것인지.
+  "Where it happened: {name}": "문제가 생긴 곳: {name}",
+  "The list of Bots": "봇 목록",
+  "The main screen": "본문 화면",
+  "The conversation": "대화",
+  "The conversation's messages": "대화 내용",
+  "The side panel": "옆 패널",
+  "The Bot's screen, full size": "봇의 화면 크게 보기",
+  "A Settings page": "설정 화면",
+  "An admin page": "관리 화면",
+  "The notices at the top": "위쪽 안내",
+  "The whole screen": "화면 전체",
+  "Something the app was doing": "앱이 하던 작업",
 };

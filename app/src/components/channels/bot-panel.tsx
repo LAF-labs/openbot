@@ -2,6 +2,7 @@ import { IconClock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ComputerView } from "@/components/computer/computer-view";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { t } from "@/lib/i18n";
@@ -39,7 +40,14 @@ export function BotPanel({
          * its padding, so the thumbnail pushed the pane out to 400px from the inside. It scales to
          * whatever it is given; the floor exists for the full-size view, not for a preview.
          */}
-        <ComputerView active computerId={agentId} minWidth={0} teachable />
+        {/*
+         * ITS OWN SEAM, INSIDE THE PANE'S. The screen card decodes a frame a second, polls the wheel
+         * and holds the teaching panel; the routines under it are a plain list. A card that failed
+         * leaves the list — and the pane's own seam (`DetailPanel`) is still there for the rest.
+         */}
+        <SectionBoundary className="rounded-2xl border" section="computer">
+          <ComputerView active computerId={agentId} minWidth={0} teachable />
+        </SectionBoundary>
         <p className="text-center text-muted-foreground text-xs">
           {name ? t("{name}'s screen", { name }) : t("The Bot's screen")}
         </p>

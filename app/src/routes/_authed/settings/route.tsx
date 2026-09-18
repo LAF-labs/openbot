@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { RailNav } from "@/components/layout/rail-nav";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import {
   ShellTitleBar,
   shellTopInset,
@@ -41,7 +42,15 @@ function RouteComponent() {
           items={SETTINGS_NAV}
           label={t("Settings")}
         />
-        <Outlet />
+        {/*
+         * EVERY SETTINGS PAGE, ONE AT A TIME. Around the outlet rather than inside each page, so a
+         * page added later is covered without anybody remembering to; it resets when the address
+         * changes, so each page is its own attempt. The rail and the row above stay out of it:
+         * they are the way to the pages that still work.
+         */}
+        <SectionBoundary className="py-16" section="settings_page">
+          <Outlet />
+        </SectionBoundary>
       </main>
     </SidebarProvider>
   );

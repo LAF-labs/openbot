@@ -1,7 +1,10 @@
 import { createRouter, Link } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useIsInsideSection } from "./components/layout/section-boundary";
 import { Button } from "./components/ui/button";
 import { PageSkeleton } from "./components/ui/skeleton";
 import { t } from "./lib/i18n";
+import { reportScreenError } from "./lib/support/screen-errors";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
 
@@ -13,7 +16,21 @@ import { routeTree } from "./routeTree.gen";
  * /api/me was enough to replace the entire product with a framework error page — which is not just
  * ugly, it is a screen a person cannot act on and cannot get out of.
  */
-function AppErrorScreen({ reset }: { reset: () => void }) {
+function AppErrorScreen({
+  error,
+  reset,
+}: {
+  error: unknown;
+  reset: () => void;
+}) {
+  /*
+   * WHAT REACHED THIS SCREEN WAS WHAT NO SECTION CAUGHT — a loader, a layout, a page with no seam
+   * of its own — and it replaced a whole route, so it is reported like any section that failed.
+   */
+  useEffect(() => {
+    void reportScreenError("route_screen", error);
+  }, [error]);
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-8 text-center">
       <p className="font-semibold text-lg">{t("Something went wrong.")}</p>
@@ -25,6 +42,25 @@ function AppErrorScreen({ reset }: { reset: () => void }) {
       </Button>
     </div>
   );
+}
+
+/**
+ * The router's error screen, unless the route that failed is drawn inside a section.
+ *
+ * The router catches every route it draws, one level below the section that wraps its outlet — the
+ * pane beside the roster, a Settings page, an admin page (`section-boundary.tsx` says how that was
+ * found). Inside a section the failure is thrown on up to it, which says it in that part's place,
+ * reports it and brings it back; this screen is for what failed with no section around it.
+ */
+function RouteErrorScreen({
+  error,
+  reset,
+}: {
+  error: unknown;
+  reset: () => void;
+}) {
+  if (useIsInsideSection()) throw error;
+  return <AppErrorScreen error={error} reset={reset} />;
 }
 
 function NotFoundScreen() {
@@ -49,7 +85,9 @@ function NotFoundScreen() {
 export const router = createRouter({
   routeTree,
   context: {} as RouterContext,
-  defaultErrorComponent: ({ reset }) => <AppErrorScreen reset={reset} />,
+  defaultErrorComponent: ({ error, reset }) => (
+    <RouteErrorScreen error={error} reset={reset} />
+  ),
   defaultNotFoundComponent: NotFoundScreen,
   /*
    * THE FOURTH SCREEN, AND UNTIL NOW IT WAS A WHITE PAGE.

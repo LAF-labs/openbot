@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { TeachATask } from "@/components/computer/teach-a-task";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
@@ -662,11 +663,22 @@ export function ComputerView({
               </div>
               {/* Overlay uses the live socket; the inline card keeps low-cost polling. */}
               <div className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-black">
-                <LiveScreen
-                  computerId={computerId}
-                  driving={driving}
-                  onProblem={setProblem}
-                />
+                {/*
+                 * THE LIVE VIEW FAILS INSIDE THE OVERLAY, NOT WITH IT. The bar above holds "봇에게 제어
+                 * 돌려주기" while somebody has the wheel, and an overlay that vanished with the view would
+                 * leave the Bot waiting on a takeover nobody can see they hold. The fallback brings
+                 * its own ground: this one is black in both themes.
+                 */}
+                <SectionBoundary
+                  className="m-4 rounded-lg bg-background"
+                  section="live_screen"
+                >
+                  <LiveScreen
+                    computerId={computerId}
+                    driving={driving}
+                    onProblem={setProblem}
+                  />
+                </SectionBoundary>
               </div>
             </div>,
             document.body,

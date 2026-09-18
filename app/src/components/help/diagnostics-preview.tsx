@@ -24,11 +24,63 @@ const duration = (ms: number): string =>
   t("{seconds}s", { seconds: Math.round(ms / 100) / 10 });
 
 /**
+ * Which part of the screen a `screen_failed` record is about, in the screen's words.
+ *
+ * The section's id is a fact and is printed as one in the exact fold below; on the line itself
+ * `sidebar` means nothing to the person deciding whether to send it, and "봇 목록" does. An id this
+ * build does not know is printed as the id.
+ */
+const sectionName = (section: string): string => {
+  switch (section) {
+    case "sidebar":
+      return t("The list of Bots");
+    case "main":
+      return t("The main screen");
+    case "conversation":
+      return t("The conversation");
+    case "transcript":
+      return t("The conversation's messages");
+    case "detail":
+      return t("The side panel");
+    case "computer":
+      return t("The Bot's screen");
+    case "live_screen":
+      return t("The Bot's screen, full size");
+    case "settings_page":
+      return t("A Settings page");
+    case "admin_page":
+      return t("An admin page");
+    case "notices":
+      return t("The notices at the top");
+    case "route_screen":
+      return t("The whole screen");
+    case "window_error":
+    case "unhandled_rejection":
+      return t("Something the app was doing");
+    default:
+      return section;
+  }
+};
+
+/**
  * One event as a line: when, what, and the code and duration when it has them. The event's name and
  * its code are the facts themselves, printed as they will be sent — a translation of `run_failed`
  * would be a sentence about the bundle rather than the bundle.
  */
 const eventLine = (event: DiagnosticEvent, time: Intl.DateTimeFormat) => {
+  // A part of the screen that failed: which part, and what kind of error. The rest is in the fold.
+  if (event.event === "screen_failed") {
+    return [
+      time.format(new Date(event.at)),
+      event.event,
+      typeof event.section === "string"
+        ? t("Where it happened: {name}", { name: sectionName(event.section) })
+        : null,
+      typeof event.kind === "string" ? event.kind : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" · ");
+  }
   const ms =
     typeof event.ms === "number"
       ? event.ms

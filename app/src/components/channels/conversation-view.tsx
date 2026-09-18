@@ -20,6 +20,7 @@ import {
   reduceQueue,
 } from "@/components/channels/composer";
 import { UsageNotice } from "@/components/channels/usage-notice";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
 
 export function ConversationView({
@@ -251,25 +252,33 @@ export function ConversationView({
          * array would give every message a new prop identity on each refetch and re-render the whole
          * conversation to change nothing.
          */}
-        <ChatTranscript
-          busy={busy}
-          {...(channelId ? { channelId } : {})}
-          commandNames={(commands ?? [])
-            .map((command) => command.name)
-            .join(",")}
-          messages={messages}
-          {...(messageTimes ? { messageTimes } : {})}
-          {...(readWindow ? { readWindow } : {})}
-          {...(speakers ? { speakers } : {})}
-          onRemoveQueued={(id) => {
-            apply({ id, type: "remove" });
-          }}
-          queued={queued}
-          {...(stoppedCode ? { stoppedCode } : {})}
-          {...(failures ? { failures } : {})}
-          {...(onRetry ? { onRetry } : {})}
-          retryKeepsReplies={retryKeepsReplies}
-        />
+        {/*
+         * THE TRANSCRIPT FAILS ALONE. It draws what a model wrote, while it is still being written,
+         * through a markdown renderer and a card per tool — the likeliest thing on this screen to
+         * throw — and the composer below it holds what somebody is in the middle of typing, and the
+         * messages they parked. Both live out here, so a transcript that failed takes neither.
+         */}
+        <SectionBoundary className="flex-1" section="transcript">
+          <ChatTranscript
+            busy={busy}
+            {...(channelId ? { channelId } : {})}
+            commandNames={(commands ?? [])
+              .map((command) => command.name)
+              .join(",")}
+            messages={messages}
+            {...(messageTimes ? { messageTimes } : {})}
+            {...(readWindow ? { readWindow } : {})}
+            {...(speakers ? { speakers } : {})}
+            onRemoveQueued={(id) => {
+              apply({ id, type: "remove" });
+            }}
+            queued={queued}
+            {...(stoppedCode ? { stoppedCode } : {})}
+            {...(failures ? { failures } : {})}
+            {...(onRetry ? { onRetry } : {})}
+            retryKeepsReplies={retryKeepsReplies}
+          />
+        </SectionBoundary>
       </div>
       {/*
        * FULL WIDTH, `px-4`, matching the transcript above it.

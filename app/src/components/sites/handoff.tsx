@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { pokeControl, watchControl } from "@/components/computer/control-poll";
 import { releaseControl } from "@/components/computer/take-the-wheel";
 import { LiveScreen } from "@/components/computer/live-screen";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { screenProblemText } from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
@@ -122,7 +123,13 @@ export const Handoff = ({
         </span>
       </div>
       <div className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-black">
-        <LiveScreen computerId={botId} driving onProblem={setProblem} />
+        {/* The same seam as the Bot's own full-size view: the hand-back button above outlives it. */}
+        <SectionBoundary
+          className="m-4 rounded-lg bg-background"
+          section="live_screen"
+        >
+          <LiveScreen computerId={botId} driving onProblem={setProblem} />
+        </SectionBoundary>
       </div>
       {problem ? (
         <p className="relative mt-2 text-sm text-white" role="alert">

@@ -1,6 +1,15 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { BotSidebar } from "@/components/app-sidebar/bot-sidebar";
+import { SectionBoundary } from "@/components/layout/section-boundary";
+import { agentKeys } from "@/lib/agents/queries";
+import { channelKeys } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
+
+/**
+ * What the roster reads that the screen beside it reads too — the Bots and the conversations — so
+ * 다시 불러오기 fetches them again even while that screen is still watching them.
+ */
+const ROSTER_QUERIES = [agentKeys.list(), channelKeys.list()] as const;
 
 export const Route = createFileRoute("/_authed/_app")({
   component: RouteComponent,
@@ -29,14 +38,29 @@ function RouteComponent() {
       >
         {t("Skip to the conversation")}
       </a>
-      <BotSidebar />
+      {/*
+       * TWO SEAMS, ONE PER COLUMN. The roster and the screen beside it share nothing but the
+       * window, and before these a throw in either was caught by the router at THIS layout — both
+       * columns replaced by one error page. A failed roster now leaves the conversation working,
+       * and a failed page leaves the roster to go somewhere else with. The roster's fallback keeps
+       * the column's ground and a fixed width, so the page beside it does not jump sideways.
+       */}
+      <SectionBoundary
+        className="h-full w-70 max-w-[40vw] shrink-0 border-border border-r bg-sidebar"
+        queryKeys={ROSTER_QUERIES}
+        section="sidebar"
+      >
+        <BotSidebar />
+      </SectionBoundary>
       <main
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         id="main"
         // Focusable only as a skip-link target, never as a tab stop of its own.
         tabIndex={-1}
       >
-        <Outlet />
+        <SectionBoundary className="flex-1" section="main">
+          <Outlet />
+        </SectionBoundary>
       </main>
     </div>
   );

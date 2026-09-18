@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ShellConnectionCheck } from "../components/help/connection-check-dialog";
 import { ConnectionNotice } from "../components/layout/connection-notice";
+import { SectionBoundary } from "../components/layout/section-boundary";
 import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
@@ -78,10 +79,24 @@ function AuthedShell() {
       {/*
        * A free trial's countdown, on every signed-in screen — Settings and the first run included,
        * because it is the only place the end date is ever said. Draws nothing off a trial.
+       *
+       * THE TWO STRIPS SIT ABOVE EVERY SIGNED-IN SCREEN, so a throw in either used to take every
+       * one of those screens with it. Their seam is a line, not a block: a strip that failed must
+       * not push the screen under it down by a card's height.
        */}
-      <TrialBanner />
-      <ConnectionNotice />
-      {/* 연결 점검, opened from the line above and from the help page. */}
+      <SectionBoundary
+        className="border-border border-b"
+        layout="line"
+        section="notices"
+      >
+        <TrialBanner />
+        <ConnectionNotice />
+      </SectionBoundary>
+      {/*
+       * 연결 점검, opened from the line above and from the help page. OUTSIDE the strips' seam on
+       * purpose: the help page opens this same dialog, and a trial banner that failed must not take
+       * the check away from the one page that still offers it.
+       */}
       <ShellConnectionCheck />
       <Outlet />
     </>
