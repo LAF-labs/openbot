@@ -42,6 +42,7 @@ import {
   agentQueryOptions,
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -664,20 +665,19 @@ function MemoriesCard({ agentId }: { agentId: string }) {
 
   const forget = async (memoryId: string) => {
     setForgetting(memoryId);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so MemoriesCard is left as written:
-    // the code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      await fetch(
-        `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
-        { credentials: "include", method: "DELETE" },
-      );
-      await queryClient.invalidateQueries({
-        queryKey: agentKeys.memories(agentId),
-      });
-    } finally {
-      setForgetting(null);
-    }
+    // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
+    await ensure(
+      async () => {
+        await fetch(
+          `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
+          { credentials: "include", method: "DELETE" },
+        );
+        await queryClient.invalidateQueries({
+          queryKey: agentKeys.memories(agentId),
+        });
+      },
+      () => setForgetting(null),
+    );
   };
 
   /*
@@ -780,30 +780,29 @@ function SkillsCard({ agentId }: { agentId: string }) {
   const toggle = async (slug: string, held: boolean) => {
     setBusy(slug);
     setProblem(null);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so SkillsCard is left as written: the
-    // code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      const response = held
-        ? await fetch(
-            `/api/plugins/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(agentId)}`,
-            { credentials: "include", method: "DELETE" },
-          )
-        : await fetch("/api/plugins/grants", {
-            body: JSON.stringify({ agentId, kind: "skill", ref: slug }),
-            credentials: "include",
-            headers: { "content-type": "application/json" },
-            method: "POST",
-          });
-      if (!response.ok) {
-        // The server's own sentence is the operator's; the surface owns the words a person reads.
-        setProblem(t("That did not go through. Try again."));
-        return;
-      }
-      await queryClient.invalidateQueries({ queryKey: pluginKeys.all });
-    } finally {
-      setBusy(null);
-    }
+    // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
+    await ensure(
+      async () => {
+        const response = held
+          ? await fetch(
+              `/api/plugins/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(agentId)}`,
+              { credentials: "include", method: "DELETE" },
+            )
+          : await fetch("/api/plugins/grants", {
+              body: JSON.stringify({ agentId, kind: "skill", ref: slug }),
+              credentials: "include",
+              headers: { "content-type": "application/json" },
+              method: "POST",
+            });
+        if (!response.ok) {
+          // The server's own sentence is the operator's; the surface owns the words a person reads.
+          setProblem(t("That did not go through. Try again."));
+          return;
+        }
+        await queryClient.invalidateQueries({ queryKey: pluginKeys.all });
+      },
+      () => setBusy(null),
+    );
   };
 
   return (

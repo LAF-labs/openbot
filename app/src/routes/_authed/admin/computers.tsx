@@ -43,6 +43,52 @@ export const Route = createFileRoute("/_authed/admin/computers")({
 });
 
 /**
+ * The list, read: the computers and how much they share, or the sentence for why not. Never throws.
+ * Out here, like `pressComputer` below, because a component holding a `try` with a conditional in
+ * it is left uncompiled — which this page was, behind its `finally`, until that went.
+ */
+async function readComputers(): Promise<
+  | {
+      computers: ComputerProfile[];
+      isolation: "per-bot" | "shared" | null;
+    }
+  | { problem: string }
+> {
+  try {
+    /*
+     * AN ADDRESS THAT NAMES NO BOT. This asked `/api/computers/shared/computers`, filling the Bot id
+     * with a word no Bot has; once the ownership guard stopped letting an administrator past on role
+     * alone, that was a 404 for everybody, and this page drew a load error and no rows — so no Reset
+     * button either (audit R3-04, R5-02, 2026-09-16). Stop and reset below still go through a row's
+     * own Bot, which is a real one.
+     */
+    const response = await fetch("/api/computers", {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        code?: string;
+      } | null;
+      // The computer's facts are the pane's facts — unreachable, timed out — and have its words.
+      return {
+        problem: refusalText(
+          SCREEN_PROBLEM_SAID,
+          body?.code,
+          t("The computers could not be listed."),
+        ),
+      };
+    }
+    const body = (await response.json()) as {
+      computers: ComputerProfile[];
+      isolation?: "per-bot" | "shared";
+    };
+    return { computers: body.computers, isolation: body.isolation ?? null };
+  } catch {
+    return { problem: t("The computers could not be reached.") };
+  }
+}
+
+/**
  * One press of 탭 닫기 or 초기화 through a row's Bot: `null` when it worked, or the sentence for why
  * not. Out here because it holds the `try`, and a component that holds one is left uncompiled.
  */
@@ -93,41 +139,14 @@ function ComputersPage() {
   const nameFor = useBotNames();
 
   const load = useCallback(async () => {
-    try {
-      /*
-       * AN ADDRESS THAT NAMES NO BOT. This asked `/api/computers/shared/computers`, filling the Bot
-       * id with a word no Bot has; once the ownership guard stopped letting an administrator past
-       * on role alone, that was a 404 for everybody, and this page drew a load error and no rows —
-       * so no Reset button either (audit R3-04, R5-02, 2026-09-16). Stop and reset below still go
-       * through a row's own Bot, which is a real one.
-       */
-      const response = await fetch("/api/computers", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          code?: string;
-        } | null;
-        // The computer's facts are the pane's facts — unreachable, timed out — and have its words.
-        setProblem(
-          refusalText(
-            SCREEN_PROBLEM_SAID,
-            body?.code,
-            t("The computers could not be listed."),
-          ),
-        );
-        return;
-      }
-      const body = (await response.json()) as {
-        computers: ComputerProfile[];
-        isolation?: "per-bot" | "shared";
-      };
-      setComputers(body.computers);
-      setIsolation(body.isolation ?? null);
-      setProblem(null);
-    } catch {
-      setProblem(t("The computers could not be reached."));
+    const answer = await readComputers();
+    if ("problem" in answer) {
+      setProblem(answer.problem);
+      return;
     }
+    setComputers(answer.computers);
+    setIsolation(answer.isolation);
+    setProblem(null);
   }, []);
 
   useEffect(() => {

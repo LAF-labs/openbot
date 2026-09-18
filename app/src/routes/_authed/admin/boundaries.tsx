@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AskSubject, describeSubject } from "@/lib/approvals";
 import { BOUNDARY_REFUSALS, refusalText } from "@/lib/computer/refusals";
+import { ensure } from "@/lib/ensure";
 import { activeLocale, t } from "@/lib/i18n";
 
 /**
@@ -41,6 +42,96 @@ type ActionPolicy = {
  * from tightening its own rules.
  */
 type PolicyChange = ActionPolicy & { reason?: string };
+
+/*
+ * THE PAGE'S FOUR REQUESTS, OUT HERE. Each holds a `try` with a conditional in it, and a component
+ * that holds one is left uncompiled by the React Compiler — which this page was, behind the
+ * `finally` in its save, until that went and these four were next in line. None of them throws.
+ */
+
+/** The policy, read: the rules, or the sentence for why they could not be. */
+async function readPolicy(): Promise<
+  { policy: ActionPolicy } | { problem: string }
+> {
+  try {
+    const response = await fetch("/api/computers/policy", {
+      credentials: "include",
+    });
+    if (!response.ok) return { problem: t("The boundary could not be read.") };
+    const body = (await response.json()) as { policy: ActionPolicy };
+    return { policy: body.policy };
+  } catch {
+    return { problem: t("The boundary could not be reached.") };
+  }
+}
+
+/**
+ * The standing allowances, or `null` to leave the list as it was. This section is a reading of the
+ * boundary, not the boundary itself, and a failed read must not blank a list somebody is about to
+ * act on.
+ */
+async function readStanding(): Promise<StandingAllowance[] | null> {
+  try {
+    const response = await fetch("/api/approvals/standing", {
+      credentials: "include",
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      standing?: StandingAllowance[];
+    };
+    return body.standing ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Withdraw one allowance: whether the list should be read again. 409 is "already withdrawn, most
+ * likely in another tab" — the list is simply out of date, so reloading it is the whole fix and there
+ * is nothing to tell anybody. A request that went nowhere changed nothing; the row stays and the
+ * button becomes pressable again.
+ */
+async function withdrawStanding(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/approvals/standing/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    return response.ok || response.status === 409;
+  } catch {
+    return false;
+  }
+}
+
+/** One save of the policy: what the server holds now, or the sentence for why it does not. */
+async function putPolicy(
+  next: PolicyChange,
+): Promise<{ held: ActionPolicy | null } | { problem: string }> {
+  try {
+    const response = await fetch("/api/computers/policy", {
+      method: "PUT",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      policy?: ActionPolicy;
+      code?: string;
+    } | null;
+    if (!response.ok) {
+      return {
+        problem: refusalText(
+          BOUNDARY_REFUSALS,
+          body?.code,
+          t("The boundary could not be saved."),
+        ),
+      };
+    }
+    return { held: body?.policy ?? null };
+  } catch {
+    return { problem: t("The boundary could not be reached.") };
+  }
+}
 
 type Preset = { label: string; rule: string; cost?: string };
 
@@ -163,52 +254,24 @@ function BoundariesPage() {
     agents?.find((agent) => agent.id === botId)?.name ?? botId;
 
   const load = useCallback(async () => {
-    try {
-      const response = await fetch("/api/computers/policy", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        setProblem(t("The boundary could not be read."));
-        return;
-      }
-      const body = (await response.json()) as { policy: ActionPolicy };
-      setPolicy(body.policy);
-      setProblem(null);
-    } catch {
-      setProblem(t("The boundary could not be reached."));
+    const answer = await readPolicy();
+    if ("problem" in answer) {
+      setProblem(answer.problem);
+      return;
     }
+    setPolicy(answer.policy);
+    setProblem(null);
   }, []);
 
   const loadStanding = useCallback(async () => {
-    try {
-      const response = await fetch("/api/approvals/standing", {
-        credentials: "include",
-      });
-      if (!response.ok) return;
-      const body = (await response.json()) as {
-        standing?: StandingAllowance[];
-      };
-      setStanding(body.standing ?? []);
-    } catch {
-      // Left as it was. This section is a reading of the boundary, not the boundary itself, and a
-      // failed read must not blank a list somebody is about to act on.
-    }
+    const read = await readStanding();
+    if (read) setStanding(read);
   }, []);
 
   const revoke = useCallback(
     async (id: string) => {
       setRevoking(id);
-      try {
-        const response = await fetch(`/api/approvals/standing/${id}`, {
-          method: "DELETE",
-          credentials: "include",
-        });
-        // 409 is "already withdrawn, most likely in another tab" — the list is simply out of date,
-        // so reloading it is the whole fix and there is nothing to tell anybody.
-        if (response.ok || response.status === 409) await loadStanding();
-      } catch {
-        // Nothing changed; the row stays and the button becomes pressable again.
-      }
+      if (await withdrawStanding(id)) await loadStanding();
       setRevoking(null);
     },
     [loadStanding],
@@ -230,41 +293,23 @@ function BoundariesPage() {
   const save = useCallback(async (next: PolicyChange): Promise<boolean> => {
     setSaving(true);
     setSaved(false);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so BoundariesPage is left as written:
-    // the code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      const response = await fetch("/api/computers/policy", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      const body = (await response.json().catch(() => null)) as {
-        policy?: ActionPolicy;
-        code?: string;
-      } | null;
-      if (!response.ok) {
-        setProblem(
-          refusalText(
-            BOUNDARY_REFUSALS,
-            body?.code,
-            t("The boundary could not be saved."),
-          ),
-        );
-        return false;
-      }
-      // Display the persisted policy in case the server normalized it.
-      if (body?.policy) setPolicy(body.policy);
-      setProblem(null);
-      setSaved(true);
-      return true;
-    } catch {
-      setProblem(t("The boundary could not be reached."));
-      return false;
-    } finally {
-      setSaving(false);
-    }
+    // `try`…`catch`…`finally`: the `try`…`catch` in `putPolicy`, which never throws, and the
+    // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
+    return ensure(
+      async () => {
+        const answer = await putPolicy(next);
+        if ("problem" in answer) {
+          setProblem(answer.problem);
+          return false;
+        }
+        // Display the persisted policy in case the server normalized it.
+        if (answer.held) setPolicy(answer.held);
+        setProblem(null);
+        setSaved(true);
+        return true;
+      },
+      () => setSaving(false),
+    );
   }, []);
 
   if (problem && !policy) {

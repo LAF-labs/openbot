@@ -13,6 +13,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { refusalText } from "@/lib/refusals";
 
@@ -38,6 +39,48 @@ export const Route = createFileRoute("/_authed/admin/bots")({
 type ConnectionVerdict =
   | { ok: true; events: string[] }
   | { ok: false; reason: string };
+
+/**
+ * Try an endpoint from the server, which is what runs will actually dial. Never throws: a request
+ * that went nowhere is a verdict too. Out here because it holds the `try`, and a component that
+ * holds one with a conditional in it is left uncompiled.
+ */
+async function testEndpoint(
+  endpoint: string,
+  authValue: string,
+): Promise<ConnectionVerdict> {
+  try {
+    const response = await fetch("/api/agents/test-connection", {
+      // The unsaved key is included so the test matches the pending form state.
+      body: JSON.stringify({
+        endpoint,
+        ...(authValue.trim()
+          ? { headers: { Authorization: authValue.trim() } }
+          : {}),
+      }),
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    const body = (await response.json().catch(() => null)) as
+      | ConnectionVerdict
+      | { code?: string }
+      | null;
+    return body && "ok" in body
+      ? body
+      : {
+          ok: false,
+          // A refusal, not a verdict: its code, never `error` — which is the code itself.
+          reason: refusalText(
+            {},
+            (body as { code?: string } | null)?.code,
+            t("The connection could not be tested."),
+          ),
+        };
+  } catch {
+    return { ok: false, reason: t("The connection could not be tested.") };
+  }
+}
 
 function RouteComponent() {
   const agents = useQuery(agentListQueryOptions());
@@ -95,47 +138,12 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
   const testConnection = async () => {
     setTesting(true);
     setConnection(null);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so BotEndpoint is left as written: the
-    // code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      const response = await fetch("/api/agents/test-connection", {
-        // The unsaved key is included so the test matches the pending form state.
-        body: JSON.stringify({
-          endpoint,
-          ...(authValue.trim()
-            ? { headers: { Authorization: authValue.trim() } }
-            : {}),
-        }),
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const body = (await response.json().catch(() => null)) as
-        | ConnectionVerdict
-        | { code?: string }
-        | null;
-      setConnection(
-        body && "ok" in body
-          ? body
-          : {
-              ok: false,
-              // A refusal, not a verdict: its code, never `error` — which is the code itself.
-              reason: refusalText(
-                {},
-                (body as { code?: string } | null)?.code,
-                t("The connection could not be tested."),
-              ),
-            },
-      );
-    } catch {
-      setConnection({
-        ok: false,
-        reason: t("The connection could not be tested."),
-      });
-    } finally {
-      setTesting(false);
-    }
+    // `try`…`catch`…`finally`: the `try`…`catch` in `testEndpoint`, which never throws, and the
+    // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
+    await ensure(
+      async () => setConnection(await testEndpoint(endpoint, authValue)),
+      () => setTesting(false),
+    );
   };
 
   return (
