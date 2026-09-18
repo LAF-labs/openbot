@@ -1,8 +1,10 @@
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -33,21 +35,44 @@ type BotHolder = { current: string };
 const ActiveBotContext = createContext<BotHolder | null>(null);
 const ActiveBotValueContext = createContext<{
   declared: string | undefined;
-  /** The declared id as a ref, so unmount restores what it found rather than what it rendered with. */
-  held: { current: string | undefined };
-  announce: (botId: string | undefined) => void;
+  /** Point the holder at a Bot and announce it; what it returns puts back what it found. */
+  declare: (botId: string | undefined) => () => void;
 } | null>(null);
 
 export function ActiveBotProvider({ children }: { children: ReactNode }) {
-  const holder = useRef<BotHolder>({ current: DEFAULT_BOT_ID });
+  /*
+   * The holder IS the ref, handed down as it is. It used to be an object kept inside a ref and read
+   * out of it while rendering, and the declared value was rebuilt into a ref on every render — reads
+   * and writes of `.current` during render, which the React Compiler refuses to compile. The ref
+   * object is the same object for the provider's whole life, so passing it on reads nothing.
+   */
+  const holder = useRef(DEFAULT_BOT_ID);
+  /** The declared id as a ref, so unmount restores what it found rather than what it rendered with. */
   const held = useRef<string | undefined>(undefined);
   const [declared, setDeclared] = useState<string | undefined>(undefined);
-  const value = useRef({ declared, held, announce: setDeclared });
-  value.current = { declared, held, announce: setDeclared };
+
+  /*
+   * The writes happen here, in the provider, rather than in `useActiveBot` reaching into a context
+   * value to change it: what a context hands out is treated as read-only by the compiler, and the
+   * provider is the one place that owns these refs.
+   */
+  const declare = useCallback((botId: string | undefined) => {
+    const previousHeld = holder.current;
+    const previousDeclared = held.current;
+    holder.current = botId ?? DEFAULT_BOT_ID;
+    held.current = botId;
+    setDeclared(botId);
+    return () => {
+      holder.current = previousHeld;
+      held.current = previousDeclared;
+      setDeclared(previousDeclared);
+    };
+  }, []);
+  const value = useMemo(() => ({ declared, declare }), [declared, declare]);
 
   return (
-    <ActiveBotContext.Provider value={holder.current}>
-      <ActiveBotValueContext.Provider value={value.current}>
+    <ActiveBotContext.Provider value={holder}>
+      <ActiveBotValueContext.Provider value={value}>
         {children}
       </ActiveBotValueContext.Provider>
     </ActiveBotContext.Provider>
@@ -61,21 +86,8 @@ export function ActiveBotProvider({ children }: { children: ReactNode }) {
  * whatever mounts next.
  */
 export function useActiveBot(botId: string | undefined): void {
-  const holder = useContext(ActiveBotContext);
-  const value = useContext(ActiveBotValueContext);
-  useEffect(() => {
-    if (!holder || !value) return;
-    const previousHeld = holder.current;
-    const previousDeclared = value.held.current;
-    holder.current = botId ?? DEFAULT_BOT_ID;
-    value.held.current = botId;
-    value.announce(botId);
-    return () => {
-      holder.current = previousHeld;
-      value.held.current = previousDeclared;
-      value.announce(previousDeclared);
-    };
-  }, [holder, value, botId]);
+  const declare = useContext(ActiveBotValueContext)?.declare;
+  useEffect(() => declare?.(botId), [declare, botId]);
 }
 
 /** The holder itself, to be read inside a handler at the moment it runs. */
