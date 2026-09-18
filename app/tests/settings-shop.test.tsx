@@ -130,6 +130,27 @@ describe("Settings → 내 가게", () => {
     expect(view.buttonNamed("Save")?.disabled).toBe(true);
   });
 
+  test("the places hold still while the kind is being changed", async () => {
+    // The order follows the SAVED kind. Following the pressed one moved every chip under the
+    // pointer the moment a kind was pressed — measured in the browser on this screen.
+    const { api } = server({ shop: { kind: "food", places: [] } });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(
+      () => view.buttonNamed("Baemin") !== undefined,
+      "the places",
+    );
+    const order = () =>
+      [
+        ...view.host.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="daily-places"] button',
+        ),
+      ].map((chip) => chip.textContent);
+    const before = order();
+
+    await press(view, "Office or professional services");
+    expect(order()).toEqual(before);
+  });
+
   test("clears an answer when everything is taken back", async () => {
     const { api, puts } = server({
       shop: { kind: "beauty", places: ["naver-smartplace"] },

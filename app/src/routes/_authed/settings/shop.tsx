@@ -45,8 +45,14 @@ const ShopSettings = () => {
   const [isSaved, flashSaved] = useSavedFlash();
 
   const overview = useQuery(connectionsOverviewQueryOptions());
+  /*
+   * ORDERED BY THE SAVED KIND, NOT THE PRESSED ONE. Following the pressed kind re-sorted every chip
+   * under the pointer the moment a kind was pressed — measured on this screen, where both questions
+   * sit together; on the first run they are two screens and the order is settled before the chips
+   * are drawn. The list re-sorts once, after a save, which is a moment the person caused.
+   */
   const offered = overview.data
-    ? placesToOffer(overview.data, kind, places)
+    ? placesToOffer(overview.data, saved.kind, places)
     : null;
   const answer = { kind, places };
   const isChanged = !sameShop(answer, saved);
