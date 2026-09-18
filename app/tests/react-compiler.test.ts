@@ -46,7 +46,7 @@ import {
  * and one of them, `ChannelChat`, also opts out on purpose, so that it stays uncompiled on the day
  * the compiler learns `finally` (the reason is beside its directive).
  */
-const SKIPPED_CEILING = 11;
+const SKIPPED_CEILING = 10;
 
 const APP = join(import.meta.dir, "..");
 
