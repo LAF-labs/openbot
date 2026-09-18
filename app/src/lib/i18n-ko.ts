@@ -2004,6 +2004,7 @@ export const ko: Record<string, string> = {
   "Sum up what changed in Notion this week.":
     "이번 주 노션에서 바뀐 것을 정리해줘",
   "Connect a site": "사이트 연결하기",
+  "Connect {place}": "{place} 연결하기",
   // 네 번째 칩. 첫 문장을 그대로 매일 아침 루틴으로 건다 — 같은 대화에 답이 온다.
   "Get a report every morning at 7:30": "매일 아침 7:30에 보고받기",
   "The first sentence above, asked every morning at 7:30, answered in this conversation.":

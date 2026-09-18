@@ -22,6 +22,7 @@ import {
   roleHint,
 } from "@/lib/agents/first-tasks";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
@@ -98,10 +99,16 @@ function RouteComponent() {
    */
   const { data: overview } = useQuery(connectionsOverviewQueryOptions());
   const { data: channels } = useQuery(channelListQueryOptions());
+  /*
+   * And what the person said about the shop on the first run, which orders the chips and can put a
+   * picked-but-unconnected place's connect chip first. Off the current user, already in the cache:
+   * waiting on it would be waiting on nothing.
+   */
+  const { data: user } = useQuery(currentUserQueryOptions());
   const hint = chosen ? roleHint(chosen) : null;
   const firstTasks =
     chosen && overview && channels && isFirstConversation(channels, chosen.id)
-      ? pickFirstTasks(overview, { hint })
+      ? pickFirstTasks(overview, { hint, shop: user?.shop })
       : null;
 
   /**

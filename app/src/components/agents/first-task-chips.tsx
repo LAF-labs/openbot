@@ -11,6 +11,7 @@ import type { WorkPatternId } from "@/lib/agents/presets";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
+import { dailyPlaceById } from "@/lib/shop/catalogue";
 
 /**
  * THE FIRST THING TO ASK, AS SOMETHING TO PRESS.
@@ -77,8 +78,13 @@ export const FirstTaskChips = ({
           task.kind === "connect" ? (
             <Link
               className={chip}
-              key="connect"
+              key={`connect:${task.place ?? ""}`}
               onClick={() =>
+                /*
+                 * Reported as the connect chip it has always been. Which place it named is not on
+                 * the wire: the fleet counts presses by catalogue keys it already validates, and a
+                 * new field there is a contract change for a fact the insights do not ask about.
+                 */
                 reportFirstTaskPressed({
                   agentId: agent.id,
                   kind: "connect",
@@ -90,7 +96,15 @@ export const FirstTaskChips = ({
               }
               to="/settings/connected-accounts"
             >
-              {t("Connect a site")}
+              {/*
+               * A place the person picked is named, in their own word for it: "배달의민족
+               * 연결하기" is an errand somebody recognises as theirs, "사이트 연결하기" is a chore.
+               */}
+              {task.place
+                ? t("Connect {place}", {
+                    place: t(dailyPlaceById(task.place)?.name ?? task.place),
+                  })
+                : t("Connect a site")}
             </Link>
           ) : (
             <button

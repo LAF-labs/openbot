@@ -1,5 +1,6 @@
 import {
   AGENT_PRESETS,
+  shopWorkOrder,
   WORK_PATTERNS,
   type WorkPatternId,
 } from "@/lib/agents/presets";
@@ -8,6 +9,13 @@ import type { ChannelSummary } from "@/lib/channels/queries";
 import type { ConnectionsOverview } from "@/lib/connections/queries";
 import { ko } from "@/lib/i18n-ko";
 import { routineRequest } from "@/lib/routines/queries";
+import {
+  dailyPlaceById,
+  EMPTY_SHOP,
+  placeIsConnected,
+  placeIsOffered,
+  type ShopProfile,
+} from "@/lib/shop/catalogue";
 import { BUSINESS_SITES } from "@/lib/sites/catalogue";
 
 /**
@@ -36,6 +44,13 @@ import { BUSINESS_SITES } from "@/lib/sites/catalogue";
  * shown what it can do, and a screen that keeps suggesting first tasks to somebody on their fifth
  * conversation is a screen that has not noticed them.
  *
+ * THE SHOP ANSWERS ORDER, THEY DO NOT FILTER. What the person said on the first run — the trade and
+ * the places they use every day (`shared/shop/catalogue.ts`) — puts those kinds of work after the
+ * Bot's own role and before everything else, and puts a picked place's sentence ahead of another
+ * connected site's in the same kind of work. The row is still four sentences. And a place they
+ * picked that the Bot cannot use yet is the one thing worth doing before any of them, so its
+ * connect chip goes first — only for a place this deployment can actually connect.
+ *
  * Every sentence here is an English key with Korean in `i18n-ko.ts`, read through `t(variable)`
  * where it is drawn — invisible to `i18n-coverage.test.ts`, so `first-tasks.test.ts` walks these
  * tables the way `agent-presets.test.ts` walks the presets.
@@ -50,7 +65,14 @@ export type FirstTask =
       /** The connection that made this sentence answerable, or null when none is needed. */
       via: { kind: "site" | "account"; id: string } | null;
     }
-  | { kind: "connect" };
+  | {
+      kind: "connect";
+      /**
+       * The daily place this chip is for — one the person picked on the first run or in Settings
+       * that no door of is connected yet. Absent is the general "connect a site" chip.
+       */
+      place?: string;
+    };
 
 type Sentence = { pattern: WorkPatternId; sentence: string };
 
@@ -226,15 +248,70 @@ export function roleHint(
   return null;
 }
 
-/** The eight patterns, with the hinted one first and the rest in their own order. */
-function patternOrder(hint: WorkPatternId | null): WorkPatternId[] {
-  const ids = WORK_PATTERNS.map((pattern) => pattern.id);
-  return hint ? [hint, ...ids.filter((id) => id !== hint)] : ids;
+/**
+ * The eight patterns: the hinted one first, then the shop's, then the rest in their own order.
+ *
+ * The Bot's own card outranks the shop: it is about THIS Bot, and a person who made a reviews Bot
+ * for a restaurant wants reviews first, not the restaurant's settlement.
+ */
+function patternOrder(
+  hint: WorkPatternId | null,
+  shopPatterns: readonly WorkPatternId[],
+): WorkPatternId[] {
+  const order: WorkPatternId[] = [];
+  const add = (id: WorkPatternId) => {
+    if (!order.includes(id)) order.push(id);
+  };
+  if (hint) add(hint);
+  for (const id of shopPatterns) add(id);
+  for (const pattern of WORK_PATTERNS) add(pattern.id);
+  return order;
 }
 
-/** Everything this person has connected that has a first sentence to go with it. */
+/**
+ * Where a connection stands among the places the person picked: its index in their pick order, or
+ * past the end for a connection that belongs to no picked place.
+ */
+function pickedRank(
+  via: Candidate["via"],
+  placesInPickOrder: readonly string[],
+): number {
+  const index = placesInPickOrder.findIndex((id) =>
+    dailyPlaceById(id)?.connections.some(
+      (door) => door.kind === via.kind && door.id === via.id,
+    ),
+  );
+  return index < 0 ? placesInPickOrder.length : index;
+}
+
+/**
+ * The first place the person picked that this deployment could connect and nothing connects yet.
+ *
+ * `placeIsOffered` first: a place with no door on this deployment — no browser behind it, or a
+ * vendor the fleet registered no application with — has nothing to press on 연결, and a chip that
+ * leads there is a promise the screen cannot keep.
+ */
+function firstUnconnectedPlace(
+  overview: Pick<ConnectionsOverview, "sites" | "accounts">,
+  placesInPickOrder: readonly string[],
+): string | null {
+  for (const id of placesInPickOrder) {
+    const place = dailyPlaceById(id);
+    if (!place) continue;
+    if (placeIsOffered(place, overview) && !placeIsConnected(place, overview)) {
+      return id;
+    }
+  }
+  return null;
+}
+
+/**
+ * Everything this person has connected that has a first sentence to go with it — the places they
+ * picked first, in the order they picked them, and everything else after in its own order.
+ */
 function connectedCandidates(
   overview: Pick<ConnectionsOverview, "sites" | "accounts">,
+  placesInPickOrder: readonly string[] = [],
 ): Candidate[] {
   const candidates: Candidate[] = [];
   for (const site of overview.sites) {
@@ -254,7 +331,12 @@ function connectedCandidates(
     if (!known) continue;
     candidates.push({ ...known, via: { kind: "account", id: account.id } });
   }
-  return candidates;
+  // Stable: with nothing picked every rank is the same, and the order is the one it always was.
+  return candidates.sort(
+    (a, b) =>
+      pickedRank(a.via, placesInPickOrder) -
+      pickedRank(b.via, placesInPickOrder),
+  );
 }
 
 /**
@@ -273,11 +355,18 @@ function connectedCandidates(
  */
 export function pickFirstTasks(
   overview: Pick<ConnectionsOverview, "sites" | "accounts">,
-  options: { hint?: WorkPatternId | null; count?: number } = {},
+  options: {
+    hint?: WorkPatternId | null;
+    count?: number;
+    /** What the person answered about the business. Absent or empty changes nothing. */
+    shop?: ShopProfile;
+  } = {},
 ): FirstTask[] {
   const count = options.count ?? FIRST_TASK_COUNT;
-  const order = patternOrder(options.hint ?? null);
-  const candidates = connectedCandidates(overview);
+  const shop = options.shop ?? EMPTY_SHOP;
+  const shopPatterns = shopWorkOrder(shop).patterns;
+  const order = patternOrder(options.hint ?? null, shopPatterns);
+  const candidates = connectedCandidates(overview, shop.places);
 
   const picked: FirstTask[] = [];
   const taken = new Set<string>();
@@ -300,19 +389,31 @@ export function pickFirstTasks(
   }
 
   /*
-   * Padding, in three tiers and otherwise in table order (`sort` is stable): the hinted pattern's
-   * sentence, then the patterns nothing above covers yet, then the ones something does. A review
-   * site connected and 소개 문구 beside it is half a row about reviews; the hint leads only when no
-   * connected chip already speaks for it.
+   * Padding, in tiers and otherwise in table order (`sort` is stable): the hinted pattern's
+   * sentence, then the shop's kinds of work in the shop's own order, then the patterns nothing
+   * above covers yet, then the ones something does. A review site connected and 소개 문구 beside it
+   * is half a row about reviews; the hint leads only when no connected chip already speaks for it.
    */
   const covered = new Set(
     picked.map((task) => (task.kind === "ask" ? task.pattern : null)),
   );
-  const tier = (task: Sentence) =>
-    covered.has(task.pattern) ? 2 : task.pattern === options.hint ? 0 : 1;
+  const tier = (task: Sentence) => {
+    if (covered.has(task.pattern)) return 3;
+    if (task.pattern === options.hint) return 0;
+    const inShop = shopPatterns.indexOf(task.pattern);
+    // Within the shop tier, the shop's own order: 1.0 for its first kind of work, under 2 for its last.
+    return inShop < 0 ? 2 : 1 + inShop / (shopPatterns.length + 1);
+  };
   const padding = [...NO_CONNECTION_TASKS].sort((a, b) => tier(a) - tier(b));
   for (const task of padding) offer(task, null);
 
+  /*
+   * A picked place nothing connects yet goes FIRST — the one act that turns the sentences after it
+   * from generic into this shop's. It stands in for the general connect chip, which is for
+   * somebody with nothing connected and nothing picked to point them at.
+   */
+  const unconnected = firstUnconnectedPlace(overview, shop.places);
+  if (unconnected) return [{ kind: "connect", place: unconnected }, ...picked];
   if (candidates.length === 0) picked.push({ kind: "connect" });
   return picked;
 }

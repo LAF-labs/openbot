@@ -78,6 +78,8 @@ const tasks: FirstTask[] = [
 async function mounted(props: {
   disabled?: boolean;
   onAsk: (sentence: string) => void;
+  /** The row to draw; the four sentences and the general connect chip unless a test says otherwise. */
+  tasks?: FirstTask[];
 }) {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -97,7 +99,7 @@ async function mounted(props: {
         disabled: props.disabled ?? false,
         hint: null,
         onAsk: props.onAsk,
-        tasks,
+        tasks: props.tasks ?? tasks,
       }),
   });
   const router = createRouter({
@@ -166,6 +168,26 @@ describe("the first-task chips", () => {
         link.getAttribute("href")?.startsWith("/settings/connected-accounts"),
       );
     expect(connect?.textContent).toBe(t("Connect a site"));
+  });
+
+  test("a picked place that is not connected is named on its own chip, first, and goes to 연결", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const asks = tasks.filter((task) => task.kind === "ask");
+    const view = await mounted({
+      onAsk: () => {},
+      tasks: [{ kind: "connect", place: "baemin-ceo" }, ...asks],
+    });
+
+    const first = view.host.querySelector("a, button");
+    expect(first?.tagName).toBe("A");
+    expect(first?.textContent).toBe(
+      t("Connect {place}", { place: t("Baemin") }),
+    );
+    expect(first?.getAttribute("href")).toBe("/settings/connected-accounts");
+    // The general chip is not drawn beside it: one way to the 연결 screen is enough.
+    expect(view.links().map((link) => link.textContent)).not.toContain(
+      t("Connect a site"),
+    );
   });
 
   test("a press sends the sentence, in the person's language, and reports itself once", async () => {

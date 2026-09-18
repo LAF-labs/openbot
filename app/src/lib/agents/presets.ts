@@ -27,6 +27,12 @@
  * the instruction says so. A standing instruction is the one place a person is likely to read it.
  */
 
+import {
+  type BusinessKindId,
+  dailyPlaceById,
+  type ShopProfile,
+} from "@shared/shop/catalogue";
+
 /** The eight patterns, as the plan names them. */
 export type WorkPatternId =
   | "night-watch"
@@ -402,12 +408,126 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
 ] as const;
 
 /**
+ * Which presets each kind of business leads with, likeliest first (`shared/shop/catalogue.ts`).
+ *
+ * The same thirty-two presets, reordered: a restaurant's settlement card is the platform payouts,
+ * not the corporate expense report, and a salon's schedule card is the booking desk rather than
+ * meeting prep. Every other trade names at least five kinds of work, because the intro card deals
+ * five and a list that ran out would hand the rest of the hand back to chance.
+ *
+ * 그 밖에 names none: the person told us their trade is not one of these, and a guess on their
+ * behalf would be a worse hand than no preference at all.
+ */
+export const KIND_PRESETS: Readonly<Record<BusinessKindId, readonly string[]>> =
+  {
+    food: [
+      "review-replies",
+      "payouts",
+      "stock",
+      "bookings",
+      "support-replies",
+      "night-shift",
+      "tax-prep",
+      "outgoing-check",
+    ],
+    online: [
+      "support-replies",
+      "stock",
+      "payouts",
+      "review-replies",
+      "competitors",
+      "outgoing-check",
+      "tax-prep",
+    ],
+    store: [
+      "stock",
+      "settlement",
+      "review-replies",
+      "faq-answers",
+      "shift-roster",
+      "social",
+      "suppliers",
+      "tax-prep",
+    ],
+    beauty: [
+      "bookings",
+      "review-replies",
+      "faq-answers",
+      "social",
+      "settlement",
+      "stock",
+      "shift-roster",
+    ],
+    education: [
+      "faq-answers",
+      "receivables",
+      "bookings",
+      "weekly-report",
+      "social",
+      "notice-watch",
+    ],
+    health: [
+      "bookings",
+      "review-replies",
+      "faq-answers",
+      "notice-watch",
+      "tax-prep",
+      "stock",
+    ],
+    office: [
+      "inbox-triage",
+      "meeting-prep",
+      "contracts",
+      "quotes",
+      "weekly-report",
+      "doc-digest",
+      "news-brief",
+    ],
+    other: [],
+  };
+
+/** What the shop answers say should come first: kinds of work, and the presets to show for them. */
+export type WorkOrder = {
+  /** Kinds of work, most wanted first. Everything not here keeps its place after them. */
+  patterns: WorkPatternId[];
+  /** Preset ids to prefer within their kind of work. */
+  presets: string[];
+};
+
+/**
+ * The shop answers as an order of work.
+ *
+ * THE PLACES LEAD, THEN THE TRADE. "I am on 배민 every morning" is a more exact statement than "I
+ * run a restaurant", so the kinds of work of the places picked — in the order they were picked —
+ * come first, and the trade's own list fills in behind them. An answer with nothing in it says
+ * nothing, and the suggestions stay exactly what they were before anybody asked.
+ */
+export function shopWorkOrder(shop: ShopProfile): WorkOrder {
+  const presets = shop.kind ? [...KIND_PRESETS[shop.kind]] : [];
+  const patterns: WorkPatternId[] = [];
+  const add = (pattern: WorkPatternId | undefined) => {
+    if (pattern && !patterns.includes(pattern)) patterns.push(pattern);
+  };
+  for (const id of shop.places) add(dailyPlaceById(id)?.pattern);
+  for (const id of presets) {
+    add(AGENT_PRESETS.find((preset) => preset.id === id)?.pattern);
+  }
+  return { patterns, presets };
+}
+
+/**
  * A handful of suggestions, one kind of work at a time.
  *
  * Picking at random from all thirty-two gives runs of the same pattern often enough to notice — six
  * suggestions that are all marketing read as a marketing product. So: shuffle the patterns, take one
  * preset from each in turn, and come back round for a second if more are wanted than there are
  * patterns.
+ *
+ * `order` puts the shop answers in front WITHOUT narrowing anything: its kinds of work are dealt
+ * first, each led by its preferred preset, and every other kind of work follows in shuffled order
+ * exactly as before. The hand is the same size and still one card per kind of work — a first-run
+ * guess must not become the only thing a Bot is ever offered. With no order, or an empty one, the
+ * random calls are the same ones in the same sequence, so the hand is the one it always was.
  *
  * `random` is a parameter so a test can be deterministic; callers pass nothing and get `Math.random`.
  * Callers must hold the result in state — calling this during render returns a different six every
@@ -416,6 +536,7 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
 export function pickSuggestions(
   count: number,
   random: () => number = Math.random,
+  order: WorkOrder = { patterns: [], presets: [] },
 ): AgentPreset[] {
   const byPattern = new Map<WorkPatternId, AgentPreset[]>();
   for (const preset of AGENT_PRESETS) {
@@ -423,10 +544,28 @@ export function pickSuggestions(
     if (bucket) bucket.push(preset);
     else byPattern.set(preset.pattern, [preset]);
   }
-  // Shuffled within the pattern too, or the second time round always offers the same runner-up.
-  const buckets = shuffle([...byPattern.values()], random).map((bucket) =>
-    shuffle(bucket, random),
+  const leading = order.patterns.filter((pattern) => byPattern.has(pattern));
+  const rest = shuffle(
+    [...byPattern.keys()].filter((pattern) => !leading.includes(pattern)),
+    random,
   );
+  /*
+   * Shuffled within the pattern too, or the second time round always offers the same runner-up —
+   * after the trade's own preferred presets, which lead their bucket in the order the trade names.
+   */
+  const buckets = [...leading, ...rest].map((pattern) => {
+    const bucket = byPattern.get(pattern) ?? [];
+    const preferred = order.presets
+      .map((id) => bucket.find((preset) => preset.id === id))
+      .filter((preset): preset is AgentPreset => preset !== undefined);
+    return [
+      ...preferred,
+      ...shuffle(
+        bucket.filter((preset) => !preferred.includes(preset)),
+        random,
+      ),
+    ];
+  });
 
   const picked: AgentPreset[] = [];
   // `round` walks down each bucket; buckets that run out are simply skipped.

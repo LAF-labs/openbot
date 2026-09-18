@@ -1,5 +1,6 @@
+import { EMPTY_SHOP } from "@shared/shop/catalogue";
 import { IconX } from "@tabler/icons-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
@@ -10,9 +11,11 @@ import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import {
   type AgentPreset,
   pickSuggestions,
+  shopWorkOrder,
   workPattern,
 } from "@/lib/agents/presets";
 import type { AgentProfile } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { useSavedFlash } from "@/lib/saved-flash";
 
@@ -42,8 +45,16 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
   /*
    * Dealt once, in an initialiser. Calling `pickSuggestions` in the render body deals a new hand on
    * every keystroke in the name field — the chips a person is reading would move while they read.
+   *
+   * THE SHOP LEADS THE HAND. What the person said on the first run — the trade and the places they
+   * use every day — puts that work first, still five kinds of work. It is read off the current
+   * user, which `_authed` put in the cache before this screen could draw, so it is here for the
+   * initialiser and the hand is dealt once, already in order.
    */
-  const [suggestions] = useState(() => pickSuggestions(5));
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const [suggestions] = useState(() =>
+    pickSuggestions(5, Math.random, shopWorkOrder(user?.shop ?? EMPTY_SHOP)),
+  );
 
   /*
    * A PATCH REPLACES THE FIELDS IT CARRIES, so the ones the parser requires go back unchanged:
