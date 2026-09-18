@@ -249,6 +249,39 @@ describe("the notification outbox", () => {
     ).toHaveLength(0);
   });
 
+  test("a pause is read back as its facts, not as an action a door would try to describe", async () => {
+    /*
+     * The column is shared with an approval's subject and a failed run's facts (`factsOf`). A pause
+     * read back as a `subject` would be an action with no intent — the in-app door and the webhook
+     * would each try to say what is "waiting" about routines that are simply off.
+     */
+    const outbox = createNotificationOutbox({ database });
+    const userId = await createPerson();
+    const pause = {
+      reason: "unread" as const,
+      routineIds: [`routine-${suite}`],
+      count: 1,
+      unread: 3,
+      since: "2026-09-09T22:30:00.000Z",
+    };
+
+    const written = await outbox.enqueue({
+      kind: "routine.paused",
+      botId: `bot-${suite}`,
+      userId,
+      channelId: `channel-${suite}`,
+      pause,
+    });
+    const [listed] = await outbox.list(userId);
+
+    for (const record of [written, listed]) {
+      expect(record?.kind).toBe("routine.paused");
+      expect(record?.pause).toEqual(pause);
+      expect(record?.subject).toBeUndefined();
+      expect(record?.run).toBeUndefined();
+    }
+  });
+
   test("the sweep takes what has aged out and leaves the rest", async () => {
     const outbox = createNotificationOutbox({ database });
     const userId = await createPerson();

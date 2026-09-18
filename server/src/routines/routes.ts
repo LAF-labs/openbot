@@ -117,6 +117,38 @@ function addCollection(
       return context.json(mapped.body, mapped.status);
     }
   });
+
+  /*
+   * 다시 켜기 and 계속 돌리기: one Bot's routines the unread rule paused, back on — and, for the
+   * second, never paused that way again (`routines/unread.ts`). Named by the Bot, because the pause
+   * and the banner that answers it are per Bot, and one press is all of them or none.
+   *
+   * Not a door a Bot's tool reaches: `manage_routine` edits and switches one routine at a time, and
+   * exempting routines from the rule is the person's decision.
+   */
+  routes.post("/resume", requireUser, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      agentId?: unknown;
+      keepRunning?: unknown;
+    } | null;
+    if (typeof body?.agentId !== "string" || !body.agentId) {
+      return context.json(
+        { error: "laf:routine_incomplete", code: "laf:routine_incomplete" },
+        400,
+      );
+    }
+    try {
+      const routines = await service.resumePaused(
+        context.var.actor,
+        body.agentId,
+        { keepRunning: body.keepRunning === true },
+      );
+      return context.json({ routines });
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
 }
 
 /**
@@ -222,6 +254,27 @@ function addRoutineVerbs(
         context.var.actor,
         context.req.param("id"),
         body?.enabled === true,
+      );
+      return context.json({ routine });
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
+
+  /*
+   * 계속 돌리기 on one routine, and its undoing. Its own door, never a field of the edit below — see
+   * `setRoutineKeepRunning`. Anything but `true` is off, the way the enabled switch reads its body.
+   */
+  routes.post("/:id/keep-running", requireUser, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      keepRunning?: unknown;
+    } | null;
+    try {
+      const routine = await service.setKeepRunning(
+        context.var.actor,
+        context.req.param("id"),
+        body?.keepRunning === true,
       );
       return context.json({ routine });
     } catch (error) {

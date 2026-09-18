@@ -50,6 +50,8 @@ export type NotificationFrame = {
   subject?: Record<string, unknown>;
   /** For `run.failed`: what the run was and how it ended. See `RunFailureFacts` in outbox.ts. */
   run?: Record<string, unknown>;
+  /** For `routine.paused`: which routines stopped and why. See `RoutinePauseFacts` in outbox.ts. */
+  pause?: Record<string, unknown>;
   at: string;
 };
 
@@ -68,6 +70,9 @@ export function notificationFrame(
       : {}),
     ...(record.run
       ? { run: record.run as unknown as Record<string, unknown> }
+      : {}),
+    ...(record.pause
+      ? { pause: record.pause as unknown as Record<string, unknown> }
       : {}),
     at: record.createdAt,
   };

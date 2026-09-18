@@ -85,6 +85,30 @@ function fakeService(overrides: Partial<RoutineService> = {}) {
       mine(actor, id);
       return { ...routine, ...(change as object) };
     },
+    async setKeepRunning(
+      actor: { id: string },
+      id: string,
+      keepRunning: boolean,
+    ) {
+      calls.push(["setKeepRunning", actor, id, keepRunning]);
+      mine(actor, id);
+      return { ...routine, keepRunning };
+    },
+    async resumePaused(
+      actor: { id: string },
+      agentId: string,
+      resume: { keepRunning: boolean },
+    ) {
+      calls.push(["resumePaused", actor, agentId, resume]);
+      if (actor.id !== OWNER.id || agentId !== routine.agentId) {
+        throw new RoutineError(
+          "There is no such Bot.",
+          404,
+          "laf:bot_not_found",
+        );
+      }
+      return [{ ...routine, enabled: true }];
+    },
     async runNow(actor: { id: string }, id: string) {
       calls.push(["runNow", actor, id]);
       mine(actor, id);
@@ -358,6 +382,85 @@ describe("editing a routine", () => {
   });
 });
 
+/**
+ * 계속 돌리기 and 다시 켜기 — the person's answers to the unread rule (`routines/unread.ts`).
+ *
+ * Each its own door, and neither is PATCH: a Bot's `manage_routine` reaches PATCH, and whether a
+ * routine may be paused for going unread is the person's to decide, not the Bot's.
+ */
+describe("keeping a routine running, and turning paused ones back on", () => {
+  test("keep-running takes its switch and hands the service the actor", async () => {
+    const service = fakeService();
+    const app = appAs(OWNER, service);
+
+    const on = await app.request(
+      "http://laf.test/routine_1/keep-running",
+      post({ keepRunning: true }),
+    );
+    expect(on.status).toBe(200);
+    expect(await on.json()).toMatchObject({ routine: { keepRunning: true } });
+    // Anything but `true` is off, the way the enabled switch reads its body.
+    await app.request(
+      "http://laf.test/routine_1/keep-running",
+      post({ keepRunning: "yes" }),
+    );
+
+    expect(service.calls).toEqual([
+      ["setKeepRunning", OWNER, "routine_1", true],
+      ["setKeepRunning", OWNER, "routine_1", false],
+    ]);
+  });
+
+  test("resume names the Bot, and says whether to keep them running from now on", async () => {
+    const service = fakeService();
+    const app = appAs(OWNER, service);
+
+    const response = await app.request(
+      "http://laf.test/resume",
+      post({ agentId: "agent_1", keepRunning: true }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      routines: [{ id: "routine_1", enabled: true }],
+    });
+    await app.request("http://laf.test/resume", post({ agentId: "agent_1" }));
+
+    expect(service.calls).toEqual([
+      ["resumePaused", OWNER, "agent_1", { keepRunning: true }],
+      ["resumePaused", OWNER, "agent_1", { keepRunning: false }],
+    ]);
+  });
+
+  test("resume without a Bot is refused before the service is asked", async () => {
+    const service = fakeService();
+    const response = await appAs(OWNER, service).request(
+      "http://laf.test/resume",
+      post({ keepRunning: true }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: "laf:routine_incomplete",
+      error: "laf:routine_incomplete",
+    });
+    expect(service.calls).toEqual([]);
+  });
+
+  test("somebody else's Bot is not there to resume", async () => {
+    const service = fakeService();
+    const response = await appAs(STAFF, service).request(
+      "http://laf.test/resume",
+      post({ agentId: "agent_1" }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      code: "laf:bot_not_found",
+      error: "laf:bot_not_found",
+    });
+  });
+});
+
 describe("the routines surface, as somebody else on the same VM", () => {
   /*
    * 404 and not 403, following agents/routes.ts: a Bot somebody cannot see answers 404 there
@@ -375,6 +478,11 @@ describe("the routines surface, as somebody else on the same VM", () => {
     ["running it now", "http://laf.test/routine_1/run", post()],
     ["deleting it", "http://laf.test/routine_1", { method: "DELETE" }],
     ["editing it", "http://laf.test/routine_1", patch({ name: "내 것" })],
+    [
+      "keeping it running",
+      "http://laf.test/routine_1/keep-running",
+      post({ keepRunning: true }),
+    ],
     [
       "reading its notepad",
       "http://laf.test/routine_1/notepad",
@@ -488,6 +596,8 @@ describe("the webhook, which has no session", () => {
       ["http://laf.test/routine_1/run", post()],
       ["http://laf.test/routine_1", { method: "DELETE" }],
       ["http://laf.test/routine_1", patch({ name: "무제" })],
+      ["http://laf.test/routine_1/keep-running", post({ keepRunning: true })],
+      ["http://laf.test/resume", post({ agentId: "agent_1" })],
     ] as const) {
       const response = await app.request(url, init);
       expect(response.status).toBe(401);

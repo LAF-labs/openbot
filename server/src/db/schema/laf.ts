@@ -281,6 +281,36 @@ export const lafRoutines = pgTable("laf_routines", {
   triggerTokenHash: text("trigger_token_hash"),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  /**
+   * Why the routine is off, when it was not its person's switch that turned it off. Null otherwise.
+   *
+   * `unread` is the one reason today (`routines/unread.ts`): its results piled up in its Bot's
+   * conversation for a week with nobody opening it, so it stopped spending the day's allowance on
+   * answers nobody reads. Text rather than an enum for the reason `laf_notifications.kind` gives —
+   * a new reason is a line of TypeScript, not a migration. Cleared by any switch a person presses,
+   * on or off: the decision is theirs again from then on.
+   */
+  pausedReason: text("paused_reason").$type<RoutinePauseReason>(),
+  /** When `paused_reason` was set. Null with it. */
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
+  /**
+   * The person's 계속 돌리기: never paused for going unread, whatever piles up.
+   *
+   * Set only by the person, on their own screen (`POST /api/routines/:id/keep-running`,
+   * `POST /api/routines/resume`). Never by a Bot: `manage_routine` reaches name, instruction,
+   * schedule and the switch, and a Bot that could exempt its own routines from the rule would be a
+   * Bot deciding what it is allowed to spend.
+   */
+  keepRunning: boolean("keep_running").notNull().default(false),
+  /**
+   * When a person last switched it on again after it was off. Null for one never turned off.
+   *
+   * The unread rule counts deliveries from here as well as from the last read, because a person who
+   * turns a paused routine back on has answered the question the pause asked. Without it the pile
+   * that caused the pause — still unread, since switching a routine on is not reading its
+   * conversation — would pause it again on the next tick.
+   */
+  resumedAt: timestamp("resumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -288,6 +318,9 @@ export const lafRoutines = pgTable("laf_routines", {
     .notNull()
     .defaultNow(),
 });
+
+/** Why a routine is off when its person did not turn it off. See `laf_routines.paused_reason`. */
+export type RoutinePauseReason = "unread";
 
 /**
  * What happened the last twenty times a routine ran.

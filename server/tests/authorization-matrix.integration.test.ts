@@ -474,6 +474,10 @@ function bodyFor(method: string, template: string): unknown {
     case "PATCH /api/routines/:id":
       // A rename: the owner's edit lands, and nobody else's reaches the routine at all.
       return { name: `matrix ${run} renamed` };
+    case "POST /api/routines/resume":
+      // 다시 켜기 on A's Bot: the owner's press resumes what the unread rule paused (nothing, here),
+      // and the colleague must be told the Bot is not there.
+      return { agentId: BOT_A };
     case "POST /api/components/:name/decision":
       return { agentId: BOT_A };
     case "POST /api/components/:name/call":
@@ -835,6 +839,9 @@ const A_ALLOWED = [
   "GET /api/routines/:id/runs",
   // Editing it in place: its name, its words, its clock.
   "PATCH /api/routines/:id",
+  // 계속 돌리기 on it, and 다시 켜기 on its Bot's routines the unread rule paused.
+  "POST /api/routines/:id/keep-running",
+  "POST /api/routines/resume",
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
@@ -899,7 +906,9 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "PATCH /api/routines/:id",
   "POST /api/routines",
   "POST /api/routines/:id/enabled",
+  "POST /api/routines/:id/keep-running",
   "POST /api/routines/:id/run",
+  "POST /api/routines/resume",
   // Its browser: what it is looking at, and every way of pressing something in it.
   "DELETE /api/computers/:botId/demonstration",
   "GET /api/computers/:botId/control",
@@ -1078,6 +1087,7 @@ describe("the matrix", () => {
     // The doors a body — or, for the grant revoke, a query — opens.
     for (const template of [
       "POST /api/routines",
+      "POST /api/routines/resume",
       "POST /api/components/:name/decision",
       "POST /api/components/:name/call",
       "POST /api/plugins/call",

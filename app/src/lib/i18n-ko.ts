@@ -1982,6 +1982,8 @@ export const ko: Record<string, string> = {
   "It could not finish: the server restarted partway through.":
     "끝내지 못했습니다. 도중에 서버가 다시 시작됐습니다.",
   "A routine ran late, within its grace": "루틴이 늦었지만 유예 안에 실행됨",
+  "Paused: its results went unread": "멈춤: 결과를 한동안 읽지 않음",
+  "A Bot's routines": "봇의 루틴",
   /**
    * 첫 일 제안 — 빈 대화 위의 칩. 연결된 사이트·계정이 있으면 그 카드의 첫 문장을, 없으면
    * 연결 없이도 답할 수 있는 문장과 사이트 연결로 가는 칩을 낸다. 문장 표는 `t(변수)`로

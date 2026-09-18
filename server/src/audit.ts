@@ -316,6 +316,16 @@ export const auditEventTypes = [
    */
   "routine.skipped_not_admitted",
   /**
+   * A Bot's routines were paused because their results had piled up unread (`routines/unread.ts`).
+   *
+   * The one change to a routine that nobody pressed anything for, which is why it is on the trail:
+   * "why did my morning briefing stop" has to be answerable after the person has turned it back on
+   * and the row's reason is gone. Carries which Bot, whose conversation, which routines, how many
+   * results were waiting and since when — never what they said. The outbox watch turns it into the
+   * one `routine.paused` notification the pause is worth (`notifications/from-audit.ts`).
+   */
+  "routine.paused_unread",
+  /**
    * A person emptied a routine's notepad — where it left off (`routines/notepad.ts`).
    *
    * A decision about what the routine does next, not housekeeping: its next run starts with no

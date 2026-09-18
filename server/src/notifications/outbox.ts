@@ -36,7 +36,7 @@ import type { DeploymentAdmission } from "../auth/admission";
 import type { TurnFailureCode } from "../channels/turn-failures";
 import type { AskSubject } from "../computer/approvals";
 import type { Database } from "../db/client";
-import { lafNotifications } from "../db/schema";
+import { lafNotifications, type RoutinePauseReason } from "../db/schema";
 import type { RunOrigin } from "../runner/run-ledger";
 import type { DiagnosticsSummary } from "../support/diagnostics";
 import {
@@ -67,6 +67,16 @@ export const NOTIFICATION_KINDS = [
   "run.finished",
   /** A run ended without an answer. */
   "run.failed",
+  /**
+   * A Bot's routines were paused because their results piled up unread (`routines/unread.ts`).
+   *
+   * Neither blocked nor finished, and still worth telling: something the person set going has
+   * stopped, and they did not press anything. Once per pause — the sweep writes one trail row for
+   * it and the watch turns that into this (`from-audit.ts`) — and never through 알림톡, which has
+   * no template for it and costs money per message. It points at the conversation where the
+   * results are waiting, which is also where reading them starts the count again.
+   */
+  "routine.paused",
   /**
    * A person wrote to the people who run the product, from the 문의·의견 box.
    *
@@ -190,6 +200,22 @@ export type RunFailureFacts = {
   code: TurnFailureCode;
 };
 
+/**
+ * What a `routine.paused` row is about, in facts: why, which routines, how many results were waiting
+ * unread and since when. Stored in `subject` under `kind: "pause"`, the way a failed run's facts are
+ * under `kind: "run"` — see `factsOf`. The words are the surface's.
+ */
+export type RoutinePauseFacts = {
+  reason: RoutinePauseReason;
+  routineIds: string[];
+  /** How many routines were paused. */
+  count: number;
+  /** How many results were waiting unread when they were. */
+  unread: number;
+  /** When the oldest of those arrived, as an ISO string. */
+  since: string;
+};
+
 /** A row of the outbox, as everything that reads one sees it. */
 export type NotificationRecord = {
   id: string;
@@ -215,6 +241,8 @@ export type NotificationRecord = {
   rating?: AnswerRatingFacts;
   /** The withdrawal the fleet is told about, for a `fleet.*` row. See {@link FleetFacts}. */
   fleet?: FleetFacts;
+  /** Which routines stopped and why, for a `routine.paused` row. See {@link RoutinePauseFacts}. */
+  pause?: RoutinePauseFacts;
   createdAt: string;
   deliveredVia: string[];
   deliveredAt?: string;
@@ -253,6 +281,7 @@ export type EnqueueInput = {
   run?: RunFailureFacts;
   support?: SupportFacts;
   rating?: AnswerRatingFacts;
+  pause?: RoutinePauseFacts;
 };
 
 export type NotificationOutbox = {
@@ -529,7 +558,9 @@ export function createNotificationOutbox(input: {
                   ? { subject: { kind: "support", ...enqueueInput.support } }
                   : enqueueInput.rating
                     ? { subject: { kind: "rating", ...enqueueInput.rating } }
-                    : {}),
+                    : enqueueInput.pause
+                      ? { subject: { kind: "pause", ...enqueueInput.pause } }
+                      : {}),
             createdAt: now(),
           })
           .returning();
@@ -651,7 +682,7 @@ function factsOf(
   stored: unknown,
 ): Pick<
   NotificationRecord,
-  "subject" | "run" | "group" | "support" | "rating" | "fleet"
+  "subject" | "run" | "group" | "support" | "rating" | "fleet" | "pause"
 > {
   if (!stored || typeof stored !== "object") return {};
   const held = stored as Record<string, unknown>;
@@ -675,6 +706,10 @@ function factsOf(
   if (held.kind === "fleet") {
     const { kind: _kind, ...facts } = held;
     return { fleet: facts as FleetFacts };
+  }
+  if (held.kind === "pause") {
+    const { kind: _kind, ...facts } = held;
+    return { pause: facts as RoutinePauseFacts };
   }
   return { subject: stored as AskSubject };
 }

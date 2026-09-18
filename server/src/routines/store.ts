@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import {
   actorMayDriveBot,
@@ -99,6 +99,10 @@ const publishedColumns = {
   createdById: lafRoutines.createdById,
   createdByRole: lafRoutines.createdByRole,
   suggestionKey: lafRoutines.suggestionKey,
+  // Why it is off when its person did not turn it off, and their 계속 돌리기. See `unread.ts`.
+  pausedReason: lafRoutines.pausedReason,
+  pausedAt: lafRoutines.pausedAt,
+  keepRunning: lafRoutines.keepRunning,
   nextRunAt: lafRoutines.nextRunAt,
   lastRunAt: lafRoutines.lastRunAt,
   createdAt: lafRoutines.createdAt,
@@ -416,11 +420,24 @@ export async function setRoutineEnabled(
   enabled: boolean,
 ) {
   const { database } = store;
-  await mine(database, actor, id);
+  const before = await mine(database, actor, id);
   const at = store.now();
+  /*
+   * THE SWITCH IS THE PERSON'S DECISION, WHICHEVER WAY IT GOES, so it clears the reason the unread
+   * rule left (`unread.ts`): on is "run it", off is "I turned it off", and neither is the rule's any
+   * more. Turning it on from off is also where the rule starts counting again — the pile that paused
+   * it is still unread, and it must not pause the routine a second time on the next tick. A switch
+   * pressed to where it already was is no resume, and moves nothing.
+   */
   const [row] = await database
     .update(lafRoutines)
-    .set({ enabled, updatedAt: at })
+    .set({
+      enabled,
+      pausedReason: null,
+      pausedAt: null,
+      ...(enabled && !before.enabled ? { resumedAt: at } : {}),
+      updatedAt: at,
+    })
     .where(eq(lafRoutines.id, id))
     .returning();
   if (!row) throw noSuchRoutine();
@@ -436,6 +453,89 @@ export async function setRoutineEnabled(
     return published(withoutTokenHash(rearmed ?? row));
   }
   return published(withoutTokenHash(row));
+}
+
+/**
+ * 계속 돌리기 on one routine: never paused for going unread (`unread.ts`), or back under the rule.
+ *
+ * Its own verb and its own route, never a field of the edit: a Bot's `manage_routine` reaches the
+ * edit, and a Bot that could exempt its own routines from the rule would be deciding for itself
+ * what it may spend. It does not turn the routine on — that is the switch's, or 다시 켜기's.
+ */
+export async function setRoutineKeepRunning(
+  store: RoutineStore,
+  actor: AgentActor,
+  id: string,
+  keepRunning: boolean,
+) {
+  const { database } = store;
+  await mine(database, actor, id);
+  const [row] = await database
+    .update(lafRoutines)
+    .set({ keepRunning, updatedAt: store.now() })
+    .where(eq(lafRoutines.id, id))
+    .returning();
+  if (!row) throw noSuchRoutine();
+  return published(withoutTokenHash(row));
+}
+
+/**
+ * 다시 켜기 and 계속 돌리기, for one Bot: its routines the unread rule paused, back on.
+ *
+ * Only those the RULE paused. A routine the person switched off themselves carries no reason and is
+ * not touched: the banner that offers this is about the rule's pause, and pressing it must not undo
+ * a decision somebody made on the switch. Each is re-armed from now, like the switch — a routine
+ * paused for a week does not fire a backlog — and counted by the rule from now, like the switch.
+ *
+ * One statement, so a press is all of its routines or none of them. Whose Bot is asked the way
+ * create asks it: a Bot that is not this person's is not there.
+ */
+export async function resumeUnreadPaused(
+  store: RoutineStore,
+  actor: AgentActor,
+  agentId: string,
+  options: { keepRunning: boolean },
+) {
+  const { database } = store;
+  await refuseSomebodyElsesBot(database, actor, agentId);
+  const at = store.now();
+  const paused = await database
+    .select()
+    .from(lafRoutines)
+    .where(
+      and(
+        eq(lafRoutines.agentId, agentId),
+        eq(lafRoutines.pausedReason, "unread"),
+        eq(lafRoutines.enabled, false),
+        scopeOf(database, actor),
+      ),
+    );
+  if (paused.length === 0) return [];
+  return database.transaction(async (transaction) => {
+    const resumed: RoutineRow[] = [];
+    for (const row of paused) {
+      const [updated] = await transaction
+        .update(lafRoutines)
+        .set({
+          enabled: true,
+          pausedReason: null,
+          pausedAt: null,
+          resumedAt: at,
+          nextRunAt: nextRunAt(scheduleOf(row), at),
+          ...(options.keepRunning ? { keepRunning: true } : {}),
+          updatedAt: at,
+        })
+        .where(
+          and(
+            eq(lafRoutines.id, row.id),
+            eq(lafRoutines.pausedReason, "unread"),
+          ),
+        )
+        .returning();
+      if (updated) resumed.push(updated);
+    }
+    return resumed.map((row) => published(withoutTokenHash(row)));
+  });
 }
 
 export async function removeRoutine(

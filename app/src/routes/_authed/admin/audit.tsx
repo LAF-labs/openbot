@@ -626,6 +626,8 @@ export const DECISIONS: Record<string, string> = {
     "Not run: its account can no longer use this place",
   // A person's decision about where the routine's next run starts, which is why it names who.
   "routine.notepad_cleared": "A person cleared where it left off",
+  // Nobody pressed anything: its results had piled up unread for a week (`routines/unread.ts`).
+  "routine.paused_unread": "Paused: its results went unread",
   // A read, not a permission: the grant was checked and this is the Bot opening the body.
   "skill.viewed": "The Bot read a skill",
   "model.usage": "Model usage recorded",
@@ -936,6 +938,7 @@ export const EVENTS: Record<string, string> = {
   "routine.skipped_not_admitted": "A routine",
   "routine.caught_up": "A routine",
   "routine.notepad_cleared": "A routine's notepad",
+  "routine.paused_unread": "A Bot's routines",
   "skill.viewed": "A skill",
   "component.granted": "A component",
   "component.revoked": "A component",

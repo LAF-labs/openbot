@@ -341,6 +341,10 @@ export function createAccountExport(database: Database): AccountExport {
         dailyTimeZone: lafRoutines.dailyTimeZone,
         dailyDays: lafRoutines.dailyDays,
         enabled: lafRoutines.enabled,
+        // Whether the unread rule paused it, and the person's 계속 돌리기 — their settings too.
+        pausedReason: lafRoutines.pausedReason,
+        pausedAt: lafRoutines.pausedAt,
+        keepRunning: lafRoutines.keepRunning,
         createdById: lafRoutines.createdById,
         nextRunAt: lafRoutines.nextRunAt,
         lastRunAt: lafRoutines.lastRunAt,

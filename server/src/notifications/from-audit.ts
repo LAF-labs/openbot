@@ -24,7 +24,7 @@ import {
   TURN_FAILURE_CODES,
   type TurnFailureCode,
 } from "../channels/turn-failures";
-import type { NotificationOutbox } from "./outbox";
+import type { NotificationOutbox, RoutinePauseFacts } from "./outbox";
 
 /** The rows that mean a Bot has stopped and is waiting on a person's hands. */
 const NEEDS_YOU: ReadonlySet<string> = new Set([
@@ -47,6 +47,43 @@ const NEEDS_YOU: ReadonlySet<string> = new Set([
  * (`runner/laf-runner.ts`), because no row is written for a run that never got to write one.
  */
 const RUN_FAILED = "routine.ran";
+
+/**
+ * And the fourth: a Bot's routines paused because their results piled up unread
+ * (`routines/unread.ts`). The sweep writes this row once per pause and only when it paused
+ * something, so one row is one notice and a second sweep over the same pile tells nobody again.
+ * It carries who to tell (`actor`), the conversation the results are waiting in (`channelId`) and
+ * the facts of the pause; the words are the surface's.
+ */
+const PAUSED_UNREAD = "routine.paused_unread";
+
+/** The pause's facts off the trail row's payload, or null when the row names nobody to tell. */
+function pauseOf(payload: Record<string, unknown>): {
+  botId: string;
+  userId: string;
+  channelId?: string;
+  pause: RoutinePauseFacts;
+} | null {
+  const { agentId, actor, channelId, routineIds, count, unread, since } =
+    payload;
+  if (typeof agentId !== "string" || !agentId) return null;
+  if (typeof actor !== "string" || !actor) return null;
+  const ids = Array.isArray(routineIds)
+    ? routineIds.filter((id): id is string => typeof id === "string")
+    : [];
+  return {
+    botId: agentId,
+    userId: actor,
+    ...(typeof channelId === "string" && channelId ? { channelId } : {}),
+    pause: {
+      reason: "unread",
+      routineIds: ids,
+      count: typeof count === "number" ? count : ids.length,
+      unread: typeof unread === "number" ? unread : 0,
+      since: typeof since === "string" ? since : "",
+    },
+  };
+}
 
 const KNOWN_CODES = new Set<string>(Object.values(TURN_FAILURE_CODES));
 
@@ -73,6 +110,14 @@ export function withOutboxWatch(
   return {
     insert: async (event: AuditEventInput) => {
       await store.insert(event);
+      if (event.eventType === PAUSED_UNREAD) {
+        const told = pauseOf(event.payload);
+        if (!told) return;
+        void outbox
+          .enqueue({ kind: "routine.paused", ...told })
+          .catch(() => undefined);
+        return;
+      }
       if (event.eventType === RUN_FAILED) {
         if (event.payload.ok !== false) return;
         // A person stopped it themselves (`모두 멈추기`). Telling them would be telling them what

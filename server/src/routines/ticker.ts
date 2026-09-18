@@ -28,6 +28,12 @@ export type RoutineTickerOptions = {
    * author the deployment no longer admits is claimed for its window and not run.
    */
   execute: (row: RoutineRow) => Promise<boolean>;
+  /**
+   * Pauses what has gone unread on these Bots (`unread.ts`) — the Bots with a routine due in this
+   * pass, asked before anything is claimed. Absent, nothing is paused, which is what a test that
+   * drives the clock alone wants.
+   */
+  pauseUnread?: (botIds: string[], at: Date) => Promise<unknown>;
 };
 
 export function createRoutineTicker(options: RoutineTickerOptions) {
@@ -87,6 +93,18 @@ async function pass(options: RoutineTickerOptions): Promise<number> {
       asc(lafRoutines.createdAt),
       asc(lafRoutines.id),
     );
+
+  /*
+   * UNREAD FIRST, THEN THE CLAIMS. A routine whose results have been piling up unread is paused
+   * before its window is claimed, so the run it would have spent is the one saved — and the claim
+   * below asks for `enabled`, so a routine paused here is simply not taken. Only the Bots with
+   * something due are looked at: a tick with nothing due costs nothing, and the pause lands at the
+   * moment it saves something. A sweep that fails leaves every routine running, as before it existed.
+   */
+  if (due.length > 0 && options.pauseUnread) {
+    const botIds = [...new Set(due.map((row) => row.agentId))];
+    await options.pauseUnread(botIds, at).catch(() => undefined);
+  }
 
   let ran = 0;
   for (const row of due) {

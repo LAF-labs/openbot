@@ -316,6 +316,13 @@
       "when": 1789715124192,
       "tag": "0044_shop_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789716715301,
+      "tag": "0045_routine_unread_pause",
+      "breakpoints": true
     }
   ]
 }

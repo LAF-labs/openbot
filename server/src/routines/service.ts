@@ -8,6 +8,7 @@ import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
+import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
@@ -31,10 +32,13 @@ import {
   type RoutineInput,
   type RoutineStore,
   removeRoutine,
+  resumeUnreadPaused,
   setRoutineEnabled,
+  setRoutineKeepRunning,
   updateRoutine,
 } from "./store";
 import { createRoutineTicker } from "./ticker";
+import { pauseUnreadRoutines } from "./unread";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -51,6 +55,7 @@ import { createRoutineTicker } from "./ticker";
  *   receipts.ts    `laf_routine_runs`: what was reported, the newest few kept
  *   notepad.ts     where a routine left off: read at the run, written by its settlement, cleared here
  *   store.ts       made, listed, edited, paused and deleted, with the cap and the Bot check
+ *   unread.ts      routines whose results pile up unread, paused before their next run
  *   ownership.ts   whose routine it is
  *   errors.ts      what a refusal carries
  *
@@ -176,6 +181,14 @@ export function createRoutineService(options: RoutineServiceOptions) {
     auditStore: options.auditStore,
     now,
     execute: (row) => routine.run(row, "clock"),
+    pauseUnread: (botIds, at) =>
+      pauseUnreadRoutines({
+        database,
+        now: at,
+        botIds,
+        auditStore: options.auditStore,
+        log: (message) => log.warn("routine_unread_sweep", { message }),
+      }),
   });
 
   return {
@@ -198,6 +211,20 @@ export function createRoutineService(options: RoutineServiceOptions) {
     /** Its name, what it says, when it runs — in place. See `updateRoutine`. */
     update(actor: AgentActor, id: string, change: RoutineChange) {
       return updateRoutine(store, actor, id, change);
+    },
+
+    /** 계속 돌리기 on one routine. See `setRoutineKeepRunning`. */
+    setKeepRunning(actor: AgentActor, id: string, keepRunning: boolean) {
+      return setRoutineKeepRunning(store, actor, id, keepRunning);
+    },
+
+    /** 다시 켜기 and 계속 돌리기 on one Bot's routines the unread rule paused. See `resumeUnreadPaused`. */
+    resumePaused(
+      actor: AgentActor,
+      agentId: string,
+      resume: { keepRunning: boolean },
+    ) {
+      return resumeUnreadPaused(store, actor, agentId, resume);
     },
 
     remove(actor: AgentActor, id: string) {

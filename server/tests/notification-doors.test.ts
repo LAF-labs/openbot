@@ -394,3 +394,107 @@ describe("a routine that did not finish", () => {
     expect(outbox.written).toEqual([]);
   });
 });
+
+/**
+ * A Bot's routines paused because their results piled up unread (`routines/unread.ts`), told once.
+ *
+ * The same seam a failed run is told through: the sweep writes one trail row per pause, and the
+ * watch turns that row into one notification. Facts only — which Bot, whose conversation, which
+ * routines, how many results were waiting and since when — and the surface writes the sentence.
+ */
+describe("routines paused for going unread", () => {
+  const paused = (payload: Record<string, unknown> = {}) => ({
+    eventType: "routine.paused_unread" as const,
+    targetType: "routine",
+    targetId: "routine-1",
+    actorUserId: "person-1",
+    payload: {
+      agentId: "bot-1",
+      actor: "person-1",
+      channelId: "channel-1",
+      routineIds: ["routine-1", "routine-2"],
+      count: 2,
+      unread: 5,
+      since: "2026-09-09T22:30:00.000Z",
+      ...payload,
+    },
+  });
+
+  test("become one notice, pointing at the conversation the results are waiting in", async () => {
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    await store.insert(paused());
+    await Promise.resolve();
+
+    expect(outbox.written).toEqual([
+      {
+        kind: "routine.paused",
+        botId: "bot-1",
+        userId: "person-1",
+        channelId: "channel-1",
+        pause: {
+          reason: "unread",
+          routineIds: ["routine-1", "routine-2"],
+          count: 2,
+          unread: 5,
+          since: "2026-09-09T22:30:00.000Z",
+        },
+      },
+    ]);
+  });
+
+  test("with nobody named to tell, tell nobody", async () => {
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    await store.insert(paused({ actor: undefined }));
+    await store.insert(paused({ agentId: "" }));
+    await Promise.resolve();
+
+    expect(outbox.written).toEqual([]);
+  });
+
+  test("the buzz webhook carries the facts and a headline of its own, and 알림톡 has no template for it", async () => {
+    const record: NotificationRecord = {
+      ...RECORD,
+      kind: "routine.paused",
+      channelId: "channel-1",
+      pause: {
+        reason: "unread",
+        routineIds: ["routine-1"],
+        count: 1,
+        unread: 3,
+        since: "2026-09-09T22:30:00.000Z",
+      },
+    };
+    const frames: Array<Record<string, unknown>> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        frames.push((await request.json()) as Record<string, unknown>);
+        return new Response("ok");
+      },
+    });
+    try {
+      const adapter = createWebhookAdapter(
+        `http://127.0.0.1:${server.port}/hook`,
+      );
+      expect(await adapter.deliver(record)).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+    expect(frames[0]).toMatchObject({
+      kind: "routine.paused",
+      botId: record.botId,
+      channelId: "channel-1",
+      pause: { reason: "unread", count: 1, unread: 3 },
+    });
+    expect(String(frames[0]?.headline)).toContain("루틴");
+    expect(notificationFrame(record)).toMatchObject({
+      event: "routine.paused",
+      channelId: "channel-1",
+      pause: { reason: "unread", count: 1 },
+    });
+  });
+});
