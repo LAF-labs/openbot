@@ -242,13 +242,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sees tests going missing INSIDE files, and at those margins a dozen gutted files passed. Measured
  * server 2,497 / app 932 / agent-computer 261 / root 350, each re-raised to 3% under.
  *
+ * RAISED 2026-09-18, with 모두 멈추기 and today's trial usage: every run path stopping on a person's
+ * word (the loop, a room, a routine queued or running, a coworker's answer, a chat on the wire and
+ * one whose step is with a browser) and the door that stops them all brought thirty-two tests to
+ * `server`; the dialog's arithmetic, the press order, and the meter and the 80% line brought
+ * thirty-seven to `app`. Measured server 2,522 / app 966, each re-raised to 3% under; the other two
+ * did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2422, roots: ["server"] },
-  { name: "app", floor: 904, roots: ["app"] },
+  { name: "server", floor: 2446, roots: ["server"] },
+  { name: "app", floor: 937, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 339, roots: ["tests", "agent-bot"] },
 ] as const;
