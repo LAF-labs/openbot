@@ -1,6 +1,6 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
 import { AGENT_REFUSALS } from "@/lib/agents/mutations";
@@ -47,8 +47,16 @@ export function CoworkerTools() {
   ) => {
     if (id) exchanges.current.set(id, entry);
   };
-  rosterRef.current = agents.data ?? [];
-  const names = rosterRef.current.map((agent) => agent.name).join(", ");
+  const profiles = agents.data ?? [];
+  const names = profiles.map((agent) => agent.name).join(", ");
+  /*
+   * Handed to the ref after the commit rather than while rendering, where a write is what the React
+   * Compiler refuses and a discarded render could leave the handler a roster that was never on
+   * screen. Layout, so it is in place before anything the commit set off can call the handler.
+   */
+  useLayoutEffect(() => {
+    rosterRef.current = profiles;
+  }, [profiles]);
 
   /*
    * Re-registered whenever the roster changes — the second argument. `useFrontendTool` registers
