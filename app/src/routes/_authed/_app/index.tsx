@@ -5,6 +5,7 @@ import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { NewBotButton } from "@/components/agents/new-bot-button";
 import { RosterStrip } from "@/components/agents/roster-strip";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
+import { UsageNotice } from "@/components/channels/usage-notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -131,6 +132,10 @@ function RouteComponent() {
       ) : null}
 
       <div className="mt-6 flex w-full flex-col items-center">
+        {/* The day's allowance, above the box a question is started in — as in a conversation. */}
+        <div className="w-full max-w-2xl">
+          <UsageNotice />
+        </div>
         <Composer
           agents={toAgentOptions(agents)}
           className="w-full max-w-2xl"

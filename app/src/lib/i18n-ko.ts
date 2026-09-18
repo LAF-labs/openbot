@@ -2363,7 +2363,7 @@ export const ko: Record<string, string> = {
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",
   "How much of today's free allowance is used. It fills up again every day at midnight, Korean time.":
-    "오늘 무료로 쓸 수 있는 양 중 얼마나 썼는지예요. 매일 자정(한국 시간)에 다시 채워져요.",
+    "무료 체험으로 하루에 쓸 수 있는 양 중 오늘 쓴 만큼이에요. 매일 자정(한국 시간)에 다시 채워져요.",
   "You have used {percent}% of today's free allowance · it fills up again at midnight, Korean time":
     "오늘 무료 사용량의 {percent}%를 썼어요 · 자정(한국 시간)에 다시 채워져요",
   "Today's free allowance is used up · it fills up again at midnight, Korean time":
