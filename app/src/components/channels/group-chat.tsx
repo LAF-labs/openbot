@@ -1,6 +1,13 @@
 import type { Message } from "@ag-ui/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { RoomIntro } from "@/components/channels/room-intro";
@@ -40,6 +47,7 @@ import {
   SOCKET_RECONNECTED,
   socketState,
 } from "@/lib/channels/use-channel-events";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { refreshTodayUsage } from "@/lib/usage/today";
 
@@ -136,7 +144,11 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
    */
   const setRead = useMutation(setChannelReadMutationOptions(queryClient));
   const markRead = useRef(setRead.mutateAsync);
-  markRead.current = setRead.mutateAsync;
+  // Kept current after every commit, not during render, which the React Compiler refuses. Every
+  // reader below is an effect or a socket event, and all of them run after it.
+  useLayoutEffect(() => {
+    markRead.current = setRead.mutateAsync;
+  });
   const [readWindow, setReadWindow] = useState<{
     from: string;
     until: string;
@@ -230,10 +242,12 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     setRoom((state) => mergeApprovals(state, open));
   }, [memberIds, memberNames]);
   const catchUpApprovalsRef = useRef(catchUpApprovals);
-  catchUpApprovalsRef.current = catchUpApprovals;
-
   const catchUpRef = useRef(catchUp);
-  catchUpRef.current = catchUp;
+  // After every commit, for the same reason as `markRead`.
+  useLayoutEffect(() => {
+    catchUpApprovalsRef.current = catchUpApprovals;
+    catchUpRef.current = catchUp;
+  });
 
   useEffect(() => {
     void catchUpRef.current();
@@ -343,100 +357,99 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       setNotice(null);
       setQuiet(null);
       setPosting(true);
-      // React Compiler 1.0 cannot compile `try`…`finally` yet, so GroupChat is left as written: the
-      // code is right, and the compiler cannot follow it. Counted in
-      // app/tests/react-compiler.test.ts.
-      try {
-        const messageId = retryOf ?? crypto.randomUUID();
-        // On screen at once, under the id the server will store it as, so catch-up keeps it. A
-        // retried message is on screen already; it goes back to pending rather than appearing twice.
-        setRoom((state) => ({
-          ...state,
-          messages: state.messages.some((message) => message.id === messageId)
-            ? state.messages.map((message) =>
-                message.id === messageId
-                  ? { ...message, pending: true }
-                  : message,
-              )
-            : [
-                ...state.messages,
-                {
-                  id: messageId,
-                  role: "user",
-                  content: trimmed,
-                  pending: true,
-                },
-              ],
-        }));
-        /*
-         * A network failure is caught HERE and not left to throw. Thrown, the composer would put
-         * the draft back in the box while the optimistic bubble stayed on screen with nothing
-         * saying why — and from the seed effect it would be an unhandled rejection. And the 202
-         * may have been lost AFTER the server stored the message: that is why the bubble is kept
-         * under the server's id on a network error and catch-up is asked — if the message is
-         * there, it stays; if not, the notice says to try again.
-         */
-        let response: Response | null = null;
-        try {
-          response = await fetch(
-            `/api/channels/${encodeURIComponent(channel.id)}/room-turn`,
-            {
-              method: "POST",
-              credentials: "include",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                text: trimmed,
-                messageId,
-                addressedAgentIds,
-              }),
-            },
-          );
-        } catch {
-          setNotice(
-            t(
-              "The room could not be reached. Check the connection and try again.",
-            ),
-          );
-          void catchUpRef.current();
-          return;
-        }
-        /*
-         * Acknowledged, so the server has it: the room writes the message and THEN answers 202.
-         * Until this point the bubble exists only on screen, and a catch-up in that window would
-         * have fetched a thread without it and taken the person's own words away.
-         */
-        setRoom((state) => ({
-          ...state,
-          messages: state.messages.map((message) =>
-            message.id === messageId && message.pending
-              ? { ...message, pending: false }
-              : message,
-          ),
-        }));
-        if (!response.ok) {
+      // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
+      await ensure(
+        async () => {
+          const messageId = retryOf ?? crypto.randomUUID();
+          // On screen at once, under the id the server will store it as, so catch-up keeps it. A
+          // retried message is on screen already; it goes back to pending rather than appearing twice.
+          setRoom((state) => ({
+            ...state,
+            messages: state.messages.some((message) => message.id === messageId)
+              ? state.messages.map((message) =>
+                  message.id === messageId
+                    ? { ...message, pending: true }
+                    : message,
+                )
+              : [
+                  ...state.messages,
+                  {
+                    id: messageId,
+                    role: "user",
+                    content: trimmed,
+                    pending: true,
+                  },
+                ],
+          }));
           /*
-           * The server's own sentence is deliberately not read. It is written in English for an
-           * operator, and this screen is read in Korean by somebody who wants to know what to do
-           * next — which the status says well enough on its own.
+           * A network failure is caught HERE and not left to throw. Thrown, the composer would put
+           * the draft back in the box while the optimistic bubble stayed on screen with nothing
+           * saying why — and from the seed effect it would be an unhandled rejection. And the 202
+           * may have been lost AFTER the server stored the message: that is why the bubble is kept
+           * under the server's id on a network error and catch-up is asked — if the message is
+           * there, it stays; if not, the notice says to try again.
            */
-          setNotice(
-            response.status === 404
-              ? t("This room is no longer available.")
-              : response.status === 400
-                ? t("That message could not be sent. It may be too long.")
-                : t("The room could not take that message."),
-          );
-          // A retried message stays: it is the server's row, not this press's bubble.
-          if (!retryOf) {
-            setRoom((state) => ({
-              ...state,
-              messages: state.messages.filter((m) => m.id !== messageId),
-            }));
+          let response: Response | null = null;
+          try {
+            response = await fetch(
+              `/api/channels/${encodeURIComponent(channel.id)}/room-turn`,
+              {
+                method: "POST",
+                credentials: "include",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  text: trimmed,
+                  messageId,
+                  addressedAgentIds,
+                }),
+              },
+            );
+          } catch {
+            setNotice(
+              t(
+                "The room could not be reached. Check the connection and try again.",
+              ),
+            );
+            void catchUpRef.current();
+            return;
           }
-        }
-      } finally {
-        setPosting(false);
-      }
+          /*
+           * Acknowledged, so the server has it: the room writes the message and THEN answers 202.
+           * Until this point the bubble exists only on screen, and a catch-up in that window would
+           * have fetched a thread without it and taken the person's own words away.
+           */
+          setRoom((state) => ({
+            ...state,
+            messages: state.messages.map((message) =>
+              message.id === messageId && message.pending
+                ? { ...message, pending: false }
+                : message,
+            ),
+          }));
+          if (!response.ok) {
+            /*
+             * The server's own sentence is deliberately not read. It is written in English for an
+             * operator, and this screen is read in Korean by somebody who wants to know what to do
+             * next — which the status says well enough on its own.
+             */
+            setNotice(
+              response.status === 404
+                ? t("This room is no longer available.")
+                : response.status === 400
+                  ? t("That message could not be sent. It may be too long.")
+                  : t("The room could not take that message."),
+            );
+            // A retried message stays: it is the server's row, not this press's bubble.
+            if (!retryOf) {
+              setRoom((state) => ({
+                ...state,
+                messages: state.messages.filter((m) => m.id !== messageId),
+              }));
+            }
+          }
+        },
+        () => setPosting(false),
+      );
     },
     [channel.id],
   );
@@ -451,24 +464,28 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
 
   const stop = useCallback(async () => {
     setStopping(true);
-    try {
-      const response = await fetch(
-        `/api/channels/${encodeURIComponent(channel.id)}/room-turn/stop`,
-        { method: "POST", credentials: "include" },
-      );
-      /*
-       * Said out loud when it did not work. Stop swallowing its own failure is the worst version of
-       * this button: the person presses it, the room carries on, and the only explanation available
-       * to them is that the product ignored them.
-       */
-      if (!response.ok) {
-        setNotice(t("The room could not be stopped. Try again."));
-      }
-    } catch {
-      setNotice(t("The room could not be stopped. Try again."));
-    } finally {
-      setStopping(false);
-    }
+    // `try`…`catch`…`finally`, the `finally` through `ensure`: see `post`.
+    await ensure(
+      async () => {
+        try {
+          const response = await fetch(
+            `/api/channels/${encodeURIComponent(channel.id)}/room-turn/stop`,
+            { method: "POST", credentials: "include" },
+          );
+          /*
+           * Said out loud when it did not work. Stop swallowing its own failure is the worst version
+           * of this button: the person presses it, the room carries on, and the only explanation
+           * available to them is that the product ignored them.
+           */
+          if (!response.ok) {
+            setNotice(t("The room could not be stopped. Try again."));
+          }
+        } catch {
+          setNotice(t("The room could not be stopped. Try again."));
+        }
+      },
+      () => setStopping(false),
+    );
   }, [channel.id]);
 
   /** Message id → the NAME of the Bot that said it, which is what the transcript draws. */
