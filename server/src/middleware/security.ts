@@ -134,7 +134,11 @@ const SWEEP_AT = 10_000;
 
 type Window = { count: number; resetAt: number };
 
-function createLimiter(now: () => number) {
+/**
+ * A fixed window of a minute per key. Exported for the one door that is limited per session after
+ * its guard rather than before it (`support/screen-errors.ts`), so there is one limiter, not two.
+ */
+export function createLimiter(now: () => number) {
   const windows = new Map<string, Window>();
   return {
     /** Spend one, or say how long until the next one is free. */
@@ -182,7 +186,7 @@ const nameOf = (secret: string) =>
  * `__Secure-` spelling on https — and by nothing else in the header: the rest of the cookies are the
  * page's, and a key that changed with a theme cookie would be a limit a new theme resets.
  */
-function sessionKey(context: Context): string | undefined {
+export function sessionKey(context: Context): string | undefined {
   for (const pair of (context.req.header("cookie") ?? "").split(";")) {
     const at = pair.indexOf("=");
     if (at <= 0) continue;

@@ -61,6 +61,7 @@ The lines worth knowing by name:
 | `model_call_refused`, `auto_review_probe_failed` | server | The server's own model calls (the auto-review judge, the demonstration write-up) were refused or unusable. |
 | `dev_no_auth`, `encryption_key_is_example`, `fleet_webhook_unconfigured` | server | Boot warnings about settings that are fine on a laptop and wrong on a VM. |
 | `unhandled_rejection`          | server           | A promise nobody awaited rejected; the server kept running (a remote Bot's socket resetting must not take everyone down). |
+| `screen_failed`                | server           | A part of the app's screen failed on the `user`'s screen, as the app reported it (`POST /api/support/screen-errors`, since 2026-09-18). `section` says which part (`sidebar`, `transcript`, `settings_page`, …; `window_error` and `unhandled_rejection` for what nothing on screen caught), `route` the route's template (`/channel/$channelId`, never the address), `kind` the error's constructor, `fingerprint` a digest of where it was thrown — the same failure has the same one — and `build` and `surface` (`shell` or `browser`) what the page was running. Never the message. At most six a minute per session; the person's 문의 diagnostic details carry it. |
 
 A provider failure is said as one of a closed set of words, whichever road it came by (the OpenAI
 client in `agent-bot`, or the hand-written call in `server/src/computer/model-call.ts`):

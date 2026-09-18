@@ -28,10 +28,20 @@
  * The run ledger is read the same way: a run's `error` is free text written by whatever threw
  * (`channels/turn-failures.ts` says so), so it is reduced to the transcript's own failure code, and
  * its `label` — a routine's name, which a person wrote — is never read at all.
+ *
+ * ONE LINE IS OWNED DIFFERENTLY, AND CARRIES SEVEN MORE FACTS (2026-09-18). A part of the app's
+ * screen that failed is reported by the app (`screen-errors.ts`), and no Bot, run or room vouches
+ * for a screen: the line names the person whose screen it was, and is theirs when that is who asks.
+ * What it may carry past the allow-list above is exactly what a report is made of — the section,
+ * the route's template, the error's kind, the fingerprint, the build, the commit, the surface — and
+ * each is checked again against the closed shapes the route refused by (`shared/screen-errors.ts`).
+ * Those are facts by construction: a list, a list, a constructor's name, twelve hex digits, a
+ * release word, hex, a list. Nothing else on that line is read, and no other line gains them.
  */
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { type Build, type LogFields, readLogLine } from "../../../shared/log";
+import { screenErrorFacts } from "../../../shared/screen-errors";
 import type { ConnectionCheckFacts } from "../../../shared/support/connection-check";
 import { classifyTurnFailure } from "../channels/turn-failures";
 import type { Database } from "../db/client";
@@ -43,6 +53,7 @@ import {
   lafThreadRuns,
 } from "../db/schema";
 import type { HealthReport } from "../health";
+import { SCREEN_FAILED } from "./screen-errors";
 
 /** How many of the person's events a bundle holds, newest kept. */
 export const DIAGNOSTIC_EVENTS_MAX = 50;
@@ -138,8 +149,15 @@ const ID_FIELDS: Readonly<Record<string, OwnedKind>> = {
   routineId: "routine",
 };
 
-/** Which of the ids a line might name are this person's. Anything absent is not. */
-export type Ownership = Readonly<Record<OwnedKind, ReadonlySet<string>>>;
+/**
+ * Which of the ids a line might name are this person's. Anything absent is not.
+ *
+ * `user` is the person themselves, asked about by one line only — a screen that failed (see the
+ * module note). Absent, no such line is anybody's.
+ */
+export type Ownership = Readonly<Record<OwnedKind, ReadonlySet<string>>> & {
+  readonly user?: ReadonlySet<string>;
+};
 
 /** An id this deployment minted: a UUID, a Bot id. No `@`, no `/`, no space, no Hangul. */
 const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -182,6 +200,7 @@ export function eventFromLine(
 ): DiagnosticEvent | null {
   const fields = readLogLine(line);
   if (!fields) return null;
+  if (fields.event === SCREEN_FAILED) return screenEventFrom(fields, ownership);
   const named = namedIds(fields);
   if (!named || named.length === 0) return null;
   if (!named.every(([kind, id]) => ownership[kind].has(id))) return null;
@@ -214,6 +233,41 @@ export function eventFromLine(
     ) {
       out[key] = value;
     }
+  }
+  return out;
+}
+
+/**
+ * A screen that failed, when it was this person's screen; null otherwise.
+ *
+ * Theirs when the line names them as `user`, and names nothing else: the route writes the person
+ * and the report and no id besides, so a `screen_failed` line naming a Bot or a room is not one it
+ * wrote. Then the same time, level and service as every other line, and the report's facts that
+ * still fit their shapes — each one alone, so a fact a newer rule refuses leaves the rest standing.
+ */
+function screenEventFrom(
+  fields: LogFields,
+  ownership: Ownership,
+): DiagnosticEvent | null {
+  const person = fields.user;
+  if (typeof person !== "string" || !ownership.user?.has(person)) return null;
+  if (namedIds(fields)?.length !== 0) return null;
+  const at = new Date(String(fields.at));
+  if (Number.isNaN(at.getTime())) return null;
+
+  const out: DiagnosticEvent = {
+    at: at.toISOString(),
+    source: "log",
+    event: SCREEN_FAILED,
+  };
+  if (typeof fields.level === "string" && LEVELS.has(fields.level)) {
+    out.level = fields.level;
+  }
+  if (typeof fields.svc === "string" && SERVICE_NAME.test(fields.svc)) {
+    out.svc = fields.svc;
+  }
+  for (const [fact, value] of Object.entries(screenErrorFacts(fields))) {
+    if (typeof value === "string") out[fact] = value;
   }
   return out;
 }
@@ -438,6 +492,8 @@ export function createDiagnosticsSource(input: {
       members.set(row.id, people);
     }
     return {
+      // The person asking, for the one line that names a person rather than a thing of theirs.
+      user: new Set([userId]),
       bot: new Set([...named.bot].filter((id) => ownBots.has(id))),
       run: new Set(runs.map((row) => row.id)),
       thread: new Set(threads.map((row) => row.id)),
