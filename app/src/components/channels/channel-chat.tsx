@@ -717,10 +717,32 @@ export function ChannelChat({
    */
   const thread = [...transcriptMessages(agent.messages, seed)];
 
+  /*
+   * STABLE BY HAND, BECAUSE NOTHING HERE IS MEMOISED FOR US.
+   *
+   * The compiled view keeps the composer it drew last time for as long as the composer's props are
+   * the same objects. Built inline, these two were new on every render of this component — every
+   * streamed chunk of an answer — so the box somebody is typing in redrew with each word the Bot
+   * wrote. Neither reads the agent's messages, which is the one thing this component must never
+   * cache.
+   */
+  const agentOptions = useMemo(
+    () => toAgentOptions(agentProfiles, channel.agentIds),
+    [agentProfiles, channel.agentIds],
+  );
+  /**
+   * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
+   * unanswered tool call before the next turn.
+   */
+  const handleStop = useCallback(() => {
+    awaitingReply.current = false;
+    copilotkit.stopAgent({ agent });
+  }, [agent, copilotkit]);
+
   return (
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
-        agents={toAgentOptions(agentProfiles, channel.agentIds)}
+        agents={agentOptions}
         /*
          * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
          * note above already gives. `agent.isRunning` stays false for the second and a half while
@@ -766,14 +788,7 @@ export function ChannelChat({
 
           await say(draft.text, skillInstructions);
         }}
-        /**
-         * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
-         * unanswered tool call before the next turn.
-         */
-        onStop={() => {
-          awaitingReply.current = false;
-          copilotkit.stopAgent({ agent });
-        }}
+        onStop={handleStop}
         /*
          * The turn, not the run. A browser action ends one run and starts another, and telling the
          * conversation it is idle in between is what would drain a parked correction into the
