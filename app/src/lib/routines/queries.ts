@@ -282,6 +282,9 @@ export function scheduleLabel(routine: Routine): string {
    * `{}.length` is undefined, so both early returns miss, and the spread below threw "days is not
    * iterable" out of a LABEL. The error boundary caught it at the page, so every routine somebody
    * had disappeared behind "문제가 생겼습니다" because one of them had a shape nobody expected.
+   * (It was not what was stored: the list was sending the driver's `Int32Array`, which JSON writes
+   * as an object — `{}` when empty, `{"0":1,…}` otherwise, so every weekday routine also read as
+   * 매일. The server normalises the list since 2026-09-18; see `published` in `routines/store.ts`.)
    *
    * A label is the last place that should be able to fail. An unreadable day list reads as "every
    * day", which is what an empty one already means and is the honest degradation: the routine is

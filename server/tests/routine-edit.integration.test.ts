@@ -312,6 +312,33 @@ describe("editing when a routine runs", () => {
   });
 });
 
+/**
+ * THE LIST IS WHAT THE EDIT FORM OPENS ON, so its weekdays have to be a list.
+ *
+ * Bun's driver hands an `integer[]` back as an `Int32Array` whenever the query carries parameters —
+ * the list's ownership clause does — and an `Int32Array` is not an array: `Array.isArray` says no,
+ * and JSON writes it as `{"0":1,"1":3}`. The screen read every such routine as 매일 (measured
+ * 2026-09-18: a 평일 routine listed as 매일 오전 8:30), and the edit form would have opened a
+ * weekday routine as an every-day one and saved it that way the first time its time was changed.
+ */
+describe("the list the edit form opens on", () => {
+  test("hands back weekdays as a list", async () => {
+    const clock = { now: AT };
+    const service = serviceAt(clock, { timeZone: "Asia/Seoul" });
+    const made = await service.create(ACTOR, {
+      ...MORNING,
+      schedule: { kind: "daily", time: "09:00", days: [1, 3, 5] },
+    });
+
+    const listed = (await service.list(ACTOR)).find(
+      (routine) => routine.id === made.id,
+    );
+    expect(Array.isArray(listed?.dailyDays)).toBe(true);
+    expect(listed?.dailyDays).toEqual([1, 3, 5]);
+    expect(JSON.stringify(listed)).toContain('"dailyDays":[1,3,5]');
+  });
+});
+
 describe("whose routine an edit reaches", () => {
   test("somebody else's routine does not exist", async () => {
     const clock = { now: AT };

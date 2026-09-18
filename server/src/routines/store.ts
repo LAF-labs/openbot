@@ -116,10 +116,13 @@ function withoutTokenHash<Row extends { triggerTokenHash?: unknown }>(
 /**
  * A routine row as the API may publish it.
  *
- * `.returning()` hands back `integer[]` columns as `{ "0": 1, "1": 3 }` where a plain SELECT of the
- * same row gives `[1, 3]` — verified against the live server, and the reason the create response
- * and the list disagreed about the same routine's days. Normalised here, once, for every row that
- * leaves the service.
+ * Bun's driver hands an `integer[]` column back as an `Int32Array` whenever the query carries
+ * parameters, and as an array only when it does not. An `Int32Array` is not an array to
+ * `Array.isArray`, and JSON writes it as `{ "0": 1, "1": 3 }`. `.returning()` was where this was
+ * first seen — the create response and the list disagreed about the same routine's days — and
+ * the list itself turned out to have it too, because its ownership clause is a parameter: every
+ * weekday routine read as 매일 on the screen (measured 2026-09-18). Normalised here, once, for
+ * every row that leaves the service.
  */
 function published<Row extends { dailyDays: unknown }>(row: Row): Row {
   const days = row.dailyDays;
@@ -382,11 +385,12 @@ function sameSchedule(a: StoredSchedule, b: StoredSchedule): boolean {
 }
 
 export async function listRoutines(store: RoutineStore, actor: AgentActor) {
-  return store.database
+  const rows = await store.database
     .select(publishedColumns)
     .from(lafRoutines)
     .where(scopeOf(store.database, actor))
     .orderBy(desc(lafRoutines.createdAt));
+  return rows.map(published);
 }
 
 export async function listRuns(
