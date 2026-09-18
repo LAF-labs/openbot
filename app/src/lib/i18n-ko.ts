@@ -2120,6 +2120,8 @@ export const ko: Record<string, string> = {
   "The coworker did not answer in time.":
     "다른 봇이 제시간에 답하지 않았습니다.",
   "The coworker could not answer.": "다른 봇이 답하지 못했습니다.",
+  "Everything was stopped, so the coworker stopped answering too.":
+    "모두 멈추기를 눌러서 다른 봇도 답하던 걸 멈췄습니다.",
   /*
    * 봇의 컴퓨터가 코드로만 보내는 거절들 (2파동, 2026-09-14). 예전에는 서버와 컨테이너의 영어 문장이
    * 그대로 떴다 — 비밀번호를 넣는 칸 아래, 경계 설정 화면, 컴퓨터 화면, 툴 한 줄. 표는
@@ -2284,6 +2286,9 @@ export const ko: Record<string, string> = {
     "다음 실행은 지난번에 어디까지 했는지 모른 채 시작해서, 이미 본 것을 다시 볼 수 있습니다.",
   "A person cleared where it left off": "사람이 루틴의 메모장을 비움",
   "A routine's notepad": "루틴 메모장",
+  "A person stopped everything that was running":
+    "사람이 진행 중이던 일을 모두 멈춤",
+  "Everything that was running": "진행 중이던 모든 일",
   // A routine failing the same way over and over: one line, the count on it, and 확인 to quiet it.
   "Failed {count} times for the same reason · last {time}":
     "같은 이유로 {count}번 실패 · 마지막 {time}",

@@ -126,6 +126,15 @@ export type UnattendedRunOptions = {
    * that away silently.
    */
   watch?: AgentSubscriber;
+  /**
+   * A person's stop — `모두 멈추기` (`stop-all.ts`) — for work nobody is watching.
+   *
+   * It cuts exactly where the deadline cuts, because it is the same cut on a person's word instead
+   * of a clock's: the model's stream is aborted, the call in flight is abandoned down to the socket,
+   * and nothing further is started. What already happened stays happened. The run ends in
+   * {@link RunStopped}, which every caller records as a stop and never as a failure.
+   */
+  signal?: AbortSignal;
 };
 
 /** One turn of the model, for the record a routine keeps and an operator reads. */
@@ -175,6 +184,24 @@ class RunDeadline extends UnattendedRunError {
   constructor(steps: UnattendedStep[]) {
     super("The run did not finish in time.", steps);
     this.name = "RunDeadline";
+  }
+}
+
+/** The fact a stopped run ends on — in the error, the ledger and a routine's receipt alike. */
+export const RUN_STOPPED = "laf:run_stopped";
+
+/**
+ * A person stopped the run (`UnattendedRunOptions.signal`).
+ *
+ * Not a failure, and kept apart from one by every caller that records the run: a routine's receipt
+ * says it was stopped, a room does not count the member as unable to answer, and nobody is sent a
+ * notification about a stop they made themselves. The message is the fact code, never a sentence:
+ * the surface owns the words.
+ */
+export class RunStopped extends UnattendedRunError {
+  constructor(steps: UnattendedStep[]) {
+    super(RUN_STOPPED, steps);
+    this.name = "RunStopped";
   }
 }
 
@@ -291,8 +318,19 @@ export async function runUnattended(
    * the deadline — after the run had finished — and abort whatever the agent was doing by then.
    */
   const abort = new AbortController();
+  /**
+   * A person's stop, made the way the deadline's cut is made. The model's stream is aborted as well
+   * as the calls, because a stop that only walked away would leave a Bot generating — and a person
+   * who pressed stop to make it stop is owed that it did.
+   */
+  const stopped = (): RunStopped => {
+    abort.abort();
+    target.abortRun?.();
+    return new RunStopped(steps);
+  };
   const withDeadline = <T>(promise: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let onStop: (() => void) | undefined;
     const expiry = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => {
@@ -303,9 +341,19 @@ export async function runUnattended(
         Math.max(0, deadline - Date.now()),
       );
       timer.unref?.();
+      if (options.signal) {
+        onStop = () => reject(stopped());
+        if (options.signal.aborted) onStop();
+        else options.signal.addEventListener("abort", onStop, { once: true });
+      }
     });
-    return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+    return Promise.race([promise, expiry]).finally(() => {
+      clearTimeout(timer);
+      if (onStop) options.signal?.removeEventListener("abort", onStop);
+    });
   };
+  // Stopped before it began — queued behind another run on the same Bot, say — asks nothing.
+  if (options.signal?.aborted) throw stopped();
 
   /**
    * One turn of the model, watched.
@@ -315,6 +363,8 @@ export async function runUnattended(
    * reads, so the record and the loop cannot disagree about what the model asked for.
    */
   const turn = async (tools: Tool[]): Promise<void> => {
+    // Before the model is asked, not after: a stop that came in during a tool call starts nothing.
+    if (options.signal?.aborted) throw stopped();
     const startedAt = Date.now();
     let failure: string | null = null;
     let finished = false;
@@ -451,6 +501,8 @@ export async function runUnattended(
           target.abortRun?.();
           throw new RunDeadline(steps);
         }
+        // The same for a stop that landed between two waits: the next call must not leave.
+        if (options.signal?.aborted) throw stopped();
         outcome = await withDeadline(
           options.toolkit.execute(call.name, args, {
             id: call.id,

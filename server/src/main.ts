@@ -90,9 +90,11 @@ import {
 import { createRoutineService } from "./routines/service";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
+import { createWorkInFlight } from "./runner/in-flight";
 import { LafPostgresRunner, reportInterruptedRuns } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
+import { createStopAll } from "./runner/stop-all";
 import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
@@ -141,9 +143,19 @@ if (!fleetNotifier) sayFleetIsUnconfigured();
 // One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
 // one module writes it. Built before the runner because the runner opens its rows through it.
 const runLedger = createRunLedger(database);
+/**
+ * What is going on for each person right now, with the way to stop each piece — the one list
+ * `모두 멈추기` reads (runner/in-flight.ts). Built beside the ledger and handed to the same run paths:
+ * the ledger says a run is happening, this is what can end one.
+ */
+const workInFlight = createWorkInFlight();
 // The durable runner every turn goes through. Built before the app because construction adjudicates
 // the runs the last process left open; it reads no conversation until one is asked for.
-const lafRunner = await LafPostgresRunner.create(database, runLedger);
+const lafRunner = await LafPostgresRunner.create(
+  database,
+  runLedger,
+  workInFlight,
+);
 /**
  * What every run is metered by, and on a free trial judged against — one object, handed to every
  * path that builds agents (the chat endpoint below, and `resolveAgentsFor` for rooms, routines and
@@ -570,6 +582,7 @@ const coworkerCall = createCoworkerCall({
   auditStore: bootAuditStore,
   ledger: runLedger,
   recordExchange: recordCoworkerExchange(database, agentProfileStore),
+  work: workInFlight,
 });
 
 /**
@@ -616,6 +629,7 @@ const routineService = createRoutineService({
   timeZone: config.botTimeZone,
   // A routine runs as its author; one the sign-in list no longer admits is run by no door.
   admission,
+  work: workInFlight,
 });
 
 /*
@@ -720,6 +734,7 @@ const app = createApp(
     awaitApproval: createApprovalWaiter(approvals),
     // Each member's turn on the trail: which round, why it spoke, what came of it.
     auditStore: bootAuditStore,
+    work: workInFlight,
   }),
   createThreadMessageReader(database),
   standingApprovals,
@@ -817,6 +832,8 @@ const app = createApp(
   sessionRevocation,
   // A free trial's day, for `/api/me` to say whether it is spent — the judge the runs are refused by.
   dailyBudget,
+  // `모두 멈추기`: the list every run path writes, and the trail the press is recorded on.
+  createStopAll({ work: workInFlight, auditStore: bootAuditStore }),
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

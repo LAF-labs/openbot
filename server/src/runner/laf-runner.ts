@@ -25,9 +25,10 @@
  * by `run-ledger.ts`. The full event stream is not stored; the log of record for
  * actions is `audit_events`.
  */
-import type { BaseEvent, Message } from "@ag-ui/client";
+import type { AbstractAgent, BaseEvent, Message } from "@ag-ui/client";
 import {
   type AgentRunnerRunRequest,
+  type AgentRunnerStopRequest,
   InMemoryAgentRunner,
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
@@ -38,6 +39,7 @@ import { channelThreads, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
+import type { WorkInFlight } from "./in-flight";
 import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
 import { redactSecretTyping } from "./secret-redaction";
 import {
@@ -191,6 +193,96 @@ export function runOutcome(
 }
 
 /**
+ * How long a step handed to a browser is listed as going on, and how long a turn stopped during one
+ * stays stopped.
+ *
+ * The same ten minutes the roster presumes a run dead after (`working.ts`) and a question waits for a
+ * person's answer (the approval registry): the longest a browser step legitimately takes is a Bot
+ * waiting for somebody to press 허용. A browser that closed mid-step never sends its result, so the
+ * listing has to end on its own rather than claim, forever, that something is still going on.
+ */
+const BROWSER_STEP_MS = 10 * 60 * 1000;
+
+/** One chat run, as a stop needs to know it. */
+type LiveRun = {
+  /** A person stopped it, so its ledger row says `stopped` whatever its events say. */
+  stopped: boolean;
+  /** Its stream has ended. A listing that arrives after this must not be made. */
+  over: boolean;
+  /** Ends its listing as work in flight, once it has one. */
+  done?: () => void;
+};
+
+/** What `beginRun` found out: the ledger row, and whose conversation it is. */
+type Opened = { runId: string | null; owner: string | null };
+
+/**
+ * Whether a run ended by handing a step to the browser: a tool call started in it and not answered
+ * in it, in a run that finished.
+ *
+ * Every computer tool is registered in the browser, so the model asking for one ENDS the run and the
+ * browser carries it out, then starts the next run with the result. A call `agent-bot` answers itself
+ * (the bridge's lookups) comes back with its result in the same run, and a stopped run's open calls
+ * are answered by the stop's own finalisation — neither is waiting on anybody.
+ */
+function handedToBrowser(events: ReadonlyArray<BaseEvent>): boolean {
+  const open = new Set<string>();
+  let finished = false;
+  for (const raw of events) {
+    const event = raw as BaseEvent & { toolCallId?: string };
+    const type = String(event.type);
+    if (type === "RUN_ERROR") return false;
+    if (type === "RUN_FINISHED") finished = true;
+    if (type === "TOOL_CALL_START" && event.toolCallId) {
+      open.add(event.toolCallId);
+    }
+    if (type === "TOOL_CALL_RESULT" && event.toolCallId) {
+      open.delete(event.toolCallId);
+    }
+  }
+  return finished && open.size > 0;
+}
+
+/** The run that carries a browser step's result onward: its last message is that result. */
+function carriesAStepOn(messages: readonly Message[]): boolean {
+  return messages.at(-1)?.role === "tool";
+}
+
+/**
+ * The Bot's stand-in for the one run a stop refuses: it starts, it finishes, it asks nothing.
+ *
+ * Handed to the vendored runner in the Bot's place so everything downstream — the stream the browser
+ * reads, the runner's in-memory copy, the tee below — sees an ordinary empty run. A refusal sent as
+ * an error would be drawn in the browser as a failure under a turn the person stopped themselves.
+ */
+function stoppedTurn(
+  request: AgentRunnerRunRequest,
+  messages: Message[],
+): AbstractAgent {
+  const { threadId } = request;
+  const { runId } = request.input;
+  const standIn = {
+    agentId: request.agent.agentId,
+    messages,
+    abortRun() {},
+    async runAgent(
+      _input: unknown,
+      subscriber?: { onEvent?: (payload: { event: BaseEvent }) => unknown },
+    ) {
+      for (const type of ["RUN_STARTED", "RUN_FINISHED"]) {
+        subscriber?.onEvent?.({
+          event: { type, threadId, runId } as unknown as BaseEvent,
+        });
+      }
+      return { result: undefined, newMessages: [] };
+    },
+  };
+  // What the vendored runner uses of an agent is exactly these four members; see `run` in
+  // `@copilotkit/runtime`'s in-memory runner.
+  return standIn as unknown as AbstractAgent;
+}
+
+/**
  * A run the last process left open, as boot found it.
  *
  * Everything the ledger row knew about who and what, so that the process that reconciled it can
@@ -212,12 +304,23 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   private readonly primed = new Map<string, PrimedThread>();
   /** The thread list, read for the one route that asks for it. Null until something does. */
   private listed: InMemoryThread[] | null = null;
+  /** The newest run on each thread, for a stop to mark. See `stop`. */
+  private readonly latest = new Map<string, LiveRun>();
+  /** Threads whose last run handed a step to a browser: what ends that listing. See `run`. */
+  private readonly inBrowser = new Map<string, () => void>();
+  /** Threads a person stopped while a step was with a browser, and when. See `run`. */
+  private readonly halted = new Map<string, number>();
 
   private constructor(
     private readonly database: Database,
     private readonly ledger: RunLedger,
     /** What boot found still running. Read once by `reportInterruptedRuns`, never added to. */
     private readonly interrupted: readonly InterruptedRun[],
+    /**
+     * Where each chat run is listed while it is on the wire — and each turn while a browser has its
+     * next step — so `모두 멈추기` can reach it (`stop-all.ts`). Absent in suites that never stop.
+     */
+    private readonly work?: WorkInFlight,
   ) {
     // `supersede` matches the hosted posture upstream documents for its own
     // listener: a fast follow-up turn replaces a wedged one instead of erroring.
@@ -233,6 +336,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   static async create(
     database: Database,
     ledger: RunLedger,
+    work?: WorkInFlight,
   ): Promise<LafPostgresRunner> {
     /*
      * Boot reconciliation: a run still `running` now cannot still be running,
@@ -259,7 +363,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         note: "These runs were still `running` when the last process died; nothing is known about how they ended.",
       });
     }
-    return new LafPostgresRunner(database, ledger, reconciled);
+    return new LafPostgresRunner(database, ledger, reconciled, work);
   }
 
   /**
@@ -385,6 +489,26 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       typeof request.input.runId === "string" && request.input.runId
         ? request.input.runId
         : null;
+    /*
+     * WHATEVER STEP A BROWSER HAD ON THIS THREAD IS OVER: this run is its result coming back, or
+     * the person's next message. The listing ends here, and so does a stop made while it was listed
+     * — spent on this run if it carries the step on, and forgotten if it is the person speaking.
+     *
+     * A carried-on step after a stop is refused, not run: the step itself already happened and its
+     * result is kept (the input is stored below like any other), but the model is not asked what to
+     * do next. That is the half of a chat turn only a browser could otherwise stop, and it is what
+     * lets `모두 멈추기` stop a conversation open in another window as well as its own. A person's
+     * own new message is never refused: its last message is theirs, not a step's result.
+     */
+    this.inBrowser.get(request.threadId)?.();
+    const haltedAt = this.halted.get(request.threadId);
+    this.halted.delete(request.threadId);
+    const refused =
+      haltedAt !== undefined &&
+      Date.now() - haltedAt < BROWSER_STEP_MS &&
+      carriesAStepOn(inputMessages);
+    const live: LiveRun = { stopped: refused, over: false };
+    this.latest.set(request.threadId, live);
     const opened = this.beginRun(
       requestedRunId,
       request.threadId,
@@ -392,8 +516,14 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       inputMessages,
       origin,
       dedupeKey,
+      // A refused run is over before anybody could stop it; it is not listed.
+      refused ? null : live,
     );
-    const events = super.run(request);
+    const events = super.run(
+      refused
+        ? { ...request, agent: stoppedTurn(request, inputMessages) }
+        : request,
+    );
     const collected: BaseEvent[] = [];
     /*
      * The clock reading for each assistant message, taken as it starts streaming.
@@ -417,6 +547,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         }
       },
       error: (error: unknown) => {
+        this.ended(live);
         void this.finishRun(
           opened,
           request.threadId,
@@ -425,9 +556,11 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           collected,
           startedAt,
           error instanceof Error ? error.message : String(error),
+          live,
         );
       },
       complete: () => {
+        this.ended(live);
         void this.finishRun(
           opened,
           request.threadId,
@@ -436,10 +569,93 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           collected,
           startedAt,
           null,
+          live,
         );
       },
     });
     return events;
+  }
+
+  /**
+   * The runtime's own stop — a person's Stop in the conversation, and `모두 멈추기` — with the run it
+   * ended marked as stopped.
+   *
+   * Marked BEFORE the vendored stop, because that aborts synchronously and the stream can end, and
+   * be settled, before a mark made afterwards landed. Without the mark the ledger read the stop's
+   * own closing RUN_FINISHED as the Bot finishing, and recorded a stopped run as `done`.
+   */
+  override async stop(request: AgentRunnerStopRequest): Promise<boolean> {
+    const live = this.latest.get(request.threadId);
+    const marked = live !== undefined && !live.over && !live.stopped;
+    if (live && marked) live.stopped = true;
+    const stopped = (await super.stop(request)) === true;
+    if (live && marked && !stopped) live.stopped = false;
+    return stopped;
+  }
+
+  /** A run's stream has ended: it is no longer going on, whatever is still being written about it. */
+  private ended(live: LiveRun): void {
+    live.over = true;
+    live.done?.();
+  }
+
+  /** List a chat run on the wire, as its owner's, stopped by the runtime's own stop. */
+  private listOnWire(
+    live: LiveRun,
+    threadId: string,
+    owner: string,
+    agentId: string | null,
+  ): void {
+    if (!this.work || live.over) return;
+    live.done = this.work.track({
+      kind: "chat",
+      userId: owner,
+      agentId,
+      threadId,
+      stop: async () => {
+        /*
+         * Halted as well as aborted. A run that ends by handing a step to the browser in the same
+         * instant as this stop is no longer on the wire to abort, and its step would be carried on.
+         */
+        this.halted.set(threadId, Date.now());
+        await this.stop({ threadId });
+        return true;
+      },
+    });
+  }
+
+  /**
+   * List a turn whose step is with a browser, as its owner's, until that browser answers.
+   *
+   * Nothing runs on the server while the browser works, so the stop is the halt `run` reads: the
+   * step under way finishes, and the run that would carry it on is refused.
+   */
+  private listInBrowser(
+    threadId: string,
+    owner: string,
+    agentId: string | null,
+  ): void {
+    if (!this.work) return;
+    this.inBrowser.get(threadId)?.();
+    const done = this.work.track({
+      kind: "chat",
+      userId: owner,
+      agentId,
+      threadId,
+      stop: async () => {
+        this.halted.set(threadId, Date.now());
+        return true;
+      },
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const end = () => {
+      clearTimeout(timer);
+      done();
+      if (this.inBrowser.get(threadId) === end) this.inBrowser.delete(threadId);
+    };
+    timer = setTimeout(end, BROWSER_STEP_MS);
+    timer.unref?.();
+    this.inBrowser.set(threadId, end);
   }
 
   /**
@@ -496,7 +712,10 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     messages: Message[],
     origin: RunOrigin,
     dedupeKey: string | null,
-  ): Promise<string | null> {
+    /** Listed as work in flight once its owner is known; null for a run nobody can stop. */
+    live: LiveRun | null,
+  ): Promise<Opened> {
+    let owner: string | null = null;
     try {
       /*
        * WHOSE RUN IT IS, LOOKED UP RATHER THAN ACCEPTED.
@@ -507,50 +726,70 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
        * own work in theirs. The thread already knows. `channel_threads` is unique on `thread_id`,
        * so this is one indexed read of a fact the server itself wrote.
        */
-      const [owner] = await this.database
+      const [row] = await this.database
         .select({ userId: channelThreads.userId })
         .from(channelThreads)
         .where(eq(channelThreads.threadId, threadId))
         .limit(1);
+      owner = row?.userId ?? null;
+      // The same owner, for the same reason: a stop reaches a person's own conversations only.
+      if (live && owner) this.listOnWire(live, threadId, owner, agentId);
 
       // One writer for this table, and it is not this class. See runner/run-ledger.ts.
       const runId = await this.ledger.begin({
         ...(requestedRunId ? { runId: requestedRunId } : {}),
         threadId,
         agentId,
-        userId: owner?.userId ?? null,
+        userId: owner,
         origin,
         dedupeKey,
       });
       await appendMessages(this.database, threadId, messages, { runId });
-      return runId;
+      return { runId, owner };
     } catch (error) {
       log.error("run_start_not_persisted", {
         thread: threadId,
         reason: describeFailure(error),
       });
-      return null;
+      return { runId: null, owner };
     }
   }
 
   private async finishRun(
-    opened: Promise<string | null>,
+    opened: Promise<Opened>,
     threadId: string,
     agentId: string | null,
     inputMessages: Message[],
     events: BaseEvent[],
     startedAt: Map<string, string>,
     errorMessage: string | null,
+    live: LiveRun,
   ): Promise<void> {
     try {
-      const runId = await opened;
+      const { runId, owner } = await opened;
+      /*
+       * Listed before anything is written, and only while this is still the thread's newest run:
+       * the browser starts the step's run a round trip after this one ended, and a listing made
+       * after that run began would claim a step that is already over.
+       */
+      if (
+        owner &&
+        !live.stopped &&
+        errorMessage === null &&
+        this.latest.get(threadId) === live &&
+        handedToBrowser(events)
+      ) {
+        this.listInBrowser(threadId, owner, agentId);
+      }
       const messages = [
         ...inputMessages,
         ...assistantMessagesFrom(events, startedAt, agentId),
       ];
       await appendMessages(this.database, threadId, messages, { runId });
       if (runId) {
-        const outcome = runOutcome(events, errorMessage);
+        const outcome = live.stopped
+          ? { status: "stopped" as const, error: null }
+          : runOutcome(events, errorMessage);
         await this.ledger.settle(runId, {
           ...outcome,
           eventCount: events.length,

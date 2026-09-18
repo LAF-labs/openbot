@@ -9,6 +9,7 @@ import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
 import type { BotLane } from "../runner/bot-lane";
+import type { WorkInFlight } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
 import type { DeliverRoutineAnswer, DeliverRoutineFailure } from "./deliver";
@@ -136,6 +137,11 @@ export type RoutineServiceOptions = {
    * 2026-09-16.
    */
   admission?: Pick<DeploymentAdmission, "admitsPerson">;
+  /**
+   * Where each run is listed while it is claimed or running, so `모두 멈추기` reaches it (`run.ts`).
+   * Absent in the suites that never stop a routine.
+   */
+  work?: WorkInFlight;
 };
 
 /** What firing a routine outside the clock needs: the table, the time, and the run. */

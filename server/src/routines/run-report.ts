@@ -50,7 +50,15 @@ export async function reportRun(
          * transcript reads, so the notification and the red line agree — and the conversation
          * it was marked in, so the notification can point there.
          */
-        ...(ok ? {} : { failure: classifyTurnFailure(failure) }),
+        /*
+         * A stop says so and carries no failure code: the outbox watch reads `failure` to ring a
+         * bell, and nobody is to be told about a stop they made (`notifications/from-audit.ts`).
+         */
+        ...(settled.stopped
+          ? { stopped: true }
+          : ok
+            ? {}
+            : { failure: classifyTurnFailure(failure) }),
         ...(settled.failedIn ? { channelId: settled.failedIn.channelId } : {}),
         /*
          * What became of the notepad the run changed, as a word and never its contents: whether the

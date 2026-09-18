@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AuditStore } from "../audit";
 import type { RefusalCode } from "../failure-text";
+import type { WorkInFlight } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
 import type { AgentActor } from "./profile-types";
 
@@ -33,7 +34,7 @@ export class CoworkerCallError extends Error {
   constructor(
     message: string,
     /** Mirrors HTTP so the route does not re-derive it from prose. */
-    readonly status: 400 | 403 | 404 | 502 | 504,
+    readonly status: 400 | 403 | 404 | 409 | 502 | 504,
     /**
      * The fact, which is what a route answers with and what a surface phrases.
      *
@@ -96,6 +97,21 @@ export const COWORKER_QUESTION_MAX_CHARS = 8_000;
 export const COWORKER_ANSWER_MAX_CHARS = 20_000;
 
 /**
+ * A person pressed `모두 멈추기` while the coworker was answering.
+ *
+ * The sentence is the asking Bot's to read — it is handed back as the tool's result — and it says
+ * not to ask again, because a Bot that retried a stopped question would be the one piece of work
+ * the stop did not end. 409, not a failure status: nothing went wrong.
+ */
+function coworkerStopped(): CoworkerCallError {
+  return new CoworkerCallError(
+    "A person stopped everything that was running, this answer included. Do not ask again.",
+    409,
+    "laf:coworker_stopped",
+  );
+}
+
+/**
  * One server-side run: the message in, the assistant's text out, or a timeout.
  *
  * A Bot running once from a fresh instance with no tools in the room. This is still what a
@@ -118,10 +134,28 @@ export async function runAgentOnce(
    * that the day something does, the fact is already there.
    */
   delegation?: { callerId: string; depth: number },
+  /**
+   * A person's stop (`모두 멈추기`). The run is aborted — the model told, not walked away from —
+   * and this rejects with `laf:coworker_stopped`. A stop that came first asks the model nothing.
+   */
+  signal?: AbortSignal,
 ): Promise<string> {
+  if (signal?.aborted) throw coworkerStopped();
   target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
 
+  let onStop: (() => void) | undefined;
+  const stopped = new Promise<never>((_, reject) => {
+    if (!signal) return;
+    onStop = () => {
+      reject(coworkerStopped());
+      // Optional in practice: a test's stand-in agent has no transport to abort.
+      target.abortRun?.();
+    };
+    signal.addEventListener("abort", onStop, { once: true });
+  });
+
   const outcome = await Promise.race([
+    stopped,
     /*
      * The mode, so the prompt composer knows there are no tools in this room.
      *
@@ -149,7 +183,9 @@ export async function runAgentOnce(
         timeoutMs,
       ).unref?.();
     }),
-  ]);
+  ]).finally(() => {
+    if (onStop) signal?.removeEventListener("abort", onStop);
+  });
 
   return outcome.newMessages
     .filter((entry) => entry.role === "assistant")
@@ -196,6 +232,14 @@ export type CoworkerCallOptions = {
     at: Date;
   }) => Promise<void>;
   timeoutMs?: number;
+  /**
+   * Where an answer being worked on is listed while it is, so `모두 멈추기` can reach it.
+   *
+   * Without this a coworker went on answering for up to ninety seconds after the conversation that
+   * asked had been stopped in the browser: the route cannot tell that its caller gave up, and the
+   * roster said the Bot was helping another Bot the whole time. Absent in suites that do not stop.
+   */
+  work?: WorkInFlight;
 };
 
 export function createCoworkerCall(options: CoworkerCallOptions) {
@@ -302,13 +346,42 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         })
         .catch(() => null);
 
+      const stopping = new AbortController();
+      const done = options.work?.track({
+        kind: "handoff",
+        userId: actor.id,
+        agentId: targetId,
+        stop: async () => {
+          stopping.abort();
+          return true;
+        },
+      });
       let answer: string;
       try {
-        answer = await runAgentOnce(target, question, timeoutMs, {
-          callerId,
-          depth: origin.depth + 1,
-        });
+        answer = await runAgentOnce(
+          target,
+          question,
+          timeoutMs,
+          { callerId, depth: origin.depth + 1 },
+          stopping.signal,
+        );
       } catch (error) {
+        /*
+         * A STOP IS NOT THE COWORKER FAILING. Settled as `stopped`, the way a chat the person
+         * stopped is, and the trail says a person stopped it rather than carrying a reason.
+         */
+        if (stopping.signal.aborted) {
+          if (runId) {
+            await options.ledger
+              ?.settle(runId, { status: "stopped", error: null })
+              .catch(() => {});
+          }
+          await record(actor.id, callerId, targetId, {
+            ok: false,
+            stopped: true,
+          });
+          throw coworkerStopped();
+        }
         const reason = error instanceof Error ? error.message : String(error);
         if (runId) await options.ledger?.finish(runId, reason).catch(() => {});
         await record(actor.id, callerId, targetId, { ok: false, reason });
@@ -318,6 +391,8 @@ export function createCoworkerCall(options: CoworkerCallOptions) {
         // The sentence is the upstream's — measured as the provider's own "Unable to connect. Is
         // the computer able to access the url?" — and the code is what crosses to a screen.
         throw new CoworkerCallError(reason, 502, "laf:coworker_failed");
+      } finally {
+        done?.();
       }
 
       if (runId) await options.ledger?.finish(runId).catch(() => {});

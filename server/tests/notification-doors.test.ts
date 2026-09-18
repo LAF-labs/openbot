@@ -380,4 +380,17 @@ describe("a routine that did not finish", () => {
       },
     ]);
   });
+
+  test("a routine the person stopped themselves rings no bell", async () => {
+    // `모두 멈추기`: telling them would be telling them what they just did, as a failure.
+    const outbox = spyOutbox();
+    const store = withOutboxWatch({ insert: async () => {} }, outbox);
+
+    const { failure: _none, ...stopped } = ran({ stopped: true }).payload;
+    await store.insert({ ...ran({}), payload: stopped });
+    await Promise.resolve();
+
+    expect(outbox.offered).toEqual([]);
+    expect(outbox.written).toEqual([]);
+  });
 });

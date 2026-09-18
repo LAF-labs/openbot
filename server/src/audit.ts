@@ -428,6 +428,17 @@ export const auditEventTypes = [
    */
   "onboarding.first_task_pressed",
   "support.help_opened",
+
+  /*
+   * A person pressed `모두 멈추기` (`runner/stop-all.ts`): every conversation, room turn, routine run
+   * and coworker's answer going on for them, on their own Bots, asked to stop at once.
+   *
+   * Written whether or not anything was running — the press is the fact, as it is for
+   * `computer.stopped` — with what it came to: how many of each kind were stopped, how many were
+   * found and could NOT be stopped (only when there were any, and it is the half an investigator
+   * wants), and which Bots. Counts and ids; nothing anybody said or typed.
+   */
+  "work.stopped_all",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

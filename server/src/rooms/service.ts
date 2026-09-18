@@ -20,6 +20,7 @@ import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { channelMemberships, channels } from "../db/schema";
 import { type BotLane, createBotLane } from "../runner/bot-lane";
+import type { WorkInFlight } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
 import { relayApprovals } from "./approval-relay";
@@ -96,6 +97,11 @@ export type RoomServiceOptions = {
    */
   auditStore?: AuditStore;
   memberTimeoutMs?: number;
+  /**
+   * Where a turn is listed while it runs, so `모두 멈추기` can reach it (`runner/stop-all.ts`).
+   * Absent in the suites that never stop a room.
+   */
+  work?: WorkInFlight;
 };
 
 export type RoomTurnStart = {
@@ -283,6 +289,33 @@ export function createRoomService(options: RoomServiceOptions) {
     memberIds: string[];
   }): Promise<void> {
     let ended = "failed";
+    /*
+     * A PERSON'S STOP FOR THE WHOLE TURN — `모두 멈추기`, not the room's own Stop.
+     *
+     * The room's Stop moves the epoch and lets a member already thinking finish, because a sentence
+     * already paid for is worth keeping (see `stop` above). This one is the button for when
+     * something looks wrong, so it also cuts the member mid-thought: a member can be driving the
+     * Bot's browser, and "stop" that waited for the click to land would not be one. It moves the
+     * epoch as well, so a turn the person queued behind this one in the same room does not start.
+     */
+    const stopping = new AbortController();
+    const done = options.work?.track({
+      kind: "room",
+      userId: input.actor.id,
+      agentId: null,
+      threadId: input.threadId,
+      stop: async () => {
+        stopping.abort();
+        await database
+          .update(channels)
+          .set({ roomTurnEpoch: sql`${channels.roomTurnEpoch} + 1` })
+          .where(eq(channels.id, input.channelId))
+          .catch(() => {
+            // The turn in hand is stopped either way: `isCurrent` reads the signal first.
+          });
+        return true;
+      },
+    });
     // Members that could not take their turn at all, as opposed to members with nothing to add.
     let failures = 0;
     /** The first reason a member gave for not taking its turn: what the turn's own row says. */
@@ -309,9 +342,18 @@ export function createRoomService(options: RoomServiceOptions) {
       .catch(() => null);
     try {
       await drive();
+      if (stopping.signal.aborted) ended = "stopped";
     } finally {
+      done?.();
       if (turnRun) {
-        await options.ledger?.finish(turnRun, firstFailure).catch(() => {});
+        /*
+         * A stopped turn is `stopped`, the status the conversation's failure reader passes over —
+         * whatever a member said before the stop stays said, and the question gets no red line.
+         */
+        await (stopping.signal.aborted
+          ? options.ledger?.settle(turnRun, { status: "stopped", error: null })
+          : options.ledger?.finish(turnRun, firstFailure)
+        )?.catch(() => {});
       }
       /*
        * ALWAYS, whatever threw. The browser was told the turn started and holds the composer
@@ -335,6 +377,7 @@ export function createRoomService(options: RoomServiceOptions) {
       const agents = await options.resolveAgents(input.actor);
 
       const isCurrent = async () => {
+        if (stopping.signal.aborted) return false;
         const [row] = await database
           .select({ epoch: channels.roomTurnEpoch })
           .from(channels)
@@ -361,6 +404,8 @@ export function createRoomService(options: RoomServiceOptions) {
           runId: string;
           spoke: number;
           failed: string | boolean | null;
+          /** A person stopped the turn while this member had it. Not a failure. */
+          stopped?: boolean;
         },
       ) => {
         try {
@@ -385,6 +430,7 @@ export function createRoomService(options: RoomServiceOptions) {
               ...(typeof result.failed === "string"
                 ? { failure: result.failed }
                 : {}),
+              ...(result.stopped ? { stopped: true } : {}),
             },
           });
         } catch {
@@ -504,6 +550,7 @@ export function createRoomService(options: RoomServiceOptions) {
                 toolkit,
                 userId: input.actor.id,
                 timeoutMs,
+                signal: stopping.signal,
                 ...(options.ledger ? { ledger: options.ledger } : {}),
                 deliver: async (text, toolCallId) => {
                   const written = await appendRoomMessage(database, {
@@ -596,9 +643,20 @@ export function createRoomService(options: RoomServiceOptions) {
               runId,
               spoke: result.spoke,
               failed: result.failed,
+              ...(result.stopped ? { stopped: true } : {}),
             });
             return { spoke: result.spoke, said };
           } catch (error) {
+            // Whatever a stop interrupted on its way here is the stop, not this member failing.
+            if (stopping.signal.aborted) {
+              await record(ask, {
+                runId,
+                spoke: said.length,
+                failed: null,
+                stopped: true,
+              });
+              return { spoke: said.length, said };
+            }
             /*
              * ONE MEMBER'S BAD DAY IS NOT THE ROOM'S. Everything above can throw before the model
              * is ever reached — resolving a Bot's tools, reading its grants, reading the thread —

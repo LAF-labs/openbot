@@ -92,6 +92,8 @@ import {
   type SuggestionDismissalStore,
 } from "./routines/suggestions";
 import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
+import type { StopAll } from "./runner/stop-all";
+import { createStopAllRoutes } from "./runner/stop-all-routes";
 import { createSupportRoutes, type SupportService } from "./support/routes";
 import type { PackageStatusReader } from "./tenant-package";
 import type { DailyBudget } from "./usage/daily-budget";
@@ -394,6 +396,14 @@ export function createApp(
    * is not a trial, which then says nothing about a trial at all.
    */
   dailyBudget?: DailyBudget,
+  /**
+   * `모두 멈추기`: what a person has going on, and the one press that stops it all
+   * (`runner/stop-all.ts`). Last, like everything new here.
+   *
+   * Absent leaves both doors unmounted, which is the honest degraded behaviour: a deployment that
+   * cannot reach its running work answers 404 rather than a count of nothing that reads as calm.
+   */
+  stopAll?: StopAll,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1084,6 +1094,9 @@ export function createApp(
   // is an administrator's. See account/routes.ts.
   if (accountService)
     app.route("/api", createAccountRoutes(accountService, requireUser));
+
+  // `모두 멈추기`, under `/api/me` because it is about the person asking and nobody else.
+  if (stopAll) app.route("/api", createStopAllRoutes(stopAll, requireUser));
 
   // A person writing to the operator. Under its own prefix: it is neither about the account nor
   // about a Bot, and a message to whoever runs the product should not read as either. The build and

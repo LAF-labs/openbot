@@ -10,7 +10,9 @@ import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import type { lafRoutines } from "../db/schema";
 import type { BotLane } from "../runner/bot-lane";
+import type { WorkInFlight } from "../runner/in-flight";
 import {
+  RUN_STOPPED,
   runUnattended,
   UnattendedRunError,
   type UnattendedToolkit,
@@ -85,6 +87,12 @@ export type RoutineRunOptions = SettlementOptions & {
   lane?: BotLane;
   runTimeoutMs: number;
   admission?: Pick<DeploymentAdmission, "admitsPerson">;
+  /**
+   * Where a run is listed from the moment it is claimed, so `모두 멈추기` can reach it — including
+   * while it waits its turn on the Bot's lane, which is when a stop that only reached the running
+   * one would let this one start a second later.
+   */
+  work?: WorkInFlight;
 };
 
 type RoutineRow = typeof lafRoutines.$inferSelect;
@@ -110,7 +118,7 @@ export type RoutineRun = {
 /** What asking the Bot came to, before any of it is written down. */
 type Attempt = Pick<
   RunToSettle,
-  "ok" | "answer" | "failure" | "steps" | "notepad"
+  "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped"
 > & {
   /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
   awaiting: boolean;
@@ -125,16 +133,38 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
     async run(row, door = "clock") {
       if (!(await authorAdmitted(row, door))) return false;
       /*
-       * One unattended run per Bot at a time, through the lane every server-side path shares.
-       *
-       * The tick is sequential, but Run now is not the tick, a room turn is not either, and any two
-       * of those can name the same Bot. With one shared computer, two tool loops on one Bot drive
-       * one browser at once — each one's snapshot goes stale under the other, and a click meant for
-       * one page lands on the other's. A queue private to this service would not have seen the room.
+       * Listed as its author's work from here, before the lane, and stoppable from here: a run that
+       * is stopped while it waits behind another is settled as stopped when its turn comes, without
+       * the Bot being asked anything.
        */
-      await (options.lane
-        ? options.lane.run(row.agentId, () => executeNow(options, row))
-        : executeNow(options, row));
+      const stopping = new AbortController();
+      const done = options.work?.track({
+        kind: "routine",
+        userId: row.createdById,
+        agentId: row.agentId,
+        stop: async () => {
+          stopping.abort();
+          return true;
+        },
+      });
+      try {
+        /*
+         * One unattended run per Bot at a time, through the lane every server-side path shares.
+         *
+         * The tick is sequential, but Run now is not the tick, a room turn is not either, and any
+         * two of those can name the same Bot. With one shared computer, two tool loops on one Bot
+         * drive one browser at once — each one's snapshot goes stale under the other, and a click
+         * meant for one page lands on the other's. A queue private to this service would not have
+         * seen the room.
+         */
+        await (options.lane
+          ? options.lane.run(row.agentId, () =>
+              executeNow(options, row, stopping.signal),
+            )
+          : executeNow(options, row, stopping.signal));
+      } finally {
+        done?.();
+      }
       return true;
     },
   };
@@ -192,6 +222,8 @@ async function authorIsAdmitted(
 async function executeNow(
   options: RoutineRunOptions,
   row: RoutineRow,
+  /** A person's stop (`모두 멈추기`). Already aborted when the run was stopped in the queue. */
+  signal: AbortSignal,
 ): Promise<void> {
   const startedAt = options.now();
   const runId = randomUUID();
@@ -206,7 +238,7 @@ async function executeNow(
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author);
-  const attempt = await askTheBot(options, row, author);
+  const attempt = await askTheBot(options, row, author, signal);
 
   /*
    * Nothing to report, said the way the routine prompt asks for it.
@@ -231,6 +263,7 @@ async function executeNow(
     steps: attempt.steps,
     silent,
     notepad: attempt.notepad,
+    stopped: attempt.stopped,
   });
 
   // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
@@ -287,8 +320,26 @@ async function askTheBot(
   options: RoutineRunOptions,
   row: RoutineRow,
   author: string | null,
+  signal: AbortSignal,
 ): Promise<Attempt> {
   let notepad: NotepadDraft | null = null;
+  /*
+   * STOPPED, NOT FAILED — decided by the signal this run was handed rather than by what the stop
+   * threw on its way out. The loop throws its own `RunStopped`, the toolless path a coworker's
+   * refusal, and a stop that landed mid-write could surface as anything; the signal is the one
+   * witness that a person asked for it.
+   */
+  const stopped = (steps: Attempt["steps"]): Attempt => ({
+    ok: false,
+    answer: "",
+    failure: RUN_STOPPED,
+    steps,
+    awaiting: false,
+    // Kept so the trail can say its writes were discarded, exactly as a failed run's are.
+    notepad,
+    stopped: true,
+  });
+  if (signal.aborted) return stopped(null);
   try {
     if (!author) {
       throw new Error(
@@ -335,6 +386,7 @@ async function askTheBot(
         mode: "routine",
         // And where this routine left off, as facts that middleware composes after the mode.
         notepad: notepad.read,
+        signal,
       });
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
@@ -352,6 +404,7 @@ async function askTheBot(
         steps: run.steps,
         awaiting,
         notepad,
+        stopped: false,
       };
     }
     /*
@@ -362,6 +415,8 @@ async function askTheBot(
       target,
       instruction,
       options.runTimeoutMs,
+      undefined,
+      signal,
     );
     return {
       ok: true,
@@ -370,8 +425,12 @@ async function askTheBot(
       steps: null,
       awaiting: false,
       notepad: null,
+      stopped: false,
     };
   } catch (error) {
+    if (signal.aborted) {
+      return stopped(error instanceof UnattendedRunError ? error.steps : null);
+    }
     return {
       ok: false,
       answer: "",
@@ -381,6 +440,7 @@ async function askTheBot(
       awaiting: false,
       // Kept so the trail can say a failed run's writes were discarded — never so they are written.
       notepad,
+      stopped: false,
     };
   }
 }

@@ -75,6 +75,9 @@ export function withOutboxWatch(
       await store.insert(event);
       if (event.eventType === RUN_FAILED) {
         if (event.payload.ok !== false) return;
+        // A person stopped it themselves (`모두 멈추기`). Telling them would be telling them what
+        // they just did, as though it had gone wrong behind their back.
+        if (event.payload.stopped === true) return;
         const botId = event.payload.agentId;
         const actor = event.payload.actor;
         if (typeof actor !== "string" || !actor) return;

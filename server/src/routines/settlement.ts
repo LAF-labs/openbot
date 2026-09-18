@@ -81,6 +81,12 @@ export type RunToSettle = {
   silent: boolean;
   /** What the run staged for its notepad. Null for a run that was never offered one. */
   notepad: NotepadDraft | null;
+  /**
+   * A person stopped it (`모두 멈추기`). Not ok, and not a failure either: see `writeRecord`.
+   *
+   * Optional so a caller that cannot be stopped says nothing, which is "not stopped".
+   */
+  stopped?: boolean;
 };
 
 /** What the record came to, and the announcements it earned — to be made by the caller. */
@@ -88,6 +94,8 @@ export type Settlement = {
   /** Whether the run is reported as having succeeded; false too when its record rolled back. */
   ok: boolean;
   failure: string;
+  /** A person stopped the run, and its record says so. False when the record rolled back. */
+  stopped: boolean;
   delivered: Delivered | null;
   failedIn: Delivered | null;
   /** What became of the notepad the run changed. Null when it changed nothing. */
@@ -113,6 +121,7 @@ export async function settleRun(
     return {
       ok: run.ok,
       failure: run.failure,
+      stopped: run.stopped === true,
       delivered,
       failedIn,
       notepad,
@@ -142,6 +151,7 @@ export async function settleRun(
     return {
       ok: false,
       failure,
+      stopped: false,
       delivered: null,
       failedIn: null,
       notepad: run.notepad?.changed ? "discarded" : null,
@@ -154,7 +164,7 @@ async function writeRecord(
   options: SettlementOptions,
   transaction: Executor,
   run: RunToSettle,
-): Promise<Omit<Settlement, "ok" | "failure">> {
+): Promise<Omit<Settlement, "ok" | "failure" | "stopped">> {
   /*
    * WHERE THE NEXT RUN STARTS FROM IS ONE DECISION, taken here for both of its halves. A success
    * lands the notepad and closes the routine's open failure groups; a failure discards the notepad
@@ -184,7 +194,12 @@ async function writeRecord(
   if (run.ledgerRunId) {
     await options.ledger?.settle(
       run.ledgerRunId,
-      { status: run.ok ? "done" : "error", error: run.ok ? null : run.failure },
+      run.ok
+        ? { status: "done", error: null }
+        : run.stopped
+          ? // The status the conversation's failure reader passes over, as it does a chat's Stop.
+            { status: "stopped", error: null }
+          : { status: "error", error: run.failure },
       transaction,
     );
   }
@@ -235,6 +250,13 @@ async function markOrCount(
   const { row, author } = run;
   // Nobody to tell is nobody to group for; the mark needs a person too.
   if (run.ok || !author) return { failedIn: null, group: null };
+  /*
+   * A STOP IS NEITHER NEWS NOR A FAILURE TO COUNT. The person pressed it, so a red line in the
+   * Bot's conversation would be telling them something they did as though it had happened to them,
+   * and counting it into a failure group would make the routine's next real failure read as a
+   * repeat of a stop. The receipt still says it was stopped; see `writeReceipt` below.
+   */
+  if (run.stopped) return { failedIn: null, group: null };
 
   const at = options.now();
   const signature = routineFailureSignature({

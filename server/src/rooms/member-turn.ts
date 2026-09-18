@@ -23,6 +23,8 @@ export type MemberTurnResult = {
   spoke: number;
   /** Why it could not take its turn at all, if it could not. */
   failed: string | null;
+  /** A person stopped it mid-turn (`모두 멈추기`). Not a failure: `failed` stays null. */
+  stopped?: boolean;
 };
 
 export type MemberTurnInput = {
@@ -62,6 +64,11 @@ export type MemberTurnInput = {
   timeoutMs: number;
   ledger?: RunLedger;
   userId: string;
+  /**
+   * A person's stop for the whole turn (`모두 멈추기`), handed to the loop so it cuts this member
+   * mid-thought and abandons a browser action on its way out, exactly as the deadline does.
+   */
+  signal?: AbortSignal;
 };
 
 export async function runMemberTurn(
@@ -92,6 +99,7 @@ export async function runMemberTurn(
     .catch(() => null);
 
   let failed: string | null = null;
+  let stopped = false;
   try {
     await runUnattended(input.agent, roomTurnPrompt(input), {
       toolkit,
@@ -101,12 +109,18 @@ export async function runMemberTurn(
       mode: "room",
       ...(input.history ? { history: input.history } : {}),
       watch: watchRoomSpeech(input.watch),
+      ...(input.signal ? { signal: input.signal } : {}),
     });
   } catch (error) {
-    failed = error instanceof Error ? error.message : String(error);
+    // The signal, not the error's shape, says whether a person asked for this: see `routines/run.ts`.
+    if (input.signal?.aborted) stopped = true;
+    else failed = error instanceof Error ? error.message : String(error);
   } finally {
     if (runId) {
-      await input.ledger?.finish(runId, failed).catch(() => {});
+      await (stopped
+        ? input.ledger?.settle(runId, { status: "stopped", error: null })
+        : input.ledger?.finish(runId, failed)
+      )?.catch(() => {});
     }
   }
 
@@ -115,5 +129,5 @@ export async function runMemberTurn(
    * member said is what it sent, and that has already been posted. A failure that happened AFTER
    * the member spoke is still a failure worth recording, but it does not unsay anything.
    */
-  return { spoke: toolkit.spoken(), failed };
+  return { spoke: toolkit.spoken(), failed, ...(stopped ? { stopped } : {}) };
 }

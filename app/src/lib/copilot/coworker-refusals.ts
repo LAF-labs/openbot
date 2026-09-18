@@ -21,6 +21,8 @@ export const COWORKER_REFUSALS: Record<string, string> = {
   "laf:coworker_not_found": "That coworker is no longer there.",
   "laf:coworker_timed_out": "The coworker did not answer in time.",
   "laf:coworker_failed": "The coworker could not answer.",
+  "laf:coworker_stopped":
+    "Everything was stopped, so the coworker stopped answering too.",
 };
 
 /** The numbers a refusal carries beside its code, read defensively: the body crossed a network. */
@@ -54,6 +56,10 @@ export function coworkerRefusalForModel(
       return "That coworker is not in the roster any more. Check the roster in this tool's description.";
     case "laf:coworker_timed_out":
       return "The coworker did not answer in time. Answer with what you know, or ask again later.";
+    // A person pressed stop on everything: going on — asking again, or anything else — is the
+    // opposite of what they asked for.
+    case "laf:coworker_stopped":
+      return "A person stopped everything that was running, this question included. Do not ask again, and do not carry on with the task.";
     default:
       return "The coworker could not answer right now. Answer with what you know.";
   }

@@ -658,6 +658,9 @@ export const DECISIONS: Record<string, string> = {
   // said here as what happened — a press and a visit, not a decision anybody made about access.
   "onboarding.first_task_pressed": "A person pressed a suggested first task",
   "support.help_opened": "A person opened the help page",
+  // Not a refusal and not a failure: a person asked for everything going on to stop. The payload
+  // says how many of each kind, and how many could not be.
+  "work.stopped_all": "A person stopped everything that was running",
 };
 
 /**
@@ -952,4 +955,5 @@ export const EVENTS: Record<string, string> = {
   "support.feedback_sent": "A message to the operator",
   "onboarding.first_task_pressed": "A first task",
   "support.help_opened": "The help page",
+  "work.stopped_all": "Everything that was running",
 };
