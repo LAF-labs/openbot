@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { TeachATask } from "@/components/computer/teach-a-task";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -10,6 +17,7 @@ import {
   screenProblemText,
 } from "@/lib/computer/screen-problems";
 import { focusRing, focusRingInset } from "@/components/ui/focus";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { pokeControl, watchControl } from "./control-poll";
@@ -159,7 +167,6 @@ export function ComputerView({
   const driving = control?.holder === "human";
   /** Read by the polling loop without restarting it on control changes. */
   const drivingRef = useRef(false);
-  drivingRef.current = driving;
 
   /**
    * Release control; the Bot's waiting tool call resumes from this state change.
@@ -202,7 +209,14 @@ export function ComputerView({
   /** Secret prompts keep the screen live even though the human does not hold the wheel. */
   const secretPending = Boolean(control?.secretWanted);
   const secretPendingRef = useRef(false);
-  secretPendingRef.current = secretPending;
+  /*
+   * Both written after every commit rather than during render, which the React Compiler refuses.
+   * Their readers are the screenshot poll and the control loop, which read them from timers, after it.
+   */
+  useLayoutEffect(() => {
+    drivingRef.current = driving;
+    secretPendingRef.current = secretPending;
+  });
   // Held in a ref so a slow response cannot overwrite a newer frame after the component moved on.
   const generation = useRef(0);
   /** Force a short watch window after non-Bot actions such as secret entry. */
@@ -227,53 +241,57 @@ export function ComputerView({
       return unchanged < SETTLED_FRAMES;
     };
 
-    // Always fetch at least one frame; only repeated refreshes are conditional.
-    const tick = async () => {
-      // React Compiler 1.0 cannot compile `try`…`finally` yet, so ComputerView is left as written:
-      // the code is right, and the compiler cannot follow it. Counted in
-      // app/tests/react-compiler.test.ts.
-      try {
-        const response = await fetch(
-          `/api/computers/${computerId}/screenshot`,
-          {
-            credentials: "include",
-          },
-        );
-        if (generation.current !== mine) return;
+    /** One frame, fetched, decoded and painted: the poll's body. A failure throws out of it. */
+    const step = async () => {
+      const response = await fetch(`/api/computers/${computerId}/screenshot`, {
+        credentials: "include",
+      });
+      if (generation.current !== mine) return;
 
-        if (!response.ok) {
-          // `code` is the fact; `error` beside it is the server's own sentence, kept for older
-          // readers and never shown here.
-          const body = (await response.json().catch(() => null)) as {
-            code?: string;
-          } | null;
-          setProblem(body?.code ?? SCREEN_UNAVAILABLE);
-        } else {
-          const next = (await response.json()) as Screenshot;
-          // Exact byte comparison is the settling signal.
-          unchanged = next.base64 === lastFrame ? unchanged + 1 : 0;
-          lastFrame = next.base64;
-          // Decode before swapping so the visible frame is never blank between polls.
-          const bitmap = await decodeFrame(next.base64, "image/png");
-          if (generation.current !== mine) {
-            bitmap?.close();
-            return;
-          }
-          const canvas = canvasRef.current;
-          if (bitmap && canvas) paintFrame(canvas, bitmap);
+      if (!response.ok) {
+        // `code` is the fact; `error` beside it is the server's own sentence, kept for older
+        // readers and never shown here.
+        const body = (await response.json().catch(() => null)) as {
+          code?: string;
+        } | null;
+        setProblem(body?.code ?? SCREEN_UNAVAILABLE);
+      } else {
+        const next = (await response.json()) as Screenshot;
+        // Exact byte comparison is the settling signal.
+        unchanged = next.base64 === lastFrame ? unchanged + 1 : 0;
+        lastFrame = next.base64;
+        // Decode before swapping so the visible frame is never blank between polls.
+        const bitmap = await decodeFrame(next.base64, "image/png");
+        if (generation.current !== mine) {
           bitmap?.close();
-          setShot(next);
-          setProblem(null);
+          return;
         }
-      } catch {
-        if (generation.current !== mine) return;
-        setProblem(SCREEN_UNAVAILABLE);
-      } finally {
-        if (generation.current === mine && shouldContinue()) {
-          timer = setTimeout(tick, intervalMs);
-        }
+        const canvas = canvasRef.current;
+        if (bitmap && canvas) paintFrame(canvas, bitmap);
+        bitmap?.close();
+        setShot(next);
+        setProblem(null);
       }
     };
+
+    /*
+     * `try`…`catch`…`finally`, as `step`'s `catch` and `ensure`: the React Compiler cannot compile a
+     * `finally` in the component, nor a conditional inside a `try`, and the body has both.
+     */
+    // Always fetch at least one frame; only repeated refreshes are conditional.
+    const tick = (): Promise<void> =>
+      ensure(
+        () =>
+          step().catch(() => {
+            if (generation.current !== mine) return;
+            setProblem(SCREEN_UNAVAILABLE);
+          }),
+        () => {
+          if (generation.current === mine && shouldContinue()) {
+            timer = setTimeout(tick, intervalMs);
+          }
+        },
+      );
 
     void tick();
     return () => {
