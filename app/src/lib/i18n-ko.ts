@@ -284,7 +284,7 @@ export const ko: Record<string, string> = {
   "Academy or tutoring": "학원·교육",
   "Clinic or pharmacy": "병원·약국",
   "Office or professional services": "사무·전문직",
-  "Something else": "그 밖에",
+  // "Something else"(그 밖에)는 답 평가의 이유와 같은 말이라 그쪽 항목 하나를 함께 쓴다.
   "Naver Smart Store": "네이버 스마트스토어",
   "Naver Booking and Talk": "네이버 예약·톡톡",
   Baemin: "배달의민족",

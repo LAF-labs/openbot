@@ -24,8 +24,12 @@ export type AuthenticatedUser = {
    * What kind of business this person runs and where they work every day, as they answered on the
    * first run or in Settings → 내 가게. Catalogue keys only; the words are this surface's. The empty
    * answer when nothing was answered, and on a deployment that keeps none.
+   *
+   * OPTIONAL, though `currentUser` always fills it: every reader already treats absent as nothing
+   * answered, and a required field here broke the first fixture of this type written without it
+   * (`today-usage-render.test.tsx`, merged beside this) — and would break the next one too.
    */
-  shop: ShopProfile;
+  shop?: ShopProfile;
 };
 
 /**
