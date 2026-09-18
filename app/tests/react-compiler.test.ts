@@ -27,6 +27,12 @@ import {
  * WHAT THIS DOES NOT SEE. The app's tests run under `bun test`, which never applies the compiler:
  * every component a test renders is the uncompiled one. What the compiler does to a component is
  * seen only in `vite dev` and `vite build`.
+ *
+ * Nor does a count see a component that compiled and is now wrong. The compiler keeps work whose
+ * inputs are the same objects as last time, and assumes rendering is pure; an input mutated in place
+ * or a clock read while rendering breaks both. The two found when it was turned on were found by
+ * reading the compiled output, not by this number: CopilotKit's message array, grown in place (see
+ * `ChannelChat`), and labels computed from `new Date()` (see `lib/use-now.ts`).
  */
 
 /**
