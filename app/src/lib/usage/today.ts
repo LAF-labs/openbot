@@ -4,6 +4,7 @@ import {
   type CurrentUserResult,
   type Trial,
 } from "@/lib/auth/queries";
+import type { Reading } from "@/lib/reading";
 
 /**
  * How much of a free trial's day is used, for the two places that say so before a question is
@@ -31,6 +32,31 @@ export type TodayUsage = {
   /** Whole percent, rounded down so it never says more was used than was, and at most 100. */
   percent: number;
 };
+
+/**
+ * The 오늘 사용량 row's state, from `/api/me` — or null, for a deployment with no allowance to count.
+ *
+ * NO ROW WITHOUT A TRIAL, AND THAT IS DELIBERATE rather than an unavailable line: a section called
+ * 무료 체험 on a deployment that is not one would be a heading over a promise nobody made.
+ *
+ * A TRIAL WHOSE COUNT THE SERVER COULD NOT READ IS A FAILED READ, NOT NOTHING. `/api/me` leaves the
+ * count out when it could not read it, and the row used to vanish with it — so on the one day the
+ * meter mattered, the only place that says how much is left said nothing, and did not say that it
+ * had said nothing. It says so now, with 다시 시도, and never with an empty meter, which would claim
+ * plenty left on a day that may be one question from the limit.
+ */
+export function todayUsageReading(
+  user: { deployment: { trial?: Trial } } | null | undefined,
+  { isFetching = false }: { isFetching?: boolean } = {},
+): Reading<TodayUsage> | null {
+  if (user === undefined) return { state: "loading" };
+  const trial = user?.deployment.trial;
+  if (!trial || !(trial.dailyTokenBudget > 0)) return null;
+  const usage = usageOf(trial);
+  return usage
+    ? { state: "ready", data: usage }
+    : { state: "failed", previous: null, isRetrying: isFetching };
+}
 
 /** Today's use, or nothing to draw — no trial, a count the server could not read, or no budget. */
 export function usageOf(trial: Trial | undefined): TodayUsage | null {

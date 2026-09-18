@@ -6,7 +6,12 @@ import { SiteRows } from "@/components/connections/site-rows";
 import { PartnerRow } from "@/components/partners/partner-connections";
 import { ConnectOutcome } from "@/components/plugins/connections";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { agentKeys } from "@/lib/agents/queries";
 import {
   connectionKeys,
@@ -18,6 +23,7 @@ import {
 import type { AlimtalkStatus } from "@/lib/partners/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys } from "@/lib/plugins/queries";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 
 /**
  * 연결 — one screen, one read, and one gesture on every row.
@@ -136,7 +142,19 @@ export const ConnectionsScreen = ({
   }, [queryClient]);
 
   const accounts = data?.accounts ?? [];
-  const sites = data?.sites ?? [];
+  /*
+   * What the screen draws, read once. A refetch that fails over twenty-four rows keeps the rows —
+   * this screen learnt that by hand before the helper existed (the note on the failure below) — and
+   * now also says, quietly, that they are from before. A read with nothing in it at all is an
+   * empty screen that says so, rather than a title over nothing.
+   */
+  const reading = useReading(overview, {
+    isEmpty: (answer) =>
+      answer.accounts.length === 0 && answer.sites.length === 0,
+  });
+  const settled = settledOf(reading);
+  const shownAccounts = settled?.data.accounts ?? [];
+  const sites = settled?.data.sites ?? [];
 
   return (
     <PageShell
@@ -168,27 +186,29 @@ export const ConnectionsScreen = ({
       ) : null}
 
       {/*
-       * `!data` as well as the error: a refetch that fails while the screen already has an answer
-       * must not replace twenty-four rows with a red line. In TanStack Query v5 a failed background
-       * refetch turns `status` to error with the data still in hand, so reading the flag alone
-       * would blank a working screen every time a laptop's wifi dropped for a second.
+       * Only a read with nothing from before is a failure that takes the rows' place: a refetch that
+       * fails while the screen already has an answer must not replace twenty-four rows with a red
+       * line. In TanStack Query v5 a failed background refetch turns `status` to error with the data
+       * still in hand, so reading the flag alone would blank a working screen every time a laptop's
+       * wifi dropped for a second. `useReading` keeps that answer as `previous`.
        */}
-      {overview.isError && !data ? (
-        <PageSection title={t("Connections")}>
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {t("The connections could not be loaded.")}
-          </p>
-          <Button
-            className="mt-3"
-            onClick={() => void overview.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {t("Try again")}
-          </Button>
+      {reading.state === "unavailable" ? (
+        <PageSection>
+          <ReadUnavailable
+            message={unavailableText(
+              reading.why,
+              t("Connections are not offered here."),
+            )}
+          />
         </PageSection>
-      ) : overview.isPending ? (
+      ) : hasFailedOutright(reading) ? (
+        <PageSection>
+          <ReadFailed
+            message={t("The connections could not be loaded.")}
+            onRetry={() => void overview.refetch()}
+          />
+        </PageSection>
+      ) : reading.state === "loading" ? (
         <>
           <PageSection
             description={t(
@@ -217,7 +237,28 @@ export const ConnectionsScreen = ({
         </>
       ) : (
         <>
-          {accounts.length > 0 ? (
+          {reading.state === "failed" ? (
+            <ReadStale
+              className="mt-8"
+              isRetrying={reading.isRetrying}
+              onRetry={() => void overview.refetch()}
+            />
+          ) : null}
+
+          {settled?.state === "empty" ? (
+            /*
+             * A deployment whose catalogue, partners and browser all sent nothing. The heading used
+             * to stand over an empty page — every section withheld, as each should be — which read
+             * as a screen that had not finished loading.
+             */
+            <PageSection>
+              <p className="text-muted-foreground text-sm" role="status">
+                {t("There is nothing this deployment can connect yet.")}
+              </p>
+            </PageSection>
+          ) : null}
+
+          {shownAccounts.length > 0 ? (
             <PageSection
               description={t(
                 "Sign in once at the service and your Bot works with your own account.",
@@ -225,7 +266,7 @@ export const ConnectionsScreen = ({
               title={t("Accounts")}
             >
               <div className="mt-4 rounded-lg border border-border bg-card">
-                {accounts.map((account) =>
+                {shownAccounts.map((account) =>
                   account.kind === "oauth" ? (
                     <OauthRow
                       account={account}
@@ -251,7 +292,7 @@ export const ConnectionsScreen = ({
               )}
               title={t("Sites")}
             >
-              <SiteRows bots={data?.bots ?? []} sites={sites} />
+              <SiteRows bots={settled?.data.bots ?? []} sites={sites} />
             </PageSection>
           ) : null}
         </>

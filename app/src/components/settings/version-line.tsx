@@ -1,9 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import {
+  ReadFailed,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
+import { settledOf, useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
 import {
   browserOf,
@@ -32,14 +39,17 @@ const COPIED_MS = 1_500;
  * plus the two facts a person would not know to look up. 복사했어요 appears only once the clipboard
  * took it: through `copyText`, the same door the copy button under a Bot's answer uses.
  *
- * Nothing is drawn until the server has answered, and nothing at all when it could not: a version
- * this line invents is exactly the wrong number for the thread to start from.
+ * No version is ever drawn that the server did not say: a version this line invents is exactly the
+ * wrong number for the thread to start from. What IS drawn when it could not say is that — with
+ * 다시 시도 — rather than the nothing it used to be, which on the screen somebody opens when
+ * something is wrong read as a footer that had simply lost its first line.
  */
 export function VersionLine({ className }: { className?: string }) {
-  const { data: build } = useQuery(buildQueryOptions());
+  const buildQuery = useQuery(buildQueryOptions());
   const { data: shell } = useQuery(shellVersionQueryOptions());
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reading = useReading(buildQuery);
 
   useEffect(
     () => () => {
@@ -48,7 +58,34 @@ export function VersionLine({ className }: { className?: string }) {
     [],
   );
 
-  if (!build) return null;
+  if (reading.state === "loading") {
+    // One line's height, so the footer does not grow when the answer lands.
+    return <Skeleton className={cn("h-4 w-44", className)} />;
+  }
+  if (reading.state === "unavailable") {
+    return (
+      <ReadUnavailable
+        className={cn("py-0", className)}
+        message={unavailableText(
+          reading.why,
+          t("This server does not say which version it is."),
+        )}
+        size="compact"
+      />
+    );
+  }
+  const settled = settledOf(reading);
+  if (!settled) {
+    return (
+      <ReadFailed
+        className={cn("py-0", className)}
+        message={t("The version could not be read.")}
+        onRetry={() => void buildQuery.refetch()}
+        size="compact"
+      />
+    );
+  }
+  const build = settled.data;
 
   const text = shell
     ? t("Version {build} · app {shell}", {

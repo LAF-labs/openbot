@@ -3,6 +3,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
 import {
   DailyPlacePicker,
@@ -14,6 +20,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 import { useSavedFlash } from "@/lib/saved-flash";
 import {
   type BusinessKindId,
@@ -53,8 +60,12 @@ const ShopSettings = () => {
    * sit together; on the first run they are two screens and the order is settled before the chips
    * are drawn. The list re-sorts once, after a save, which is a moment the person caused.
    */
-  const offered = overview.data
-    ? placesToOffer(overview.data, saved.kind, places)
+  const placesReading = useReading(overview, {
+    isEmpty: (answer) => placesToOffer(answer, saved.kind, places).length === 0,
+  });
+  const settledPlaces = settledOf(placesReading);
+  const offered = settledPlaces
+    ? placesToOffer(settledPlaces.data, saved.kind, places)
     : null;
   const answer = { kind, places };
   const isChanged = !sameShop(answer, saved);
@@ -110,6 +121,10 @@ const ShopSettings = () => {
         title={t("Places you use every day")}
       >
         <div className="mt-4">
+          {/*
+           * "REFRESH TO TRY AGAIN" WAS THE WHOLE OF THE FAILURE, and the installed app has no
+           * refresh: no address bar, no reload key anybody knows. The press is on the screen now.
+           */}
           {offered && offered.length > 0 ? (
             <DailyPlacePicker
               align="start"
@@ -123,13 +138,30 @@ const ShopSettings = () => {
             <p className="text-muted-foreground text-sm">
               {t("There is nothing this deployment can connect yet.")}
             </p>
-          ) : overview.isError ? (
-            <p className="text-muted-foreground text-sm" role="status">
-              {t("The places could not be loaded. Refresh to try again.")}
-            </p>
+          ) : placesReading.state === "unavailable" ? (
+            <ReadUnavailable
+              className="py-0"
+              message={unavailableText(
+                placesReading.why,
+                t("There is nothing this deployment can connect yet."),
+              )}
+            />
+          ) : hasFailedOutright(placesReading) ? (
+            <ReadFailed
+              className="py-0"
+              message={t("The places could not be loaded.")}
+              onRetry={() => void overview.refetch()}
+            />
           ) : (
             <DailyPlacePickerSkeleton />
           )}
+          {placesReading.state === "failed" && placesReading.previous ? (
+            <ReadStale
+              className="mt-3"
+              isRetrying={placesReading.isRetrying}
+              onRetry={() => void overview.refetch()}
+            />
+          ) : null}
         </div>
         {/*
          * Picking a place here does not connect it: that is a sign-in or a consent, and it happens

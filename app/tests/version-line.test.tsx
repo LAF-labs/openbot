@@ -144,6 +144,7 @@ async function mounted() {
   await settle();
   const copyButton = () => host.querySelector("button");
   return {
+    settle,
     /** The version line itself, without the copy control beside it. */
     text: () => host.querySelector("p")?.textContent ?? "",
     everything: () => host.textContent ?? "",
@@ -214,12 +215,34 @@ describe("the line", () => {
     await page.unmount();
   });
 
-  test("draws nothing rather than a guess when the server could not say", async () => {
+  test("draws no guess when the server could not say — and says it could not, with a way to ask again", async () => {
+    /*
+     * It drew nothing at all until 2026-09-18, which kept the guess off the screen and also every
+     * sign that the line was missing: the footer simply lost its first fact, on the one screen a
+     * person opens when something is wrong. No version is drawn still, and nothing to copy.
+     */
     serverAnswers("unreachable");
     const page = await mounted();
-    // Nor anything to copy: a line with no build in it is not worth pasting to anybody.
-    expect(page.everything()).toBe("");
-    expect(page.copyButton()).toBeNull();
+    expect(page.everything()).not.toMatch(/Version|v\d/);
+    expect(page.everything()).toContain("The version could not be read.");
+    expect(page.copyButton()?.textContent).toBe("Try again");
+    await page.unmount();
+  });
+
+  test("a failed read asks again when pressed, and draws the build the answer brings", async () => {
+    serverAnswers({ status: 500, body: { code: "laf:internal" } });
+    const page = await mounted();
+    expect(page.everything()).toContain("The version could not be read.");
+
+    serverAnswers({
+      status: 200,
+      body: { version: "v0.5.1", revision: "dba36c3f0c", channel: "stable" },
+    });
+    // The line's one button is 다시 시도 while the read has failed.
+    await page.copy();
+    await page.settle();
+    expect(page.text()).toBe("Version v0.5.1 (dba36c3) · stable");
+    expect(page.copyButton()?.textContent).toBe("Copy");
     await page.unmount();
   });
 });

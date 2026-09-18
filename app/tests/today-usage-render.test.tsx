@@ -106,13 +106,22 @@ describe("the 오늘 사용량 row in Settings", () => {
     expect(view.host.innerHTML).toBe("");
   });
 
-  test("is not drawn when the server could not read today's count", async () => {
-    // An empty meter would say "plenty left" on a day that may be one question from the limit.
+  test("says so when the server could not read today's count — with no meter, and a way to ask again", async () => {
+    /*
+     * An empty meter would say "plenty left" on a day that may be one question from the limit, so
+     * none is drawn. Nor is nothing, as it was until 2026-09-18: the row vanished with the count, and
+     * on the day the number mattered the one place that gives it said nothing, and not that.
+     */
     const { TodayUsageSection } = await import(
       "../src/components/settings/today-usage"
     );
     const view = await drawn(person({}), () => <TodayUsageSection />);
-    expect(view.host.innerHTML).toBe("");
+    expect(view.host.querySelector("progress")).toBeNull();
+    expect(view.host.querySelector('[data-slot="today-usage"]')).toBeNull();
+    expect(
+      view.host.querySelector('[data-read-state="failed"]')?.textContent,
+    ).toContain("Today's usage could not be read.");
+    expect(view.host.querySelector("button")?.textContent).toBe("Try again");
   });
 });
 

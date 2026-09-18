@@ -5,6 +5,7 @@ import {
   noticeDue,
   readDismissedDay,
   seoulDayKey,
+  todayUsageReading,
   usageOf,
   writeDismissedDay,
 } from "../src/lib/usage/today";
@@ -46,6 +47,42 @@ describe("what /api/me says today has used", () => {
         "tokensUsedToday",
       );
     }
+  });
+});
+
+describe("the 오늘 사용량 row's state", () => {
+  const person = (trialFacts?: Record<string, unknown>) => ({
+    deployment: trialFacts ? { trial: parseTrial(trial(trialFacts)) } : {},
+  });
+
+  test("is nothing to draw on a deployment that is not a trial", () => {
+    expect(todayUsageReading(person())).toBeNull();
+    expect(todayUsageReading(null)).toBeNull();
+  });
+
+  test("is the meter when the count was read", () => {
+    expect(todayUsageReading(person({ tokensUsedToday: 420_000 }))).toEqual({
+      state: "ready",
+      data: { used: 420_000, budget: 1_000_000, ratio: 0.42, percent: 42 },
+    });
+  });
+
+  test("is a failed read when the server could not read the count — not nothing, and never an empty meter", () => {
+    expect(todayUsageReading(person({ tokensUsedToday: undefined }))).toEqual({
+      state: "failed",
+      previous: null,
+      isRetrying: false,
+    });
+    // Asked again, the button says so until `/api/me` answers.
+    expect(
+      todayUsageReading(person({ tokensUsedToday: undefined }), {
+        isFetching: true,
+      }),
+    ).toEqual({ state: "failed", previous: null, isRetrying: true });
+  });
+
+  test("is loading only before `/api/me` has answered at all", () => {
+    expect(todayUsageReading(undefined)).toEqual({ state: "loading" });
   });
 });
 
