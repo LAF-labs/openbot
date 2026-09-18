@@ -216,10 +216,27 @@ passes only on the machine it was written on is the failure mode
 (`room-transcript.integration.test.ts` had exactly that), and it is now the
 normal case, since the test database starts empty.
 
+### The React Compiler compiles the app
+
+Every component and hook goes through it (`app/src/lib/build/react-compiler.ts`),
+and `app/tests/react-compiler.test.ts` fails when the number of functions it
+leaves uncompiled rises above its ceiling. What leaves one uncompiled, measured
+here: a `finally` anywhere in a component — write `await ensure(work, after)`
+(`@/lib/ensure`); a ref read or written while rendering — write it in an effect
+or keep the value in state; the clock read while rendering — `useNow()`, which
+is also the only cure for `new Date()`, since the check cannot see that one.
+
+A component that compiles can still behave differently, and the ceiling cannot
+see it. CopilotKit changes its message array in place while it streams, so a
+compiled component handed that array stops showing the reply after its first
+chunk: `ChannelChat` says `"use no memo"` and hands down a copy. And `bun test`
+never compiles, so a compiled component is only ever seen in the browser.
+
 ## Conventions
 
-- `const` arrow components; `handle`-prefixed handlers; verb-prefixed booleans.
-- PascalCase component files; kebab-case everything else.
+- Components are function declarations (`export function BotPanel`), as most of
+  the app is written; `handle`-prefixed handlers; verb-prefixed booleans.
+- kebab-case file names, components included (`bot-panel.tsx`).
 - Tailwind classes only. No inline styles.
 - Comments explain **why**, and are worth most where they record what went
   wrong. A comment saying what the line does is noise.
