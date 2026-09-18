@@ -205,7 +205,10 @@ a week alone pauses a weekly report after the first one nobody opened.
 
 - **A delivery** is a `routine.ran` trail row that says `delivered: true`,
   written for a run whose answer went into the conversation; `[SILENT]` and
-  failed runs delivered nothing to read. The trail rather than the receipts,
+  failed runs delivered nothing to read, and neither did a run stopped with
+  모두 멈추기 — it is settled not ok, delivers nothing and its row says
+  `stopped` (`routine-unread.integration.test.ts` runs a real stop through the
+  trail to hold that). The trail rather than the receipts,
   because receipts are pruned to twenty a routine: a routine that reports every
   half hour keeps ten hours of them, and its oldest unread result would never
   look a week old. A deployment keeping less than a week of trail
