@@ -1,8 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { ConnectionCheckDialog } from "@/components/help/connection-check-dialog";
 import { DiagnosticsPreview } from "@/components/help/diagnostics-preview";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -131,9 +138,22 @@ export function FeedbackDialog({
 
   // Ticked and not yet drawn is not sendable: nothing goes that the person has not been shown.
   const isWaitingForDiagnostics = withDiagnostics && !preview;
+  const isSending = send.isPending;
+  const hasGatherFailed =
+    withDiagnostics && !gather.isPending && !preview && gather.error !== null;
+
+  /*
+   * THE RECEIPT TAKES THE FORM'S PLACE, AND THE BUTTON THAT SENT IT WITH IT. 닫기 takes the focus
+   * after the commit that draws it; left alone, the keyboard that pressed 보내기 was on `<body>`.
+   */
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const hasReceipt = receipt !== null;
+  useEffect(() => {
+    if (hasReceipt) closeRef.current?.focus();
+  }, [hasReceipt]);
 
   const handleSend = () => {
-    if (!text.trim() || send.isPending || isWaitingForDiagnostics) return;
+    if (!text.trim() || isSending || isWaitingForDiagnostics) return;
     send.mutate();
   };
 
@@ -145,7 +165,8 @@ export function FeedbackDialog({
     : "";
 
   return (
-    <Dialog onOpenChange={handleOpenChange} open={open}>
+    // While the message is on its way nothing closes the box: it would take the answer with it.
+    <Dialog isBusy={isSending} onOpenChange={handleOpenChange} open={open}>
       <DialogContent initialFocus={textareaRef}>
         <DialogHeader>
           <DialogTitle>{t("Questions and feedback")}</DialogTitle>
@@ -155,151 +176,174 @@ export function FeedbackDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        {receipt ? (
-          <p className="text-sm" role="status">
-            <span className="font-medium">{t("Sent.")}</span>{" "}
-            {t("Received {time}.", { time: receivedAt })}
-            {receipt.told.length > 0
-              ? ` ${t("It has reached the people who run the app.")}`
-              : null}
-            {receipt.withDiagnostics
-              ? ` ${t("The diagnostic details went with it.")}`
-              : null}
-          </p>
-        ) : (
+        {/* Mounted from the open, so the receipt is heard when it replaces the form. */}
+        <LiveRegion as="p" className="text-sm">
+          {receipt ? (
+            <>
+              <span className="font-medium">{t("Sent.")}</span>{" "}
+              {t("Received {time}.", { time: receivedAt })}
+              {receipt.told.length > 0
+                ? ` ${t("It has reached the people who run the app.")}`
+                : null}
+              {receipt.withDiagnostics
+                ? ` ${t("The diagnostic details went with it.")}`
+                : null}
+            </>
+          ) : null}
+        </LiveRegion>
+        {receipt ? null : (
           // The body scrolls, so an opened preview never pushes 보내기 off a short screen.
           <DialogBody>
             <form
-              className="flex flex-col gap-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 handleSend();
               }}
             >
-              <Textarea
-                aria-label={t("Questions and feedback")}
-                maxLength={FEEDBACK_MAX_LENGTH}
-                onChange={(event) => setText(event.target.value)}
-                placeholder={t(
-                  "For example: the review summary has not worked since yesterday.",
-                )}
-                ref={textareaRef}
-                rows={5}
-                value={text}
-              />
-              <p className="text-right text-muted-foreground text-xs">
-                {text.length}/{FEEDBACK_MAX_LENGTH}
-              </p>
-              <label
-                className="flex cursor-pointer items-start gap-2 text-sm"
-                htmlFor={boxId}
+              {/*
+               * Locked while it sends: the text, both boxes, and the two buttons inside. A message
+               * edited after 보내기 is not the message that went.
+               */}
+              <fieldset
+                className="flex min-w-0 flex-col gap-3"
+                disabled={isSending}
               >
-                <input
-                  checked={withScreen}
-                  className="mt-1 size-4 shrink-0 accent-primary"
-                  id={boxId}
-                  onChange={(event) => setWithScreen(event.target.checked)}
-                  type="checkbox"
+                <Textarea
+                  aria-label={t("Questions and feedback")}
+                  maxLength={FEEDBACK_MAX_LENGTH}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={t(
+                    "For example: the review summary has not worked since yesterday.",
+                  )}
+                  ref={textareaRef}
+                  rows={5}
+                  value={text}
                 />
-                <span className="flex flex-col gap-0.5">
-                  <span>{t("Send what is on screen too")}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {t(
-                      "Only this screen's address and the last failure code. Never a screenshot, never a message.",
-                    )}
-                  </span>
-                  {withScreen ? (
-                    <span className="text-muted-foreground text-xs">
-                      {facts.failureCode
-                        ? t(
-                            "Will attach: {route} and the last failure, {code}",
-                            {
-                              route: facts.route,
-                              code: facts.failureCode,
-                            },
-                          )
-                        : t("Will attach: {route}", { route: facts.route })}
-                    </span>
-                  ) : null}
-                </span>
-              </label>
-              <div className="flex flex-col gap-2">
+                <p className="text-right text-muted-foreground text-xs">
+                  {text.length}/{FEEDBACK_MAX_LENGTH}
+                </p>
                 <label
                   className="flex cursor-pointer items-start gap-2 text-sm"
-                  htmlFor={diagnosticsBoxId}
+                  htmlFor={boxId}
                 >
                   <input
-                    checked={withDiagnostics}
+                    checked={withScreen}
                     className="mt-1 size-4 shrink-0 accent-primary"
-                    id={diagnosticsBoxId}
-                    onChange={(event) =>
-                      handleDiagnosticsChange(event.target.checked)
-                    }
+                    id={boxId}
+                    onChange={(event) => setWithScreen(event.target.checked)}
                     type="checkbox"
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span>{t("Send diagnostic details too")}</span>
+                    <span>{t("Send what is on screen too")}</span>
                     <span className="text-muted-foreground text-xs">
                       {t(
-                        "The app version, whether the server is working, recent failure codes and your own Bots' recent records.",
+                        "Only this screen's address and the last failure code. Never a screenshot, never a message.",
                       )}
                     </span>
-                    {lastCheck ? (
+                    {withScreen ? (
                       <span className="text-muted-foreground text-xs">
-                        {t("And the result of the last connection check.")}
+                        {facts.failureCode
+                          ? t(
+                              "Will attach: {route} and the last failure, {code}",
+                              {
+                                route: facts.route,
+                                code: facts.failureCode,
+                              },
+                            )
+                          : t("Will attach: {route}", { route: facts.route })}
                       </span>
                     ) : null}
                   </span>
                 </label>
-                {withDiagnostics ? (
-                  gather.isPending ? (
-                    <p className="text-muted-foreground text-xs" role="status">
-                      {t("Gathering the diagnostic details…")}
-                    </p>
-                  ) : preview ? (
+                <div className="flex flex-col gap-2">
+                  <label
+                    className="flex cursor-pointer items-start gap-2 text-sm"
+                    htmlFor={diagnosticsBoxId}
+                  >
+                    <input
+                      checked={withDiagnostics}
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      id={diagnosticsBoxId}
+                      onChange={(event) =>
+                        handleDiagnosticsChange(event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span>{t("Send diagnostic details too")}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {t(
+                          "The app version, whether the server is working, recent failure codes and your own Bots' recent records.",
+                        )}
+                      </span>
+                      {lastCheck ? (
+                        <span className="text-muted-foreground text-xs">
+                          {t("And the result of the last connection check.")}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                  {/* Both mounted with the box, so the gathering and its failure are heard. */}
+                  <LiveRegion as="p" className="text-muted-foreground text-xs">
+                    {withDiagnostics && gather.isPending
+                      ? t("Gathering the diagnostic details…")
+                      : null}
+                  </LiveRegion>
+                  {withDiagnostics && preview ? (
                     <DiagnosticsPreview bundle={preview.diagnostics} />
-                  ) : gather.error ? (
-                    <p className="text-destructive text-xs" role="alert">
-                      {gather.error.message}{" "}
-                      <button
-                        className="underline underline-offset-2"
-                        onClick={() => gather.mutate()}
-                        type="button"
-                      >
-                        {t("Try again")}
-                      </button>
-                    </p>
-                  ) : null
-                ) : null}
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {t(
-                  "If the app seems stuck, a connection check may already say why.",
-                )}{" "}
-                <button
-                  className="underline underline-offset-2"
-                  onClick={() => setIsChecking(true)}
-                  type="button"
-                >
-                  {t("Connection check")}
-                </button>
-              </p>
-              {send.error ? (
-                <p className="text-destructive text-sm" role="alert">
-                  {send.error.message}
+                  ) : null}
+                  <LiveRegion
+                    as="p"
+                    className="text-destructive text-xs"
+                    tone="alert"
+                  >
+                    {hasGatherFailed ? (
+                      <>
+                        {gather.error?.message}{" "}
+                        <button
+                          className="underline underline-offset-2"
+                          onClick={() => gather.mutate()}
+                          type="button"
+                        >
+                          {t("Try again")}
+                        </button>
+                      </>
+                    ) : null}
+                  </LiveRegion>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  {t(
+                    "If the app seems stuck, a connection check may already say why.",
+                  )}{" "}
+                  <button
+                    className="underline underline-offset-2"
+                    onClick={() => setIsChecking(true)}
+                    type="button"
+                  >
+                    {t("Connection check")}
+                  </button>
                 </p>
-              ) : null}
+              </fieldset>
             </form>
           </DialogBody>
         )}
+        {/* Outside the form, which goes when the receipt comes: this line is the box's, not the form's. */}
+        <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+          {receipt ? null : send.error?.message}
+        </LiveRegion>
         <DialogFooter>
           {receipt ? (
-            <Button onClick={() => handleOpenChange(false)} size="sm">
+            <Button
+              onClick={() => handleOpenChange(false)}
+              ref={closeRef}
+              size="sm"
+            >
               {t("Close")}
             </Button>
           ) : (
             <>
               <Button
+                disabled={isSending}
                 onClick={() => handleOpenChange(false)}
                 size="sm"
                 variant="outline"
@@ -307,13 +351,13 @@ export function FeedbackDialog({
                 {t("Cancel")}
               </Button>
               <Button
-                disabled={
-                  !text.trim() || send.isPending || isWaitingForDiagnostics
-                }
+                disabled={!text.trim() || isSending || isWaitingForDiagnostics}
+                // Keeps the focus it was pressed with while the message is on its way.
+                focusableWhenDisabled={isSending}
                 onClick={handleSend}
                 size="sm"
               >
-                {send.isPending ? t("Sending…") : t("Send")}
+                {isSending ? t("Sending…") : t("Send")}
               </Button>
             </>
           )}
