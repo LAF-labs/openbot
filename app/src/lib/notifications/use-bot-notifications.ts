@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   askSubjectOf,
@@ -165,13 +165,20 @@ export function useBotNotifications(): void {
    * notifiable and none would know the Bot's name.
    */
   const rosterRef = useRef(agents.data);
-  rosterRef.current = agents.data;
   const pathRef = useRef(location.pathname);
-  pathRef.current = location.pathname;
   const navigateRef = useRef(navigate);
-  navigateRef.current = navigate;
   const queryClientRef = useRef(queryClient);
-  queryClientRef.current = queryClient;
+  /*
+   * Kept current after each commit, not assigned while rendering: a write during render is what
+   * the React Compiler refuses, and a render React throws away must not tell a listener it is on a
+   * page it never reached. Layout, so they are in place before any listener can run after it.
+   */
+  useLayoutEffect(() => {
+    rosterRef.current = agents.data;
+    pathRef.current = location.pathname;
+    navigateRef.current = navigate;
+    queryClientRef.current = queryClient;
+  }, [agents.data, location.pathname, navigate, queryClient]);
   /** Last delivery per `${agentId}:${kind}`. Lives as long as the app does, like the socket. */
   const lastNotified = useRef(new Map<string, number>());
   /**
