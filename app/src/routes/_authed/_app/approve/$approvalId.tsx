@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -145,9 +150,11 @@ function ApprovePage() {
    * "was open, is not" is how this page learns somebody pressed a button, without the card having
    * to grow a callback for one caller.
    */
-  const wasOpen = useRef(false);
-  if (isOpen) wasOpen.current = true;
-  const isSettled = wasOpen.current && !isOpen;
+  const [wasOpen, setWasOpen] = useState(false);
+  // State adjusted during render, not a ref set during render, which the React Compiler refuses:
+  // React renders again with the latch set before committing, so nothing is drawn a step late.
+  if (isOpen && !wasOpen) setWasOpen(true);
+  const isSettled = wasOpen && !isOpen;
 
   /** The Bot's own room, which is where somebody who has answered should be. */
   const botId = waiting?.botId;
