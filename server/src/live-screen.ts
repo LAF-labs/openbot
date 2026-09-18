@@ -11,6 +11,7 @@
  * 2026-09-14, where the only way a test could reach it was to start the whole process.
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import { CONNECTION_PROBE_PARAM } from "../../shared/support/connection-check";
 import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
 import {
@@ -96,16 +97,35 @@ type StreamData = {
 };
 
 /**
+ * The connection check's socket on this door (`app/src/lib/support/connection-check.ts`).
+ *
+ * It clears every gate a screen does — the computer, the origin, the session, whose Bot it is — and
+ * is then answered with one frame and closed. NOTHING INWARD: the computer keeps one viewer per Bot
+ * and a new one replaces the last (`agent-computer/src/live-screen.ts`), so a check that opened the
+ * real stream would freeze the picture in any window already watching that Bot, and take the
+ * keyboard from somebody driving it. And NO ROW: the trail's line says a person looked at a Bot's
+ * screen (`computer/screen-view.ts`), and a check shows nobody anything.
+ */
+type ProbeData = { screenProbe: true };
+
+/** The frame a probe is answered with — `type`, as every frame on this socket is keyed. */
+export const SCREEN_PROBE_FRAME = JSON.stringify({ type: "probe" });
+
+/**
  * Bun takes exactly one WebSocket handler for the server, and two features need one: this proxies
  * the computer stream, and the channels push their activity through Hono's adapter. So the handler
- * dispatches on what the upgrade attached — a proxy socket carries `upstream`, a Hono socket does
- * not — rather than either feature quietly taking the slot and breaking the other on connect.
+ * dispatches on what the upgrade attached — a proxy socket carries `upstream`, a probe carries
+ * `screenProbe`, a Hono socket carries neither — rather than either feature quietly taking the slot
+ * and breaking the other on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-export type SocketData = StreamData | ChannelSocket["data"];
+export type SocketData = StreamData | ProbeData | ChannelSocket["data"];
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
   typeof (data as StreamData).upstream === "string";
+
+const isProbe = (data: SocketData): data is ProbeData =>
+  (data as ProbeData).screenProbe === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -261,6 +281,12 @@ export function createLiveScreen(input: {
       if (access === "not_found") {
         return fact("laf:bot_not_found", 404);
       }
+      // After every gate and before anything inward: see `ProbeData`.
+      if (new URL(request.url).searchParams.has(CONNECTION_PROBE_PARAM)) {
+        return server.upgrade(request, { data: { screenProbe: true } })
+          ? undefined
+          : fact(UPGRADE_REQUIRED, 400);
+      }
       let upstream: string;
       try {
         upstream = toStreamUrl(computer.baseUrl, botId, computer.token ?? "");
@@ -289,6 +315,11 @@ export function createLiveScreen(input: {
 
     websocket: (channels) => ({
       open(ws: ServerWebSocket<SocketData>) {
+        if (isProbe(ws.data)) {
+          ws.send(SCREEN_PROBE_FRAME);
+          ws.close(1000, "laf:probe_answered");
+          return;
+        }
         if (!isProxiedStream(ws.data)) {
           channels.open(asChannelSocket(ws));
           return;
@@ -315,6 +346,8 @@ export function createLiveScreen(input: {
         inward.onerror = () => ws.close();
       },
       message(ws: ServerWebSocket<SocketData>, raw) {
+        // A probe takes no input: there is no browser behind it to take any to.
+        if (isProbe(ws.data)) return;
         if (!isProxiedStream(ws.data)) {
           channels.message(asChannelSocket(ws), raw);
           return;
@@ -340,6 +373,7 @@ export function createLiveScreen(input: {
         if (ws.data.inward?.readyState === 1) ws.data.inward.send(text);
       },
       close(ws: ServerWebSocket<SocketData>, code, reason) {
+        if (isProbe(ws.data)) return;
         if (!isProxiedStream(ws.data)) {
           channels.close(asChannelSocket(ws), code, reason);
           return;

@@ -3,10 +3,19 @@
  */
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { CONNECTION_PROBE_PARAM } from "../../../shared/support/connection-check";
 import type { AppVariables } from "../auth/guards";
 import { originRefusalBody, upgradeOriginAllowed } from "../auth/origin";
 import type { ChannelEventHub } from "./events";
 import { upgradeWebSocket } from "./socket";
+
+/**
+ * What a probe is answered with: the one frame this socket ever sends first.
+ *
+ * `kind`, like every frame the feed carries, so a reader that switches on it never mistakes this for
+ * a roster row — though no reader but the connection check ever asks for one.
+ */
+export const EVENTS_PROBE_FRAME = JSON.stringify({ kind: "probe" });
 
 export function createEventRoutes(
   events: ChannelEventHub,
@@ -33,6 +42,24 @@ export function createEventRoutes(
       await next();
     },
     upgradeWebSocket((context) => {
+      /*
+       * THE CONNECTION CHECK'S SOCKET (`app/src/lib/support/connection-check.ts`): through the
+       * session and the origin like any other, then one frame and a close.
+       *
+       * The feed sends nothing of its own accord until something moves, so a socket opened only to
+       * see whether this network lets one through would wait on silence and learn nothing. And it is
+       * NEVER registered with the hub. A notification counts as delivered once a socket of its
+       * person's took it (`notifications/in-app.ts`): a check's socket counted there could take a
+       * frame meant for the app's own and close with it, and the row would say it had arrived.
+       */
+      if (context.req.query(CONNECTION_PROBE_PARAM) !== undefined) {
+        return {
+          onOpen: (_event, ws) => {
+            ws.send(EVENTS_PROBE_FRAME);
+            ws.close(1000, "laf:probe_answered");
+          },
+        };
+      }
       // Resolved at upgrade, not per message: the connection belongs to whoever authenticated it,
       // and nothing it later sends can change that.
       const { id: userId } = context.var.actor;

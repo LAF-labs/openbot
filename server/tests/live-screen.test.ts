@@ -7,6 +7,7 @@ import {
   createLiveScreen,
   describePointOn,
   type LiveScreen,
+  SCREEN_PROBE_FRAME,
   type SocketData,
 } from "../src/live-screen";
 
@@ -324,6 +325,87 @@ describe("an opened screen", () => {
     await until(() => channelCalls.includes("close"));
     expect(channelCalls).toEqual(["open", "message", "close"]);
     expect(computerSaw).toEqual([]);
+  });
+});
+
+/**
+ * The connection check's probe: the same gates, one frame, and nothing behind it.
+ *
+ * What it must never do is what opening the real stream does — replace the one viewer the computer
+ * keeps per Bot (freezing any window already watching) and write a line saying a person looked.
+ */
+describe("the connection check's probe", () => {
+  const probeUrl = (botId: string) =>
+    `ws://127.0.0.1:${server.port}/api/computers/${botId}/stream?probe=1`;
+
+  /** A probe to its end: every frame it was sent, and the code it was closed with. */
+  const probe = async (botId: string) => {
+    const socket = new WebSocket(probeUrl(botId), {
+      headers: { origin: ORIGIN, "x-test-actor": OWNER },
+    } as never);
+    const frames: string[] = [];
+    socket.onmessage = (event) => frames.push(String(event.data));
+    const code = await new Promise<number>((resolve, reject) => {
+      socket.onclose = (event) => resolve(event.code);
+      socket.onerror = () => reject(new Error("the probe did not open"));
+    });
+    return { frames, code };
+  };
+
+  test("is refused by the same gates as the screen, by the same codes", async () => {
+    const path = `/api/computers/${BOT}/stream?probe=1`;
+    expect(await refusal(path, { "x-test-actor": OWNER })).toEqual({
+      status: 403,
+      body: { error: "laf:origin_refused", code: "laf:origin_refused" },
+    });
+    expect((await refusal(path, { origin: ORIGIN })).status).toBe(401);
+    expect(
+      (
+        await refusal(`/api/computers/${SOMEBODY_ELSES}/stream?probe=1`, {
+          origin: ORIGIN,
+          "x-test-actor": OWNER,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await refusal(
+          path,
+          { origin: ORIGIN, "x-test-actor": OWNER },
+          withoutComputer,
+        )
+      ).status,
+    ).toBe(503);
+  });
+
+  test("is answered with one frame and closed, and opens nothing inward and records nothing", async () => {
+    const { frames, code } = await probe(BOT);
+
+    expect(frames).toEqual([SCREEN_PROBE_FRAME]);
+    expect(code).toBe(1000);
+    expect(computerSaw).toEqual([]);
+    expect(opened).toEqual([]);
+    expect(live.openFor(OWNER)).toBe(0);
+  });
+
+  test("leaves a screen that is already open on that Bot exactly as it was", async () => {
+    const { socket } = await openScreen(BOT);
+    expect(live.openFor(OWNER)).toBe(1);
+
+    await probe(BOT);
+
+    // The computer was asked once, by the screen: a second `open` there would have replaced it.
+    expect(
+      computerSaw.filter((entry) => "opened" in entry).map((e) => e.opened),
+    ).toEqual([{ bot: BOT, token: TOKEN }]);
+    expect(opened).toHaveLength(1);
+    expect(live.openFor(OWNER)).toBe(1);
+    // And it still carries input inward.
+    socket.send("still driving");
+    await until(() =>
+      computerSaw.some((entry) => entry.input === "still driving"),
+    );
+    socket.close();
   });
 });
 
