@@ -29,9 +29,14 @@ import { useActiveBotHolder, useDeclaredBotId } from "./active-bot";
 export function SkillTools() {
   const declared = useDeclaredBotId();
   const { data } = useQuery(agentPluginsQueryOptions(declared));
-  const everHeld = useRef(false);
-  if ((data?.skills.length ?? 0) > 0) everHeld.current = true;
-  return everHeld.current ? <SkillViewTool /> : null;
+  const holdsOne = (data?.skills.length ?? 0) > 0;
+  /*
+   * State adjusted during render, not a ref set during render: the React Compiler refuses the
+   * second, and the first commits nothing until React has rendered again with the latch set.
+   */
+  const [everHeld, setEverHeld] = useState(holdsOne);
+  if (holdsOne && !everHeld) setEverHeld(true);
+  return everHeld ? <SkillViewTool /> : null;
 }
 
 function SkillViewTool() {
