@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { createElement } from "react";
+import type { ConfirmShown } from "./support/confirm-dialog-render";
 
 /**
  * THE DIALOG THAT ASKS BEFORE SOMETHING IS GONE, AND WHETHER A KEYBOARD CAN ANSWER IT.
@@ -94,7 +95,7 @@ describe("a closed confirm dialog", () => {
       createElement(ConfirmDialog, {
         confirmLabel: "삭제",
         description: "되돌릴 수 없습니다.",
-        onConfirm: () => {},
+        onConfirm: async () => {},
         onOpenChange: () => {},
         open: false,
         title: "'김비서'를 삭제할까요?",
@@ -123,7 +124,8 @@ describe("what the dialog promises", () => {
      */
     expect(SOURCE).toContain("initialFocus={cancelRef}");
     const ref = SOURCE.indexOf("ref={cancelRef}");
-    const cancel = SOURCE.indexOf('{t("Cancel")}');
+    // It reads 닫기 once a re-check has left nothing else to answer; before that, 취소.
+    const cancel = SOURCE.indexOf('t("Cancel")');
     expect(ref).toBeGreaterThan(0);
     // The ref is on the button that says Cancel, not on the one beside it.
     expect(cancel).toBeGreaterThan(ref);
@@ -166,3 +168,87 @@ describe("what the dialog promises", () => {
     }
   });
 });
+
+/**
+ * PRESSED FOR REAL, IN A PROCESS OF ITS OWN (`support/confirm-dialog-render.tsx`), where Base UI
+ * meets a DOM before it is first evaluated and the popup is the real one.
+ *
+ * MEASURED IN CHROME on 2026-09-18, before the dialog owned its press: a Bot's 삭제 pressed with the
+ * request held, then Escape — the dialog closed mid-request, and the refusal that came back a moment
+ * later was drawn on the profile behind it, beside an unhandled rejection in the console. What is
+ * held here is the checklist in `docs/laf/dialogs.md`, against that.
+ */
+describe("a confirm dialog, pressed", () => {
+  test("cannot be closed while it works, says a failure inside itself, and offers 다시 시도 only then", async () => {
+    const { failing } = await renderedInKorean();
+    expect(failing.focusedOnOpen).toBe("취소");
+
+    expect(failing.runningLabel).toBe("삭제 중…");
+    expect(failing.runningDisabled).toBe(true);
+    expect(failing.cancelDisabledWhileRunning).toBe(true);
+    expect(failing.closeDisabledWhileRunning).toBe(true);
+    // Escape, a press on the overlay and the ×: not one of them asked the caller to close it.
+    expect(failing.closesAskedWhileRunning).toEqual([]);
+    expect(failing.openAfterEscapeOverlayAndX).toBe(true);
+    // A second press while it ran started nothing.
+    expect(failing.actionsStarted).toBe(1);
+
+    // The failure, in the dialog, in the region that was waiting for it.
+    expect(failing.alertMountedBeforeFailure).toBe(true);
+    expect(failing.alertIsSameElement).toBe(true);
+    expect(failing.alert).toBe("그 봇은 더 이상 없습니다.");
+    expect(failing.labelAfterFailure).toBe("다시 시도");
+    expect(failing.openAfterFailure).toBe(true);
+  }, 120_000);
+
+  test("closes itself once the action has succeeded, and not before", async () => {
+    const { succeeding } = await renderedInKorean();
+    // 다시 시도 is the failed state's alone.
+    expect(succeeding.labelBeforePress).toBe("삭제");
+    expect(succeeding.closesAsked).toEqual([false]);
+    expect(succeeding.openAfterSuccess).toBe(false);
+  }, 120_000);
+
+  test("a re-check that finds the thing gone sends nothing, says why, and leaves only 닫기", async () => {
+    const { moot } = await renderedInKorean();
+    expect(moot.actionsStarted).toBe(0);
+    expect(moot.status).toBe("이 봇은 이미 삭제되었습니다.");
+    expect(moot.buttons).toEqual(["닫기"]);
+    expect(moot.focused).toBe("닫기");
+  }, 120_000);
+
+  test("with nothing running, Escape, the overlay and the × each close it — so the refusals above are real", async () => {
+    const { idle } = await renderedInKorean();
+    expect(idle.closesAskedOnEscape).toEqual([false]);
+    expect(idle.closesAskedOnOverlay).toEqual([false]);
+    expect(idle.closesAskedOnX).toEqual([false]);
+  }, 120_000);
+});
+
+let rendering: Promise<ConfirmShown> | undefined;
+
+function renderedInKorean(): Promise<ConfirmShown> {
+  rendering ??= render();
+  return rendering;
+}
+
+async function render(): Promise<ConfirmShown> {
+  const child = Bun.spawn(
+    ["bun", join(import.meta.dir, "support/confirm-dialog-render.tsx")],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [stdout, stderr, status] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  const line = stdout
+    .split("\n")
+    .find((candidate) => candidate.startsWith("CONFIRM_RENDER "));
+  if (status !== 0 || !line) {
+    throw new Error(
+      `the dialog render did not finish (exit ${status}):\n${stderr.slice(-3000)}`,
+    );
+  }
+  return JSON.parse(line.slice("CONFIRM_RENDER ".length)) as ConfirmShown;
+}

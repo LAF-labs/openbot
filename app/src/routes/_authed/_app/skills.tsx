@@ -36,6 +36,7 @@ import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { skillDeleteRecheck } from "@/lib/rechecks";
 import { refusalFrom } from "@/lib/refusals";
 
 /**
@@ -75,7 +76,6 @@ function SkillsPage() {
     pluginsPageQueryOptions(),
   );
   const { data: me } = useQuery(currentUserQueryOptions());
-  const [error, setError] = useState<string | null>(null);
   /** The slug being confirmed, or null. One dialog for the page, not one per row. */
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   /*
@@ -94,20 +94,26 @@ function SkillsPage() {
    */
   const [askedAbout, setAskedAbout] = useState("");
 
-  const mutate = useMutation({
-    mutationFn: async (run: () => Promise<Response>) => {
-      const response = await run();
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: pluginKeys.all });
+  /*
+   * The delete, for the dialog to await. It used to close the dialog on the press and put the
+   * refusal at the top of the page; the dialog now stays open until the list has been read back
+   * without the skill, and says a refusal inside itself.
+   */
+  const remove = useMutation({
+    mutationFn: async (slug: string) => {
+      const response = await fetch(
+        `/api/plugins/skills/${encodeURIComponent(slug)}`,
+        { method: "DELETE", credentials: "include" },
+      );
       if (!response.ok) {
         throw new Error(
           await refusalFrom(response, SKILL_REFUSALS, t("That did not work.")),
         );
       }
     },
-    onError: (caught: Error) => setError(caught.message),
-    onSuccess: () => {
-      setError(null);
-      void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
-    },
+    onSuccess: refresh,
   });
 
   /*
@@ -158,12 +164,6 @@ function SkillsPage() {
         )}
         title={t("Skills")}
       >
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
-
         {/*
          * ONE DIALOG FOR THE PAGE. A skill is gone the moment it is deleted and any Bot carrying it
          * loses the command; asking is the same courtesy a routine and a Bot already get.
@@ -173,22 +173,17 @@ function SkillsPage() {
           description={t(
             "The command stops working and any Bot carrying it loses it. This cannot be undone.",
           )}
-          onConfirm={() => {
-            const slug = confirmingDelete;
-            if (!slug) return;
-            setConfirmingDelete(null);
-            mutate.mutate(() =>
-              fetch(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
-                method: "DELETE",
-                credentials: "include",
-              }),
-            );
+          onConfirm={async () => {
+            if (confirmingDelete) await remove.mutateAsync(confirmingDelete);
           }}
           onOpenChange={(next) => {
             if (!next) setConfirmingDelete(null);
           }}
+          onStale={() => void refresh()}
           open={confirmingDelete !== null}
-          pending={mutate.isPending}
+          recheck={async () =>
+            confirmingDelete ? skillDeleteRecheck(confirmingDelete) : null
+          }
           title={t("Delete {name}{josa}?", {
             josa: josa(askedAbout, "을/를"),
             name: askedAbout,

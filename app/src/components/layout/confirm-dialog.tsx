@@ -1,4 +1,11 @@
-import { type ReactNode, useRef } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,6 +16,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { t } from "@/lib/i18n";
+import { pressOnce } from "@/lib/press";
+
+/** Where one press has got to. `done` looks like `running` while the dialog fades out. */
+type Press =
+  | { phase: "asking" }
+  | { phase: "running" }
+  | { phase: "done" }
+  | { phase: "failed"; sentence: string }
+  | { phase: "moot"; sentence: string };
 
 /**
  * THE QUESTION ASKED BEFORE SOMETHING IS GONE FOR GOOD.
@@ -33,37 +49,101 @@ import { t } from "@/lib/i18n";
  *    codebase draws a button that cannot be pressed. The confirm here is filled, because the whole
  *    job of this dialog is to make the irreversible press unmistakable.
  *
+ * AND IT OWNS ITS PRESS, since 2026-09-18 (`docs/laf/dialogs.md`). It used to be handed `pending`
+ * and `error` and trust each caller to wire them, and the six callers wired six different things:
+ * three closed the dialog on the press and let the request fail on the page behind, one never
+ * showed the error at all, and every one of them could be closed by Escape halfway through a
+ * delete. Now a caller hands over the action as a promise and the dialog keeps the list: nothing
+ * closes it while it runs, a failure is said inside it and 삭제 becomes 다시 시도, and it closes
+ * only when the action has succeeded.
+ *
+ * `recheck` IS ASKED AT THE PRESS, NOT AT RENDER. The question on screen was true when it opened;
+ * by the press, another window may have deleted the thing, or the thing's Bot may be gone. A
+ * sentence back means nothing is sent — the dialog says why, and 닫기 is the only answer left.
+ *
  * The title takes the noun ALREADY CARRYING ITS PARTICLE (see `lib/josa.ts`); this component does
  * not know Korean grammar, it just refuses to build the sentence itself.
  */
 export function ConfirmDialog({
   confirmLabel,
   description,
-  error,
+  finalFocus,
   onConfirm,
   onOpenChange,
+  onStale,
   open,
-  pending,
   pendingLabel,
+  recheck,
   title,
 }: {
   confirmLabel: string;
   description: ReactNode;
-  /** What went wrong last time it was pressed, if anything. */
-  error?: string | null;
-  onConfirm: () => void;
+  /**
+   * Where focus goes back to on close, when what opened the dialog is gone by then — a menu item,
+   * which leaves with its menu. Without it Base UI hands focus back to the element it took it from.
+   */
+  finalFocus?: RefObject<HTMLElement | null>;
+  /** The action. Resolves once it is done; throws the person's sentence when it is not. */
+  onConfirm: () => Promise<unknown>;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Called once the dialog has closed after `recheck` found the thing gone: the moment to refresh
+   * what is behind it. Not sooner — a list refreshed while the dialog is up takes the row it is
+   * drawn from, and the dialog with it, before the sentence saying why has been read.
+   */
+  onStale?: () => void;
   open: boolean;
-  pending?: boolean;
   /** What the button says while it works. */
   pendingLabel?: string;
+  /** Asked at the press, before `onConfirm`: why the action no longer applies, or `null`. */
+  recheck?: () => Promise<string | null>;
   title: string;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const [press, setPress] = useState<Press>({ phase: "asking" });
+  const isRunning = press.phase === "running" || press.phase === "done";
+  const isMoot = press.phase === "moot";
+
+  /*
+   * A MOOT PRESS TAKES THE BUTTON THAT HELD FOCUS AWAY, so 닫기 takes it — after the commit, not in
+   * the handler. Measured in Chrome: focusing it in the handler did nothing, because at that moment
+   * it was still the disabled 취소 of the running press, and focus fell to `<body>` when the confirm
+   * left. (happy-dom focuses a disabled button without complaint, so only the browser showed it.)
+   */
+  useEffect(() => {
+    if (isMoot) cancelRef.current?.focus();
+  }, [isMoot]);
+
+  const handleConfirm = async () => {
+    if (isRunning || isMoot) return;
+    setPress({ phase: "running" });
+    const outcome = await pressOnce({ act: onConfirm, recheck });
+    if (outcome.kind === "done") {
+      setPress({ phase: "done" });
+      onOpenChange(false);
+      return;
+    }
+    setPress(
+      outcome.kind === "moot"
+        ? { phase: "moot", sentence: outcome.sentence }
+        : { phase: "failed", sentence: outcome.sentence },
+    );
+  };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog
+      isBusy={isRunning}
+      onOpenChange={onOpenChange}
+      // Every open starts from the question, never from what the last press came to.
+      onOpenChangeComplete={(isOpen) => {
+        if (isOpen) return;
+        if (isMoot) onStale?.();
+        setPress({ phase: "asking" });
+      }}
+      open={open}
+    >
       <DialogContent
+        {...(finalFocus ? { finalFocus } : {})}
         /*
          * A ref, not `true`. `initialFocus: true` focuses the popup's first tabbable element, which
          * is the × in the corner — reachable, but it tells a person nothing about the choice they
@@ -75,37 +155,48 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {/* Both mounted from the open, so what the press came to is heard when it is said. */}
+        <LiveRegion as="p" className="text-sm">
+          {press.phase === "moot" ? press.sentence : null}
+        </LiveRegion>
+        <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+          {press.phase === "failed" ? press.sentence : null}
+        </LiveRegion>
         <DialogFooter>
           <Button
+            disabled={isRunning}
             onClick={() => onOpenChange(false)}
             ref={cancelRef}
             size="sm"
             variant="outline"
           >
-            {t("Cancel")}
+            {isMoot ? t("Close") : t("Cancel")}
           </Button>
-          <Button
-            /*
-             * Filled, not tinted. The `destructive` variant's own background is `destructive/10`,
-             * and on this popover ground that is a pink so pale it reads as unavailable.
-             *
-             * `dark:text-background` rather than white in both themes: the dark palette's red is a
-             * bright coral (#ff5667) and white on it is about 3:1. The near-black ground colour on
-             * that coral is legible, and it is the same trick `--sand-text-on-primary` plays.
-             */
-            className="bg-destructive text-white hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:text-background dark:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)]"
-            disabled={pending}
-            onClick={onConfirm}
-            size="sm"
-            variant="destructive"
-          >
-            {pending ? (pendingLabel ?? t("Deleting…")) : confirmLabel}
-          </Button>
+          {isMoot ? null : (
+            <Button
+              /*
+               * Filled, not tinted. The `destructive` variant's own background is `destructive/10`,
+               * and on this popover ground that is a pink so pale it reads as unavailable.
+               *
+               * `dark:text-background` rather than white in both themes: the dark palette's red is
+               * a bright coral (#ff5667) and white on it is about 3:1. The near-black ground colour
+               * on that coral is legible, and it is the same trick `--sand-text-on-primary` plays.
+               */
+              className="bg-destructive text-white hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:text-background dark:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)]"
+              disabled={isRunning}
+              // Keeps the focus it was pressed with while it works, rather than dropping it on the page.
+              focusableWhenDisabled
+              onClick={() => void handleConfirm()}
+              size="sm"
+              variant="destructive"
+            >
+              {isRunning
+                ? (pendingLabel ?? t("Deleting…"))
+                : press.phase === "failed"
+                  ? t("Try again")
+                  : confirmLabel}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

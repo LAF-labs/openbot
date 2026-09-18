@@ -1,7 +1,7 @@
 import { IconClockPlay, IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
@@ -31,6 +31,7 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { routineDeleteRecheck } from "@/lib/rechecks";
 import {
   type Routine,
   type RoutineRun,
@@ -189,14 +190,13 @@ function RoutineRow({ routine }: { routine: Routine }) {
       }),
     onSettled: invalidate,
   });
+  // The dialog closes itself once this resolves; the list it was pressed from refreshes first.
   const remove = useMutation({
     mutationFn: async () =>
       routineRequest(`/api/routines/${routine.id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      setConfirmingDelete(false);
-      invalidate();
-    },
+    onSuccess: invalidate,
   });
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const bot = agents.data?.find((agent) => agent.id === routine.agentId);
 
@@ -314,6 +314,7 @@ function RoutineRow({ routine }: { routine: Routine }) {
             render={
               <Button
                 aria-label={t("Actions for {name}", { name: routine.name })}
+                ref={menuTriggerRef}
                 size="icon-sm"
                 variant="ghost"
               >
@@ -382,13 +383,14 @@ function RoutineRow({ routine }: { routine: Routine }) {
         description={t(
           "The schedule stops and its run history goes with it. This cannot be undone.",
         )}
-        error={remove.error?.message}
-        onConfirm={() => remove.mutate()}
+        finalFocus={menuTriggerRef}
+        onConfirm={() => remove.mutateAsync()}
         onOpenChange={(open) => {
           if (!open) setConfirmingDelete(false);
         }}
+        onStale={invalidate}
         open={confirmingDelete}
-        pending={remove.isPending}
+        recheck={() => routineDeleteRecheck(routine.id)}
         title={t("Delete {name}{josa}?", {
           josa: josa(routine.name, "을/를"),
           name: routine.name,

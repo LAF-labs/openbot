@@ -3,6 +3,7 @@ import { Fragment, useId, useState } from "react";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
+import { notepadClearRecheck } from "@/lib/rechecks";
 import { useNow } from "@/lib/use-now";
 import {
   notepadEntryLabel,
@@ -37,17 +38,17 @@ export const RoutineNotepad = ({ routineId }: { routineId: string }) => {
       (await routineRequest(`/api/routines/${routineId}/notepad`))
         ?.notepad as Notepad,
   });
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: routineKeys.notepad(routineId),
+    });
+  // Awaited by the dialog, which closes itself once the emptied notepad has been read back.
   const clear = useMutation({
     mutationFn: async () =>
       routineRequest(`/api/routines/${routineId}/notepad`, {
         method: "DELETE",
       }),
-    onSuccess: () => {
-      setIsConfirming(false);
-      void queryClient.invalidateQueries({
-        queryKey: routineKeys.notepad(routineId),
-      });
-    },
+    onSuccess: refresh,
   });
 
   const entries = notepad.data?.entries ?? [];
@@ -130,14 +131,14 @@ export const RoutineNotepad = ({ routineId }: { routineId: string }) => {
         description={t(
           "Its next run starts without knowing where the last one left off, so it may go over the same things again.",
         )}
-        error={clear.error?.message}
-        onConfirm={() => clear.mutate()}
+        onConfirm={() => clear.mutateAsync()}
         onOpenChange={(open) => {
           if (!open) setIsConfirming(false);
         }}
+        onStale={() => void refresh()}
         open={isConfirming}
-        pending={clear.isPending}
         pendingLabel={t("Clearing…")}
+        recheck={() => notepadClearRecheck(routineId)}
         title={t("Clear this routine's notepad?")}
       />
     </section>

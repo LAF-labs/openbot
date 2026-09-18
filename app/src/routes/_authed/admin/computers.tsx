@@ -21,7 +21,9 @@ import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { refusalText } from "@/lib/computer/refusals";
 import { SCREEN_PROBLEM_SAID } from "@/lib/computer/screen-problems";
+import { ensure } from "@/lib/ensure";
 import { activeLocale, t } from "@/lib/i18n";
+import { computerResetRecheck } from "@/lib/rechecks";
 
 type ComputerProfile = {
   botId: string;
@@ -40,6 +42,40 @@ export const Route = createFileRoute("/_authed/admin/computers")({
   component: ComputersPage,
 });
 
+/**
+ * One press of 탭 닫기 or 초기화 through a row's Bot: `null` when it worked, or the sentence for why
+ * not. Out here because it holds the `try`, and a component that holds one is left uncompiled.
+ */
+async function pressComputer(
+  botId: string,
+  action: "stop" | "reset",
+): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `/api/computers/${encodeURIComponent(botId)}/computers/${action}`,
+      { method: "POST", credentials: "include" },
+    );
+    if (response.ok) return null;
+    const body = (await response.json().catch(() => null)) as {
+      code?: string;
+    } | null;
+    /*
+     * Two sentences, not one template. `The computer could not be ${action}.` produced "The
+     * computer could not be stop." — a string built by concatenating a verb into a sentence that
+     * needed its past participle, and untranslatable either way.
+     */
+    return refusalText(
+      SCREEN_PROBLEM_SAID,
+      body?.code,
+      action === "stop"
+        ? t("The browser could not be stopped.")
+        : t("The computer could not be reset."),
+    );
+  } catch {
+    return t("The computer could not be reached.");
+  }
+}
+
 function ComputersPage() {
   const [computers, setComputers] = useState<ComputerProfile[] | null>(null);
   /**
@@ -50,7 +86,7 @@ function ComputersPage() {
    */
   const [isolation, setIsolation] = useState<"per-bot" | "shared" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  /** Bot id currently running a stop/reset request. */
+  /** Bot id whose 탭 닫기 is in flight. A reset is the dialog's, and the dialog holds the page. */
   const [busy, setBusy] = useState<string | null>(null);
   /** Reset deletes the one browser profile every Bot shares, so it requires confirmation. */
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -98,53 +134,40 @@ function ComputersPage() {
     void load();
   }, [load]);
 
-  const run = useCallback(
-    async (botId: string, action: "stop" | "reset") => {
+  /**
+   * 탭 닫기, on one row.
+   *
+   * WHAT THE PRESS CAME TO, KEPT PAST THE RELOAD BELOW. `load` clears the page's problem when the
+   * list comes back — and it does come back — so a refused press set its sentence and lost it a
+   * moment later. Measured 2026-09-16: Reset refused 404 closed its dialog and left the page as it
+   * was, with nothing on it saying that nothing had happened.
+   */
+  const stop = useCallback(
+    async (botId: string) => {
       setBusy(botId);
-      setConfirming(null);
-      /*
-       * WHAT THE PRESS CAME TO, KEPT PAST THE RELOAD BELOW. `load` clears the page's problem when the
-       * list comes back — and it does come back — so a refused press set its sentence and lost it a
-       * moment later. Measured 2026-09-16: Reset refused 404 closed its dialog and left the page as
-       * it was, with nothing on it saying that nothing had happened.
-       */
-      let refused: string | null = null;
-      // React Compiler 1.0 cannot compile `try`…`finally` yet, so ComputersPage is left as written:
-      // the code is right, and the compiler cannot follow it. Counted in
-      // app/tests/react-compiler.test.ts.
-      try {
-        const response = await fetch(
-          `/api/computers/${encodeURIComponent(botId)}/computers/${action}`,
-          { method: "POST", credentials: "include" },
-        );
-        if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as {
-            code?: string;
-          } | null;
-          /*
-           * Two sentences, not one template. `The computer could not be ${action}.` produced "The
-           * computer could not be stop." — a string built by concatenating a verb into a sentence
-           * that needed its past participle, and untranslatable either way.
-           */
-          refused = refusalText(
-            SCREEN_PROBLEM_SAID,
-            body?.code,
-            action === "stop"
-              ? t("The browser could not be stopped.")
-              : t("The computer could not be reset."),
-          );
-        }
-      } catch {
-        refused = t("The computer could not be reached.");
-      } finally {
-        setBusy(null);
-        await load();
-        // A press that worked leaves whatever the reload said, its own failure to load included.
-        if (refused) setProblem(refused);
-      }
+      // `try`…`finally`, the `finally` through `ensure`: the React Compiler cannot compile the
+      // statement in a component. `pressComputer` catches everything, so what follows always runs.
+      const refused = await ensure(
+        () => pressComputer(botId, "stop"),
+        () => setBusy(null),
+      );
+      await load();
+      // A press that worked leaves whatever the reload said, its own failure to load included.
+      if (refused) setProblem(refused);
     },
     [load],
   );
+
+  /**
+   * 초기화, for the dialog to await. A refusal is thrown and said inside the dialog, which stays
+   * open until the reset has happened — it used to close on the press, and the refusal landed on
+   * the page behind it.
+   */
+  const reset = async (botId: string) => {
+    const refused = await pressComputer(botId, "reset");
+    if (refused) throw new Error(refused);
+    await load();
+  };
 
   return (
     <PageShell
@@ -253,7 +276,7 @@ function ComputersPage() {
                     <ItemActions>
                       <Button
                         disabled={busy === computer.botId || !computer.running}
-                        onClick={() => void run(computer.botId, "stop")}
+                        onClick={() => void stop(computer.botId)}
                         size="sm"
                         variant="outline"
                       >
@@ -304,15 +327,18 @@ function ComputersPage() {
         description={t(
           "Your Bots share one browser, so this signs all of them out of every service they had logged into and starts clean. This cannot be undone.",
         )}
-        onConfirm={() => {
-          if (confirming) void run(confirming, "reset");
+        onConfirm={async () => {
+          if (confirming) await reset(confirming);
         }}
         onOpenChange={(open) => {
           if (!open) setConfirming(null);
         }}
+        onStale={() => void load()}
         open={confirming !== null}
-        pending={busy === confirming}
         pendingLabel={t("Resetting…")}
+        recheck={async () =>
+          confirming ? computerResetRecheck(confirming) : null
+        }
         title={t("Reset the computer every Bot shares?")}
       />
 

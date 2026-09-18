@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { playgroundDeleteRecheck } from "@/lib/rechecks";
 import { refusalFrom } from "@/lib/refusals";
 import {
   PLAYGROUND_REFUSALS,
@@ -62,6 +63,7 @@ type Draft = typeof STARTER;
 
 function PlaygroundPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [askedAbout, setAskedAbout] = useState("");
   const queryClient = useQueryClient();
   /*
    * The whole query, not `data` alone. It was destructured to `{ data: components }`, so a list that
@@ -158,6 +160,26 @@ function PlaygroundPage() {
     });
 
   const save = () => mutate.mutate(saveDraft);
+
+  const refreshSaved = () =>
+    queryClient.invalidateQueries({ queryKey: sandboxedKeys.all });
+  /** A saved component, for the delete dialog to await: a refusal is thrown, in the page's words. */
+  const remove = async (name: string) => {
+    const response = await fetch(`/api/sandboxed/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error(
+        await refusalFrom(
+          response,
+          PLAYGROUND_REFUSALS,
+          t("That did not work."),
+        ),
+      );
+    }
+    await refreshSaved();
+  };
 
   /**
    * Publish what is on screen.
@@ -388,7 +410,10 @@ function PlaygroundPage() {
                       </Button>
                       <Button
                         disabled={mutate.isPending}
-                        onClick={() => setDeleting(component.name)}
+                        onClick={() => {
+                          setAskedAbout(component.name);
+                          setDeleting(component.name);
+                        }}
                         size="sm"
                         type="button"
                         variant="ghost"
@@ -421,26 +446,26 @@ function PlaygroundPage() {
         description={t(
           "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.",
         )}
-        onConfirm={() => {
-          const name = deleting;
-          setDeleting(null);
-          if (name) {
-            mutate.mutate(() =>
-              fetch(`/api/sandboxed/${encodeURIComponent(name)}`, {
-                method: "DELETE",
-                credentials: "include",
-              }),
-            );
-          }
+        /*
+         * Awaited, and its refusal thrown: the dialog used to close on the press and hand the
+         * request to the page's own mutation, so a refused delete was said above the editors while
+         * the question it answered had already gone.
+         */
+        onConfirm={async () => {
+          if (deleting) await remove(deleting);
         }}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
+        onStale={() => void refreshSaved()}
         open={deleting !== null}
-        pending={mutate.isPending}
+        recheck={async () =>
+          deleting ? playgroundDeleteRecheck(deleting) : null
+        }
+        // The name the question was asked about, kept through the fade: `deleting` clears on close.
         title={t("Delete {name}{josa}?", {
-          josa: josa(deleting ?? "", "을/를"),
-          name: deleting ?? "",
+          josa: josa(askedAbout, "을/를"),
+          name: askedAbout,
         })}
       />
     </div>

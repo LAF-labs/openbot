@@ -1,7 +1,7 @@
 import { IconDots, IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { type RefObject, useId, useRef, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
@@ -45,6 +45,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
 
 /**
@@ -93,6 +94,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   );
   const isEditing = editingId === agentId;
   const isConfirmingDelete = confirmingDeleteId === agentId;
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const agent = useQuery(agentQueryOptions(agentId));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
@@ -115,8 +117,8 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   }
 
   const profile = agent.data;
-  const actionError =
-    duplicateAgent.error ?? setHidden.error ?? deleteAgent.error;
+  // Not the delete's: that one is said inside its dialog, which stays open until it succeeds.
+  const actionError = duplicateAgent.error ?? setHidden.error;
 
   /*
    * A NEUTRAL TILE, WITH THE COLOUR IN THE CHARACTER.
@@ -275,6 +277,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
               <BotMenu
                 items={botMenuItems(profile, seats)}
                 name={profile.name}
+                triggerRef={menuTriggerRef}
                 onChoose={async (id) => {
                   if (id === "edit") {
                     setEditingId(agentId);
@@ -365,16 +368,22 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         description={t(
           "Its conversations, its routines and everything it remembers go with it. This cannot be undone.",
         )}
+        // The menu item that opened it left with its menu; its trigger is where the keyboard was.
+        finalFocus={menuTriggerRef}
         onConfirm={async () => {
           await deleteAgent.mutateAsync(agentId);
-          setConfirmingDeleteId(null);
           await navigate({ search: {}, to: "/agents" });
         }}
         onOpenChange={(next) => {
           if (!next) setConfirmingDeleteId(null);
         }}
+        // Deleted elsewhere while this was open: the roster goes on without it, and so does the pane.
+        onStale={() => {
+          void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+          void navigate({ search: {}, to: "/agents" });
+        }}
         open={isConfirmingDelete}
-        pending={deleteAgent.isPending}
+        recheck={() => botDeleteRecheck(agentId)}
         title={t("Delete {name}{josa}?", {
           josa: josa(profile.name, "을/를"),
           name: profile.name,
@@ -398,10 +407,13 @@ function BotMenu({
   items,
   name,
   onChoose,
+  triggerRef,
 }: {
   items: BotMenuItem[];
   name: string;
   onChoose: (id: BotMenuItem["id"]) => Promise<void> | void;
+  /** Where a dialog one of the items opened hands focus back, once the item itself is gone. */
+  triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <DropdownMenu>
@@ -409,6 +421,7 @@ function BotMenu({
         render={
           <Button
             aria-label={t("Actions for {name}", { name })}
+            ref={triggerRef}
             size="icon"
             variant="outline"
           >

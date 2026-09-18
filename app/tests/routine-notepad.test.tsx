@@ -182,7 +182,10 @@ describe("the notepad on a routine's row", () => {
       "utf8",
     );
     expect(source).toContain("<ConfirmDialog");
-    expect(source).toContain("onConfirm={() => clear.mutate()}");
+    // Awaited, so the dialog stays open until the notepad is empty and says so inside if it is not.
+    expect(source).toContain("onConfirm={() => clear.mutateAsync()}");
+    // And asked again at the press: an empty notepad, or a routine gone, sends nothing.
+    expect(source).toContain("recheck={() => notepadClearRecheck(routineId)}");
     expect(source).toMatch(
       /routineRequest\(`\/api\/routines\/\$\{routineId\}\/notepad`, \{\s*method: "DELETE",/,
     );
