@@ -1,7 +1,7 @@
 import { IconClockPlay, IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
@@ -196,7 +196,6 @@ function RoutineRow({ routine }: { routine: Routine }) {
       routineRequest(`/api/routines/${routine.id}`, { method: "DELETE" }),
     onSuccess: invalidate,
   });
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const bot = agents.data?.find((agent) => agent.id === routine.agentId);
 
@@ -314,7 +313,6 @@ function RoutineRow({ routine }: { routine: Routine }) {
             render={
               <Button
                 aria-label={t("Actions for {name}", { name: routine.name })}
-                ref={menuTriggerRef}
                 size="icon-sm"
                 variant="ghost"
               >
@@ -383,7 +381,6 @@ function RoutineRow({ routine }: { routine: Routine }) {
         description={t(
           "The schedule stops and its run history goes with it. This cannot be undone.",
         )}
-        finalFocus={menuTriggerRef}
         onConfirm={() => remove.mutateAsync()}
         onOpenChange={(open) => {
           if (!open) setConfirmingDelete(false);

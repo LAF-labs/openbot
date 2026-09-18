@@ -1,10 +1,4 @@
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,7 +61,6 @@ type Press =
 export function ConfirmDialog({
   confirmLabel,
   description,
-  finalFocus,
   onConfirm,
   onOpenChange,
   onStale,
@@ -78,11 +71,6 @@ export function ConfirmDialog({
 }: {
   confirmLabel: string;
   description: ReactNode;
-  /**
-   * Where focus goes back to on close, when what opened the dialog is gone by then — a menu item,
-   * which leaves with its menu. Without it Base UI hands focus back to the element it took it from.
-   */
-  finalFocus?: RefObject<HTMLElement | null>;
   /** The action. Resolves once it is done; throws the person's sentence when it is not. */
   onConfirm: () => Promise<unknown>;
   onOpenChange: (open: boolean) => void;
@@ -143,7 +131,6 @@ export function ConfirmDialog({
       open={open}
     >
       <DialogContent
-        {...(finalFocus ? { finalFocus } : {})}
         /*
          * A ref, not `true`. `initialFocus: true` focuses the popup's first tabbable element, which
          * is the × in the corner — reachable, but it tells a person nothing about the choice they

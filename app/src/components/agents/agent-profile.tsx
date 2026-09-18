@@ -1,7 +1,7 @@
 import { IconDots, IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { type RefObject, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
@@ -94,7 +94,6 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   );
   const isEditing = editingId === agentId;
   const isConfirmingDelete = confirmingDeleteId === agentId;
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const agent = useQuery(agentQueryOptions(agentId));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
@@ -277,7 +276,6 @@ export function AgentProfile({ agentId }: { agentId: string }) {
               <BotMenu
                 items={botMenuItems(profile, seats)}
                 name={profile.name}
-                triggerRef={menuTriggerRef}
                 onChoose={async (id) => {
                   if (id === "edit") {
                     setEditingId(agentId);
@@ -368,8 +366,6 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         description={t(
           "Its conversations, its routines and everything it remembers go with it. This cannot be undone.",
         )}
-        // The menu item that opened it left with its menu; its trigger is where the keyboard was.
-        finalFocus={menuTriggerRef}
         onConfirm={async () => {
           await deleteAgent.mutateAsync(agentId);
           await navigate({ search: {}, to: "/agents" });
@@ -407,13 +403,10 @@ function BotMenu({
   items,
   name,
   onChoose,
-  triggerRef,
 }: {
   items: BotMenuItem[];
   name: string;
   onChoose: (id: BotMenuItem["id"]) => Promise<void> | void;
-  /** Where a dialog one of the items opened hands focus back, once the item itself is gone. */
-  triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <DropdownMenu>
@@ -421,7 +414,6 @@ function BotMenu({
         render={
           <Button
             aria-label={t("Actions for {name}", { name })}
-            ref={triggerRef}
             size="icon"
             variant="outline"
           >
