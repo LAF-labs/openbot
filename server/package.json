@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ag-ui/client": "0.0.57",
+    "@ag-ui/client": "0.0.59",
     "@better-auth/drizzle-adapter": "^1.6.27",
-    "@copilotkit/runtime": "1.67.1",
+    "@copilotkit/runtime": "1.71.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "better-auth": "^1.6.27",
+    "better-auth": "^1.7.4",
     "cel-js": "^0.8.2",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
