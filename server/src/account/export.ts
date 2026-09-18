@@ -43,6 +43,7 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { publishedRoutine } from "../routines/store";
 import { messagesFor } from "../runner/thread-store";
 
 /**
@@ -355,8 +356,10 @@ export function createAccountExport(database: Database): AccountExport {
       .where(routineOwnership)
       .orderBy(asc(lafRoutines.createdAt));
     // `trigger_token_hash` is deliberately absent: it is the hash of a webhook capability, and a
-    // hash of a capability belongs on no shelf this export creates.
-    yield `,\n"routines":${JSON.stringify(routines)}`;
+    // hash of a capability belongs on no shelf this export creates. The days go through the
+    // routines' own normaliser: read with this WHERE, they arrive as the driver's `Int32Array`,
+    // which JSON writes as `{"0":1,…}` — a 월·수·금 routine taken away as an object.
+    yield `,\n"routines":${JSON.stringify(routines.map(publishedRoutine))}`;
 
     const routineIds = routines.map((routine) => routine.id);
     const routineRuns = routineIds.length

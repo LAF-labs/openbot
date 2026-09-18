@@ -126,9 +126,12 @@ function withoutTokenHash<Row extends { triggerTokenHash?: unknown }>(
  * first seen — the create response and the list disagreed about the same routine's days — and
  * the list itself turned out to have it too, because its ownership clause is a parameter: every
  * weekday routine read as 매일 on the screen (measured 2026-09-18). Normalised here, once, for
- * every row that leaves the service.
+ * every row that leaves the service — and exported, because the account export reads routines
+ * the same way and wrote the same object into the file a person takes with them.
  */
-function published<Row extends { dailyDays: unknown }>(row: Row): Row {
+export function publishedRoutine<Row extends { dailyDays: unknown }>(
+  row: Row,
+): Row {
   const days = row.dailyDays;
   const dailyDays = Array.isArray(days)
     ? days
@@ -164,7 +167,7 @@ export async function createRoutine(
       at,
     });
     // The token, once. Never its hash, which is the one column this row does not publish.
-    return { ...published(withoutTokenHash(row)), triggerToken };
+    return { ...publishedRoutine(withoutTokenHash(row)), triggerToken };
   });
 }
 
@@ -349,7 +352,7 @@ export async function updateRoutine(
     .where(eq(lafRoutines.id, id))
     .returning();
   if (!updated) throw noSuchRoutine();
-  return published(withoutTokenHash(updated));
+  return publishedRoutine(withoutTokenHash(updated));
 }
 
 /**
@@ -394,7 +397,7 @@ export async function listRoutines(store: RoutineStore, actor: AgentActor) {
     .from(lafRoutines)
     .where(scopeOf(store.database, actor))
     .orderBy(desc(lafRoutines.createdAt));
-  return rows.map(published);
+  return rows.map(publishedRoutine);
 }
 
 export async function listRuns(
@@ -450,9 +453,9 @@ export async function setRoutineEnabled(
       .set({ nextRunAt: next })
       .where(eq(lafRoutines.id, id))
       .returning();
-    return published(withoutTokenHash(rearmed ?? row));
+    return publishedRoutine(withoutTokenHash(rearmed ?? row));
   }
-  return published(withoutTokenHash(row));
+  return publishedRoutine(withoutTokenHash(row));
 }
 
 /**
@@ -476,7 +479,7 @@ export async function setRoutineKeepRunning(
     .where(eq(lafRoutines.id, id))
     .returning();
   if (!row) throw noSuchRoutine();
-  return published(withoutTokenHash(row));
+  return publishedRoutine(withoutTokenHash(row));
 }
 
 /**
@@ -534,7 +537,7 @@ export async function resumeUnreadPaused(
         .returning();
       if (updated) resumed.push(updated);
     }
-    return resumed.map((row) => published(withoutTokenHash(row)));
+    return resumed.map((row) => publishedRoutine(withoutTokenHash(row)));
   });
 }
 

@@ -398,6 +398,30 @@ describe("the export", () => {
     expect(serialised).not.toContain("credentialKeyId");
     expect(serialised).not.toContain("not-a-real-secret");
   });
+
+  test("a weekday routine's days leave as a list, not as the driver's typed array", async () => {
+    /*
+     * The export reads routines with a parameterised WHERE, and Bun's driver hands an `integer[]`
+     * back as an `Int32Array` whenever a query carries parameters — which JSON writes as
+     * `{"0":1,"1":3,"2":5}`. Somebody taking their data away got their 월·수·금 routine's days as
+     * an object keyed by position: the fault the routine list had, fixed there on 2026-09-18
+     * (`publishedRoutine` in routines/store.ts) and measured here the same day.
+     */
+    await database
+      .update(lafRoutines)
+      .set({ dailyDays: [1, 3, 5] })
+      .where(eq(lafRoutines.id, leaver.routineId));
+
+    const text = await new Response(
+      createAccountExport(database).stream(leaver.id),
+    ).text();
+
+    expect(text).toContain('"dailyDays":[1,3,5]');
+    const document = JSON.parse(text) as {
+      routines: Array<{ dailyDays: unknown }>;
+    };
+    expect(document.routines[0]?.dailyDays).toEqual([1, 3, 5]);
+  });
 });
 
 describe("deletion", () => {
