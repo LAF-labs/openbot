@@ -45,6 +45,14 @@ import {
  * left are the constructs the compiler cannot follow yet, each with a comment beside it saying so,
  * and one of them, `ChannelChat`, also opts out on purpose, so that it stays uncompiled on the day
  * the compiler learns `finally` (the reason is beside its directive).
+ *
+ * LOWERED TO 9 once the branch sat on the connection check and the section boundaries (their new
+ * modules added no skip): the conversation view, the composer, a room and the computer card hand
+ * their `finally` to `lib/ensure.ts`, `??=` and the playground's conditional were spelled out, and
+ * the refs those four had been writing during render — hidden until the `finally` was gone — are
+ * written after the commit. 333 of 342 compile. Eight of the nine left are more `finally` blocks —
+ * in admin, Settings, the welcome screen and two cards on a Bot's profile — each an `ensure` away;
+ * the ninth is `ChannelChat`.
  */
 const SKIPPED_CEILING = 9;
 
