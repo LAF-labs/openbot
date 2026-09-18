@@ -249,15 +249,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * thirty-seven to `app`. Measured server 2,522 / app 966, each re-raised to 3% under; the other two
  * did not grow.
  *
+ * RE-RAISED 2026-09-18, with the first run's two questions about the shop and what every Bot is
+ * told about them: the catalogue and its doors, the prompt line and where it sits, what reaches the
+ * endpoint on every kind of run, the store and its one route, the boundary never reading it, the
+ * welcome and Settings screens pressed through, and the suggestions ordered by it. Fifty tests to
+ * `server`, thirty-five to `app` and seventeen to `root`, measured on that branch alone at server
+ * 2,540 / app 962 / agent-computer 261 / root 367. Rebased onto the stop-all branch above, each
+ * floor is the higher of what the two branches set: `server` and `root` this one's, `app` that one's.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2446, roots: ["server"] },
+  { name: "server", floor: 2463, roots: ["server"] },
   { name: "app", floor: 937, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
-  { name: "root", floor: 339, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
