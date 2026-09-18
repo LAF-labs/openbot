@@ -294,13 +294,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * compiler can compile them: four tests to `app`, holding it to the statement it replaces. Measured
  * at server 2,680 / app 1,142 / agent-computer 261 / root 367; `app` re-raised to 3% under.
  *
+ * RAISED 2026-09-18 with the dialog checklist (`docs/laf/dialogs.md`): the live region that is
+ * mounted before it speaks, one press as `pressOnce` sees it, the confirm dialog pressed for real in
+ * a process of its own and tried at every way out while it runs, the wheel on the Bot's screen
+ * registered on the canvas and not passively, and the unread-pause banner's line that outlives it —
+ * nineteen tests to `app`. Measured at server 2,680 / app 1,161; `app` re-raised to 3% under.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2599, roots: ["server"] },
-  { name: "app", floor: 1107, roots: ["app"] },
+  { name: "app", floor: 1126, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
