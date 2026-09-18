@@ -9,6 +9,7 @@ import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
 import {
+  auditEvents,
   channelMemberships,
   channels,
   lafRoutineRuns,
@@ -34,8 +35,8 @@ import { TEST_POOL } from "./support/database";
  * the person last opened it, and the oldest of them has waited a week, the routines that delivered
  * them are paused, the reason is kept on the row, and the person is told once.
  *
- * Everything here is measured with a fixed clock. The deliveries are receipts written with the
- * times a run would have given them, and the reading is the conversation's own read mark.
+ * Everything here is measured with a fixed clock. The deliveries are `routine.ran` trail rows written
+ * with the times a run would have given them, and the reading is the conversation's own read mark.
  */
 
 const database = createDatabase(
@@ -171,7 +172,7 @@ function serviceAt(
 
 /**
  * A routine on the Bot. Made a minute before `NOW`, so its clock is not due when a test ticks —
- * only the routine a test sets due is. Its receipts are backdated; the rule reads those, not this.
+ * only the routine a test sets due is. Its deliveries are backdated; the rule reads those, not this.
  */
 async function routineOn(
   owner: AgentActor,
@@ -193,21 +194,31 @@ async function routineOn(
   });
 }
 
-/** One run's receipt, finished `at`: what the settlement writes beside a delivery. */
+/**
+ * One run's `routine.ran` trail row, written `at`: what the rule reads a delivery from.
+ *
+ * The trail and not the receipts, because receipts are pruned to twenty a routine — a routine that
+ * reports every half hour keeps ten hours of them, and its oldest unread result would never look a
+ * week old. The trail is append-only, so these rows outlive the test; they name routines only this
+ * run made, and nothing else reads them.
+ */
 async function delivered(
   routineId: string,
   at: Date,
   answer = "새 리뷰 2건: 배송이 빨라요, 포장이 꼼꼼해요.",
   ok = true,
 ) {
-  await database.insert(lafRoutineRuns).values({
-    id: randomUUID(),
-    routineId,
-    startedAt: new Date(at.getTime() - 30_000),
-    finishedAt: at,
-    ok,
-    answer: ok ? answer : null,
-    error: ok ? null : "The Bot stopped before it finished.",
+  const silent = ok && answer === "[SILENT]";
+  await database.insert(auditEvents).values({
+    eventType: "routine.ran",
+    targetType: "routine",
+    targetId: routineId,
+    payload: {
+      ok,
+      ...(silent ? { silent: true } : {}),
+      ...(ok && !silent ? { delivered: true } : {}),
+    },
+    createdAt: at,
   });
 }
 
@@ -308,6 +319,32 @@ describe("a Bot whose results pile up unread", () => {
     expect(
       audit.rows.filter((event) => event.payload.agentId === botId),
     ).toHaveLength(1);
+  });
+
+  test("a routine that reports every half hour is counted from its first unread result, not its last twenty", async () => {
+    /*
+     * The case the rule exists for most: a routine that says something every run spends the most.
+     * Its receipts are pruned to twenty — ten hours — so a rule reading them would never see a
+     * result a week old, and the chattiest routine would be the one that never stops.
+     */
+    const { owner, botId } = await botWithConversation(daysAgo(20));
+    const chatty = await routineOn(owner, botId, "주문 확인", {
+      kind: "interval",
+      minutes: 30,
+    });
+    for (let hours = 8 * 24; hours > 0; hours -= 6) {
+      await delivered(chatty.id, new Date(NOW.getTime() - hours * 3_600_000));
+    }
+
+    const [pause] = await pauseUnreadRoutines({
+      database,
+      botIds: [botId],
+      now: NOW,
+    });
+
+    expect(pause?.routineIds).toEqual([chatty.id]);
+    expect(pause?.unread).toBe(32);
+    expect(pause?.since).toEqual(daysAgo(8));
   });
 
   test("pauses every routine that is part of the pile, and one notice counts them", async () => {
@@ -622,7 +659,7 @@ describe("on the clock", () => {
     // Not asked, and no run recorded: the pause came before the claim, and the claim asks for a
     // routine that is on.
     expect(asked).toEqual([]);
-    expect(await receiptsOf(daily.id)).toBe(3);
+    expect(await receiptsOf(daily.id)).toBe(0);
     expect((await stored(daily.id)).pausedReason).toBe("unread");
     expect(
       audit.rows
@@ -651,7 +688,67 @@ describe("on the clock", () => {
 
     await serviceAt({ now: NOW }, { agents: { [botId]: agent } }).tick();
 
-    expect(await receiptsOf(daily.id)).toBe(4);
+    expect(await receiptsOf(daily.id)).toBe(1);
     expect((await stored(daily.id)).enabled).toBe(true);
+  });
+});
+
+describe("what a run's trail row says", () => {
+  test("a run whose answer landed in the conversation says so, and a silent one does not", async () => {
+    /*
+     * The trail row is what the rule counts, so it has to say the one thing the rule asks: did this
+     * run put something in front of the person. `ok` alone does not — a `[SILENT]` run is ok and
+     * delivered nothing.
+     */
+    const { owner, botId, channelId } = await botWithConversation(daysAgo(1));
+    const daily = await routineOn(owner, botId, "아침 리뷰 요약");
+    const replies = ["새 리뷰 1건: 맛있어요.", "[SILENT]"];
+    const agent = {
+      setMessages() {},
+      async runAgent() {
+        return {
+          result: undefined,
+          newMessages: [
+            {
+              id: randomUUID(),
+              role: "assistant",
+              content: replies.shift() ?? "",
+            },
+          ],
+        };
+      },
+    } as unknown as AbstractAgent;
+    const audit = trail();
+    const service = createRoutineService({
+      database,
+      resolveAgents: async () => ({ [botId]: agent }),
+      auditStore: audit.store,
+      timeZone: "Asia/Seoul",
+      now: () => NOW,
+      // What the real delivery answers when the message went in; see `routines/deliver.ts`.
+      deliver: async () => ({
+        channelId,
+        threadId: "thread",
+        announce: () => {},
+      }),
+    });
+
+    await service.runNow(owner, daily.id);
+    await service.runNow(owner, daily.id);
+
+    expect(
+      audit.rows
+        .filter(
+          (event) =>
+            event.eventType === "routine.ran" && event.targetId === daily.id,
+        )
+        .map((event) => ({
+          delivered: event.payload.delivered === true,
+          silent: event.payload.silent === true,
+        })),
+    ).toEqual([
+      { delivered: true, silent: false },
+      { delivered: false, silent: true },
+    ]);
   });
 });

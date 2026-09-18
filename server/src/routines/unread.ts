@@ -1,10 +1,9 @@
-import { and, asc, eq, gt, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloConversationOf } from "../channels/solo-channel";
 import type { Database } from "../db/client";
-import { channelMemberships, lafRoutineRuns, lafRoutines } from "../db/schema";
-import { isSilentAnswer } from "./deliver";
+import { auditEvents, channelMemberships, lafRoutines } from "../db/schema";
 
 /**
  * Routines whose results pile up unread stop on their own.
@@ -21,11 +20,18 @@ import { isSilentAnswer } from "./deliver";
  * through the trail row this writes, which the outbox watch turns into a notification
  * (`notifications/from-audit.ts`), the way a failed run is told.
  *
- * WHAT COUNTS AS A DELIVERY is a run's receipt that says it succeeded with something to say: the
- * receipt is written in the same transaction as the message it describes (`settlement.ts`), so a
- * successful, non-silent receipt IS a delivery into that conversation. A `[SILENT]` run and a failed
- * run delivered nothing anybody could read — a failed run is told the person by its own path — and
- * neither is counted. Receipts are kept twenty to a routine, far more than the three this reads.
+ * WHAT COUNTS AS A DELIVERY is a `routine.ran` trail row that says `delivered: true` — written for a
+ * run whose answer went into the conversation (`run-report.ts`), after the settlement that put it
+ * there committed. A `[SILENT]` run and a failed run delivered nothing anybody could read — a failed
+ * run is told the person by its own path — and neither says so.
+ *
+ * THE TRAIL, NOT THE RECEIPTS. The receipts beside each run are pruned to twenty a routine, and the
+ * routine this rule matters most for is the one that reports every run: every half hour, twenty
+ * receipts are ten hours, and its oldest unread result would never look a week old — the chattiest
+ * routine would be the one that never stopped. The trail is the history of record and is kept for
+ * `AUDIT_RETENTION_DAYS`; a deployment that keeps less than a week of it simply never pauses, which
+ * is the side to fail on. Runs from before the trail said `delivered` are not counted either, so the
+ * rule starts counting from the upgrade that taught it the word.
  *
  * WHICH ROUTINES. Only those the rule governs — on, and not told to keep running — are counted, and
  * only those that are part of the pile are paused:
@@ -242,34 +248,30 @@ async function unreadDeliveries(
   group: Governed[],
   readFrom: Date,
 ): Promise<Array<{ routineId: string; at: Date }>> {
-  const receipts = await database
-    .select({
-      routineId: lafRoutineRuns.routineId,
-      finishedAt: lafRoutineRuns.finishedAt,
-      answer: lafRoutineRuns.answer,
-    })
-    .from(lafRoutineRuns)
+  const runs = await database
+    .select({ routineId: auditEvents.targetId, at: auditEvents.createdAt })
+    .from(auditEvents)
     .where(
       and(
+        // The index the trail is read by: (event_type, created_at).
+        eq(auditEvents.eventType, "routine.ran"),
+        gt(auditEvents.createdAt, readFrom),
         inArray(
-          lafRoutineRuns.routineId,
+          auditEvents.targetId,
           group.map((routine) => routine.id),
         ),
-        eq(lafRoutineRuns.ok, true),
-        gt(lafRoutineRuns.finishedAt, readFrom),
+        sql`${auditEvents.payload} ->> 'delivered' = 'true'`,
       ),
     )
-    .orderBy(asc(lafRoutineRuns.finishedAt));
+    .orderBy(asc(auditEvents.createdAt));
   const resumed = new Map(
     group.map((routine) => [routine.id, routine.resumedAt]),
   );
-  return receipts.flatMap((receipt) => {
-    const at = receipt.finishedAt;
-    const answer = (receipt.answer ?? "").trim();
-    if (!at || !answer || isSilentAnswer(answer)) return [];
-    const since = resumed.get(receipt.routineId);
+  return runs.flatMap(({ routineId, at }) => {
+    if (!routineId) return [];
+    const since = resumed.get(routineId);
     if (since && at.getTime() <= since.getTime()) return [];
-    return [{ routineId: receipt.routineId, at }];
+    return [{ routineId, at }];
   });
 }
 

@@ -203,9 +203,14 @@ the oldest has waited **a week**, the routines that delivered them are paused �
 either alone is wrong: three alone pauses a daily briefing after a long weekend,
 a week alone pauses a weekly report after the first one nobody opened.
 
-- **A delivery** is a run receipt that succeeded with something to say. The
-  settlement writes the receipt in the same transaction as the message, so it is
-  the delivery; `[SILENT]` and failed runs delivered nothing to read.
+- **A delivery** is a `routine.ran` trail row that says `delivered: true`,
+  written for a run whose answer went into the conversation; `[SILENT]` and
+  failed runs delivered nothing to read. The trail rather than the receipts,
+  because receipts are pruned to twenty a routine: a routine that reports every
+  half hour keeps ten hours of them, and its oldest unread result would never
+  look a week old. A deployment keeping less than a week of trail
+  (`AUDIT_RETENTION_DAYS`) never pauses, and runs from before the trail said
+  `delivered` are not counted.
 - **Only routines the rule governs count** — on, and not `keep_running` — and
   only those in the pile are paused, so a monitor on the same Bot that answers
   `[SILENT]` until something happens keeps watching. A routine marked 계속

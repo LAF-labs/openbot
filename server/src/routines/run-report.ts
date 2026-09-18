@@ -46,6 +46,12 @@ export async function reportRun(
         // Only when true: a row that ran and reported reads exactly as it always did.
         ...(silent && ok ? { silent: true } : {}),
         /*
+         * Whether the answer went into the person's conversation — the one fact the unread rule
+         * counts (`unread.ts`). `ok` is not it: a `[SILENT]` run is ok and delivered nothing, and so
+         * is a run whose Bot has no conversation with its author. Only when true, like `silent`.
+         */
+        ...(settled.delivered ? { delivered: true } : {}),
+        /*
          * The failure as a fact code, never the sentence that threw — the same table the
          * transcript reads, so the notification and the red line agree — and the conversation
          * it was marked in, so the notification can point there.
