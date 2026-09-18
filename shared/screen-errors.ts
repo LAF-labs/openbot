@@ -29,10 +29,11 @@
 /**
  * Every part of the screen a report can name.
  *
- * The first ten are the seams a section boundary sits on, and the diagnostics preview's
- * `sectionName` says each one in the person's words. The last three are not sections: `route_screen` is the router's own
- * error screen, reached by whatever no section caught; `window_error` is an error thrown outside
- * React's drawing — an event handler, a timer; `unhandled_rejection` is a promise nobody awaited.
+ * The first eleven are the seams a section boundary sits on, and the diagnostics preview's
+ * `sectionName` says each one in the person's words. The last three are not sections:
+ * `route_screen` is the router's own error screen, reached by whatever no section caught;
+ * `window_error` is an error thrown outside React's drawing — an event handler, a timer;
+ * `unhandled_rejection` is a promise nobody awaited.
  */
 export const SCREEN_SECTIONS = [
   "sidebar",
@@ -45,6 +46,7 @@ export const SCREEN_SECTIONS = [
   "settings_page",
   "admin_page",
   "notices",
+  "connection_check",
   "route_screen",
   "window_error",
   "unhandled_rejection",

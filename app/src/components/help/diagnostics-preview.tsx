@@ -52,6 +52,8 @@ const sectionName = (section: string): string => {
       return t("An admin page");
     case "notices":
       return t("The notices at the top");
+    case "connection_check":
+      return t("Connection check");
     case "route_screen":
       return t("The whole screen");
     case "window_error":

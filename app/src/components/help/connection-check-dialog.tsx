@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ConnectionCheckPanel } from "@/components/help/connection-check-panel";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import {
   Dialog,
   DialogBody,
@@ -41,7 +42,15 @@ export const ConnectionCheckDialog = ({
         </DialogDescription>
       </DialogHeader>
       <DialogBody>
-        <ConnectionCheckPanel />
+        {/*
+         * The check fails inside its dialog, under the title and the close button. The dialog sits
+         * in the signed-in shell above every section, so a panel that threw used to take the whole
+         * window to the router's error screen — for somebody who opened it because the app already
+         * seemed stuck.
+         */}
+        <SectionBoundary section="connection_check">
+          <ConnectionCheckPanel />
+        </SectionBoundary>
       </DialogBody>
     </DialogContent>
   </Dialog>

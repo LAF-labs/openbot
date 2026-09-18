@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ConnectionCheckPanel } from "@/components/help/connection-check-panel";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 
@@ -46,7 +47,10 @@ function UnreachableScreen() {
       </div>
       {isChecking ? (
         <div className="mt-4 w-full max-w-md text-left">
-          <ConnectionCheckPanel />
+          {/* A check that threw leaves 다시 시도 above it, the one way on from this screen. */}
+          <SectionBoundary section="connection_check">
+            <ConnectionCheckPanel />
+          </SectionBoundary>
         </div>
       ) : null}
     </div>
