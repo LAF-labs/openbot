@@ -257,13 +257,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * 2,540 / app 962 / agent-computer 261 / root 367. Rebased onto the stop-all branch above, each
  * floor is the higher of what the two branches set: `server` and `root` this one's, `app` that one's.
  *
+ * MEASURED TOGETHER 2026-09-18, once the answer ratings, 모두 멈추기 and the shop questions were on
+ * one tree: server 2,587 / app 1,024 / agent-computer 261 / root 367 — more than any of the three
+ * measured alone, so the higher of the two floors above sat 4.8% under `server` and 8.5% under `app`.
+ * Those two are re-raised to 3% under; `root` already is, and `agent-computer` did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2463, roots: ["server"] },
-  { name: "app", floor: 937, roots: ["app"] },
+  { name: "server", floor: 2509, roots: ["server"] },
+  { name: "app", floor: 993, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
