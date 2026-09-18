@@ -104,6 +104,22 @@ describe("the check itself", () => {
     );
   });
 
+  test("leaves a component that reads the clock while rendering uncompiled, and says so", async () => {
+    // Compiled, `Date.now()` here would be read once and kept; the build's options make it a skip.
+    const result = await measureModule({
+      path: "fixture.tsx",
+      source: [
+        "export const Stamp = ({ at }: { at: number }) => {",
+        "  const ago = Date.now() - at;",
+        "  return <span>{ago}</span>;",
+        "};",
+      ].join("\n"),
+    });
+    expect(result.compiled).toBe(0);
+    expect(result.skipped.map(({ name }) => name)).toEqual(["Stamp"]);
+    expect(result.skipped[0]?.reasons[0]).toStartWith("Purity:");
+  });
+
   test("counts a function that opts out as skipped, and notices when it does not say why", async () => {
     const result = await measureModule({
       path: "fixture.tsx",
