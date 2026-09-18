@@ -269,13 +269,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * on the combined tree at server 2,636 / app 1,070 / agent-computer 261 / root 367; `server` and
  * `app` re-raised to 3% under, `agent-computer` and `root` did not grow.
  *
+ * RAISED 2026-09-18, with 연결 점검: both socket doors answering a probe without registering or
+ * opening anything, the check's vocabulary read on the way into a diagnostics bundle (thirteen to
+ * `server`), and the check itself — every answer's mapping and every skip with fakes, the copy text
+ * holding closed facts only, and the Korean screen reached four ways (thirty-six to `app`). Measured
+ * on this branch at server 2,649 / app 1,106; those two re-raised to 3% under, and the other two did
+ * not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2556, roots: ["server"] },
-  { name: "app", floor: 1037, roots: ["app"] },
+  { name: "server", floor: 2569, roots: ["server"] },
+  { name: "app", floor: 1072, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
