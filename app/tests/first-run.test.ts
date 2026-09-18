@@ -39,6 +39,7 @@ function seeded(answers: Onboarding[]) {
         role: "user" as const,
         onboarded: answer.onboarded,
         consentRequired: false,
+        shop: { kind: null, places: [] },
         deployment: { effort: true, autoReview: true, seats: 5 },
       };
     },

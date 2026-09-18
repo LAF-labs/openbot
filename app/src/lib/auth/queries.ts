@@ -1,5 +1,7 @@
+import type { ShopProfile } from "@shared/shop/catalogue";
 import { queryOptions } from "@tanstack/react-query";
 import { DEFAULT_BOT_SEATS } from "@/lib/agents/seats";
+import { parseShop } from "@/lib/shop/catalogue";
 import { SESSION_REVOKED } from "./session-revoked";
 
 export type AuthenticatedUser = {
@@ -18,6 +20,12 @@ export type AuthenticatedUser = {
    * cannot keep is a wall with nothing behind it.
    */
   consentRequired: boolean;
+  /**
+   * What kind of business this person runs and where they work every day, as they answered on the
+   * first run or in Settings → 내 가게. Catalogue keys only; the words are this surface's. The empty
+   * answer when nothing was answered, and on a deployment that keeps none.
+   */
+  shop: ShopProfile;
 };
 
 /**
@@ -202,7 +210,9 @@ async function currentUser(): Promise<CurrentUserResult> {
   }
 
   const body = (await response.json()) as {
-    user: Omit<AuthenticatedUser, "consentRequired">;
+    user: Omit<AuthenticatedUser, "consentRequired" | "shop"> & {
+      shop?: unknown;
+    };
     deployment?: Partial<Omit<Deployment, "trial">> & { trial?: unknown };
     /** Two facts and no verdict; the verdict is drawn here. Absent when nothing records it. */
     consent?: { version: string | null; current: string };
@@ -213,6 +223,8 @@ async function currentUser(): Promise<CurrentUserResult> {
   // guessing wrong here is a control that is missing rather than a control that lies.
   return {
     ...body.user,
+    // Read forgivingly: a deployment that keeps no answers sends no key, and that is no answer.
+    shop: parseShop(body.user.shop),
     consentRequired:
       body.consent !== undefined &&
       body.consent.version !== body.consent.current,

@@ -1,26 +1,47 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConsentLine } from "@/components/legal/consent-line";
+import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
+import {
+  DailyPlacePicker,
+  DailyPlacePickerSkeleton,
+} from "@/components/shop/daily-place-picker";
 import { Button } from "@/components/ui/button";
 import { createAgentMutationOptions } from "@/lib/agents/mutations";
 import { createBotNow, useSeats } from "@/lib/agents/new-bot";
 import { agreeToLegal } from "@/lib/auth/consent";
-import { authKeys } from "@/lib/auth/queries";
+import { authKeys, currentUserQueryOptions } from "@/lib/auth/queries";
+import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { t } from "@/lib/i18n";
+import {
+  type BusinessKindId,
+  EMPTY_SHOP,
+  placesToOffer,
+  sameShop,
+} from "@/lib/shop/catalogue";
+import { saveShop } from "@/lib/shop/queries";
 
 /**
  * The first run, and the only place the product asks anybody to set anything up.
  *
- * TWO SCREENS, AND THE SECOND ONE IS A BUTTON. It used to be three, the last of which was a form:
- * thirty-five faces to choose from, above a name field, above an optional description, in front of
- * somebody who had not yet seen a Bot say a single word — every question of which the Bot itself
- * asks better, in its own conversation, once it exists.
+ * FOUR SCREENS, AND THE MIDDLE TWO ARE A PRESS EACH. The agreement, then what kind of business
+ * this is, then the places the owner uses every day, then the first Bot. It used to be three, the
+ * last of which was a form: thirty-five faces to choose from, above a name field, above an optional
+ * description, in front of somebody who had not yet seen a Bot say a single word — every question
+ * of which the Bot itself asks better, in its own conversation, once it exists.
+ *
+ * THE TWO QUESTIONS ARE NOT THAT FORM COME BACK. Nothing is typed and both are skippable; they are
+ * the two things a Bot cannot find out for itself before it has been of any use — which trade this
+ * is, and which of the sites it could sign into are the ones this owner lives in — and they are what
+ * turn the first Bot's suggestions from generic into this shop's (`presets.ts`, `first-tasks.ts`)
+ * and what every Bot is told on every run (`shared/prompt/shop.ko.ts`).
  *
  * It still ends with one Bot existing, because a roster of Bots you made is the whole product and
- * there is nothing to look at before the first one. And there is still no skip: it is one screen and
- * one press, and every path past it lands somewhere that only makes sense once a Bot exists.
+ * there is nothing to look at before the first one. And there is still no skip past THAT: it is one
+ * screen and one press, and every path past it lands somewhere that only makes sense once a Bot
+ * exists.
  */
 /** Three fixed faces for the first screen: distinct shapes and palettes, no accessories. */
 const WELCOME_FACES = [
@@ -39,8 +60,65 @@ function Welcome() {
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
   const seats = useSeats();
 
-  const [step, setStep] = useState<"hello" | "create">("hello");
+  const [step, setStep] = useState<"hello" | "kind" | "places" | "create">(
+    "hello",
+  );
   const [problem, setProblem] = useState<string | null>(null);
+
+  /*
+   * THE ANSWERS START FROM WHAT IS SAVED. Somebody who closed the laptop between the questions and
+   * the first Bot comes back to this screen, and their earlier presses should still be pressed.
+   * `_authed` has already loaded the current user, so this is in hand on the first render.
+   */
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const saved = user?.shop ?? EMPTY_SHOP;
+  const [kind, setKind] = useState<BusinessKindId | null>(saved.kind);
+  const [places, setPlaces] = useState<string[]>([...saved.places]);
+  const [saving, setSaving] = useState(false);
+  const kindHeadingId = useId();
+  const placesHeadingId = useId();
+
+  /*
+   * What this deployment can touch, asked from the first question on so the second has it ready.
+   * The 연결 screen's own read: a place is offered only when one of its doors is in it.
+   */
+  const overview = useQuery({
+    ...connectionsOverviewQueryOptions(),
+    enabled: step !== "hello",
+  });
+  const offered = overview.data
+    ? placesToOffer(overview.data, kind, places)
+    : null;
+  /** A deployment that can touch none of the places has no second question to ask. */
+  const hasNoPlaces = offered !== null && offered.length === 0;
+
+  /*
+   * EACH QUESTION SAVES WHEN IT IS LEFT, AND ONLY WHAT CHANGED. What is on the screen is what is
+   * kept — a press taken back and then skipped clears the answer — and an answer that did not move
+   * is not sent again. A failed save keeps the screen with the answer still pressed, so the next
+   * press of the same button is the retry.
+   */
+  const handleAnswered = async (next: "places" | "create") => {
+    if (saving) return;
+    setProblem(null);
+    const answer = { kind, places };
+    if (!sameShop(answer, saved)) {
+      setSaving(true);
+      try {
+        await saveShop(answer, queryClient);
+      } catch (caught) {
+        setProblem(
+          caught instanceof Error
+            ? caught.message
+            : t("That was not saved. Try again."),
+        );
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    setStep(next);
+  };
   /*
    * A REF, NOT `isPending`. The mutation's flag is a render-time value, so two clicks landing in the
    * same frame both read `false` and both submit — which in onboarding means two Bots, one of the
@@ -63,7 +141,7 @@ function Welcome() {
     setProblem(null);
     try {
       await agreeToLegal(queryClient);
-      setStep("create");
+      setStep("kind");
     } catch {
       setProblem(t("Could not record your agreement. Try again."));
     } finally {
@@ -223,6 +301,122 @@ function Welcome() {
              */}
             <ConsentLine className="text-pretty text-muted-foreground text-xs" />
           </section>
+        ) : step === "kind" ? (
+          <section className="flex flex-col items-center gap-6 text-center">
+            <h1 className="font-semibold text-2xl" id={kindHeadingId}>
+              {t("What kind of work do you do?")}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {t(
+                "Pick the one closest to yours. Your Bots start from it, and you can change it in Settings whenever you like.",
+              )}
+            </p>
+            <BusinessKindPicker
+              disabled={saving}
+              label={{ labelledBy: kindHeadingId }}
+              onChange={setKind}
+              value={kind}
+            />
+            {problem ? (
+              <p className="text-destructive text-sm" role="alert">
+                {problem}
+              </p>
+            ) : null}
+            {/*
+             * ONE BUTTON THAT SAYS WHICH IT IS. With nothing pressed it reads 건너뛰기 and moves on
+             * without sending anything; with an answer pressed it reads 다음 and saves it. A skip
+             * that looked like 다음 would leave somebody unsure whether pressing it had agreed to
+             * something, and a third button would make a two-button screen a form.
+             */}
+            <div className="flex w-full flex-col gap-2">
+              <Button
+                className="w-full"
+                disabled={saving}
+                onClick={() =>
+                  void handleAnswered(hasNoPlaces ? "create" : "places")
+                }
+                type="button"
+              >
+                {kind ? t("Next") : t("Skip")}
+              </Button>
+              <Button
+                className="w-full"
+                disabled={saving}
+                onClick={() => setStep("hello")}
+                type="button"
+                variant="outline"
+              >
+                {t("Back")}
+              </Button>
+            </div>
+          </section>
+        ) : step === "places" ? (
+          <section className="flex flex-col items-center gap-6 text-center">
+            <h1 className="font-semibold text-2xl" id={placesHeadingId}>
+              {t("Pick the places you use every day")}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {t(
+                "As many as you like. Your Bots look there first, and ask you to connect any that are not connected yet.",
+              )}
+            </p>
+            {/*
+             * Only what this deployment can touch, the likeliest for the kind just answered first.
+             * A read that failed is said, and the way on still works: the places can be picked in
+             * Settings later, and the first Bot does not depend on them.
+             */}
+            {hasNoPlaces ? (
+              // Reached only when the read landed after the first question was answered.
+              <p className="text-muted-foreground text-sm" role="status">
+                {t(
+                  "There is nothing to pick here yet. You can come back to it in Settings.",
+                )}
+              </p>
+            ) : offered ? (
+              <DailyPlacePicker
+                disabled={saving}
+                label={{ labelledBy: placesHeadingId }}
+                onChange={setPlaces}
+                places={offered}
+                value={places}
+              />
+            ) : overview.isError ? (
+              <p className="text-muted-foreground text-sm" role="status">
+                {t(
+                  "The places could not be loaded. You can pick them later in Settings.",
+                )}
+              </p>
+            ) : (
+              <DailyPlacePickerSkeleton />
+            )}
+            {problem ? (
+              <p className="text-destructive text-sm" role="alert">
+                {problem}
+              </p>
+            ) : null}
+            <div className="flex w-full flex-col gap-2">
+              <Button
+                className="w-full"
+                disabled={saving}
+                onClick={() => void handleAnswered("create")}
+                type="button"
+              >
+                {places.length > 0 ? t("Next") : t("Skip")}
+              </Button>
+              <Button
+                className="w-full"
+                disabled={saving}
+                onClick={() => {
+                  setProblem(null);
+                  setStep("kind");
+                }}
+                type="button"
+                variant="outline"
+              >
+                {t("Back")}
+              </Button>
+            </div>
+          </section>
         ) : (
           <section className="flex flex-col items-center gap-6 text-center">
             {/* The same disc as step one, holding one face: this is the Bot about to be made. */}
@@ -274,7 +468,11 @@ function Welcome() {
               </Button>
               <Button
                 className="w-full"
-                onClick={() => setStep("hello")}
+                onClick={() => {
+                  setProblem(null);
+                  // Back to the question before this one: the places, unless there were none.
+                  setStep(hasNoPlaces ? "kind" : "places");
+                }}
                 type="button"
                 variant="outline"
               >

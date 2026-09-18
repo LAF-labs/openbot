@@ -38,6 +38,7 @@ import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/p
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsAccountRouteImport } from './routes/_authed/settings/account'
 import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
+import { Route as AuthedSettingsShopRouteImport } from './routes/_authed/settings/shop'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
@@ -187,6 +188,11 @@ const AuthedSettingsConnectedAccountsRoute =
     path: '/connected-accounts',
     getParentRoute: () => AuthedSettingsRouteRoute,
   } as any)
+const AuthedSettingsShopRoute = AuthedSettingsShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   id: '/agents/',
   path: '/agents/',
@@ -236,6 +242,7 @@ export interface FileRoutesByFullPath {
   '/admin/plugins': typeof AuthedAdminPluginsRoute
   '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/settings/shop': typeof AuthedSettingsShopRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
@@ -267,6 +274,7 @@ export interface FileRoutesByTo {
   '/admin/plugins': typeof AuthedAdminPluginsRoute
   '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/settings/shop': typeof AuthedSettingsShopRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   '/_authed/admin/plugins': typeof AuthedAdminPluginsRoute
   '/_authed/settings/account': typeof AuthedSettingsAccountRoute
   '/_authed/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/_authed/settings/shop': typeof AuthedSettingsShopRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
     | '/admin/plugins'
     | '/settings/account'
     | '/settings/connected-accounts'
+    | '/settings/shop'
     | '/admin/'
     | '/settings/'
     | '/approve/$approvalId'
@@ -369,6 +379,7 @@ export interface FileRouteTypes {
     | '/admin/plugins'
     | '/settings/account'
     | '/settings/connected-accounts'
+    | '/settings/shop'
     | '/admin'
     | '/settings'
     | '/approve/$approvalId'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins'
     | '/_authed/settings/account'
     | '/_authed/settings/connected-accounts'
+    | '/_authed/settings/shop'
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
@@ -628,6 +640,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsConnectedAccountsRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/shop': {
+      id: '/_authed/settings/shop'
+      path: '/shop'
+      fullPath: '/settings/shop'
+      preLoaderRoute: typeof AuthedSettingsShopRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/_app/agents/': {
       id: '/_authed/_app/agents/'
       path: '/agents'
@@ -689,12 +708,14 @@ const AuthedAdminRouteRouteWithChildren =
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsAccountRoute: typeof AuthedSettingsAccountRoute
   AuthedSettingsConnectedAccountsRoute: typeof AuthedSettingsConnectedAccountsRoute
+  AuthedSettingsShopRoute: typeof AuthedSettingsShopRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsAccountRoute: AuthedSettingsAccountRoute,
   AuthedSettingsConnectedAccountsRoute: AuthedSettingsConnectedAccountsRoute,
+  AuthedSettingsShopRoute: AuthedSettingsShopRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
 

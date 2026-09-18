@@ -17,7 +17,7 @@ import { t } from "@/lib/i18n";
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
 /**
- * The three screens Settings is, and the only list of them.
+ * The four screens Settings is, and the only list of them.
  *
  * Exported because the rail is not the only thing that draws it: below `lg` there is no rail, and
  * `RailNav` reads this same table. Two copies would be two orders and, sooner, two answers about
@@ -33,6 +33,15 @@ export const SETTINGS_NAV: RailNavItem[] = [
      * made this argument for `/admin`; this rail had never had it made.
      */
     isExact: true,
+  },
+  /*
+   * 내 가게 — what kind of business and the places used every day, which every Bot is told on every
+   * run. A row of its own because it is the one place a person can see what their Bots believe about
+   * the business; beside 연결, because its places are the ones 연결 connects.
+   */
+  {
+    title: t("My shop"),
+    linkOptions: { to: "/settings/shop" },
   },
   /*
    * The same argument as 내 정보 below, and it had never been made for this one: 연결 was reachable

@@ -259,6 +259,54 @@ export const ko: Record<string, string> = {
     "봇을 만들지 못했습니다. 다시 시도해 주세요.",
   Next: "다음",
   Back: "뒤로",
+  // 첫 실행의 두 질문과 설정 → 내 가게. 일의 이름과 곳의 이름은 `t(변수)`로 읽히므로
+  // shop-copy.test.ts가 표를 직접 훑고, 봇이 읽는 이름(shared/prompt/shop.ko.ts)과 같은지도 본다.
+  Skip: "건너뛰기",
+  "What kind of work do you do?": "어떤 일을 하세요?",
+  "Pick the one closest to yours. Your Bots start from it, and you can change it in Settings whenever you like.":
+    "가장 가까운 것 하나를 골라 주세요. 봇들이 여기에 맞춰 일을 제안하고, 설정에서 언제든 바꿀 수 있어요.",
+  "Pick the places you use every day": "매일 쓰는 곳을 골라 주세요",
+  "As many as you like. Your Bots look there first, and ask you to connect any that are not connected yet.":
+    "여러 곳을 골라도 돼요. 봇들이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
+  "The places could not be loaded. You can pick them later in Settings.":
+    "고를 곳을 불러오지 못했어요. 나중에 설정의 내 가게에서 고를 수 있어요.",
+  "There is nothing to pick here yet. You can come back to it in Settings.":
+    "아직 여기서 고를 수 있는 곳이 없어요. 나중에 설정의 내 가게에서 다시 볼 수 있어요.",
+  "Show more": "더 보기",
+  "Show fewer": "접기",
+  "That was not saved. Try again.": "저장하지 못했어요. 다시 눌러 주세요.",
+  "That was not saved. Check the connection and try again.":
+    "저장하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.",
+  "Restaurant or café": "음식점·카페",
+  "Selling online": "온라인 판매",
+  "Selling in a shop": "매장 판매",
+  "Hair and beauty": "미용·뷰티",
+  "Academy or tutoring": "학원·교육",
+  "Clinic or pharmacy": "병원·약국",
+  "Office or professional services": "사무·전문직",
+  "Something else": "그 밖에",
+  "Naver Smart Store": "네이버 스마트스토어",
+  "Naver Booking and Talk": "네이버 예약·톡톡",
+  Baemin: "배달의민족",
+  "Coupang Eats": "쿠팡이츠",
+  Yogiyo: "요기요",
+  CatchTable: "캐치테이블",
+  "KakaoTalk Channel": "카카오톡 채널",
+  Instagram: "인스타그램",
+  "Toss Payments": "토스페이먼츠",
+  "My shop": "내 가게",
+  "What kind of business this is and where you work every day. Every Bot reads it before it starts, and no Bot can change it.":
+    "어떤 일을 하는지, 매일 어디서 일하는지 적어 두는 곳이에요. 모든 봇이 일을 시작하기 전에 읽고, 봇이 바꿀 수는 없어요.",
+  "What you do": "하는 일",
+  "Places you use every day": "매일 쓰는 곳",
+  "Your Bots look there first, and ask you to connect any that are not connected yet.":
+    "봇들이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
+  "There is nothing this deployment can connect yet.":
+    "아직 여기서 연결할 수 있는 곳이 없어요.",
+  "The places could not be loaded. Refresh to try again.":
+    "고를 곳을 불러오지 못했어요. 새로고침해서 다시 시도해 주세요.",
+  "Picking a place does not connect it.": "고른다고 연결되지는 않아요.",
+  "Connect it on Connections": "연결 화면에서 연결하기",
   "(Optional)": "(선택)",
   "Nobody had anything to add this time.":
     "이번에는 아무도 덧붙일 말이 없었습니다.",

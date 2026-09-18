@@ -60,6 +60,7 @@ afterEach(unmountAll);
 const SETTINGS_PATHS = [
   "/",
   "/settings",
+  "/settings/shop",
   "/settings/connected-accounts",
   "/settings/account",
 ];
@@ -119,9 +120,11 @@ async function adminScreenAt(at: string) {
 }
 
 describe("which link is lit", () => {
-  test("Settings is General, 연결 and 내 데이터, in that order", () => {
+  test("Settings is General, 내 가게, 연결 and 내 데이터, in that order", () => {
+    // 내 가게 beside 연결, because its places are the ones 연결 connects.
     expect(SETTINGS_NAV.map((item) => item.linkOptions.to)).toEqual([
       "/settings",
+      "/settings/shop",
       "/settings/connected-accounts",
       "/settings/account",
     ]);
@@ -153,6 +156,8 @@ describe("which link is lit", () => {
      */
     const data = await railAt("/settings/account", SETTINGS_NAV, "Settings");
     expect(data.lit()).toEqual(["Your data"]);
+    const shop = await railAt("/settings/shop", SETTINGS_NAV, "Settings");
+    expect(shop.lit()).toEqual(["My shop"]);
     const connections = await railAt(
       "/settings/connected-accounts",
       SETTINGS_NAV,
