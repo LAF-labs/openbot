@@ -2043,6 +2043,15 @@ export const ko: Record<string, string> = {
   // The footer on Settings and the help page: what is running, for a support thread to start from.
   "Version {build}": "버전 {build}",
   "Version {build} · app {shell}": "버전 {build} · 앱 {shell}",
+  // 버전 줄 옆의 복사: 운영자에게 붙여 넣을 한 줄. 사실(버전·기종)은 그대로 두고 이름표만 옮긴다.
+  Copy: "복사",
+  "Copy version details": "버전 정보 복사",
+  "Copied to the clipboard": "복사했어요",
+  "server {build}": "서버 {build}",
+  "app {shell}": "앱 {shell}",
+  "browser {browser}": "브라우저 {browser}",
+  browser: "브라우저",
+  "unknown system": "운영체제 모름",
   /*
    * 봇의 답 아래 좋아요·아쉬워요. 버튼 두 개의 말투에 맞춰 해요체로 썼다. 서버는 이유를 키로만
    * 받고(`not-as-asked`…), 여기서 그 키를 말로 바꾼다. 운영자에게 가는 알림의 말은 서버 쪽이다.

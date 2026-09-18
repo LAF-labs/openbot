@@ -12,7 +12,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { VersionLine } from "../src/components/settings/version-line";
-import { describeBuild, readBuild } from "../src/lib/version";
+import {
+  browserOf,
+  describeBuild,
+  platformOf,
+  readBuild,
+  supportLine,
+} from "../src/lib/version";
 
 /**
  * The version line under Settings and the help page.
@@ -61,6 +67,9 @@ function serverAnswers(
 afterEach(() => {
   (globalThis as Global).fetch = originalFetch;
   (globalThis as Global).__TAURI__ = undefined;
+  // What `runningOn` put on the instance; the DOM's own answers are on the prototype underneath.
+  Reflect.deleteProperty(navigator, "userAgent");
+  Reflect.deleteProperty(navigator, "clipboard");
 });
 
 describe("describing a build", () => {
@@ -127,17 +136,58 @@ async function mounted() {
     );
   });
   // Both queries resolve on microtasks; one settle is enough for a stubbed fetch.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
+  const settle = async (ms = 20) => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+  };
+  await settle();
+  const copyButton = () => host.querySelector("button");
   return {
-    text: () => host.textContent ?? "",
+    /** The version line itself, without the copy control beside it. */
+    text: () => host.querySelector("p")?.textContent ?? "",
+    everything: () => host.textContent ?? "",
+    copyButton,
+    copy: async () => {
+      await act(async () => {
+        copyButton()?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+      });
+      await settle();
+    },
     unmount: async () => {
       await act(async () => root.unmount());
       host.remove();
     },
   };
 }
+
+/** What the page believes it is running on, and a clipboard that remembers what it was given. */
+function runningOn(userAgent: string, clipboard: "works" | "refuses") {
+  const written: string[] = [];
+  Object.defineProperty(navigator, "userAgent", {
+    value: userAgent,
+    configurable: true,
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    value: {
+      writeText: async (text: string) => {
+        if (clipboard === "refuses")
+          throw new Error("Document is not focused.");
+        written.push(text);
+      },
+    },
+    configurable: true,
+  });
+  return written;
+}
+
+const MAC_CHROME =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+/** What the shell's webview on a Mac says: WebKit, and no browser of its own. */
+const MAC_SHELL =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
 
 describe("the line", () => {
   test("draws the server's build in a browser tab, and nothing about a shell", async () => {
@@ -167,10 +217,153 @@ describe("the line", () => {
   test("draws nothing rather than a guess when the server could not say", async () => {
     serverAnswers("unreachable");
     const page = await mounted();
-    expect(page.text()).toBe("");
+    // Nor anything to copy: a line with no build in it is not worth pasting to anybody.
+    expect(page.everything()).toBe("");
+    expect(page.copyButton()).toBeNull();
+    await page.unmount();
+  });
+});
+
+/**
+ * 복사: one line a person can paste to whoever runs the product, so the first reply to "it does not
+ * work" is not "what are you running?". The product, the server's build, the shell's version when
+ * there is a shell (and the browser when there is not), and the system — every part from the same
+ * place the line on screen reads it, never typed by the person.
+ */
+describe("copying the version details", () => {
+  test("puts the product, the build, the shell and the system on the clipboard, and says so", async () => {
+    const written = runningOn(MAC_SHELL, "works");
+    serverAnswers({
+      status: 200,
+      body: { version: "v0.5.1", revision: "dba36c3f0c", channel: "stable" },
+    });
+    (globalThis as Global).__TAURI__ = {
+      app: { getVersion: async () => "0.2.0" },
+    };
+    const page = await mounted();
+    expect(page.copyButton()?.textContent).toBe("Copy");
+    expect(page.copyButton()?.getAttribute("aria-label")).toBe(
+      "Copy version details",
+    );
+
+    await page.copy();
+    expect(written).toEqual([
+      "LAF Agent · server v0.5.1 (dba36c3) · stable · app 0.2.0 · macOS",
+    ]);
+    expect(page.copyButton()?.textContent).toBe("Copied to the clipboard");
     await page.unmount();
   });
 
+  test("names the browser in a browser tab, where there is no shell to name", async () => {
+    const written = runningOn(MAC_CHROME, "works");
+    serverAnswers({ status: 200, body: { version: "edge" } });
+    const page = await mounted();
+    await page.copy();
+    expect(written).toEqual([
+      "LAF Agent · server edge · browser Chrome 128 · macOS",
+    ]);
+    await page.unmount();
+  });
+
+  test("a clipboard that refused says nothing was copied, because nothing was", async () => {
+    const written = runningOn(MAC_CHROME, "refuses");
+    serverAnswers({ status: 200, body: { version: "edge" } });
+    const page = await mounted();
+    await page.copy();
+    expect(written).toEqual([]);
+    expect(page.copyButton()?.textContent).toBe("Copy");
+    await page.unmount();
+  });
+});
+
+describe("what the page is running on", () => {
+  test("the system, as a person names it", () => {
+    for (const [agent, named] of [
+      [MAC_CHROME, "macOS"],
+      [MAC_SHELL, "macOS"],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
+        "Windows",
+      ],
+      [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        "iOS",
+      ],
+      [
+        "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36",
+        "Android",
+      ],
+      [
+        "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "ChromeOS",
+      ],
+      [
+        "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
+        "Linux",
+      ],
+      ["", null],
+    ] as const) {
+      expect({ agent, named: platformOf({ userAgent: agent }) }).toEqual({
+        agent,
+        named,
+      });
+    }
+    // A browser that says outright is believed before its user-agent string is parsed.
+    expect(
+      platformOf({
+        userAgent: MAC_CHROME,
+        userAgentData: { platform: "Windows" },
+      }),
+    ).toBe("Windows");
+  });
+
+  test("the browser, by family and major version — the ones built on Chrome by their own names", () => {
+    for (const [agent, named] of [
+      [MAC_CHROME, "Chrome 128"],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Whale/3.27.254.15 Safari/537.36",
+        "Whale 3",
+      ],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
+        "Edge 128",
+      ],
+      [
+        "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36",
+        "Samsung Internet 25",
+      ],
+      [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+        "Safari 17",
+      ],
+      [
+        "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
+        "Firefox 130",
+      ],
+      // The shell's webview names no browser, and none is guessed for it.
+      [MAC_SHELL, null],
+    ] as const) {
+      expect({ agent, named: browserOf({ userAgent: agent }) }).toEqual({
+        agent,
+        named,
+      });
+    }
+  });
+
+  test("the line, when neither the browser nor the system can be told", () => {
+    expect(
+      supportLine({
+        product: "LAF Agent",
+        build: { version: "edge" },
+        shell: null,
+        browser: null,
+        platform: null,
+      }),
+    ).toBe("LAF Agent · server edge · browser · unknown system");
+  });
+});
+
+describe("the line's place", () => {
   /** Where a person who has run out of ideas looks: Settings, and the help page. */
   test("sits in both footers", () => {
     for (const path of [
