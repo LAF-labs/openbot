@@ -14,10 +14,8 @@ import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
-import {
-  SCREEN_UNAVAILABLE,
-  screenProblemText,
-} from "@/lib/computer/screen-problems";
+import { SCREEN_UNAVAILABLE } from "@/lib/computer/screen-problems";
+import { screenView } from "@/lib/computer/screen-state";
 import { focusRing, focusRingInset } from "@/components/ui/focus";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
@@ -133,9 +131,10 @@ export function ComputerView({
   /**
    * Why the screen cannot be shown, as a fact code (`laf:…`), or null while it can.
    *
-   * A code and not a sentence, so what is rendered is always `screenProblemText(problem)` in the
-   * person's language. It used to hold the server's `error` prose straight out of the response
-   * body, and what a Korean reader then saw was "The assistant's computer is not running."
+   * A code and not a sentence, so what is rendered is always the table's words for it, in the
+   * person's language, by way of `screenView`. It used to hold the server's `error` prose straight
+   * out of the response body, and what a Korean reader then saw was "The assistant's computer is
+   * not running."
    */
   const [problem, setProblem] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -419,12 +418,17 @@ export function ComputerView({
   const frameStyle = { aspectRatio, minWidth, minHeight };
 
   // Always render the card frame; help/secret controls live below the conditional picture.
-  const blankBrowser = shot ? isBlankBrowser(shot) : false;
+  /** What the picture area says, from the frame and the last problem — see `screenView`. */
+  const view = screenView({
+    hasFrame: shot !== null,
+    isBlank: shot ? isBlankBrowser(shot) : false,
+    problem,
+  });
   /** Blank browser placeholders should not be opened as readable screens. */
-  const showScreen = shot !== null && !blankBrowser;
+  const showScreen = view.kind === "showing";
 
   /** Nothing has arrived yet and nothing has gone wrong: the one state that is genuinely loading. */
-  const isLoadingFirstFrame = shot === null && problem === null;
+  const isLoadingFirstFrame = view.kind === "waiting";
 
   return (
     <>
@@ -483,33 +487,41 @@ export function ComputerView({
            * on its way instead of like a grey rectangle that might be all there is. The sentence
            * stays for anyone reading the page rather than looking at it.
            */}
-          {isLoadingFirstFrame ? (
+          {view.kind === "waiting" ? (
             <>
               <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
-              <span className="sr-only">
-                {t("Waiting for the Bot's screen…")}
-              </span>
+              <span className="sr-only">{view.label}</span>
             </>
-          ) : showScreen ? null : (
+          ) : view.kind === "showing" ? null : (
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
-              {problem ? (
+              {view.kind === "problem" ? (
                 <>
                   <span className="font-medium text-foreground">
-                    {t("You cannot see the screen right now")}
+                    {view.heading}
                   </span>
-                  <span>{screenProblemText(problem)}</span>
-                  <span>
-                    {t(
-                      "The Bot may still be working. An administrator can check whether its computer is running.",
-                    )}
-                  </span>
+                  <span>{view.sentence}</span>
+                  {view.advice ? <span>{view.advice}</span> : null}
                 </>
               ) : (
-                <span>{t("The Bot has not opened a page yet.")}</span>
+                <span>{view.sentence}</span>
               )}
             </span>
           )}
         </button>
+
+        {/*
+         * THE PICTURE ABOVE IS OLD, AND SAYS SO. Until the next frame lands, which clears it: a
+         * frozen frame drawn with nothing under it is a screen somebody watches for a minute before
+         * realising nothing is moving.
+         */}
+        {view.kind === "showing" && view.stale ? (
+          <p
+            className="text-pretty text-muted-foreground text-xs"
+            role="status"
+          >
+            {view.stale}
+          </p>
+        ) : null}
 
         {/*
           Secret values go directly to the page path and are never included in the conversation.

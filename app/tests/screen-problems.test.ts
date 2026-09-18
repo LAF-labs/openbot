@@ -144,8 +144,22 @@ describe("the panes read the table, not the wire", () => {
   });
 
   test("wherever a problem is drawn, it is drawn through the table", () => {
-    for (const source of [view, handoff]) {
+    /*
+     * The card's words are decided in `screenView` since 2026-09-18 (`lib/computer/screen-state.ts`),
+     * so that is where the table has to be read — and the card has to draw what `screenView` says
+     * rather than a sentence of its own. Checked against the code, not a comment: until then this
+     * passed on the card because a comment in it quoted the call.
+     */
+    const state = readFileSync(
+      join(COMPONENTS, "../lib/computer/screen-state.ts"),
+      "utf8",
+    );
+    for (const source of [state, handoff]) {
       expect(source).toContain("screenProblemText(problem)");
+    }
+    expect(view).toContain("screenView({");
+    expect(view).not.toContain("screenProblemText");
+    for (const source of [view, handoff]) {
       expect(source).not.toMatch(/\{problem\}/);
     }
   });

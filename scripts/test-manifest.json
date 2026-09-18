@@ -132,6 +132,7 @@
   "app/tests/screen-errors.test.ts",
   "app/tests/screen-problems.test.ts",
   "app/tests/screen-routes.test.ts",
+  "app/tests/screen-state.test.ts",
   "app/tests/section-boundary.test.tsx",
   "app/tests/section-seams.test.tsx",
   "app/tests/session-gate.test.tsx",
