@@ -157,8 +157,16 @@ async function card(options: Parameters<typeof computer>[0] = {}) {
     ...stub,
     figure,
     picture,
-    /** Every block below the picture, each starting on the card's own left rule. */
-    rows: () => [...figure.children].slice(1) as HTMLElement[],
+    /**
+     * Every block below the picture, each starting on the card's own left rule.
+     *
+     * Not a live region waiting to speak: the picture's own line is mounted with the card and is
+     * visually hidden while it has nothing to say (`LiveRegion`), and hidden is not a row.
+     */
+    rows: () =>
+      ([...figure.children].slice(1) as HTMLElement[]).filter(
+        (child) => !child.classList.contains("sr-only"),
+      ),
     focusable: () =>
       [
         ...figure.querySelectorAll<HTMLElement>(

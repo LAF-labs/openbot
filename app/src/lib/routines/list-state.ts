@@ -3,6 +3,7 @@ import {
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
 import { t } from "@/lib/i18n";
+import { type ReadLine, readLineOf } from "@/lib/read-line";
 import { type Reading, settledOf } from "@/lib/reading";
 import type { Routine, RoutineRun } from "@/lib/routines/queries";
 import { RUN_STOPPED } from "@/lib/work/stop-all";
@@ -17,61 +18,38 @@ import { RUN_STOPPED } from "@/lib/work/stop-all";
  * turn's sentence, so each case can be pinned without drawing anything (`routine-list-state.test.ts`).
  */
 
-/** What the list area draws: rows, placeholders, and at most one line about them. */
+/** What the list area draws: rows, placeholders, one line about them, and "none yet". */
 export type RoutineListView = {
   /** The routines to draw — the answer, or the answer from before when refreshing it failed. */
   rows: Routine[];
   isLoading: boolean;
-  line:
-    | { kind: "failed"; text: string }
-    | { kind: "stale"; isRetrying: boolean }
-    | { kind: "unavailable"; why: "not_configured" | "not_allowed" }
-    | { kind: "empty"; text: string }
-    | null;
+  /** The line the list says besides its rows, for its `ReadNotice`. */
+  notice: ReadLine;
+  /** "None yet", said once the answer is in. */
+  empty: string | null;
 };
 
 export function routineListView(
   reading: Reading<Routine[]>,
   { isCreating }: { isCreating: boolean },
 ): RoutineListView {
-  const rows = settledOf(reading)?.data ?? [];
-  switch (reading.state) {
-    case "loading":
-      return { rows, isLoading: true, line: null };
-    case "unavailable":
-      return {
-        rows,
-        isLoading: false,
-        line: { kind: "unavailable", why: reading.why },
-      };
-    case "failed":
-      return {
-        rows,
-        isLoading: false,
-        line: reading.previous
-          ? { kind: "stale", isRetrying: reading.isRetrying }
-          : { kind: "failed", text: t("Your routines could not be loaded.") },
-      };
-    case "empty":
-      /*
-       * Not while the form for the first one is open beside it: "none yet" next to the routine
-       * somebody is writing is a sentence arguing with them.
-       */
-      return {
-        rows,
-        isLoading: false,
-        line: isCreating
-          ? null
-          : {
-              kind: "empty",
-              text: t(
-                "No routines yet. Give a Bot something to do every morning.",
-              ),
-            },
-      };
-    case "ready":
-      return { rows, isLoading: false, line: null };
-  }
+  return {
+    rows: settledOf(reading)?.data ?? [],
+    isLoading: reading.state === "loading",
+    notice: readLineOf(reading, {
+      failed: t("Your routines could not be loaded."),
+      notHere: t("Routines are not offered here."),
+    }),
+    /*
+     * Not while the form for the first one is open beside it: "none yet" next to the routine
+     * somebody is writing is a sentence arguing with them. And not over a list that could not be
+     * refreshed — that one was empty when it was read, and the notice says the rest.
+     */
+    empty:
+      reading.state === "empty" && !isCreating
+        ? t("No routines yet. Give a Bot something to do every morning.")
+        : null,
+  };
 }
 
 /** How one run ended, as its row in the history says it. */

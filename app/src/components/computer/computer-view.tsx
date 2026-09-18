@@ -512,16 +512,15 @@ export function ComputerView({
         {/*
          * THE PICTURE ABOVE IS OLD, AND SAYS SO. Until the next frame lands, which clears it: a
          * frozen frame drawn with nothing under it is a screen somebody watches for a minute before
-         * realising nothing is moving.
+         * realising nothing is moving. Mounted with the card, so the line is heard when it is said.
          */}
-        {view.kind === "showing" && view.stale ? (
-          <p
-            className="text-pretty text-muted-foreground text-xs"
-            role="status"
-          >
-            {view.stale}
-          </p>
-        ) : null}
+        <LiveRegion
+          as="p"
+          // A row like the card's others once it speaks: on the rule, under a hairline.
+          className="border-t pt-2 text-pretty text-muted-foreground text-xs"
+        >
+          {view.kind === "showing" ? view.stale : null}
+        </LiveRegion>
 
         {/*
           Secret values go directly to the page path and are never included in the conversation.

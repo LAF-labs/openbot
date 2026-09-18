@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { ReadFailed } from "@/components/layout/read-states";
+import { LiveRegion } from "@/components/layout/live-region";
+import { ReadNotice } from "@/components/layout/read-states";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -13,7 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
-import { settledOf, useReading } from "@/lib/reading";
+import type { ReadLine } from "@/lib/read-line";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 import { routineKeys } from "@/lib/routines/queries";
 import {
   type RoutineSuggestion,
@@ -174,81 +176,81 @@ export const RoutineSuggestions = () => {
   /** The routine just made from a card, named in a status line until the next press. */
   const [made, setMade] = useState<string | null>(null);
   const reading = useReading(suggestions);
-
-  if (reading.state === "loading") {
-    return (
-      <section aria-busy="true" className="mb-8">
-        <Skeleton className="h-[116px] rounded-xl" />
-      </section>
-    );
-  }
-  /*
-   * A PLACE WITH NO SUGGESTIONS IS A PAGE WITH NO CARDS, NOT A FAILURE. The route is mounted only
-   * where the connections and the roster are (`server/src/app.ts`), and where it is not, the read
-   * met `laf:not_found` — which drew "could not be loaded" and 다시 시도 above the routines, a press
-   * that could only ever fail again. An offer this place cannot make is simply not made.
-   */
-  if (reading.state === "unavailable") return null;
-  const settled = settledOf(reading);
-  if (!settled) {
-    return (
-      <section className="mb-8">
-        <ReadFailed
-          className="py-0"
-          message={t("The suggestions could not be loaded.")}
-          onRetry={() => void suggestions.refetch()}
-        />
-      </section>
-    );
-  }
-
-  const cards = settled.data;
+  const cards = settledOf(reading)?.data ?? [];
   const bots: Bot[] = (agents.data ?? []).map((bot) => ({
     id: bot.id,
     name: bot.name,
   }));
+  /*
+   * A PLACE WITH NO SUGGESTIONS IS A PAGE WITH NO CARDS, NOT A FAILURE. The route is mounted only
+   * where the connections and the roster are (`server/src/app.ts`), and where it is not, the read
+   * met `laf:not_found` — which drew "could not be loaded" and 다시 시도 above the routines, a press
+   * that could only ever fail again. An offer this place cannot make is simply not made, and cards
+   * kept over a refresh that failed need no line either: each card's press says if it has gone.
+   */
+  const line: ReadLine = hasFailedOutright(reading)
+    ? {
+        kind: "failed",
+        message: t("The suggestions could not be loaded."),
+        isRetrying: false,
+      }
+    : null;
 
-  // Nothing to offer and nothing just made: the list below is the whole page, as it was.
-  if (cards.length === 0 && !made) return null;
-
+  // The notice first and always, so its line is heard when it is said; the rest as the read allows.
   return (
-    <section
-      aria-labelledby={cards.length > 0 ? headingId : undefined}
-      className="mb-8"
-    >
-      {cards.length > 0 ? (
-        <>
-          <h2 className="font-medium text-sm" id={headingId}>
-            {t("Routines you might want")}
-          </h2>
-          <p className="mt-1 text-muted-foreground text-xs">
-            {t(
-              "Made from what you have connected. Nothing is created until you press Make.",
-            )}
-          </p>
-        </>
+    <>
+      <ReadNotice
+        className="mb-8 py-0"
+        line={line}
+        onRetry={() => void suggestions.refetch()}
+      />
+      {reading.state === "loading" ? (
+        <section aria-busy="true" className="mb-8">
+          <Skeleton className="h-[116px] rounded-xl" />
+        </section>
       ) : null}
-      {made ? (
-        <p className="mt-2 text-muted-foreground text-xs" role="status">
-          {t("{name}{josa} in the list below now.", {
-            josa: josa(made, "이/가"),
-            name: made,
-          })}
-        </p>
+      {/* Nothing to offer and nothing just made: the list below is the whole page, as it was. */}
+      {cards.length > 0 || made ? (
+        <section
+          aria-labelledby={cards.length > 0 ? headingId : undefined}
+          className="mb-8"
+        >
+          {cards.length > 0 ? (
+            <>
+              <h2 className="font-medium text-sm" id={headingId}>
+                {t("Routines you might want")}
+              </h2>
+              <p className="mt-1 text-muted-foreground text-xs">
+                {t(
+                  "Made from what you have connected. Nothing is created until you press Make.",
+                )}
+              </p>
+            </>
+          ) : null}
+          {/* Mounted with the cards, so what a press made is heard when it is said. */}
+          <LiveRegion as="p" className="mt-2 text-muted-foreground text-xs">
+            {made
+              ? t("{name}{josa} in the list below now.", {
+                  josa: josa(made, "이/가"),
+                  name: made,
+                })
+              : null}
+          </LiveRegion>
+          {cards.length > 0 ? (
+            <ul className="mt-3 flex flex-col gap-2">
+              {cards.map((suggestion) => (
+                <SuggestionCard
+                  bots={bots}
+                  isRosterPending={agents.isPending}
+                  key={suggestion.key}
+                  onMade={setMade}
+                  suggestion={suggestion}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </section>
       ) : null}
-      {cards.length > 0 ? (
-        <ul className="mt-3 flex flex-col gap-2">
-          {cards.map((suggestion) => (
-            <SuggestionCard
-              bots={bots}
-              isRosterPending={agents.isPending}
-              key={suggestion.key}
-              onMade={setMade}
-              suggestion={suggestion}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </section>
+    </>
   );
 };

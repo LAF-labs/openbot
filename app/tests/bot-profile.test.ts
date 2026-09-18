@@ -149,7 +149,7 @@ describe("what it remembers", () => {
      * The card's states are drawn in `read-states-render.test.tsx`; this holds the two
      * lines a later edit could quietly undo.
      */
-    expect(card).toContain('if (reading.state === "loading") {');
+    expect(card).toContain('reading.state === "loading" ? (');
     expect(card).toContain("<Skeleton");
     expect(card).not.toContain("return null;");
     expect(card).not.toContain("memories.length === 0) return null");

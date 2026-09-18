@@ -7,12 +7,7 @@ import { Mascot } from "@/components/agents/mascot";
 import { NewBotButton } from "@/components/agents/new-bot-button";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,7 +16,8 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { seatsFullMessage } from "@/lib/agents/seats";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { t } from "@/lib/i18n";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 
 /**
  * Inspecting a Bot is a search-parameter state so the roster remains mounted and Back closes the
@@ -123,13 +119,18 @@ function AgentsScreen() {
               : t("My Bots")
           }
         >
-          {reading.state === "failed" && reading.previous ? (
-            <ReadStale
-              className="mb-3"
-              isRetrying={reading.isRetrying}
-              onRetry={() => void roster.refetch()}
-            />
-          ) : null}
+          {/*
+           * One notice for the roster's line, mounted with the section so it is heard when it is
+           * said: the failure where the cards would be, or the quiet line over cards still shown.
+           */}
+          <ReadNotice
+            className="mb-3"
+            line={readLineOf(reading, {
+              failed: t("Your Bots could not be loaded."),
+              notHere: t("Bots are not offered here."),
+            })}
+            onRetry={() => void roster.refetch()}
+          />
           <div className="flex flex-row">
             {!!mine?.length && (
               /*
@@ -178,22 +179,6 @@ function AgentsScreen() {
                   <Skeleton className="h-[196px] rounded-xl" key={slot} />
                 ))}
               </div>
-            )}
-            {hasFailedOutright(reading) && (
-              <ReadFailed
-                className="py-0"
-                message={t("Your Bots could not be loaded.")}
-                onRetry={() => void roster.refetch()}
-              />
-            )}
-            {reading.state === "unavailable" && (
-              <ReadUnavailable
-                className="py-0"
-                message={unavailableText(
-                  reading.why,
-                  t("Bots are not offered here."),
-                )}
-              />
             )}
             {settled?.state === "empty" && (
               /*

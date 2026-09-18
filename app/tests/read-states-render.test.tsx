@@ -97,6 +97,13 @@ describe("the roster", () => {
       "the Bot to arrive",
     );
     expect(nav()?.querySelector("[data-roster-notice]")).toBeNull();
+    // And the roster's notice has fallen quiet again — still mounted, saying nothing.
+    expect(nav()?.querySelector("[data-read-state]")).toBeNull();
+    expect(
+      [...(nav()?.querySelectorAll('[role="alert"]') ?? [])].map(
+        (alert) => alert.textContent,
+      ),
+    ).toEqual([""]);
   });
 
   test("an empty roster says so, with the way to make the first Bot", async () => {
@@ -250,7 +257,12 @@ describe("routines", () => {
       "the stale line",
     );
     expect(main()?.textContent).toContain("Morning check");
-    expect(main()?.querySelector('[role="alert"]')).toBeNull();
+    // Nothing alarming is SAID: the alert region is there, mounted before it speaks, and empty.
+    expect(
+      [...(main()?.querySelectorAll('[role="alert"]') ?? [])].some((alert) =>
+        alert.textContent?.trim(),
+      ),
+    ).toBe(false);
   });
 
   test("routines this place does not offer say so, and offer nothing to press", async () => {

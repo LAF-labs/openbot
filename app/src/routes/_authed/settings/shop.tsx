@@ -3,12 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
 import {
   DailyPlacePicker,
@@ -20,7 +15,8 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 import { useSavedFlash } from "@/lib/saved-flash";
 import {
   type BusinessKindId,
@@ -123,8 +119,18 @@ const ShopSettings = () => {
         <div className="mt-4">
           {/*
            * "REFRESH TO TRY AGAIN" WAS THE WHOLE OF THE FAILURE, and the installed app has no
-           * refresh: no address bar, no reload key anybody knows. The press is on the screen now.
+           * refresh: no address bar, no reload key anybody knows. The press is on the screen now,
+           * in a notice mounted with the section — the line it replaced was a status line, and a
+           * status line is there before it speaks.
            */}
+          <ReadNotice
+            className="mb-3 py-0"
+            line={readLineOf(placesReading, {
+              failed: t("The places could not be loaded."),
+              notHere: t("There is nothing this deployment can connect yet."),
+            })}
+            onRetry={() => void overview.refetch()}
+          />
           {offered && offered.length > 0 ? (
             <DailyPlacePicker
               align="start"
@@ -138,29 +144,8 @@ const ShopSettings = () => {
             <p className="text-muted-foreground text-sm">
               {t("There is nothing this deployment can connect yet.")}
             </p>
-          ) : placesReading.state === "unavailable" ? (
-            <ReadUnavailable
-              className="py-0"
-              message={unavailableText(
-                placesReading.why,
-                t("There is nothing this deployment can connect yet."),
-              )}
-            />
-          ) : hasFailedOutright(placesReading) ? (
-            <ReadFailed
-              className="py-0"
-              message={t("The places could not be loaded.")}
-              onRetry={() => void overview.refetch()}
-            />
-          ) : (
+          ) : placesReading.state === "loading" ? (
             <DailyPlacePickerSkeleton />
-          )}
-          {placesReading.state === "failed" && placesReading.previous ? (
-            <ReadStale
-              className="mt-3"
-              isRetrying={placesReading.isRetrying}
-              onRetry={() => void overview.refetch()}
-            />
           ) : null}
         </div>
         {/*

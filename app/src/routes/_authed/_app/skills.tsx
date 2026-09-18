@@ -11,12 +11,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
@@ -42,7 +37,8 @@ import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 import { skillDeleteRecheck } from "@/lib/rechecks";
 import { refusalFrom } from "@/lib/refusals";
 
@@ -209,8 +205,17 @@ function SkillsPage() {
            * `isError` — a 500, a dropped connection, a signed-out session — fell into the same
            * branch as an empty list: 아직 스킬이 없습니다, in front of somebody whose skills are all
            * still there. Routines and the roster both learned this already; these are their two
-           * answers, in their two shapes. A failed REFRESH keeps the rows and says so quietly.
+           * answers, in their two shapes. A failed REFRESH keeps the rows and says so quietly — all
+           * of it in one notice, mounted with the section so its line is heard when it is said.
            */}
+          <ReadNotice
+            className="mb-2"
+            line={readLineOf(reading, {
+              failed: t("Your skills could not be loaded."),
+              notHere: t("Skills are not offered here."),
+            })}
+            onRetry={() => void page.refetch()}
+          />
           {reading.state === "loading" ? (
             <PageRows>
               {[0, 1].map((slot) => (
@@ -220,27 +225,6 @@ function SkillsPage() {
                 </div>
               ))}
             </PageRows>
-          ) : null}
-          {hasFailedOutright(reading) ? (
-            <ReadFailed
-              message={t("Your skills could not be loaded.")}
-              onRetry={() => void page.refetch()}
-            />
-          ) : null}
-          {reading.state === "unavailable" ? (
-            <ReadUnavailable
-              message={unavailableText(
-                reading.why,
-                t("Skills are not offered here."),
-              )}
-            />
-          ) : null}
-          {reading.state === "failed" && reading.previous ? (
-            <ReadStale
-              className="mb-2"
-              isRetrying={reading.isRetrying}
-              onRetry={() => void page.refetch()}
-            />
           ) : null}
           {/*
            * A section title over nothing at all reads as a screen that failed to load. Routines and

@@ -6,13 +6,9 @@ import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineForm } from "@/components/routines/routine-form";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
@@ -37,6 +33,7 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { routineDeleteRecheck } from "@/lib/rechecks";
 import { routineListView, runOutcome } from "@/lib/routines/list-state";
@@ -71,91 +68,69 @@ function RunHistory({ routineId }: { routineId: string }) {
   const reading = useReading(runs);
   const settled = settledOf(reading);
 
-  // "Never run" is a claim about the past. It must not be made while the past is still arriving.
-  if (reading.state === "loading") {
-    return (
-      <p className="py-2 text-xs text-muted-foreground">{t("Loading runs…")}</p>
-    );
-  }
-  if (reading.state === "unavailable") {
-    return (
-      <ReadUnavailable
-        message={unavailableText(
-          reading.why,
-          t("Routines are not offered here."),
-        )}
-        size="compact"
-      />
-    );
-  }
-  if (!settled) {
-    return (
-      <ReadFailed
-        message={t("The run history could not be loaded.")}
-        onRetry={() => void runs.refetch()}
-        size="compact"
-      />
-    );
-  }
   /*
-   * A FAILED REFRESH KEEPS THE HISTORY. 지금 실행 refetches this list the moment its run is
-   * accepted, and the error used to be checked before the data — so one failed read replaced every
-   * run the routine had made with "could not be loaded" until somebody pressed again.
+   * ONE PLACE FOR ITS LINE, FIRST, IN EVERY STATE: the notice is mounted before it speaks. And A
+   * FAILED REFRESH KEEPS THE HISTORY — 지금 실행 refetches this list the moment its run is accepted,
+   * and the error used to be checked before the data, so one failed read replaced every run the
+   * routine had made with "could not be loaded" until somebody pressed again.
    */
-  const stale =
-    reading.state === "failed" ? (
-      <ReadStale
-        className="pb-2"
-        isRetrying={reading.isRetrying}
+  return (
+    <>
+      <ReadNotice
+        className="py-2"
+        line={readLineOf(reading, {
+          failed: t("The run history could not be loaded."),
+          notHere: t("Routines are not offered here."),
+        })}
         onRetry={() => void runs.refetch()}
+        size="compact"
       />
-    ) : null;
-  if (settled.state === "empty") {
-    return (
-      <>
+      {/* "Never run" is a claim about the past. It must not be made while the past is arriving. */}
+      {reading.state === "loading" ? (
+        <p className="py-2 text-xs text-muted-foreground">
+          {t("Loading runs…")}
+        </p>
+      ) : null}
+      {settled?.state === "empty" ? (
         <p className="py-2 text-xs text-muted-foreground">
           {t("This routine has not run yet.")}
         </p>
-        {stale}
-      </>
-    );
-  }
-  return (
-    <>
-      <ul className="flex flex-col gap-2 py-2">
-        {settled.data.map((run) => {
-          /*
-           * A run somebody stopped with 모두 멈추기 is not a failure, and red would say it was. Its
-           * receipt carries the fact code rather than a sentence; the words are `runOutcome`'s.
-           */
-          const outcome = runOutcome(run);
-          const shape = runShape(run.steps, t);
-          return (
-            <li
-              key={run.id}
-              className="rounded-lg border border-border bg-card p-3"
-            >
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  {new Date(run.startedAt).toLocaleString(activeLocale)}
-                </span>
-                <span
-                  className={
-                    outcome.tone === "failed" ? "text-destructive" : ""
-                  }
-                >
-                  {outcome.label}
-                  {shape ? ` · ${shape}` : ""}
-                </span>
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
-                {outcome.text}
-              </p>
-            </li>
-          );
-        })}
-      </ul>
-      {stale}
+      ) : null}
+      {settled?.state === "ready" ? (
+        <ul className="flex flex-col gap-2 py-2">
+          {settled.data.map((run) => {
+            /*
+             * A run somebody stopped with 모두 멈추기 is not a failure, and red would say it was.
+             * Its receipt carries the fact code rather than a sentence; the words are `runOutcome`'s.
+             */
+            const outcome = runOutcome(run);
+            const shape = runShape(run.steps, t);
+            return (
+              <li
+                key={run.id}
+                className="rounded-lg border border-border bg-card p-3"
+              >
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {new Date(run.startedAt).toLocaleString(activeLocale)}
+                  </span>
+                  <span
+                    className={
+                      outcome.tone === "failed" ? "text-destructive" : ""
+                    }
+                  >
+                    {outcome.label}
+                    {shape ? ` · ${shape}` : ""}
+                  </span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+                  {outcome.text}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </>
   );
 }
@@ -452,63 +427,55 @@ function RoutineRow({ routine }: { routine: Routine }) {
 const EditRoutine = ({ id, onDone }: { id: string; onDone: () => void }) => {
   const routines = useQuery(routineListQueryOptions());
   const reading = useReading(routines);
-  const routine = settledOf(reading)?.data.find(
-    (candidate) => candidate.id === id,
-  );
-  if (reading.state === "loading") {
-    return (
-      <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-8">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="h-20 w-full" />
-      </div>
-    );
+  const settled = settledOf(reading);
+  const routine = settled?.data.find((candidate) => candidate.id === id);
+  if (routine) {
+    return <RoutineForm key={routine.id} onDone={onDone} routine={routine} />;
   }
   /*
    * "NO LONGER THERE" IS A CLAIM, and a list that could not be read cannot make it: the panel said
-   * the routine had been deleted whenever the one read behind it failed.
+   * the routine had been deleted whenever the one read behind it failed. Not even out of the list
+   * from before — a refresh that failed is a failure here, since the answer this panel needs is the
+   * one that did not come.
+   *
+   * Every state that is not the form shares this one panel, so its lines are mounted before they
+   * speak (`LiveRegion`): opened on a routine, the panel loads, and then says what it found.
    */
-  if (
-    reading.state === "unavailable" ||
-    (!routine && reading.state === "failed")
-  ) {
-    return (
-      <div className="mx-auto flex w-full max-w-xl flex-col items-start gap-3 p-8">
-        {reading.state === "unavailable" ? (
-          <ReadUnavailable
-            className="py-0"
-            message={unavailableText(
-              reading.why,
-              t("Routines are not offered here."),
-            )}
-          />
-        ) : (
-          <ReadFailed
-            className="py-0"
-            message={t("Your routines could not be loaded.")}
-            onRetry={() => void routines.refetch()}
-          />
-        )}
+  const isGone = settled !== null && reading.state !== "failed";
+  return (
+    <div className="mx-auto flex w-full max-w-xl flex-col items-start gap-3 p-8">
+      <ReadNotice
+        line={
+          reading.state === "failed"
+            ? {
+                kind: "failed",
+                message: t("Your routines could not be loaded."),
+                isRetrying: reading.isRetrying,
+              }
+            : readLineOf(reading, {
+                failed: t("Your routines could not be loaded."),
+                notHere: t("Routines are not offered here."),
+              })
+        }
+        onRetry={() => void routines.refetch()}
+      />
+      {/* Deleted in another window, or by its Bot, while the address still named it. */}
+      <LiveRegion as="p" className="text-muted-foreground text-sm">
+        {isGone ? t("That routine is no longer there.") : null}
+      </LiveRegion>
+      {reading.state === "loading" ? (
+        <div className="flex w-full flex-col gap-4">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : (
         <Button onClick={onDone} size="sm" variant="outline">
           {t("Close")}
         </Button>
-      </div>
-    );
-  }
-  if (!routine) {
-    // Deleted in another window, or by its Bot, while the address still named it.
-    return (
-      <div className="mx-auto flex w-full max-w-xl flex-col items-start gap-3 p-8">
-        <p className="text-muted-foreground text-sm" role="status">
-          {t("That routine is no longer there.")}
-        </p>
-        <Button onClick={onDone} size="sm" variant="outline">
-          {t("Close")}
-        </Button>
-      </div>
-    );
-  }
-  return <RoutineForm key={routine.id} onDone={onDone} routine={routine} />;
+      )}
+    </div>
+  );
 };
 
 function RoutinesPage() {
@@ -571,41 +538,25 @@ function RoutinesPage() {
           <UnreadPauseBanners />
           <RoutineSuggestions />
           <div className="flex flex-col gap-3">
-            {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
+            {/*
+             * OVER THE ROWS, AND THERE BEFORE IT SPEAKS. The page was blank on a failed fetch — no
+             * rows, no snail, no explanation — and later drew a red "could not be loaded" above rows
+             * that were still there and still worked, which read as the list being wrong rather
+             * than old. The failure, the quiet line and "not offered here" share this one place.
+             */}
+            <ReadNotice
+              line={list.notice}
+              onRetry={() => void routines.refetch()}
+            />
             {list.isLoading
               ? [0, 1, 2].map((slot) => (
                   <Skeleton className="h-[92px] rounded-xl" key={slot} />
                 ))
               : null}
-            {list.line?.kind === "failed" ? (
-              <ReadFailed
-                message={list.line.text}
-                onRetry={() => void routines.refetch()}
-              />
-            ) : null}
-            {list.line?.kind === "unavailable" ? (
-              <ReadUnavailable
-                message={unavailableText(
-                  list.line.why,
-                  t("Routines are not offered here."),
-                )}
-              />
-            ) : null}
-            {/*
-             * OVER THE ROWS, QUIETLY. A refresh that failed used to put the red "could not be
-             * loaded" above rows that were still there and still worked, which read as the list
-             * being wrong rather than old.
-             */}
-            {list.line?.kind === "stale" ? (
-              <ReadStale
-                isRetrying={list.line.isRetrying}
-                onRetry={() => void routines.refetch()}
-              />
-            ) : null}
             {list.rows.map((routine) => (
               <RoutineRow key={routine.id} routine={routine} />
             ))}
-            {list.line?.kind === "empty" ? (
+            {list.empty ? (
               <div className="flex flex-col items-center gap-3 py-10">
                 {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
                 <BotAvatar
@@ -614,7 +565,7 @@ function RoutinesPage() {
                   size={56}
                 />
                 <p className="text-center text-muted-foreground text-sm">
-                  {list.line.text}
+                  {list.empty}
                 </p>
                 {/* The way to make one, where the sentence says to — not only in the header. */}
                 <Button

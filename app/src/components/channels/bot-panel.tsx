@@ -2,17 +2,13 @@ import { IconClock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ComputerView } from "@/components/computer/computer-view";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { t } from "@/lib/i18n";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 import { routineListQueryOptions, scheduleLabel } from "@/lib/routines/queries";
 
 /**
@@ -72,37 +68,24 @@ export function BotPanel({
           {t("Routines")}
         </h2>
 
+        {/*
+         * ITS LINE, MOUNTED BEFORE IT SPEAKS. The failure had no way to ask again — a red line, and
+         * nothing to press but reload the window.
+         */}
+        <ReadNotice
+          line={readLineOf(reading, {
+            failed: t("Your routines could not be loaded."),
+            notHere: t("Routines are not offered here."),
+          })}
+          onRetry={() => void routines.refetch()}
+          size="compact"
+        />
+
         {reading.state === "loading" ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
-        ) : null}
-
-        {/* It had no way to ask again: a red line, and nothing to press but reload the window. */}
-        {hasFailedOutright(reading) ? (
-          <ReadFailed
-            message={t("Your routines could not be loaded.")}
-            onRetry={() => void routines.refetch()}
-            size="compact"
-          />
-        ) : null}
-
-        {reading.state === "unavailable" ? (
-          <ReadUnavailable
-            message={unavailableText(
-              reading.why,
-              t("Routines are not offered here."),
-            )}
-            size="compact"
-          />
-        ) : null}
-
-        {reading.state === "failed" && reading.previous ? (
-          <ReadStale
-            isRetrying={reading.isRetrying}
-            onRetry={() => void routines.refetch()}
-          />
         ) : null}
 
         {settledOf(reading)?.state === "empty" ? (

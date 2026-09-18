@@ -79,7 +79,14 @@ async function skillsPage(plugins: ApiAnswer, path = "/skills") {
         (request) =>
           request.method === "GET" && request.pathname === "/api/plugins",
       ).length,
-    alert: () => main.querySelector('[role="alert"]'),
+    /*
+     * The alert that is SAYING something. Its region is mounted before it speaks (`LiveRegion`), so
+     * it is on the page, empty, in every state; what a person hears is whether it has words.
+     */
+    alert: () =>
+      [...main.querySelectorAll('[role="alert"]')].find((alert) =>
+        alert.textContent?.trim(),
+      ) ?? null,
     section: (title: string) => {
       const heading = [...main.querySelectorAll("h2")].find(
         (h2) => h2.textContent === title,

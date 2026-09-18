@@ -7,12 +7,7 @@ import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +48,8 @@ import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
 
@@ -66,7 +62,7 @@ import { useSavedFlash } from "@/lib/saved-flash";
  */
 function ProfileSkeleton() {
   return (
-    <div className="flex w-full flex-col gap-6 p-8 pt-6">
+    <>
       <header className="flex flex-col items-center gap-3">
         <Skeleton className="h-[132px] w-full rounded-2xl" />
         <div className="flex w-full flex-col items-center gap-1.5">
@@ -88,7 +84,7 @@ function ProfileSkeleton() {
         <Skeleton className="h-9 w-full" />
         <Skeleton className="h-9 w-full" />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -124,29 +120,32 @@ export function AgentProfile({ agentId }: { agentId: string }) {
     // The same answer for "deleted" and "not yours", on purpose (`server/src/agents/routes.ts`).
     unavailable: { "laf:agent_not_found": "not_allowed" },
   });
-  if (reading.state === "loading") {
-    return <ProfileSkeleton />;
-  }
-  if (reading.state === "unavailable") {
-    return (
-      <ReadUnavailable
-        className="p-8"
-        message={
-          reading.code === "laf:agent_not_found"
-            ? t("This Bot is no longer here.")
-            : unavailableText(reading.why, t("Bots are not offered here."))
-        }
-      />
-    );
-  }
   const settled = settledOf(reading);
+  /*
+   * ONE PANE AROUND EVERY STATE, ITS NOTICE FIRST, so the line is mounted before it speaks: the pane
+   * opens on a skeleton, and whatever the read comes to is said in a region already there.
+   */
+  const notice = (
+    <ReadNotice
+      className="py-0"
+      line={
+        reading.state === "unavailable" &&
+        reading.code === "laf:agent_not_found"
+          ? { kind: "unavailable", message: t("This Bot is no longer here.") }
+          : readLineOf(reading, {
+              failed: t("Could not load this Bot."),
+              notHere: t("Bots are not offered here."),
+            })
+      }
+      onRetry={() => void agent.refetch()}
+    />
+  );
   if (!settled) {
     return (
-      <ReadFailed
-        className="p-8"
-        message={t("Could not load this Bot.")}
-        onRetry={() => void agent.refetch()}
-      />
+      <div className="flex w-full flex-col gap-6 p-8 pt-6">
+        {notice}
+        {reading.state === "loading" ? <ProfileSkeleton /> : null}
+      </div>
     );
   }
 
@@ -183,12 +182,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
 
   return (
     <div className="flex w-full flex-col gap-6 p-8 pt-6">
-      {reading.state === "failed" ? (
-        <ReadStale
-          isRetrying={reading.isRetrying}
-          onRetry={() => void agent.refetch()}
-        />
-      ) : null}
+      {notice}
       <header className="flex flex-col items-center gap-3 text-center">
         {/*
          * The face is the control, where there is one to press. A pencil beside it would be a second
@@ -734,45 +728,32 @@ function MemoriesCard({ agentId }: { agentId: string }) {
    * 기억하는 내용 jumped once the memories landed, and again when the skills did. The placeholder is
    * the same height as the card it becomes.
    */
-  if (reading.state === "loading") {
-    return (
-      <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-9 w-full rounded-lg" />
-      </section>
-    );
-  }
+  const line = readLineOf(reading, {
+    failed: t("What it remembers could not be loaded."),
+    notHere: t(
+      "Bots here do not keep what they learn between conversations, so there is nothing to show.",
+    ),
+  });
 
+  // One section in every state, the notice last in it: mounted before it speaks.
   return (
     <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-      <div className="flex flex-col gap-0.5">
-        <h2 className="font-medium text-base">{t("What it remembers")}</h2>
-        <p className="text-muted-foreground text-sm">
-          {t(
-            "Things this Bot worked out about you and keeps between conversations. Only you see yours.",
-          )}
-        </p>
-      </div>
-      {reading.state === "unavailable" ? (
-        <ReadUnavailable
-          // The empty line's own box, so "nothing to show here" and "nothing yet" read as siblings.
-          className="rounded-lg bg-background px-3 py-2"
-          message={unavailableText(
-            reading.why,
-            t(
-              "Bots here do not keep what they learn between conversations, so there is nothing to show.",
-            ),
-          )}
-        />
-      ) : null}
-      {hasFailedOutright(reading) ? (
-        <ReadFailed
-          message={t("What it remembers could not be loaded.")}
-          onRetry={() => void memories.refetch()}
-          size="compact"
-        />
-      ) : null}
+      {reading.state === "loading" ? (
+        <>
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+        </>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          <h2 className="font-medium text-base">{t("What it remembers")}</h2>
+          <p className="text-muted-foreground text-sm">
+            {t(
+              "Things this Bot worked out about you and keeps between conversations. Only you see yours.",
+            )}
+          </p>
+        </div>
+      )}
       {settled?.state === "ready" ? (
         <ul className="flex flex-col gap-1">
           {settled.data.map((memory) => (
@@ -798,12 +779,16 @@ function MemoriesCard({ agentId }: { agentId: string }) {
           {t("Nothing yet. What it learns about you appears here.")}
         </p>
       ) : null}
-      {reading.state === "failed" && reading.previous ? (
-        <ReadStale
-          isRetrying={reading.isRetrying}
-          onRetry={() => void memories.refetch()}
-        />
-      ) : null}
+      <ReadNotice
+        // "Not here" in the empty line's own box, so it and "nothing yet" read as siblings.
+        className={
+          line?.kind === "unavailable"
+            ? "rounded-lg bg-background px-3 py-2"
+            : "py-0"
+        }
+        line={line}
+        onRetry={() => void memories.refetch()}
+      />
     </section>
   );
 }
@@ -840,20 +825,6 @@ function SkillsCard({ agentId }: { agentId: string }) {
   });
   const settled = settledOf(reading);
   const mine = (settled?.data.skills ?? []).filter(isMine);
-  /*
-   * A card's worth of height while the answer is in flight, so the pane does not shift under
-   * whoever is reading it when the answer lands.
-   */
-  if (reading.state === "loading") {
-    return (
-      <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-        <Skeleton className="h-5 w-20" />
-        <Skeleton className="h-4 w-2/3" />
-        <Skeleton className="h-9 w-full rounded-lg" />
-      </section>
-    );
-  }
-
   const toggle = (slug: string, held: boolean) => {
     setBusy(slug);
     setProblem(null);
@@ -882,30 +853,27 @@ function SkillsCard({ agentId }: { agentId: string }) {
     );
   };
 
+  /*
+   * One section in every state, the notice last in it, mounted before it speaks. While the answer is
+   * in flight it is a card's worth of skeleton, so the pane does not shift under whoever is reading
+   * it when the answer lands.
+   */
   return (
     <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-      <div className="flex flex-col gap-0.5">
-        <h2 className="font-medium text-base">{t("Skills")}</h2>
-        <p className="text-muted-foreground text-sm">
-          {t("A Bot carrying one offers it in the composer as /name.")}
-        </p>
-      </div>
-      {reading.state === "unavailable" ? (
-        <ReadUnavailable
-          message={unavailableText(
-            reading.why,
-            t("Skills are not offered here."),
-          )}
-          size="compact"
-        />
-      ) : null}
-      {hasFailedOutright(reading) ? (
-        <ReadFailed
-          message={t("Your skills could not be loaded.")}
-          onRetry={() => void page.refetch()}
-          size="compact"
-        />
-      ) : null}
+      {reading.state === "loading" ? (
+        <>
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+        </>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          <h2 className="font-medium text-base">{t("Skills")}</h2>
+          <p className="text-muted-foreground text-sm">
+            {t("A Bot carrying one offers it in the composer as /name.")}
+          </p>
+        </div>
+      )}
       {settled?.state === "empty" ? (
         <div className="flex flex-col items-start gap-2 rounded-lg bg-background px-3 py-2">
           <p className="text-muted-foreground text-sm">
@@ -924,12 +892,6 @@ function SkillsCard({ agentId }: { agentId: string }) {
             {t("New skill")}
           </Button>
         </div>
-      ) : null}
-      {reading.state === "failed" && reading.previous ? (
-        <ReadStale
-          isRetrying={reading.isRetrying}
-          onRetry={() => void page.refetch()}
-        />
       ) : null}
       <ul className="flex flex-col gap-1">
         {mine.map((skill) => {
@@ -955,11 +917,19 @@ function SkillsCard({ agentId }: { agentId: string }) {
           );
         })}
       </ul>
-      {problem ? (
-        <p className="text-destructive text-sm" role="alert">
-          {problem}
-        </p>
-      ) : null}
+      {/* Mounted with the card, so a switch that did not take is heard when it is said. */}
+      <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+        {problem}
+      </LiveRegion>
+      <ReadNotice
+        className="py-0"
+        line={readLineOf(reading, {
+          failed: t("Your skills could not be loaded."),
+          notHere: t("Skills are not offered here."),
+        })}
+        onRetry={() => void page.refetch()}
+        size="compact"
+      />
     </section>
   );
 }

@@ -281,9 +281,12 @@ describe("the section", () => {
   test("says so when they cannot be loaded, and Try again asks again", async () => {
     const { requests } = server({ cards: [card()], suggestionsStatus: 500 });
     const view = await mountedSection();
-    expect(view.host.querySelector("[role=alert]")?.textContent).toBe(
-      "The suggestions could not be loaded.",
-    );
+    // The region is mounted before it speaks (`LiveRegion`): what matters is whether it has words.
+    const spoken = () =>
+      [...view.host.querySelectorAll("[role=alert]")].find((alert) =>
+        alert.textContent?.trim(),
+      ) ?? null;
+    expect(spoken()?.textContent).toBe("The suggestions could not be loaded.");
     expect(view.host.querySelector("[aria-busy]")).toBeNull();
     const retry = [...view.host.querySelectorAll("button")].find(
       (button) => button.textContent === "Try again",
@@ -295,14 +298,17 @@ describe("the section", () => {
 
     if (retry) await view.press(retry);
     expect(asked()).toBe(2);
-    expect(view.host.querySelector("[role=alert]")).toBeNull();
+    expect(spoken() === null).toBe(true);
     expect(view.cards()).toHaveLength(1);
   });
 
   test("draws nothing when there is nothing to offer", async () => {
     server({ cards: [] });
     const view = await mountedSection();
-    expect(view.host.innerHTML).toBe("");
+    // Nothing drawn and nothing said: only the notice, mounted before it speaks, silent and hidden.
+    expect(view.host.querySelector("section")).toBeNull();
+    expect(view.host.textContent).toBe("");
+    expect(view.host.querySelector("[data-read-state]")).toBeNull();
   });
 
   test("offers exactly two verbs per card, and creates nothing until Make is pressed", async () => {
@@ -336,7 +342,7 @@ describe("the section", () => {
     // The card is gone from here, the routine is in the list below, and a status line says so.
     expect(view.cards().map((one) => one.textContent)).toHaveLength(1);
     // The particle is chosen for the name (`lib/josa.ts`), not spliced in as 이(가).
-    expect(view.host.querySelector("[role=status]")?.textContent).toBe(
+    expect(view.host.querySelector("section [role=status]")?.textContent).toBe(
       "아침 브리핑이 in the list below now.",
     );
   });

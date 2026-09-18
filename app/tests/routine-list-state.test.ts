@@ -43,11 +43,12 @@ const view = (reading: Reading<Routine[]>, isCreating = false) =>
   routineListView(reading, { isCreating });
 
 describe("the list area", () => {
-  test("draws placeholders and nothing else while nothing has been read", () => {
+  test("draws placeholders and says nothing while nothing has been read", () => {
     expect(view({ state: "loading" })).toEqual({
       rows: [],
       isLoading: true,
-      line: null,
+      notice: null,
+      empty: null,
     });
   });
 
@@ -62,17 +63,20 @@ describe("the list area", () => {
     ).toEqual({
       rows,
       isLoading: false,
-      line: { kind: "stale", isRetrying: false },
+      notice: { kind: "stale", isRetrying: false },
+      empty: null,
     });
   });
 
   test("says it could not load when there is nothing to show, never that there are none", () => {
     const failed = view({ state: "failed", previous: null, isRetrying: false });
     expect(failed.rows).toEqual([]);
-    expect(failed.line).toEqual({
+    expect(failed.notice).toEqual({
       kind: "failed",
-      text: "Your routines could not be loaded.",
+      message: "Your routines could not be loaded.",
+      isRetrying: false,
     });
+    expect(failed.empty).toBeNull();
     expect(ko["Your routines could not be loaded."]).toBeTruthy();
   });
 
@@ -86,16 +90,27 @@ describe("the list area", () => {
     ).toEqual({
       rows: [],
       isLoading: false,
-      line: { kind: "unavailable", why: "not_configured" },
+      notice: {
+        kind: "unavailable",
+        message: "Routines are not offered here.",
+      },
+      empty: null,
     });
   });
 
   test("says none yet only once the answer is in, and not beside the form for the first one", () => {
-    expect(view({ state: "empty", data: [] }).line).toEqual({
-      kind: "empty",
-      text: "No routines yet. Give a Bot something to do every morning.",
-    });
-    expect(view({ state: "empty", data: [] }, true).line).toBeNull();
+    expect(view({ state: "empty", data: [] }).empty).toBe(
+      "No routines yet. Give a Bot something to do every morning.",
+    );
+    expect(view({ state: "empty", data: [] }, true).empty).toBeNull();
+    // A list that was empty when it was read, and could not be read again, is not "none yet" now.
+    expect(
+      view({
+        state: "failed",
+        previous: { state: "empty", data: [] },
+        isRetrying: false,
+      }).empty,
+    ).toBeNull();
   });
 });
 

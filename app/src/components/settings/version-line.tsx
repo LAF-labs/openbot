@@ -1,15 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import {
-  ReadFailed,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
+import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
 import {
@@ -58,43 +55,18 @@ export function VersionLine({ className }: { className?: string }) {
     [],
   );
 
-  if (reading.state === "loading") {
-    // One line's height, so the footer does not grow when the answer lands.
-    return <Skeleton className={cn("h-4 w-44", className)} />;
-  }
-  if (reading.state === "unavailable") {
-    return (
-      <ReadUnavailable
-        className={cn("py-0", className)}
-        message={unavailableText(
-          reading.why,
-          t("This server does not say which version it is."),
-        )}
-        size="compact"
-      />
-    );
-  }
-  const settled = settledOf(reading);
-  if (!settled) {
-    return (
-      <ReadFailed
-        className={cn("py-0", className)}
-        message={t("The version could not be read.")}
-        onRetry={() => void buildQuery.refetch()}
-        size="compact"
-      />
-    );
-  }
-  const build = settled.data;
-
-  const text = shell
-    ? t("Version {build} · app {shell}", {
-        build: describeBuild(build),
-        shell,
-      })
-    : t("Version {build}", { build: describeBuild(build) });
+  const build = settledOf(reading)?.data ?? null;
+  const text = build
+    ? shell
+      ? t("Version {build} · app {shell}", {
+          build: describeBuild(build),
+          shell,
+        })
+      : t("Version {build}", { build: describeBuild(build) })
+    : null;
 
   const handleCopy = async () => {
+    if (!build) return;
     const line = supportLine({
       product: appConfig.brand.productName,
       build,
@@ -109,21 +81,38 @@ export function VersionLine({ className }: { className?: string }) {
     timer.current = setTimeout(() => setCopied(false), COPIED_MS);
   };
 
+  /*
+   * ONE LINE IN EVERY STATE, ITS NOTICE LAST, so what the read came to is said in a region that was
+   * already there (`LiveRegion`). While the answer is out, the line is a skeleton of its own height,
+   * so the footer does not grow when it lands.
+   */
   return (
     <div className={cn("flex flex-wrap items-center gap-x-2", className)}>
-      <p className="text-muted-foreground text-xs">{text}</p>
-      <Button
-        aria-label={
-          copied ? t("Copied to the clipboard") : t("Copy version details")
-        }
-        className="text-muted-foreground"
-        onClick={() => void handleCopy()}
-        size="xs"
-        type="button"
-        variant="ghost"
-      >
-        {copied ? t("Copied to the clipboard") : t("Copy")}
-      </Button>
+      {reading.state === "loading" ? <Skeleton className="h-4 w-44" /> : null}
+      {text ? <p className="text-muted-foreground text-xs">{text}</p> : null}
+      {build ? (
+        <Button
+          aria-label={
+            copied ? t("Copied to the clipboard") : t("Copy version details")
+          }
+          className="text-muted-foreground"
+          onClick={() => void handleCopy()}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
+          {copied ? t("Copied to the clipboard") : t("Copy")}
+        </Button>
+      ) : null}
+      <ReadNotice
+        className="py-0"
+        line={readLineOf(reading, {
+          failed: t("The version could not be read."),
+          notHere: t("This server does not say which version it is."),
+        })}
+        onRetry={() => void buildQuery.refetch()}
+        size="compact"
+      />
     </div>
   );
 }

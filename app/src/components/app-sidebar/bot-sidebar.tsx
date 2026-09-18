@@ -36,12 +36,7 @@ import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import {
@@ -185,12 +180,6 @@ const ICON_BUTTON_CLASS = cn(
   buttonVariants({ size: "icon-sm", variant: "ghost" }),
   "text-muted-foreground hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground dark:hover:bg-[var(--sand-fill-ghost-hover)]",
 );
-
-/** Which of the roster's two lists could not be read, in its own words. */
-const rosterFailure = (what: "bots" | "rooms") =>
-  what === "bots"
-    ? t("Your Bots could not be loaded.")
-    : t("Your conversations could not be loaded.");
 
 /** The footer's links, sharing the roster rows' focus ring for the same reason they now have one. */
 const NAV_LINK_CLASS = `flex h-10 items-center rounded-lg border border-transparent bg-clip-padding text-base outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)]`;
@@ -788,6 +777,20 @@ export function BotSidebar() {
         </div>
       )}
 
+      {/*
+       * THE ROSTER'S LINE, OVER THE ROWS AND MOUNTED BEFORE IT SPEAKS: that the list could not be
+       * read, that it could not be refreshed, or that this place has no Bots to list. Which one is
+       * `rosterNotice`'s decision. The rail keeps the words for a screen reader and has no room to
+       * show them; its press is the button in the list below.
+       */}
+      <ReadNotice
+        className={isRail ? "sr-only" : "justify-center px-4 pb-2 text-center"}
+        hasButton={!isRail}
+        line={notice.line}
+        onRetry={handleRetryRoster}
+        size="compact"
+      />
+
       <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {bots.state === "loading"
           ? [0, 1, 2].map((slot) => (
@@ -863,20 +866,16 @@ export function BotSidebar() {
         ))}
 
         {/*
-         * ONE LINE UNDER THE ROWS, and which one is `rosterNotice`'s decision. A roster that filtered
-         * to nothing is not an empty roster, and a roster that could not be read is neither.
-         *
-         * The rail has no room for a sentence and no search field to have caused one, so it says
-         * only what somebody has to act on — a list that could not be read — as a button with its
-         * sentence in the tooltip.
+         * The rail has no room for a sentence, so it keeps only what somebody has to act on — a list
+         * that could not be read — as a button with its sentence in the tooltip.
          */}
-        {notice && isRail && notice.kind === "failed" ? (
+        {isRail && notice.line?.kind === "failed" ? (
           <li className="flex justify-center py-2">
             <Tooltip>
               <TooltipTrigger
                 render={
                   <button
-                    aria-label={`${rosterFailure(notice.what)} ${t("Try again")}`}
+                    aria-label={`${notice.line.message} ${t("Try again")}`}
                     className={ICON_BUTTON_CLASS}
                     onClick={handleRetryRoster}
                     type="button"
@@ -886,50 +885,32 @@ export function BotSidebar() {
                 <IconRefresh className="size-4" />
               </TooltipTrigger>
               <TooltipContent side="right">
-                {rosterFailure(notice.what)}
+                {notice.line.message}
               </TooltipContent>
             </Tooltip>
           </li>
         ) : null}
-        {notice && !isRail ? (
-          <li data-roster-notice={notice.kind}>
-            {notice.kind === "unavailable" ? (
-              <ReadUnavailable
-                className="px-2 text-center"
-                message={unavailableText(
-                  notice.why,
-                  t("Bots are not offered here."),
-                )}
-                size="compact"
-              />
-            ) : notice.kind === "failed" ? (
-              <ReadFailed
-                className="justify-center px-2 text-center"
-                message={rosterFailure(notice.what)}
-                onRetry={handleRetryRoster}
-                size="compact"
-              />
-            ) : notice.kind === "stale" ? (
-              <ReadStale
-                className="justify-center px-2 py-2 text-center"
-                isRetrying={notice.isRetrying}
-                onRetry={handleRetryRoster}
-              />
-            ) : notice.kind === "no-match" ? (
+        {/*
+         * A roster that filtered to nothing is not an empty roster, and must not read as one. The
+         * rail has no room for either sentence and no search field to have caused one.
+         */}
+        {notice.list && !isRail ? (
+          <li data-roster-notice={notice.list}>
+            {notice.list === "no-match" ? (
               <p className="px-2 py-6 text-center text-muted-foreground text-sm">
                 {t("Nobody matches that.")}
               </p>
             ) : (
               <div className="flex flex-col items-center gap-3 px-2 py-6 text-center">
                 <p className="text-muted-foreground text-sm">
-                  {notice.hasHidden
+                  {notice.list === "all-hidden"
                     ? t("Every Bot you have made is hidden.")
                     : t("No Bots yet.")}
                 </p>
                 {/* The way to make the first one, where the sentence says there is none. */}
-                {notice.hasHidden ? null : (
+                {notice.list === "empty" ? (
                   <NewBotButton size="sm" variant="outline" />
-                )}
+                ) : null}
               </div>
             )}
           </li>

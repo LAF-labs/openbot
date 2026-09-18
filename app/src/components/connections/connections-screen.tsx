@@ -6,12 +6,7 @@ import { SiteRows } from "@/components/connections/site-rows";
 import { PartnerRow } from "@/components/partners/partner-connections";
 import { ConnectOutcome } from "@/components/plugins/connections";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import {
-  ReadFailed,
-  ReadStale,
-  ReadUnavailable,
-  unavailableText,
-} from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import { agentKeys } from "@/lib/agents/queries";
 import {
   connectionKeys,
@@ -23,7 +18,8 @@ import {
 import type { AlimtalkStatus } from "@/lib/partners/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys } from "@/lib/plugins/queries";
-import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf, useReading } from "@/lib/reading";
 
 /**
  * 연결 — one screen, one read, and one gesture on every row.
@@ -190,25 +186,18 @@ export const ConnectionsScreen = ({
        * fails while the screen already has an answer must not replace twenty-four rows with a red
        * line. In TanStack Query v5 a failed background refetch turns `status` to error with the data
        * still in hand, so reading the flag alone would blank a working screen every time a laptop's
-       * wifi dropped for a second. `useReading` keeps that answer as `previous`.
+       * wifi dropped for a second. `useReading` keeps that answer as `previous`, and the notice —
+       * mounted with the screen, so its line is heard when it is said — says the rest.
        */}
-      {reading.state === "unavailable" ? (
-        <PageSection>
-          <ReadUnavailable
-            message={unavailableText(
-              reading.why,
-              t("Connections are not offered here."),
-            )}
-          />
-        </PageSection>
-      ) : hasFailedOutright(reading) ? (
-        <PageSection>
-          <ReadFailed
-            message={t("The connections could not be loaded.")}
-            onRetry={() => void overview.refetch()}
-          />
-        </PageSection>
-      ) : reading.state === "loading" ? (
+      <ReadNotice
+        className="mt-8"
+        line={readLineOf(reading, {
+          failed: t("The connections could not be loaded."),
+          notHere: t("Connections are not offered here."),
+        })}
+        onRetry={() => void overview.refetch()}
+      />
+      {reading.state === "loading" ? (
         <>
           <PageSection
             description={t(
@@ -237,14 +226,6 @@ export const ConnectionsScreen = ({
         </>
       ) : (
         <>
-          {reading.state === "failed" ? (
-            <ReadStale
-              className="mt-8"
-              isRetrying={reading.isRetrying}
-              onRetry={() => void overview.refetch()}
-            />
-          ) : null}
-
           {settled?.state === "empty" ? (
             /*
              * A deployment whose catalogue, partners and browser all sent nothing. The heading used

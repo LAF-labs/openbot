@@ -1,149 +1,108 @@
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
-import type { Unavailability } from "@/lib/reading";
+import type { ReadLine } from "@/lib/read-line";
 import { cn } from "@/lib/utils";
 
 /**
- * THE THREE LINES A READ CAN END IN BESIDES ITS DATA, DRAWN ONE WAY ON EVERY SCREEN.
+ * THE ONE LINE A READ CAN END IN BESIDES ITS DATA, IN A PLACE ON THE SCREEN THAT IS ALWAYS THERE.
  *
- * `useReading` (`lib/reading.ts`) says which state a read is in; these say it. Each screen keeps its
- * own sentence — "루틴을 불러오지 못했습니다" is about routines — and its own skeleton and empty
- * state, because those are the shape of what is coming. What is shared is the grammar: a failure is
- * a sentence with 다시 시도 beside it, a refresh that failed over data still on screen is one quiet
- * line under it, and something this place cannot have is a sentence with nothing to press.
+ * `useReading` (`lib/reading.ts`) says which state a read is in and `readLineOf`
+ * (`lib/read-line.ts`) puts it in the screen's words; `ReadNotice` says it. Each screen keeps its
+ * own sentence — "루틴을 불러오지 못했습니다" is about routines — and its own skeleton and empty state,
+ * because those are the shape of what is coming. What is shared is the grammar: a failure is a
+ * sentence with 다시 시도 beside it, a refresh that failed over data still on screen is one quiet
+ * line, and something this place cannot have is a sentence with nothing to press.
  *
- * `compact` is for the narrow columns — the roster and a Bot's side pane — where the page-sized
- * line would wrap into three.
+ * MOUNTED BEFORE IT HAS ANYTHING TO SAY, like every status line in this app (`docs/laf/dialogs.md`,
+ * `LiveRegion`). A screen reader announces a change to a region it already knows about; a line
+ * mounted only once a read had failed would arrive with its region and, in most screen readers, not
+ * be read out — somebody who cannot see the list would never be told it had not loaded. So a screen
+ * draws its `ReadNotice` on every render, in the place its line belongs, and the notice is nothing —
+ * `display: contents` around two empty, visually hidden regions — until there is something to say.
+ * Keep it at the same place among its siblings in every state (`cond ? x : null` beside it, not an
+ * early return), or React draws a new one and the region is new again.
  */
-
-type Size = "default" | "compact";
-
-/** Nothing could be read, and nothing from before stands in for it. */
-export function ReadFailed({
+export function ReadNotice({
   className,
-  isRetrying = false,
-  message,
+  hasButton = true,
+  line,
   onRetry,
   size = "default",
 }: {
-  className?: string;
   /**
-   * Asked again and not answered yet. Most reads go back to their skeleton when asked again, so
-   * this is for the one that cannot — a fact missing from an answer that is otherwise in hand.
+   * The place the line takes once it says something — a margin, a padding. Not applied while it is
+   * silent, so a silent notice leaves no gap in a column.
    */
-  isRetrying?: boolean;
-  /** Already through `t()`: what could not be loaded, in the screen's own words. */
-  message: string;
-  onRetry: () => void;
-  size?: Size;
+  className?: string;
+  /** False keeps the words and drops the press, for the 64px rail, which draws a press of its own. */
+  hasButton?: boolean;
+  line: ReadLine;
+  onRetry?: () => void;
+  /** `compact` for the narrow columns — the roster, a Bot's side pane — where a page line wraps. */
+  size?: "default" | "compact";
 }) {
+  const isCompact = size === "compact";
+  const isRetrying =
+    line !== null && line.kind !== "unavailable" && line.isRetrying;
   return (
     <div
-      className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2",
-        size === "compact" ? "py-2" : "py-6",
-        className,
-      )}
-      data-read-state="failed"
+      className={
+        line === null
+          ? "contents"
+          : cn(
+              "flex flex-wrap items-center gap-y-1",
+              /*
+               * A failure or "not here" stands where the list would have been, and takes a list's
+               * room; the quiet line sits among rows that are still there, and takes none.
+               */
+              line.kind === "stale"
+                ? "gap-x-2"
+                : cn("gap-x-3", isCompact ? "py-2" : "py-6"),
+              className,
+            )
+      }
+      data-read-state={line?.kind}
     >
-      <p
+      {/* A failure interrupts: told it a sentence late, somebody has moved on as if it had worked. */}
+      <LiveRegion
+        as="p"
         className={cn(
           "text-pretty text-destructive",
-          size === "compact" ? "text-xs" : "text-sm",
+          isCompact ? "text-xs" : "text-sm",
         )}
-        role="alert"
+        tone="alert"
       >
-        {message}
-      </p>
-      <Button
-        disabled={isRetrying}
-        onClick={onRetry}
-        size={size === "compact" ? "xs" : "sm"}
-        type="button"
-        variant="outline"
+        {line?.kind === "failed" ? line.message : null}
+      </LiveRegion>
+      {/* The quiet ones wait their turn: the screen still works; it is only old, or not here. */}
+      <LiveRegion
+        as="p"
+        className={cn(
+          "text-pretty text-muted-foreground",
+          line?.kind === "stale" || isCompact ? "text-xs" : "text-sm",
+        )}
       >
-        {isRetrying ? t("Reloading…") : t("Try again")}
-      </Button>
+        {line?.kind === "stale"
+          ? t("Could not refresh this. What you see is from before.")
+          : line?.kind === "unavailable"
+            ? line.message
+            : null}
+      </LiveRegion>
+      {/* 다시 시도 only where asking again can change the answer — never beside "not here". */}
+      {hasButton && onRetry && line !== null && line.kind !== "unavailable" ? (
+        <Button
+          disabled={isRetrying}
+          // The focus it was pressed with stays on it while the read goes out again.
+          focusableWhenDisabled
+          onClick={onRetry}
+          size={line.kind === "stale" || isCompact ? "xs" : "sm"}
+          type="button"
+          variant={line.kind === "stale" ? "ghost" : "outline"}
+        >
+          {isRetrying ? t("Reloading…") : t("Try again")}
+        </Button>
+      ) : null}
     </div>
-  );
-}
-
-/**
- * Reading it again failed, and what was read before is still on screen.
- *
- * QUIET ON PURPOSE. The screen above this line still works — its rows can be opened and pressed —
- * so it is not an alert and not red; it only stops somebody taking an old list for a fresh one.
- */
-export function ReadStale({
-  className,
-  isRetrying,
-  onRetry,
-}: {
-  className?: string;
-  isRetrying: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs",
-        className,
-      )}
-      data-read-state="stale"
-    >
-      <p className="text-pretty" role="status">
-        {t("Could not refresh this. What you see is from before.")}
-      </p>
-      <Button
-        disabled={isRetrying}
-        onClick={onRetry}
-        size="xs"
-        type="button"
-        variant="ghost"
-      >
-        {isRetrying ? t("Reloading…") : t("Try again")}
-      </Button>
-    </div>
-  );
-}
-
-/**
- * The sentence for a read this place or this account cannot have.
- *
- * An account refused is the same fact on every screen, so it is one sentence; a place without the
- * thing is about the thing, so the screen says which (`notHere`).
- */
-export function unavailableText(why: Unavailability, notHere: string): string {
-  return why === "not_allowed"
-    ? t("This account cannot see this here.")
-    : notHere;
-}
-
-/**
- * This place, or this account, cannot have it — so there is nothing to press. A retry in front of
- * an answer that will not change is how a working screen comes to look broken.
- */
-export function ReadUnavailable({
-  className,
-  message,
-  size = "default",
-}: {
-  className?: string;
-  /** Already through `t()`. */
-  message: string;
-  size?: Size;
-}) {
-  return (
-    <p
-      className={cn(
-        "text-pretty text-muted-foreground",
-        size === "compact" ? "py-2 text-xs" : "py-6 text-sm",
-        className,
-      )}
-      data-read-state="unavailable"
-      role="status"
-    >
-      {message}
-    </p>
   );
 }

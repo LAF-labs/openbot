@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { rosterNotice } from "../src/lib/agents/roster-state";
+import {
+  type RosterNotice,
+  rosterNotice,
+} from "../src/lib/agents/roster-state";
 import type { Reading } from "../src/lib/reading";
 
 /**
- * THE ROSTER'S ONE LINE, OVER EVERY COMBINATION OF ITS TWO READS.
+ * WHAT THE ROSTER SAYS BESIDES ITS ROWS, OVER EVERY COMBINATION OF ITS TWO READS.
  *
  * MEASURED 2026-09-18 before this: with `/api/agents` answering 500, the roster said
  * 아직 봇이 없습니다 — the empty line was drawn whenever the Bots list was not pending and had no
@@ -44,8 +47,16 @@ const notice = (
 
 describe("the roster's line", () => {
   test("a Bots list that failed says so — never that there are none", () => {
-    expect(notice(failed, empty)).toEqual({ kind: "failed", what: "bots" });
-    expect(notice(failed, ready)).toEqual({ kind: "failed", what: "bots" });
+    const expected: RosterNotice = {
+      line: {
+        kind: "failed",
+        message: "Your Bots could not be loaded.",
+        isRetrying: false,
+      },
+      list: null,
+    };
+    expect(notice(failed, empty)).toEqual(expected);
+    expect(notice(failed, ready)).toEqual(expected);
   });
 
   test("a list this account cannot have says so, with nothing to press", () => {
@@ -54,52 +65,70 @@ describe("the roster's line", () => {
         { state: "unavailable", code: "laf:no_access", why: "not_allowed" },
         ready,
       ),
-    ).toEqual({ kind: "unavailable", why: "not_allowed" });
+    ).toEqual({
+      line: {
+        kind: "unavailable",
+        message: "This account cannot see this here.",
+      },
+      list: null,
+    });
+    expect(
+      notice(
+        { state: "unavailable", code: "laf:not_found", why: "not_configured" },
+        ready,
+      ).line,
+    ).toEqual({ kind: "unavailable", message: "Bots are not offered here." });
   });
 
   test("nothing is said while the Bots are loading: the skeleton says it", () => {
-    expect(notice(loading, failed)).toBeNull();
+    expect(notice(loading, failed)).toEqual({ line: null, list: null });
   });
 
-  test("the rooms failing is said under the Bots that did load", () => {
+  test("the rooms failing is said beside the Bots that did load", () => {
     expect(notice(ready, failed, { shownCount: 3 })).toEqual({
-      kind: "failed",
-      what: "rooms",
+      line: {
+        kind: "failed",
+        message: "Your conversations could not be loaded.",
+        isRetrying: false,
+      },
+      list: null,
     });
   });
 
   test("a refresh that failed over either list keeps the rows and says they are from before", () => {
-    expect(notice(stale, ready, { shownCount: 2 })).toEqual({
-      kind: "stale",
-      isRetrying: false,
-    });
-    expect(notice(ready, stale, { shownCount: 2 })).toEqual({
-      kind: "stale",
-      isRetrying: false,
-    });
+    const quiet: RosterNotice = {
+      line: { kind: "stale", isRetrying: false },
+      list: null,
+    };
+    expect(notice(stale, ready, { shownCount: 2 })).toEqual(quiet);
+    expect(notice(ready, stale, { shownCount: 2 })).toEqual(quiet);
     expect(
       notice({ state: "failed", previous: empty, isRetrying: true }, ready, {
         shownCount: 1,
-      }),
+      }).line,
     ).toEqual({ kind: "stale", isRetrying: true });
   });
 
-  test("a roster with rows on it needs no line", () => {
-    expect(notice(ready, ready, { shownCount: 4 })).toBeNull();
+  test("a roster with rows on it says nothing", () => {
+    expect(notice(ready, ready, { shownCount: 4 })).toEqual({
+      line: null,
+      list: null,
+    });
   });
 
   test("filtered to nothing is not empty", () => {
     expect(notice(ready, ready, { isSearching: true })).toEqual({
-      kind: "no-match",
+      line: null,
+      list: "no-match",
     });
   });
 
   test("empty only once both lists have answered, and never 'none yet' to somebody who hid theirs", () => {
-    expect(notice(empty, loading)).toBeNull();
-    expect(notice(empty, empty)).toEqual({ kind: "empty", hasHidden: false });
+    expect(notice(empty, loading)).toEqual({ line: null, list: null });
+    expect(notice(empty, empty)).toEqual({ line: null, list: "empty" });
     expect(notice(empty, empty, { hasHidden: true })).toEqual({
-      kind: "empty",
-      hasHidden: true,
+      line: null,
+      list: "all-hidden",
     });
     // A deployment with no rooms at all is simply a roster of Bots.
     expect(
@@ -108,6 +137,6 @@ describe("the roster's line", () => {
         code: "laf:not_found",
         why: "not_configured",
       }),
-    ).toEqual({ kind: "empty", hasHidden: false });
+    ).toEqual({ line: null, list: "empty" });
   });
 });

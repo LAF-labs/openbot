@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
-import { ReadFailed } from "@/components/layout/read-states";
+import { ReadNotice } from "@/components/layout/read-states";
 import {
   Item,
   ItemActions,
@@ -46,15 +46,21 @@ export const TodayUsageSection = () => {
                 "How much of today's free allowance is used. It fills up again every day at midnight, Korean time.",
               )}
             </ItemDescription>
-            {reading.state === "failed" ? (
-              <ReadFailed
-                className="pb-0"
-                isRetrying={reading.isRetrying}
-                message={t("Today's usage could not be read.")}
-                onRetry={() => void user.refetch()}
-                size="compact"
-              />
-            ) : null}
+            {/* Mounted with the row, so the line is heard when it is said. */}
+            <ReadNotice
+              className="pb-0"
+              line={
+                reading.state === "failed"
+                  ? {
+                      kind: "failed",
+                      message: t("Today's usage could not be read."),
+                      isRetrying: reading.isRetrying,
+                    }
+                  : null
+              }
+              onRetry={() => void user.refetch()}
+              size="compact"
+            />
           </ItemContent>
           {reading.state === "loading" ? (
             <ItemActions>
