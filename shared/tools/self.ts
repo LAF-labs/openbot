@@ -54,29 +54,40 @@ export const UPDATE_PROFILE: SelfTool = {
   }),
 };
 
+/*
+ * 고치는 것은 제자리에서다. 2026-09-18 전까지 update는 켜고 끄는 것뿐이었고 설명이 "지우고 새로
+ * 만든다"고 시켰다 — 그러면 루틴의 실행 기록과 메모장과 웹훅이 옛 행과 함께 사라진다. 어느 루틴인지는
+ * id나 정확한 이름으로 말하고, 둘 다 모르면 list로 본다: 봇에게 루틴의 id가 닿는 길은 list의 결과와
+ * 거절에 곁들여지는 목록뿐이다. 계속 돌리기(읽지 않아도 멈추지 않기)와 어느 봇인지는 이 툴에 칸이 없다
+ * — 사람이 정하는 것이다.
+ */
 export const MANAGE_ROUTINE: SelfTool = {
   name: "manage_routine",
   description:
-    "일정에 맞춰 저절로 도는 일을 만들고, 멈추거나 다시 돌리고, 지운다. " +
-    "사람이 실제로 시각이나 요일이나 주기를 말했을 때만 쓴다 — 시간이 붙지 않은 일은 루틴이 아니라 네 직무이므로 update_profile로 간다. " +
-    "이름이나 지시를 바꾸려면 지우고 새로 만든다.",
+    "일정에 맞춰 저절로 도는 일을 만들고, 보고, 고치고, 멈추거나 다시 돌리고, 지운다. " +
+    "사람이 실제로 시각이나 요일이나 주기를 말했을 때만 만든다 — 시간이 붙지 않은 일은 루틴이 아니라 네 직무이므로 update_profile로 간다. " +
+    "있는 루틴의 이름·지시·일정을 바꿀 때는 지우고 새로 만들지 말고 update로 고친다.",
   parameters: object(
     {
       action: {
         type: "string",
-        enum: ["create", "update", "delete"],
+        enum: ["create", "list", "update", "delete"],
         description:
-          "create: 새 루틴을 만든다(name, instruction, schedule 필요). update: 잠시 멈추거나 다시 돌린다(routineId와 enabled 필요). delete: 지운다(routineId 필요).",
+          "create: 새 루틴을 만든다(name, instruction, schedule 필요). list: 네 루틴을 id·일정과 함께 본다. update: 있는 루틴을 고친다(routineId와, 바뀌는 것만). delete: 지운다(routineId 필요).",
       },
       routineId: {
         type: "string",
-        description: "고치거나 지울 루틴의 id. update와 delete에 필요",
+        description:
+          "update와 delete에서 어느 루틴인지: 그 루틴의 id, 또는 지금 이름을 정확히. 모르면 list로 먼저 본다",
       },
-      name: { type: "string", description: "루틴 이름. create에 필요" },
+      name: {
+        type: "string",
+        description: "루틴 이름. create에 필요, update에서는 새 이름",
+      },
       instruction: {
         type: "string",
         description:
-          "그 시각마다 무엇을 할지, 미래의 너에게 쓰듯이. create에 필요",
+          "그 시각마다 무엇을 할지, 미래의 너에게 쓰듯이. create에 필요, update에서는 새 지시",
       },
       enabled: {
         type: "boolean",
@@ -84,7 +95,7 @@ export const MANAGE_ROUTINE: SelfTool = {
       },
       schedule: {
         type: "object",
-        description: "언제 도는지. create에 필요",
+        description: "언제 도는지. create에 필요, update에서는 새 일정",
         properties: {
           kind: { type: "string", enum: ["daily", "interval"] },
           time: {

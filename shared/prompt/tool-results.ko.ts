@@ -342,12 +342,29 @@ export const TOOL_RESULT_KO: Record<string, string> = {
    * 저장된 일정을 되풀이한다. `{schedule}`은 서버가 저장한 행에서 `routineSavedText`가 채운다 —
    * 이 문장을 그대로 꺼내 쓰는 곳은 없다. "저장했다"만 말하던 때, 시간대 없이 만든 "매일 7시 반"이
    * UTC로 저장돼 서울 16:30에 돌았고 봇은 사람에게 다 됐다고 말했다(감사 2026-09-16, R2 F1).
-   * 루틴 화면에는 일정을 고치는 칸이 없어서 "고칠 수 있다"도 사실이 아니었다 — 멈추거나 지운다.
+   * 틀렸을 때 바로잡는 길은 2026-09-18부터 update다. 그 전에는 고치는 길이 없어서 지우고 다시
+   * 만들라고 했고, 그러면 루틴의 실행 기록과 메모장과 웹훅이 옛 행과 함께 사라졌다.
    */
   "laf:routine_saved":
-    "루틴을 저장했다. 저장된 일정: {schedule}. 이제부터 이 일정대로 혼자 돈다. 사람에게 이 일정을 그대로 말해 확인받아라 — 사람이 말한 시각·요일·시간대와 다르면 이 루틴을 지우고 맞게 다시 만든다. 사람은 루틴 화면에서 보고 멈추거나 지울 수 있다.",
+    "루틴을 저장했다. 저장된 일정: {schedule}. 이제부터 이 일정대로 혼자 돈다. 사람에게 이 일정을 그대로 말해 확인받아라 — 사람이 말한 시각·요일·시간대와 다르면 update로 이 루틴을 바로잡는다. 사람은 루틴 화면에서 보고 고치거나 멈추거나 지울 수 있다.",
   "laf:routine_saved_unread":
     "루틴 저장 요청에 대한 답을 읽지 못해서, 저장됐는지도 어떤 일정으로 저장됐는지도 확인하지 못했다. 시각을 짐작해서 말하지 말고, 사람에게 루틴 화면에서 이 루틴이 있는지와 그 시각·요일을 확인해 달라고 말해라.",
+  /*
+   * 고친 결과도 저장된 행에서 되풀이한다(`routineUpdatedText`). 봇이 보낸 "08:00"에 서버가 배포의
+   * 시간대를 채웠을 수 있고, 사람이 확인할 것은 요청이 아니라 저장된 것이다.
+   */
+  "laf:routine_updated":
+    "그 루틴을 고쳤다. 이름: {name}. 지금 일정: {schedule}. 사람에게 바뀐 것을 그대로 말해 확인받아라 — 사람이 말한 것과 다르면 update로 다시 고친다.",
+  // 이 봇의 루틴 목록. `{list}`는 `routineListText`가 채운다 — 이름은 따옴표 안에, id와 일정과 함께.
+  "laf:routine_list":
+    "이 봇의 루틴:\n{list}\n고치거나 지울 때는 routineId에 그 id를 넣는다. id는 사람에게 말할 필요가 없다.",
+  "laf:routine_list_empty": "이 봇에는 아직 루틴이 없다.",
+  "laf:routine_list_unavailable":
+    "루틴 목록을 읽지 못해서 어느 루틴인지 확인하지 못했고, 아무것도 바꾸지 않았다. 한 번만 다시 시도하고, 또 안 되면 사람에게 루틴 화면에서 해 달라고 말해라.",
+  "laf:routine_name_unknown":
+    "그 id나 이름의 루틴이 이 봇에는 없어서 아무것도 바꾸지 않았다. 이 봇의 루틴:\n{list}\n맞는 루틴의 id를 routineId에 넣어 다시 불러라. 맞는 것이 없으면 사람에게 어느 루틴인지 물어라.",
+  "laf:routine_name_ambiguous":
+    "그 이름의 루틴이 여럿이라 어느 것인지 몰라서 아무것도 바꾸지 않았다. 이 봇의 루틴:\n{list}\n고칠 루틴의 id를 routineId에 넣어 다시 불러라.",
   "laf:routine_deleted": "그 루틴을 지웠다.",
   "laf:routine_paused": "그 루틴을 멈췄다.",
   "laf:routine_resumed": "그 루틴을 다시 돌린다.",
@@ -364,11 +381,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "루틴이 매번 무엇을 할지 한 줄로 적어야 한다.",
   "laf:routine_needs_schedule":
     "루틴에는 언제 도는지가 필요하다. 사람이 시각이나 주기를 말하지 않았다면 그것은 루틴이 아니라 네 직무이니 update_profile로 적어라.",
-  "laf:routine_needs_id": "어떤 루틴인지 id로 말해야 한다.",
-  "laf:routine_needs_enabled":
-    "멈출지 다시 돌릴지를 enabled로 말해야 한다(false면 멈춤, true면 재개).",
+  "laf:routine_needs_id":
+    "어느 루틴인지 routineId에 id나 정확한 이름으로 말해야 한다. 모르면 먼저 list로 이 봇의 루틴을 본다.",
   "laf:routine_unknown_action":
-    "루틴에 무엇을 할지 말해라: create, update, delete 중 하나.",
+    "루틴에 무엇을 할지 말해라: create, list, update, delete 중 하나.",
   "laf:routine_not_found": "그 루틴은 더 이상 없다.",
   "laf:routine_cap_reached": "루틴 수가 한도에 닿아 더 만들 수 없다.",
   "laf:routine_incomplete": "봇과 일정을 먼저 정해야 한다.",
@@ -707,6 +723,73 @@ export function routineSavedText(saved: unknown): string {
     "{schedule}",
     () => schedule,
   );
+}
+
+/**
+ * 고친 루틴을 봇이 읽는 문장 — 이름과 일정을 서버가 저장한 대로 되풀이한다.
+ *
+ * `saved`는 `PATCH /api/routines/:id`가 돌려준 `routine`이다. 읽지 못하면 `routineSavedText`와
+ * 같은 이유로 일정을 지어내지 않는다.
+ */
+export function routineUpdatedText(saved: unknown): string {
+  const schedule = savedSchedule(saved);
+  const name = quotedName(saved);
+  if (schedule === undefined || name === undefined) {
+    return toolResultText("laf:routine_saved_unread");
+  }
+  return toolResultText("laf:routine_updated")
+    .replace("{name}", () => name)
+    .replace("{schedule}", () => schedule);
+}
+
+/**
+ * 이 봇의 루틴들을 보여 주는 문장. `code`는 `laf:routine_list`나, 목록을 곁들이는 거절 코드다.
+ *
+ * 봇에게 루틴의 id가 닿는 곳은 여기뿐이다. 만들기의 결과에도, 프롬프트에도 id는 없어서, 이 목록이
+ * 생기기 전에는 "id로 고친다"가 짐작이었다.
+ */
+export function routineListResult(
+  code: string,
+  routines: readonly unknown[],
+): string {
+  const lines = routines
+    .map(routineLine)
+    .filter((line): line is string => line !== undefined);
+  if (code === "laf:routine_list" && lines.length === 0) {
+    return toolResultText("laf:routine_list_empty");
+  }
+  const list = lines.length > 0 ? lines.join("\n") : "(없음)";
+  return toolResultText(code).replace("{list}", () => list);
+}
+
+/**
+ * 루틴 한 줄: `- "아침 브리핑" (id: routine_…) — 매일 07:30 (시간대 Asia/Seoul), 켜짐`.
+ *
+ * 이름은 JSON 따옴표 안에 넣는다 — 사람이나 봇이 지은 글자이고, 따옴표와 줄바꿈이 이스케이프되니
+ * 이름이 제 줄을 닫고 그 아래에 "시스템:" 줄을 여는 일이 없다. 지시문은 싣지 않는다: 어느 루틴인지
+ * 고르는 데 필요 없고, 긴 사람의 글을 모델 앞에 한 번 더 세울 까닭이 없다. id가 서버가 만드는
+ * 모양이 아니면 그 줄을 뺀다.
+ */
+function routineLine(routine: unknown): string | undefined {
+  if (!routine || typeof routine !== "object") return undefined;
+  const row = routine as Record<string, unknown>;
+  const name = quotedName(row);
+  if (typeof row.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(row.id)) {
+    return undefined;
+  }
+  if (name === undefined) return undefined;
+  const when = savedSchedule(row) ?? "일정을 읽지 못함";
+  const state = row.enabled === true ? "켜짐" : "멈춤";
+  return `- ${name} (id: ${row.id}) — ${when}, ${state}`;
+}
+
+/** 저장된 행의 이름을 따옴표 안에. 이름이 글자가 아니면 undefined. */
+function quotedName(saved: unknown): string | undefined {
+  if (!saved || typeof saved !== "object") return undefined;
+  const name = (saved as Record<string, unknown>).name;
+  return typeof name === "string" && name.trim()
+    ? JSON.stringify(name.trim())
+    : undefined;
 }
 
 /** 저장된 행의 일정을 한 줄로: "매주 월·수·금 07:30 (시간대 Asia/Seoul)", "30분마다". 어긋나면 undefined. */
