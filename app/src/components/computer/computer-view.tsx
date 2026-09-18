@@ -8,7 +8,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { TeachATask } from "@/components/computer/teach-a-task";
+import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
+import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
@@ -177,8 +179,10 @@ export function ComputerView({
     setRecording(await readRecording(computerId));
   }, [computerId]);
 
-  const handBack = useCallback(async () => {
-    const state = await releaseControl(computerId);
+  /** Whether the wheel went back: the full-size view closes on that answer and not before it. */
+  const handBack = useCallback(async (): Promise<boolean> => {
+    // A request nothing answered is a hand-back that did not happen, not a rejection for a caller.
+    const state = await releaseControl(computerId).catch(() => null);
     if (state) setControl(state);
     // The other cards watching this computer share one loop, and it may have settled. Wake it, or
     // the pane beside the conversation goes on saying somebody holds the wheel.
@@ -186,7 +190,56 @@ export function ComputerView({
     // Handing back is what ends a recording, so what was kept is read straight afterwards — that is
     // the moment the panel has something to offer.
     await refreshRecording();
+    return state !== null;
   }, [computerId, refreshRecording]);
+
+  /*
+   * THE FULL-SIZE VIEW'S TWO ACTIONS, HELD (`docs/laf/dialogs.md`). 제어 가져오기 said nothing when
+   * the computer refused it, and 봇에게 제어 돌려주기 — the button and Escape alike — closed the view
+   * before the wheel had gone back, so a hand-back that failed left a Bot blocked on a takeover
+   * nobody could see any more. While either runs the view cannot be closed; a refusal is said inside
+   * it; it closes on a hand-back only once the wheel is the Bot's.
+   */
+  const [overlayPress, setOverlayPress] = useState<
+    "taking" | "handing-back" | null
+  >(null);
+  const [overlayFailure, setOverlayFailure] = useState<string | null>(null);
+  const isOverlayBusy = overlayPress !== null;
+
+  const closeOverlay = useCallback(() => {
+    setOverlayFailure(null);
+    setExpanded(false);
+  }, []);
+
+  const handBackAndClose = useCallback(async () => {
+    setOverlayFailure(null);
+    setOverlayPress("handing-back");
+    const handedBack = await handBack();
+    setOverlayPress(null);
+    if (!handedBack) {
+      setOverlayFailure(
+        t("The browser could not be handed back to the Bot. Try again."),
+      );
+      return;
+    }
+    setExpanded(false);
+  }, [handBack]);
+
+  const handleTakeControl = async () => {
+    if (isOverlayBusy) return;
+    setOverlayFailure(null);
+    setOverlayPress("taking");
+    const state = await takeControl(computerId).catch(() => null);
+    setOverlayPress(null);
+    if (state) setControl(state);
+    pokeControl(computerId);
+    // Verified, not assumed — the same rule the sign-in handoff keeps (`site-rows.tsx`).
+    if (state?.holder !== "human") {
+      setOverlayFailure(
+        t("The browser could not be handed over. Please try again."),
+      );
+    }
+  };
 
   /*
    * Read once on arrival, because a recording outlives the page that made it.
@@ -323,19 +376,44 @@ export function ComputerView({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       /*
-       * HANDS BACK BEFORE IT CLOSES. Escape used to shut the overlay while leaving the person still
-       * holding the wheel — the Bot stayed blocked on a takeover nobody could see they still had.
-       *
        * `preventDefault` is load-bearing now that DetailPanel also listens for Escape and respects
        * `defaultPrevented`: without it, one press would close this overlay and the pane behind it.
+       *
+       * AND IT HAS TO COME FIRST, which is why this listens in the capture phase. Both listen on
+       * the window, and listeners on one target run in the order they were added: the pane's was
+       * there before this one, read `defaultPrevented` before it was set, and closed. Measured on
+       * 2026-09-18 — one Escape shut the view and the pane under it.
        */
-      if (driving) void handBack();
-      setExpanded(false);
       event.preventDefault();
+      // Nothing closes the view while the wheel is changing hands.
+      if (isOverlayBusy) return;
+      /*
+       * HANDS BACK BEFORE IT CLOSES. Escape used to shut the overlay while leaving the person still
+       * holding the wheel — the Bot stayed blocked on a takeover nobody could see they still had.
+       * And it closes once the wheel has gone back, not on the press.
+       */
+      if (driving) {
+        void handBackAndClose();
+        return;
+      }
+      closeOverlay();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [expanded, driving, handBack]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [expanded, driving, isOverlayBusy, handBackAndClose, closeOverlay]);
+
+  /*
+   * A MODAL, AND ONE THE KEYBOARD CAN FIND. The page under the view is inert while it is up and
+   * focus goes back to what opened it (`useOverlayModal`); it used to stay on the picture behind the
+   * scrim, so Tab walked the page nobody could see. Watching, focus goes to the scrim's own close
+   * — the answer that changes nothing; driving, the live screen takes it for the keyboard itself.
+   */
+  const pictureRef = useRef<HTMLButtonElement>(null);
+  useOverlayModal(expanded, pictureRef);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (expanded && !drivingRef.current) closeRef.current?.focus();
+  }, [expanded]);
 
   // Sized from the ratio, never from the payload, so the frame is identical in all three states.
   const frameStyle = { aspectRatio, minWidth, minHeight };
@@ -357,6 +435,7 @@ export function ComputerView({
         <button
           type="button"
           onClick={() => setExpanded(true)}
+          ref={pictureRef}
           // Disabled while blank/waiting but still reserves the frame.
           disabled={!showScreen}
           /*
@@ -593,7 +672,10 @@ export function ComputerView({
               {/* Backdrop closes only while read-only; during driving, Escape remains the exit. */}
               <button
                 type="button"
-                onClick={() => !driving && setExpanded(false)}
+                onClick={() => {
+                  if (!driving && !isOverlayBusy) closeOverlay();
+                }}
+                ref={closeRef}
                 aria-label={t("Close the Bot's screen")}
                 aria-hidden={driving}
                 tabIndex={driving ? -1 : 0}
@@ -638,14 +720,20 @@ export function ComputerView({
                   {driving ? (
                     <Button
                       className={OVERLAY_BUTTON}
+                      disabled={isOverlayBusy}
+                      // Keeps the focus it was pressed with while the wheel goes back.
+                      focusableWhenDisabled
                       onClick={() => {
-                        setExpanded(false);
-                        void handBack();
+                        if (!isOverlayBusy) void handBackAndClose();
                       }}
                       size="sm"
                       type="button"
                     >
-                      {t("Hand back to the Bot")}
+                      {overlayPress === "handing-back"
+                        ? t("Handing back…")
+                        : overlayFailure
+                          ? t("Try again")
+                          : t("Hand back to the Bot")}
                     </Button>
                   ) : (
                     /*
@@ -661,17 +749,20 @@ export function ComputerView({
                           ? "bg-primary text-primary-foreground focus-visible:border-white focus-visible:ring-white/70"
                           : OVERLAY_BUTTON
                       }
-                      onClick={async () => {
-                        const state = await takeControl(computerId);
-                        if (state) setControl(state);
-                        pokeControl(computerId);
-                      }}
+                      disabled={isOverlayBusy}
+                      // Keeps the focus it was pressed with while the wheel is being handed over.
+                      focusableWhenDisabled
+                      onClick={() => void handleTakeControl()}
                       size="sm"
                       type="button"
                     >
-                      {control?.requested
-                        ? t("Take control — the Bot asked for you")
-                        : t("Take control")}
+                      {overlayPress === "taking"
+                        ? t("Taking control…")
+                        : overlayFailure
+                          ? t("Try again")
+                          : control?.requested
+                            ? t("Take control — the Bot asked for you")
+                            : t("Take control")}
                     </Button>
                   )}
                   <span className="pointer-events-none text-white/70">
@@ -682,6 +773,14 @@ export function ComputerView({
                   </span>
                 </span>
               </div>
+              {/* Mounted with the view, so a refused handover is heard when it is said. */}
+              <LiveRegion
+                as="p"
+                className="relative mb-3 self-start rounded-md bg-destructive px-3 py-1.5 text-sm text-white"
+                tone="alert"
+              >
+                {overlayFailure}
+              </LiveRegion>
               {/* Overlay uses the live socket; the inline card keeps low-cost polling. */}
               <div className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-black">
                 {/*

@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { pokeControl, watchControl } from "@/components/computer/control-poll";
 import { releaseControl } from "@/components/computer/take-the-wheel";
 import { LiveScreen } from "@/components/computer/live-screen";
+import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
+import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { screenProblemText } from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
@@ -42,30 +44,54 @@ export const Handoff = ({
   /** A fact code from the live screen, said in the person's words where it is rendered. */
   const [problem, setProblem] = useState<string | null>(null);
   const [isHandingBack, setHandingBack] = useState(false);
+  /** Why the wheel did not go back, when it did not. */
+  const [failure, setFailure] = useState<string | null>(null);
   /** Null until the first read comes back: "we do not know yet" is not "the Bot has it". */
   const [hasWheel, setHasWheel] = useState<boolean | null>(null);
 
+  /*
+   * CLOSES ONCE THE WHEEL IS BACK, AND NOT BEFORE (`docs/laf/dialogs.md`). A release the computer
+   * refused used to be read past — the page was checked and the overlay closed as if it had worked,
+   * leaving the Bot blocked — and one nothing answered threw out of here with the button stuck on
+   * 화면을 확인하는 중… for good. Now either stays open, says so, and offers 다시 시도.
+   */
   const handBack = useCallback(async () => {
+    setFailure(null);
     setHandingBack(true);
-    await releaseControl(botId);
+    const released = await releaseControl(botId).catch(() => null);
     // Every other view watching this computer shares one control loop, and it may have settled.
     pokeControl(botId);
-    const checked = await checkSiteConnection(site.id, botId);
+    if (!released) {
+      setHandingBack(false);
+      setFailure(
+        t("The browser could not be handed back to the Bot. Try again."),
+      );
+      return;
+    }
+    // A check nothing answered is the row's "could not be read", which `onDone(null)` already says.
+    const checked = await checkSiteConnection(site.id, botId).catch(() => null);
     onDone(checked ? checked.signedIn : null);
   }, [botId, site.id, onDone]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
+      // Once, not once per press: a second Escape while the wheel goes back sent a second release.
+      if (isHandingBack) return;
       // Hands back BEFORE it closes, the same contract the Bot's screen makes: an overlay that
       // vanishes while somebody still holds the wheel leaves the Bot blocked on a takeover nobody
       // can see they have.
       void handBack();
-      event.preventDefault();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handBack]);
+    // In the capture phase, so its `preventDefault` is set before any window listener added earlier
+    // reads it — the Bot's screen measured one Escape closing its overlay and the pane beneath.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [handBack, isHandingBack]);
+
+  // The page under it is inert while it is up, and focus goes back to the row that opened it.
+  useOverlayModal(true);
 
   useEffect(
     () =>
@@ -108,20 +134,34 @@ export const Handoff = ({
         <span className="flex shrink-0 items-center gap-3">
           <Button
             disabled={isHandingBack}
-            onClick={() => void handBack()}
+            // Keeps the focus it was pressed with while the wheel goes back and the page is read.
+            focusableWhenDisabled
+            onClick={() => {
+              if (!isHandingBack) void handBack();
+            }}
             size="sm"
             type="button"
             variant="secondary"
           >
             {isHandingBack
               ? t("Checking the page…")
-              : t("Hand back to the Bot")}
+              : failure
+                ? t("Try again")
+                : t("Hand back to the Bot")}
           </Button>
           <span className="pointer-events-none text-white/70">
             {t("Press Escape to hand back and close")}
           </span>
         </span>
       </div>
+      {/* Mounted with the overlay, so a hand-back that did not happen is heard when it is said. */}
+      <LiveRegion
+        as="p"
+        className="relative mb-3 self-start rounded-md bg-destructive px-3 py-1.5 text-sm text-white"
+        tone="alert"
+      >
+        {failure}
+      </LiveRegion>
       <div className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-black">
         {/* The same seam as the Bot's own full-size view: the hand-back button above outlives it. */}
         <SectionBoundary
@@ -131,11 +171,13 @@ export const Handoff = ({
           <LiveScreen computerId={botId} driving onProblem={setProblem} />
         </SectionBoundary>
       </div>
-      {problem ? (
-        <p className="relative mt-2 text-sm text-white" role="alert">
-          {screenProblemText(problem)}
-        </p>
-      ) : null}
+      <LiveRegion
+        as="p"
+        className="relative mt-2 text-sm text-white"
+        tone="alert"
+      >
+        {problem ? screenProblemText(problem) : null}
+      </LiveRegion>
     </div>,
     document.body,
   );
