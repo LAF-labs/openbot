@@ -16,6 +16,7 @@
  * received, which doors told the operator and whether the details went with it; the dialog draws
  * those, and draws nothing on a request that did not come back 201.
  */
+import type { ConnectionCheckFacts } from "@shared/support/connection-check";
 import { t } from "@/lib/i18n";
 import type { RememberedFailure } from "./last-failure";
 
@@ -62,6 +63,8 @@ export type DiagnosticBundle = {
   failureWindowDays: number;
   failures: Array<{ code: string; count: number; lastAt: string }>;
   events: DiagnosticEvent[];
+  /** The last 연결 점검 this tab ran, as the server read it back. Absent when none was sent. */
+  connectionCheck?: ConnectionCheckFacts;
 };
 
 export type DiagnosticsPreview = { id: string; diagnostics: DiagnosticBundle };
@@ -157,11 +160,22 @@ export async function sendFeedback(
   };
 }
 
-/** The bundle the box would attach, assembled by the server and held there under the id it returns. */
+/**
+ * The bundle the box would attach, assembled by the server and held there under the id it returns.
+ *
+ * WITH THE LAST 연결 점검, when this tab ran one: the one part only the window can know. It goes as
+ * a query on the same read — a result of closed values (`shared/support/connection-check.ts`) that
+ * the server reads through the same vocabulary and keeps only if every field is on it — so the
+ * preview drawn from the answer is still exactly what would be stored.
+ */
 export async function fetchDiagnostics(
   fetchImpl: typeof fetch = fetch,
+  connectionCheck: ConnectionCheckFacts | null = null,
 ): Promise<DiagnosticsPreview> {
-  const response = await fetchImpl("/api/support/diagnostics", {
+  const query = connectionCheck
+    ? `?connectionCheck=${encodeURIComponent(JSON.stringify(connectionCheck))}`
+    : "";
+  const response = await fetchImpl(`/api/support/diagnostics${query}`, {
     credentials: "include",
   });
   const body = (await response.json().catch(() => null)) as {

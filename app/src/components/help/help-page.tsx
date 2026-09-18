@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { openConnectionCheck } from "@/components/help/connection-check-dialog";
 import { FeedbackDialog } from "@/components/help/feedback-dialog";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { LegalLinks } from "@/components/legal/legal-links";
@@ -113,10 +114,21 @@ export function HelpPage() {
           {guide}
         </Streamdown>
       </article>
-      <PageSection title={t("Still stuck?")}>
-        <Button onClick={() => setAsking(true)} variant="outline">
-          {t("Questions and feedback")}
-        </Button>
+      <PageSection
+        description={t(
+          "If the app seems stuck, the connection check says what is not getting through from this device, and what to try.",
+        )}
+        title={t("Still stuck?")}
+      >
+        {/* The check first: what it finds is often the answer, and otherwise it is what to send. */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={openConnectionCheck} variant="outline">
+            {t("Connection check")}
+          </Button>
+          <Button onClick={() => setAsking(true)} variant="outline">
+            {t("Questions and feedback")}
+          </Button>
+        </div>
       </PageSection>
       <footer className="mt-12 space-y-2">
         <LegalLinks className="text-muted-foreground text-xs" />

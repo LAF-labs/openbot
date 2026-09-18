@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
+import { ConnectionCheckDialog } from "@/components/help/connection-check-dialog";
 import { DiagnosticsPreview } from "@/components/help/diagnostics-preview";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,10 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { activeLocale, t } from "@/lib/i18n";
+import {
+  lastConnectionCheck,
+  subscribeToConnectionCheck,
+} from "@/lib/support/connection-check";
 import {
   FEEDBACK_MAX_LENGTH,
   type FeedbackReceipt,
@@ -46,6 +51,10 @@ import { lastTurnFailure } from "@/lib/support/last-failure";
  * answered with, after a 201 and never before: the time it was received, whether anybody was
  * told, and whether the details went with it. A box that said "sent" on the press would say so to a
  * dead server too.
+ *
+ * 연결 점검 OPENS OVER THE BOX, NOT INSTEAD OF IT, so a half-written message survives it; and the
+ * details, when ticked, are gathered again once it closes, because the last check's result is part
+ * of them (`fetchDiagnostics`) and the preview must show the one that will go.
  */
 export function FeedbackDialog({
   onOpenChange,
@@ -62,9 +71,17 @@ export function FeedbackDialog({
   const [withScreen, setWithScreen] = useState(false);
   const [withDiagnostics, setWithDiagnostics] = useState(false);
   const [receipt, setReceipt] = useState<FeedbackReceipt | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const lastCheck = useSyncExternalStore(
+    subscribeToConnectionCheck,
+    lastConnectionCheck,
+    () => null,
+  );
 
   const facts = screenFactsFor(location.pathname, lastTurnFailure());
-  const gather = useMutation({ mutationFn: () => fetchDiagnostics() });
+  const gather = useMutation({
+    mutationFn: () => fetchDiagnostics(fetch, lastConnectionCheck()),
+  });
   const preview = withDiagnostics ? (gather.data ?? null) : null;
   const send = useMutation({
     mutationFn: () =>
@@ -93,10 +110,16 @@ export function FeedbackDialog({
       setWithScreen(false);
       setWithDiagnostics(false);
       setReceipt(null);
+      setIsChecking(false);
       send.reset();
       gather.reset();
     }
     onOpenChange(next);
+  };
+
+  const handleCheckingChange = (next: boolean) => {
+    setIsChecking(next);
+    if (!next && withDiagnostics) gather.mutate();
   };
 
   const handleDiagnosticsChange = (checked: boolean) => {
@@ -221,6 +244,11 @@ export function FeedbackDialog({
                         "The app version, whether the server is working, recent failure codes and your own Bots' recent records.",
                       )}
                     </span>
+                    {lastCheck ? (
+                      <span className="text-muted-foreground text-xs">
+                        {t("And the result of the last connection check.")}
+                      </span>
+                    ) : null}
                   </span>
                 </label>
                 {withDiagnostics ? (
@@ -244,6 +272,18 @@ export function FeedbackDialog({
                   ) : null
                 ) : null}
               </div>
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  "If the app seems stuck, a connection check may already say why.",
+                )}{" "}
+                <button
+                  className="underline underline-offset-2"
+                  onClick={() => setIsChecking(true)}
+                  type="button"
+                >
+                  {t("Connection check")}
+                </button>
+              </p>
               {send.error ? (
                 <p className="text-destructive text-sm" role="alert">
                   {send.error.message}
@@ -278,6 +318,11 @@ export function FeedbackDialog({
             </>
           )}
         </DialogFooter>
+        {/* Inside the box's popup, so Base UI nests it rather than stacking two dialogs side by side. */}
+        <ConnectionCheckDialog
+          onOpenChange={handleCheckingChange}
+          open={isChecking}
+        />
       </DialogContent>
     </Dialog>
   );

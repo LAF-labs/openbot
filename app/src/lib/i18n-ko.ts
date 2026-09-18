@@ -585,6 +585,107 @@ export const ko: Record<string, string> = {
     "서버는 정상입니다. 이 계정의 권한이 회수되었고, 관리하는 분이 다시 열어 줄 수 있습니다.",
   "This usually clears on its own. Nothing your Bots are doing has stopped.":
     "대개 저절로 풀립니다. 봇이 하던 일은 멈추지 않았습니다.",
+  /*
+   * 연결 점검 — `lib/support/connection-check.ts` and its panel. Each failure is one sentence: what it
+   * probably means, then what to try. Row names reuse the 진단 정보 preview's words where it names the
+   * same thing (데이터베이스, 봇 서버, 봇의 컴퓨터), so one thing has one name.
+   */
+  "Connection check": "연결 점검",
+  "Whether this device reaches the app's server, step by step, and what to try where it does not.":
+    "이 기기가 앱 서버에 제대로 닿는지 하나씩 확인하고, 안 되는 곳은 무엇을 해 볼지 알려 줍니다.",
+  "If the app seems stuck, the connection check says what is not getting through from this device, and what to try.":
+    "앱이 멈춘 것 같으면 연결 점검이 이 기기에서 무엇이 닿지 않는지와 해 볼 일을 알려 줍니다.",
+  "If the app seems stuck, a connection check may already say why.":
+    "앱이 멈춘 것 같으면 연결 점검이 이유를 먼저 알려 줄 수 있습니다.",
+  "And the result of the last connection check.":
+    "마지막 연결 점검 결과도 함께 보냅니다.",
+  "The app's server": "앱 서버",
+  "Sign-in": "로그인",
+  "Secure connection": "보안 연결",
+  "Live connection for conversations": "대화 실시간 연결",
+  "Live connection for the Bot's screen": "봇 화면 실시간 연결",
+  "This device's clock": "기기 시계",
+  Passed: "통과",
+  Skipped: "건너뜀",
+  Waiting: "대기",
+  "Checking… {done} of {total}": "점검하는 중… {done}/{total}",
+  "Problems found in {count} of {total} checks.":
+    "{total}개 중 {count}개에서 문제가 보였습니다.",
+  "No problems found.": "문제가 보이지 않았습니다.",
+  "Checked at {time}": "{time}에 점검함",
+  "Run the check again": "다시 점검",
+  "Copy the result": "점검 결과 복사",
+  "The result could not be copied. Select the text below and copy it.":
+    "결과를 복사하지 못했습니다. 아래 글을 직접 선택해 복사해 주세요.",
+  "See what is copied": "복사되는 내용 보기",
+  "Only which checks ran, how they came out, how long they took and the kind of error. Never anything you typed, and no sign-in details.":
+    "어떤 점검을 했는지, 결과, 걸린 시간, 오류 종류만 담깁니다. 입력한 글이나 로그인 정보는 담기지 않습니다.",
+  "Local development address": "개발용 로컬 주소",
+  "Under a second apart": "1초 이내 차이",
+  "{gap} apart": "{gap} 차이",
+  "{ms} ms": "{ms}ms",
+  "{count} s": "{count}초",
+  "{count} min": "{count}분",
+  "{count} h": "{count}시간",
+  "{count} d": "{count}일",
+  "Not checked, because the sign-in did not pass.":
+    "로그인이 통과하지 않아 확인하지 않았습니다.",
+  "You have no Bot yet, so there is no screen to check.":
+    "아직 봇이 없어 확인할 화면이 없습니다.",
+  "Your Bots could not be read, so this was not checked.":
+    "봇 목록을 읽지 못해 확인하지 않았습니다.",
+  "This server has no computer for Bots.":
+    "이 서버에는 봇의 컴퓨터가 없습니다.",
+  "The server's report did not include this.":
+    "서버 보고에 이 항목이 없었습니다.",
+  "The server's answer carried no time to compare with.":
+    "서버 응답에 비교할 시각이 없었습니다.",
+  "The server did not answer, so this was not checked.":
+    "서버가 답하지 않아 확인하지 않았습니다.",
+  "This device is not connected to the internet, so check the Wi-Fi or the cable and check again.":
+    "이 기기가 인터넷에 연결되어 있지 않으니 와이파이나 랜선을 확인한 뒤 다시 점검해 주세요.",
+  "The server took too long to answer, so check again in a moment on a steadier connection.":
+    "서버가 너무 오래 답하지 않았으니 연결이 안정된 곳에서 잠시 뒤에 다시 점검해 주세요.",
+  "The address answered but the app's server behind it did not; this usually clears on its own, so check again in a few minutes.":
+    "주소는 답했지만 그 뒤의 앱 서버가 답하지 않았습니다 — 대개 저절로 풀리니 몇 분 뒤에 다시 점검해 주세요.",
+  "The server answered with an error, so check again in a minute, and tell us through Questions and feedback if it keeps happening.":
+    "서버가 오류로 답했으니 1분 뒤에 다시 점검해 보고, 계속되면 문의·의견으로 알려 주세요.",
+  "Something other than the app's server answered; if this network asks you to sign in or agree first, as in a café or hotel, do that and check again.":
+    "앱 서버가 아닌 다른 곳이 대신 답했습니다 — 카페나 호텔처럼 먼저 로그인이나 동의를 받는 네트워크라면 그것부터 마치고 다시 점검해 주세요.",
+  "The server gave an answer the app did not expect, so check again in a minute, and tell us through Questions and feedback if it keeps happening.":
+    "서버가 예상하지 못한 답을 보냈으니 1분 뒤에 다시 점검해 보고, 계속되면 문의·의견으로 알려 주세요.",
+  "The server did not answer this device, so check again in a minute, and try another network if it keeps happening.":
+    "서버가 이 기기에 답하지 않았으니 1분 뒤에 다시 점검해 보고, 계속되면 다른 네트워크에서 해 보세요.",
+  "This browser cannot open live connections, so update it or use the installed app.":
+    "이 브라우저는 실시간 연결을 열지 못하니 브라우저를 업데이트하거나 설치형 앱을 써 주세요.",
+  "This sign-in was ended on the server, so sign in again.":
+    "서버에서 이 로그인을 끝냈으니 다시 로그인해 주세요.",
+  "The live connection opened but nothing came through; a security program or a company network may be holding it back, so try another network.":
+    "실시간 연결은 열렸지만 아무것도 오지 않았습니다 — 보안 프로그램이나 회사 네트워크가 붙잡고 있을 수 있으니 다른 네트워크로 해 보세요.",
+  "The live connection was cut before anything came through, so check again, and try another network if it keeps happening.":
+    "실시간 연결이 무엇이 오기도 전에 끊겼으니 다시 점검해 보고, 계속되면 다른 네트워크로 해 보세요.",
+  "The Bot's screen could not open its live connection though conversations can, so check again, and tell us through Questions and feedback if it keeps happening.":
+    "대화의 실시간 연결은 되는데 봇 화면의 실시간 연결만 열리지 않았으니 다시 점검해 보고, 계속되면 문의·의견으로 알려 주세요.",
+  "The Bot's screen uses the same kind of live connection, so the same applies.":
+    "봇 화면도 같은 실시간 연결을 쓰니 위와 같습니다.",
+  "Ordinary requests reach the server but live connections do not; a company or school network, or a security program, may be blocking them, so try another network such as a phone's hotspot.":
+    "일반 요청은 서버에 닿지만 실시간 연결은 닿지 않습니다 — 회사·학교 네트워크나 보안 프로그램이 막고 있을 수 있으니 휴대폰 핫스팟 같은 다른 네트워크로 해 보세요.",
+  "The server cannot reach its database; it is not this device, so check again in a few minutes.":
+    "서버가 데이터베이스에 닿지 못하고 있습니다 — 이 기기 문제는 아니니 몇 분 뒤에 다시 점검해 주세요.",
+  "The server that makes Bots answer is not responding, so Bots cannot reply for now; it is not this device, so check again in a few minutes.":
+    "봇이 답하게 하는 서버가 응답하지 않아 지금은 봇이 답할 수 없습니다 — 이 기기 문제는 아니니 몇 분 뒤에 다시 점검해 주세요.",
+  "The Bots' computer is not responding, so Bots cannot open websites for now; it is not this device, so check again in a few minutes.":
+    "봇의 컴퓨터가 응답하지 않아 지금은 봇이 사이트를 열 수 없습니다 — 이 기기 문제는 아니니 몇 분 뒤에 다시 점검해 주세요.",
+  "You are signed out, so sign in again.":
+    "로그인이 풀렸으니 다시 로그인해 주세요.",
+  "Whether you are signed in could not be checked, so check again in a moment.":
+    "로그인 상태를 확인하지 못했으니 잠시 뒤에 다시 점검해 주세요.",
+  "This screen did not come over a secure (https) address, so what passes can be read on the way; open the app from its https address.":
+    "이 화면은 보안 주소(https)로 열리지 않아 오가는 내용이 중간에 읽힐 수 있으니, 앱을 https 주소로 열어 주세요.",
+  "This device's clock is {gap} ahead of the server's, so routine times and countdowns will look wrong; turn on setting the time automatically in the device's settings.":
+    "이 기기의 시계가 서버보다 {gap} 빠릅니다 — 루틴 시각과 남은 시간이 어긋나 보이니 기기 설정에서 시간 자동 설정을 켜 주세요.",
+  "This device's clock is {gap} behind the server's, so routine times and countdowns will look wrong; turn on setting the time automatically in the device's settings.":
+    "이 기기의 시계가 서버보다 {gap} 느립니다 — 루틴 시각과 남은 시간이 어긋나 보이니 기기 설정에서 시간 자동 설정을 켜 주세요.",
   "Remembered something": "기억해 두었습니다",
   Remembering: "기억하는 중",
   "Something went wrong.": "문제가 생겼습니다.",

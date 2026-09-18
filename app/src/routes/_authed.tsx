@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { ShellConnectionCheck } from "../components/help/connection-check-dialog";
 import { ConnectionNotice } from "../components/layout/connection-notice";
 import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
@@ -80,6 +81,8 @@ function AuthedShell() {
        */}
       <TrialBanner />
       <ConnectionNotice />
+      {/* 연결 점검, opened from the line above and from the help page. */}
+      <ShellConnectionCheck />
       <Outlet />
     </>
   );

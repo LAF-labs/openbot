@@ -1,4 +1,8 @@
 import { activeLocale, t } from "@/lib/i18n";
+import {
+  checkName as connectionCheckName,
+  failedCount,
+} from "@/lib/support/connection-check";
 import type { DiagnosticBundle, DiagnosticEvent } from "@/lib/support/feedback";
 
 /** A health check's name, in the screen's words. The server's names are `health.ts`'s probes. */
@@ -126,6 +130,27 @@ export const DiagnosticsPreview = ({
         </dd>
         <dt className="text-muted-foreground">{t("Recent records")}</dt>
         <dd>{t("{count} records", { count: bundle.events.length })}</dd>
+        {bundle.connectionCheck ? (
+          <>
+            <dt className="text-muted-foreground">{t("Connection check")}</dt>
+            <dd>
+              {failedCount(bundle.connectionCheck) === 0
+                ? t("No problems found.")
+                : t("Problems found in {count} of {total} checks.", {
+                    count: failedCount(bundle.connectionCheck),
+                    total: bundle.connectionCheck.checks.length,
+                  })}
+              {failedCount(bundle.connectionCheck) > 0 ? (
+                <span className="block text-muted-foreground">
+                  {bundle.connectionCheck.checks
+                    .filter((check) => check.state === "fail")
+                    .map((check) => connectionCheckName(check.id))
+                    .join(" · ")}
+                </span>
+              ) : null}
+            </dd>
+          </>
+        ) : null}
       </dl>
       {lines.length > 0 ? (
         <ol className="mt-2 max-h-40 overflow-y-auto font-mono leading-5">
