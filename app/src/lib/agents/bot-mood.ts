@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BotAvatarState } from "@/components/avatar/bot-avatar";
 
 /**
@@ -39,6 +39,12 @@ export function moodFor(input: {
 /**
  * The mood as a hook: it re-evaluates when the signals change, once a minute so a quiet Bot can
  * doze off without anybody touching the roster, and once more when the moment of gladness ends.
+ *
+ * THE CLOCK IS READ IN EFFECTS, NEVER WHILE RENDERING. This used to note the end of work, and take
+ * the time, in the middle of a render, which is exactly what the React Compiler assumes a component
+ * does not do: compiled, a render-time `Date.now()` is read once and kept. Time is state here, moved
+ * by the minute tick, by the end of work and by the end of the moment of gladness, so a sleeping face
+ * can be up to a minute late and never early.
  */
 export function useBotMood(input: {
   working: boolean;
@@ -46,11 +52,18 @@ export function useBotMood(input: {
   lastMessageAt: string | undefined;
 }): BotAvatarState {
   const [now, setNow] = useState(() => Date.now());
-  const workedUntil = useRef<number | null>(null);
+  const [workedUntil, setWorkedUntil] = useState<number | null>(null);
   const wasWorking = useRef(input.working);
 
-  if (wasWorking.current && !input.working) workedUntil.current = Date.now();
-  wasWorking.current = input.working;
+  // A layout effect, so the glad face is on the first frame after the work rather than the second.
+  useLayoutEffect(() => {
+    if (wasWorking.current && !input.working) {
+      const ended = Date.now();
+      setWorkedUntil(ended);
+      setNow(ended);
+    }
+    wasWorking.current = input.working;
+  }, [input.working]);
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60 * 1000);
@@ -58,18 +71,18 @@ export function useBotMood(input: {
   }, []);
 
   useEffect(() => {
-    if (input.working || workedUntil.current === null) return;
-    const remaining = DONE_FOR_MS - (Date.now() - workedUntil.current);
+    if (input.working || workedUntil === null) return;
+    const remaining = DONE_FOR_MS - (Date.now() - workedUntil);
     if (remaining <= 0) return;
     const timer = setTimeout(() => setNow(Date.now()), remaining + 16);
     return () => clearTimeout(timer);
-  }, [input.working]);
+  }, [input.working, workedUntil]);
 
   return moodFor({
     working: input.working,
     blocked: input.blocked,
     lastMessageAt: input.lastMessageAt,
-    workedUntil: workedUntil.current,
-    now: Math.max(now, Date.now()),
+    workedUntil,
+    now,
   });
 }
