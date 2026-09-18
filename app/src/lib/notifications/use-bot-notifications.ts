@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -23,10 +23,13 @@ import {
   type NotificationFrame,
   notificationFrames,
   readNotifications,
+  routinesChangedBy,
 } from "@/lib/notifications/outbox";
 import { appConfig } from "@/lib/generated/application-config";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { routineKeys } from "@/lib/routines/queries";
+import { pausedCountOf, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
 import {
   canRaiseNotice,
   decideNotice,
@@ -84,8 +87,32 @@ export function noticeKindOf(event: string): NoticeKind | null {
   if (event === "approval.requested" || event === "run.needs_you") {
     return "needs-you";
   }
-  if (event === "run.finished" || event === "run.failed") return "finished";
+  /*
+   * A pause the unread rule made (`routine.paused`) is quiet like a finish: nobody is blocked, and
+   * something the person set going has stopped without their pressing anything — news, not a
+   * question. The words are its own (`pausedBody`).
+   */
+  if (
+    event === "run.finished" ||
+    event === "run.failed" ||
+    event === "routine.paused"
+  ) {
+    return "finished";
+  }
   return null;
+}
+
+/**
+ * The line under a `routine.paused` notice: how many of the Bot's routines stopped, and why.
+ *
+ * The count is the server's; a row whose facts cannot be read still says what happened, without a
+ * number made up for it.
+ */
+export function pausedBody(pause: unknown): string {
+  const count = pausedCountOf(pause);
+  return count === null
+    ? t("Some routines were paused — their results went unread for a while.")
+    : t(UNREAD_PAUSE_SENTENCES.notice, { count });
 }
 
 /**
@@ -97,6 +124,7 @@ export function noticeKindOf(event: string): NoticeKind | null {
  */
 export function bodyFor(event: string, described: string | null): string {
   if (described) return described;
+  if (event === "routine.paused") return pausedBody(null);
   if (event === "run.finished") return t("It finished while you were away.");
   if (event === "run.failed") return t("It stopped before it finished.");
   // A password, a code from a text message, a login it cannot finish. The row deliberately carries
@@ -124,6 +152,7 @@ export function bodyFor(event: string, described: string | null): string {
  * Mounted once, in `_authed`, so it covers every signed-in screen.
  */
 export function useBotNotifications(): void {
+  const queryClient = useQueryClient();
   const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
   const navigate = useNavigate();
@@ -141,6 +170,8 @@ export function useBotNotifications(): void {
   pathRef.current = location.pathname;
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
   /** Last delivery per `${agentId}:${kind}`. Lives as long as the app does, like the socket. */
   const lastNotified = useRef(new Map<string, number>());
   /**
@@ -307,6 +338,12 @@ export function useBotNotifications(): void {
       // Null is "the server could not be asked", which is not "nothing is waiting". Leaving the
       // watermark alone means the next read covers the same ground rather than skipping it.
       if (!rows || stopped) return;
+      // A pause the unread rule made changed rows the routines page is drawing. See the predicate.
+      if (options.raises && routinesChangedBy(rows)) {
+        void queryClientRef.current.invalidateQueries({
+          queryKey: routineKeys.all,
+        });
+      }
       // Oldest first, so that when several arrive at once the notice left on screen is the newest.
       for (const row of [...rows].reverse()) {
         if (!watermark || row.at > watermark) watermark = row.at;
@@ -352,7 +389,14 @@ export function useBotNotifications(): void {
             kind === "needs-you"
               ? needsYouTitle(bot?.name ?? frame.botId)
               : (bot?.name ?? frame.botId),
-          body: bodyFor(frame.event, subject ? describeSubject(subject) : null),
+          body: bodyFor(
+            frame.event,
+            frame.event === "routine.paused"
+              ? pausedBody(frame.pause)
+              : subject
+                ? describeSubject(subject)
+                : null,
+          ),
           tag: `laf-notification:${key}`,
           ...(destination ? { destination } : {}),
         },

@@ -19,6 +19,14 @@ export type Routine = {
   enabled: boolean;
   lastRunAt: string | null;
   nextRunAt: string;
+  /**
+   * Why it is off when its person did not turn it off: `unread`, when its results piled up unread
+   * for a week (`server/src/routines/unread.ts`). Null otherwise. See `lib/routines/unread.ts`.
+   */
+  pausedReason?: "unread" | null;
+  pausedAt?: string | null;
+  /** The person's 계속 돌리기: never paused for going unread. */
+  keepRunning?: boolean;
 };
 
 export type RoutineRun = {

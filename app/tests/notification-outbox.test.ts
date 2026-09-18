@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   destinationOf,
   isNotificationFrame,
   markNotificationSeen,
   type NotificationFrame,
   readNotifications,
+  routinesChangedBy,
 } from "../src/lib/notifications/outbox";
 import {
   bodyFor,
   noticeKindOf,
+  pausedBody,
 } from "../src/lib/notifications/use-bot-notifications";
 import { stubFetch } from "./support/fetch";
 
@@ -168,5 +172,91 @@ describe("reading the door", () => {
 
     expect(asked[0]).toContain("since=2026-09-03T13%3A00%3A00.000Z");
     expect(asked[1]).toBe("/api/me/notifications/notification-1/seen");
+  });
+});
+
+/**
+ * A Bot's routines paused because their results piled up unread. 2026-09-18.
+ *
+ * Not blocked on anybody and not finished, and still worth a quiet notice: something the person set
+ * going stopped without them pressing anything. Quiet, like a finish — it is news, not a question.
+ * The server sends the count; the line is written here.
+ */
+describe("routines paused for going unread", () => {
+  test("is a quiet notice, with its own line that says how many", () => {
+    expect(noticeKindOf("routine.paused")).toBe("finished");
+    const line = pausedBody({ reason: "unread", count: 2, unread: 5 });
+    expect(line).toContain("2");
+    expect(line).not.toContain("{count}");
+    // Not the line a finished run gets: a pause is not a finish.
+    expect(line).not.toBe(bodyFor("run.finished", null));
+    // A row whose facts cannot be read still says what happened, without inventing a number.
+    expect(pausedBody(null)).not.toMatch(/\d|\{/);
+    expect(bodyFor("routine.paused", null)).toBe(pausedBody(null));
+  });
+
+  test("the door's row carries its facts onto the frame, and the click lands on the conversation", async () => {
+    globalThis.fetch = stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            notifications: [
+              {
+                id: "notification-3",
+                kind: "routine.paused",
+                botId: "bot-3",
+                channelId: "channel-3",
+                pause: {
+                  reason: "unread",
+                  routineIds: ["routine-1"],
+                  count: 1,
+                  unread: 3,
+                  since: "2026-09-09T22:30:00.000Z",
+                },
+                createdAt: "2026-09-18T06:00:00.000Z",
+                deliveredVia: [],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const [row] = (await readNotifications()) ?? [];
+    expect(row).toMatchObject({
+      event: "routine.paused",
+      channelId: "channel-3",
+      pause: { count: 1, unread: 3 },
+    });
+    if (!row) throw new Error("no row");
+    // Where the results are waiting — reading them is also what starts the count again.
+    expect(destinationOf(row)).toEqual({ kind: "channel", id: "channel-3" });
+  });
+});
+
+describe("a pause that lands while the routines page is open", () => {
+  test("a read that brings one says the routines list is stale", () => {
+    const pause = { ...FRAME, event: "routine.paused", approvalId: undefined };
+    expect(routinesChangedBy([FRAME, pause])).toBe(true);
+    expect(routinesChangedBy([FRAME])).toBe(false);
+    expect(routinesChangedBy([])).toBe(false);
+  });
+
+  test("and the hook refetches the list when it is — the banner appears without a reload", () => {
+    /*
+     * MEASURED 2026-09-18: the socket delivered the notice to an open routines page and the page
+     * went on showing both routines switched on until something else refetched the list. The
+     * notice is the only thing the page hears about a pause, so it is what refreshes the list.
+     */
+    const source = readFileSync(
+      join(
+        import.meta.dir,
+        "../src/lib/notifications/use-bot-notifications.ts",
+      ),
+      "utf8",
+    );
+    expect(source).toContain("if (options.raises && routinesChangedBy(rows))");
+    expect(source).toContain("queryClientRef.current.invalidateQueries({");
+    expect(source).toContain("queryKey: routineKeys.all,");
   });
 });

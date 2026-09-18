@@ -814,6 +814,27 @@ export const ko: Record<string, string> = {
     "실행 기록과 메모장, 웹훅은 그대로 남습니다.",
   "A routine stays with the Bot it was made for.":
     "루틴을 맡은 봇은 바꿀 수 없습니다.",
+  /*
+   * 결과를 안 보셔서 멈춘 루틴. `UNREAD_PAUSE_SENTENCES` in lib/routines/unread.ts, read through
+   * `t(variable)` and walked by routine-unread-pause.test.tsx. 해요체, because the product did
+   * something on the person's behalf and is telling them so, not reporting a system state.
+   */
+  "Paused {count} routines on {name}":
+    "{name}의 루틴 {count}개를 멈춰 두었어요",
+  "Their results had gone unread for a while, so they stopped rather than keep running for nobody.":
+    "보내 드린 결과를 한동안 보지 않으셔서, 아무도 안 읽는 채로 계속 돌지 않게 멈췄어요.",
+  "Turn back on": "다시 켜기",
+  "Keep running": "계속 돌리기",
+  "Keep running means they will not stop like this again, read or not.":
+    "계속 돌리기를 누르면 앞으로는 결과를 안 보셔도 멈추지 않아요.",
+  "Paused — its results went unread for a while":
+    "결과를 한동안 안 보셔서 멈췄어요",
+  "Keep running even if unread": "안 읽어도 계속 돌리기",
+  "Paused {count} routines — their results went unread for a while.":
+    "결과를 한동안 보지 않으셔서 루틴 {count}개를 멈췄어요.",
+  "This Bot": "이 봇",
+  "Some routines were paused — their results went unread for a while.":
+    "결과를 한동안 보지 않으셔서 루틴을 멈췄어요.",
   "Create routine": "루틴 만들기",
   "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.":
     "봇이 시계에 맞춰 실행하는 지시 — 아침 다이제스트, 매일 점검, 주간 요약.",

@@ -10,11 +10,14 @@ import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineForm } from "@/components/routines/routine-form";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
+import { UnreadPauseBanners } from "@/components/routines/unread-pause-banner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { focusRing } from "@/components/ui/focus";
@@ -38,6 +41,7 @@ import {
   scheduleLabel,
   whenLabel,
 } from "@/lib/routines/queries";
+import { pausedForUnread, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
 import { RUN_STOPPED } from "@/lib/work/stop-all";
 
 /**
@@ -141,8 +145,11 @@ function RoutineRow({ routine }: { routine: Routine }) {
     onMutate: async (enabled: boolean) => {
       await queryClient.cancelQueries({ queryKey: routineKeys.all });
       const previous = queryClient.getQueryData<Routine[]>(routineKeys.all);
+      // The server clears the unread rule's reason on either press (`setRoutineEnabled`).
       queryClient.setQueryData<Routine[]>(routineKeys.all, (rows) =>
-        rows?.map((row) => (row.id === routine.id ? { ...row, enabled } : row)),
+        rows?.map((row) =>
+          row.id === routine.id ? { ...row, enabled, pausedReason: null } : row,
+        ),
       );
       return { previous };
     },
@@ -166,6 +173,18 @@ function RoutineRow({ routine }: { routine: Routine }) {
         queryKey: routineKeys.notepad(routine.id),
       });
     },
+  });
+  /*
+   * 계속 돌리기 on this one routine: never paused for going unread. Its own door, never the edit's —
+   * a Bot's `manage_routine` reaches the edit, and this is the person's call.
+   */
+  const keepRunning = useMutation({
+    mutationFn: async (keep: boolean) =>
+      routineRequest(`/api/routines/${routine.id}/keep-running`, {
+        method: "POST",
+        body: JSON.stringify({ keepRunning: keep }),
+      }),
+    onSettled: invalidate,
   });
   const remove = useMutation({
     mutationFn: async () =>
@@ -207,6 +226,16 @@ function RoutineRow({ routine }: { routine: Routine }) {
           <p className="truncate text-xs text-muted-foreground">
             {routine.instruction}
           </p>
+          {/*
+           * WHY IT IS OFF, when nobody here turned it off. A switch at off reads as something the
+           * person did and forgot; this line says the rule did it, and the banner above has the
+           * answers (`UnreadPauseBanners`).
+           */}
+          {pausedForUnread(routine) ? (
+            <p className="truncate text-warning text-xs">
+              {t(UNREAD_PAUSE_SENTENCES.row)}
+            </p>
+          ) : null}
           {/*
            * WHEN IT LAST WENT AND WHEN IT GOES NEXT.
            *
@@ -289,7 +318,7 @@ function RoutineRow({ routine }: { routine: Routine }) {
               </Button>
             }
           />
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="w-auto">
             {/*
              * 수정 FIRST. It is the verb a person reaches for more often than the one below it, and
              * the one below it is the only irreversible thing on the page.
@@ -299,6 +328,23 @@ function RoutineRow({ routine }: { routine: Routine }) {
             >
               {t("Edit")}
             </DropdownMenuItem>
+            {/*
+             * 안 읽어도 계속 돌리기: the exemption from the unread rule, for one routine, as a check
+             * the person can see the state of. The banner's 계속 돌리기 sets the same thing for all of
+             * a Bot's paused routines at once.
+             */}
+            <DropdownMenuCheckboxItem
+              checked={routine.keepRunning === true}
+              // One line: measured wrapping to "안 읽어도 계속 / 돌리기" in the menu's default width.
+              className="whitespace-nowrap"
+              disabled={keepRunning.isPending}
+              onCheckedChange={(checked) =>
+                keepRunning.mutate(checked === true)
+              }
+            >
+              {t(UNREAD_PAUSE_SENTENCES.menu)}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => setConfirmingDelete(true)}
               variant="destructive"
@@ -443,6 +489,11 @@ function RoutinesPage() {
            * has written the routine themselves. The section draws nothing when there is nothing
            * to offer, so the list sits where it always did.
            */}
+          {/*
+           * What the unread rule paused, first: it is about routines the person already has, and a
+           * pause that sits below the suggestions is a pause read after an offer of more routines.
+           */}
+          <UnreadPauseBanners />
           <RoutineSuggestions />
           <div className="flex flex-col gap-3">
             {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}

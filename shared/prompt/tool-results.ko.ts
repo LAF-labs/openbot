@@ -779,7 +779,14 @@ function routineLine(routine: unknown): string | undefined {
   }
   if (name === undefined) return undefined;
   const when = savedSchedule(row) ?? "일정을 읽지 못함";
-  const state = row.enabled === true ? "켜짐" : "멈춤";
+  // 저절로 멈춘 것은 그렇다고 말한다(`server/src/routines/unread.ts`): 사람이 끈 것과 달리, 사람은
+  // 멈춘 줄 모를 수 있고 봇이 그 까닭을 전할 수 있어야 한다.
+  const state =
+    row.enabled === true
+      ? "켜짐"
+      : row.pausedReason === "unread"
+        ? "멈춤(결과를 한동안 읽지 않아 저절로 멈춤)"
+        : "멈춤";
   return `- ${name} (id: ${row.id}) — ${when}, ${state}`;
 }
 

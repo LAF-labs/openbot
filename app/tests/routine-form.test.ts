@@ -181,10 +181,13 @@ describe("the row", () => {
   });
 
   test("keeps the destructive verb behind the ⋯ menu", () => {
-    const menu = page.indexOf('<DropdownMenuContent align="end">');
+    // Inside the menu, whatever else the menu grows to hold (수정 and 계속 돌리기 came later).
+    const menu = page.indexOf('<DropdownMenuContent align="end"');
     const del = page.indexOf('variant="destructive"', menu);
+    const end = page.indexOf("</DropdownMenuContent>", menu);
     expect(menu).toBeGreaterThan(0);
-    expect(del - menu).toBeLessThan(900);
+    expect(del).toBeGreaterThan(menu);
+    expect(del).toBeLessThan(end);
     // And no bare trash icon beside the switch any more.
     expect(page).not.toContain("IconTrash");
   });
@@ -202,7 +205,7 @@ describe("the row", () => {
  */
 describe("editing a routine", () => {
   test("the ⋯ menu offers 수정 above 삭제, and it opens the panel on that routine", () => {
-    const menu = page.indexOf('<DropdownMenuContent align="end">');
+    const menu = page.indexOf('<DropdownMenuContent align="end"');
     const edit = page.indexOf('{t("Edit")}', menu);
     const del = page.indexOf('{t("Delete")}', menu);
     expect(menu).toBeGreaterThan(0);

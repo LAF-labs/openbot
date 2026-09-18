@@ -50,6 +50,12 @@ const ROSTER = [
     dailyDays: [1],
     enabled: false,
   }),
+  // Paused by the unread rule rather than by the person: the Bot is told which, so it can say so.
+  routine("routine_quiet", "월말 정산", {
+    dailyLocal: "10:00",
+    enabled: false,
+    pausedReason: "unread",
+  }),
   // Another Bot's routine, with the same name as this one's. A Bot reaches its own and no other.
   routine("routine_theirs", "아침 브리핑", { agentId: "bot-2" }),
 ];
@@ -233,7 +239,10 @@ describe("finding the routine", () => {
     expect(text).toContain("매일 07:30 (시간대 Asia/Seoul)");
     expect(text).toContain('"주간 정산" (id: routine_weekly)');
     expect(text).toContain("매주 월 09:00");
-    expect(text).toContain("멈춤");
+    expect(text).toContain("매주 월 09:00 (시간대 Asia/Seoul), 멈춤\n");
+    expect(text).toContain(
+      '"월말 정산" (id: routine_quiet) — 매일 10:00 (시간대 Asia/Seoul), 멈춤(결과를 한동안 읽지 않아 저절로 멈춤)',
+    );
     expect(text).not.toContain("routine_theirs");
     // The standing instruction stays out: it is the person's text and nothing the lookup needs.
     expect(text).not.toContain("새 리뷰를 요약해줘");

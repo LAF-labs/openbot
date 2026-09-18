@@ -26,6 +26,7 @@ export const NOTIFICATION_EVENTS = [
   "run.needs_you",
   "run.finished",
   "run.failed",
+  "routine.paused",
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -40,6 +41,8 @@ export type NotificationFrame = {
   channelId?: string;
   /** An `AskSubject`, unparsed. `askSubjectOf` in `lib/approvals.ts` is what makes it one. */
   subject?: unknown;
+  /** For `routine.paused`: which routines stopped and why, unparsed. See `lib/routines/unread.ts`. */
+  pause?: unknown;
   at: string;
 };
 
@@ -95,6 +98,7 @@ export async function readNotifications(
         approvalId?: string;
         channelId?: string;
         subject?: unknown;
+        pause?: unknown;
         createdAt: string;
       }>;
     };
@@ -106,6 +110,7 @@ export async function readNotifications(
       ...(row.approvalId ? { approvalId: row.approvalId } : {}),
       ...(row.channelId ? { channelId: row.channelId } : {}),
       ...(row.subject ? { subject: row.subject } : {}),
+      ...(row.pause ? { pause: row.pause } : {}),
       at: row.createdAt,
     }));
   } catch {
@@ -148,6 +153,16 @@ export async function acknowledgeFailureGroup(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a read of the door brought news that the routines list is out of date — a pause the
+ * unread rule made (`routine.paused`). The notice is the only thing an open page hears about one,
+ * so it is what refreshes the list: the routines page would otherwise go on drawing paused routines
+ * switched on until something else happened to refetch it.
+ */
+export function routinesChangedBy(rows: NotificationFrame[]): boolean {
+  return rows.some((row) => row.event === "routine.paused");
 }
 
 /** Where acting on this notification should land somebody, or null when it names no place. */
