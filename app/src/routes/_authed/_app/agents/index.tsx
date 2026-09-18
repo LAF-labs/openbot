@@ -7,8 +7,13 @@ import { Mascot } from "@/components/agents/mascot";
 import { NewBotButton } from "@/components/agents/new-bot-button";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { StaggerItem } from "@/components/layout/stagger";
-import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSeats } from "@/lib/agents/new-bot";
@@ -16,6 +21,7 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { seatsFullMessage } from "@/lib/agents/seats";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { t } from "@/lib/i18n";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 
 /**
  * Inspecting a Bot is a search-parameter state so the roster remains mounted and Back closes the
@@ -42,15 +48,19 @@ export const Route = createFileRoute("/_authed/_app/agents/")({
 function AgentsScreen() {
   const { agent: selectedAgentId } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const {
-    data: agents,
-    isPending,
-    isError,
-    refetch,
-  } = useQuery(agentListQueryOptions());
+  const roster = useQuery(agentListQueryOptions());
   const { data: working } = useQuery(workingQueryOptions());
   const seats = useSeats();
-  const mine = agents?.filter((a) => a.mine);
+  /*
+   * Empty is about YOUR Bots — the list also carries ones an administrator can see — and a refresh
+   * that fails keeps the cards on screen under a quiet line, where it used to draw the red "could
+   * not be loaded" over them.
+   */
+  const reading = useReading(roster, {
+    isEmpty: (list) => !list.some((agent) => agent.mine),
+  });
+  const settled = settledOf(reading);
+  const mine = settled?.data.filter((a) => a.mine);
 
   const close = () => navigate({ search: {} });
 
@@ -105,14 +115,21 @@ function AgentsScreen() {
            */
           description={seats.isFull ? seatsFullMessage(seats) : undefined}
           title={
-            isPending || isError
-              ? t("My Bots")
-              : t("My Bots {used}/{total}", {
+            settled
+              ? t("My Bots {used}/{total}", {
                   total: seats.total,
                   used: seats.used,
                 })
+              : t("My Bots")
           }
         >
+          {reading.state === "failed" && reading.previous ? (
+            <ReadStale
+              className="mb-3"
+              isRetrying={reading.isRetrying}
+              onRetry={() => void roster.refetch()}
+            />
+          ) : null}
           <div className="flex flex-row">
             {!!mine?.length && (
               /*
@@ -154,7 +171,7 @@ function AgentsScreen() {
              * again when the request failed, which told somebody with a roster full of Bots that
              * they had never made one.
              */}
-            {isPending && (
+            {reading.state === "loading" && (
               <div className="grid w-full grid-cols-2 gap-4 lg:grid-cols-[repeat(auto-fill,minmax(144px,1fr))]">
                 {[0, 1, 2].map((slot) => (
                   // The card's own height, so the roster does not jump when the answer lands.
@@ -162,21 +179,23 @@ function AgentsScreen() {
                 ))}
               </div>
             )}
-            {isError && (
-              <div className="flex flex-col items-start gap-2">
-                <p className="text-destructive text-sm" role="alert">
-                  {t("Your Bots could not be loaded.")}
-                </p>
-                <Button
-                  onClick={() => void refetch()}
-                  size="sm"
-                  variant="outline"
-                >
-                  {t("Try again")}
-                </Button>
-              </div>
+            {hasFailedOutright(reading) && (
+              <ReadFailed
+                className="py-0"
+                message={t("Your Bots could not be loaded.")}
+                onRetry={() => void roster.refetch()}
+              />
             )}
-            {!isPending && !isError && !mine?.length && (
+            {reading.state === "unavailable" && (
+              <ReadUnavailable
+                className="py-0"
+                message={unavailableText(
+                  reading.why,
+                  t("Bots are not offered here."),
+                )}
+              />
+            )}
+            {settled?.state === "empty" && (
               /*
                * A DEAD END BEFORE. The empty roster said "you have not made a Bot yet" and offered
                * nothing to press: the button was in the header, in ghost grey, above a page whose

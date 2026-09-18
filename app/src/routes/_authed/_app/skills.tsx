@@ -11,6 +11,12 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
@@ -36,6 +42,7 @@ import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 import { skillDeleteRecheck } from "@/lib/rechecks";
 import { refusalFrom } from "@/lib/refusals";
 
@@ -72,9 +79,7 @@ function SkillsPage() {
   // roster uses when `new` and `agent` arrive together.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingSlug !== undefined;
-  const { data, isError, isPending, refetch } = useQuery(
-    pluginsPageQueryOptions(),
-  );
+  const page = useQuery(pluginsPageQueryOptions());
   const { data: me } = useQuery(currentUserQueryOptions());
   /** The slug being confirmed, or null. One dialog for the page, not one per row. */
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
@@ -125,7 +130,13 @@ function SkillsPage() {
    * another person's lands in neither list. Not a leak, but an administrator cannot see here what
    * they are entitled to. Worth an owner column or a third section before this page is called done.
    */
-  const skills = data?.skills ?? [];
+  const reading = useReading(page, {
+    // Empty is about YOUR skills: the section below it is withheld when it has none of its own.
+    isEmpty: (answer) =>
+      !answer.skills.some((skill) => skill.ownerUserId === me?.id),
+  });
+  const settled = settledOf(reading);
+  const skills = settled?.data.skills ?? [];
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
   const deployment = skills.filter((skill) => skill.ownerUserId === null);
 
@@ -198,9 +209,9 @@ function SkillsPage() {
            * `isError` — a 500, a dropped connection, a signed-out session — fell into the same
            * branch as an empty list: 아직 스킬이 없습니다, in front of somebody whose skills are all
            * still there. Routines and the roster both learned this already; these are their two
-           * answers, in their two shapes.
+           * answers, in their two shapes. A failed REFRESH keeps the rows and says so quietly.
            */}
-          {isPending ? (
+          {reading.state === "loading" ? (
             <PageRows>
               {[0, 1].map((slot) => (
                 <div className="flex flex-col gap-2 p-4" key={slot}>
@@ -210,26 +221,33 @@ function SkillsPage() {
               ))}
             </PageRows>
           ) : null}
-          {isError ? (
-            <div className="flex flex-col items-start gap-2 py-6">
-              <p className="text-destructive text-sm" role="alert">
-                {t("Your skills could not be loaded.")}
-              </p>
-              <Button
-                onClick={() => void refetch()}
-                size="sm"
-                variant="outline"
-              >
-                {t("Try again")}
-              </Button>
-            </div>
+          {hasFailedOutright(reading) ? (
+            <ReadFailed
+              message={t("Your skills could not be loaded.")}
+              onRetry={() => void page.refetch()}
+            />
+          ) : null}
+          {reading.state === "unavailable" ? (
+            <ReadUnavailable
+              message={unavailableText(
+                reading.why,
+                t("Skills are not offered here."),
+              )}
+            />
+          ) : null}
+          {reading.state === "failed" && reading.previous ? (
+            <ReadStale
+              className="mb-2"
+              isRetrying={reading.isRetrying}
+              onRetry={() => void page.refetch()}
+            />
           ) : null}
           {/*
            * A section title over nothing at all reads as a screen that failed to load. Routines and
            * the agents roster both answer this with a face and a sentence; this is that, so the
            * three of them say "none yet" the same way.
            */}
-          {!isPending && !isError && !mine?.length ? (
+          {settled?.state === "empty" ? (
             <div className="flex flex-col items-center gap-3 py-10">
               {/* The plainest face the generator makes: a skill is a note, not a character. */}
               <BotAvatar
@@ -240,6 +258,18 @@ function SkillsPage() {
               <p className="text-center text-sm text-muted-foreground">
                 {t("No skills yet. Write one and any Bot you own can run it.")}
               </p>
+              {/* The way to write one, where the sentence says to — not only in the header. */}
+              {showCreate ? null : (
+                <Button
+                  nativeButton={false}
+                  render={(props) => (
+                    <Link search={{ new: true }} to="/skills" {...props} />
+                  )}
+                  variant="secondary"
+                >
+                  {t("New skill")}
+                </Button>
+              )}
             </div>
           ) : null}
           {!!mine?.length && (

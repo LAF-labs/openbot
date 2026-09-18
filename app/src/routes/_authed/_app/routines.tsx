@@ -7,6 +7,12 @@ import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineForm } from "@/components/routines/routine-form";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
@@ -31,7 +37,9 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { settledOf, useReading } from "@/lib/reading";
 import { routineDeleteRecheck } from "@/lib/rechecks";
+import { routineListView, runOutcome } from "@/lib/routines/list-state";
 import {
   type Routine,
   type RoutineRun,
@@ -44,7 +52,6 @@ import {
 } from "@/lib/routines/queries";
 import { pausedForUnread, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
 import { useNow } from "@/lib/use-now";
-import { RUN_STOPPED } from "@/lib/work/stop-all";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -61,65 +68,95 @@ function RunHistory({ routineId }: { routineId: string }) {
       (await routineRequest(`/api/routines/${routineId}/runs`))
         ?.runs as RoutineRun[],
   });
+  const reading = useReading(runs);
+  const settled = settledOf(reading);
 
   // "Never run" is a claim about the past. It must not be made while the past is still arriving.
-  if (runs.isPending) {
+  if (reading.state === "loading") {
     return (
       <p className="py-2 text-xs text-muted-foreground">{t("Loading runs…")}</p>
     );
   }
-  if (runs.isError) {
+  if (reading.state === "unavailable") {
     return (
-      <div className="flex items-center gap-2 py-2">
-        <p className="text-xs text-destructive" role="alert">
-          {t("The run history could not be loaded.")}
-        </p>
-        <Button onClick={() => void runs.refetch()} size="sm" variant="ghost">
-          {t("Try again")}
-        </Button>
-      </div>
+      <ReadUnavailable
+        message={unavailableText(
+          reading.why,
+          t("Routines are not offered here."),
+        )}
+        size="compact"
+      />
     );
   }
-  if (!runs.data?.length) {
+  if (!settled) {
     return (
-      <p className="py-2 text-xs text-muted-foreground">
-        {t("This routine has not run yet.")}
-      </p>
+      <ReadFailed
+        message={t("The run history could not be loaded.")}
+        onRetry={() => void runs.refetch()}
+        size="compact"
+      />
+    );
+  }
+  /*
+   * A FAILED REFRESH KEEPS THE HISTORY. 지금 실행 refetches this list the moment its run is
+   * accepted, and the error used to be checked before the data — so one failed read replaced every
+   * run the routine had made with "could not be loaded" until somebody pressed again.
+   */
+  const stale =
+    reading.state === "failed" ? (
+      <ReadStale
+        className="pb-2"
+        isRetrying={reading.isRetrying}
+        onRetry={() => void runs.refetch()}
+      />
+    ) : null;
+  if (settled.state === "empty") {
+    return (
+      <>
+        <p className="py-2 text-xs text-muted-foreground">
+          {t("This routine has not run yet.")}
+        </p>
+        {stale}
+      </>
     );
   }
   return (
-    <ul className="flex flex-col gap-2 py-2">
-      {runs.data.map((run) => {
-        /*
-         * A run somebody stopped with 모두 멈추기 is not a failure, and red would say it was. Its
-         * receipt carries the fact code rather than a sentence; the words are here.
-         */
-        const stopped = !run.ok && run.error === RUN_STOPPED;
-        return (
-          <li
-            key={run.id}
-            className="rounded-lg border border-border bg-card p-3"
-          >
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {new Date(run.startedAt).toLocaleString(activeLocale)}
-              </span>
-              <span className={run.ok || stopped ? "" : "text-destructive"}>
-                {run.ok ? t("Ran") : stopped ? t("Stopped") : t("Failed")}
-                {runShape(run.steps, t) ? ` · ${runShape(run.steps, t)}` : ""}
-              </span>
-            </div>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
-              {run.ok
-                ? run.answer
-                : stopped
-                  ? t("It was stopped with Stop everything.")
-                  : run.error}
-            </p>
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-2 py-2">
+        {settled.data.map((run) => {
+          /*
+           * A run somebody stopped with 모두 멈추기 is not a failure, and red would say it was. Its
+           * receipt carries the fact code rather than a sentence; the words are `runOutcome`'s.
+           */
+          const outcome = runOutcome(run);
+          const shape = runShape(run.steps, t);
+          return (
+            <li
+              key={run.id}
+              className="rounded-lg border border-border bg-card p-3"
+            >
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {new Date(run.startedAt).toLocaleString(activeLocale)}
+                </span>
+                <span
+                  className={
+                    outcome.tone === "failed" ? "text-destructive" : ""
+                  }
+                >
+                  {outcome.label}
+                  {shape ? ` · ${shape}` : ""}
+                </span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+                {outcome.text}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+      {stale}
+    </>
   );
 }
 
@@ -414,13 +451,47 @@ function RoutineRow({ routine }: { routine: Routine }) {
  */
 const EditRoutine = ({ id, onDone }: { id: string; onDone: () => void }) => {
   const routines = useQuery(routineListQueryOptions());
-  const routine = routines.data?.find((candidate) => candidate.id === id);
-  if (routines.isPending) {
+  const reading = useReading(routines);
+  const routine = settledOf(reading)?.data.find(
+    (candidate) => candidate.id === id,
+  );
+  if (reading.state === "loading") {
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-8">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-9 w-full" />
         <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+  /*
+   * "NO LONGER THERE" IS A CLAIM, and a list that could not be read cannot make it: the panel said
+   * the routine had been deleted whenever the one read behind it failed.
+   */
+  if (
+    reading.state === "unavailable" ||
+    (!routine && reading.state === "failed")
+  ) {
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col items-start gap-3 p-8">
+        {reading.state === "unavailable" ? (
+          <ReadUnavailable
+            className="py-0"
+            message={unavailableText(
+              reading.why,
+              t("Routines are not offered here."),
+            )}
+          />
+        ) : (
+          <ReadFailed
+            className="py-0"
+            message={t("Your routines could not be loaded.")}
+            onRetry={() => void routines.refetch()}
+          />
+        )}
+        <Button onClick={onDone} size="sm" variant="outline">
+          {t("Close")}
+        </Button>
       </div>
     );
   }
@@ -447,6 +518,8 @@ function RoutinesPage() {
   const routines = useQuery(routineListQueryOptions());
   const creating = isCreating === true;
   const editing = typeof editingId === "string" && editingId.length > 0;
+  const routinesReading = useReading(routines);
+  const list = routineListView(routinesReading, { isCreating: creating });
   const handleDone = () => {
     void navigate({ search: {} });
     void queryClient.invalidateQueries({ queryKey: routineKeys.all });
@@ -499,29 +572,40 @@ function RoutinesPage() {
           <RoutineSuggestions />
           <div className="flex flex-col gap-3">
             {/* The page was blank on a failed fetch: no rows, no snail, no explanation, nothing. */}
-            {routines.isPending
+            {list.isLoading
               ? [0, 1, 2].map((slot) => (
                   <Skeleton className="h-[92px] rounded-xl" key={slot} />
                 ))
               : null}
-            {routines.isError ? (
-              <div className="flex flex-col items-start gap-2 py-6">
-                <p className="text-destructive text-sm" role="alert">
-                  {t("Your routines could not be loaded.")}
-                </p>
-                <Button
-                  onClick={() => void routines.refetch()}
-                  size="sm"
-                  variant="outline"
-                >
-                  {t("Try again")}
-                </Button>
-              </div>
+            {list.line?.kind === "failed" ? (
+              <ReadFailed
+                message={list.line.text}
+                onRetry={() => void routines.refetch()}
+              />
             ) : null}
-            {(routines.data ?? []).map((routine) => (
+            {list.line?.kind === "unavailable" ? (
+              <ReadUnavailable
+                message={unavailableText(
+                  list.line.why,
+                  t("Routines are not offered here."),
+                )}
+              />
+            ) : null}
+            {/*
+             * OVER THE ROWS, QUIETLY. A refresh that failed used to put the red "could not be
+             * loaded" above rows that were still there and still worked, which read as the list
+             * being wrong rather than old.
+             */}
+            {list.line?.kind === "stale" ? (
+              <ReadStale
+                isRetrying={list.line.isRetrying}
+                onRetry={() => void routines.refetch()}
+              />
+            ) : null}
+            {list.rows.map((routine) => (
               <RoutineRow key={routine.id} routine={routine} />
             ))}
-            {routines.data?.length === 0 && !creating ? (
+            {list.line?.kind === "empty" ? (
               <div className="flex flex-col items-center gap-3 py-10">
                 {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
                 <BotAvatar
@@ -530,10 +614,18 @@ function RoutinesPage() {
                   size={56}
                 />
                 <p className="text-center text-muted-foreground text-sm">
-                  {t(
-                    "No routines yet. Give a Bot something to do every morning.",
-                  )}
+                  {list.line.text}
                 </p>
+                {/* The way to make one, where the sentence says to — not only in the header. */}
+                <Button
+                  nativeButton={false}
+                  render={(props) => (
+                    <Link search={{ new: true }} to="/routines" {...props} />
+                  )}
+                  variant="secondary"
+                >
+                  {t("New routine")}
+                </Button>
               </div>
             ) : null}
           </div>

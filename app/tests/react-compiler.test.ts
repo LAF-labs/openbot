@@ -59,6 +59,11 @@ import {
  * `try` in the Computers page's list read and the Boundaries page's reads, moved out of the
  * components into functions that never throw. 343 of 344 compile. The one left is `ChannelChat`,
  * which opts out on purpose (the reason is beside its directive).
+ *
+ * THE DATA STATES, REBASED ONTO THAT, ADDED NO SKIP — though `BotSidebar` went uncompiled on the way,
+ * with five "existing memoization could not be preserved": a reading made by a plain function and
+ * then handed on counts as still changing under a `useMemo`. `useReading` (`lib/reading.ts`), the
+ * same function as a hook, is what the compiler takes as settled.
  */
 const SKIPPED_CEILING = 1;
 

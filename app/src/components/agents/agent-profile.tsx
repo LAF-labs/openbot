@@ -1,12 +1,18 @@
 import { IconDots, IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
 import { MascotPicker } from "@/components/agents/mascot-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +53,7 @@ import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
 
@@ -106,18 +113,44 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   const deleteAgent = useMutation(deleteAgentMutationOptions(queryClient));
   const seats = useSeats();
 
-  if (agent.isPending) {
+  /*
+   * A REFRESH THAT FAILED USED TO TAKE THE WHOLE PROFILE WITH IT. `agent.error` was checked before
+   * the data, so a Bot already on screen — its face, its settings, a half-written instruction —
+   * was replaced by one red line the first time a refetch met a dropped connection. Measured on
+   * 2026-09-18: away to 루틴 and back with the refetch refused, and the pane read only
+   * "봇을 불러오지 못했습니다", with nothing to press. What was read stays now, under a quiet line.
+   */
+  const reading = useReading(agent, {
+    // The same answer for "deleted" and "not yours", on purpose (`server/src/agents/routes.ts`).
+    unavailable: { "laf:agent_not_found": "not_allowed" },
+  });
+  if (reading.state === "loading") {
     return <ProfileSkeleton />;
   }
-  if (agent.error || !agent.data) {
+  if (reading.state === "unavailable") {
     return (
-      <p className="p-8 text-destructive text-sm" role="alert">
-        {t("Could not load this Bot.")}
-      </p>
+      <ReadUnavailable
+        className="p-8"
+        message={
+          reading.code === "laf:agent_not_found"
+            ? t("This Bot is no longer here.")
+            : unavailableText(reading.why, t("Bots are not offered here."))
+        }
+      />
+    );
+  }
+  const settled = settledOf(reading);
+  if (!settled) {
+    return (
+      <ReadFailed
+        className="p-8"
+        message={t("Could not load this Bot.")}
+        onRetry={() => void agent.refetch()}
+      />
     );
   }
 
-  const profile = agent.data;
+  const profile = settled.data;
   // Not the delete's: that one is said inside its dialog, which stays open until it succeeds.
   const actionError = duplicateAgent.error ?? setHidden.error;
 
@@ -150,6 +183,12 @@ export function AgentProfile({ agentId }: { agentId: string }) {
 
   return (
     <div className="flex w-full flex-col gap-6 p-8 pt-6">
+      {reading.state === "failed" ? (
+        <ReadStale
+          isRetrying={reading.isRetrying}
+          onRetry={() => void agent.refetch()}
+        />
+      ) : null}
       <header className="flex flex-col items-center gap-3 text-center">
         {/*
          * The face is the control, where there is one to press. A pencil beside it would be a second
@@ -656,15 +695,23 @@ function EffortCard({
  */
 function MemoriesCard({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
-  const { data: memories, isPending } = useQuery(
-    agentMemoriesQueryOptions(agentId),
-  );
+  const memories = useQuery(agentMemoriesQueryOptions(agentId));
   const [forgetting, setForgetting] = useState<string | null>(null);
+  /*
+   * "IT REMEMBERS NOTHING" IS A CLAIM, and until 2026-09-18 two things that are not nothing made it:
+   * a read that failed, and a deployment with no memory store at all (`laf:not_found` — which the
+   * server sends precisely so a screen will not say "nothing yet" for a Bot that cannot learn).
+   * Both measured saying 아직 없습니다 on this card.
+   */
+  const reading = useReading(memories, {
+    unavailable: { "laf:agent_not_found": "not_allowed" },
+  });
+  const settled = settledOf(reading);
 
-  const forget = async (memoryId: string) => {
+  const forget = (memoryId: string) => {
     setForgetting(memoryId);
     // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
-    await ensure(
+    return ensure(
       async () => {
         await fetch(
           `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
@@ -687,7 +734,7 @@ function MemoriesCard({ agentId }: { agentId: string }) {
    * 기억하는 내용 jumped once the memories landed, and again when the skills did. The placeholder is
    * the same height as the card it becomes.
    */
-  if (isPending) {
+  if (reading.state === "loading") {
     return (
       <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
         <Skeleton className="h-5 w-32" />
@@ -707,9 +754,28 @@ function MemoriesCard({ agentId }: { agentId: string }) {
           )}
         </p>
       </div>
-      {memories && memories.length > 0 ? (
+      {reading.state === "unavailable" ? (
+        <ReadUnavailable
+          // The empty line's own box, so "nothing to show here" and "nothing yet" read as siblings.
+          className="rounded-lg bg-background px-3 py-2"
+          message={unavailableText(
+            reading.why,
+            t(
+              "Bots here do not keep what they learn between conversations, so there is nothing to show.",
+            ),
+          )}
+        />
+      ) : null}
+      {hasFailedOutright(reading) ? (
+        <ReadFailed
+          message={t("What it remembers could not be loaded.")}
+          onRetry={() => void memories.refetch()}
+          size="compact"
+        />
+      ) : null}
+      {settled?.state === "ready" ? (
         <ul className="flex flex-col gap-1">
-          {memories.map((memory) => (
+          {settled.data.map((memory) => (
             <li
               className="flex items-start gap-2 rounded-lg bg-background px-3 py-2"
               key={memory.id}
@@ -726,11 +792,18 @@ function MemoriesCard({ agentId }: { agentId: string }) {
             </li>
           ))}
         </ul>
-      ) : (
+      ) : null}
+      {settled?.state === "empty" ? (
         <p className="rounded-lg bg-background px-3 py-2 text-muted-foreground text-sm">
           {t("Nothing yet. What it learns about you appears here.")}
         </p>
-      )}
+      ) : null}
+      {reading.state === "failed" && reading.previous ? (
+        <ReadStale
+          isRetrying={reading.isRetrying}
+          onRetry={() => void memories.refetch()}
+        />
+      ) : null}
     </section>
   );
 }
@@ -750,21 +823,28 @@ function MemoriesCard({ agentId }: { agentId: string }) {
 function SkillsCard({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
   const { data: me } = useQuery(currentUserQueryOptions());
-  const { data, isPending } = useQuery(pluginsPageQueryOptions());
+  const page = useQuery(pluginsPageQueryOptions());
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const mine = (data?.skills ?? []).filter(
-    (skill) => skill.ownerUserId && skill.ownerUserId === me?.id,
-  );
+  const isMine = (skill: { ownerUserId: string | null }) =>
+    Boolean(skill.ownerUserId) && skill.ownerUserId === me?.id;
   /*
-   * A card's worth of height while the answer is in flight, then either the list or nothing at all.
-   *
-   * Nothing to grant and nothing to say is a real state — the Skills page is where a first one gets
-   * written — but it is only knowable once the request lands, and `null` in the meantime made the
-   * pane shift under whoever was reading it.
+   * NOTHING, WHETHER THERE WAS NOTHING OR THE READ FAILED. The card returned null for an empty list
+   * — and, because `data` was all it read, for a list that could not be read at all — so a Bot's
+   * owner could not tell "you have written none" from "this did not load", and neither said where a
+   * first one is written. Each says its own thing now.
    */
-  if (isPending) {
+  const reading = useReading(page, {
+    isEmpty: (answer) => !answer.skills.some(isMine),
+  });
+  const settled = settledOf(reading);
+  const mine = (settled?.data.skills ?? []).filter(isMine);
+  /*
+   * A card's worth of height while the answer is in flight, so the pane does not shift under
+   * whoever is reading it when the answer lands.
+   */
+  if (reading.state === "loading") {
     return (
       <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
         <Skeleton className="h-5 w-20" />
@@ -773,13 +853,12 @@ function SkillsCard({ agentId }: { agentId: string }) {
       </section>
     );
   }
-  if (mine.length === 0) return null;
 
-  const toggle = async (slug: string, held: boolean) => {
+  const toggle = (slug: string, held: boolean) => {
     setBusy(slug);
     setProblem(null);
     // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
-    await ensure(
+    return ensure(
       async () => {
         const response = held
           ? await fetch(
@@ -811,6 +890,47 @@ function SkillsCard({ agentId }: { agentId: string }) {
           {t("A Bot carrying one offers it in the composer as /name.")}
         </p>
       </div>
+      {reading.state === "unavailable" ? (
+        <ReadUnavailable
+          message={unavailableText(
+            reading.why,
+            t("Skills are not offered here."),
+          )}
+          size="compact"
+        />
+      ) : null}
+      {hasFailedOutright(reading) ? (
+        <ReadFailed
+          message={t("Your skills could not be loaded.")}
+          onRetry={() => void page.refetch()}
+          size="compact"
+        />
+      ) : null}
+      {settled?.state === "empty" ? (
+        <div className="flex flex-col items-start gap-2 rounded-lg bg-background px-3 py-2">
+          <p className="text-muted-foreground text-sm">
+            {t(
+              "You have not written a skill yet. Write one on Skills, and you can give it to this Bot here.",
+            )}
+          </p>
+          <Button
+            nativeButton={false}
+            render={(props) => (
+              <Link search={{ new: true }} to="/skills" {...props} />
+            )}
+            size="sm"
+            variant="secondary"
+          >
+            {t("New skill")}
+          </Button>
+        </div>
+      ) : null}
+      {reading.state === "failed" && reading.previous ? (
+        <ReadStale
+          isRetrying={reading.isRetrying}
+          onRetry={() => void page.refetch()}
+        />
+      ) : null}
       <ul className="flex flex-col gap-1">
         {mine.map((skill) => {
           const held = skill.grantedTo.includes(agentId);

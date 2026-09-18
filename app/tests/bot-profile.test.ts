@@ -146,10 +146,12 @@ describe("what it remembers", () => {
      * Pending still claims nothing — "it remembers nothing" is as much a claim as a list — but it no
      * longer claims it by disappearing. `return null` left a card-shaped hole that filled in a
      * moment later and shoved the cards below it down the pane; the placeholder holds the space.
+     * The card's states are drawn in `read-states-render.test.tsx`; this holds the two
+     * lines a later edit could quietly undo.
      */
-    expect(card).toContain("if (isPending) {");
+    expect(card).toContain('if (reading.state === "loading") {');
     expect(card).toContain("<Skeleton");
-    expect(card).not.toContain("if (isPending) return null;");
+    expect(card).not.toContain("return null;");
     expect(card).not.toContain("memories.length === 0) return null");
   });
 });

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { ReadFailed } from "@/components/layout/read-states";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { settledOf, useReading } from "@/lib/reading";
 import { routineKeys } from "@/lib/routines/queries";
 import {
   type RoutineSuggestion,
@@ -171,32 +173,36 @@ export const RoutineSuggestions = () => {
   const headingId = useId();
   /** The routine just made from a card, named in a status line until the next press. */
   const [made, setMade] = useState<string | null>(null);
+  const reading = useReading(suggestions);
 
-  if (suggestions.isPending) {
+  if (reading.state === "loading") {
     return (
       <section aria-busy="true" className="mb-8">
         <Skeleton className="h-[116px] rounded-xl" />
       </section>
     );
   }
-  if (suggestions.isError) {
+  /*
+   * A PLACE WITH NO SUGGESTIONS IS A PAGE WITH NO CARDS, NOT A FAILURE. The route is mounted only
+   * where the connections and the roster are (`server/src/app.ts`), and where it is not, the read
+   * met `laf:not_found` — which drew "could not be loaded" and 다시 시도 above the routines, a press
+   * that could only ever fail again. An offer this place cannot make is simply not made.
+   */
+  if (reading.state === "unavailable") return null;
+  const settled = settledOf(reading);
+  if (!settled) {
     return (
-      <section className="mb-8 flex flex-wrap items-center gap-2">
-        <p className="text-destructive text-sm" role="alert">
-          {t("The suggestions could not be loaded.")}
-        </p>
-        <Button
-          onClick={() => void suggestions.refetch()}
-          size="sm"
-          variant="ghost"
-        >
-          {t("Try again")}
-        </Button>
+      <section className="mb-8">
+        <ReadFailed
+          className="py-0"
+          message={t("The suggestions could not be loaded.")}
+          onRetry={() => void suggestions.refetch()}
+        />
       </section>
     );
   }
 
-  const cards = suggestions.data;
+  const cards = settled.data;
   const bots: Bot[] = (agents.data ?? []).map((bot) => ({
     id: bot.id,
     name: bot.name,

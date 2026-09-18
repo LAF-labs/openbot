@@ -14,6 +14,7 @@ import {
   IconPinnedOff,
   IconPlayerStop,
   IconPlus,
+  IconRefresh,
   IconSearch,
   IconSettings,
   IconShieldLock,
@@ -30,10 +31,17 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { NewBotButton } from "@/components/agents/new-bot-button";
 import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import {
@@ -63,12 +71,14 @@ import {
   setAgentPreferencesMutationOptions,
 } from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import { rosterNotice } from "@/lib/agents/roster-state";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import { settledOf, useReading } from "@/lib/reading";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
@@ -175,6 +185,12 @@ const ICON_BUTTON_CLASS = cn(
   buttonVariants({ size: "icon-sm", variant: "ghost" }),
   "text-muted-foreground hover:bg-[var(--sand-fill-ghost-hover)] hover:text-foreground dark:hover:bg-[var(--sand-fill-ghost-hover)]",
 );
+
+/** Which of the roster's two lists could not be read, in its own words. */
+const rosterFailure = (what: "bots" | "rooms") =>
+  what === "bots"
+    ? t("Your Bots could not be loaded.")
+    : t("Your conversations could not be loaded.");
 
 /** The footer's links, sharing the roster rows' focus ring for the same reason they now have one. */
 const NAV_LINK_CLASS = `flex h-10 items-center rounded-lg border border-transparent bg-clip-padding text-base outline-none transition-colors hover:bg-[var(--sand-fill-ghost-hover)] ${focusRing} data-[status=active]:bg-[var(--sand-fill-ghost-selected)]`;
@@ -431,6 +447,14 @@ export function BotSidebar() {
   const searchId = useId();
   const rowActions = useRowActions();
   /*
+   * THE TWO LISTS, EACH READ ONCE. What is drawn is what was read — the answer, or the one from
+   * before when refreshing it failed — and never data a refusal has said this account cannot have.
+   */
+  const bots = useReading(agents);
+  const rooms = useReading(channels);
+  const botList = settledOf(bots)?.data;
+  const roomList = settledOf(rooms)?.data;
+  /*
    * The clock, as an input. "14:32" becomes a weekday at midnight only if something redraws the row
    * then; read from `new Date()` inside `rosterTime`, the compiled roster redrew a row only when its
    * conversation changed.
@@ -456,7 +480,7 @@ export function BotSidebar() {
      * duplicates (every early send minted a channel) the roster row and the composer were two
      * different conversations with one colleague.
      */
-    const oldestFirst = [...(channels.data ?? [])].sort((a, b) =>
+    const oldestFirst = [...(roomList ?? [])].sort((a, b) =>
       a.createdAt.localeCompare(b.createdAt),
     );
     for (const channel of oldestFirst) {
@@ -472,7 +496,7 @@ export function BotSidebar() {
       });
     }
     return byAgent;
-  }, [channels.data]);
+  }, [roomList]);
 
   /*
    * ORDERED BY WHO SPOKE LAST, then by name for the Bots who never have.
@@ -490,7 +514,7 @@ export function BotSidebar() {
    */
   const groups = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(activeLocale);
-    return (channels.data ?? [])
+    return (roomList ?? [])
       .filter((channel) => channel.agentIds.length > 1)
       .filter((channel) =>
         needle
@@ -517,7 +541,7 @@ export function BotSidebar() {
         at: channel.lastMessageAt ?? channel.createdAt,
         unread: channel.unread,
       }));
-  }, [channels.data, query]);
+  }, [roomList, query]);
 
   /*
    * A run ending is the moment a routine's answer lands in a room, and nothing pushes that to the
@@ -549,7 +573,7 @@ export function BotSidebar() {
 
   const rows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(activeLocale);
-    return (agents.data ?? [])
+    return (botList ?? [])
       .map((agent) => {
         const channel = channelFor.get(agent.id);
         return {
@@ -589,7 +613,20 @@ export function BotSidebar() {
         if (b.at) return 1;
         return a.agent.name.localeCompare(b.agent.name);
       });
-  }, [agents.data, channelFor, query]);
+  }, [botList, channelFor, query]);
+
+  const notice = rosterNotice({
+    bots,
+    rooms,
+    isSearching: query.trim() !== "",
+    shownCount: rows.length + groups.length,
+    hasHidden: (hidden.data ?? []).length > 0,
+  });
+  /** Asks again for whichever of the two lists failed; a list that answered is left alone. */
+  const handleRetryRoster = () => {
+    if (bots.state === "failed") void agents.refetch();
+    if (rooms.state === "failed") void channels.refetch();
+  };
 
   const handleSignOut = async () => {
     setSignOutError(null);
@@ -752,7 +789,7 @@ export function BotSidebar() {
       )}
 
       <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-        {agents.isPending
+        {bots.state === "loading"
           ? [0, 1, 2].map((slot) => (
               <li
                 className={cn("py-2", isRail ? "flex justify-center" : "px-2")}
@@ -825,14 +862,76 @@ export function BotSidebar() {
           </li>
         ))}
 
-        {/* A roster that filtered to nothing is not an empty roster, and must not read as one. The
-         * rail has no room for either sentence and no search field to have caused one. */}
-        {!agents.isPending &&
-        !isRail &&
-        rows.length === 0 &&
-        groups.length === 0 ? (
-          <li className="px-2 py-6 text-center text-muted-foreground text-sm">
-            {query.trim() ? t("Nobody matches that.") : t("No Bots yet.")}
+        {/*
+         * ONE LINE UNDER THE ROWS, and which one is `rosterNotice`'s decision. A roster that filtered
+         * to nothing is not an empty roster, and a roster that could not be read is neither.
+         *
+         * The rail has no room for a sentence and no search field to have caused one, so it says
+         * only what somebody has to act on — a list that could not be read — as a button with its
+         * sentence in the tooltip.
+         */}
+        {notice && isRail && notice.kind === "failed" ? (
+          <li className="flex justify-center py-2">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    aria-label={`${rosterFailure(notice.what)} ${t("Try again")}`}
+                    className={ICON_BUTTON_CLASS}
+                    onClick={handleRetryRoster}
+                    type="button"
+                  />
+                }
+              >
+                <IconRefresh className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {rosterFailure(notice.what)}
+              </TooltipContent>
+            </Tooltip>
+          </li>
+        ) : null}
+        {notice && !isRail ? (
+          <li data-roster-notice={notice.kind}>
+            {notice.kind === "unavailable" ? (
+              <ReadUnavailable
+                className="px-2 text-center"
+                message={unavailableText(
+                  notice.why,
+                  t("Bots are not offered here."),
+                )}
+                size="compact"
+              />
+            ) : notice.kind === "failed" ? (
+              <ReadFailed
+                className="justify-center px-2 text-center"
+                message={rosterFailure(notice.what)}
+                onRetry={handleRetryRoster}
+                size="compact"
+              />
+            ) : notice.kind === "stale" ? (
+              <ReadStale
+                className="justify-center px-2 py-2 text-center"
+                isRetrying={notice.isRetrying}
+                onRetry={handleRetryRoster}
+              />
+            ) : notice.kind === "no-match" ? (
+              <p className="px-2 py-6 text-center text-muted-foreground text-sm">
+                {t("Nobody matches that.")}
+              </p>
+            ) : (
+              <div className="flex flex-col items-center gap-3 px-2 py-6 text-center">
+                <p className="text-muted-foreground text-sm">
+                  {notice.hasHidden
+                    ? t("Every Bot you have made is hidden.")
+                    : t("No Bots yet.")}
+                </p>
+                {/* The way to make the first one, where the sentence says there is none. */}
+                {notice.hasHidden ? null : (
+                  <NewBotButton size="sm" variant="outline" />
+                )}
+              </div>
+            )}
           </li>
         ) : null}
       </ul>

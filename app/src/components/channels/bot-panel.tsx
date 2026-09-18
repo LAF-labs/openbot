@@ -2,10 +2,17 @@ import { IconClock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ComputerView } from "@/components/computer/computer-view";
+import {
+  ReadFailed,
+  ReadStale,
+  ReadUnavailable,
+  unavailableText,
+} from "@/components/layout/read-states";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { t } from "@/lib/i18n";
+import { hasFailedOutright, settledOf, useReading } from "@/lib/reading";
 import { routineListQueryOptions, scheduleLabel } from "@/lib/routines/queries";
 
 /**
@@ -28,7 +35,14 @@ export function BotPanel({
   name: string | undefined;
 }) {
   const routines = useQuery(routineListQueryOptions());
-  const mine = (routines.data ?? []).filter(
+  /*
+   * THIS BOT'S routines, read out of everybody's: empty is about this Bot, so a person with ten
+   * routines on other Bots is still offered the first one for this one.
+   */
+  const reading = useReading(routines, {
+    isEmpty: (all) => !all.some((routine) => routine.agentId === agentId),
+  });
+  const mine = (settledOf(reading)?.data ?? []).filter(
     (routine) => routine.agentId === agentId,
   );
 
@@ -58,20 +72,40 @@ export function BotPanel({
           {t("Routines")}
         </h2>
 
-        {routines.isPending ? (
+        {reading.state === "loading" ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
         ) : null}
 
-        {routines.isError ? (
-          <p className="text-destructive text-xs" role="alert">
-            {t("Your routines could not be loaded.")}
-          </p>
+        {/* It had no way to ask again: a red line, and nothing to press but reload the window. */}
+        {hasFailedOutright(reading) ? (
+          <ReadFailed
+            message={t("Your routines could not be loaded.")}
+            onRetry={() => void routines.refetch()}
+            size="compact"
+          />
         ) : null}
 
-        {!routines.isPending && !routines.isError && mine.length === 0 ? (
+        {reading.state === "unavailable" ? (
+          <ReadUnavailable
+            message={unavailableText(
+              reading.why,
+              t("Routines are not offered here."),
+            )}
+            size="compact"
+          />
+        ) : null}
+
+        {reading.state === "failed" && reading.previous ? (
+          <ReadStale
+            isRetrying={reading.isRetrying}
+            onRetry={() => void routines.refetch()}
+          />
+        ) : null}
+
+        {settledOf(reading)?.state === "empty" ? (
           /*
            * A Bot with no standing work is the normal case, so this is an empty state and not an
            * error: a sentence saying what a routine IS, then the button that makes one. It was an
