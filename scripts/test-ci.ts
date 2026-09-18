@@ -276,13 +276,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * on this branch at server 2,649 / app 1,106; those two re-raised to 3% under, and the other two did
  * not grow.
  *
+ * RAISED AGAIN 2026-09-18, with the section boundaries and the screen-error reports rebased onto 연결
+ * 점검: the report's route — who may send one, how big, how often, what shape — and its line followed
+ * into the diagnostic details beside the window's connection check (thirty-one to `server`); the
+ * boundary drawn, pressed and navigated, a roster and two pages broken under an open window in the
+ * real route tree, the report built from an error holding a password and a Korean sentence, and the
+ * route list held to the generated tree (twenty-five to `app`). Measured on the combined tree at
+ * server 2,680 / app 1,131 / agent-computer 261 / root 367; `server` and `app` re-raised to 3%
+ * under, the other two did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2569, roots: ["server"] },
-  { name: "app", floor: 1072, roots: ["app"] },
+  { name: "server", floor: 2599, roots: ["server"] },
+  { name: "app", floor: 1097, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
