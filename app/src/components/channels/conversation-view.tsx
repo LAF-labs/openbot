@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -22,6 +23,7 @@ import {
 import { UsageNotice } from "@/components/channels/usage-notice";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
+import { ensure } from "@/lib/ensure";
 
 export function ConversationView({
   channelId,
@@ -168,18 +170,18 @@ export function ConversationView({
 
   const start = async (draft: ComposerDraft) => {
     setRunning(true);
-    // React Compiler 1.0 cannot compile `try`…`finally` yet, so ConversationView is left as
-    // written: the code is right, and the compiler cannot follow it. Counted in
-    // app/tests/react-compiler.test.ts.
-    try {
-      await onSubmit(draft);
-    } finally {
-      setRunning(false);
-    }
+    // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
+    await ensure(
+      () => onSubmit(draft),
+      () => setRunning(false),
+    );
   };
   /** Read through a ref so an inline `onSubmit` from the route does not re-run the drain effect. */
   const startRef = useRef(start);
-  startRef.current = start;
+  // After every commit rather than during render, which the compiler refuses; before any effect reads it.
+  useLayoutEffect(() => {
+    startRef.current = start;
+  });
 
   /**
    * Send now, or park it. Which one is the composer's call: it holds the only accurate view of
