@@ -86,7 +86,14 @@ async function makePerson(label: string): Promise<Person> {
   const runId = `${id}-run`;
   const approvalId = `${id}-standing`;
 
-  await database.insert(users).values({ id, email, name: label });
+  await database.insert(users).values({
+    id,
+    email,
+    name: label,
+    // The first run's answers, different per person, so a leak from one to the other shows.
+    businessKind: label === "stayer" ? "office" : "food",
+    dailyPlaces: label === "stayer" ? ["notion"] : ["baemin-ceo"],
+  });
   await database.insert(agents).values({
     id: botId,
     name: `${label}'s Bot`,
@@ -330,6 +337,11 @@ describe("the export", () => {
       consentedAt: null,
       consentVersion: null,
     });
+    // What they told the product about their business is theirs to take, and only theirs.
+    expect((document.profile as Record<string, unknown>).shop).toEqual({
+      kind: "food",
+      places: ["baemin-ceo"],
+    });
     expect(
       (document.bots as Array<{ id: string }>).map((bot) => bot.id),
     ).toEqual([leaver.botId]);
@@ -382,6 +394,7 @@ describe("the export", () => {
     // The serialised whole, checked for the two things that must never be in it.
     const serialised = JSON.stringify(document);
     expect(serialised).not.toContain(stayer.id);
+    expect(serialised).not.toContain('"notion"');
     expect(serialised).not.toContain("credentialKeyId");
     expect(serialised).not.toContain("not-a-real-secret");
   });
@@ -456,10 +469,16 @@ describe("deletion", () => {
     const gone = async (name: string, rows: Promise<unknown[]>) =>
       expect([name, await rows]).toEqual([name, []]);
 
+    // The shop answers are columns on this row, so they went with it — and the stayer's did not.
     await gone(
       "users",
       database.select().from(users).where(eq(users.id, leaver.id)),
     );
+    const [kept] = await database
+      .select({ kind: users.businessKind, places: users.dailyPlaces })
+      .from(users)
+      .where(eq(users.id, stayer.id));
+    expect(kept).toEqual({ kind: "office", places: ["notion"] });
     await gone(
       "agents",
       database.select().from(agents).where(eq(agents.id, leaver.botId)),

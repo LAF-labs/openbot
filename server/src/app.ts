@@ -17,6 +17,7 @@ import {
   requireAdmin,
 } from "./auth/guards";
 import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
+import { createShopRoutes, type ShopStore } from "./account/shop";
 import type { OnboardingStore } from "./auth/onboarding";
 import type { SessionAdmission } from "./auth/session-revocation";
 import {
@@ -404,6 +405,13 @@ export function createApp(
    * cannot reach its running work answers 404 rather than a count of nothing that reads as calm.
    */
   stopAll?: StopAll,
+  /**
+   * What kind of business the person runs and where they work every day. Last, like everything new.
+   *
+   * Absent, `/api/me` says nothing about a shop and `PUT /api/me/shop` is not mounted — a 404
+   * rather than a save that kept nothing. See account/shop.ts.
+   */
+  shop?: ShopStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -652,8 +660,16 @@ export function createApp(
           },
         }
       : {};
+    /*
+     * The shop answers, beside who is asking: two catalogue keys and a list of them, no words.
+     * Here rather than on a call of their own because every screen that orders anything by them is
+     * drawn after this call has answered — a second request would land after the chips were dealt.
+     * A read that fails leaves the key out, which the surface reads as nothing answered: the door
+     * every screen waits on must not fall over for one optional fact.
+     */
+    const answered = shop ? await shop.read(actor.id).catch(() => null) : null;
     return context.json({
-      user: { ...actor, onboarded },
+      user: { ...actor, onboarded, ...(answered ? { shop: answered } : {}) },
       deployment: { ...(await capabilities()), ...trial },
       ...(consent
         ? {
@@ -1097,6 +1113,9 @@ export function createApp(
 
   // `모두 멈추기`, under `/api/me` because it is about the person asking and nobody else.
   if (stopAll) app.route("/api", createStopAllRoutes(stopAll, requireUser));
+
+  // The shop answers' one door, for the first run and Settings alike. See account/shop.ts.
+  if (shop) app.route("/api", createShopRoutes(shop, requireUser));
 
   // A person writing to the operator. Under its own prefix: it is neither about the account nor
   // about a Bot, and a message to whoever runs the product should not read as either. The build and

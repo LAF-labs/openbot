@@ -22,6 +22,10 @@
  *   SET NULL agent_profiles.owner_user_id  ← a Bot would survive its owner, unowned and running
  *            laf_routines.created_by_id    ← deliberate: a routine outlives its author (see laf.ts)
  *
+ * and what is ON the row goes with it and needs nothing here: the consent stamp, and the first
+ * run's answers about the business (`business_kind`, `daily_places`, migration 0044) — kept as
+ * columns rather than a table of their own for exactly this reason.
+ *
  * and when a Bot (`agents`) goes:
  *
  *   cascade  agent_profiles, agent_preferences, agent_memories, channel_agents, plugin_grants,

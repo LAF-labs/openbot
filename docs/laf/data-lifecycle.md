@@ -27,7 +27,7 @@
 
 | 테이블 | 담고 있는 것 | 누가 볼 수 있나 | 보존 |
 |---|---|---|---|
-| `users` | 이메일, 이름, 프로필 사진 주소, 가입·온보딩 시각, 약관 동의 시각과 버전(`consented_at`, `consent_version` — 온보딩 첫 화면의 다음 버튼이 찍는다) | 본인 | 계정을 지울 때까지 |
+| `users` | 이메일, 이름, 프로필 사진 주소, 가입·온보딩 시각, 약관 동의 시각과 버전(`consented_at`, `consent_version` — 온보딩 첫 화면의 다음 버튼이 찍는다), 가게의 일과 매일 쓰는 곳(`business_kind`, `daily_places` — 첫 실행의 두 질문, `설정 → 내 가게`에서 바꾼다. 카탈로그 키뿐이고, 모든 봇의 모든 실행에 한 줄로 실린다 — 아래) | 본인 | 계정을 지울 때까지 |
 | `accounts` | 로그인 제공자(구글·카카오·네이버·LAF)의 계정 식별자와 토큰 | 아무도(서버만) | 계정을 지울 때까지 |
 | `sessions` | 로그인 세션, IP, 브라우저 문자열 | 아무도(서버만) | 만료 또는 로그아웃. 로그인 명단(`SIGN_IN_ALLOWED_EMAILS`)에서 빠진 사람은 그 명단으로 서버가 다시 뜰 때, 관리 메뉴에서 지운 남은 계정은 지운 순간 그 사람의 세션 전부가 지워진다 |
 | `agents` + `agent_profiles` | 내가 만든 봇 — 이름, 직무, 말투, 생각 깊이, "묻지 마" 문장 | 본인 | 계정을 지울 때까지 |
@@ -61,6 +61,16 @@
 - **백업** — VM의 `/var/backups/laf`(최근 14벌)와, 설정된 경우 객체 스토리지 버킷.
   **데이터베이스 덤프뿐이다** — 위의 브라우저 프로필도, `.env`도 들어 있지 않다. §4를 볼 것.
 
+**가게의 일과 매일 쓰는 곳 (2026-09-18).** 첫 실행이 약관 동의와 첫 봇 사이에서 두 가지를
+묻는다 — 어떤 일을 하는지(여덟 가지 중 하나), 매일 들어가는 곳이 어디인지(연결하거나 로그인할 수
+있는 곳 중 여러 개). 둘 다 건너뛸 수 있고, 누르기만 하며 글자를 받지 않는다. 저장되는 것은
+`shared/shop/catalogue.ts`의 **키**(`food`, `baemin-ceo` 같은)뿐이다. 이 답은 **모든 봇의 모든
+실행에** 시스템 메시지의 한두 줄로 들어가므로(`shared/prompt/shop.ko.ts`), 대화 내용과 똑같이
+**모델 공급자에게 보내진다** — "음식점·카페, 배달의민족·지메일을 매일 씀" 정도의 사실이다. 쓰는 문은
+`PUT /api/me/shop` 하나이고 사람의 세션이 있어야 열린다. 봇이 가진 어떤 도구도 이 문에 닿지 않고,
+경계(무엇이 멈추고 묻는가)를 정하는 코드는 이 답을 읽지 않는다(`server/tests/shop-boundary.test.ts`).
+내보내기의 `profile.shop`에 들어가고, 계정을 지우면 `users` 행과 함께 사라진다.
+
 **감사 기록에 무엇이 들어가는지 한 번 더.** `audit_events`의 payload에는 봇이 본 **주소와
 버튼 이름**이 들어간다. 사장님의 스마트스토어 주문 화면을 봤다면 그 주소가 남는다. 즉
 **고객의 개인정보가 이 기록에 들어올 수 있다.** 값 자체(비밀번호, 토큰, 도구 인자, 결과)는
@@ -80,7 +90,7 @@
 
 **들어 있는 것**
 
-- `profile` — `users` 행(이메일, 이름, 가입 시각)과 내 권한
+- `profile` — `users` 행(이메일, 이름, 가입 시각, 가게의 일과 매일 쓰는 곳 `shop`)과 내 권한
 - `bots` — 내가 소유한 봇 전부(지운 봇 포함)와 그 프로필
 - `botPreferences`, `memories` — 봇 표시 설정, 봇이 기억한 사실(잊은 것 포함)
 - `channels`, `conversations` — 내가 속한 방과 **모든 대화 전문**
@@ -446,6 +456,7 @@ VM이 아니라 정문이 답한다. CI가 `app/scripts/render-legal.ts`로 두 
 | 하는 일 | 파일 |
 |---|---|
 | 내보내기 | `server/src/account/export.ts` |
+| 가게의 일과 매일 쓰는 곳 — 저장, 봇에게 실리는 한 줄, 경계가 읽지 않음 | `server/src/account/shop.ts`, `server/src/agents/shop-context.ts`, `shared/prompt/shop.ko.ts`, `server/tests/shop-boundary.test.ts` |
 | 삭제(무엇이 어떤 순서로, 무엇이 cascade인지) | `server/src/account/deletion.ts` |
 | 가명 | `server/src/account/pseudonym.ts` |
 | 보존 기간 청소 | `server/src/account/retention.ts` |

@@ -77,6 +77,21 @@ export const users = pgTable("users", {
    */
   consentedAt: timestamp("consented_at", { withTimezone: true }),
   consentVersion: text("consent_version"),
+  /**
+   * What kind of business this person runs, and the places they work in every day.
+   *
+   * The two questions the first run asks between the agreement and the first Bot, changed later on
+   * Settings → 내 가게 (`account/shop.ts`). On the person because they are the person's: one account
+   * per deployment, and every Bot in it reads the same answer before every run
+   * (`agents/shop-context.ts`). No tool a Bot holds writes them.
+   *
+   * Catalogue keys, not words (`shared/shop/catalogue.ts`), and plain text rather than an enum: the
+   * catalogue will grow, and a key it has since dropped is skipped on read rather than failing the
+   * read every run makes. Null and empty are "not answered" — skipped, or an account older than the
+   * question — and nothing is backfilled, because an answer nobody gave would be told to every Bot.
+   */
+  businessKind: text("business_kind"),
+  dailyPlaces: text("daily_places").array().notNull().default([]),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

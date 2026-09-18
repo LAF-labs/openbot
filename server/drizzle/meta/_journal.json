@@ -309,6 +309,13 @@
       "when": 1789710893889,
       "tag": "0043_answer_ratings",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789715124192,
+      "tag": "0044_shop_profile",
+      "breakpoints": true
     }
   ]
 }

@@ -128,6 +128,10 @@ export function createAccountExport(database: Database): AccountExport {
             // dispute would turn on.
             consentedAt: person.consentedAt,
             consentVersion: person.consentVersion,
+            // What kind of business, and where they work every day: their answers, told to every
+            // Bot on every run. The row as it stands, so a key the catalogue has since dropped
+            // leaves with them too rather than being tidied away on the way out.
+            shop: { kind: person.businessKind, places: person.dailyPlaces },
             createdAt: person.createdAt,
             updatedAt: person.updatedAt,
             roles: roles.map((row) => row.role),

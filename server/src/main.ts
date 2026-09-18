@@ -3,6 +3,7 @@ import { serve } from "bun";
 import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
+import { createShopStore } from "./account/shop";
 import { createCoworkerCall } from "./agents/coworker-call";
 import { recordCoworkerExchange } from "./agents/coworker-exchange";
 import { withGrantedSkills } from "./agents/granted-skills";
@@ -10,6 +11,7 @@ import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
+import { withShopProfile } from "./agents/shop-context";
 import { createApp } from "./app";
 import { createAuditReader, createAuditStore } from "./audit";
 import { createAuth } from "./auth";
@@ -295,10 +297,16 @@ const channelStore = createChannelStore(
  */
 const componentStore = createComponentStore(database);
 const roleRepository = createRoleRepository(database);
-// What each Bot IS, then what skills it holds — by name and one line, for the prompt's index.
-const loadAgentsForActor = withGrantedSkills(
-  createRuntimeAgentLoader(database, agentVault),
-  database,
+/**
+ * What kind of business the person runs and where they work every day: written only by the person
+ * (`PUT /api/me/shop`, the first run and Settings), read by `/api/me` and by every run below.
+ */
+const shopStore = createShopStore(database);
+// What each Bot IS, then what skills it holds — by name and one line, for the prompt's index — then
+// the shop it works for, which is the person's and the same for every Bot they have.
+const loadAgentsForActor = withShopProfile(
+  withGrantedSkills(createRuntimeAgentLoader(database, agentVault), database),
+  shopStore.read,
 );
 /**
  * Who is still let in, for the sessions already issued (auth/session-revocation.ts).
@@ -834,6 +842,9 @@ const app = createApp(
   dailyBudget,
   // `모두 멈추기`: the list every run path writes, and the trail the press is recorded on.
   createStopAll({ work: workInFlight, auditStore: bootAuditStore }),
+  // The shop answers: `/api/me` carries them and `PUT /api/me/shop` is their one door. The same
+  // store every run reads through `loadAgentsForActor` above.
+  shopStore,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
