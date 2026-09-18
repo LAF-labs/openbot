@@ -31,11 +31,14 @@ const signedIn = {
 };
 const roles = { rolesForUser: async () => ["admin" as const] };
 
-function judge(reached: boolean) {
-  const asked = { count: 0 };
+function judge(reached: boolean, used: () => Promise<number> = async () => 0) {
+  const asked = { count: 0, counted: 0 };
   const budget: DailyBudget = {
     tokens: 3_000_000,
-    usedToday: async () => 0,
+    usedToday: async () => {
+      asked.counted += 1;
+      return used();
+    },
     reachedToday: async () => {
       asked.count += 1;
       return reached;
@@ -67,14 +70,32 @@ async function deployment(app: ReturnType<typeof createApp>) {
 }
 
 describe("what /api/me says about a trial", () => {
-  test("the four values, as the .env wrote them", async () => {
+  test("the four values, as the .env wrote them, and what today has used", async () => {
     const { budget } = judge(false);
     expect((await deployment(surface(TRIAL, budget))).trial).toEqual({
       endsAt: "2026-09-29T14:59:59Z",
       holdDays: 30,
       dailyTokenBudget: 3_000_000,
       budgetReachedToday: false,
+      tokensUsedToday: 0,
     });
+  });
+
+  test("today's use is the count the judge sums, read once", async () => {
+    const { budget, asked } = judge(false, async () => 2_412_345);
+    const said = await deployment(surface(TRIAL, budget));
+    expect(said.trial).toMatchObject({ tokensUsedToday: 2_412_345 });
+    expect(asked.counted).toBe(1);
+  });
+
+  test("a count that cannot be read is left out, not said as nothing used", async () => {
+    // Zero would be a meter drawn empty on the day somebody may be one question from the limit.
+    const { budget } = judge(false, async () => {
+      throw new Error("the trail is down");
+    });
+    const said = await deployment(surface(TRIAL, budget));
+    expect(said.trial).toMatchObject({ budgetReachedToday: false });
+    expect(said.trial).not.toHaveProperty("tokensUsedToday");
   });
 
   test("whether today is spent, from the same judge a run is refused by", async () => {
@@ -98,5 +119,6 @@ describe("what /api/me says about a trial", () => {
     // The capabilities are untouched beside it.
     expect(said).toMatchObject({ effort: true, autoReview: true });
     expect(asked.count).toBe(0);
+    expect(asked.counted).toBe(0);
   });
 });

@@ -625,6 +625,12 @@ export function createApp(
      * it is kept after, the day's budget, and whether today's is spent. `endsAt` is the `.env` value
      * as written, so reading these four back is how an operator sees a push arrived. Absent — the
      * key, not an empty trial — on every deployment that is not one, and the judge is not asked.
+     *
+     * AND WHAT TODAY HAS USED, so the surface can say how much is left before a question is refused
+     * rather than only after. The judge's own count (`usedToday`) — the same Seoul day and the same
+     * sum the refusal is decided on — and never a second reading of the trail here. Left OUT when it
+     * cannot be read: zero would draw an empty meter on the very day somebody may be one question
+     * from the limit, which is the one thing this field exists to tell them.
      */
     const trial = config.trial
       ? {
@@ -632,9 +638,7 @@ export function createApp(
             endsAt: config.trial.endsAt,
             holdDays: config.trial.holdDays,
             dailyTokenBudget: config.trial.dailyTokenBudget,
-            budgetReachedToday: dailyBudget
-              ? await dailyBudget.reachedToday()
-              : false,
+            ...(await todayOf(dailyBudget)),
           },
         }
       : {};
@@ -1136,6 +1140,29 @@ export function createApp(
   }
 
   return app;
+}
+
+/**
+ * Today, as a trial's surface is told it: whether the day is spent, and what it has used so far.
+ *
+ * Both asked of the one judge the runs are refused by, side by side rather than one after the
+ * other, because `/api/me` is the call every screen waits on before it draws. `reachedToday` never
+ * throws — a trail that cannot be read is not a refusal — and the count can, so a count nobody
+ * could read is left out rather than said as zero.
+ */
+async function todayOf(budget: DailyBudget | undefined): Promise<{
+  budgetReachedToday: boolean;
+  tokensUsedToday?: number;
+}> {
+  if (!budget) return { budgetReachedToday: false };
+  const [budgetReachedToday, tokensUsedToday] = await Promise.all([
+    budget.reachedToday(),
+    budget.usedToday().catch(() => null),
+  ]);
+  return {
+    budgetReachedToday,
+    ...(tokensUsedToday === null ? {} : { tokensUsedToday }),
+  };
 }
 
 function credentialInput(
