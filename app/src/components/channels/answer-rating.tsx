@@ -6,6 +6,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -192,7 +193,20 @@ export const AnswerRatingControls = ({
           <IconThumbUp className="size-3.5" />
         )}
       </Button>
-      <Popover onOpenChange={handleOpenChange} open={open}>
+      <Popover
+        onOpenChange={(next, details) => {
+          /*
+           * Non-modal, and still not closed by a press elsewhere while 보내기 is out: the refusal is
+           * said inside the panel, and a panel closed under it would take the answer with it.
+           */
+          if (!next && down.isPending) {
+            details.cancel();
+            return;
+          }
+          handleOpenChange(next);
+        }}
+        open={open}
+      >
         <PopoverTrigger
           render={
             <Button
@@ -230,7 +244,11 @@ export const AnswerRatingControls = ({
              * face picker already use for one choice out of a few, so a reader arriving on the second
              * reason hears which one is already chosen.
              */}
-            <fieldset className="flex flex-wrap gap-1.5">
+            <fieldset
+              className="flex flex-wrap gap-1.5"
+              // Locked while it sends, like the note below: what is on screen is what went.
+              disabled={down.isPending}
+            >
               <legend className="sr-only">{t("Reason")}</legend>
               {ANSWER_RATING_REASONS.map((key) => (
                 <Button
@@ -251,6 +269,7 @@ export const AnswerRatingControls = ({
             <div className="flex flex-col gap-1">
               <Textarea
                 aria-label={t("Tell us more (optional)")}
+                disabled={down.isPending}
                 maxLength={ANSWER_NOTE_MAX_LENGTH}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder={t(
@@ -270,13 +289,16 @@ export const AnswerRatingControls = ({
                 </span>
               </div>
             </div>
-            {down.error ? (
-              <p className="text-destructive text-xs" role="alert">
-                {down.error.message}
-              </p>
-            ) : null}
+            <LiveRegion
+              as="p"
+              className="text-destructive text-xs"
+              tone="alert"
+            >
+              {down.error?.message}
+            </LiveRegion>
             <div className="flex justify-end gap-2">
               <Button
+                disabled={down.isPending}
                 onClick={() => handleOpenChange(false)}
                 size="sm"
                 type="button"
@@ -284,23 +306,30 @@ export const AnswerRatingControls = ({
               >
                 {t("Cancel")}
               </Button>
-              <Button disabled={down.isPending} size="sm" type="submit">
+              <Button
+                disabled={down.isPending}
+                // Keeps the focus it was pressed with while the rating is on its way.
+                focusableWhenDisabled={down.isPending}
+                size="sm"
+                type="submit"
+              >
                 {down.isPending ? t("Sending…") : t("Send")}
               </Button>
             </div>
           </form>
         </PopoverContent>
       </Popover>
-      {received ? (
-        <span className="px-1 text-muted-foreground text-xs" role="status">
-          {received}
-        </span>
-      ) : null}
-      {up.error ? (
-        <span className="px-1 text-destructive text-xs" role="alert">
-          {up.error.message}
-        </span>
-      ) : null}
+      {/* Mounted beside the thumbs, so what a rating came to is heard when it is said. */}
+      <LiveRegion as="span" className="px-1 text-muted-foreground text-xs">
+        {received}
+      </LiveRegion>
+      <LiveRegion
+        as="span"
+        className="px-1 text-destructive text-xs"
+        tone="alert"
+      >
+        {up.error?.message}
+      </LiveRegion>
     </div>
   );
 };
