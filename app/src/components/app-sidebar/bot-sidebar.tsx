@@ -69,6 +69,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
 /**
@@ -227,11 +228,10 @@ const FooterLink = ({
  * own, so a Korean-language app on an en-US machine printed "Sat" and "9/6" down a column of Korean
  * names — the one place in the roster where the app's language setting reached nothing.
  */
-function rosterTime(iso: string | null): string | undefined {
+function rosterTime(iso: string | null, now: Date): string | undefined {
   if (!iso) return undefined;
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return undefined;
-  const now = new Date();
   const sameDay =
     at.getFullYear() === now.getFullYear() &&
     at.getMonth() === now.getMonth() &&
@@ -430,6 +430,12 @@ export function BotSidebar() {
   const working = useQuery(workingQueryOptions());
   const searchId = useId();
   const rowActions = useRowActions();
+  /*
+   * The clock, as an input. "14:32" becomes a weekday at midnight only if something redraws the row
+   * then; read from `new Date()` inside `rosterTime`, the compiled roster redrew a row only when its
+   * conversation changed.
+   */
+  const now = useNow();
 
   /** A Bot's conversation, once it has one. Single-Bot channels only; a group is not a colleague. */
   const channelFor = useMemo(() => {
@@ -771,7 +777,7 @@ export function BotSidebar() {
                     avatarSeed={agent.avatarSeed}
                     channelId={channel?.id}
                     isCompact={isRail}
-                    lastMessageAt={rosterTime(at)}
+                    lastMessageAt={rosterTime(at, now)}
                     name={agent.name}
                     pinned={agent.pinnedAt !== null}
                     subtitle={subtitle}
@@ -810,7 +816,7 @@ export function BotSidebar() {
             <GroupRow
               channelId={channel.id}
               isCompact={isRail}
-              lastMessageAt={rosterTime(at)}
+              lastMessageAt={rosterTime(at, now)}
               name={channel.name}
               participantIds={channel.agentIds}
               subtitle={subtitle}

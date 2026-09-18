@@ -85,9 +85,12 @@ export type RoutineNotepad = {
  * thing its last run handled — and it reads as that rather than as `lastId`/`lastAt`, which are the
  * model's field names and nothing a shop owner has a use for.
  */
-export function notepadEntryLabel(entry: RoutineNotepadEntry): string {
+export function notepadEntryLabel(
+  entry: RoutineNotepadEntry,
+  now: Date = new Date(),
+): string {
   if (entry.kind === "note") return entry.value;
-  const when = entry.lastAt ? whenLabel(entry.lastAt) : "";
+  const when = entry.lastAt ? whenLabel(entry.lastAt, now) : "";
   if (entry.lastId && when) {
     return t("Up to {id}, {when}", { id: entry.lastId, when });
   }
@@ -239,8 +242,11 @@ export function hourLabel(hour: number): string {
  * of it is a wall of digits, and the question a person is asking of this line ("has it run? when is
  * it next?") is answered by the day, not by the year. Anything beyond tomorrow keeps its date,
  * because "in 8 days" is not a thing anybody can act on either.
+ *
+ * `now` is what "today" is measured from. A screen passes the one `useNow` keeps, so the label
+ * turns over at midnight rather than whenever the row happens to be drawn again.
  */
-export function whenLabel(iso: string | null): string {
+export function whenLabel(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "";
   const when = new Date(iso);
   if (Number.isNaN(when.getTime())) return "";
@@ -248,7 +254,7 @@ export function whenLabel(iso: string | null): string {
   const midnight = (date: Date) =>
     new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const days = Math.round(
-    (midnight(when) - midnight(new Date())) / 86_400_000, // ms in a day
+    (midnight(when) - midnight(now)) / 86_400_000, // ms in a day
   );
   const time = clockLabel(
     `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`,

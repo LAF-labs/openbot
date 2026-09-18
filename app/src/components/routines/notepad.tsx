@@ -3,6 +3,7 @@ import { Fragment, useId, useState } from "react";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
+import { useNow } from "@/lib/use-now";
 import {
   notepadEntryLabel,
   type RoutineNotepad as Notepad,
@@ -27,6 +28,8 @@ export const RoutineNotepad = ({ routineId }: { routineId: string }) => {
   const queryClient = useQueryClient();
   const headingId = useId();
   const [isConfirming, setIsConfirming] = useState(false);
+  // What 오늘 and 어제 are measured from; see `useNow` for why it is not read inside `whenLabel`.
+  const now = useNow();
 
   const notepad = useQuery({
     queryKey: routineKeys.notepad(routineId),
@@ -109,14 +112,14 @@ export const RoutineNotepad = ({ routineId }: { routineId: string }) => {
                   {entry.key}
                 </dt>
                 <dd className="whitespace-pre-wrap break-words">
-                  {notepadEntryLabel(entry)}
+                  {notepadEntryLabel(entry, now)}
                 </dd>
               </Fragment>
             ))}
           </dl>
           {updatedAt ? (
             <p className="pt-2 text-muted-foreground/80 text-xs">
-              {t("Noted {when}", { when: whenLabel(updatedAt) })}
+              {t("Noted {when}", { when: whenLabel(updatedAt, now) })}
             </p>
           ) : null}
         </>

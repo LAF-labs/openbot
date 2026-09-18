@@ -12,6 +12,7 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
+import { useNow } from "@/lib/use-now";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: RouteComponent,
@@ -22,9 +23,12 @@ export const Route = createFileRoute("/_authed/_app/")({
  *
  * Local hours, because "good morning" at somebody's 3pm is worse than no greeting: the whole point
  * of the line is that the product noticed.
+ *
+ * Handed the time rather than reading it: read while rendering, the React Compiler kept the first
+ * greeting for as long as Home stayed open, so a morning visit still said good morning at night.
  */
-function greeting(): string {
-  const hour = new Date().getHours();
+function greeting(now: Date): string {
+  const hour = now.getHours();
   if (hour < 6) return t("Working late?");
   if (hour < 12) return t("Good morning");
   if (hour < 18) return t("Good afternoon");
@@ -50,6 +54,7 @@ function RouteComponent() {
   const { start, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const now = useNow();
 
   const selected = roster.find((agent) => agent.id === selectedId) ?? roster[0];
   const skillCommands = useSkillCommands(selected?.id ?? "");
@@ -65,7 +70,7 @@ function RouteComponent() {
     <div className="flex w-full flex-1 flex-col items-center justify-center p-4">
       <div className="flex flex-col items-center">
         <h1 className="text-center font-semibold text-[26px] tracking-tight">
-          {greeting()}
+          {greeting(now)}
         </h1>
         <p className="mt-1 text-center text-[13px] text-muted-foreground">
           {t("What should the team take off your hands?")}

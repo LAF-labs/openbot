@@ -42,6 +42,7 @@ import {
   whenLabel,
 } from "@/lib/routines/queries";
 import { pausedForUnread, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
+import { useNow } from "@/lib/use-now";
 import { RUN_STOPPED } from "@/lib/work/stop-all";
 
 /**
@@ -127,6 +128,8 @@ function RoutineRow({ routine }: { routine: Routine }) {
   const agents = useQuery(agentListQueryOptions());
   const [showRuns, setShowRuns] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // What 오늘 and 내일 are measured from; see `useNow` for why it is not read inside `whenLabel`.
+  const now = useNow();
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: routineKeys.all });
 
@@ -245,9 +248,9 @@ function RoutineRow({ routine }: { routine: Routine }) {
            * promise the switch is making; 마지막 실행 is the evidence it kept it.
            */}
           <p className="truncate text-muted-foreground/80 text-xs">
-            {t("Next {when}", { when: whenLabel(routine.nextRunAt) })}
+            {t("Next {when}", { when: whenLabel(routine.nextRunAt, now) })}
             {routine.lastRunAt
-              ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt) })}`
+              ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt, now) })}`
               : ` · ${t("Not run yet")}`}
           </p>
         </button>

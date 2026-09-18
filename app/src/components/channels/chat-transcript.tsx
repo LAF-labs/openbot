@@ -50,6 +50,7 @@ import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
+import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import { toVisibleChatItems, unsettledFrom } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
@@ -233,7 +234,9 @@ function TurnFailed({
   const quiet = Boolean(
     group && (group.acknowledged || group.closed || pressed),
   );
-  const repeated = group ? repeatedFailureLine(group) : null;
+  // "Last 오전 9:00" becomes "어제" at midnight because the time is an input; see `useNow`.
+  const now = useNow();
+  const repeated = group ? repeatedFailureLine(group, now) : null;
 
   const handleAcknowledge = async () => {
     if (!group) return;
@@ -827,12 +830,14 @@ function UnreadLine() {
  * timestamp beside every sentence is what makes a transcript read as a log instead of a chat.
  */
 function TimeSeparator({ at }: { at: Date }) {
+  // 오늘 becomes 어제 at midnight because the time is an input, not a read; see `useNow`.
+  const now = useNow();
   return (
     <time
       className="mt-3.5 mb-2 flex h-7 w-auto items-center justify-center self-center whitespace-nowrap py-1.5 text-muted-foreground text-xs"
       dateTime={at.toISOString()}
     >
-      {sittingLabel(at)}
+      {sittingLabel(at, now)}
     </time>
   );
 }

@@ -17,6 +17,7 @@ import { silenceOf } from "@/lib/audit/silence";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { siteById } from "@/lib/sites/catalogue";
+import { useNow } from "@/lib/use-now";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -74,12 +75,17 @@ function AuditPage() {
    */
   const days = useMemo(() => groupByDay(rows), [rows]);
   /*
-   * Recomputed per render on purpose. The alternative is a value captured at mount, and this page is
-   * one somebody leaves open: a trail still labelling last night's rows as today at nine the next
-   * morning is a date that is quietly wrong on the screen that exists for dates.
+   * Moved by the clock, not captured at mount. This page is one somebody leaves open: a trail still
+   * labelling last night's rows as today at nine the next morning is a date that is quietly wrong on
+   * the screen that exists for dates.
+   *
+   * It used to be read from `new Date()` on every render, and under the React Compiler that is
+   * exactly a value captured at mount: with no inputs, the compiler computes it once and keeps it.
+   * `useNow` makes the minute an input, so the headings turn over at midnight with the page open.
    */
-  const today = dayKeyOf(new Date().toISOString());
-  const yesterday = dayKeyOf(new Date(Date.now() - DAY_MS).toISOString());
+  const now = useNow();
+  const today = dayKeyOf(now.toISOString());
+  const yesterday = dayKeyOf(new Date(now.getTime() - DAY_MS).toISOString());
 
   return (
     /*

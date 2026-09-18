@@ -11,6 +11,7 @@ import {
   usageOf,
   writeDismissedDay,
 } from "@/lib/usage/today";
+import { useNow } from "@/lib/use-now";
 
 /**
  * One line above the composer once a free trial's day is 80% used: how much, and when it fills.
@@ -28,8 +29,10 @@ import {
 export const UsageNotice = () => {
   const { data: user } = useQuery(currentUserQueryOptions());
   const [dismissedDay, setDismissedDay] = useState(readDismissedDay);
+  // The Seoul day is measured from `useNow`, so a dismissal ends at midnight with the window open.
+  const now = useNow();
   const usage = usageOf(user?.deployment.trial);
-  if (!usage || !noticeDue(usage, dismissedDay, new Date())) return null;
+  if (!usage || !noticeDue(usage, dismissedDay, now)) return null;
 
   const handleDismiss = () => {
     const today = seoulDayKey(new Date());
