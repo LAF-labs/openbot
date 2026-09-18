@@ -32,8 +32,8 @@
     "eval:deferral": "bun --env-file=.env evals/deferral.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11",
-    "@types/bun": "^1.4.0",
+    "@biomejs/biome": "^2.5.13",
+    "@types/bun": "^1.4.2",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"
