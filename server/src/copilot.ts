@@ -12,6 +12,7 @@ import {
   type PromptSkill,
   type RoutineNote,
 } from "../../shared/prompt";
+import type { ShopProfile } from "../../shared/shop/catalogue";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "./audit";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
@@ -106,6 +107,16 @@ export type AgentStandingProfile = {
    * middleware below is synchronous, and a Bot's grants are the plugin store's question.
    */
   skills?: readonly PromptSkill[];
+  /**
+   * What kind of business the person asking runs, and where they work every day.
+   *
+   * The person's, not the Bot's, so every Bot in their roster carries the same one. Attached by
+   * `agents/shop-context.ts` from what the person answered — never taken from a run's
+   * `forwardedProps`, which on a chat run are whatever the browser sent. Composed below into the
+   * one system message, like the job and the memories, and for the same reason: it is the only
+   * thing every endpoint understands.
+   */
+  shop?: ShopProfile;
 };
 
 /*
@@ -162,6 +173,7 @@ export function botPromptMessage(
       timeZone: options.timeZone,
       bot: { id: profile.id, name: profile.name, title: profile.title },
       standingRole: profile.roleDescription,
+      ...(profile.shop ? { shop: profile.shop } : {}),
       ...(profile.memories ? { memories: profile.memories } : {}),
       ...(profile.skills ? { skills: profile.skills } : {}),
       ...(options.notepad?.length ? { notepad: options.notepad } : {}),

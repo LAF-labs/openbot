@@ -505,6 +505,79 @@ describe("what reaches the endpoint", () => {
   });
 });
 
+/**
+ * THE SHOP LINE, ON THE WIRE.
+ *
+ * What kind of business the person runs and where they work every day are theirs, answered on the
+ * first run or in Settings, and every run of every Bot has to carry them — chat, a room's turn, a
+ * routine, one Bot asking another. They reach this middleware on the profile the loader built for
+ * the person asking (`agents/shop-context.ts`), the way memories and skills do, and are composed
+ * into the one system message here. Asserted on what the endpoint RECEIVED, because a line composed
+ * and never sent is the failure CLAUDE.md warns about by name.
+ */
+describe("the shop line on every run", () => {
+  const shop = { kind: "food" as const, places: ["baemin-ceo", "gmail"] };
+  const line =
+    "이 사람이 하는 일: 음식점·카페. 매일 쓰는 곳: 배달의민족(ceo.baemin.com), 지메일.";
+
+  const withShop = (endpoint: string) => {
+    const agent = remoteAgent(endpoint);
+    return { ...agent, profile: { ...agent.profile, shop } };
+  };
+
+  test.each(["chat", "room", "routine", "coworker"] as const)(
+    "reaches the endpoint on a %s run",
+    async (mode) => {
+      await using endpoint = fakeAgUiEndpoint();
+      const agent = buildAgents([withShop(endpoint.url)], model).agent_expense;
+      agent?.setMessages([userMessage("오늘 뭐부터 할까?")]);
+      await agent?.runAgent(
+        mode === "chat" ? undefined : ({ forwardedProps: { mode } } as never),
+      );
+
+      expect(firstSystemMessage(endpoint.requests.at(-1))).toContain(line);
+    },
+  );
+
+  test("is absent for somebody who answered nothing", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const agent = buildAgents([remoteAgent(endpoint.url)], model).agent_expense;
+    agent?.setMessages([userMessage("오늘 뭐부터 할까?")]);
+    await agent?.runAgent();
+
+    expect(firstSystemMessage(endpoint.requests.at(-1))).not.toContain(
+      "이 사람이 하는 일",
+    );
+  });
+
+  /**
+   * NOT FROM THE CALLER. A chat run's forwarded props come from the browser, and a Bot's own
+   * tools post through that same browser. The line is what the server read for the person asking —
+   * whatever a run claims about the shop reaches neither the prompt nor the endpoint's settings.
+   */
+  test("takes nothing a run forwards about the shop", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const agent = buildAgents([withShop(endpoint.url)], model).agent_expense;
+    agent?.setMessages([userMessage("오늘 뭐부터 할까?")]);
+    await agent?.runAgent({
+      forwardedProps: { shop: { kind: "office", places: ["notion"] } },
+    } as never);
+
+    const system = firstSystemMessage(endpoint.requests.at(-1));
+    expect(system).toContain(line);
+    expect(system).not.toContain("사무·전문직");
+    expect(system).not.toContain("노션");
+  });
+
+  test("is carried on the profile the prompt is composed from", () => {
+    const content = botPromptMessage(
+      withShop("http://bot.internal/ag-ui").profile,
+      { mode: "chat", now: new Date(), timeZone: "Asia/Seoul" },
+    ).content;
+    expect(content).toContain(line);
+  });
+});
+
 function firstSystemMessage(request: Record<string, unknown> | undefined) {
   const messages = (request?.messages ?? []) as Array<{
     role: string;

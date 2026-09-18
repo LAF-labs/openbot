@@ -7,8 +7,10 @@
  * 받은 것을 그대로 모델에게 넘기는 멍청한 종단으로 남는다. 두 곳이 프롬프트를 가지면 둘 중
  * 어느 쪽이 실제로 읽히는지 아무도 모르게 된다.
  *
- * 조립 순서: 기본 → 이 봇이 누구인지 → 무엇을 기억하는지 → 어떤 스킬을 받았는지 → 이번 모드
- * → (루틴이면) 그 루틴의 메모장 → 지금 몇 시인지.
+ * 조립 순서: 기본 → 이 봇이 누구인지 → 어떤 가게에서 일하는지 → 무엇을 기억하는지 → 어떤 스킬을
+ * 받았는지 → 이번 모드 → (루틴이면) 그 루틴의 메모장 → 지금 몇 시인지.
+ * 가게 줄은 사람이 직접 고른 사실이라 봇이 알아낸 기억보다 앞에 선다 — 둘이 어긋나면 봇은 어느
+ * 쪽이 사람의 답인지 알아야 한다.
  * 모드가 신원과 기억 뒤에 오는 이유는 모드가 이번 실행에서만 참이고, 다른 것과 부딪히면 이겨야
  * 하기 때문이다(방에서 "짧게 말하라"는 send_message 안에서만 뜻이 있다). 메모장은 실행마다 바뀔 수
  * 있는 글이라 모드 뒤, 시계 앞에 선다.
@@ -19,6 +21,7 @@
  * 바뀌는 글을 맨 뒤에(Hermes의 순서: stable → context → volatile, timestamp last).
  * 실측은 `bun run eval:cache`, 숫자는 docs/laf/eval-pack.md.
  */
+import type { ShopProfile } from "../shop/catalogue";
 import { BASE_KO } from "./base.ko";
 import { copula } from "./particles";
 import { CHAT_KO } from "./mode/chat.ko";
@@ -26,6 +29,7 @@ import { COWORKER_KO } from "./mode/coworker.ko";
 import { roomKo } from "./mode/room.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
+import { shopText } from "./shop.ko";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO } from "./base.ko";
@@ -38,6 +42,7 @@ export {
   type RoutineNote,
 } from "./notepad.ko";
 export { copula } from "./particles";
+export { shopText } from "./shop.ko";
 export { type PromptSkill, skillIndexText } from "./skill-index";
 export { TOOL_RESULT_KO } from "./tool-results.ko";
 
@@ -118,6 +123,11 @@ export type ComposePromptInput = {
   bot: PromptBot;
   /** 사람이 써 준 이 봇의 상시 직무. 비어 있으면 아직 직무를 받지 못한 것이다. */
   standingRole?: string;
+  /**
+   * 사람이 고른 가게의 일과 매일 쓰는 곳. 봇 하나가 아니라 사람의 것이라 그 사람의 모든 봇이 같은
+   * 줄을 읽는다. 비어 있거나 없으면 아무 줄도 없다.
+   */
+  shop?: ShopProfile;
   /** 이 봇이 이 사람에 대해 알아낸 것, 오래된 것부터. */
   memories?: readonly string[];
   /** 이 봇에게 허용된 스킬. 이름과 한 줄만 — 본문은 skill_view가 읽는다. */
@@ -179,6 +189,12 @@ export function composePrompt(input: ComposePromptInput): string {
           ? "update_profile로 네 설명에 적어 두어 다음에도 알고 있게 하고, 곧바로 그 일을 시작해라."
           : "다음에도 알고 있도록 적어 두고, 곧바로 그 일을 시작해라.",
       ].join(" "),
+    /*
+     * 가게 — 사람이 첫 실행이나 설정에서 눌러서 고른 답. 직무 바로 뒤, 기억 앞: 직무가 비어 있는
+     * 새 봇이 "무엇을 도와줄까요"를 물을 때 이 가게에 맞는 일부터 꺼내게 하는 자리이고, 봇이
+     * 알아낸 것(기억)보다 사람이 정한 것이 앞선다. 아무것도 답하지 않았으면 빈 문자열이다.
+     */
+    shopText(input.shop),
     /*
      * 기억은 직무에 섞지 않고 따로 세운다. 직무는 사람이 정한 것이고 기억은 봇이 알아낸 것,
      * 즉 틀릴 수 있는 쪽이다. 둘이 어긋날 때 어느 쪽이 어느 쪽인지 봇이 구별할 수 있어야 한다.
