@@ -128,6 +128,10 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
   "laf:routine_schedule_invalid": "Choose how often it should run.",
   "laf:routine_schedule_unreachable": "That schedule never comes round.",
   "laf:routine_not_created": "The routine could not be made. Try again.",
+  // An edit that named nothing to change. The form closes without a request when nothing changed,
+  // so this screen should never meet it — but the route can send it, and a code with no words here
+  // would print the generic failure for what is not a failure.
+  "laf:routine_nothing_to_change": "Nothing was changed.",
   "laf:routine_trigger_token_missing": "That link is missing its key.",
   /*
    * "Run now" on a routine an account this place no longer admits wrote — one left from before a

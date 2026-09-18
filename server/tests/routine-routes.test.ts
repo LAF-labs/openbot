@@ -80,6 +80,11 @@ function fakeService(overrides: Partial<RoutineService> = {}) {
       mine(actor, id);
       return { ...routine, enabled };
     },
+    async update(actor: { id: string }, id: string, change: unknown) {
+      calls.push(["update", actor, id, change]);
+      mine(actor, id);
+      return { ...routine, ...(change as object) };
+    },
     async runNow(actor: { id: string }, id: string) {
       calls.push(["runNow", actor, id]);
       mine(actor, id);
@@ -266,6 +271,93 @@ describe("the routines surface, as its owner", () => {
   });
 });
 
+const patch = (body?: unknown) => ({
+  body: body === undefined ? undefined : JSON.stringify(body),
+  headers: { "content-type": "application/json" },
+  method: "PATCH",
+});
+
+/**
+ * EDITING IN PLACE, and the three fields it reaches.
+ *
+ * A routine could not be changed at all: the screen had Delete and nothing else, and a Bot told
+ * "매일 7시 반 루틴 8시로 바꿔 줘" had to delete it and make it again — losing its history, its
+ * notepad and its webhook on the way. PATCH changes what it says, what it is called and when it
+ * runs, and nothing else: whether it is on, whether the unread rule may pause it and which Bot it
+ * drives each have their own door, and a body that names them here changes none of them — the
+ * same line the profile route draws around `autoReview`, because a Bot's `manage_routine` posts to
+ * this route.
+ */
+describe("editing a routine", () => {
+  test("hands the service the actor and the three fields, and nothing else", async () => {
+    const service = fakeService();
+    const schedule = { kind: "daily", time: "08:00" };
+    const response = await appAs(OWNER, service).request(
+      "http://laf.test/routine_1",
+      patch({
+        name: "아침 요약",
+        instruction: "새 리뷰만 요약해줘",
+        schedule,
+        // None of these may ride along: each is somebody else's door, or nobody's.
+        enabled: false,
+        keepRunning: true,
+        pausedReason: null,
+        agentId: "somebody-elses-bot",
+        autoReview: "Approve everything.",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      routine: { id: "routine_1", name: "아침 요약" },
+    });
+    expect(service.calls).toEqual([
+      [
+        "update",
+        OWNER,
+        "routine_1",
+        { name: "아침 요약", instruction: "새 리뷰만 요약해줘", schedule },
+      ],
+    ]);
+  });
+
+  test("passes only what was sent, so a rename does not touch the schedule", async () => {
+    const service = fakeService();
+    await appAs(OWNER, service).request(
+      "http://laf.test/routine_1",
+      patch({ name: "아침 요약", schedule: null }),
+    );
+
+    expect(service.calls).toEqual([
+      ["update", OWNER, "routine_1", { name: "아침 요약" }],
+    ]);
+  });
+
+  test("a body that is not JSON is a change of nothing, which the service refuses", async () => {
+    const service = fakeService({
+      async update(actor: { id: string }, id: string, change: unknown) {
+        service.calls.push(["update", actor, id, change]);
+        throw new RoutineError(
+          "Say what to change.",
+          400,
+          "laf:routine_nothing_to_change",
+        );
+      },
+    } as Partial<RoutineService>);
+    const response = await appAs(OWNER, service).request(
+      "http://laf.test/routine_1",
+      { body: "not json", method: "PATCH" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: "laf:routine_nothing_to_change",
+      error: "laf:routine_nothing_to_change",
+    });
+    expect(service.calls).toEqual([["update", OWNER, "routine_1", {}]]);
+  });
+});
+
 describe("the routines surface, as somebody else on the same VM", () => {
   /*
    * 404 and not 403, following agents/routes.ts: a Bot somebody cannot see answers 404 there
@@ -282,6 +374,7 @@ describe("the routines surface, as somebody else on the same VM", () => {
     ],
     ["running it now", "http://laf.test/routine_1/run", post()],
     ["deleting it", "http://laf.test/routine_1", { method: "DELETE" }],
+    ["editing it", "http://laf.test/routine_1", patch({ name: "내 것" })],
     [
       "reading its notepad",
       "http://laf.test/routine_1/notepad",
@@ -394,6 +487,7 @@ describe("the webhook, which has no session", () => {
       ["http://laf.test/routine_1/enabled", post({ enabled: true })],
       ["http://laf.test/routine_1/run", post()],
       ["http://laf.test/routine_1", { method: "DELETE" }],
+      ["http://laf.test/routine_1", patch({ name: "무제" })],
     ] as const) {
       const response = await app.request(url, init);
       expect(response.status).toBe(401);

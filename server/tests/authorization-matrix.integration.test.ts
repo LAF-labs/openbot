@@ -471,6 +471,9 @@ function bodyFor(method: string, template: string): unknown {
         instruction: "say the time",
         schedule: { kind: "interval", minutes: 30 },
       };
+    case "PATCH /api/routines/:id":
+      // A rename: the owner's edit lands, and nobody else's reaches the routine at all.
+      return { name: `matrix ${run} renamed` };
     case "POST /api/components/:name/decision":
       return { agentId: BOT_A };
     case "POST /api/components/:name/call":
@@ -830,6 +833,8 @@ const A_ALLOWED = [
   "GET /api/plugins/for/:agentId",
   "GET /api/routines/:id/notepad",
   "GET /api/routines/:id/runs",
+  // Editing it in place: its name, its words, its clock.
+  "PATCH /api/routines/:id",
   "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
@@ -891,6 +896,7 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "DELETE /api/routines/:id/notepad",
   "GET /api/routines/:id/notepad",
   "GET /api/routines/:id/runs",
+  "PATCH /api/routines/:id",
   "POST /api/routines",
   "POST /api/routines/:id/enabled",
   "POST /api/routines/:id/run",

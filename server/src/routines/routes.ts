@@ -2,8 +2,10 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import {
+  type RoutineChange,
   RoutineError,
   type RoutineInput,
+  type RoutineSchedule,
   type RoutineService,
 } from "./service";
 
@@ -11,7 +13,8 @@ type Routes = Hono<{ Variables: AppVariables }>;
 type RequireUser = MiddlewareHandler<{ Variables: AppVariables }>;
 
 /**
- * The routines surface: create, list, arm, run now, read the recent runs, read and clear the notepad.
+ * The routines surface: create, list, edit, arm, run now, read the recent runs, read and clear the
+ * notepad.
  *
  * Thin by design — every rule lives in the service, so a second surface (the Bot proposing its own
  * routine, one day) enforces the same limits by construction.
@@ -45,6 +48,25 @@ const mapError = (error: unknown) => {
   }
   throw error;
 };
+
+/**
+ * The three fields an edit reaches, out of whatever arrived. A field that is absent or `null` is not
+ * being changed; a name or an instruction is read as text the way create reads it, and a schedule
+ * is handed on as sent for `parseSchedule` to accept or refuse with its code.
+ */
+function changeOf(body: unknown): RoutineChange {
+  if (!body || typeof body !== "object") return {};
+  const { name, instruction, schedule } = body as Record<string, unknown>;
+  return {
+    ...(name === undefined || name === null ? {} : { name: String(name) }),
+    ...(instruction === undefined || instruction === null
+      ? {}
+      : { instruction: String(instruction) }),
+    ...(schedule === undefined || schedule === null
+      ? {}
+      : { schedule: schedule as RoutineSchedule }),
+  };
+}
 
 function addCollection(
   routes: Routes,
@@ -200,6 +222,31 @@ function addRoutineVerbs(
         context.var.actor,
         context.req.param("id"),
         body?.enabled === true,
+      );
+      return context.json({ routine });
+    } catch (error) {
+      const mapped = mapError(error);
+      return context.json(mapped.body, mapped.status);
+    }
+  });
+
+  /*
+   * Its name, what it says, when it runs — changed in place, and nothing else here.
+   *
+   * THE BODY IS READ FOR THREE FIELDS AND THE REST IS DROPPED, not refused. A Bot's `manage_routine`
+   * posts here, and whether a routine runs, which Bot it drives and whether the unread rule may
+   * pause it are each somebody's decision behind a door of their own. A body naming them changes
+   * nothing rather than failing — the line the profile route draws around `autoReview`, and for
+   * the same reason: a Bot told "no" tries again in another shape, and a field that never reaches
+   * the store is the end of that conversation.
+   */
+  routes.patch("/:id", requireUser, async (context) => {
+    const body: unknown = await context.req.json().catch(() => null);
+    try {
+      const routine = await service.update(
+        context.var.actor,
+        context.req.param("id"),
+        changeOf(body),
       );
       return context.json({ routine });
     } catch (error) {

@@ -27,10 +27,12 @@ import {
   hashToken,
   listRoutines,
   listRuns,
+  type RoutineChange,
   type RoutineInput,
   type RoutineStore,
   removeRoutine,
   setRoutineEnabled,
+  updateRoutine,
 } from "./store";
 import { createRoutineTicker } from "./ticker";
 
@@ -48,7 +50,7 @@ import { createRoutineTicker } from "./ticker";
  *   run-report.ts  the `routine.ran` trail row a failed run's notification is raised from
  *   receipts.ts    `laf_routine_runs`: what was reported, the newest few kept
  *   notepad.ts     where a routine left off: read at the run, written by its settlement, cleared here
- *   store.ts       made, listed, paused and deleted, with the cap and the Bot check
+ *   store.ts       made, listed, edited, paused and deleted, with the cap and the Bot check
  *   ownership.ts   whose routine it is
  *   errors.ts      what a refusal carries
  *
@@ -64,7 +66,11 @@ export {
   nextRunAt,
   type RoutineSchedule,
 } from "./schedule";
-export { MAX_ROUTINES, type RoutineInput } from "./store";
+export {
+  MAX_ROUTINES,
+  type RoutineChange,
+  type RoutineInput,
+} from "./store";
 
 /**
  * The shortest gap between two triggered runs of one routine.
@@ -187,6 +193,11 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
     setEnabled(actor: AgentActor, id: string, enabled: boolean) {
       return setRoutineEnabled(store, actor, id, enabled);
+    },
+
+    /** Its name, what it says, when it runs — in place. See `updateRoutine`. */
+    update(actor: AgentActor, id: string, change: RoutineChange) {
+      return updateRoutine(store, actor, id, change);
     },
 
     remove(actor: AgentActor, id: string) {

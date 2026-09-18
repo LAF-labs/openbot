@@ -20,8 +20,8 @@ import {
 } from "./schedule";
 
 /**
- * The routines a person keeps: made, listed, paused, re-armed and deleted — every verb scoped by
- * whose they are (`ownership.ts`).
+ * The routines a person keeps: made, listed, edited, paused, re-armed and deleted — every verb
+ * scoped by whose they are (`ownership.ts`).
  */
 
 /**
@@ -44,6 +44,19 @@ export type RoutineInput = {
    * sets it — the create route does not read it out of a body.
    */
   suggestionKey?: string;
+};
+
+/**
+ * What an edit may change: the words, the name and the clock — any of them, and only these.
+ *
+ * Not `enabled`, not which Bot, and not whether the unread rule may pause it: each of those has a
+ * door of its own, and this shape is what a Bot's `manage_routine` reaches (`routes.ts` picks these
+ * three out of the body and drops everything else).
+ */
+export type RoutineChange = {
+  name?: string;
+  instruction?: string;
+  schedule?: RoutineSchedule;
 };
 
 /** What every verb here works with: the database, and the clock a new or re-armed routine reads. */
@@ -240,18 +253,11 @@ async function insertRoutine(
       agentId: input.agentId,
       name: made.name,
       instruction: made.instruction,
-      scheduleKind: schedule.kind,
-      intervalMinutes: schedule.kind === "interval" ? schedule.minutes : null,
-      dailyLocal: schedule.kind === "daily" ? schedule.time : null,
-      // No fallback here: a parsed daily schedule always names its zone, and the one this line used
-      // to supply was UTC.
-      dailyTimeZone: schedule.kind === "daily" ? schedule.timeZone : null,
-      dailyDays: schedule.kind === "daily" ? schedule.days : null,
+      ...scheduleColumns(schedule, at),
       enabled: true,
       createdById: actor.id,
       createdByRole: actor.role,
       suggestionKey: input.suggestionKey ?? null,
-      nextRunAt: nextRunAt(schedule, at),
       createdAt: at,
       updatedAt: at,
     })
@@ -264,6 +270,115 @@ async function insertRoutine(
     );
   }
   return row;
+}
+
+/**
+ * A routine changed in place: its name, what it says, when it runs.
+ *
+ * IN PLACE, BECAUSE THE ALTERNATIVE WAS DELETING IT. There was no edit, so "move my 07:30 briefing
+ * to eight" was a delete and a create — and a routine's id is what its run history, its notepad
+ * and its webhook token hang from, so all three went with the old row. The row stays; the fields
+ * move.
+ *
+ * Checked the way a new routine is, with the same codes, before the row is looked for: a blank name
+ * or instruction, and every schedule refusal `parseSchedule` makes, including the deployment's zone
+ * for a daily time that names none — a Bot hears "8시" on that clock (see `parseSchedule`).
+ *
+ * THE CLOCK MOVES ONLY WHEN THE SCHEDULE DOES. Re-arming from the moment of the edit is right for
+ * a new time and wrong for a new name: an hourly routine renamed at 05:40 would otherwise fire at
+ * 06:40 instead of 06:00. A schedule sent back exactly as it is stored — the form sends every field,
+ * and a Bot may repeat the schedule beside a rename — is no change, and moves nothing.
+ *
+ * Who made it is not touched. `created_by_id` is who the routine runs as (`run.ts`), and an edit
+ * is not a reason for it to start running as somebody else.
+ */
+export async function updateRoutine(
+  store: RoutineStore,
+  actor: AgentActor,
+  id: string,
+  change: RoutineChange,
+) {
+  const { database } = store;
+  const name = change.name?.trim();
+  const instruction = change.instruction?.trim();
+  if (
+    name === undefined &&
+    instruction === undefined &&
+    change.schedule === undefined
+  ) {
+    throw new RoutineError(
+      "Say what to change: the name, the instruction or the schedule.",
+      400,
+      "laf:routine_nothing_to_change",
+    );
+  }
+  if (name !== undefined && !name) {
+    throw new RoutineError("Name the routine.", 400, "laf:routine_needs_name");
+  }
+  if (instruction !== undefined && !instruction) {
+    throw new RoutineError(
+      "Say what the routine should do.",
+      400,
+      "laf:routine_needs_instruction",
+    );
+  }
+  const schedule =
+    change.schedule === undefined
+      ? undefined
+      : parseSchedule(change.schedule, store.timeZone);
+
+  const row = await mine(database, actor, id);
+  const at = store.now();
+  const rescheduled =
+    schedule !== undefined && !sameSchedule(schedule, scheduleOf(row));
+  const [updated] = await database
+    .update(lafRoutines)
+    .set({
+      ...(name === undefined ? {} : { name }),
+      ...(instruction === undefined ? {} : { instruction }),
+      ...(rescheduled ? scheduleColumns(schedule, at) : {}),
+      updatedAt: at,
+    })
+    .where(eq(lafRoutines.id, id))
+    .returning();
+  if (!updated) throw noSuchRoutine();
+  return published(withoutTokenHash(updated));
+}
+
+/**
+ * The columns a schedule is kept in, and the next window it names from `at` — for a new routine
+ * and an edited one alike, so the two cannot store the same schedule two ways.
+ */
+function scheduleColumns(schedule: StoredSchedule, at: Date) {
+  return {
+    scheduleKind: schedule.kind,
+    intervalMinutes: schedule.kind === "interval" ? schedule.minutes : null,
+    dailyLocal: schedule.kind === "daily" ? schedule.time : null,
+    // No fallback here: a parsed daily schedule always names its zone, and the one this line used
+    // to supply was UTC.
+    dailyTimeZone: schedule.kind === "daily" ? schedule.timeZone : null,
+    dailyDays: schedule.kind === "daily" ? schedule.days : null,
+    nextRunAt: nextRunAt(schedule, at),
+  };
+}
+
+/**
+ * Whether two schedules name the same windows. The day lists are compared as sets: a parsed one is
+ * sorted, and a row written before `parseSchedule` sorted them need not be.
+ */
+function sameSchedule(a: StoredSchedule, b: StoredSchedule): boolean {
+  if (a.kind === "interval" || b.kind === "interval") {
+    return (
+      a.kind === "interval" && b.kind === "interval" && a.minutes === b.minutes
+    );
+  }
+  const days = (list: number[]) =>
+    [...new Set(list)].sort((x, y) => x - y).join(",");
+  return (
+    a.time === b.time &&
+    a.timeZone === b.timeZone &&
+    days(a.days) === days(b.days)
+  );
 }
 
 export async function listRoutines(store: RoutineStore, actor: AgentActor) {
