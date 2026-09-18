@@ -130,18 +130,23 @@ export function PieChartCard({
   const circumference = 2 * Math.PI * radius;
   const total = points.reduce((sum, entry) => sum + (entry.value || 0), 0);
 
+  /*
+   * A loop rather than a `map` whose callback advanced `travelled`: the React Compiler cannot tell a
+   * callback that runs now from one kept for later, so it refuses to compile a component whose
+   * callback reassigns a variable from outside it.
+   */
+  const slices = [];
   let travelled = 0;
-  const slices = points.map((entry, index) => {
+  for (const [index, entry] of points.entries()) {
     const arc = total > 0 ? (entry.value / total) * circumference : 0;
-    const slice = {
+    slices.push({
       ...entry,
       arc,
       offset: -travelled,
       colour: seriesColour(index),
-    };
+    });
     travelled += arc;
-    return slice;
-  });
+  }
 
   return (
     <GalleryFrame caption={caption} title={title}>
