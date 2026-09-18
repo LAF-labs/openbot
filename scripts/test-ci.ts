@@ -290,13 +290,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * minute — seven tests to `app`. Measured on the combined tree at server 2,680 / app 1,138 /
  * agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not grow.
  *
+ * RAISED AGAIN 2026-09-18, with `ensure`, the `finally` that four components hand over so the
+ * compiler can compile them: four tests to `app`, holding it to the statement it replaces. Measured
+ * at server 2,680 / app 1,142 / agent-computer 261 / root 367; `app` re-raised to 3% under.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2599, roots: ["server"] },
-  { name: "app", floor: 1103, roots: ["app"] },
+  { name: "app", floor: 1107, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
