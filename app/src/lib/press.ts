@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { t } from "@/lib/i18n";
 
 /**
@@ -40,6 +41,29 @@ export async function pressOnce({
   } catch (error) {
     return { kind: "failed", sentence: failureSentence(error) };
   }
+}
+
+/**
+ * A form dialog's press, held: whether it is running, and what the last one failed with.
+ *
+ * `run` resolves `true` when the action is done, so the dialog closes then and only then; on a
+ * failure it keeps what was typed, because nothing here touches the fields, and `failure` is the
+ * sentence for the dialog's alert line. The caller refuses a second press while `isRunning`.
+ */
+export function usePress() {
+  const [isRunning, setIsRunning] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const run = async (act: () => unknown): Promise<boolean> => {
+    setFailure(null);
+    setIsRunning(true);
+    const outcome = await pressOnce({ act });
+    setIsRunning(false);
+    if (outcome.kind === "done") return true;
+    setFailure(outcome.sentence);
+    return false;
+  };
+  const forget = () => setFailure(null);
+  return { failure, forget, isRunning, run };
 }
 
 /** The browser's words for a request nothing answered, the three spellings `turn-failure.ts` lists. */

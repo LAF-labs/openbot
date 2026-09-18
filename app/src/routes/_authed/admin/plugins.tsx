@@ -5,6 +5,7 @@ import * as React from "react";
 import { useCallback, useState } from "react";
 import { z } from "zod";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
+import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import {
   ConnectionStrip,
@@ -36,6 +37,7 @@ import {
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 import { PLUGIN_ADMIN_REFUSALS } from "@/lib/plugins/refusals";
+import { usePress } from "@/lib/press";
 import { refusalFrom } from "@/lib/refusals";
 
 /**
@@ -72,6 +74,22 @@ const refusedBy = async (response: Response): Promise<Error> =>
       t("That did not go through. Try again."),
     ),
   );
+
+/** A server that is not in the catalogue, as the dialog that adds one collects it. */
+type CustomServerInput = {
+  id: string;
+  title: string;
+  url: string;
+  token?: string;
+};
+
+/** A deployment skill, as the dialog that writes one collects it. */
+type SkillInput = {
+  slug: string;
+  title: string;
+  summary: string;
+  instructions: string;
+};
 
 function PluginsPage() {
   const queryClient = useQueryClient();
@@ -169,6 +187,22 @@ function PluginsPage() {
   });
 
   /*
+   * THE TWO THAT ARE ASKED IN A DIALOG, AWAITED BY IT. They went through `mutate` like the rows'
+   * toggles do, so the dialog closed on the press, cleared what had been typed, and a refusal was
+   * said at the top of the page — about a form that was gone. Thrown instead, the refusal is said
+   * inside the dialog, which keeps the fields and closes once the list has been read back.
+   */
+  const addCustom = async (input: CustomServerInput) => {
+    const credentialId = await storeToken(input.id, input.token);
+    await post("/servers/custom", { ...input, credentialId });
+    await refresh();
+  };
+  const installSkill = async (input: SkillInput) => {
+    await post("/skills", { ...input, global: true });
+    await refresh();
+  };
+
+  /*
    * Fired on the way back from a consent that worked. Not wrapped in `useCallback`: what makes it
    * run once is the latch inside `ConnectOutcome`, which has already recorded the outcome by the
    * time this identity could change — a memo here would be guarding something already guarded.
@@ -259,12 +293,7 @@ function PluginsPage() {
                   return post("/servers", { key, instanceHost, credentialId });
                 })
               }
-              onAddCustom={(input) =>
-                mutate.mutate(async () => {
-                  const credentialId = await storeToken(input.id, input.token);
-                  return post("/servers/custom", { ...input, credentialId });
-                })
-              }
+              onAddCustom={addCustom}
             />
           ) : tab === "yours" ? (
             <Yours
@@ -310,9 +339,7 @@ function PluginsPage() {
                 )
               }
               // Admin-authored skills are deployment-global; personal skills are created elsewhere.
-              onInstall={(input) =>
-                mutate.mutate(() => post("/skills", { ...input, global: true }))
-              }
+              onInstall={installSkill}
               onUninstall={(slug) =>
                 mutate.mutate(() => del(`/skills/${encodeURIComponent(slug)}`))
               }
@@ -334,12 +361,8 @@ function Catalogue({
   items: CatalogueItem[];
   added: Set<string>;
   onAdd: (key: string, instanceHost?: string, token?: string) => void;
-  onAddCustom: (input: {
-    id: string;
-    title: string;
-    url: string;
-    token?: string;
-  }) => void;
+  /** Resolves once the server is added and listed; throws the refusal when it is not. */
+  onAddCustom: (input: CustomServerInput) => Promise<unknown>;
 }) {
   const [instanceHost, setInstanceHost] = useState<Record<string, string>>({});
   const [token, setToken] = useState<Record<string, string>>({});
@@ -350,6 +373,20 @@ function Catalogue({
     url: "",
     token: "",
   });
+  const adding = usePress();
+  const canAdd = Boolean(custom.id && custom.title && custom.url);
+
+  const handleCustomOpenChange = (open: boolean) => {
+    setAddingCustom(open);
+    if (!open) adding.forget();
+  };
+  // Cleared and closed only once the server is there; a refusal keeps every field as typed.
+  const handleAddCustom = async () => {
+    if (adding.isRunning || !canAdd) return;
+    if (!(await adding.run(() => onAddCustom(custom)))) return;
+    setCustom({ id: "", title: "", url: "", token: "" });
+    handleCustomOpenChange(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -473,98 +510,119 @@ function Catalogue({
         </Button>
       </div>
 
-      <Dialog onOpenChange={setAddingCustom} open={addingCustom}>
+      <Dialog
+        isBusy={adding.isRunning}
+        onOpenChange={handleCustomOpenChange}
+        open={addingCustom}
+      >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("Add a server by URL")}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="custom-id">{t("Name")}</FieldLabel>
-                <Input
-                  id="custom-id"
-                  onChange={(event) =>
-                    setCustom((current) => ({
-                      ...current,
-                      id: event.target.value,
-                    }))
-                  }
-                  placeholder="name (lower-case)"
-                  value={custom.id}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="custom-title">{t("Title")}</FieldLabel>
-                <Input
-                  id="custom-title"
-                  onChange={(event) =>
-                    setCustom((current) => ({
-                      ...current,
-                      title: event.target.value,
-                    }))
-                  }
-                  placeholder={t("Title")}
-                  value={custom.title}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="custom-url">{t("URL")}</FieldLabel>
-                <Input
-                  id="custom-url"
-                  onChange={(event) =>
-                    setCustom((current) => ({
-                      ...current,
-                      url: event.target.value,
-                    }))
-                  }
-                  placeholder="https://mcp.example.com/mcp"
-                  value={custom.url}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="custom-token">
-                  {t("Access token, if it needs one")}
-                </FieldLabel>
-                <Input
-                  id="custom-token"
-                  onChange={(event) =>
-                    setCustom((current) => ({
-                      ...current,
-                      token: event.target.value,
-                    }))
-                  }
-                  type="password"
-                  value={custom.token}
-                />
-              </Field>
-            </FieldGroup>
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            <Button
-              onClick={() => setAddingCustom(false)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={!(custom.id && custom.title && custom.url)}
-              onClick={() => {
-                onAddCustom(custom);
-                setCustom({ id: "", title: "", url: "", token: "" });
-                setAddingCustom(false);
-              }}
-              size="sm"
-            >
-              {t("Add server")}
-            </Button>
-          </DialogFooter>
+          {/* A form, so Return in any field adds the server the way the button does. */}
+          <form
+            className="flex min-h-0 flex-1 flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAddCustom();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{t("Add a server by URL")}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.",
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody className="mt-4">
+              <fieldset className="min-w-0" disabled={adding.isRunning}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="custom-id">{t("Name")}</FieldLabel>
+                    <Input
+                      id="custom-id"
+                      onChange={(event) =>
+                        setCustom((current) => ({
+                          ...current,
+                          id: event.target.value,
+                        }))
+                      }
+                      placeholder="name (lower-case)"
+                      value={custom.id}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="custom-title">{t("Title")}</FieldLabel>
+                    <Input
+                      id="custom-title"
+                      onChange={(event) =>
+                        setCustom((current) => ({
+                          ...current,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder={t("Title")}
+                      value={custom.title}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="custom-url">{t("URL")}</FieldLabel>
+                    <Input
+                      id="custom-url"
+                      onChange={(event) =>
+                        setCustom((current) => ({
+                          ...current,
+                          url: event.target.value,
+                        }))
+                      }
+                      placeholder="https://mcp.example.com/mcp"
+                      value={custom.url}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="custom-token">
+                      {t("Access token, if it needs one")}
+                    </FieldLabel>
+                    <Input
+                      id="custom-token"
+                      onChange={(event) =>
+                        setCustom((current) => ({
+                          ...current,
+                          token: event.target.value,
+                        }))
+                      }
+                      type="password"
+                      value={custom.token}
+                    />
+                  </Field>
+                </FieldGroup>
+              </fieldset>
+              <LiveRegion
+                as="p"
+                className="text-destructive text-sm"
+                tone="alert"
+              >
+                {adding.failure}
+              </LiveRegion>
+            </DialogBody>
+            <DialogFooter className="mt-4">
+              <Button
+                disabled={adding.isRunning}
+                onClick={() => handleCustomOpenChange(false)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={!canAdd || adding.isRunning}
+                focusableWhenDisabled={adding.isRunning}
+                size="sm"
+                type="submit"
+              >
+                {adding.isRunning ? t("Adding…") : t("Add server")}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
@@ -800,12 +858,8 @@ function Skills({
 }: {
   skills: PluginSkill[];
   bots: { id: string; name: string }[];
-  onInstall: (input: {
-    slug: string;
-    title: string;
-    summary: string;
-    instructions: string;
-  }) => void;
+  /** Resolves once the skill is installed and listed; throws the refusal when it is not. */
+  onInstall: (input: SkillInput) => Promise<unknown>;
   onUninstall: (slug: string) => void;
   onGrant: (slug: string, agentId: string, held: boolean) => void;
 }) {
@@ -816,6 +870,20 @@ function Skills({
     summary: "",
     instructions: "",
   });
+  const installing = usePress();
+  const canInstall = Boolean(draft.slug && draft.title && draft.instructions);
+
+  const handleWritingChange = (open: boolean) => {
+    setWriting(open);
+    if (!open) installing.forget();
+  };
+  // Cleared and closed only once the skill is there; a refusal keeps the instructions as written.
+  const handleInstall = async () => {
+    if (installing.isRunning || !canInstall) return;
+    if (!(await installing.run(() => onInstall(draft)))) return;
+    setDraft({ slug: "", title: "", summary: "", instructions: "" });
+    handleWritingChange(false);
+  };
 
   return (
     <div className="space-y-4">
@@ -826,102 +894,124 @@ function Skills({
         </Button>
       </div>
 
-      <Dialog onOpenChange={setWriting} open={writing}>
+      <Dialog
+        isBusy={installing.isRunning}
+        onOpenChange={handleWritingChange}
+        open={writing}
+      >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("Write a skill for the deployment")}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="skill-slug">{t("Slug")}</FieldLabel>
-                <Input
-                  id="skill-slug"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      slug: event.target.value,
-                    }))
-                  }
-                  placeholder="standup-notes"
-                  value={draft.slug}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="skill-title">{t("Title")}</FieldLabel>
-                <Input
-                  id="skill-title"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      title: event.target.value,
-                    }))
-                  }
-                  placeholder={t("Title")}
-                  value={draft.title}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="skill-summary">{t("Summary")}</FieldLabel>
-                <Input
-                  id="skill-summary"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      summary: event.target.value,
-                    }))
-                  }
-                  placeholder={t("One line")}
-                  value={draft.summary}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="skill-instructions">
-                  {t("Instructions")}
-                </FieldLabel>
-                <Textarea
-                  className="h-28 font-mono text-sm"
-                  id="skill-instructions"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      instructions: event.target.value,
-                    }))
-                  }
-                  placeholder={t(
-                    "What the Bot should do when this skill is used.",
-                  )}
-                  value={draft.instructions}
-                />
-              </Field>
-            </FieldGroup>
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            <Button onClick={() => setWriting(false)} size="sm" variant="ghost">
-              {t("Cancel")}
-            </Button>
-            <Button
-              disabled={!(draft.slug && draft.title && draft.instructions)}
-              onClick={() => {
-                onInstall(draft);
-                setDraft({
-                  slug: "",
-                  title: "",
-                  summary: "",
-                  instructions: "",
-                });
-                setWriting(false);
-              }}
-              size="sm"
-            >
-              {t("Install skill")}
-            </Button>
-          </DialogFooter>
+          {/* A form, so Return in a one-line field installs it; the instructions keep their lines. */}
+          <form
+            className="flex min-h-0 flex-1 flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleInstall();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{t("Write a skill for the deployment")}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it. People write their own on the Skills page.",
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody className="mt-4">
+              <fieldset className="min-w-0" disabled={installing.isRunning}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="skill-slug">{t("Slug")}</FieldLabel>
+                    <Input
+                      id="skill-slug"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          slug: event.target.value,
+                        }))
+                      }
+                      placeholder="standup-notes"
+                      value={draft.slug}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="skill-title">{t("Title")}</FieldLabel>
+                    <Input
+                      id="skill-title"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder={t("Title")}
+                      value={draft.title}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="skill-summary">
+                      {t("Summary")}
+                    </FieldLabel>
+                    <Input
+                      id="skill-summary"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          summary: event.target.value,
+                        }))
+                      }
+                      placeholder={t("One line")}
+                      value={draft.summary}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="skill-instructions">
+                      {t("Instructions")}
+                    </FieldLabel>
+                    <Textarea
+                      className="h-28 font-mono text-sm"
+                      id="skill-instructions"
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          instructions: event.target.value,
+                        }))
+                      }
+                      placeholder={t(
+                        "What the Bot should do when this skill is used.",
+                      )}
+                      value={draft.instructions}
+                    />
+                  </Field>
+                </FieldGroup>
+              </fieldset>
+              <LiveRegion
+                as="p"
+                className="text-destructive text-sm"
+                tone="alert"
+              >
+                {installing.failure}
+              </LiveRegion>
+            </DialogBody>
+            <DialogFooter className="mt-4">
+              <Button
+                disabled={installing.isRunning}
+                onClick={() => handleWritingChange(false)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={!canInstall || installing.isRunning}
+                focusableWhenDisabled={installing.isRunning}
+                size="sm"
+                type="submit"
+              >
+                {installing.isRunning ? t("Installing…") : t("Install skill")}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

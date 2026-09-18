@@ -880,6 +880,9 @@ export const ko: Record<string, string> = {
   "That Bot is no longer there, so the computer cannot be reset through it.":
     "그 봇이 이제 없어서, 그 봇을 통해서는 컴퓨터를 초기화할 수 없습니다.",
   "It has already been deleted.": "이미 삭제되었습니다.",
+  // 대화상자의 버튼이 일하는 동안 하는 말.
+  "Adding…": "추가하는 중…",
+  "Installing…": "설치하는 중…",
   "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. This one refuses; the boundary already asks on the fifth, which is the gentler place to start.":
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 이 규칙은 거부합니다. 기본 경계는 다섯 번째에서 묻기부터 시작합니다.",
   Unhide: "숨김 해제",
