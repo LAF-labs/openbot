@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -75,8 +76,22 @@ export const StopAllDialog = ({
     !checking && running.data ? runningWithHeld(running.data, held) : null;
   const total = counts ? totalOf(counts) : null;
   const pressed = stop.data;
+  const said = pressed ? pressedSaid(pressed) : null;
+  const isStopping = stop.isPending;
+
+  /*
+   * THE BUTTON THAT WAS PRESSED LEAVES WITH THE ANSWER. A stop that reached the server swaps the
+   * footer for 닫기 alone, so the keyboard that pressed 모두 멈추기 was left on `<body>`; 닫기
+   * takes it, after the commit that drew it. A stop the server never answered keeps its button,
+   * as 다시 시도, and keeps the focus with it.
+   */
+  const hasReached = pressed?.reached === true;
+  useEffect(() => {
+    if (hasReached) cancelRef.current?.focus();
+  }, [hasReached]);
 
   const handleStop = () => {
+    if (isStopping) return;
     stop.mutate();
   };
 
@@ -91,8 +106,14 @@ export const StopAllDialog = ({
     </Button>
   );
 
-  const body = pressed ? (
-    <PressedBody pressed={pressed} />
+  const body = said ? (
+    <DialogHeader>
+      <DialogTitle>{said.title}</DialogTitle>
+      <DialogDescription>{said.description}</DialogDescription>
+      {said.stuck ? (
+        <p className="text-destructive text-sm">{said.stuck}</p>
+      ) : null}
+    </DialogHeader>
   ) : checking ? (
     <DialogHeader>
       <DialogTitle>{t("Stop everything that is running?")}</DialogTitle>
@@ -145,6 +166,7 @@ export const StopAllDialog = ({
     ) : (
       <DialogFooter>
         <Button
+          disabled={isStopping}
           onClick={() => onOpenChange(false)}
           ref={cancelRef}
           size="sm"
@@ -158,12 +180,14 @@ export const StopAllDialog = ({
            * `destructive` variant's own pale wash reads as a button that cannot be pressed.
            */
           className="bg-destructive text-white hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:text-background dark:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)]"
-          disabled={stop.isPending}
+          disabled={isStopping}
+          // Keeps the focus it was pressed with while the stop is out.
+          focusableWhenDisabled
           onClick={handleStop}
           size="sm"
           variant="destructive"
         >
-          {stop.isPending
+          {isStopping
             ? t("Stopping…")
             : pressed
               ? t("Try again")
@@ -173,57 +197,76 @@ export const StopAllDialog = ({
     );
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    // Nothing closes it while the stop is out: what it came to is said here, not on the page.
+    <Dialog isBusy={isStopping} onOpenChange={onOpenChange} open={open}>
       {/* Cancel, not the confirm, under Return: see `ConfirmDialog` for why focus is placed at all. */}
       <DialogContent initialFocus={cancelRef}>
         {body}
+        {/*
+         * WHAT THE PRESS CAME TO, SAID AS WELL AS DRAWN. The title and description above change in
+         * place, and a heading that changes is not announced; these two lines are mounted with the
+         * dialog, empty, so the answer is heard the moment it arrives. The alert only for what did
+         * not stop.
+         */}
+        <LiveRegion className="sr-only">{said?.status}</LiveRegion>
+        <LiveRegion className="sr-only" tone="alert">
+          {said?.failure}
+        </LiveRegion>
         {footer}
       </DialogContent>
     </Dialog>
   );
 };
 
-/** What the press came to, in the person's words. */
-const PressedBody = ({ pressed }: { pressed: Pressed }) => {
+/**
+ * What the press came to, in the person's words: what the dialog draws, and what it says aloud —
+ * `status` for what stopped, `failure` for what did not.
+ */
+function pressedSaid(pressed: Pressed): {
+  title: string;
+  description: string;
+  stuck: string | null;
+  status: string | null;
+  failure: string | null;
+} {
   const { stopped, notStopped } = pressed.outcome;
   const stoppedAny = totalOf(stopped) > 0;
   const stuckAny = totalOf(notStopped) > 0;
 
   if (!pressed.reached) {
-    return (
-      <DialogHeader>
-        <DialogTitle>{t("Could not stop everything")}</DialogTitle>
-        <DialogDescription>
-          {t("The server did not answer. Check the connection and try again.")}
-          {stoppedAny
-            ? ` ${t("The conversation running in this window was stopped.")}`
-            : ""}
-        </DialogDescription>
-      </DialogHeader>
-    );
+    const title = t("Could not stop everything");
+    const description = `${t("The server did not answer. Check the connection and try again.")}${
+      stoppedAny
+        ? ` ${t("The conversation running in this window was stopped.")}`
+        : ""
+    }`;
+    return {
+      title,
+      description,
+      stuck: null,
+      status: null,
+      failure: `${title}. ${description}`,
+    };
   }
 
-  return (
-    <DialogHeader>
-      <DialogTitle>
-        {stuckAny
-          ? t("Some of it could not be stopped")
-          : t("Everything is stopped")}
-      </DialogTitle>
-      <DialogDescription>
-        {stoppedAny
-          ? t("Stopped: {work}.", { work: describeWork(stopped) })
-          : stuckAny
-            ? ""
-            : t("Everything had already finished by the time you pressed.")}
-      </DialogDescription>
-      {stuckAny ? (
-        <p className="text-destructive text-sm" role="alert">
-          {t("Could not stop: {work}. Try again in a moment.", {
-            work: describeWork(notStopped),
-          })}
-        </p>
-      ) : null}
-    </DialogHeader>
-  );
-};
+  const title = stuckAny
+    ? t("Some of it could not be stopped")
+    : t("Everything is stopped");
+  const description = stoppedAny
+    ? t("Stopped: {work}.", { work: describeWork(stopped) })
+    : stuckAny
+      ? ""
+      : t("Everything had already finished by the time you pressed.");
+  const stuck = stuckAny
+    ? t("Could not stop: {work}. Try again in a moment.", {
+        work: describeWork(notStopped),
+      })
+    : null;
+  return {
+    title,
+    description,
+    stuck,
+    status: description ? `${title}. ${description}` : title,
+    failure: stuck,
+  };
+}
