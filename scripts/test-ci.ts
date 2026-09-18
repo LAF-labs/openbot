@@ -285,13 +285,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * server 2,680 / app 1,131 / agent-computer 261 / root 367; `server` and `app` re-raised to 3%
  * under, the other two did not grow.
  *
+ * RAISED 2026-09-18, with the React Compiler rebased onto both: the ceiling on the functions it
+ * leaves uncompiled, the four fixtures that hold that check to what it must see, and `useNow`'s
+ * minute — seven tests to `app`. Measured on the combined tree at server 2,680 / app 1,138 /
+ * agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2599, roots: ["server"] },
-  { name: "app", floor: 1097, roots: ["app"] },
+  { name: "app", floor: 1103, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
