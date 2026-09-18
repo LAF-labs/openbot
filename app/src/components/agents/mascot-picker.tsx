@@ -16,7 +16,7 @@ export function MascotPicker({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   seed: string | undefined;
-  onSelect: (id: string) => void;
+  onSelect: (id: string) => Promise<unknown>;
   pending?: boolean;
 }) {
   return (

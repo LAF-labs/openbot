@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +19,7 @@ import {
   randomBotAvatarSeed,
 } from "@/lib/avatar/bot-avatar";
 import { t } from "@/lib/i18n";
+import { pressOnce } from "@/lib/press";
 
 /**
  * Choosing a Bot's face: a body, a colour, and a shuffle.
@@ -94,13 +97,40 @@ export const BotAvatarPicker = ({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   seed: string | undefined;
-  onSelect: (seed: string) => void;
+  /** Saves the face. Resolves once it is saved; throws the person's sentence when it is not. */
+  onSelect: (seed: string) => Promise<unknown>;
   pending?: boolean;
 }) => {
   const params = botAvatarParams(seed);
+  /*
+   * WHAT A CHOICE CAME TO, SAID HERE. A face that did not save was said nowhere: the press's
+   * promise rejected into the console, and the preview simply stayed as it was — which looks
+   * exactly like a tile that was never pressed.
+   */
+  const [isApplying, setIsApplying] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  // Saving a face is this dialog's one action: while it is out, nothing closes it or picks again.
+  const isBusy = isApplying || pending === true;
+
+  const handleSelect = async (chosen: string) => {
+    if (isBusy) return;
+    setFailure(null);
+    setIsApplying(true);
+    const outcome = await pressOnce({ act: () => onSelect(chosen) });
+    setIsApplying(false);
+    if (outcome.kind === "failed") setFailure(outcome.sentence);
+  };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog
+      isBusy={isBusy}
+      onOpenChange={onOpenChange}
+      // Every open starts clean: the last failure was about a choice already left behind.
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) setFailure(null);
+      }}
+      open={open}
+    >
       {/* One way out: a click applies, and 완료 closes. A second × beside it asked what it did. */}
       <DialogContent showCloseButton={false}>
         <DialogHeader>
@@ -111,14 +141,14 @@ export const BotAvatarPicker = ({
         </DialogHeader>
 
         <div
-          aria-busy={pending ? "true" : undefined}
+          aria-busy={isBusy ? "true" : undefined}
           className="flex flex-col gap-4"
         >
           <div className="flex flex-col items-center gap-3">
             <BotAvatar seed={seed} size={128} state="curious" />
             <Button
-              disabled={pending}
-              onClick={() => onSelect(randomBotAvatarSeed())}
+              disabled={isBusy}
+              onClick={() => void handleSelect(randomBotAvatarSeed())}
               size="sm"
               type="button"
               variant="outline"
@@ -130,23 +160,28 @@ export const BotAvatarPicker = ({
           <Row
             axis="shape"
             label={t("Shape")}
-            onSelect={onSelect}
+            onSelect={(chosen) => void handleSelect(chosen)}
             options={BOT_AVATAR_SHAPES}
             params={params}
-            pending={pending}
+            pending={isBusy}
           />
           <Row
             axis="palette"
             label={t("Colour")}
-            onSelect={onSelect}
+            onSelect={(chosen) => void handleSelect(chosen)}
             options={BOT_AVATAR_PALETTES}
             params={params}
-            pending={pending}
+            pending={isBusy}
           />
         </div>
 
+        <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+          {failure}
+        </LiveRegion>
+
         <DialogFooter>
           <Button
+            disabled={isBusy}
             onClick={() => onOpenChange(false)}
             type="button"
             variant="outline"
