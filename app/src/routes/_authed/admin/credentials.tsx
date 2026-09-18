@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
+import { LiveRegion } from "@/components/layout/live-region";
 import {
   PageEmpty,
   PageRows,
@@ -85,6 +86,20 @@ function CredentialsPage() {
       setAdding(false);
     },
   });
+  const isSaving = createCredential.isPending;
+
+  /*
+   * Every way of closing comes through here (see the note on the dialog below). 취소 used to set
+   * the flag itself, and a close Base UI did not make never reaches `onOpenChange` — so Escape
+   * cleared the secret and 취소, the one button labelled for it, kept it.
+   */
+  const handleOpenChange = (open: boolean) => {
+    setAdding(open);
+    if (!open) {
+      form.reset();
+      createCredential.reset();
+    }
+  };
 
   return (
     <PageShell
@@ -112,23 +127,18 @@ function CredentialsPage() {
        * in a masked input for the rest of the session and reappearing the next time anybody opened
        * this dialog. A secret a person decided not to save should not survive the decision.
        */}
-      <Dialog
-        onOpenChange={(open) => {
-          setAdding(open);
-          if (!open) {
-            form.reset();
-            createCredential.reset();
-          }
-        }}
-        open={adding}
-      >
+      <Dialog isBusy={isSaving} onOpenChange={handleOpenChange} open={adding}>
         <DialogContent>
           <form
             className="flex min-h-0 flex-1 flex-col gap-4"
             noValidate
             onSubmit={(event) => {
               event.preventDefault();
-              form.handleSubmit();
+              /*
+               * `handleSubmit` rethrows what `onSubmit` threw, and nothing awaited it: every refused
+               * save was an unhandled rejection. The refusal is said below, from the mutation.
+               */
+              form.handleSubmit().catch(() => undefined);
             }}
           >
             <DialogHeader>
@@ -140,138 +150,146 @@ function CredentialsPage() {
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="mt-4">
-              <FieldGroup className="sm:grid sm:grid-cols-2">
-                <form.Field name="kind">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>
-                          {t("Type")}
-                        </FieldLabel>
-                        <Select
-                          onValueChange={(value) =>
-                            field.handleChange(value as "model" | "connector")
-                          }
-                          value={field.state.value}
-                        >
-                          <SelectTrigger
+              {/* Locked while it saves: what is on screen is what is being stored. */}
+              <fieldset className="min-w-0" disabled={isSaving}>
+                <FieldGroup className="sm:grid sm:grid-cols-2">
+                  <form.Field name="kind">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>
+                            {t("Type")}
+                          </FieldLabel>
+                          <Select
+                            onValueChange={(value) =>
+                              field.handleChange(value as "model" | "connector")
+                            }
+                            value={field.state.value}
+                          >
+                            <SelectTrigger
+                              aria-invalid={isInvalid}
+                              id={field.name}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                <SelectItem value="model">
+                                  {t("Model")}
+                                </SelectItem>
+                                <SelectItem value="connector">
+                                  {t("Connector")}
+                                </SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          {isInvalid ? (
+                            <FieldError errors={field.state.meta.errors} />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                  <form.Field name="provider">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>
+                            {t("Provider")}
+                          </FieldLabel>
+                          <Input
                             aria-invalid={isInvalid}
                             id={field.name}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="model">
-                                {t("Model")}
-                              </SelectItem>
-                              <SelectItem value="connector">
-                                {t("Connector")}
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        {isInvalid ? (
-                          <FieldError errors={field.state.meta.errors} />
-                        ) : null}
-                      </Field>
-                    );
-                  }}
-                </form.Field>
-                <form.Field name="provider">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>
-                          {t("Provider")}
-                        </FieldLabel>
-                        <Input
-                          aria-invalid={isInvalid}
-                          id={field.name}
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                          onChange={(event) =>
-                            field.handleChange(event.target.value)
-                          }
-                          placeholder={t("OpenAI")}
-                          value={field.state.value}
-                        />
-                        {isInvalid ? (
-                          <FieldError errors={field.state.meta.errors} />
-                        ) : null}
-                      </Field>
-                    );
-                  }}
-                </form.Field>
-                <form.Field name="keyId">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>
-                          {t("Key ID")}
-                        </FieldLabel>
-                        <Input
-                          aria-invalid={isInvalid}
-                          id={field.name}
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                          onChange={(event) =>
-                            field.handleChange(event.target.value)
-                          }
-                          placeholder="production"
-                          value={field.state.value}
-                        />
-                        {isInvalid ? (
-                          <FieldError errors={field.state.meta.errors} />
-                        ) : null}
-                      </Field>
-                    );
-                  }}
-                </form.Field>
-                <form.Field name="plaintext">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor={field.name}>
-                          {t("Secret")}
-                        </FieldLabel>
-                        <Input
-                          aria-invalid={isInvalid}
-                          autoComplete="off"
-                          id={field.name}
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                          onChange={(event) =>
-                            field.handleChange(event.target.value)
-                          }
-                          type="password"
-                          value={field.state.value}
-                        />
-                        {isInvalid ? (
-                          <FieldError errors={field.state.meta.errors} />
-                        ) : null}
-                      </Field>
-                    );
-                  }}
-                </form.Field>
-              </FieldGroup>
-              {createCredential.error ? (
-                <p className="text-destructive text-sm" role="alert">
-                  {t("Could not save the credential. Try again.")}
-                </p>
-              ) : null}
+                            name={field.name}
+                            onBlur={field.handleBlur}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                            placeholder={t("OpenAI")}
+                            value={field.state.value}
+                          />
+                          {isInvalid ? (
+                            <FieldError errors={field.state.meta.errors} />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                  <form.Field name="keyId">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>
+                            {t("Key ID")}
+                          </FieldLabel>
+                          <Input
+                            aria-invalid={isInvalid}
+                            id={field.name}
+                            name={field.name}
+                            onBlur={field.handleBlur}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                            placeholder="production"
+                            value={field.state.value}
+                          />
+                          {isInvalid ? (
+                            <FieldError errors={field.state.meta.errors} />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                  <form.Field name="plaintext">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>
+                            {t("Secret")}
+                          </FieldLabel>
+                          <Input
+                            aria-invalid={isInvalid}
+                            autoComplete="off"
+                            id={field.name}
+                            name={field.name}
+                            onBlur={field.handleBlur}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                            type="password"
+                            value={field.state.value}
+                          />
+                          {isInvalid ? (
+                            <FieldError errors={field.state.meta.errors} />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                </FieldGroup>
+              </fieldset>
+              <LiveRegion
+                as="p"
+                className="text-destructive text-sm"
+                tone="alert"
+              >
+                {createCredential.error
+                  ? t("Could not save the credential. Try again.")
+                  : null}
+              </LiveRegion>
             </DialogBody>
             <DialogFooter className="mt-4">
               <Button
-                onClick={() => setAdding(false)}
+                disabled={isSaving}
+                onClick={() => handleOpenChange(false)}
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -283,13 +301,13 @@ function CredentialsPage() {
               >
                 {([canSubmit, isSubmitting]) => (
                   <Button
-                    disabled={
-                      !canSubmit || isSubmitting || createCredential.isPending
-                    }
+                    disabled={!canSubmit || isSubmitting || isSaving}
+                    // Keeps the focus it was pressed with while the secret is being stored.
+                    focusableWhenDisabled={isSaving}
                     size="sm"
                     type="submit"
                   >
-                    {isSubmitting || createCredential.isPending
+                    {isSubmitting || isSaving
                       ? t("Saving…")
                       : t("Save credential")}
                   </Button>
