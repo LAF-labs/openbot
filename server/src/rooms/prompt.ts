@@ -137,36 +137,6 @@ export function rotate<T>(items: readonly T[], by: number): T[] {
 }
 
 /**
- * Who this turn is addressed to.
- *
- * NOBODY NAMED MEANS EVERYBODY, which is the reference's rule (`m6i`) and the opposite of the one
- * we had: ours picked the room's first member, so a question to the room was always answered by
- * whichever Bot happened to sort first. Ids, never names — the composer already carries the id of
- * every `@` chip, and re-deriving it by scanning prose for names is a worse version of a thing we
- * already have exactly.
- */
-export function addressedMembers<T extends { id: string }>(
-  members: readonly T[],
-  addressedIds: readonly string[],
-): T[] {
-  const wanted = new Set(addressedIds);
-  const named = members.filter((member) => wanted.has(member.id));
-  return named.length > 0 ? named : [...members];
-}
-
-/**
- * A Bot that had nothing to add.
- *
- * Empty is silence, and so is `(pass)` — the reference accepts it because models reach for a word
- * when told they may say nothing, and a room that prints "(pass)" as a message is worse than one
- * that prints nothing.
- */
-export function isSilence(text: string): boolean {
-  const trimmed = text.trim();
-  return trimmed.length === 0 || /^\(?pass\)?$/i.test(trimmed);
-}
-
-/**
  * The turn itself: the room, who is in it, what has been said since, and whose turn it is.
  *
  * Deliberately one user message rather than several. The Bot's own history is the rest of the

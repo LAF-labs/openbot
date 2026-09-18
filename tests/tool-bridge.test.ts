@@ -4,7 +4,6 @@ import {
   BRIDGE_TOOLS,
   bridgeTools,
   DEFERRED_TOOL_PREFIX,
-  DEFERRED_TOOLS_HINT_KO,
   describeResultText,
   exposureOf,
   familiesOf,
@@ -280,12 +279,6 @@ describe("the words around the bridge", () => {
     );
     const bare = BRIDGE_TOOLS.find((tool) => tool.name === "tool_search");
     expect(bare?.description).toContain("연결된 서비스는 없다");
-  });
-
-  test("the prompt line the context tier can pick up names all three bridge tools", () => {
-    for (const name of ["tool_search", "tool_describe", "tool_call"]) {
-      expect(DEFERRED_TOOLS_HINT_KO).toContain(name);
-    }
   });
 
   test("a one-line description is the first sentence, bounded", () => {

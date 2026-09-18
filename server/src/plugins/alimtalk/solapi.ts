@@ -27,8 +27,8 @@ export const SOLAPI_DEFAULT_BASE_URL = "https://api.solapi.com";
  * The exact facts that must be confirmed against the live API once LAF's key exists.
  *
  * Exported as data rather than left in prose, because a comment is not a checklist and this is one.
- * `docs/laf/connections.md` prints it; a test asserts it is not empty, so deleting an entry is a
- * deliberate act by somebody who has actually run the call.
+ * `docs/laf/connections.md` points here, and deleting an entry is a deliberate act by somebody who
+ * has actually run the call. Nothing in the product reads it: it is the operator's list.
  */
 export const SOLAPI_UNVERIFIED: readonly {
   call: string;

@@ -34,11 +34,6 @@ import {
 
 export type { NoticeDestination };
 
-/** The path a destination names, which is where a click on the notice should land. */
-export function noticePath(destination: NoticeDestination): string {
-  return `/${destination.kind}/${encodeURIComponent(destination.id)}`;
-}
-
 export type NotificationSupport = "unsupported" | "granted" | "denied" | "ask";
 
 /** What the browser will currently let us do, without asking it for anything. */

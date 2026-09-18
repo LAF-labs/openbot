@@ -26,16 +26,10 @@ import type { AgentActor, AgentProfile } from "./profile-types";
  * package's Bot outright — and it is not permission to drive the browser a Bot holds, which is
  * `actorMayDriveBot` and reads ownership on its own terms. Seeing a Bot and using one are two
  * questions and are kept apart on purpose.
- */
-export function canSeeAgent(
-  actor: AgentActor,
-  agent: Pick<AgentProfile, "ownerUserId">,
-): boolean {
-  return agent.ownerUserId === null || agent.ownerUserId === actor.id;
-}
-
-/**
- * The same rule as a WHERE clause, for the reads that must never fetch the row in the first place.
+ *
+ * ONLY AS A WHERE CLAUSE, for the reads that must never fetch the row in the first place. A
+ * predicate spelling of the same rule sat beside this one with no caller but its own test, which
+ * is how two spellings of one rule start to disagree; it was removed on 2026-09-18.
  *
  * In the query and not in JavaScript afterwards: "we read it and then did not show it" is the shape
  * most accidental disclosures take, and every one of these reads feeds something — a roster, a

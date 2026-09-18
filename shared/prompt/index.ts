@@ -37,14 +37,9 @@ export {
   notepadText,
   type RoutineNote,
 } from "./notepad.ko";
-export { asRole, copula } from "./particles";
-export {
-  estimateTokens,
-  type PromptSkill,
-  SKILL_INDEX_MAX_TOKENS,
-  skillIndexText,
-} from "./skill-index";
-export { TOOL_RESULT_KO, toolResultText } from "./tool-results.ko";
+export { copula } from "./particles";
+export { type PromptSkill, skillIndexText } from "./skill-index";
+export { TOOL_RESULT_KO } from "./tool-results.ko";
 
 /** 실행이 벌어지는 자리. `forwardedProps.mode`로 오고, 아무 말이 없으면 대화다. */
 export type PromptMode = "chat" | "room" | "routine" | "coworker";

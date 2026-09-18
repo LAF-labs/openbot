@@ -1,10 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
-import { t } from "@/lib/i18n";
-
 /**
  * What the 사이트 연결 section asks the server, and nothing else.
  *
- * Three calls, and the important one is not here: opening the login page goes through
+ * Two calls, and the important one is not here: opening the login page goes through
  * `POST /api/computers/:botId/navigate`, the ordinary governed and audited door to a Bot's browser
  * — see `openSite` below. This module holds no words; every sentence a person reads about these
  * results is chosen in the component, in Korean.
@@ -20,35 +17,6 @@ export type SiteConnection = {
   /** The last look found the login wall instead of the shop. */
   needsLogin: boolean;
 };
-
-export const siteKeys = {
-  all: ["sites"] as const,
-  connections: () => ["sites", "connections"] as const,
-};
-
-export function siteConnectionsQueryOptions() {
-  return queryOptions({
-    queryKey: siteKeys.connections(),
-    queryFn: async (): Promise<SiteConnection[]> => {
-      const response = await fetch("/api/sites/connections", {
-        credentials: "include",
-      });
-      /*
-       * A deployment with no computer does not mount these routes, and that is not an error worth a
-       * red line across somebody's settings screen — every card simply reads "아직 연결 안 됨",
-       * which is true. A real failure still throws, so a broken deployment does not masquerade as an
-       * empty one.
-       */
-      if (response.status === 404) return [];
-      if (!response.ok)
-        throw new Error(
-          t("Could not load the connected sites. Refresh to try again."),
-        );
-      return ((await response.json()) as { connections: SiteConnection[] })
-        .connections;
-    },
-  });
-}
 
 /**
  * Why opening the login page did not happen, in facts.

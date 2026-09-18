@@ -187,11 +187,6 @@ export function botAvatarSeed(params: BotAvatarParams): string {
   return `s:${params.shape}.${params.palette}`;
 }
 
-/** The seed a Bot's face is actually drawn from: normalised, never nothing. */
-export function botAvatarIdFor(seed: string | undefined): string {
-  return botAvatarSeed(botAvatarParams(seed));
-}
-
 /** A face nobody has yet: any body, any pickable colour. */
 export function randomBotAvatarSeed(rng: () => number = Math.random): string {
   const pick = <T>(list: readonly T[]): T => {
@@ -202,15 +197,6 @@ export function randomBotAvatarSeed(rng: () => number = Math.random): string {
     return list[index] as T;
   };
   return botAvatarSeed({ shape: pick(SHAPE_IDS), palette: pick(PICKABLE) });
-}
-
-export function botAvatarColor(seed: string | undefined): BotAvatarColor {
-  return COLORS[botAvatarParams(seed).palette];
-}
-
-/** The body fill on a light page, for a chip or a ring that wants the Bot's colour. */
-export function botAvatarBackground(seed: string | undefined): string {
-  return botAvatarColor(seed).light;
 }
 
 export { DEFAULT_SHAPE_IDS, SHAPE_IDS, type ShapeId };

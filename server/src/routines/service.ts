@@ -59,9 +59,7 @@ export { ROUTINE_RUN_TIMEOUT_MS } from "./run";
 export {
   CATCH_UP_GRACE_MAX_MS,
   CATCH_UP_GRACE_MIN_MS,
-  CAUGHT_UP_AFTER_MS,
   catchUpGraceMs,
-  MIN_INTERVAL_MINUTES,
   nextRunAt,
   type RoutineSchedule,
 } from "./schedule";

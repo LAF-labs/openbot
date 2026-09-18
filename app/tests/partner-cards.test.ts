@@ -7,7 +7,6 @@ import { ko } from "../src/lib/i18n-ko";
 import {
   confirmAlimtalkCode,
   disconnectPartner,
-  partnersQueryOptions,
   requestAlimtalkCode,
 } from "../src/lib/partners/queries";
 import { stubFetch } from "./support/fetch";
@@ -49,21 +48,6 @@ afterEach(() => {
 });
 
 describe("what the cards ask for", () => {
-  test("a deployment with no partner routes is an empty list, not a red line", async () => {
-    reply = () => new Response("", { status: 404 });
-    const cards = await partnersQueryOptions().queryFn?.({} as never);
-    // A machine set up without either account genuinely has no partner services. An error here
-    // would draw a failure across somebody's settings screen for a correct deployment.
-    expect(cards).toEqual([]);
-  });
-
-  test("a real failure still throws, so a broken deployment is not an empty one", async () => {
-    reply = () => new Response("", { status: 500 });
-    await expect(
-      partnersQueryOptions().queryFn?.({} as never),
-    ).rejects.toThrow();
-  });
-
   test("the code request carries the channel id and the manager's phone, and nothing else", async () => {
     reply = () => new Response(JSON.stringify({ searchId: "@미소상회" }));
     await requestAlimtalkCode("@미소상회", "010-5555-4444");

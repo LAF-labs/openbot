@@ -118,8 +118,6 @@ export const OWNER_INSTRUCTION = {
  */
 export const VERDICTS = ["allow", "ask"] as const;
 
-export type Verdict = (typeof VERDICTS)[number];
-
 export const SYSTEM = [
   "You decide whether one action a software agent is about to take is covered by a standing",
   "instruction its owner wrote about what they do not want to be asked. Answer only that.",

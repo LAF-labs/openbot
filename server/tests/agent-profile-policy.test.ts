@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canManageAgent, canSeeAgent } from "../src/agents/profile-policy";
+import { canManageAgent } from "../src/agents/profile-policy";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
 
 const creator: AgentActor = { id: "user-1", role: "user" };
@@ -27,36 +27,10 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   };
 }
 
-/**
- * Seeing a Bot, which is a different question from managing one.
- *
- * The role decides the second and has nothing to do with the first. Asserted here as a predicate
- * as well as in SQL (`agent-profile-store.integration.test.ts`), because the rule is written twice
- * on purpose — once as a WHERE clause for the reads, once as an answer for the doors that never
- * load a profile — and two spellings of one rule that disagree is the failure to watch for.
+/*
+ * Who may SEE a Bot is a WHERE clause (`visibleToActor`) and is measured against the database in
+ * `agent-profile-store.integration.test.ts` — an administrator included, and a package's Bot.
  */
-describe("who can see a Bot at all", () => {
-  test("a Bot belongs to the account that made it, and to nobody else", () => {
-    const agent = profile();
-
-    expect(canSeeAgent(creator, agent)).toBe(true);
-    expect(canSeeAgent(otherUser, agent)).toBe(false);
-    // No role exception. This returned true until 2026-09-16, and the roster read behind it
-    // showed an administrator every private Bot on the deployment.
-    expect(canSeeAgent(admin, agent)).toBe(false);
-  });
-
-  test("a Bot the deployment itself ships is everybody's", () => {
-    // Null owner: a package's Bot belongs to no person, and it is the one thing on a roster that
-    // is not somebody's. The same case `actorMayDriveBot` has always made for a Bot nobody made.
-    const agent = profile({ ownerUserId: null });
-
-    for (const actor of [creator, otherUser, admin]) {
-      expect(canSeeAgent(actor, agent)).toBe(true);
-    }
-  });
-});
-
 describe("agent profile permissions", () => {
   test("allows only the creator and admins to manage active user profiles", () => {
     const agent = profile();

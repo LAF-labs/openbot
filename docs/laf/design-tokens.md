@@ -117,25 +117,17 @@ Grok의 사다리는 파생이 아니라 **명시**다: 2 / 4 / 6 / 8 / 10 / 14 
 | `focusRing` | 자기 테두리가 있는 컨트롤 — 버튼, 인풋, 셀렉트, 스위치 | `border-ring` + `ring-3 ring-ring/50` |
 | `focusRingInset` | 패딩 있는 팝업 안의 행 — 메뉴 항목, 셀렉트 옵션, 사이드바 행 | `ring-2 ring-ring/50 ring-inset` |
 | `focusRingWithin` | 자식을 통해 포커스되는 컨테이너 — 칩 필드 | `focus-within:` 형태의 하우스 링 |
-| `focusRingHasControl` | 인풋 그룹 — 안의 **컨트롤**이 포커스될 때만 | `has-[[data-slot=input-group-control]:focus-visible]:` 형태 |
 | `focusRingNested` | 봇의 산문이 말풍선 안에 넣은 버튼·링크 | `[button,a]:` 형태 |
-| `highlightRing` | 콤보박스 옵션 — `focus-visible`이 **절대 안 걸리는** 자리 | `data-highlighted:ring-2 ring-inset` |
 
-세 가지가 여기 적혀 있어야 하는 이유:
+두 가지가 여기 적혀 있어야 하는 이유:
 
 - **`outline-hidden`이지 `outline-none`이 아니다.** 둘 다 기본 아웃라인을 끄지만
   `outline-hidden`은 `@media (forced-colors: active)`에서 투명한 2px 아웃라인을 되돌려 놓는다.
   강제 색 테마에서는 `box-shadow` 링이 아예 그려지지 않으므로, `outline-none`은 Windows 고대비
   사용자에게 **앱 전체에 포커스 표시가 없는 상태**를 남긴다. 앱에는 두 철자가 다 있었다.
-- **콤보박스 옵션에는 `focus-visible`이 절대 걸리지 않는다.** Base UI의 `Combobox.Item`은
-  `tabIndex: undefined`이고 `.focus()`를 부르지 않는다 — DOM 포커스는 인풋에 남고 활성 옵션은
-  `aria-activedescendant`로 가리킨다. 그래서 옵션에 쓸 상수는 `highlightRing`
-  (`data-highlighted:`)이다. `focus-visible`을 걸면 **커버리지처럼 보이는 죽은 CSS**가 된다.
-  메뉴와 셀렉트는 반대로 진짜 DOM 포커스를 옮기므로 `focusRingInset`이 맞다.
 - **변형 접두사가 붙은 형태는 풀어 써야 한다.** Tailwind는 소스에서 **완성된 클래스 이름**을
   볼 때만 유틸리티를 만든다. `` `[button,a]:${focusRing}` ``은 런타임 문자열은 맞고 CSS는 하나도
-  안 나온다 — 링이 조용히 사라지는 실패다. 그래서 `focusRingNested`·`focusRingHasControl`이
-  따로 있다.
+  안 나온다 — 링이 조용히 사라지는 실패다. 그래서 `focusRingNested`가 따로 있다.
 
 `ring` 두께는 **3(컨트롤)과 2(팝업 안의 행)** 둘뿐이다. `ring-1`은 헤어라인 테두리용이고
 포커스가 아니다.
@@ -154,8 +146,7 @@ Grok의 사다리는 파생이 아니라 **명시**다: 2 / 4 / 6 / 8 / 10 / 14 
 
 | 상수 (`ui/focus.ts`) | 클래스 | 언제 |
 |---|---|---|
-| `selectedClass` | `border-foreground bg-accent text-foreground` | 자기 상태를 밖에서 받는 타일·행 |
-| `selectedWhenPressed` | 위와 같은 것을 `aria-pressed:`로 | 토글 버튼. **`Button`이 이미 달고 있다** |
+| `selectedWhenPressed` | `border-foreground bg-accent text-foreground`를 `aria-pressed:`로 | 토글 버튼. **`Button`이 이미 달고 있다** |
 
 `Button`에는 `aria-pressed={…}`만 넘기면 된다. 클래스는 필요 없다.
 
@@ -163,9 +154,8 @@ Grok의 사다리는 파생이 아니라 **명시**다: 2 / 4 / 6 / 8 / 10 / 14 
 가지고 있다). 맨 `div`라면 `border`를 먼저 주지 않으면 선택될 때 레이아웃이 1px 움직인다.
 
 **`data-pressed`는 일부러 뺐다.** Base UI가 이 속성을 두 가지로 쓴다: `Toggle`에서는 "켜짐"
-이지만 `Combobox.Trigger`·`Select.Trigger`에서는 **"지금 눌려 있음"**이다(그래서
-`combobox.tsx`가 `data-pressed:bg-transparent`로 눌림 채움을 끄고 있다). 여기서 스타일을 걸면
-앱의 모든 트리거가 누를 때마다 선택된 모습으로 번쩍인다.
+이지만 `Combobox.Trigger`·`Select.Trigger`에서는 **"지금 눌려 있음"**이다. 여기서 스타일을
+걸면 앱의 모든 트리거가 누를 때마다 선택된 모습으로 번쩍인다.
 
 ### 비활성은 색이 옅어진 활성이 아니다
 
@@ -301,11 +291,11 @@ React가 그때마다 unknown-prop 경고를 찍는다.
 `Select`의 트리거와 `Combobox`의 트리거가 서로 다른 표시를 달고 있었다 —
 `IconSelector`(위아래 두 겹)와 `IconChevronDown`(하나). 한 폼의 인접한 두 줄에서 같은 동작에
 두 가지 표시였고, 두 겹 갈매기는 뜻도 틀리다: 그건 스테퍼나 정렬 가능한 열의 표시이고 셀렉트는
-둘 다 아니다. 지금은 둘 다 `IconChevronDown`이다. (`select.tsx`의 스크롤 화살표는 별개다 —
-"더 있다"는 다른 말이다.)
+둘 다 아니다. `Select`는 `IconChevronDown`으로 맞췄고, 쓰는 화면이 없던 `Combobox`는
+2026-09-18에 지웠다. (`select.tsx`의 스크롤 화살표는 별개다 — "더 있다"는 다른 말이다.)
 
-화면은 네이티브 `<select>`를 쓰지 않는다(2026-09-06 기준 하나도 없다). `Select`나 `Combobox`를
-쓰고, 갈매기는 직접 그리지 않는다.
+화면은 네이티브 `<select>`를 쓰지 않는다(2026-09-06 기준 하나도 없다). `Select`를 쓰고,
+갈매기는 직접 그리지 않는다.
 
 ## 11. 래칫
 

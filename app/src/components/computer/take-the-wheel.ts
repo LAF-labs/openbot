@@ -116,32 +116,6 @@ export async function supplySecret(
 }
 
 /**
- * Serializes human input requests without blocking the caller; ordering matters for typed secrets.
- */
-let inputQueue: Promise<unknown> = Promise.resolve();
-
-/**
- * Send one human input event. Returns immediately; delivery is ordered.
- */
-export function sendHumanInput(
-  computerId: string,
-  kind: "click" | "type" | "key" | "scroll",
-  body: Record<string, unknown>,
-): void {
-  inputQueue = inputQueue
-    .then(() =>
-      fetch(`/api/computers/${computerId}/human/${kind}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-    )
-    // Fire-and-forget: the user can see/retry input failures, while the input queue must keep moving.
-    .catch(() => undefined);
-}
-
-/**
  * Convert display coordinates on a scaled screenshot into browser viewport coordinates.
  */
 export function pageCoordinates(

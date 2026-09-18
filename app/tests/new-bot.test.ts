@@ -60,7 +60,7 @@ describe("what a new Bot is called", () => {
   });
 
   test("the face is a seed, not a tile id", () => {
-    // `mascotIdFor` maps any string to a drawn character, so a seed cannot name a tile that the art
+    // `botAvatarParams` maps any string to a drawn character, so a seed cannot name a tile that the art
     // set stopped shipping — which is exactly what a stored tile id can do.
     const seeds = new Set(
       Array.from({ length: 50 }, () => randomFaceSeed()).map(String),

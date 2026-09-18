@@ -38,11 +38,6 @@ import { modelUsageOf } from "./usage/model-usage";
  * branch to choose between.
  */
 
-/** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
-export type IdentifyUser = (
-  request: Request,
-) => Promise<{ id: string; name: string }>;
-
 type RegisteredRemoteAgent = {
   id: string;
   name: string;

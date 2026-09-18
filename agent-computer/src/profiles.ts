@@ -222,13 +222,6 @@ const LAUNCH_ARGS = [
  */
 const CLOSE_SETTLE_MS = 2_000;
 
-/** What a Bot's browser looks like from outside. */
-export type BotBrowser = {
-  botId: string;
-  context: BrowserContext;
-  page: Page;
-};
-
 export type ProfileSummary = {
   botId: string;
   /** Whether this Bot has a tab open in the deployment's browser right now. */

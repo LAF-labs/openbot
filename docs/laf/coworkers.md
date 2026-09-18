@@ -42,9 +42,8 @@ everyone signed in, and `canManageAgent` refuses to let anybody edit or delete i
 product. **This package ships none**, so in practice every Bot on a deployment is
 `remote_ag_ui`, made by a person, visible only to them, and answered by `agent-bot`.
 
-The rule is written once, in `server/src/agents/profile-policy.ts`: `canSeeAgent` as a predicate
-and `visibleToActor` as a WHERE clause for the reads. Filtering happens in the query, never in
-JavaScript after the row is read.
+The rule is written once, in `server/src/agents/profile-policy.ts`: `visibleToActor`, a WHERE
+clause for the reads. Filtering happens in the query, never in JavaScript after the row is read.
 
 Driving a Bot — reading its screen, pressing its controls, answering its questions, spending what
 its tools hold — is decided by `actorMayDriveBot` (`auth/guards.ts`), and since 2026-09-16 it gives

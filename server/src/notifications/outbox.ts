@@ -93,10 +93,6 @@ export const NOTIFICATION_KINDS = [
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
-export function isNotificationKind(value: unknown): value is NotificationKind {
-  return NOTIFICATION_KINDS.includes(value as NotificationKind);
-}
-
 /** Rows addressed to the operator rather than to the person. One kind today; the prefix is the rule. */
 export function isSupportKind(kind: string): boolean {
   return kind.startsWith("support.");

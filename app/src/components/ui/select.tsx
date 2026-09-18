@@ -51,10 +51,10 @@ function SelectTrigger({
     >
       {children}
       {/*
-       * ONE GLYPH FOR "THIS OPENS A LIST", AND IT IS THE SAME ONE THE COMBOBOX USES.
+       * ONE GLYPH FOR "THIS OPENS A LIST".
        *
-       * This was `IconSelector`, the double up/down chevron, while `combobox.tsx` used a single
-       * `IconChevronDown` — two marks for one gesture, sitting on adjacent rows of the same form.
+       * This was `IconSelector`, the double up/down chevron, while the combobox of the day used a
+       * single `IconChevronDown` — two marks for one gesture, sitting on adjacent rows of the same form.
        * The double chevron also says the wrong thing: it is the mark for a stepper or a sortable
        * column, something you move up and down through, and a select is neither. It opens a list,
        * downward, which is what a single chevron says.

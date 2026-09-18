@@ -4,7 +4,6 @@ import {
   decideNotice,
   noticeBody,
   type NoticeRequest,
-  noticePath,
   readNotificationSupport,
   THROTTLE_MS,
   throttleKey,
@@ -203,27 +202,5 @@ describe("whether a notice can be attempted at all", () => {
     for (const browser of ["ask", "denied", "unsupported"] as const) {
       expect(canRaiseNotice({ inShell: false, browser })).toBe(false);
     }
-  });
-});
-
-/**
- * Where acting on a notice lands somebody.
- *
- * The path is built here for the browser's own click handler; the shell is handed the same kind and
- * id and resolves them against its own allowlist, so neither route can be talked into a second path
- * segment by an id with a slash in it.
- */
-describe("where a notice points", () => {
-  test("a kind and an id become one path on the origin", () => {
-    expect(noticePath({ kind: "approve", id: "a1" })).toBe("/approve/a1");
-    expect(noticePath({ kind: "channel", id: "channel_7" })).toBe(
-      "/channel/channel_7",
-    );
-  });
-
-  test("an id stays one segment", () => {
-    expect(noticePath({ kind: "approve", id: "a/../b" })).toBe(
-      "/approve/a%2F..%2Fb",
-    );
   });
 });

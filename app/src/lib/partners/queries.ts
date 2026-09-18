@@ -1,6 +1,3 @@
-import { queryOptions } from "@tanstack/react-query";
-import { t } from "@/lib/i18n";
-
 /**
  * What the 알림톡 card asks the server, and nothing else.
  *
@@ -8,11 +5,6 @@ import { t } from "@/lib/i18n";
  * still being inspected — and every sentence a person reads about them is written in the component,
  * in Korean. The server sends `laf:` codes for its refusals and this turns them into nothing: the
  * component decides what each one says.
- *
- * A DEPLOYMENT WITHOUT THE KEY ANSWERS WITH AN EMPTY LIST, and a deployment with no partner runtime
- * at all answers 404. Both mean the same thing to this screen — no partner cards — which is why the
- * 404 is not an error here. A real failure still throws, so a broken deployment does not masquerade
- * as an unconfigured one.
  */
 
 /** Which partner. The catalogue key, so one word names the row, the tools and the card. */
@@ -36,38 +28,6 @@ export type AlimtalkStatus = {
     reason: string;
   }[];
 };
-
-export type PartnerCard = {
-  id: "kakao-alimtalk";
-  title: string;
-  summary: string;
-  docsUrl: string;
-  status: AlimtalkStatus;
-};
-
-export const partnerKeys = {
-  all: ["partners"] as const,
-  list: () => ["partners", "list"] as const,
-};
-
-export function partnersQueryOptions() {
-  return queryOptions({
-    queryKey: partnerKeys.list(),
-    queryFn: async (): Promise<PartnerCard[]> => {
-      const response = await fetch("/api/partners", { credentials: "include" });
-      // A deployment with no partner runtime does not mount these routes. Not an error worth a red
-      // line across somebody's settings screen — there is simply nothing here to connect.
-      if (response.status === 404) return [];
-      if (!response.ok)
-        throw new Error(
-          t(
-            "Could not load the services this deployment offers. Refresh to try again.",
-          ),
-        );
-      return ((await response.json()) as { partners: PartnerCard[] }).partners;
-    },
-  });
-}
 
 /**
  * What the server would not do, as a code rather than a sentence.

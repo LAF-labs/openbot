@@ -12,9 +12,4 @@
  * The reading itself lives in `thread-store.ts` with everything else that touches the table; this
  * file is the name the routes already know it by.
  */
-export {
-  createMessageMarkReader as createMessageTimeReader,
-  type MessageSpeakers,
-  type MessageTimes,
-  type ThreadMarks,
-} from "./thread-store";
+export { createMessageMarkReader as createMessageTimeReader } from "./thread-store";

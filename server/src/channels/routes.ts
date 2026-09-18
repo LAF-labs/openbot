@@ -33,14 +33,9 @@ export {
   type ChannelMembershipRefusal,
   ChannelNotFoundError,
 } from "./errors";
-export { parseActivityInput, parseChannelInput } from "./input";
+export { parseChannelInput } from "./input";
 export { createChannelStore } from "./store";
-export type {
-  AgentChannel,
-  ChannelActivity,
-  ChannelStore,
-  ChannelSummary,
-} from "./types";
+export type { AgentChannel, ChannelStore } from "./types";
 
 /**
  * The refusals a channel route answers with, as facts.

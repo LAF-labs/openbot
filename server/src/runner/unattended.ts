@@ -953,5 +953,3 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
     return { tools, execute };
   };
 }
-
-export type UnattendedTools = ReturnType<typeof createUnattendedTools>;

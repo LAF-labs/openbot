@@ -20,8 +20,6 @@ export const ROOM_FRAME_KINDS = [
   "room.done",
 ] as const;
 
-export type RoomFrameKind = (typeof ROOM_FRAME_KINDS)[number];
-
 type Base = {
   channelId: string;
   turnId: string;

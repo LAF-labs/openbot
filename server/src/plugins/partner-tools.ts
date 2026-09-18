@@ -21,7 +21,6 @@
  * guard is computed.
  */
 import type { CallPreview } from "../computer/approvals";
-import { classifyDeclaredTool, type LafGuard } from "./laf-contract";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import { PluginRefusedError } from "./store";
 import type { VendorTransport } from "./transport";
@@ -65,16 +64,6 @@ export type PartnerToolPreview = (input: {
   toolName: string;
   args: Record<string, unknown>;
 }) => CallPreview | null;
-
-/**
- * The guard a partner tool's own declaration asks for, or null when it declares a plain read.
- *
- * Derived from the annotations rather than written beside them, so there is one source: a tool whose
- * annotation says `external` cannot have a table somewhere else saying it needs no floor.
- */
-export function guardOfSpec(spec: PartnerToolSpec): LafGuard | null {
-  return classifyDeclaredTool(spec.annotations).guard;
-}
 
 /**
  * A transport for a connector whose tools are this repository's own code.

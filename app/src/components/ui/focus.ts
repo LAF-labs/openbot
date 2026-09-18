@@ -45,36 +45,13 @@ export const focusRingInset =
   "outline-hidden focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset";
 
 /**
- * For a listbox option, where `focus-visible` is not a thing that can ever happen.
- *
- * A combobox keeps DOM focus in its input and points at the active option with
- * `aria-activedescendant` — Base UI's `Combobox.Item` renders with `tabIndex: undefined` and never
- * calls `.focus()`. So a `focus-visible:` rule on an option is dead CSS that looks like coverage,
- * and the attribute that actually moves is `data-highlighted`.
- *
- * That attribute is set by the pointer as well as by the arrow keys, so this ring shows on hover
- * too. Deliberate: the alternative is an option whose only marking is `bg-accent`, a 9% grey.
- */
-export const highlightRing =
-  "data-highlighted:ring-2 data-highlighted:ring-ring/50 data-highlighted:ring-inset";
-
-/**
- * For a container that is focused THROUGH a child — a chips field, an input group.
+ * For a container that is focused THROUGH a child — a chips field.
  *
  * The visible control is the wrapper; the thing that takes focus is the bare input inside it, and a
  * ring on that input draws a rectangle in the middle of the box it belongs to.
  */
 export const focusRingWithin =
   "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50";
-
-/**
- * The same ring, drawn on the WRAPPER when a specific control inside it is focused.
- *
- * `focusRingWithin` is too broad for an input group: anything focusable in the row — the clear
- * button, the dropdown trigger — would light the whole field up. This keys on the control itself.
- */
-export const focusRingHasControl =
-  "has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50";
 
 /**
  * The same ring again, for the buttons and links a Bot's own prose puts inside a bubble.
@@ -105,17 +82,13 @@ export const focusRingNested =
  * The element must already have a border box for this to land — `border` with any colour, which
  * every `Button` has (`border border-transparent`). On a bare `div` add `border` first, or the
  * chosen state moves the layout by a pixel when it turns on.
- */
-export const selectedClass = "border-foreground bg-accent text-foreground";
-
-/**
- * The same treatment, keyed to `aria-pressed="true"`, which `Button` carries for free.
+ *
+ * Keyed to `aria-pressed="true"`, which `Button` carries for free.
  *
  * `data-pressed` is deliberately NOT included, and this is the trap it avoids: Base UI overloads
  * that attribute. On `Toggle` it means "on"; on `Combobox.Trigger`, `Select.Trigger` and the rest it
- * means "the pointer is down on me right now" — which is why `combobox.tsx` has to write
- * `data-pressed:bg-transparent` to cancel a press fill. Styling `data-pressed` here would make every
- * trigger in the app flash the chosen treatment while it is being held.
+ * means "the pointer is down on me right now". Styling `data-pressed` here would make every trigger
+ * in the app flash the chosen treatment while it is being held.
  *
  * Written out rather than composed for the same reason as `focusRingNested`: Tailwind emits a
  * utility only for a class name it can SEE.

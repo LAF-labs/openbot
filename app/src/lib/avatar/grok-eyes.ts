@@ -230,14 +230,6 @@ export function blendEye(from: Eye, to: Eye, mix: number): Eye {
   };
 }
 
-export function blendExpression(
-  from: Expression,
-  to: Expression,
-  mix: number,
-): Expression {
-  return [blendEye(from[0], to[0], mix), blendEye(from[1], to[1], mix)];
-}
-
 /**
  * The adjustments Grok makes to a pair before it is shown in a given mood.
  *
@@ -301,10 +293,4 @@ export function widenTo(pair: Expression, minHalfW = 0): Expression {
   }) as unknown as Expression;
 }
 
-/** The pair's midpoint, used to pull the eyes toward the face centre when a Bot is emphasised. */
-export function pairCentre(pair: Expression): [number, number] {
-  return [(pair[0].cx + pair[1].cx) / 2, (pair[0].cy + pair[1].cy) / 2];
-}
-
-export const REFERENCE_CENTRE = pairCentre(REFERENCE);
 export { CENTRE };

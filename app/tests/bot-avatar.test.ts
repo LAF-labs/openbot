@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   BOT_AVATAR_PALETTES,
   BOT_AVATAR_SHAPES,
-  botAvatarBackground,
   botAvatarParams,
   botAvatarSeed,
   DEFAULT_SHAPE_IDS,
@@ -115,11 +114,6 @@ describe("the seed grammar", () => {
     );
     expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 1)))).toBe(true);
     expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 0)))).toBe(true);
-  });
-
-  test("the background is the colour's light value", () => {
-    expect(botAvatarBackground("s:cloud.green")).toBe("#00C972");
-    expect(botAvatarBackground(undefined)).toMatch(/^#[0-9A-F]{6}$/);
   });
 });
 

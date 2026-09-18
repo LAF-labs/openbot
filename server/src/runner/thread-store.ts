@@ -22,7 +22,7 @@
  * mechanism the seat count uses for the same reason.
  */
 import type { Message } from "@ag-ui/client";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadMessages } from "../db/schema";
 import { redactSecretTyping } from "./secret-redaction";
@@ -412,31 +412,6 @@ export async function messagesFor(
     const message = parseMessage(row.message);
     return message ? [message] : [];
   });
-}
-
-/** The same, for several threads at once, keyed by thread. */
-export async function messagesForAll(
-  executor: Executor,
-  threadIds: readonly string[],
-): Promise<Map<string, StoredMessage[]>> {
-  const found = new Map<string, StoredMessage[]>();
-  if (threadIds.length === 0) return found;
-  const rows = await executor
-    .select({
-      threadId: lafThreadMessages.threadId,
-      message: lafThreadMessages.message,
-    })
-    .from(lafThreadMessages)
-    .where(inArray(lafThreadMessages.threadId, [...threadIds]))
-    .orderBy(asc(lafThreadMessages.threadId), asc(lafThreadMessages.seq));
-  for (const row of rows) {
-    const message = parseMessage(row.message);
-    if (!message) continue;
-    const held = found.get(row.threadId);
-    if (held) held.push(message);
-    else found.set(row.threadId, [message]);
-  }
-  return found;
 }
 
 /** Message id to ISO-8601, for every message in the thread that carries a stamp. */

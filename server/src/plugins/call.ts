@@ -919,5 +919,3 @@ export function createCallPath(
     },
   };
 }
-
-export type CallPath = ReturnType<typeof createCallPath>;

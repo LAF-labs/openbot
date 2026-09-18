@@ -221,7 +221,3 @@ export const ROUTINE_SUGGESTIONS: readonly RoutineSuggestionEntry[] = [
     needsAnyOf: [],
   },
 ];
-
-export function suggestionEntry(key: string): RoutineSuggestionEntry | null {
-  return ROUTINE_SUGGESTIONS.find((entry) => entry.key === key) ?? null;
-}

@@ -14,13 +14,3 @@ export const SERIES_COLOURS = [
 export function seriesColour(index: number): string {
   return SERIES_COLOURS[index % SERIES_COLOURS.length] as string;
 }
-
-/**
- * Red and green mean something. Kept out of `SERIES_COLOURS` so a chart cannot accidentally colour
- * an ordinary series in the shade this app uses for a refusal.
- */
-export const STATE_COLOURS = {
-  positive: "#10b981",
-  caution: "#f59e0b",
-  negative: "#ef4444",
-} as const;

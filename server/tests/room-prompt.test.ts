@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { roomKo } from "../../shared/prompt/mode/room.ko";
 import {
-  addressedMembers,
-  isSilence,
   ROOM_LINES,
   type RoomLine,
   roomTurnPrompt,
@@ -98,28 +96,11 @@ describe("what a Bot is shown of the room", () => {
   });
 });
 
+/*
+ * Who is addressed is `speakersForRound`'s question, and `room-turn-taking.test.ts` asks it.
+ */
 describe("whose turn it is", () => {
   const members = [{ id: "a" }, { id: "b" }, { id: "c" }];
-
-  test("naming nobody means everybody, not the Bot that sorts first", () => {
-    expect(addressedMembers(members, []).map((m) => m.id)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-  });
-
-  test("naming somebody means only them", () => {
-    expect(addressedMembers(members, ["b"]).map((m) => m.id)).toEqual(["b"]);
-  });
-
-  test("naming only strangers falls back to everybody rather than nobody", () => {
-    expect(addressedMembers(members, ["zzz"]).map((m) => m.id)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-  });
 
   test("the order rotates, so the same Bot does not open every round", () => {
     expect(rotate(members, 0).map((m) => m.id)).toEqual(["a", "b", "c"]);
@@ -161,21 +142,6 @@ describe("what a room turn may cost", () => {
     });
     expect(prompt).toContain("김기범 (user): 나");
     expect(prompt.length).toBeLessThan(30_000);
-  });
-});
-
-describe("a Bot that had nothing to add", () => {
-  test("nothing, whitespace and (pass) are all silence", () => {
-    expect(isSilence("")).toBe(true);
-    expect(isSilence("   \n ")).toBe(true);
-    expect(isSilence("(pass)")).toBe(true);
-    expect(isSilence("pass")).toBe(true);
-    expect(isSilence("PASS")).toBe(true);
-  });
-
-  test("anything a room would want to read is not", () => {
-    expect(isSilence("동의합니다")).toBe(false);
-    expect(isSilence("pass the report over")).toBe(false);
   });
 });
 
