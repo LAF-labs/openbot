@@ -1,7 +1,7 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
@@ -88,8 +88,11 @@ function SkillsPage() {
    * IT KEEPS THE NAME NOW, NOT THE SLUG. `/danggeun-reply 삭제` was what the row menu offered and
    * what the question repeated: a command line in the middle of a Korean sentence, and the one part
    * of a skill its author did not choose the wording of. The name is what they wrote.
+   *
+   * State rather than the ref it was, which the dialog read while rendering: set in the same press
+   * as the slug, it is drawn in the same render, and nothing clears it, so it outlasts the fade.
    */
-  const askedAbout = useRef("");
+  const [askedAbout, setAskedAbout] = useState("");
 
   const mutate = useMutation({
     mutationFn: async (run: () => Promise<Response>) => {
@@ -187,8 +190,8 @@ function SkillsPage() {
           open={confirmingDelete !== null}
           pending={mutate.isPending}
           title={t("Delete {name}{josa}?", {
-            josa: josa(askedAbout.current, "을/를"),
-            name: askedAbout.current,
+            josa: josa(askedAbout, "을/를"),
+            name: askedAbout,
           })}
         />
 
@@ -312,7 +315,7 @@ function SkillsPage() {
                              */}
                             <DropdownMenuItem
                               onClick={() => {
-                                askedAbout.current = skill.title;
+                                setAskedAbout(skill.title);
                                 setConfirmingDelete(skill.slug);
                               }}
                               variant="destructive"

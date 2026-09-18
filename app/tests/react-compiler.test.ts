@@ -35,7 +35,7 @@ import {
  * mutating a value after render) and fifteen things the compiler does not handle yet (`try` with
  * no `catch` or with a `finally`, `??=`, a conditional inside a `try`).
  */
-const SKIPPED_CEILING = 17;
+const SKIPPED_CEILING = 16;
 
 const APP = join(import.meta.dir, "..");
 
