@@ -22,6 +22,7 @@ import {
 import type { StandingFailure } from "@/lib/channels/retry";
 
 export function ConversationView({
+  channelId,
   messages,
   messageTimes,
   readWindow,
@@ -42,6 +43,8 @@ export function ConversationView({
   onSubmit,
   onStop,
 }: {
+  /** The conversation, so a finished answer can be rated. Absent on the compose screen. */
+  channelId?: string;
   messages: readonly Message[];
   /** Message id to ISO-8601, for the transcript's time separators. */
   messageTimes?: Readonly<Record<string, string>>;
@@ -249,6 +252,7 @@ export function ConversationView({
          */}
         <ChatTranscript
           busy={busy}
+          {...(channelId ? { channelId } : {})}
           commandNames={(commands ?? [])
             .map((command) => command.name)
             .join(",")}

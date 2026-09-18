@@ -37,6 +37,8 @@
   "app/tests/agent-presets.test.ts",
   "app/tests/agent-refusals.test.ts",
   "app/tests/agents.test.ts",
+  "app/tests/answer-rating-render.test.ts",
+  "app/tests/answer-rating.test.ts",
   "app/tests/approval-answers.test.tsx",
   "app/tests/approval-pause.test.ts",
   "app/tests/approval-preview.test.ts",

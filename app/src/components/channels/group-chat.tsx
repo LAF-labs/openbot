@@ -524,6 +524,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     <ConversationView
       agents={toAgentOptions(agentProfiles, channel.agentIds)}
       busy={posting || inTurn}
+      // Each member's answer is rated on its own, under the member's name.
+      channelId={channel.id}
       disabled={!channel.active}
       messageTimes={messageTimes}
       messages={transcriptMessages(room.messages, seed)}

@@ -112,3 +112,24 @@ export function toVisibleChatItems(
       : [];
   });
 }
+
+/**
+ * Where the turn still being written begins: just after the person's last message while a turn is
+ * running, and past the end of the list when none is.
+ *
+ * Everything from here on can still change under the reader — a reply mid-stream, a second reply
+ * after a tool line — so it is not yet an answer anybody can say they liked or did not. Counted from
+ * the person's own message rather than from the last reply, because a turn can answer in several
+ * bubbles and the first of them is no more finished than the last until the turn is over.
+ */
+export function unsettledFrom(
+  items: readonly VisibleChatItem[],
+  busy: boolean,
+): number {
+  if (!busy) return items.length;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind === "text" && item.role === "user") return index + 1;
+  }
+  return 0;
+}

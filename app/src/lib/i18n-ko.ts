@@ -2044,6 +2044,32 @@ export const ko: Record<string, string> = {
   "Version {build}": "버전 {build}",
   "Version {build} · app {shell}": "버전 {build} · 앱 {shell}",
   /*
+   * 봇의 답 아래 좋아요·아쉬워요. 버튼 두 개의 말투에 맞춰 해요체로 썼다. 서버는 이유를 키로만
+   * 받고(`not-as-asked`…), 여기서 그 키를 말로 바꾼다. 운영자에게 가는 알림의 말은 서버 쪽이다.
+   */
+  "Good answer": "좋아요",
+  "Could be better": "아쉬워요",
+  "Got it, thank you.": "잘 받았어요. 고마워요.",
+  "What fell short?": "어떤 점이 아쉬웠나요?",
+  Reason: "이유",
+  "Not what I asked for": "요청과 달라요",
+  "Wrong facts": "사실과 달라요",
+  "Too slow": "너무 느려요",
+  "Something else": "그 밖에",
+  "Tell us more (optional)": "더 알려 주실 내용 (선택)",
+  "For example: I asked about today, not yesterday.":
+    "예: 어제 말고 오늘 걸 물어봤어요.",
+  "Only what you write here reaches the people who make the app. The answer itself is not sent.":
+    "여기 적은 내용만 앱을 만드는 사람들에게 가요. 답변 내용은 보내지 않아요.",
+  "Sent. Thank you for telling us.": "보냈어요. 알려 주셔서 고마워요.",
+  "Sent. It reached the people who make the app.":
+    "보냈어요. 앱을 만드는 사람들에게 전달됐어요.",
+  "That did not save. Try again.": "저장하지 못했어요. 다시 해 주세요.",
+  "That is over {limit} characters. Shorten it a little.":
+    "{limit}자를 넘었어요. 조금 줄여 주세요.",
+  "This answer can no longer be rated.": "이 답변은 이제 평가할 수 없어요.",
+  "This conversation is no longer here.": "이 대화는 이제 없어요.",
+  /*
    * 서버가 코드로만 보내고 화면이 말을 고르는 거절들 (감사 A1-3, 2026-09-10). 예전에는 서버의
    * 영어 문장이 그대로 떴다 — "Agent not found.", "The daily time must be HH:MM.". 표는
    * AGENT_REFUSALS·ROUTINE_REFUSALS·CHANNEL_REFUSALS·COWORKER_REFUSALS이고 각자의 테스트가 걷는다.

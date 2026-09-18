@@ -642,6 +642,8 @@ export function ChannelChat({
          * send. It was the only one of the three turn-shaped props still reading the wire.
          */
         busy={agent.isRunning || turnsInFlight > 0}
+        // What a 좋아요·아쉬워요 under an answer belongs to.
+        channelId={channel.id}
         // The `/` menu exposes only skills granted to this Bot.
         commands={skillCommands}
         // Readiness is handled by `say`; deletion is the only disabled-chat state.

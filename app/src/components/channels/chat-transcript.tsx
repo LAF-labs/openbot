@@ -47,15 +47,24 @@ import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
+import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
-import { toVisibleChatItems } from "./chat-messages";
+import { AnswerRatingControls } from "./answer-rating";
+import { toVisibleChatItems, unsettledFrom } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
 type ChatTranscriptProps = {
   busy?: boolean;
+  /**
+   * The conversation this is, which is what lets a finished answer carry 좋아요·아쉬워요.
+   *
+   * Absent on the compose screen, where there is no conversation yet for a rating to belong to —
+   * and there is no Bot's answer on it to rate either.
+   */
+  channelId?: string;
   /** Comma-separated `/` command names, used to tell a skill chip from a leading slash. */
   commandNames?: string;
   messages: ReadonlyArray<Readonly<Message>>;
@@ -485,8 +494,17 @@ function Arriving({
        * the bubble's own width and short messages wrap for no reason, and `self-end` does nothing at
        * all outside a flex container.
        */
-      // `relative`, because the copy action is lifted out of flow — see CopyReply.
-      className="relative flex w-full flex-col"
+      /*
+       * `relative`, because the row of reply actions is lifted out of flow — see ReplyActions.
+       *
+       * AND RAISED WHILE THAT ROW IS UP. The transform this wrapper animates with makes it a
+       * stacking context, so the row's own `z-10` counts only inside it, and the NEXT message's
+       * wrapper — a stacking context too, later in the document — painted over it. Under a reply
+       * with another bubble 4px below it the row sat behind that bubble: measured in a room, where
+       * a failed 좋아요's line was cut in half by the next reply. Raising the wrapper while hovered,
+       * focused or holding a line up puts the row back on top.
+       */
+      className="relative flex w-full flex-col group-hover/message:z-10 has-focus-visible:z-10 has-data-[lingering=true]:z-10"
       initial={{
         opacity: 0,
         // Reduced motion keeps the fade and drops the movement: gentler, not absent.
@@ -519,16 +537,25 @@ function Arriving({
  * It is also what keeps the entrance honest — no remount means no replay of the fade.
  */
 const TranscriptMessage = memo(function TranscriptMessage({
+  channelId,
   commandNames = "",
   delay,
+  id,
   joinedNext = false,
   joinedPrev = false,
+  rateable = false,
   role,
   speaker,
   text,
 }: {
+  /** The conversation, for the rating controls. See ChatTranscriptProps. */
+  channelId?: string | undefined;
   commandNames?: string;
   delay: number;
+  /** The message's own id: what a rating of it is keyed by. */
+  id: string;
+  /** A finished answer, as opposed to one still being written. See `unsettledFrom`. */
+  rateable?: boolean;
   /** The message below is from the same speaker, with no tool line between them. */
   joinedNext?: boolean;
   /** The message above is. */
@@ -612,19 +639,52 @@ const TranscriptMessage = memo(function TranscriptMessage({
            *
            * A Bot's answer is the artefact — a summary, a list, an address it looked up — and the
            * only way to take it anywhere was to select it by hand across a markdown block. On the
-           * assistant's side only: a person already has what they typed.
+           * assistant's side only: a person already has what they typed, and has nothing to rate.
            *
-           * Revealed on hover and on focus, so it is reachable by keyboard and does not sit over
-           * the transcript the rest of the time.
+           * 좋아요·아쉬워요 sit beside it, on a finished answer in a conversation that can keep a
+           * rating (`answer-rating.tsx`).
            */}
-          {isUser ? null : <CopyReply text={text} />}
+          {isUser ? null : (
+            <ReplyActions>
+              <CopyReply text={text} />
+              {channelId && rateable ? (
+                <AnswerRatingControls channelId={channelId} messageId={id} />
+              ) : null}
+            </ReplyActions>
+          )}
         </Arriving>
       </MessageContent>
     </MessageRow>
   );
 });
 
-/** The one control on a reply. Silent when the clipboard is unavailable, which is not an error. */
+/**
+ * The row of controls under a Bot's answer.
+ *
+ * OUT OF FLOW, BECAUSE A HIDDEN CONTROL WAS STILL TAKING 32px. The copy button sat under every
+ * assistant bubble at `opacity: 0` — invisible, and still occupying its height plus margin in the
+ * column. That is where the transcript's spacing actually went: two replies in a row read 48px apart
+ * when the measured rhythm is 4px, and no amount of tuning the gap could fix it because the space
+ * was a button nobody could see. Absolute, hugging the bubble's bottom edge, in the gutter the
+ * bubble's max-width leaves — the whole row now, not the one button.
+ *
+ * Revealed on hover and on keyboard focus, so it is reachable by keyboard and does not sit over the
+ * transcript the rest of the time — and held up while a control in it says it is in use
+ * (`data-lingering`): a popover the person is typing into, or the line saying a rating arrived,
+ * must not vanish because the pointer moved on to read the answer.
+ */
+function ReplyActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="-mt-1.5 absolute top-full left-0 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 has-focus-visible:opacity-100 has-data-[lingering=true]:opacity-100"
+      data-slot="reply-actions"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Copy the reply. Silent when the clipboard is unavailable, which is not an error. */
 function CopyReply({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -637,12 +697,7 @@ function CopyReply({ text }: { text: string }) {
   );
 
   const handleCopy = async () => {
-    try {
-      // Undefined on an insecure origin, and rejects if the document is not focused.
-      await navigator.clipboard?.writeText(text);
-    } catch {
-      return;
-    }
+    if (!(await copyText(text))) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 1500);
@@ -651,19 +706,9 @@ function CopyReply({ text }: { text: string }) {
   return (
     <Button
       aria-label={copied ? t("Copied") : t("Copy this reply")}
-      /*
-       * OUT OF FLOW, BECAUSE A HIDDEN CONTROL WAS STILL TAKING 32px.
-       *
-       * This sat under every assistant bubble at `opacity: 0` — invisible, and still occupying its
-       * height plus margin in the column. That is where the transcript's spacing actually went: two
-       * replies in a row read 48px apart when the measured rhythm is 4px, and no amount of tuning
-       * the gap could fix it because the space was a button nobody could see.
-       *
-       * Absolute, hugging the bubble's bottom edge, in the gutter the bubble's max-width leaves.
-       */
-      className="-mt-1.5 absolute top-full left-0 z-10 h-7 w-7 p-0 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100"
+      className="text-muted-foreground"
       onClick={handleCopy}
-      size="icon"
+      size="icon-sm"
       title={copied ? t("Copied") : t("Copy this reply")}
       type="button"
       variant="ghost"
@@ -812,6 +857,7 @@ function continues(
 
 export function ChatTranscript({
   busy = false,
+  channelId,
   commandNames = "",
   messageTimes = EMPTY_TIMES,
   messages,
@@ -869,6 +915,8 @@ export function ChatTranscript({
     retriesInPlace(messages, messageId, { keepsReplies: retryKeepsReplies });
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
+  /** From here on the turn is still being written, and nothing in it can be rated yet. */
+  const settledBefore = unsettledFrom(items, busy);
 
   /*
    * A REPLY THAT ARRIVED WAS NEVER ANNOUNCED.
@@ -1026,8 +1074,13 @@ export function ChatTranscript({
                     scrollAnchor={item.role === "user"}
                   >
                     <TranscriptMessage
+                      channelId={channelId}
                       commandNames={commandNames}
                       delay={delays.delayFor(item.id, index, items.length)}
+                      id={item.id}
+                      rateable={
+                        item.role === "assistant" && index < settledBefore
+                      }
                       joinedNext={continues(
                         items[index + 1],
                         item.role,
