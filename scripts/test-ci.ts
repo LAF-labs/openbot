@@ -262,13 +262,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * measured alone, so the higher of the two floors above sat 4.8% under `server` and 8.5% under `app`.
  * Those two are re-raised to 3% under; `root` already is, and `agent-computer` did not grow.
  *
+ * RE-RAISED 2026-09-18, with routines edited in place and paused when their results go unread,
+ * rebased onto all three above: the edit's route, service and form, the Bot's lookup by id or name
+ * and its list, the list and the export sending weekdays as a list, the rule's numbers and what it
+ * counts — a stopped run among what it does not — the notice, and the banner's two answers. Measured
+ * on the combined tree at server 2,636 / app 1,070 / agent-computer 261 / root 367; `server` and
+ * `app` re-raised to 3% under, `agent-computer` and `root` did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2509, roots: ["server"] },
-  { name: "app", floor: 993, roots: ["app"] },
+  { name: "server", floor: 2556, roots: ["server"] },
+  { name: "app", floor: 1037, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
