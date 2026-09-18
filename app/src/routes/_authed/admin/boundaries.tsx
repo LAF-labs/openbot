@@ -230,6 +230,9 @@ function BoundariesPage() {
   const save = useCallback(async (next: PolicyChange): Promise<boolean> => {
     setSaving(true);
     setSaved(false);
+    // React Compiler 1.0 cannot compile `try`…`finally` yet, so BoundariesPage is left as written:
+    // the code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       const response = await fetch("/api/computers/policy", {
         method: "PUT",

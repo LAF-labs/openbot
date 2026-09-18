@@ -104,6 +104,9 @@ function PlaygroundPage() {
   };
 
   const parsed = (raw: string): Record<string, unknown> | null => {
+    // React Compiler 1.0 cannot compile a conditional inside `try` yet, so PlaygroundPage is left
+    // as written: the code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       const value = JSON.parse(raw);
       return typeof value === "object" && value !== null

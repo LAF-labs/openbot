@@ -343,6 +343,9 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       setNotice(null);
       setQuiet(null);
       setPosting(true);
+      // React Compiler 1.0 cannot compile `try`…`finally` yet, so GroupChat is left as written: the
+      // code is right, and the compiler cannot follow it. Counted in
+      // app/tests/react-compiler.test.ts.
       try {
         const messageId = retryOf ?? crypto.randomUUID();
         // On screen at once, under the id the server will store it as, so catch-up keeps it. A

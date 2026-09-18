@@ -168,6 +168,9 @@ export function ConversationView({
 
   const start = async (draft: ComposerDraft) => {
     setRunning(true);
+    // React Compiler 1.0 cannot compile `try`…`finally` yet, so ConversationView is left as
+    // written: the code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       await onSubmit(draft);
     } finally {

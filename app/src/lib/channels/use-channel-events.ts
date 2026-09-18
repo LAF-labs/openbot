@@ -302,6 +302,8 @@ export function useChannelEvents() {
       connection.close();
       connection = undefined;
     }
+    // React Compiler 1.0 cannot compile `??=` yet, so useChannelEvents is left as written. It is
+    // one effect, with nothing to memoise. Counted in app/tests/react-compiler.test.ts.
     connection ??= openConnection(queryClient);
 
     return () => {

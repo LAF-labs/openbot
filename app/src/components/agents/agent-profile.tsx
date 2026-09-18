@@ -659,6 +659,9 @@ function MemoriesCard({ agentId }: { agentId: string }) {
 
   const forget = async (memoryId: string) => {
     setForgetting(memoryId);
+    // React Compiler 1.0 cannot compile `try`…`finally` yet, so MemoriesCard is left as written:
+    // the code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       await fetch(
         `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
@@ -772,6 +775,9 @@ function SkillsCard({ agentId }: { agentId: string }) {
   const toggle = async (slug: string, held: boolean) => {
     setBusy(slug);
     setProblem(null);
+    // React Compiler 1.0 cannot compile `try`…`finally` yet, so SkillsCard is left as written: the
+    // code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       const response = held
         ? await fetch(

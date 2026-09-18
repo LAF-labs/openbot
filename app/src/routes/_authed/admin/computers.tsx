@@ -109,6 +109,9 @@ function ComputersPage() {
        * it was, with nothing on it saying that nothing had happened.
        */
       let refused: string | null = null;
+      // React Compiler 1.0 cannot compile `try`…`finally` yet, so ComputersPage is left as written:
+      // the code is right, and the compiler cannot follow it. Counted in
+      // app/tests/react-compiler.test.ts.
       try {
         const response = await fetch(
           `/api/computers/${encodeURIComponent(botId)}/computers/${action}`,

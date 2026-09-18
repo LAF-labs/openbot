@@ -34,6 +34,11 @@ import {
  * The 27 left were twelve rule violations (ten reading or writing a ref while rendering, two
  * mutating a value after render) and fifteen things the compiler does not handle yet (`try` with
  * no `catch` or with a `finally`, `??=`, a conditional inside a `try`).
+ *
+ * LOWERED THE SAME DAY TO 15 by fixing the twelve, one commit each: 318 of 333 compile. The fifteen
+ * left are the constructs the compiler cannot follow yet, each with a comment beside it saying so,
+ * and one of them, `ChannelChat`, also opts out on purpose, so that it stays uncompiled on the day
+ * the compiler learns `finally` (the reason is beside its directive).
  */
 const SKIPPED_CEILING = 15;
 

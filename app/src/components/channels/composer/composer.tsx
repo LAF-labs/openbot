@@ -198,6 +198,9 @@ export function Composer({
       setIsSubmitting(true);
       // Clear optimistically; restore if the send fails before becoming a message.
       setValue([]);
+      // React Compiler 1.0 cannot compile `try`…`finally` yet, so Composer is left as written: the
+      // code is right, and the compiler cannot follow it. Counted in
+      // app/tests/react-compiler.test.ts.
       try {
         await onSubmit(submitted);
       } catch (error) {

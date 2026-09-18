@@ -95,6 +95,9 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
   const testConnection = async () => {
     setTesting(true);
     setConnection(null);
+    // React Compiler 1.0 cannot compile `try`…`finally` yet, so BotEndpoint is left as written: the
+    // code is right, and the compiler cannot follow it. Counted in
+    // app/tests/react-compiler.test.ts.
     try {
       const response = await fetch("/api/agents/test-connection", {
         // The unsaved key is included so the test matches the pending form state.
