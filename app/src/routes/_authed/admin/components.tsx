@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoadFailed } from "@/components/admin/admin-states";
+import { LiveRegion } from "@/components/layout/live-region";
 import {
   PageEmpty,
   PageSection,
@@ -34,11 +35,44 @@ import {
 } from "@/lib/components/queries";
 import { RENDERABLE_NAMES } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
+import { usePress } from "@/lib/press";
 import { refusalFrom } from "@/lib/refusals";
 
 /** A refused change, as the line this page draws: which refusal, or the page's own sentence. */
 const refusedBy = async (response: Response, fallback: string) =>
   new Error(await refusalFrom(response, COMPONENT_ADMIN_REFUSALS, fallback));
+
+/** Publish or withdraw a component; a refusal is thrown in this page's words. */
+async function publishComponent(name: string, published: boolean) {
+  const response = await fetch(
+    `/api/components/${encodeURIComponent(name)}/publication`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ published }),
+    },
+  );
+  if (!response.ok) {
+    throw await refusedBy(response, t("That change could not be saved."));
+  }
+}
+
+/** Save a component's draft description; a refusal is thrown in this page's words. */
+async function saveComponentDraft(name: string, description: string) {
+  const response = await fetch(
+    `/api/components/${encodeURIComponent(name)}/draft`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description }),
+    },
+  );
+  if (!response.ok) {
+    throw await refusedBy(response, t("That draft could not be saved."));
+  }
+}
 
 /**
  * Runtime governance for compiled gallery components: publication, per-Bot grants, model-facing
@@ -137,26 +171,8 @@ function RouteComponent() {
   });
 
   const setPublished = useMutation({
-    mutationFn: async ({
-      name,
-      published,
-    }: {
-      name: string;
-      published: boolean;
-    }) => {
-      const response = await fetch(
-        `/api/components/${encodeURIComponent(name)}/publication`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ published }),
-        },
-      );
-      if (!response.ok) {
-        throw await refusedBy(response, t("That change could not be saved."));
-      }
-    },
+    mutationFn: ({ name, published }: { name: string; published: boolean }) =>
+      publishComponent(name, published),
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => {
       setError(null);
@@ -164,33 +180,23 @@ function RouteComponent() {
     },
   });
 
-  const saveDraft = useMutation({
-    mutationFn: async ({
-      name,
-      description,
-    }: {
-      name: string;
-      description: string;
-    }) => {
-      const response = await fetch(
-        `/api/components/${encodeURIComponent(name)}/draft`,
-        {
-          method: "PUT",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ description }),
-        },
-      );
-      if (!response.ok) {
-        throw await refusedBy(response, t("That draft could not be saved."));
-      }
-    },
-    onError: (thrown: Error) => setError(thrown.message),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
-  });
+  /*
+   * THE DESCRIPTION DIALOG'S ONE ACTION, AWAITED BY IT. 초안 저장 and 게시 each fired their
+   * request and closed the dialog on the press, and 게시 fired two — the draft and the publication
+   * — at once, so the publication could reach the server before the draft it was meant to publish
+   * and publish the previous one. In order now, and a refusal is thrown for the dialog to say.
+   */
+  const saveDescription = async (
+    name: string,
+    description: string,
+    publish: boolean,
+  ) => {
+    await saveComponentDraft(name, description);
+    if (publish) await publishComponent(name, true);
+    setError(null);
+    // Read back before the dialog closes, so the card behind it already says what was saved.
+    await queryClient.invalidateQueries({ queryKey: componentKeys.all });
+  };
 
   const bots = agents ?? [];
 
@@ -293,8 +299,8 @@ function RouteComponent() {
                 onPublish={(published) =>
                   setPublished.mutate({ name: component.name, published })
                 }
-                onSaveDraft={(description) =>
-                  saveDraft.mutate({ name: component.name, description })
+                onSaveDescription={(description, publish) =>
+                  saveDescription(component.name, description, publish)
                 }
                 onSetGrant={(agentId, granted) =>
                   setGrant.mutate({ agentId, granted, name: component.name })
@@ -316,7 +322,7 @@ function ComponentRow({
   onSetGrant,
   onSetFunction,
   onPublish,
-  onSaveDraft,
+  onSaveDescription,
 }: {
   component: ComponentRecord;
   bots: { id: string; name: string }[];
@@ -326,12 +332,29 @@ function ComponentRow({
   onSetGrant: (agentId: string, granted: boolean) => void;
   onSetFunction: (functionName: string, granted: boolean) => void;
   onPublish: (published: boolean) => void;
-  onSaveDraft: (description: string) => void;
+  /** Saves the draft, then publishes it when asked; throws the refusal for the dialog to say. */
+  onSaveDescription: (description: string, publish: boolean) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(component.draftDescription);
+  const saving = usePress();
+  /** Which of the dialog's two buttons was pressed, so that one says what it is doing. */
+  const [isPublishing, setIsPublishing] = useState(false);
   const withheld = new Set(component.withheldFrom);
   const heldFunctions = new Set(component.functions);
+
+  const handleEditingChange = (open: boolean) => {
+    setEditing(open);
+    if (!open) saving.forget();
+  };
+  // Closed only once the server has the description; a refusal keeps it as typed.
+  const handleSave = async (publish: boolean) => {
+    if (saving.isRunning) return;
+    setIsPublishing(publish);
+    if (await saving.run(() => onSaveDescription(draft, publish))) {
+      handleEditingChange(false);
+    }
+  };
 
   return (
     <section
@@ -413,7 +436,11 @@ function ComponentRow({
         </div>
       </div>
 
-      <Dialog onOpenChange={setEditing} open={editing}>
+      <Dialog
+        isBusy={saving.isRunning}
+        onOpenChange={handleEditingChange}
+        open={editing}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t(component.title)}</DialogTitle>
@@ -429,36 +456,50 @@ function ComponentRow({
                 {t("Draft description")}
               </FieldLabel>
               <Textarea
+                disabled={saving.isRunning}
                 id={`draft-${component.name}`}
                 onChange={(event) => setDraft(event.target.value)}
                 rows={4}
                 value={draft}
               />
             </Field>
+            <LiveRegion
+              as="p"
+              className="text-destructive text-sm"
+              tone="alert"
+            >
+              {saving.failure}
+            </LiveRegion>
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button onClick={() => setEditing(false)} size="sm" variant="ghost">
+            <Button
+              disabled={saving.isRunning}
+              onClick={() => handleEditingChange(false)}
+              size="sm"
+              variant="ghost"
+            >
               {t("Cancel")}
             </Button>
             <Button
-              onClick={() => {
-                onSaveDraft(draft);
-                setEditing(false);
-              }}
+              disabled={saving.isRunning}
+              focusableWhenDisabled={saving.isRunning}
+              onClick={() => void handleSave(false)}
               size="sm"
               variant="outline"
             >
-              {t("Save draft")}
+              {saving.isRunning && !isPublishing
+                ? t("Saving…")
+                : t("Save draft")}
             </Button>
             <Button
-              onClick={() => {
-                onSaveDraft(draft);
-                onPublish(true);
-                setEditing(false);
-              }}
+              disabled={saving.isRunning}
+              focusableWhenDisabled={saving.isRunning}
+              onClick={() => void handleSave(true)}
               size="sm"
             >
-              {t("Publish")}
+              {saving.isRunning && isPublishing
+                ? t("Publishing…")
+                : t("Publish")}
             </Button>
           </DialogFooter>
         </DialogContent>
