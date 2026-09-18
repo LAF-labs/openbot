@@ -13,6 +13,23 @@ import {
 } from "@/lib/plugins/queries";
 import { toolLabel } from "@/lib/plugins/tool-labels";
 
+type GrantedTool = GrantedPlugins["tools"][number];
+
+/**
+ * `seen` with every tool in `tools` added, or replaced by its newer copy — or `seen` itself when
+ * nothing changed, so a render with the same grants remembers nothing new. A tool keeps its place
+ * once it has one, the order a `Map` gives a key set again.
+ */
+function withTools(
+  seen: ReadonlyMap<string, GrantedTool>,
+  tools: readonly GrantedTool[],
+): ReadonlyMap<string, GrantedTool> {
+  if (tools.every((tool) => seen.get(tool.ref) === tool)) return seen;
+  const next = new Map(seen);
+  for (const tool of tools) next.set(tool.ref, tool);
+  return next;
+}
+
 /**
  * Runtime-discovered MCP tools granted to the active Bot. Registration controls what is offered;
  * the server still rechecks each call.
@@ -24,10 +41,19 @@ export function PluginTools() {
   const { data } = useQuery(agentPluginsQueryOptions(declared));
   const granted: GrantedPlugins = data ?? { tools: [], skills: [] };
 
-  /** Keep previously offered tools mounted so mid-run revocations can return explicit refusals. */
-  const seen = useRef(new Map<string, GrantedPlugins["tools"][number]>());
-  for (const tool of granted.tools) seen.current.set(tool.ref, tool);
-  const offered = [...seen.current.values()];
+  /**
+   * Keep previously offered tools mounted so mid-run revocations can return explicit refusals.
+   *
+   * State adjusted while rendering — React's pattern for remembering what earlier renders saw —
+   * rather than a ref filled in during render, which the React Compiler refuses to compile. React
+   * renders again at once with what was just remembered, before anything is committed.
+   */
+  const [seen, setSeen] = useState<ReadonlyMap<string, GrantedTool>>(
+    () => new Map(),
+  );
+  const remembered = withTools(seen, granted.tools);
+  if (remembered !== seen) setSeen(remembered);
+  const offered = [...remembered.values()];
 
   return (
     <>
