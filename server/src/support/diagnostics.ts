@@ -32,6 +32,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { type Build, type LogFields, readLogLine } from "../../../shared/log";
+import type { ConnectionCheckFacts } from "../../../shared/support/connection-check";
 import { classifyTurnFailure } from "../channels/turn-failures";
 import type { Database } from "../db/client";
 import {
@@ -87,6 +88,12 @@ export type DiagnosticBundle = {
   failures: FailureCount[];
   /** This person's own recent events, oldest first, at most `DIAGNOSTIC_EVENTS_MAX`. */
   events: DiagnosticEvent[];
+  /**
+   * The last 연결 점검 their window ran, when it sent one: the one part of a bundle the browser
+   * assembles, because only the window knows what its network lets through. It arrives already read
+   * through `readConnectionCheck` (`routes.ts`) — closed values, or nothing.
+   */
+  connectionCheck?: ConnectionCheckFacts;
 };
 
 /** What the fleet's alert webhook is told about a bundle: how much there is, and nothing in it. */
@@ -299,6 +306,7 @@ export function assembleDiagnostics(input: {
   version: Build;
   health: HealthReport;
   now: Date;
+  connectionCheck?: ConnectionCheckFacts | null;
 }): DiagnosticBundle {
   const events = [
     ...input.lines.map((line) => eventFromLine(line, input.ownership)),
@@ -318,6 +326,9 @@ export function assembleDiagnostics(input: {
     failureWindowDays: FAILURE_WINDOW_DAYS,
     failures: countFailures(input.failedRuns),
     events,
+    ...(input.connectionCheck
+      ? { connectionCheck: input.connectionCheck }
+      : {}),
   };
 }
 
@@ -342,6 +353,8 @@ export type DiagnosticsSource = {
   assemble: (
     userId: string,
     deployment: { version: Build; health: HealthReport },
+    /** The person's last 연결 점검, already read through the vocabulary. */
+    connectionCheck?: ConnectionCheckFacts | null,
   ) => Promise<DiagnosticBundle>;
 };
 
@@ -454,7 +467,7 @@ export function createDiagnosticsSource(input: {
   };
 
   return {
-    async assemble(userId, deployment) {
+    async assemble(userId, deployment, connectionCheck) {
       const at = now();
       const lines = input.lines();
       const since = new Date(
@@ -493,6 +506,7 @@ export function createDiagnosticsSource(input: {
         version: deployment.version,
         health: deployment.health,
         now: at,
+        connectionCheck,
       });
     },
   };

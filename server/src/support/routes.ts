@@ -17,11 +17,20 @@
  * screenshot, a transcript, a Bot's last answer or a bundle of its own under any key would find
  * none of it stored, because the shape of the row is the rule and the route never copies the body
  * into it. The tests send exactly that and assert it went nowhere.
+ *
+ * The one thing the BROWSER adds to a bundle is its last 연결 점검, on the read that assembles it
+ * (`?connectionCheck=`), because only the window can know what its network lets through. It is read
+ * through the check's closed vocabulary — codes, states, bounded numbers — and dropped whole when
+ * any field is off it, so it cannot carry a sentence under a key nobody looks at.
  */
 
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { Build } from "../../../shared/log";
+import {
+  type ConnectionCheckFacts,
+  readConnectionCheck,
+} from "../../../shared/support/connection-check";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { HealthReport } from "../health";
@@ -84,6 +93,26 @@ function screenFailure(value: unknown): string | undefined {
     : undefined;
 }
 
+/** Longer than any result the vocabulary can spell, so a longer query is not one. */
+const CONNECTION_CHECK_MAX_LENGTH = 4_000;
+
+/**
+ * The window's last 연결 점검, when `?connectionCheck=` carries one — read through the vocabulary
+ * (`shared/support/connection-check.ts`), which rebuilds it from closed values and refuses the whole
+ * of it when one field is off the list. Anything else is no check: the bundle is assembled without
+ * one, and the preview the person reads says so by not drawing it.
+ */
+function connectionCheckFrom(
+  value: string | undefined,
+): ConnectionCheckFacts | null {
+  if (!value || value.length > CONNECTION_CHECK_MAX_LENGTH) return null;
+  try {
+    return readConnectionCheck(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
 export function createSupportRoutes(
   service: SupportService,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
@@ -106,10 +135,16 @@ export function createSupportRoutes(
       );
     }
     const actor = context.var.actor;
-    const bundle = await service.diagnostics.assemble(actor.id, {
+    const facts = {
       version: deployment.version,
       health: await deployment.health(),
-    });
+    };
+    const connectionCheck = connectionCheckFrom(
+      context.req.query("connectionCheck"),
+    );
+    const bundle = connectionCheck
+      ? await service.diagnostics.assemble(actor.id, facts, connectionCheck)
+      : await service.diagnostics.assemble(actor.id, facts);
     return context.json({
       id: shelf.hold(actor.id, bundle),
       diagnostics: bundle,
