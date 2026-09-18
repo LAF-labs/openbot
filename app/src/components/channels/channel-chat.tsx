@@ -76,6 +76,21 @@ export function ChannelChat({
    */
   runtimeAgentId: string;
 }) {
+  /*
+   * NOT COMPILED, BECAUSE THE AGENT CHANGES UNDER IT.
+   *
+   * `agent` is one object CopilotKit keeps mutating, and `agent.messages` is one array: a streamed
+   * reply is appended to it and then grown chunk by chunk, in place (`@ag-ui/client` adds each delta
+   * onto the same message object and hands back the same array). The React Compiler assumes what a
+   * hook returns never changes behind its back and skips any work whose inputs are the same objects
+   * as last time — so compiled, this component would compute the transcript once and keep it, and a
+   * Bot that answered would look like a Bot that had not. That is the bug `ChatTranscript` records
+   * for a `useMemo`; the compiler would reintroduce it everywhere at once. So this one component,
+   * where the agent enters the tree, reads it fresh on every render, and hands everything below it
+   * a copy (`thread`, below).
+   */
+  "use no memo";
+
   /** Something arrived while the Bot had the turn; show it once the turn is over. */
   const missedWhileBusy = useRef(false);
 
@@ -692,6 +707,16 @@ export function ChannelChat({
    */
   const speakers = EMPTY_SPEAKERS;
 
+  /*
+   * A NEW ARRAY ON EVERY RENDER, BECAUSE THE AGENT'S NEVER IS.
+   *
+   * Everything under this component is compiled, and compiled code keeps what it drew while its
+   * inputs are the same objects. Handed the agent's own array, the transcript would keep the first
+   * chunk of a reply. A copy costs one pass over the thread's references per render, and it makes
+   * "the messages changed" true exactly when this component has rendered because they did.
+   */
+  const thread = [...transcriptMessages(agent.messages, seed)];
+
   return (
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
@@ -713,7 +738,7 @@ export function ChannelChat({
         messageTimes={messageTimes}
         speakers={speakers}
         {...(readWindow ? { readWindow } : {})}
-        messages={transcriptMessages(agent.messages, seed)}
+        messages={thread}
         notice={
           channel.active ? null : (
             <p className="pb-2 text-sm text-muted-foreground" role="status">
