@@ -5,10 +5,12 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
@@ -39,6 +41,31 @@ const COMPACT_MAX_HEIGHT_PX = 104;
  * trigger list each time the screen redrew — see `sources` below.
  */
 const EMPTY_AGENTS: readonly AgentOption[] = [];
+
+type Sources = {
+  agents: readonly AgentOption[];
+  commands: readonly CommandOption[];
+};
+
+/**
+ * What the menus read when they open: the latest agent and command lists, in a box.
+ *
+ * A box rather than a ref only so that the React Compiler compiles the composer. It refuses any
+ * function that reads a ref being handed to code that runs while rendering — which `buildTriggers`
+ * is, though all it does with the readers is keep them for later — and there is no way to tell it
+ * that they are called only when somebody types `@` or `/`. The box behaves as the ref did: a
+ * layout effect writes it after every commit, before any keystroke can open a menu, and nothing
+ * that is drawn reads it.
+ */
+function createSources(initial: Sources) {
+  let current = initial;
+  return {
+    read: () => current,
+    write: (next: Sources) => {
+      current = next;
+    },
+  };
+}
 
 export type ComposerProps = {
   className?: string;
@@ -127,34 +154,39 @@ export function Composer({
    * foreign and rendered over the box: the character vanished, came back on the next render, and
    * the caret came back at the start. Everything after was typed in front of it.
    *
-   * So the lists are read through a ref at the moment a menu asks, and neither the trigger list
-   * nor the change handler ever changes identity. The effect then re-runs only when `value` does,
-   * and a render caused by `value` is never behind the editor's record of it.
+   * So the lists are read through a box (`createSources`) at the moment a menu asks, and neither
+   * the trigger list nor the change handler ever changes identity. The effect then re-runs only when
+   * `value` does, and a render caused by `value` is never behind the editor's record of it.
    */
-  const sources = useRef({ agents, commands });
-  sources.current = { agents, commands };
+  const [sources] = useState(() => createSources({ agents, commands }));
+  useLayoutEffect(() => {
+    sources.write({ agents, commands });
+  });
   const triggers = useMemo(
     () =>
       buildTriggers({
-        agents: () => sources.current.agents,
-        commands: () => sources.current.commands,
+        agents: () => sources.read().agents,
+        commands: () => sources.read().commands,
       }),
-    [],
+    [sources],
   );
   const draft = useMemo(() => toDraft(value), [value]);
 
-  const handleChange = useCallback((next: Segment[]) => {
-    const { segments, actions } = applyCommandChips(
-      enforceSingleAgent(next),
-      sources.current.commands,
-    );
-    setValue(segments);
-    // Run after the commit so an action that navigates or opens a panel is not fighting the
-    // editor's own state update for the same tick.
-    for (const action of actions) {
-      action();
-    }
-  }, []);
+  const handleChange = useCallback(
+    (next: Segment[]) => {
+      const { segments, actions } = applyCommandChips(
+        enforceSingleAgent(next),
+        sources.read().commands,
+      );
+      setValue(segments);
+      // Run after the commit so an action that navigates or opens a panel is not fighting the
+      // editor's own state update for the same tick.
+      for (const action of actions) {
+        action();
+      }
+    },
+    [sources],
+  );
 
   /**
    * The single submit path for Enter, the send button, and the form.
@@ -198,21 +230,25 @@ export function Composer({
       setIsSubmitting(true);
       // Clear optimistically; restore if the send fails before becoming a message.
       setValue([]);
-      // React Compiler 1.0 cannot compile `try`…`finally` yet, so Composer is left as written: the
-      // code is right, and the compiler cannot follow it. Counted in
-      // app/tests/react-compiler.test.ts.
-      try {
-        await onSubmit(submitted);
-      } catch (error) {
-        setValue(segments);
-        throw error;
-      } finally {
-        submitInFlight.current = false;
-        setIsSubmitting(false);
-        // Asked for here, performed in the effect below, which runs after the commit that clears
-        // `isSubmitting` and so after the render the caret would otherwise be placed against.
-        wantsFocus.current = true;
-      }
+      // `try`…`catch`…`finally`, the `finally` through `ensure`: the React Compiler cannot compile
+      // a `finally` in the component itself. The draft is put back first, then the flags come down.
+      await ensure(
+        async () => {
+          try {
+            await onSubmit(submitted);
+          } catch (error) {
+            setValue(segments);
+            throw error;
+          }
+        },
+        () => {
+          submitInFlight.current = false;
+          setIsSubmitting(false);
+          // Asked for here, performed in the effect below, which runs after the commit that clears
+          // `isSubmitting` and so after the render the caret would otherwise be placed against.
+          wantsFocus.current = true;
+        },
+      );
     },
     [disabled, isBusy, onQueue, onSubmit],
   );
