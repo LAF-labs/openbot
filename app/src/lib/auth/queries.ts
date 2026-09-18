@@ -62,6 +62,12 @@ export type Trial = {
   dailyTokenBudget: number;
   /** Whether today's is spent: the next question will be refused until midnight in Seoul. */
   budgetReachedToday: boolean;
+  /**
+   * What today has used, in tokens, by the same count the budget is judged on. Absent when the
+   * server could not read it — and then nothing is drawn, rather than an empty meter that would
+   * say plenty was left on a day that may be one question from the limit.
+   */
+  tokensUsedToday?: number;
 };
 
 /**
@@ -73,8 +79,13 @@ export type Trial = {
  */
 export function parseTrial(value: unknown): Trial | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { endsAt, holdDays, dailyTokenBudget, budgetReachedToday } =
-    value as Record<string, unknown>;
+  const {
+    endsAt,
+    holdDays,
+    dailyTokenBudget,
+    budgetReachedToday,
+    tokensUsedToday,
+  } = value as Record<string, unknown>;
   if (
     typeof endsAt !== "string" ||
     typeof holdDays !== "number" ||
@@ -83,7 +94,14 @@ export function parseTrial(value: unknown): Trial | undefined {
   ) {
     return undefined;
   }
-  return { endsAt, holdDays, dailyTokenBudget, budgetReachedToday };
+  // Optional, unlike the four: a count that is not one drops the meter, never the whole trial.
+  const used =
+    typeof tokensUsedToday === "number" &&
+    Number.isFinite(tokensUsedToday) &&
+    tokensUsedToday >= 0
+      ? { tokensUsedToday }
+      : {};
+  return { endsAt, holdDays, dailyTokenBudget, budgetReachedToday, ...used };
 }
 
 /** The signed-in person, and what the deployment they are on can do. */

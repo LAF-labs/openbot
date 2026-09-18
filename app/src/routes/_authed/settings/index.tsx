@@ -10,6 +10,7 @@ import {
 } from "@/components/layout/page-shell";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
+import { TodayUsageSection } from "@/components/settings/today-usage";
 import { VersionLine } from "@/components/settings/version-line";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
@@ -188,6 +189,8 @@ function RouteComponent() {
           ) : null}
         </PageRows>
       </PageSection>
+      {/* Only on a free trial, and only when today's count could be read. See the component. */}
+      <TodayUsageSection />
       <PageSection title={t("General")}>
         {/*
          * A LINE BETWEEN THE ROWS. Three settings — language, appearance, notifications — ran

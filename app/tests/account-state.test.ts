@@ -44,6 +44,15 @@ const DEVICE_SCOPED = [
    * §4.6), not drift, and nothing a Bot does reads it.
    */
   "routes/sign.tsx",
+  /*
+   * That this viewer dismissed the 80% line above the composer today (`lib/usage/today.ts`).
+   *
+   * A DECISION, and the argument is that it decides nothing but whether one reminder is drawn a
+   * second time. The count itself is the server's, the same on every device; what a device keeps
+   * is only "I have seen this today" — a person reading the line on the desktop app and again on
+   * their phone is told twice, which is the harmless direction. A Bot's work never reads it.
+   */
+  "lib/usage/today.ts",
 ];
 
 /**

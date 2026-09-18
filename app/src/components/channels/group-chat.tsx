@@ -41,6 +41,7 @@ import {
   socketState,
 } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
+import { refreshTodayUsage } from "@/lib/usage/today";
 
 /**
  * A room with more than one Bot in it, watched rather than driven.
@@ -258,6 +259,8 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
        * screen those are the same thing: nothing appears. Said plainly, once, when the turn ends.
        */
       if (frame.kind === "room.done" && frame.channelId === channel.id) {
+        // The room's turn spent the day's tokens too; on a trial, the meter catches up.
+        refreshTodayUsage(queryClient);
         if ((frame.failures ?? 0) > 0) {
           setNotice(
             t("{count} of the Bots could not answer this time.", {
@@ -322,7 +325,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
       socketState.removeEventListener(SOCKET_RECONNECTED, onReconnected);
     };
-  }, [channel.id]);
+  }, [channel.id, queryClient]);
 
   const post = useCallback(
     async (

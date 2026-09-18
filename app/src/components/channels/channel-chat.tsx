@@ -43,6 +43,7 @@ import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
+import { refreshTodayUsage } from "@/lib/usage/today";
 
 /**
  * Backstop for the first message of a new channel; a stalled join must not lose the message.
@@ -558,6 +559,22 @@ export function ChannelChat({
     });
     return () => subscription?.unsubscribe();
   }, [agent, runtimeAgentId, channel.id]);
+
+  /*
+   * A TURN THAT ENDED MOVES TODAY'S METER — on a free trial, once per turn, and not per run: a turn
+   * that used the browser is several runs, and the count is only worth asking for once they are all
+   * in. `turnsInFlight` falling to zero is the whole turn being over, however it ended.
+   */
+  const hadTurn = useRef(false);
+  useEffect(() => {
+    if (turnsInFlight > 0) {
+      hadTurn.current = true;
+      return;
+    }
+    if (!hadTurn.current) return;
+    hadTurn.current = false;
+    refreshTodayUsage(queryClient);
+  }, [turnsInFlight, queryClient]);
 
   /*
    * THIS CONVERSATION'S STOP, HANDED TO `모두 멈추기` for as long as it is on screen.

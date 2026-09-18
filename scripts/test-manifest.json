@@ -133,6 +133,8 @@
   "app/tests/take-the-wheel.test.ts",
   "app/tests/theme-preference.test.ts",
   "app/tests/thread-history.test.ts",
+  "app/tests/today-usage-render.test.tsx",
+  "app/tests/today-usage.test.ts",
   "app/tests/tool-result-codes.test.ts",
   "app/tests/transcript-messages.test.ts",
   "app/tests/trial-banner.test.ts",

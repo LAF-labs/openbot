@@ -2359,6 +2359,16 @@ export const ko: Record<string, string> = {
   "The free trial has ended.": "무료 체험이 끝났어요.",
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+  // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
+  "Free trial": "무료 체험",
+  "Today's usage": "오늘 사용량",
+  "How much of today's free allowance is used. It fills up again every day at midnight, Korean time.":
+    "오늘 무료로 쓸 수 있는 양 중 얼마나 썼는지예요. 매일 자정(한국 시간)에 다시 채워져요.",
+  "You have used {percent}% of today's free allowance · it fills up again at midnight, Korean time":
+    "오늘 무료 사용량의 {percent}%를 썼어요 · 자정(한국 시간)에 다시 채워져요",
+  "Today's free allowance is used up · it fills up again at midnight, Korean time":
+    "오늘 무료 사용량을 다 썼어요 · 자정(한국 시간)에 다시 채워져요",
+  "Hide until tomorrow": "내일까지 숨기기",
   // 모두 멈추기 — 사이드바 메뉴의 명령과 확인 창. 이미 한 일은 되돌리지 않는다는 걸 누르기 전에 말한다.
   "Stop everything": "모두 멈추기",
   "Stop everything that is running?": "진행 중인 일을 모두 멈출까요?",

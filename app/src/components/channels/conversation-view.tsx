@@ -19,6 +19,7 @@ import {
   type QueuedMessage,
   reduceQueue,
 } from "@/components/channels/composer";
+import { UsageNotice } from "@/components/channels/usage-notice";
 import type { StandingFailure } from "@/lib/channels/retry";
 
 export function ConversationView({
@@ -279,6 +280,8 @@ export function ConversationView({
        * the box a person types into has to sit under the width it types into.
        */}
       <div className="w-full shrink-0 px-4 pb-4">
+        {/* Every conversation screen, not one caller's: the next question is typed here on all of them. */}
+        <UsageNotice />
         {notice}
         <Composer
           agents={agents}
