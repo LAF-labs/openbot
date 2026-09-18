@@ -51,12 +51,9 @@ export const ko: Record<string, string> = {
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
   "Address for {name}": "{name} 주소",
   Account: "계정",
-  "Acorn cat": "도토리 모자 고양이",
-  "Actions for /{slug}": "/{slug} 작업",
   Add: "추가",
   "Actions for {name}": "{name} 관리",
   "Add a server by URL": "URL로 서버 추가",
-  "Add another…": "다른 봇 추가…",
   "Add credential": "자격증명 추가",
   Added: "추가됨",
   "Added to file": "파일에 추가함",
@@ -67,7 +64,6 @@ export const ko: Record<string, string> = {
   Admin: "관리",
   "Agent endpoint (optional)": "봇을 실행할 서버 주소 (선택)",
   Bots: "봇",
-  Allow: "허용",
   Allowed: "허용됨",
   "Allowed by {person}{josa}": "{person}{josa} 허용함",
   "An account is no longer connected": "계정 연결이 끊김",
@@ -198,7 +194,6 @@ export const ko: Record<string, string> = {
   "The Bot stopped without saying why.": "봇이 이유를 말하지 않고 멈췄습니다.",
   "The Bot thought about it and answered with nothing. Ask again.":
     "봇이 생각만 하고 아무 말도 하지 않았습니다. 다시 물어보세요.",
-  "The Bot was asked": "봇이 요청을 받음",
   "The Bot's computer could not be reached": "봇의 컴퓨터에 닿지 못함",
   "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.":
     "봇의 모델이 요청을 받지 않았습니다. 계속 반복되면 배포 점검이 필요합니다.",
@@ -230,8 +225,6 @@ export const ko: Record<string, string> = {
   "This deployment registered itself": "이 배포가 스스로 등록함",
   "Time is up": "시간이 다 됐습니다",
   "Updating its own profile": "자기 프로필을 바꾸는 중",
-  "Changing its own settings": "자기 설정을 바꾸는 중",
-  "Changed its own settings": "자기 설정을 바꿨습니다",
   "Saving a routine": "루틴을 저장하는 중",
   "Saved a routine": "루틴을 저장했습니다",
   "Could not save a routine": "루틴을 저장하지 못했습니다",
@@ -259,29 +252,14 @@ export const ko: Record<string, string> = {
   "Your team of always-on Bots": "언제나 켜져 있는 당신의 봇 팀",
   "Each one is a colleague you can hand real work to. Routines and rooms keep running with this window closed; a conversation like this one runs while it is open.":
     "각자 실제로 일을 맡길 수 있는 봇입니다. 루틴과 여러 봇이 있는 대화방은 창을 닫아도 계속 돌고, 지금 같은 일대일 대화는 창이 열려 있는 동안 진행됩니다.",
-  "They share one computer": "봇들은 컴퓨터 한 대를 함께 씁니다",
-  "Your Bots work on a real browser of their own — they open pages, read them, and fill things in.":
-    "봇은 진짜 브라우저에서 일합니다 — 페이지를 열고, 읽고, 입력합니다.",
-  "It is one computer for all of them, so a site one Bot signs into is signed in for the others too. Give a Bot only the access you would give the whole team.":
-    "모든 봇이 한 대를 함께 쓰기 때문에, 한 봇이 로그인한 사이트는 다른 봇들도 로그인된 상태가 됩니다. 팀 전체에 줘도 괜찮은 접근 권한만 주세요.",
-  "A good first move: sign the Bot's browser into the sites you check every day. From then on, that screen's work is work you can hand over.":
-    "좋은 첫걸음은 매일 확인하는 사이트에 봇의 브라우저로 한 번 로그인해 두는 것 — 그때부터 그 화면의 일을 맡길 수 있습니다.",
   "Anything hard to explain in words, you can teach by doing it once in front of the Bot.":
     "말로 설명하기 어려운 일은, 봇 앞에서 한 번 직접 해 보이면 가르칠 수 있습니다.",
   "Make your first Bot": "첫 봇을 만들어 보세요",
-  "It starts with nothing set and can become anything. You can make up to five.":
-    "아무것도 정해지지 않은 상태로 시작하고, 무엇이든 될 수 있습니다. 최대 다섯 개까지 만들 수 있습니다.",
-  "Name your Bot": "봇의 이름",
-  "Leave it blank and the Bot will ask you itself when you first talk to it.":
-    "비워 두면 처음 대화할 때 봇이 직접 물어봅니다.",
   "That Bot could not be created. Try again.":
     "봇을 만들지 못했습니다. 다시 시도해 주세요.",
   Next: "다음",
   Back: "뒤로",
-  "What should this Bot help with?": "이 봇이 무엇을 도와주면 좋을까요?",
   "(Optional)": "(선택)",
-  "This is what the Bot is for. Leave it blank and it will ask you itself. You can change it any time.":
-    "봇이 무엇을 하는 존재인지입니다. 비워 두면 봇이 직접 물어봅니다. 언제든 바꿀 수 있습니다.",
   "Nobody had anything to add this time.":
     "이번에는 아무도 덧붙일 말이 없었습니다.",
   "A Bot": "봇",
@@ -323,29 +301,18 @@ export const ko: Record<string, string> = {
   "Asks about every Enter the Bot presses, because a form submits from Enter in any of its fields. Expect to be asked while it is filling one in, not only at the end.":
     "봇이 누르는 모든 Enter마다 묻습니다. 폼은 어느 칸에서든 Enter로 제출되기 때문입니다. 마지막에만이 아니라 작성 중에도 물어올 수 있습니다.",
   Audit: "감사 기록",
-  Available: "사용 가능",
-  Axolotl: "우파루파",
   "Back to app": "앱으로 돌아가기",
-  Bear: "곰",
-  "Bear cub": "아기 곰",
-  Beetle: "딱정벌레",
   "Before each meeting, gather what I need: who is coming, what we said last time, and any document that has changed since. One page, no longer.":
     "회의 전에 필요한 걸 모아줘 — 누가 오는지, 지난번에 무슨 얘기를 했는지, 그 뒤로 바뀐 문서. 한 장 넘기지 말고.",
-  Bird: "새",
-  "Black cat": "검은 고양이",
   Bot: "봇",
   Boundaries: "경계",
   "Boundary at start-up": "시작 시 경계 적용",
   "The boundary was changed": "경계를 바꿈",
-  Bunny: "토끼",
-  Cactus: "선인장",
-  "Cactus in a hat": "모자 쓴 선인장",
   Calendar: "캘린더",
   "Called on this Bot's behalf": "이 봇을 대신해 호출됨",
   Cancel: "취소",
   "Capabilities and interface pieces available across Bots.":
     "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
-  Cat: "고양이",
   Catalogue: "카탈로그",
   "Bot in this conversation": "이 대화의 봇",
   "Finish in the browser that just opened, then come back.":
@@ -353,8 +320,6 @@ export const ko: Record<string, string> = {
   "Check again": "다시 확인",
   "Check the shop ID and try again.": "몰 ID를 확인하고 다시 연결해 주세요.",
   "Checking the connection…": "연결 상태를 확인하는 중…",
-  "Choose a Bot": "봇 선택",
-  "Choose a Bot…": "봇 선택…",
   "Choosing a report…": "보고서 선택 중…",
   Clicked: "클릭함",
   "Client ID": "클라이언트 ID",
@@ -395,8 +360,6 @@ export const ko: Record<string, string> = {
   "Shop ID": "몰 ID",
   "The name in front of .cafe24.com in your shop's address.":
     "쇼핑몰 주소에서 .cafe24.com 앞에 오는 이름입니다.",
-  "There is nothing to connect here yet.":
-    "아직 연결할 수 있는 서비스가 없습니다.",
   "Mail in the mailbox of whoever is asking.": "질문하는 사람의 지메일 편지함.",
   "The calendar of whoever is asking.": "질문하는 사람의 구글 캘린더.",
   "Locations and reviews of the business asking.":
@@ -411,12 +374,8 @@ export const ko: Record<string, string> = {
     "우리 업종의 입찰공고와 지원사업을 찾고, 매일 아침 새 공고를 알려 줄 수 있습니다.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공됩니다. 연결할 것이 없습니다.",
-  "Connected accounts": "연결된 계정",
-  "Connected accounts could not be loaded.":
-    "연결된 계정을 불러오지 못했습니다.",
   "Connected to {name}.": "{name}에 연결했습니다.",
   Connector: "커넥터",
-  Connectors: "커넥터",
   "Continue with Google": "Google로 계속하기",
   "Continue with Kakao": "카카오로 계속하기",
   "Continue with Naver": "네이버로 계속하기",
@@ -429,7 +388,6 @@ export const ko: Record<string, string> = {
   "Could not log out.": "로그아웃하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
-  "Could not start sign-in.": "로그인을 시작하지 못했습니다.",
   "Create a routine": "루틴 만들기",
   "Creating…": "만드는 중…",
   "Credential saved": "자격증명 저장됨",
@@ -444,22 +402,15 @@ export const ko: Record<string, string> = {
   Decision: "결정",
   Delete: "삭제",
   "Delete it": "삭제",
-  "Delete {command}": "{command} 삭제",
-  "Delete {name}": "'{name}' 삭제",
-  "Delete {name}? This cannot be undone.":
-    "'{name}' 봇을 삭제할까요? 되돌릴 수 없습니다.",
   "Deleting…": "삭제 중…",
   Deny: "거부",
   "Did not happen": "실행되지 않음",
   Disconnect: "연결 해제",
-  Doll: "인형",
-  Dolphin: "돌고래",
   "Draft description": "설명 초안",
   "Draft not published": "초안 — 미게시",
   "Draft saved, not yet published": "초안 저장됨 — 아직 게시 전",
   Drawing: "그리는 중",
   Duplicate: "복제",
-  "Duplicating…": "복제 중…",
   "The one browser your Bots share, and the profile it keeps. That profile is what makes them still signed in tomorrow, and resetting it signs every one of them out.":
     "봇들이 함께 쓰는 브라우저 하나와 그 프로필. 프로필이 있어서 봇들이 내일도 로그인 상태로 남습니다 — 초기화하면 봇 전부가 로그아웃됩니다.",
   Edit: "수정",
@@ -467,7 +418,6 @@ export const ko: Record<string, string> = {
   "Edit profile": "프로필 편집",
   "Edit skill": "스킬 수정",
   Egg: "달걀",
-  Elephant: "코끼리",
   Email: "메일",
   "Enter a web address starting with http:// or https://.":
     "http:// 또는 https://로 시작하는 웹 주소를 입력하세요.",
@@ -483,31 +433,21 @@ export const ko: Record<string, string> = {
     "봇이 이 앱 밖에서 건드릴 수 있는 모든 것과 그 한계.",
   "Expense Manager": "지출 관리",
   "Explain the latest": "최근 항목 설명 요청",
-  "Explore Bots": "다른 사람의 봇 둘러보기",
   Channel: "대화",
   "Finance operations": "재무 운영",
   "Following something up": "확인하는 중",
   "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
     "카탈로그에 없는 서버용입니다. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록됩니다.",
-  Frog: "개구리",
-  "Get started": "시작하기",
-  Ghost: "유령",
   "Going in circles": "같은 일 반복",
-  Gorilla: "고릴라",
   "Granted access": "가져온 권한",
   "Granted to this Bot": "이 봇에게 부여됨",
   "Helping another Bot": "다른 봇을 돕는 중",
   Hidden: "숨김",
-  "Hidden from your Bot list. This changes nothing for anyone else.":
-    "내 봇 목록에서만 숨겨집니다. 다른 사람에게는 아무 변화가 없습니다.",
   Hide: "숨기기",
   "Hide from sidebar": "사이드바에서 숨기기",
   "Hide hidden Bots": "숨긴 봇 감추기",
-  "Hiding…": "숨기는 중…",
   "How {product} looks. Following the system flips with it.":
     "{product}의 화면 모드입니다. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀝니다.",
-  "In “{mode}” nothing stops: a match is recorded as a question that would have been asked.":
-    "“{mode}”에서는 아무것도 멈추지 않습니다. 해당하면 물어봤을 질문으로 기록만 됩니다.",
   "Inbox Triage": "메일 분류",
   "Isolation at start-up": "시작 시 격리 적용",
   "It answered: {events}": "응답함: {events}",
@@ -515,13 +455,10 @@ export const ko: Record<string, string> = {
     "이 배포에서 제거됩니다. 그리던 봇들도 더 이상 그릴 수 없으며, 되돌릴 수 없습니다.",
   "Your Bots share one browser, so this signs all of them out of every service they had logged into and starts clean. This cannot be undone.":
     "봇들은 브라우저 하나를 함께 씁니다. 초기화하면 봇 전부가 로그인했던 모든 서비스에서 로그아웃되고 깨끗한 상태로 시작합니다. 되돌릴 수 없습니다.",
-  Jellyfish: "해파리",
   "Keys and tokens held for this deployment.": "이 배포가 보관 중인 키와 토큰.",
   "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.":
     "비워 두면 내장 봇을 사용합니다. AG-UI를 말하는 서버면 무엇이든 됩니다. 이 서버가 그쪽으로 접속하므로, 내 컴퓨터에서 도는 서버는 여기서 접근할 수 있어야 합니다.",
   Light: "라이트",
-  "Little ghost": "꼬마 유령",
-  "Loading Bots…": "봇 불러오는 중…",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
   "Mark as unread": "읽지 않음으로 표시",
@@ -531,8 +468,6 @@ export const ko: Record<string, string> = {
   "May read this": "읽을 수 있음",
   "Meeting Prep": "회의 준비",
   Messages: "메시지",
-  Monkey: "원숭이",
-  Mushroom: "버섯",
   "Name is required.": "이름을 입력하세요.",
   "Name must be 80 characters or fewer.": "이름은 80자 이하여야 합니다.",
   "Never submit a form": "폼은 절대 제출하지 않기",
@@ -546,7 +481,6 @@ export const ko: Record<string, string> = {
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
   Notifications: "알림",
-  Octopus: "문어",
   "Only the two hosts named. An address that redirects there is stopped before the site opens, but a link the Bot clicks on another page is not.":
     "명시한 두 호스트만 해당합니다. 다른 주소에서 리다이렉트로 넘어가는 것은 사이트가 열리기 전에 멈추지만, 다른 페이지에서 봇이 링크를 눌러 가는 것은 막지 않습니다.",
   "Open the audit trail": "감사 기록 열기",
@@ -554,17 +488,14 @@ export const ko: Record<string, string> = {
   "Opening Kakao…": "카카오 여는 중…",
   "Opening Naver…": "네이버 여는 중…",
   "Overnight prep": "야간 준비",
-  Panda: "판다",
   Paused: "일시정지",
   Pin: "고정",
   Pinned: "고정됨",
-  "Polar bear": "북극곰",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
   "Published, so every Bot may use it": "게시됨 — 모든 봇이 쓸 수 있음",
   "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
     "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
-  Rabbit: "토끼",
   "Read real data": "실제 데이터를 읽음",
   "Refreshing…": "새로고침 중…",
   "Remove {name}": "{name} 제외",
@@ -575,11 +506,8 @@ export const ko: Record<string, string> = {
   "Resetting…": "초기화 중…",
   "Review receipts, categorise expenses and prepare reimbursement reports. Flag anything that looks duplicated or out of policy rather than filing it.":
     "영수증을 검토하고 지출을 분류해 정산 보고서를 준비해줘. 중복이거나 규정에 안 맞아 보이면 그냥 처리하지 말고 표시해줘.",
-  Robot: "로봇",
-  "Role description is required.": "역할 설명을 입력하세요.",
   "Role description must be 1000 characters or fewer.":
     "역할 설명은 1000자 이하여야 합니다.",
-  "Routine name": "루틴 이름",
   "Rules that decide what a Bot may never do.":
     "봇이 절대 하면 안 되는 일을 정하는 규칙.",
   "Run {name} now": "'{name}' 지금 실행",
@@ -587,18 +515,15 @@ export const ko: Record<string, string> = {
   "Running {name}…": "'{name}' 실행 중…",
   "Save changes": "변경 저장",
   "Save skill": "스킬 저장",
-  Seal: "물범",
   Search: "검색",
   "Search your team": "팀 검색",
   "Sent as an {header} header on every run, and kept in the credential vault. Leave empty to keep the current key.":
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
-  Sheep: "양",
   "Show hidden Bots": "숨긴 봇 보기",
   "Sign in to {product}": "{product} 로그인",
   "Skills and tools installed for the whole workspace.":
     "작업 공간 전체에 설치된 스킬과 도구.",
   "Skip to the conversation": "대화로 건너뛰기",
-  Snail: "달팽이",
   "Cannot reach the server.": "서버에 닿지 못했습니다.",
   "The connection to the server was lost. Reconnecting…":
     "서버와 연결이 끊겼습니다 — 다시 잇는 중",
@@ -619,9 +544,7 @@ export const ko: Record<string, string> = {
   "Close its tabs": "이 봇의 탭 닫기",
   "This is not one of your Bots, or it was deleted, so it cannot be stopped or reset from here.":
     "내 봇이 아니거나 삭제된 봇이라 여기서 탭을 닫거나 초기화할 수 없습니다.",
-  Suggestions: "추천",
   "Taken away from this Bot": "이 봇에게서 회수됨",
-  "Teddy bear": "곰인형",
   // `{josa}` is computed by `lib/josa.ts` — 이(가) was on this card, on screen, until 2026-09-06.
   "Tell me when {name} finishes or needs me.":
     "{name}{josa} 작업을 마치거나 내 입력이 필요할 때 알려주세요.",
@@ -649,7 +572,6 @@ export const ko: Record<string, string> = {
   "That instruction can be up to 1,000 characters.":
     "그 지침은 1,000자까지 쓸 수 있습니다.",
   "That header name cannot be used.": "그 헤더 이름은 쓸 수 없습니다.",
-  Advanced: "고급",
   "That did not work.": "잘 되지 않았습니다.",
   "The connection could not be tested.": "연결을 시험해 보지 못했습니다.",
   "Could not start the conversation.": "대화를 시작하지 못했습니다.",
@@ -670,11 +592,8 @@ export const ko: Record<string, string> = {
     "그 스킬은 더 이상 없거나, 내가 고칠 수 있는 것이 아닙니다.",
   "Changes apply the next time {command} is used. Bots already carrying it keep it.":
     "고친 내용은 다음에 {command} 를 쓸 때부터 적용됩니다. 이미 가지고 있는 봇은 그대로 가지고 있습니다.",
-  "Delete {command}?": "{command} 를 지울까요?",
   "The command stops working and any Bot carrying it loses it. This cannot be undone.":
     "그 명령은 더 이상 동작하지 않고, 가지고 있던 봇에서도 사라집니다. 되돌릴 수 없습니다.",
-  "Only for pointing this Bot at something you host yourself. Leave it alone and it runs here.":
-    "직접 운영하는 곳에 이 봇을 연결할 때만 씁니다. 건드리지 않으면 이 서버에서 그대로 돕니다.",
   "That change could not be read. Try again.":
     "그 변경 내용을 읽지 못했습니다. 다시 시도하세요.",
   "That reads like an instruction to the Bot rather than a description, so it was not saved.":
@@ -786,8 +705,6 @@ export const ko: Record<string, string> = {
     "로그인, 파일, 세션을 함께 씁니다. 그래서 한 봇이 다른 봇이 로그인해 둔 곳에 닿을 수 있습니다. 이것은 의도된 설계입니다 — 계정마다 컴퓨터 한 대. 봇을 선 안에 두는 것은 컴퓨터를 따로 주는 것이 아니라 그 앞에 놓인 경계입니다.",
   "This Bot is waiting for you. Open its screen":
     "봇이 당신을 기다립니다. 화면을 여세요",
-  "This cannot be connected yet. An administrator has to finish setting it up first.":
-    "아직 연결할 수 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
   "This conversation has no Bot in it.": "이 대화에는 봇이 없습니다.",
   "This Bot has been deleted. The conversation stays readable, but it can no longer reply.":
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
@@ -799,17 +716,13 @@ export const ko: Record<string, string> = {
     "페이지로 바로 전달됩니다. 대화에 표시되지 않으며 봇도 받지 않습니다.",
   "This service does not register clients on its own. Register one in the service's console with exactly the address below, then paste what it gives you.":
     "이 서비스는 클라이언트를 자동으로 등록하지 않습니다. 서비스 콘솔에서 아래 주소를 그대로 사용해 등록한 뒤, 받은 값을 붙여넣어 주세요.",
-  Time: "시각",
-  "Title is required.": "제목을 입력하세요.",
   "Title must be 120 characters or fewer.": "제목은 120자 이하여야 합니다.",
-  Toast: "식빵",
   "Today {time}": "오늘 {time}",
   "Toggle Sidebar": "사이드바 여닫기",
   "Try again": "다시 시도",
   "Two calls count as the same call when the thing acted on is the same, whatever was typed into it, so a Bot running ten searches from one box, or reading one file ten times, is refused on the tenth. It misses the other way too: a Bot slow enough to spread its attempts wider than a few minutes is never caught, one that changes a single argument each time is ten different calls, and calls to another server's tools are not counted at all. This one refuses; the boundary already asks on the fifth, which is the gentler place to start.":
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 이 규칙은 거부합니다. 기본 경계는 다섯 번째에서 묻기부터 시작합니다.",
   Unhide: "숨김 해제",
-  "Unhiding…": "해제 중…",
   Unpin: "고정 해제",
   "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
   Unread: "읽지 않음",
@@ -821,12 +734,9 @@ export const ko: Record<string, string> = {
   "Asking another Bot": "다른 봇에게 물어보는 중",
   "Asked another Bot": "다른 봇에게 물었습니다",
   "Weekdays at {time}": "평일 {time}",
-  Whale: "고래",
   "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
     "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",
   "What should it do?": "무엇을 할까요?",
-  "White cat": "흰 고양이",
-  "Who is this for?": "누구에게 보낼까요?",
   "Work overnight and have a digest ready by morning: what arrived, what changed, and the two or three things worth my attention first.":
     "밤사이 일하고 아침에 다이제스트를 준비해줘 — 무엇이 도착했고, 무엇이 바뀌었고, 내가 먼저 볼 만한 두세 가지.",
   "Working late?": "늦게까지 고생이 많으세요",
@@ -854,7 +764,6 @@ export const ko: Record<string, string> = {
   "Name, e.g. Morning review digest": "이름 (예: 아침 리뷰 다이제스트)",
   "What should it do? e.g. Check the store reviews and summarize the new ones.":
     "무엇을 할까요? 예: 스토어 리뷰를 확인하고 새 리뷰만 요약해줘.",
-  Daily: "매일",
   "Every N minutes": "N분마다",
   Minutes: "분",
   "Every {minutes} minutes": "{minutes}분마다",
@@ -876,19 +785,14 @@ export const ko: Record<string, string> = {
   // 얼굴 고르기의 세 줄. 눈 모양은 줄이 없고 "다른 얼굴"이 굴린다.
   Shape: "모양",
   Colour: "색",
-  Accessory: "장식",
-  Bean: "콩",
+  Blob: "방울",
   Squircle: "둥근 네모",
   Tablet: "알약",
   Capsule: "캡슐",
-  Cylinder: "원기둥",
   Hex: "육각",
   Gem: "보석",
-  Crystal: "결정",
   Wedge: "삼각",
   Shield: "방패",
-  Dome: "돔",
-  Arch: "아치",
   Teardrop: "물방울",
   Black: "검정",
   Brown: "갈색",
@@ -901,37 +805,6 @@ export const ko: Record<string, string> = {
   Violet: "보라",
   Magenta: "자홍",
   Gray: "회색",
-  // 여섯 가지 몸 모양.
-  Blob: "방울",
-  "Rounded square": "둥근 네모",
-  Drop: "물방울",
-  Hexagon: "육각",
-  Pill: "길쭉이",
-  Triangle: "세모",
-  // 열 가지 색.
-  Coral: "산호",
-  Amber: "호박",
-  Lime: "연두",
-  Mint: "민트",
-  Sky: "하늘",
-  Periwinkle: "라벤더",
-  Lilac: "보라",
-  Rose: "장미",
-  Sand: "모래",
-  Slate: "잿빛",
-  // 일곱 가지 장식.
-  "No accessory": "장식 없음",
-  Cap: "모자",
-  Bow: "리본",
-  Glasses: "안경",
-  Antenna: "안테나",
-  Leaf: "잎",
-  Star: "별",
-  // 네 가지 눈. 화면에 줄은 없지만 이름은 읽힐 수 있어야 한다.
-  Dot: "점",
-  Oval: "타원",
-  "Half-moon": "반달",
-  Ring: "고리",
   "Filled in": "입력함",
   "Finance Operations": "재무 운영",
   General: "일반",
@@ -948,9 +821,6 @@ export const ko: Record<string, string> = {
   "Key for that agent (optional)": "그 서버의 키 (선택)",
   "Listed files": "파일 목록 조회",
   "Loading channel…": "대화 불러오는 중…",
-  "Loading credentials…": "자격증명 불러오는 중…",
-  "Loading plugins…": "플러그인 불러오는 중…",
-  "Loading the boundary…": "경계 불러오는 중…",
   "Loading the trail…": "기록 불러오는 중…",
   "Loading…": "불러오는 중…",
   "Load more": "더 보기",
@@ -960,12 +830,10 @@ export const ko: Record<string, string> = {
   "May read": "읽기 허용",
   Message: "메시지",
   Model: "모델",
-  "More message options unavailable": "추가 메시지 옵션 없음",
   "My standup skill": "나의 스탠드업 스킬",
   Name: "이름",
   "New Bot": "새 봇",
   "New skill": "새 스킬",
-  "No Bots found.": "봇이 없습니다.",
   "No auth providers are configured.": "설정된 로그인 제공자가 없습니다.",
   "No computers yet. One appears the first time a Bot opens a page.":
     "아직 컴퓨터가 없습니다. 봇이 처음 페이지를 열면 나타납니다.",
@@ -984,8 +852,6 @@ export const ko: Record<string, string> = {
     "툴 목록이 비어 있습니다. 새로고침으로 서버에 다시 물어보세요.",
   "Not in this build, nothing can draw it": "이 빌드에는 없어 그릴 수 없습니다",
   "Not shown": "표시 안 됨",
-  "Nothing to connect yet. An administrator has to set one up first.":
-    "아직 연결할 서비스가 없습니다. 관리자가 먼저 설정을 마쳐야 합니다.",
   "Nothing yet.": "아직 없습니다.",
   "One line": "한 줄",
   "One-liner": "한 줄 요약",
@@ -1019,7 +885,6 @@ export const ko: Record<string, string> = {
   "Review receipts, categorize expenses, and prepare reimbursement reports.":
     "영수증을 검토하고 지출을 분류해 정산 보고서를 준비합니다.",
   Revoke: "철회",
-  Role: "역할",
   "Sample arguments": "예시 인자",
   "Save draft": "초안 저장",
   "Saved file": "파일 저장",
@@ -1028,10 +893,6 @@ export const ko: Record<string, string> = {
   "Scroll to start": "처음으로 스크롤",
   Scrolled: "스크롤함",
   Secret: "비밀 값",
-  "Services you have connected with your own account. A Bot answers with what your account can see, and nothing it cannot.":
-    "내 계정으로 직접 연결한 서비스입니다. 봇은 내 계정이 볼 수 있는 것으로 답하고, 그 밖의 것은 답하지 못합니다.",
-  "Services you have connected with your own account, so a Bot can answer with what you can see.":
-    "내 계정으로 직접 연결한 서비스입니다. 봇이 내가 볼 수 있는 것으로 답할 수 있습니다.",
   Settings: "설정",
   "Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences.":
     "이 배포의 모든 사람에게 적용되는 설정입니다. 여기의 모든 항목은 모든 사람과 모든 봇에 영향을 줍니다 — 개인 환경설정과 다른 점입니다.",
@@ -1041,13 +902,11 @@ export const ko: Record<string, string> = {
   Slug: "슬러그",
   "Start a new channel": "새 대화 시작",
   "Start channel": "대화 시작",
-  Stop: "정지",
   "Stop the Bot": "봇 정지",
   "Switched tab": "탭 이동",
   "Summarise what I did yesterday from the channel, then list what is left.":
     "대화에서 어제 한 일을 요약하고, 남은 일을 목록으로.",
   Summary: "요약",
-  "System owned": "시스템 소유",
   "Take control": "제어 가져오기",
   "The Bot has not opened a page yet.": "봇이 아직 페이지를 열지 않았습니다.",
   "The Bot needs": "봇에게 필요합니다",
@@ -1099,7 +958,6 @@ export const ko: Record<string, string> = {
   "You have control of this browser.":
     "이 브라우저는 당신이 제어하고 있습니다.",
   "You have control.": "제어 중입니다.",
-  "Your Bots": "내 봇",
   "Your Bots could not be loaded.": "봇 목록을 불러오지 못했습니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
@@ -1108,7 +966,6 @@ export const ko: Record<string, string> = {
     "여기 입력한 값은 봇에게 절대 보이지 않습니다",
   "Unpublished, no Bot may use it": "미게시 — 어떤 봇도 쓸 수 없음",
   Language: "언어",
-  "Which language the interface uses.": "인터페이스가 사용할 언어.",
   "Which language the interface uses. Changing it reloads the screen.":
     "인터페이스가 사용할 언어. 바꾸면 화면을 다시 불러옵니다.",
   System: "시스템 설정 따름",
@@ -1132,7 +989,6 @@ export const ko: Record<string, string> = {
   "{action}, blocked": "{action} — 차단됨",
   "{action}, didn't work": "{action} — 실패",
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
-  "{name} is on": "'{name}' 켜짐",
   "{name}'s screen": "{name}의 화면",
   "Only while a tab is open.": "탭이 열려 있는 동안에만 알립니다.",
   "Your browser is blocking notifications for this site.":
@@ -1227,8 +1083,6 @@ export const ko: Record<string, string> = {
     "내가 찾을 수 있는 순서로 파일을 정리해줘 — 알아볼 만한 이름, 맞는 폴더, 중복은 표시. 옮기는 건 마음대로 해도 되지만 묻지 않고 지우지는 마.",
   "Keep my list honest: what is actually due, what I have been avoiding, and what can be dropped. Ask me each morning for the three things that matter today.":
     "내 할 일 목록을 솔직하게 유지해줘 — 진짜 기한이 온 것, 내가 피하고 있던 것, 그냥 버려도 되는 것. 매일 아침 오늘 중요한 세 가지를 나한테 물어봐.",
-  "Show me others": "다른 제안 보기",
-  "Or start from one of these": "아니면 이 중에서 시작하세요",
 
   // 새 봇이 아직 이름을 정하기 전에 쓰는 이름들 — BOT_NAME_WORDS(lib/agents/bot-names.ts).
   Lantern: "초롱",
@@ -1307,8 +1161,6 @@ export const ko: Record<string, string> = {
   "{bot} — the file {path}": "{bot} — 파일 {path}",
   "{bot} — the tool {tool}": "{bot} — 도구 {tool}",
   "Ask me again": "다시 묻게 하기",
-  "Each of these was a question somebody answered with “always”. Until it is taken back, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
-    "각 항목은 누군가 “항상”으로 답한 질문입니다. 취소하기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
   "How hard it thinks": "얼마나 깊이 생각할지",
@@ -1321,12 +1173,8 @@ export const ko: Record<string, string> = {
   "Suspended — it asks about these again": "중지됨 — 이 항목들은 다시 묻습니다",
   "how hard it thinks ({level})": "생각 깊이 ({level})",
   "Do not ask me about": "이건 묻지 마세요",
-  "When this Bot is stopped for your permission, this is read first. Write what you are happy for it to get on with; it is asked about everything else.":
-    "이 봇이 허락을 받으려고 멈추면 이 내용을 먼저 읽습니다. 그냥 진행해도 괜찮은 것을 적어두세요. 나머지는 전부 물어봅니다.",
   "Reading anything on our own site is fine.":
     "우리 사이트에서 읽기만 하는 건 괜찮습니다.",
-  "A model reads this against each stopped action, so keep it to things you would recognise. Anything it lets through was seen by nobody, and is recorded that way in the audit trail. What the deployment forbids outright is never affected.":
-    "멈춘 행동마다 모델이 이 문장과 대조해 판단하므로, 본인이 알아볼 수 있는 것만 적으세요. 여기서 통과한 행동은 아무도 본 사람이 없으며, 감사 기록에도 그렇게 남습니다. 배포가 아예 금지한 것은 영향을 받지 않습니다.",
   "Saving…": "저장 중…",
   Save: "저장",
   "Getting past without asking": "묻지 않고 넘어가기",
@@ -1430,22 +1278,12 @@ export const ko: Record<string, string> = {
   "The fleet could not be told": "함대에 전달하지 못함",
 
   // 사이트 연결 — 화면의 말.
-  "Site connections": "사이트 연결",
-  "The sites you work in every day. No keys and no developer registration: you sign in once on a Bot's own browser, hand it back, and it stays signed in.":
-    "매일 들어가는 사이트들입니다. API 키도, 개발자 등록도 필요 없습니다. 봇의 브라우저에 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
   "Make a Bot first — a site is connected on the browser they share.":
     "먼저 봇을 만들어 주세요. 사이트 연결은 봇들이 함께 쓰는 브라우저에 로그인하는 일입니다.",
   // 로그인은 계정의 것이다. 고르는 것은 "누가 여느냐"이지 "어디에 로그인되느냐"가 아니다.
   "Which Bot should open it?": "어느 봇이 열까요?",
   "Needs signing in again": "다시 로그인 필요",
-  "Not connected yet": "아직 연결 안 됨",
-  "A joint certificate or simple authentication is yours to do, and the Bot cannot keep it: you authenticate each time and hand the browser back.":
-    "공동인증서·간편인증은 봇이 대신 못 합니다. 열 때마다 직접 인증하고 브라우저를 돌려주세요.",
-  "Last seen {date}": "{date}에 확인",
-  "on {name}'s browser": "{name}의 브라우저",
   "Opening…": "여는 중…",
-  "Authenticate now and hand back": "지금 인증하고 돌려주기",
-  "Sign in again": "다시 로그인",
   "Somebody has to allow this before the page will open.":
     "허락을 받아야 이 페이지가 열립니다.",
   "The Bot's browser could not be reached.": "봇의 브라우저에 닿지 못했습니다.",
@@ -1559,17 +1397,12 @@ export const ko: Record<string, string> = {
     "가게의 카카오톡 채널로 보내는 안내 메시지.",
 
   "KakaoTalk notifications": "카카오 알림톡",
-  "Send booking confirmations and review requests from your shop's own KakaoTalk channel. No keys and no sign-up with the messaging company: a code comes to the manager's phone, you type it back, and that is it.":
-    "예약 확정, 후기 요청 같은 안내를 가게의 카카오톡 채널로 보냅니다. 문자 발송 회사에 따로 가입할 필요가 없습니다. 담당자 휴대폰으로 인증번호가 오면 그것만 입력하면 끝입니다.",
   "Channel search ID": "채널 검색용 아이디",
   "Channel manager's mobile number": "채널 담당자 휴대폰 번호",
   "The code sent to that phone": "휴대폰으로 온 인증번호",
   "Send me a code": "인증번호 받기",
   "Send the code again": "인증번호 다시 받기",
   "Connecting…": "연결하는 중…",
-  "Connected on {date}": "{date}에 연결됨",
-  "KakaoTalk reviews each message form before it can be sent. This usually takes a few working days.":
-    "카카오가 안내 문구를 하나씩 심사한 뒤에야 보낼 수 있습니다. 보통 영업일 며칠이 걸립니다.",
   "Booking confirmed": "예약 확정 안내",
   "Review request": "이용 후기 요청",
   "Being reviewed": "심사 중",
@@ -1662,8 +1495,6 @@ export const ko: Record<string, string> = {
     "쇼핑몰의 주문과 상품을 읽고, 게시글에 답합니다.",
   "Sends booking confirmations and review requests from your own channel.":
     "내 채널에서 예약 확인과 리뷰 요청을 보냅니다.",
-  "The accounts and sites your Bot works with, so it answers with what you can see.":
-    "봇이 함께 쓰는 계정과 사이트입니다. 내가 볼 수 있는 것으로 답합니다.",
 
   // 봇이 대화 안에 그리는 카드. 이 화면들은 2026-09까지 전부 영어였다 — 승인 버튼까지.
   "Waiting for the Bot…": "봇을 기다리는 중…",
@@ -1731,8 +1562,6 @@ export const ko: Record<string, string> = {
     "플레이그라운드를 불러오지 못했습니다. 새로고침해 주세요.",
   "The published cards could not be loaded. Refresh to try again.":
     "게시된 카드를 불러오지 못했습니다. 새로고침해 주세요.",
-  "Could not load the connected sites. Refresh to try again.":
-    "연결된 사이트를 불러오지 못했습니다. 새로고침해 주세요.",
   "The connections could not be loaded. Refresh to try again.":
     "연결을 불러오지 못했습니다. 새로고침해 주세요.",
   "Connections could not be loaded. Refresh to try again.":
@@ -1755,8 +1584,6 @@ export const ko: Record<string, string> = {
     "이 카드를 보여줘도 되는지 확인하려 했지만 서버에 닿지 못해 표시하지 않았습니다.",
   "The audit trail could not be loaded. Refresh to try again.":
     "감사 기록을 불러오지 못했습니다. 새로고침해 주세요.",
-  "Could not load the services this deployment offers. Refresh to try again.":
-    "이 서버가 제공하는 서비스를 불러오지 못했습니다. 새로고침해 주세요.",
   "The connection could not be started.": "연결을 시작하지 못했습니다.",
   "That connection could not be removed. Please try again.":
     "그 연결을 해제하지 못했습니다. 다시 시도해 주세요.",
@@ -1810,14 +1637,10 @@ export const ko: Record<string, string> = {
     "토큰을 저장하지 못했습니다. 다시 시도해 주세요.",
   "The definition could not be approved.":
     "정의를 승인하지 못했습니다. 다시 시도해 주세요.",
-  "That Agent could not be changed.":
-    "그 봇을 바꾸지 못했습니다. 다시 시도해 주세요.",
   "The screen could not be shown.":
     "화면을 보여주지 못했습니다. 다시 시도해 주세요.",
   "The live screen could not be reached.":
     "실시간 화면에 닿지 못했습니다. 다시 시도해 주세요.",
-  "The assistant's computer could not be reached.":
-    "봇의 컴퓨터에 닿지 못했습니다. 다시 시도해 주세요.",
   "Remove queued message: {text}": "대기 중인 메시지 삭제: {text}",
   "Point a Bot at an agent you host yourself.":
     "직접 운영하는 서버로 봇을 연결합니다.",
