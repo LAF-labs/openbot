@@ -71,6 +71,7 @@ const HEADLINES: Record<NotificationKind, string> = {
   // Never posted from here: a support or fleet row goes only to the door that asked for it
   // (`outbox.ts` `deliver`), and this door did not. The entries keep the table total.
   "support.feedback": "[LAF] 문의·의견",
+  "support.answer_rating": "[LAF] 답변이 아쉬워요",
   "fleet.account_deleted": "[LAF] 계정 삭제",
 };
 

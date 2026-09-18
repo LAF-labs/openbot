@@ -89,6 +89,20 @@ export type SupportInsight = {
   helpReaders: number;
   /** The visits whose address named a section, by the section's key. */
   helpSections: Record<string, number>;
+  /**
+   * Answers whose rating was last set to 좋아요 in the window, one per person per answer.
+   *
+   * By when it was LAST said, because a rating can be changed: somebody who pressed 아쉬워요 on
+   * Monday and 좋아요 on Tuesday has one opinion of that answer, and it is Tuesday's.
+   */
+  answersUp: number;
+  /** The same, for 아쉬워요. */
+  answersDown: number;
+  /**
+   * The 아쉬워요 among those that named a reason from the list, by the reason's key. The rest of
+   * `answersDown` named none.
+   */
+  downReasons: Record<string, number>;
 };
 
 export type PeopleInsight = {

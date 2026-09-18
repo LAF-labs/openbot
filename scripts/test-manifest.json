@@ -144,6 +144,7 @@
   "server/tests/agent-profile-policy.test.ts",
   "server/tests/agent-profile-store.integration.test.ts",
   "server/tests/agent-routes.test.ts",
+  "server/tests/answer-ratings.integration.test.ts",
   "server/tests/approval-metrics.integration.test.ts",
   "server/tests/approval-metrics.test.ts",
   "server/tests/approval-notify.test.ts",

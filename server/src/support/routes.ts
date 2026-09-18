@@ -1,7 +1,8 @@
 /**
  * `POST /api/support/feedback`: the 문의·의견 box, as the browser reaches it. And
  * `GET /api/support/diagnostics`: what "진단 정보 같이 보내기" would attach, shown before it is.
- * And `POST /api/support/help-opened`: the guide was opened.
+ * And `POST /api/support/help-opened`: the guide was opened. And `/api/support/ratings`: 좋아요·
+ * 아쉬워요 under an answer, which has its own file (`rating-routes.ts`).
  *
  * FACTS, NEVER SENTENCES. A refusal carries a code and the surface owns the words, the same
  * arrangement `account/routes.ts` and the consent call use. The answer to a message that landed is
@@ -26,6 +27,7 @@ import type { AppVariables } from "../auth/guards";
 import type { HealthReport } from "../health";
 import { isCatalogueKey } from "../insights/catalogue-key";
 import type { NotificationOutbox } from "../notifications/outbox";
+import type { AnswerRatingStore } from "./answer-ratings";
 import {
   createDiagnosticsShelf,
   DIAGNOSTICS_EXPIRED,
@@ -36,6 +38,7 @@ import {
   summariseDiagnostics,
 } from "./diagnostics";
 import { FEEDBACK_MAX_LENGTH, type FeedbackStore } from "./feedback";
+import { createAnswerRatingRoutes } from "./rating-routes";
 
 export type SupportService = {
   feedback: FeedbackStore;
@@ -44,6 +47,11 @@ export type SupportService = {
   outbox?: NotificationOutbox;
   /** Where a person's diagnostic details are read from. Absent, the box cannot attach any. */
   diagnostics?: DiagnosticsSource;
+  /**
+   * 좋아요·아쉬워요 under an answer (`answer-ratings.ts`). Absent leaves `/ratings` unmounted, and
+   * the transcript then draws no rating controls rather than controls that save nowhere.
+   */
+  ratings?: AnswerRatingStore;
 };
 
 /**
@@ -245,6 +253,19 @@ export function createSupportRoutes(
     });
     return context.body(null, 204);
   });
+
+  if (service.ratings) {
+    routes.route(
+      "/ratings",
+      createAnswerRatingRoutes(
+        {
+          ratings: service.ratings,
+          ...(service.outbox ? { outbox: service.outbox } : {}),
+        },
+        requireUser,
+      ),
+    );
+  }
 
   return routes;
 }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { NotificationRecord } from "../src/notifications/outbox";
+import type {
+  AnswerRatingFacts,
+  NotificationRecord,
+} from "../src/notifications/outbox";
+import { answerRatingAlertBody } from "../src/support/answer-ratings";
 import {
   createSupportWebhookAdapter,
   SUPPORT_DOOR,
@@ -115,6 +119,7 @@ describe("the door", () => {
     });
     expect(door.name).toBe(SUPPORT_DOOR);
     expect(door.accepts?.("support.feedback")).toBe(true);
+    expect(door.accepts?.("support.answer_rating")).toBe(true);
     for (const kind of [
       "approval.requested",
       "approval.expired",
@@ -196,5 +201,103 @@ describe("the door", () => {
       ) as unknown as typeof fetch,
     });
     expect(await door.deliver({ ...RECORD, support: undefined })).toBe(false);
+  });
+});
+
+/**
+ * 아쉬워요 with a note, as the operator's channel receives it.
+ *
+ * The same three-part shape as a 문의·의견 message, so the channel that already reads those reads
+ * this too. What it carries is the Bot, the reason, what the person wrote and the ids to find the
+ * rest by — and never the answer: the facts it is built from have nowhere to hold one, and a row
+ * read back with more on it than the facts is built field by field so the extra goes nowhere.
+ */
+describe("a rating the operator is told about", () => {
+  const RATING: AnswerRatingFacts = {
+    ratingId: "rating-1",
+    channelId: "channel-1",
+    messageId: "message-1",
+    agentId: "bot-1",
+    botName: "초롱",
+    reason: "wrong-facts",
+    note: "매출 숫자가 어제 것 같아요",
+  };
+  const ORIGIN = "https://kim.agent.laf-co.com";
+  const AT = "2026-09-18T09:00:00.000Z";
+
+  test("is the fleet alert's shape: the Bot, the reason, the note and the ids", () => {
+    const body = answerRatingAlertBody(RATING, ORIGIN, AT);
+
+    expect(body.content).toBe(body.text);
+    expect(body.text).toBe(
+      [
+        "[LAF] 답변이 아쉬워요 · https://kim.agent.laf-co.com",
+        "봇: 초롱 · 이유: 사실과 달라요",
+        "매출 숫자가 어제 것 같아요",
+        "평가 rating-1 · 대화 channel-1 · 메시지 message-1 (답변 내용은 싣지 않음)",
+      ].join("\n"),
+    );
+    expect(body.rating).toEqual({
+      id: "rating-1",
+      origin: ORIGIN,
+      rating: "down",
+      reason: "wrong-facts",
+      note: "매출 숫자가 어제 것 같아요",
+      bot: { id: "bot-1", name: "초롱" },
+      channelId: "channel-1",
+      messageId: "message-1",
+      at: AT,
+    });
+  });
+
+  test("says so when no reason was chosen", () => {
+    const body = answerRatingAlertBody({ ...RATING, reason: null }, ORIGIN, AT);
+    expect(body.text.split("\n")[1]).toBe("봇: 초롱 · 이유: 고르지 않음");
+    expect(body.rating.reason).toBeNull();
+  });
+
+  test("a row read back with more on it than its facts sends the facts alone", () => {
+    const stored = {
+      ...RATING,
+      content: "오늘 매출은 1,234,000원입니다",
+    } as AnswerRatingFacts;
+    expect(
+      JSON.stringify(answerRatingAlertBody(stored, ORIGIN, AT)),
+    ).not.toContain("1,234,000");
+  });
+
+  test("goes out through the same door as a 문의·의견 message", async () => {
+    const received: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        received.push(await request.json());
+        return new Response("ok");
+      },
+    });
+    try {
+      const door = createSupportWebhookAdapter({
+        webhookUrl: `http://127.0.0.1:${server.port}/hook`,
+        origin: ORIGIN,
+        now: () => new Date(AT),
+      });
+      const record: NotificationRecord = {
+        id: "notification-2",
+        kind: "support.answer_rating",
+        botId: "bot-1",
+        userId: "person-1",
+        channelId: "channel-1",
+        rating: RATING,
+        createdAt: AT,
+        deliveredVia: [],
+      };
+      expect(await door.deliver(record)).toBe(true);
+      expect(received).toEqual([answerRatingAlertBody(RATING, ORIGIN, AT)]);
+      // And a rating row with its facts missing is not posted at all.
+      expect(await door.deliver({ ...record, rating: undefined })).toBe(false);
+      expect(received).toHaveLength(1);
+    } finally {
+      server.stop(true);
+    }
   });
 });

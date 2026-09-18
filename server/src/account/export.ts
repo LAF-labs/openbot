@@ -34,6 +34,7 @@ import {
   channels,
   channelThreads,
   computerStandingApprovals,
+  lafAnswerRatings,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -288,6 +289,30 @@ export function createAccountExport(database: Database): AccountExport {
       written += 1;
     }
     yield `]`;
+
+    /*
+     * What they thought of the answers they got: which answer, by id; which Bot; which way; and,
+     * under 아쉬워요, the reason and whatever they wrote. Every column is theirs, so every column
+     * goes — and the answer's words are not among them: they are in `conversations` above, once.
+     * No cap: one row per answer at most, and the answers themselves are already capped.
+     */
+    yield `,\n"answerRatings":${JSON.stringify(
+      await database
+        .select({
+          id: lafAnswerRatings.id,
+          channelId: lafAnswerRatings.channelId,
+          messageId: lafAnswerRatings.messageId,
+          agentId: lafAnswerRatings.agentId,
+          rating: lafAnswerRatings.rating,
+          reason: lafAnswerRatings.reason,
+          note: lafAnswerRatings.note,
+          createdAt: lafAnswerRatings.createdAt,
+          updatedAt: lafAnswerRatings.updatedAt,
+        })
+        .from(lafAnswerRatings)
+        .where(eq(lafAnswerRatings.userId, userId))
+        .orderBy(asc(lafAnswerRatings.createdAt)),
+    )}`;
 
     /*
      * A routine is theirs if they wrote it OR if it drives a Bot of theirs — the same ownership rule

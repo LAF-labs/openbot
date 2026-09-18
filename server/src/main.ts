@@ -97,6 +97,7 @@ import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
 import { createServerModelCalls } from "./server-model-calls";
+import { createAnswerRatingStore } from "./support/answer-ratings";
 import { createDiagnosticsSource } from "./support/diagnostics";
 import { createFeedbackStore } from "./support/feedback";
 import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
@@ -796,7 +797,8 @@ const app = createApp(
   createConsentStore(database),
   screenViews,
   // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator —
-  // and what its diagnostic details are read from: this process's log tail and the run ledger.
+  // and what its diagnostic details are read from: this process's log tail and the run ledger. And
+  // 좋아요·아쉬워요 under an answer, which leaves by the same door when somebody writes why.
   {
     feedback: createFeedbackStore(database),
     auditStore: bootAuditStore,
@@ -805,6 +807,7 @@ const app = createApp(
       database,
       lines: recentLines.lines,
     }),
+    ratings: createAnswerRatingStore(database),
   },
   // The fleet's counts, read per request over the window it asks for, in the Bot's own clock — the
   // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.

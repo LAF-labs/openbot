@@ -25,11 +25,13 @@ import type { Database } from "../db/client";
 import { lafFeedback } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import type {
-  NotificationAdapter,
-  NotificationRecord,
-  SupportFacts,
+import {
+  isSupportKind,
+  type NotificationAdapter,
+  type NotificationRecord,
+  type SupportFacts,
 } from "../notifications/outbox";
+import { answerRatingAlertBody } from "./answer-ratings";
 import type { DiagnosticBundle, DiagnosticsSummary } from "./diagnostics";
 
 /**
@@ -167,7 +169,8 @@ export type SupportWebhookOptions = {
 };
 
 /**
- * The alert webhook, as the one door a support row goes through.
+ * The alert webhook, as the one door a support row goes through — a 문의·의견 message, or a
+ * 아쉬워요 somebody wrote a note under (`answer-ratings.ts`).
  *
  * `accepts` is what keeps it away from every other row: a fleet operator's channel must not get
  * "a Bot is waiting on you" for every approval on every deployment. And it answers `ok` only on a
@@ -182,27 +185,30 @@ export function createSupportWebhookAdapter(
   const now = options.now ?? (() => new Date());
   return {
     name: SUPPORT_DOOR,
-    accepts: (kind) => kind === "support.feedback",
+    accepts: isSupportKind,
     deliver: async (record: NotificationRecord) => {
-      if (!record.support) return false;
+      const at = now().toISOString();
+      // Whichever facts the row carries. A support row with neither is not posted as an empty line.
+      const body = record.support
+        ? supportAlertBody(record.support, options.origin, at)
+        : record.rating
+          ? answerRatingAlertBody(record.rating, options.origin, at)
+          : null;
+      if (!body) return false;
       try {
         const response = await send(options.webhookUrl, {
           method: "POST",
           signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            supportAlertBody(
-              record.support,
-              options.origin,
-              now().toISOString(),
-            ),
-          ),
+          body: JSON.stringify(body),
         });
         return response.ok;
       } catch (error) {
-        // One fact for the operator's log, and never the message: the row has it.
+        // One fact for the operator's log, and never the words: the row has them.
         log.warn("support_webhook_failed", {
-          feedback: record.support.feedbackId,
+          ...(record.support
+            ? { feedback: record.support.feedbackId }
+            : { rating: record.rating?.ratingId }),
           reason: describeFailure(error),
         });
         return false;

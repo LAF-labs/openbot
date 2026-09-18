@@ -15,8 +15,8 @@
  * distrustful parser it already has, and the fleet's medians are still computed from raw cells
  * across VMs rather than averaged from medians that do not add. What this VM records that the SQL
  * there does not read yet rides as extra fields inside the section it belongs to (`onboarding`'s
- * presets and first-task chips, `support`'s help page); a reader that does not know them ignores
- * them, which is how that parser treats every field it does not name.
+ * presets and first-task chips, `support`'s help page and how answers were rated); a reader that
+ * does not know them ignores them, which is how that parser treats every field it does not name.
  *
  * §1-② OF THE FLEET'S OWN RULES HOLDS HERE WORD FOR WORD. These statements open the database that
  * holds people's conversations, so:
@@ -48,6 +48,7 @@ import { CATALOGUE } from "../plugins/catalogue";
 import { ROUTINE_RUN_TIMEOUT_MS } from "../routines/run";
 import { MAX_ROUTINES } from "../routines/store";
 import { DEFAULT_MAX_STEPS } from "../runner/unattended";
+import { ANSWER_RATING_REASONS } from "../support/answer-ratings";
 import { CATALOGUE_KEY_SOURCE } from "./catalogue-key";
 import {
   INSIGHT_SECTIONS,
@@ -118,6 +119,7 @@ export function insightStatements(options: {
   const patterns = listOf(WORK_PATTERN_IDS);
   const connectors = listOf(CATALOGUE.map((entry) => entry.key));
   const siteIds = listOf(BUSINESS_SITES.map((site) => site.id));
+  const ratingReasons = listOf(ANSWER_RATING_REASONS);
 
   const onboarding = sql`
     SELECT jsonb_build_object(
@@ -332,6 +334,12 @@ export function insightStatements(options: {
       ), '[]'::jsonb)
     )::text AS value`;
 
+  /*
+   * The ratings are read off their own table rather than the trail, because the row IS the rating
+   * and a changed mind rewrites it: a count of presses would say two opinions where there is one.
+   * Only three columns are named — the rating, a reason matched against the list this build
+   * offers, and when it was last said. The note is somebody's words and is never read here.
+   */
   const support = sql`
     SELECT jsonb_build_object(
       'feedback', count(*) FILTER (WHERE event_type = 'support.feedback_sent'),
@@ -344,6 +352,18 @@ export function insightStatements(options: {
                   FROM audit_events
                  WHERE event_type = 'support.help_opened' AND created_at >= ${since} AND created_at < ${to}
                    AND payload->>'section' ~ ${CATALOGUE_KEY_SOURCE}
+                 GROUP BY 1) named
+      ), '{}'::jsonb),
+      'answersUp', (SELECT count(*) FROM laf_answer_ratings
+                     WHERE rating = 'up' AND updated_at >= ${since} AND updated_at < ${to}),
+      'answersDown', (SELECT count(*) FROM laf_answer_ratings
+                       WHERE rating = 'down' AND updated_at >= ${since} AND updated_at < ${to}),
+      'downReasons', coalesce((
+        SELECT jsonb_object_agg(reason, n)
+          FROM (SELECT reason, count(*) AS n
+                  FROM laf_answer_ratings
+                 WHERE rating = 'down' AND reason IN (${ratingReasons})
+                   AND updated_at >= ${since} AND updated_at < ${to}
                  GROUP BY 1) named
       ), '{}'::jsonb)
     )::text AS value

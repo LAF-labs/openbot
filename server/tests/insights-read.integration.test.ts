@@ -6,7 +6,9 @@ import {
   agentProfiles,
   agents,
   auditEvents,
+  channels,
   credentials,
+  lafAnswerRatings,
   lafRoutineRuns,
   lafRoutines,
   lafSiteConnections,
@@ -87,7 +89,13 @@ const RUN = (name: string) => `${PERSON_PREFIX}${suite}-${name}`;
 
 const OWNER_EMAIL = `owner-${suite}@example.com`;
 const SENTENCE = "Tell me what is on the calendar tomorrow.";
+/** The conversation the rated answers were in. */
+const CHANNEL = `${PERSON_PREFIX}${suite}-channel`;
+/** What somebody wrote under 아쉬워요: theirs, and never the fleet's. */
+const RATING_NOTE = "매출 합계가 틀렸어요 평가노트";
 const PLANTED = [
+  RATING_NOTE,
+  "rude words",
   OWNER_EMAIL,
   "김사장",
   "비밀 루틴",
@@ -479,6 +487,44 @@ async function seed() {
   await opened("문제가 생기면", u2);
   await opened("routines", u1, daysAgo(10));
 
+  /*
+   * 좋아요·아쉬워요, counted by when each was LAST said: two 좋아요 and four 아쉬워요 in the window —
+   * one of them with a note, one with no reason, one with a reason no route would have written —
+   * and a 좋아요 from before it.
+   */
+  await database
+    .insert(channels)
+    .values({ id: CHANNEL, name: "김사장 and 초롱", description: "" });
+  const rated = (
+    name: string,
+    rating: "up" | "down",
+    reason: string | null,
+    when = at(11),
+    note: string | null = null,
+  ) => ({
+    id: RUN(`rating-${name}`),
+    userId: u1,
+    channelId: CHANNEL,
+    messageId: RUN(`answer-${name}`),
+    agentId: B1,
+    rating,
+    reason,
+    note,
+    createdAt: when,
+    updatedAt: when,
+  });
+  await database
+    .insert(lafAnswerRatings)
+    .values([
+      rated("up-1", "up", null),
+      rated("up-2", "up", null),
+      rated("wrong", "down", "wrong-facts", at(11), RATING_NOTE),
+      rated("slow", "down", "too-slow"),
+      rated("none", "down", null),
+      rated("rude", "down", "rude words"),
+      rated("up-old", "up", null, daysAgo(10)),
+    ]);
+
   // Runs and what they spent.
   const threadRun = (
     runId: string,
@@ -703,6 +749,9 @@ async function clearEra() {
     .delete(agents)
     .where(sql`${agents.id} LIKE ${`${BOT_PREFIX}%`}`);
   await database
+    .delete(channels)
+    .where(sql`${channels.id} LIKE ${`${PERSON_PREFIX}%`}`);
+  await database
     .delete(users)
     .where(sql`${users.id} LIKE ${`${PERSON_PREFIX}%`}`);
 }
@@ -733,6 +782,8 @@ afterAll(async () => {
   await database
     .delete(lafThreadRuns)
     .where(sql`${lafThreadRuns.runId} LIKE ${`${PERSON_PREFIX}${suite}-%`}`);
+  // The ratings go with the conversation they were in.
+  await database.delete(channels).where(eq(channels.id, CHANNEL));
   await database.delete(agents).where(inArray(agents.id, ALL_BOTS));
   await database.delete(users).where(inArray(users.id, PEOPLE));
   await database.$client.close();
@@ -905,7 +956,7 @@ describe("what the insights read counts, against the product's own tables", () =
     });
   });
 
-  test("support: feedback, and the help page — how often, by how many people, for which section", () => {
+  test("support: feedback, the help page, and how answers were rated — how often, and why not", () => {
     expect(after.support).toEqual({
       feedback: 2,
       withScreen: 1,
@@ -913,6 +964,10 @@ describe("what the insights read counts, against the product's own tables", () =
       helpReaders: 2,
       // A heading written as words is a visit, and not a section.
       helpSections: { routines: 2 },
+      answersUp: 2,
+      answersDown: 4,
+      // By reason, for the ones that named one from the list. A reason no route writes is not a key.
+      downReasons: { "too-slow": 1, "wrong-facts": 1 },
     });
   });
 
@@ -939,12 +994,14 @@ describe("what the insights read counts, against the product's own tables", () =
     for (const planted of PLANTED) {
       expect([planted, everything.includes(planted)]).toEqual([planted, false]);
     }
-    // Nor any id: of a person, of a Bot, of a run.
+    // Nor any id: of a person, of a Bot, of a run, of a conversation or an answer.
     for (const id of [
       ...PEOPLE,
       ...ALL_BOTS,
       RUN("run-u1-chat"),
       CUSTOM_SERVER,
+      CHANNEL,
+      RUN("answer-wrong"),
     ]) {
       expect(everything.includes(id)).toBe(false);
     }
@@ -955,6 +1012,7 @@ describe("what the insights read counts, against the product's own tables", () =
     expect(month.approvals?.reduce((sum, cell) => sum + cell[2], 0)).toBe(6);
     expect(month.support?.feedback).toBe(3);
     expect(month.support?.helpOpened).toBe(5);
+    expect(month.support?.answersUp).toBe(3);
     expect(month.limits?.routineRuns).toBe(4);
     expect(month.onboarding?.firstTaskPresses).toBe(7);
   });

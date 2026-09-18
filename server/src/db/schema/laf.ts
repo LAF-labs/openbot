@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 // The entry's shape is the prompt's: one definition, so what is stored is what the next run reads.
 import type { RoutineNote } from "../../../../shared/prompt/notepad.ko";
-import { agents, users } from "./core";
+import { agents, channels, users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
 // lands as a JSON *string* that no SQL operator can read. See ./json.ts.
 import { jsonb } from "./json";
@@ -585,5 +585,75 @@ export const lafFeedback = pgTable(
   (table) => [
     // The operator's read, newest first — from the fleet, or by hand.
     index("laf_feedback_created_at_idx").on(table.createdAt),
+  ],
+);
+
+/** What a person said about one answer. A pg enum, so a client that invents a third is refused. */
+export const answerRating = pgEnum("laf_answer_rating", ["up", "down"]);
+
+/**
+ * 좋아요 and 아쉬워요 under a Bot's answer: how the person found it, one row per person per answer.
+ *
+ * WHY IT EXISTS. The product was about to meet its first customers with no way to hear, per
+ * answer, whether a Bot had done well. The 문의·의견 box hears about the product; this hears about
+ * one reply, at the moment somebody read it, for the cost of one press.
+ *
+ * FACTS ABOUT AN ANSWER, NEVER THE ANSWER. Which answer (`message_id`, an id in this person's own
+ * thread), which Bot gave it, which way the person pressed, and — for 아쉬워요 — a reason from a
+ * closed list and whatever they chose to write. Nothing here can hold what the Bot said, and
+ * nothing that reads this row goes back for it: the operator's alert (`support/answer-ratings.ts`)
+ * names the Bot and the ids, and the answer stays in `laf_thread_messages` on this VM.
+ *
+ * ONE ROW PER PERSON PER ANSWER, enforced rather than hoped for. Changing one's mind is the
+ * ordinary case — 좋아요 and then, reading it again, 아쉬워요 — and a second row would make the
+ * count say two opinions where there is one. A second press replaces the first; `created_at` stays
+ * when it was first said, `updated_at` moves to when it last was.
+ *
+ * `reason` IS TEXT, NOT AN ENUM, for the reason `laf_notifications.kind` gives: the list is product
+ * copy that will grow, and adding a reason should be a line of TypeScript rather than a migration.
+ * The route takes only the keys in `ANSWER_RATING_REASONS`, and the fleet's count reads only those.
+ *
+ * CASCADES WITH ALL THREE PARENTS. A rating is the person's, about an answer in a conversation,
+ * from a Bot; with any of them gone it is about nothing anybody can look at. The person's departure
+ * (`account/deletion.ts`) removes these rows itself so the trail can count them, and the cascades
+ * are what hold for every other way a parent goes.
+ */
+export const lafAnswerRatings = pgTable(
+  "laf_answer_ratings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    /** The answer's id in this person's thread for that channel — an id, never the words. */
+    messageId: text("message_id").notNull(),
+    /** Which Bot gave the answer, as the stored message says (`lafAgentId`). */
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    rating: answerRating("rating").notNull(),
+    /** For 아쉬워요 only, one of `ANSWER_RATING_REASONS`, or null when they chose none. */
+    reason: text("reason"),
+    /** For 아쉬워요 only: what they wrote, at most `ANSWER_NOTE_MAX_LENGTH` characters. */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // The replace, and the screen's own read: this person's ratings in one conversation.
+    uniqueIndex("laf_answer_ratings_person_answer_idx").on(
+      table.userId,
+      table.channelId,
+      table.messageId,
+    ),
+    // The fleet's count, which is a range over when each rating was last said.
+    index("laf_answer_ratings_updated_at_idx").on(table.updatedAt),
   ],
 );

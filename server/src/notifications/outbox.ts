@@ -77,6 +77,15 @@ export const NOTIFICATION_KINDS = [
    */
   "support.feedback",
   /**
+   * A person pressed 아쉬워요 under a Bot's answer and wrote why (`support/answer-ratings.ts`).
+   *
+   * The same odd one out as `support.feedback`, for the same two reasons: it is addressed to the
+   * operator, so it goes through the support door alone, and it is the person's own words, so it
+   * never appears in their list. Only a 아쉬워요 that carries a note is written here — a press with
+   * nothing written is a count, and the fleet reads counts from the ratings table, not from alerts.
+   */
+  "support.answer_rating",
+  /**
    * A person withdrew, and the fleet tool that destroys this VM when nobody is left must hear it.
    *
    * The other odd one out, and odder: it is addressed to NO person here — the person it is about
@@ -93,7 +102,7 @@ export const NOTIFICATION_KINDS = [
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
-/** Rows addressed to the operator rather than to the person. One kind today; the prefix is the rule. */
+/** Rows addressed to the operator rather than to the person. The prefix is the rule. */
 export function isSupportKind(kind: string): boolean {
   return kind.startsWith("support.");
 }
@@ -139,6 +148,27 @@ export type SupportFacts = {
 };
 
 /**
+ * What a `support.answer_rating` row carries: which answer, which Bot, and what the person wrote.
+ *
+ * The note is the person's own words and rides in the row for the same reason a 문의·의견 message
+ * does — so the door can post it without a second read. The ANSWER does not, and there is no field
+ * here it could ride in: `message_id` is how the operator finds it on the VM if they must, and the
+ * words stay in `laf_thread_messages`. `botName` is the Bot's name when the rating was sent, since
+ * an alert that said only `bot_3f9c…` would send the operator into the database to read one word.
+ */
+export type AnswerRatingFacts = {
+  /** The `laf_answer_ratings` row, which is the rating; this row is only the telling. */
+  ratingId: string;
+  channelId: string;
+  messageId: string;
+  agentId: string;
+  botName: string;
+  /** One of `ANSWER_RATING_REASONS`, or null when the person chose none. */
+  reason: string | null;
+  note: string;
+};
+
+/**
  * What a `run.failed` row is about, in facts.
  *
  * The same rule as `subject`: the words belong to the surface. `label` is the routine's name — a
@@ -181,6 +211,8 @@ export type NotificationRecord = {
   group?: FailureGroupFacts;
   /** What the person wrote and where they were, for a `support.feedback` row. */
   support?: SupportFacts;
+  /** Which answer fell short and why, for a `support.answer_rating` row. */
+  rating?: AnswerRatingFacts;
   /** The withdrawal the fleet is told about, for a `fleet.*` row. See {@link FleetFacts}. */
   fleet?: FleetFacts;
   createdAt: string;
@@ -220,6 +252,7 @@ export type EnqueueInput = {
   subject?: AskSubject;
   run?: RunFailureFacts;
   support?: SupportFacts;
+  rating?: AnswerRatingFacts;
 };
 
 export type NotificationOutbox = {
@@ -494,7 +527,9 @@ export function createNotificationOutbox(input: {
                 ? { subject: { kind: "run", ...enqueueInput.run } }
                 : enqueueInput.support
                   ? { subject: { kind: "support", ...enqueueInput.support } }
-                  : {}),
+                  : enqueueInput.rating
+                    ? { subject: { kind: "rating", ...enqueueInput.rating } }
+                    : {}),
             createdAt: now(),
           })
           .returning();
@@ -614,7 +649,10 @@ export async function purgeNotificationsBefore(
 /** The `subject` column, read back as whichever fact it holds. See `RunFailureFacts`. */
 function factsOf(
   stored: unknown,
-): Pick<NotificationRecord, "subject" | "run" | "group" | "support" | "fleet"> {
+): Pick<
+  NotificationRecord,
+  "subject" | "run" | "group" | "support" | "rating" | "fleet"
+> {
   if (!stored || typeof stored !== "object") return {};
   const held = stored as Record<string, unknown>;
   if (held.kind === "run") {
@@ -629,6 +667,10 @@ function factsOf(
   if (held.kind === "support") {
     const { kind: _kind, ...facts } = held;
     return { support: facts as SupportFacts };
+  }
+  if (held.kind === "rating") {
+    const { kind: _kind, ...facts } = held;
+    return { rating: facts as AnswerRatingFacts };
   }
   if (held.kind === "fleet") {
     const { kind: _kind, ...facts } = held;

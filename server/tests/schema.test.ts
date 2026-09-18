@@ -174,6 +174,56 @@ describe("LAF Agent database schema", () => {
   });
 
   /*
+   * 좋아요·아쉬워요 on an answer is about three things at once — the person who said it, the
+   * conversation the answer was in, and the Bot that gave it — and means nothing once any of them
+   * is gone, so it goes with each. And it is a row of facts about an answer, never the answer: there
+   * is no column here the answer's words could be copied into.
+   */
+  test("keeps a rating of an answer with its three parents, and without the answer", async () => {
+    const { lafAnswerRatings } = await import("../src/db/schema");
+
+    expect(getTableName(lafAnswerRatings)).toBe("laf_answer_ratings");
+    expect(
+      getTableConfig(lafAnswerRatings).foreignKeys.map((foreignKey) => {
+        const reference = foreignKey.reference();
+        return [
+          reference.columns.map((column) => column.name).join(","),
+          getTableName(reference.foreignTable),
+          foreignKey.onDelete,
+        ].join(" -> ");
+      }),
+    ).toEqual([
+      "user_id -> users -> cascade",
+      "channel_id -> channels -> cascade",
+      "agent_id -> agents -> cascade",
+    ]);
+    expect(
+      getTableConfig(lafAnswerRatings).columns.map((column) => column.name),
+    ).toEqual([
+      "id",
+      "user_id",
+      "channel_id",
+      "message_id",
+      "agent_id",
+      "rating",
+      "reason",
+      "note",
+      "created_at",
+      "updated_at",
+    ]);
+    // One rating per person per answer: a second press replaces the first rather than adding a row.
+    expect(
+      getTableConfig(lafAnswerRatings)
+        .indexes.filter((index) => index.config.unique)
+        .map((index) =>
+          index.config.columns.map((column) =>
+            "name" in column ? column.name : "",
+          ),
+        ),
+    ).toEqual([["user_id", "channel_id", "message_id"]]);
+  });
+
+  /*
    * The upstream knowledge plane is gone, and this is the assertion that it stays gone.
    *
    * `documents`, `chunks`, `document_acls`, `sync_runs`, `connector_cursors`,

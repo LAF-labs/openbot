@@ -51,6 +51,9 @@ const REPORT: InsightsReport = {
     helpOpened: 1,
     helpReaders: 1,
     helpSections: {},
+    answersUp: 2,
+    answersDown: 1,
+    downReasons: { "too-slow": 1 },
   },
   people: null,
 };

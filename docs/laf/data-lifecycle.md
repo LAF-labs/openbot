@@ -41,6 +41,7 @@
 | `laf_routine_notepads` | 루틴의 메모장 — 지난 실행이 어디까지 처리했는지(리뷰·주문번호, 시각)와 짧은 사실 몇 줄. 루틴의 실행만 쓰고 사람은 읽고 비운다 | 본인, 봇 주인 | 비우거나 루틴을 지울 때까지 |
 | `laf_routine_suggestion_dismissals` | 추천 루틴 카드에 "다음에"라고 한 것 (카드 이름과 시각뿐) | 본인 | 계정을 지울 때까지 |
 | `laf_feedback` | 문의·의견 칸에 쓴 글. "지금 화면을 같이 보냄"을 켰으면 그때 보고 있던 화면의 **주소**와 마지막 **실패 코드** — 스크린샷도, 대화 내용도 아니다. `LAF_ALERT_WEBHOOK_URL`이 있으면 같은 글이 운영자의 알림 채널로도 간다 | 운영자(DB로) | 계정을 지울 때까지 |
+| `laf_answer_ratings` | 봇의 답 아래 **좋아요·아쉬워요**. 어느 대화의 어느 답(메시지 **id**)에, 어느 봇에게, 어느 쪽을 눌렀는지. 아쉬워요면 고른 이유(키: `not-as-asked`·`wrong-facts`·`too-slow`·`other`)와 적은 글(500자까지). **답의 내용은 담지 않는다** — 칸이 없다. 답 하나에 한 사람 한 행이고, 다시 누르면 바뀐다. 아쉬워요에 글을 적었을 때만 `LAF_ALERT_WEBHOOK_URL`로 봇 이름·이유·글·id가 간다(같은 글을 다시 보내면 다시 가지 않는다) | 본인(그 대화에서), 운영자(DB로) | 계정·대화방·봇 중 하나라도 지워질 때까지 |
 | `skills` | `/`로 부르는 내 지시문 | 본인(배포가 만든 것은 모두) | 계정을 지울 때까지 |
 | `computer_standing_approvals` | 다시 묻지 말라고 한 것과 그 범위 | 본인 | 철회할 때까지(철회해도 기록은 남음) |
 | `credentials` | 연결한 서비스의 토큰 — **암호화되어 저장**, 화면에 다시 나오지 않음 | 아무도 | 연결 해제 또는 계정 삭제 |
@@ -83,6 +84,8 @@
 - `bots` — 내가 소유한 봇 전부(지운 봇 포함)와 그 프로필
 - `botPreferences`, `memories` — 봇 표시 설정, 봇이 기억한 사실(잊은 것 포함)
 - `channels`, `conversations` — 내가 속한 방과 **모든 대화 전문**
+- `answerRatings` — 봇의 답에 누른 좋아요·아쉬워요, 고른 이유와 적은 글(답 자체는 위
+  `conversations`에 한 번만 있다)
 - `routines`, `routineRuns`, `routineNotepads`, `runs` — 루틴과 실행 기록, 루틴의 메모장
 - `skills`, `standingApprovals` — 내 스킬, 내가 준 상시 허용
 - `auditEvents` — **내가 행위자인** 기록만
@@ -117,9 +120,14 @@
 
 순서대로: **봇들이 함께 쓰는 브라우저 프로필**(남은 계정을 지울 때는 그 계정의 봇만 놓는다 —
 아래) → 연결한 서비스의 토큰(금고에서 폐기 후 삭제) →
-대화 전문 → 대화방과 방 목록 → 루틴과 그 실행 기록 → 실행 기록 → 스킬 → 상시 허용 →
-봇이 기억한 것 → 봇 표시 설정 → **봇 자체** → 로그인 세션과 제공자 계정 → 권한 →
-`users` 행.
+대화 전문 → 답에 누른 좋아요·아쉬워요 → 대화방과 방 목록 → 루틴과 그 실행 기록 → 실행 기록 →
+스킬 → 상시 허용 → 봇이 기억한 것 → 봇 표시 설정 → **봇 자체** → 로그인 세션과 제공자 계정 →
+권한 → `users` 행.
+
+좋아요·아쉬워요(`laf_answer_ratings`)는 사람·대화방·봇 어느 쪽이 지워져도 함께 지워지는
+행(cascade)이지만, 탈퇴는 대화방과 봇보다 **먼저** 따로 지워서 몇 개였는지를 감사 기록의 개수
+(`answerRatings`)에 남긴다. 운영자의 알림 채널로 이미 간 글은 그 채널의 것이라 여기서 지울 수
+없고, 알림함(`laf_notifications`)에 남은 행은 사람과 함께 지워진다.
 
 봇을 지우면 데이터베이스가 딸린 것들을 함께 지운다(프로필 행, 도구·스킬 권한, 컴포넌트
 제외 규칙, 상시 허용, 루틴). 지워지는 행의 개수는 세어서 감사 기록에 남는다.
@@ -346,6 +354,12 @@ payload의 `own`이 그것을 가른다 — 주인의 계정 id(`ownerUserId`), 
 처리를 그대로 따르고, 셋째는 봇의 프로필 행에 붙어 있어 계정 삭제 때 봇과 함께 지워진다. 코드는 `server/src/insights/read.ts`, 내용이
 새지 않음은 `server/tests/insights-read.integration.test.ts`가 심어 둔 이메일·문장으로 확인한다.
 
+**답 평가의 수 (2026-09-18).** 같은 `support` 절에 기간 안에 **마지막으로** 좋아요였던 답의 수
+(`answersUp`), 아쉬워요였던 답의 수(`answersDown`), 아쉬워요 가운데 이유를 고른 것의 이유별
+수(`downReasons`, 목록에 있는 키만)가 붙는다. `laf_answer_ratings`에서 평가·이유·시각 세 칸만
+읽고, 적은 글(`note`)은 읽지 않는다. 마음을 바꾸면 행이 바뀌므로 누른 횟수가 아니라 답마다의
+마지막 평가를 센다.
+
 ---
 
 ## 6. 무료 체험 — 14일, 멈춤, 30일 보관, 파기 (2026-09-15)
@@ -438,6 +452,7 @@ VM이 아니라 정문이 답한다. CI가 `app/scripts/render-legal.ts`로 두 
 | 세 개의 라우트 | `server/src/account/routes.ts` |
 | 탈퇴·가입을 함대에 알리는 웹훅 | `server/src/fleet/notify.ts` |
 | 함대가 읽는 수치(수와 코드뿐)와 그 토큰 | `server/src/insights/read.ts`, `server/src/insights/routes.ts` |
+| 답에 누른 좋아요·아쉬워요, 운영자에게 가는 줄 | `server/src/support/answer-ratings.ts`, `server/src/support/rating-routes.ts`, `server/tests/answer-ratings.integration.test.ts` |
 | append-only 트리거와 그 두 통로 | `server/drizzle/0028_pipa_lifecycle.sql` |
 | 화면 | `app/src/routes/_authed/settings/account.tsx` |
 | 남은 계정이 있는 배포에서 한 계정만 지워지는지, 공용 브라우저를 언제 비우는지 | `server/tests/account-lifecycle.integration.test.ts` |

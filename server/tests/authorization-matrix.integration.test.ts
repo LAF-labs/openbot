@@ -103,6 +103,7 @@ import { createSuggestionDismissalStore } from "../src/routines/suggestions";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
 import { readInsights } from "../src/insights/read";
+import { createAnswerRatingStore } from "../src/support/answer-ratings";
 import { createDiagnosticsSource } from "../src/support/diagnostics";
 import { createFeedbackStore } from "../src/support/feedback";
 import { createPackageStatusReader } from "../src/tenant-package";
@@ -370,6 +371,8 @@ function deployment() {
       auditStore,
       outbox,
       diagnostics: createDiagnosticsSource({ database, lines: () => [] }),
+      // Mounted as `main.ts` mounts it, so its two routes are pressed by every person below.
+      ratings: createAnswerRatingStore(database),
     },
     (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
     admission,

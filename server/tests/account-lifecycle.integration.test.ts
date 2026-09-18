@@ -22,6 +22,7 @@ import {
   channelThreads,
   computerStandingApprovals,
   credentials,
+  lafAnswerRatings,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -126,6 +127,17 @@ async function makePerson(label: string): Promise<Person> {
     { id: `${id}-m1`, role: "user", content: `${label} asked something.` },
     { id: `${id}-m2`, role: "assistant", content: "The Bot answered." },
   ]);
+  // What they thought of that answer: theirs to take, and theirs to take away when they go.
+  await database.insert(lafAnswerRatings).values({
+    id: `${id}-rating`,
+    userId: id,
+    channelId,
+    messageId: `${id}-m2`,
+    agentId: botId,
+    rating: "down",
+    reason: "wrong-facts",
+    note: `${label} thinks the total is off.`,
+  });
   await database.insert(lafRoutines).values({
     id: routineId,
     agentId: botId,
@@ -332,6 +344,20 @@ describe("the export", () => {
     expect(
       (document.conversations as Array<{ messages: unknown[] }>)[0]?.messages,
     ).toHaveLength(2);
+    // How they rated the answers they got — their own ratings, reason and note included.
+    expect(document.answerRatings).toEqual([
+      {
+        id: `${leaver.id}-rating`,
+        channelId: leaver.channelId,
+        messageId: `${leaver.id}-m2`,
+        agentId: leaver.botId,
+        rating: "down",
+        reason: "wrong-facts",
+        note: "leaver thinks the total is off.",
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      },
+    ]);
     expect(
       (document.routines as Array<{ id: string }>).map((row) => row.id),
     ).toEqual([leaver.routineId]);
@@ -411,6 +437,7 @@ describe("deletion", () => {
 
     expect(result.counts).toMatchObject({
       threadMessages: 2,
+      answerRatings: 1,
       threads: 1,
       channelMemberships: 1,
       channels: 1,
@@ -447,6 +474,13 @@ describe("deletion", () => {
     await gone(
       "channels",
       database.select().from(channels).where(eq(channels.id, leaver.channelId)),
+    );
+    await gone(
+      "answerRatings",
+      database
+        .select()
+        .from(lafAnswerRatings)
+        .where(eq(lafAnswerRatings.userId, leaver.id)),
     );
     await gone(
       "routines",
@@ -525,6 +559,12 @@ describe("deletion", () => {
         .select()
         .from(channels)
         .where(eq(channels.id, stayer.channelId)),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .select()
+        .from(lafAnswerRatings)
+        .where(eq(lafAnswerRatings.userId, stayer.id)),
     ).toHaveLength(1);
     expect(
       await database

@@ -17,13 +17,15 @@
  *            laf_notifications.user_id  ← the outbox is addressed to a person and is worth
  *                                         nothing without them (migration 0029)
  *            laf_feedback.user_id       ← what they wrote to the operator is theirs (migration 0037)
+ *            laf_answer_ratings.user_id ← how they rated answers (migration 0043) — deleted below
+ *                                         first all the same, so the tally can count them
  *   SET NULL agent_profiles.owner_user_id  ← a Bot would survive its owner, unowned and running
  *            laf_routines.created_by_id    ← deliberate: a routine outlives its author (see laf.ts)
  *
  * and when a Bot (`agents`) goes:
  *
  *   cascade  agent_profiles, agent_preferences, agent_memories, channel_agents, plugin_grants,
- *            component_exclusions, computer_standing_approvals, laf_routines
+ *            component_exclusions, computer_standing_approvals, laf_routines, laf_answer_ratings
  *            (and laf_routine_runs and laf_routine_notepads behind laf_routines)
  *   SET NULL laf_thread_runs.agent_id, channels.last_message_agent_id
  *
@@ -82,6 +84,7 @@ import {
   components,
   computerStandingApprovals,
   credentials,
+  lafAnswerRatings,
   lafRoutineRuns,
   lafRoutines,
   lafThreadMessages,
@@ -351,6 +354,19 @@ export function createAccountDeletion(
                 .where(inArray(lafThreadMessages.threadId, threadIds))
                 .returning({ seq: lafThreadMessages.seq })
             : [],
+        );
+
+        /*
+         * How they rated the answers in those threads. The cascade from `users` would take these at
+         * the end; taken here instead, before the channels and the Bots they also cascade from, so
+         * the tally the trail keeps says how many there were rather than nothing.
+         */
+        record(
+          "answerRatings",
+          await transaction
+            .delete(lafAnswerRatings)
+            .where(eq(lafAnswerRatings.userId, userId))
+            .returning({ id: lafAnswerRatings.id }),
         );
 
         const memberOf = await transaction
