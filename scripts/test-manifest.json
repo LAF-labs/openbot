@@ -81,6 +81,7 @@
   "app/tests/credential-form.test.ts",
   "app/tests/current-user-guard.test.ts",
   "app/tests/design-tokens.test.ts",
+  "app/tests/ensure.test.ts",
   "app/tests/failure-group-line.test.tsx",
   "app/tests/feedback-diagnostics.test.ts",
   "app/tests/feedback.test.ts",
