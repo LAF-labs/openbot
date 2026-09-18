@@ -2359,4 +2359,36 @@ export const ko: Record<string, string> = {
   "The free trial has ended.": "무료 체험이 끝났어요.",
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+  // 모두 멈추기 — 사이드바 메뉴의 명령과 확인 창. 이미 한 일은 되돌리지 않는다는 걸 누르기 전에 말한다.
+  "Stop everything": "모두 멈추기",
+  "Stop everything that is running?": "진행 중인 일을 모두 멈출까요?",
+  "Checking what is running…": "진행 중인 일을 확인하고 있어요…",
+  "Nothing is running": "지금 진행 중인 일이 없어요",
+  "Your Bots are not working on anything right now, so there is nothing to stop.":
+    "봇들이 지금 하고 있는 일이 없어서 멈출 게 없어요.",
+  "{count} things are running right now: {work}.":
+    "지금 진행 중인 일이 {count}개 있어요: {work}.",
+  "Could not check what is running. You can still stop everything.":
+    "진행 중인 일을 확인하지 못했어요. 그래도 모두 멈출 수는 있어요.",
+  "Work already done stays done. Nothing is undone.":
+    "이미 한 일은 그대로 남고, 되돌려지지 않아요.",
+  "Stopping…": "멈추는 중…",
+  "Could not stop everything": "모두 멈추지 못했어요",
+  "The server did not answer. Check the connection and try again.":
+    "서버가 답하지 않았어요. 연결을 확인하고 다시 눌러 주세요.",
+  "The conversation running in this window was stopped.":
+    "이 창에서 진행 중이던 대화는 멈췄어요.",
+  "Some of it could not be stopped": "일부는 멈추지 못했어요",
+  "Everything is stopped": "모두 멈췄어요",
+  "Stopped: {work}.": "멈춘 일: {work}.",
+  "Everything had already finished by the time you pressed.":
+    "누르는 사이에 하던 일이 모두 끝났어요.",
+  "Could not stop: {work}. Try again in a moment.":
+    "멈추지 못한 일: {work}. 잠시 뒤에 다시 눌러 주세요.",
+  "It was stopped with Stop everything.": "모두 멈추기로 멈췄어요.",
+  // 일의 종류별 한 줄. `lib/work/stop-all.ts`의 WORK_LINES를 `t(변수)`로 읽는다.
+  "Conversations: {count}": "대화 {count}개",
+  "Rooms: {count}": "대화방 {count}개",
+  "Routines: {count}": "루틴 {count}개",
+  "Bots helping another Bot: {count}": "다른 봇 돕기 {count}개",
 };

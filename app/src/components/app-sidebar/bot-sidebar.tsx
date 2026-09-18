@@ -12,6 +12,7 @@ import {
   IconPencil,
   IconPin,
   IconPinnedOff,
+  IconPlayerStop,
   IconPlus,
   IconSearch,
   IconSettings,
@@ -31,6 +32,7 @@ import {
 } from "react";
 import { BotRow } from "@/components/app-sidebar/bot-row";
 import { GroupRow } from "@/components/app-sidebar/group-row";
+import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
@@ -408,6 +410,8 @@ export function BotSidebar() {
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  /** `모두 멈추기`'s dialog. Outside the menu, which closes on the press that opens it. */
+  const [stoppingAll, setStoppingAll] = useState(false);
   const [query, setQuery] = useState("");
   /*
    * Hiding a Bot took it out of the roster with no way back from the roster — the only route to
@@ -863,6 +867,19 @@ export function BotSidebar() {
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="p-1.5" side="top">
+            {/*
+             * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry:
+             * five Bots can be working at once, and until this there was no single way to make
+             * them all stop — Stop lived inside one conversation at a time.
+             */}
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              onClick={() => setStoppingAll(true)}
+            >
+              <IconPlayerStop />
+              {t("Stop everything")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {currentUser?.role === "admin" ? (
               <DropdownMenuItem
                 className="gap-2 px-2 py-1.5"
@@ -898,6 +915,7 @@ export function BotSidebar() {
             {signOutError}
           </p>
         ) : null}
+        <StopAllDialog onOpenChange={setStoppingAll} open={stoppingAll} />
       </div>
     </nav>
   );

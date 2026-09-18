@@ -38,6 +38,7 @@ import {
 } from "@/lib/channels/use-channel-events";
 import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
+import { holdChat } from "@/lib/copilot/held-chats";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 
 import { t } from "@/lib/i18n";
@@ -329,6 +330,17 @@ export function ChannelChat({
    */
   const [turnsInFlight, setTurnsInFlight] = useState(0);
   const [runsInFlight, setRunsInFlight] = useState(0);
+  /*
+   * The same count, readable outside a render: `모두 멈추기` asks whether this conversation has a
+   * turn in flight from the sidebar, between renders, and state read there is a render behind.
+   */
+  const turnsNow = useRef(0);
+  /**
+   * `모두 멈추기` reached this turn before its first run began — while `say` was still waiting for the
+   * runtime agent. The Stop button is not drawn in that window because there is no run to abort, so
+   * the stop is kept here instead and `run` declines to start. Cleared by the next turn.
+   */
+  const stopBeforeRun = useRef(false);
 
   /**
    * Tell the roster what was just said. Failures here must not block the conversation.
@@ -420,6 +432,11 @@ export function ChannelChat({
    * running the thread again, not adding the words a second time.
    */
   const run = async () => {
+    if (stopBeforeRun.current) {
+      // No reply is coming, so nothing may go on waiting for one — activity would park behind it.
+      awaitingReply.current = false;
+      return;
+    }
     // Providers reject later turns if prior tool calls have no result; repair before sending.
     const repaired = repairUnansweredToolCalls(agent.messages);
     if (repaired !== agent.messages) {
@@ -449,6 +466,8 @@ export function ChannelChat({
    */
   const retry = async ({ id }: RetriedMessage) => {
     if (!retriesInPlace(agent.messages, id)) return;
+    stopBeforeRun.current = false;
+    turnsNow.current += 1;
     setTurnsInFlight((count) => count + 1);
     try {
       await untilReady();
@@ -456,6 +475,7 @@ export function ChannelChat({
       awaitingReply.current = true;
       await run();
     } finally {
+      turnsNow.current -= 1;
       setTurnsInFlight((count) => count - 1);
     }
   };
@@ -472,10 +492,13 @@ export function ChannelChat({
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    stopBeforeRun.current = false;
+    turnsNow.current += 1;
     setTurnsInFlight((count) => count + 1);
     try {
       await deliver(trimmed, skillInstructions);
     } finally {
+      turnsNow.current -= 1;
       setTurnsInFlight((count) => count - 1);
     }
   };
@@ -535,6 +558,28 @@ export function ChannelChat({
     });
     return () => subscription?.unsubscribe();
   }, [agent, runtimeAgentId, channel.id]);
+
+  /*
+   * THIS CONVERSATION'S STOP, HANDED TO `모두 멈추기` for as long as it is on screen.
+   *
+   * The same two things the Stop button does — no reply is awaited any more, and the core is told,
+   * which aborts the run, the browser step under way and any follow-up run — plus the one the button
+   * cannot do, stopping a turn whose first run has not begun (`stopBeforeRun`). The server stops the
+   * run on the wire and refuses to carry a step on; only this window can cut the step itself.
+   */
+  useEffect(
+    () =>
+      holdChat({
+        threadId: channel.threadId,
+        busy: () => agent.isRunning || turnsNow.current > 0,
+        stop: () => {
+          stopBeforeRun.current = true;
+          awaitingReply.current = false;
+          copilotkit.stopAgent({ agent });
+        },
+      }),
+    [agent, copilotkit, channel.threadId],
+  );
 
   /*
    * Held in a ref because the run subscriber is wired once per agent, not per render — capturing

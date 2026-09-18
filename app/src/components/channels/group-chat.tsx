@@ -270,8 +270,11 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
          * A turn where every member chose silence looked exactly like a turn that never happened:
          * the person asked, the room thought, and then nothing — no message, no explanation. Said
          * quietly rather than as a fault, because silence is a first-class answer here.
+         *
+         * Not after `모두 멈추기` (`reason: "stopped"`): nobody chose silence, the person stopped
+         * the room, and "nobody had anything to add" would be a false thing to say about that.
          */
-        if (frame.posted === 0) {
+        if (frame.posted === 0 && frame.reason !== "stopped") {
           setQuiet(t("Nobody had anything to add this time."));
         }
       }

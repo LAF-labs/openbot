@@ -58,6 +58,7 @@ import {
   weekdayNames,
   whenLabel,
 } from "@/lib/routines/queries";
+import { RUN_STOPPED } from "@/lib/work/stop-all";
 
 /**
  * Routines: an instruction, a Bot, and a clock.
@@ -102,23 +103,36 @@ function RunHistory({ routineId }: { routineId: string }) {
   }
   return (
     <ul className="flex flex-col gap-2 py-2">
-      {runs.data.map((run) => (
-        <li
-          key={run.id}
-          className="rounded-lg border border-border bg-card p-3"
-        >
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{new Date(run.startedAt).toLocaleString(activeLocale)}</span>
-            <span className={run.ok ? "" : "text-destructive"}>
-              {run.ok ? t("Ran") : t("Failed")}
-              {runShape(run.steps, t) ? ` · ${runShape(run.steps, t)}` : ""}
-            </span>
-          </div>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
-            {run.ok ? run.answer : run.error}
-          </p>
-        </li>
-      ))}
+      {runs.data.map((run) => {
+        /*
+         * A run somebody stopped with 모두 멈추기 is not a failure, and red would say it was. Its
+         * receipt carries the fact code rather than a sentence; the words are here.
+         */
+        const stopped = !run.ok && run.error === RUN_STOPPED;
+        return (
+          <li
+            key={run.id}
+            className="rounded-lg border border-border bg-card p-3"
+          >
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {new Date(run.startedAt).toLocaleString(activeLocale)}
+              </span>
+              <span className={run.ok || stopped ? "" : "text-destructive"}>
+                {run.ok ? t("Ran") : stopped ? t("Stopped") : t("Failed")}
+                {runShape(run.steps, t) ? ` · ${runShape(run.steps, t)}` : ""}
+              </span>
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+              {run.ok
+                ? run.answer
+                : stopped
+                  ? t("It was stopped with Stop everything.")
+                  : run.error}
+            </p>
+          </li>
+        );
+      })}
     </ul>
   );
 }
