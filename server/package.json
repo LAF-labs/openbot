@@ -12,18 +12,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ag-ui/client": "0.0.57",
+    "@ag-ui/client": "0.0.59",
     "@better-auth/drizzle-adapter": "^1.6.27",
-    "@copilotkit/runtime": "1.67.1",
+    "@copilotkit/runtime": "1.71.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "better-auth": "^1.6.27",
+    "better-auth": "^1.7.4",
     "cel-js": "^0.8.2",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "eventsource": "3.0.7",
     "hono": "^4.10.0",
     "postgres": "^3.4.9",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@copilotkit/aimock": "^1.38.0"
