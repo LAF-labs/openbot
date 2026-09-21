@@ -68,6 +68,31 @@ describe("what a Bot is shown of the room", () => {
     expect(latin).toBeNull();
   });
 
+  test("the room's own vocabulary is kept out of what a Bot says to a person", () => {
+    /*
+     * MEASURED 2026-09-21 against the real model, two room turns: all three Bots wrote sentences
+     * like "재고 자료가 이번 차례에 없어요". 차례 and 바퀴 are this prompt's words for its own
+     * machinery, and a model answers in the words it was given. The memory line was the worst
+     * offender — it told a Bot that the room's words were "이번 차례에 담겨 있다", which is where
+     * "자료가 이번 차례에 없다" comes from.
+     */
+    const conduct = roomKo("리스크 분석가");
+    expect(conduct).not.toContain("이번 차례에 담겨");
+    expect(conduct).toContain("사람에게 보내는 말에는 쓰지 않는다");
+
+    const prompt = roomTurnPrompt({
+      room: { name: "출시 준비" },
+      member: risk,
+      peers: [risk, assistant],
+      lines: [said(null, "김기범", "다음 주 출시 괜찮을까요?")],
+      reason: "everybody",
+      answeringNow: 2,
+      windingDown: false,
+    });
+    // The rule about who may answer next is about the room, not about where facts live.
+    expect(prompt).not.toContain("이번 차례에 다시 말할 수 있는");
+  });
+
   test("a Bot's own line is marked as its own, so it does not answer itself", () => {
     const prompt = roomTurnPrompt({
       room: { name: "출시 준비" },

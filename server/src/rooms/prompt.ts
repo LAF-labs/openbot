@@ -277,7 +277,7 @@ export function roomTurnPrompt(input: {
      * asked in Korean. Measured on nine sentences of the kind these prompts produce: four named
      * nobody, "리뷰봇님은 어떻게 보세요?" among them, and the room ended one round in.
      */
-    "동료의 답이 필요하면 보내는 말 안에서 `@이름`으로 부른다. 이번 차례에 다시 말할 수 있는 동료는 누군가가 그렇게 부른 동료뿐이다.",
+    "동료의 답이 필요하면 보내는 말 안에서 `@이름`으로 부른다. 이어서 말할 수 있는 동료는 누군가가 그렇게 부른 동료뿐이다.",
   );
   if (windingDown) {
     /*
