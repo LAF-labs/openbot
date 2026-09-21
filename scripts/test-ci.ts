@@ -334,13 +334,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the queue's audience — seven tests to `app`. Measured at server 2,680 / app 1,227 /
  * agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not grow.
  *
+ * RAISED 2026-09-21 with both of the above in one tree, which is the number that counts: measured
+ * at server 2,691 / app 1,263 / agent-computer 261 / root 367. `app` goes to 3% under that, which
+ * supersedes the two floors the branches carried; the other three did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2609, roots: ["server"] },
-  { name: "app", floor: 1197, roots: ["app"] },
+  { name: "app", floor: 1225, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
