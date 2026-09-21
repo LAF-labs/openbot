@@ -36,13 +36,36 @@ describe("what a Bot is shown of the room", () => {
       lines: [said(null, "김기범", "다음 주 출시 괜찮을까요?")],
     });
 
-    expect(prompt.startsWith('[Room: "출시 준비" - with 일상 비서]')).toBe(
-      true,
-    );
-    expect(prompt).toContain("Participants: 일상 비서 (일상 업무)");
-    expect(prompt).toContain("The room so far (oldest first):");
-    expect(prompt).toContain("김기범 (user): 다음 주 출시 괜찮을까요?");
-    expect(prompt).toContain("It's your turn, 리스크 분석가.");
+    expect(
+      prompt.startsWith('[방: "출시 준비" — 함께 있는 참가자: 일상 비서]'),
+    ).toBe(true);
+    expect(prompt).toContain("참가자: 일상 비서(일상 업무)");
+    expect(prompt).toContain("지금까지 방에서 오간 말 (오래된 것부터):");
+    expect(prompt).toContain("김기범(사람): 다음 주 출시 괜찮을까요?");
+    expect(prompt).toContain("리스크 분석가, 네 차례다.");
+  });
+
+  /*
+   * THE WHOLE BLOCK IS KOREAN, AND THAT IS THE POINT RATHER THAN A TIDY-UP.
+   *
+   * This was the last eight lines of every member's request, in English, in capitals, behind a
+   * thousand characters of Korean — the base prompt, the room mode and the person's own words.
+   * The last instruction is the strongest one a model reads, and it was in the wrong language.
+   */
+  test("nothing in the block is English", () => {
+    const prompt = roomTurnPrompt({
+      room: { name: "출시 준비" },
+      member: risk,
+      peers: [risk, assistant],
+      lines: [said(null, "김기범", "다음 주 출시 괜찮을까요?")],
+      reason: "everybody",
+      answeringNow: 2,
+      windingDown: true,
+    });
+    // `send_message` is a tool name, not prose: it is what the Bot must call, spelled as it is
+    // registered. Everything else that is Latin letters would be English words.
+    const latin = prompt.replace(/send_message|@이름/g, "").match(/[A-Za-z]+/g);
+    expect(latin).toBeNull();
   });
 
   test("a Bot's own line is marked as its own, so it does not answer itself", () => {
@@ -56,7 +79,7 @@ describe("what a Bot is shown of the room", () => {
       ],
     });
 
-    expect(prompt).toContain("리스크 분석가 (you): 확인 중입니다");
+    expect(prompt).toContain("리스크 분석가(나): 확인 중입니다");
     expect(prompt).toContain("일상 비서: 일정은 제가 볼게요");
   });
 
@@ -67,7 +90,73 @@ describe("what a Bot is shown of the room", () => {
       peers: [risk],
       lines: [],
     });
-    expect(prompt).toContain("Nothing has been said in the room yet.");
+    expect(prompt).toContain("아직 방에서 오간 말이 없다.");
+  });
+
+  /*
+   * WHY THIS MEMBER IS SPEAKING, WHICH USED TO REACH THE AUDIT ROW AND NOTHING ELSE.
+   *
+   * The three reasons are three different turns: a colleague's unanswered question, one of
+   * several parallel answers to the person, or the person asking this Bot in particular. Handed
+   * the same prompt for all three, a member pulled in by a colleague greeted, agreed and
+   * summarised instead of answering what it was asked.
+   */
+  describe("why this member is speaking", () => {
+    const base = {
+      room: { name: "출시 준비" },
+      member: risk,
+      peers: [risk, assistant],
+      lines: [said(null, "김기범", "다음 주 출시 괜찮을까요?")],
+    };
+
+    test("a colleague called it in, and the colleague is named", () => {
+      const prompt = roomTurnPrompt({
+        ...base,
+        reason: "named",
+        namedBy: "일상 비서",
+        answeringNow: 1,
+      });
+      expect(prompt).toContain("일상 비서가 너를 불렀다");
+      expect(prompt).toContain("너에게 온 것에 먼저 답한다");
+    });
+
+    /* The particle is chosen, not guessed: "매출봇가 너를 불렀다" is the Bot's own first sentence. */
+    test("the subject particle follows the colleague's name", () => {
+      const withBatchim = roomTurnPrompt({
+        ...base,
+        reason: "named",
+        namedBy: "재고봇",
+        answeringNow: 1,
+      });
+      expect(withBatchim).toContain("재고봇이 너를 불렀다");
+      const without = roomTurnPrompt({
+        ...base,
+        reason: "named",
+        namedBy: "매출비서",
+        answeringNow: 1,
+      });
+      expect(without).toContain("매출비서가 너를 불렀다");
+    });
+
+    test("one of several answering the same question is told how many", () => {
+      const prompt = roomTurnPrompt({
+        ...base,
+        reason: "everybody",
+        answeringNow: 4,
+      });
+      expect(prompt).toContain("4명이 같은 질문에 함께 답한다");
+      expect(prompt).toContain("인사와 질문 되풀이는 빼고");
+    });
+
+    test("the person naming this Bot says so, and asks for nothing else", () => {
+      const prompt = roomTurnPrompt({
+        ...base,
+        reason: "addressed",
+        answeringNow: 1,
+      });
+      expect(prompt).toContain("사람이 너를 지목했다");
+      expect(prompt).not.toContain("함께 답한다");
+    });
   });
 
   test("only the last two dozen lines are shown", () => {
@@ -84,7 +173,12 @@ describe("what a Bot is shown of the room", () => {
     expect(prompt).toContain(`line ${ROOM_LINES + 9}`);
   });
 
-  test("winding down asks for silence unless it matters", () => {
+  /*
+   * IT USED TO ASK FOR SILENCE — "reply only if it's essential, otherwise stay silent" — so the
+   * last round of a room turn was usually empty and the conversation stopped mid-air rather than
+   * ending. Asking to CLOSE is what makes a turn finish instead of run out.
+   */
+  test("winding down asks for a close, not for silence", () => {
     const prompt = roomTurnPrompt({
       room: { name: "출시 준비" },
       member: risk,
@@ -92,7 +186,9 @@ describe("what a Bot is shown of the room", () => {
       lines: [said(null, "김기범", "정리해주세요")],
       windingDown: true,
     });
-    expect(prompt).toContain("The room is wrapping up this turn");
+    expect(prompt).toContain("마지막 바퀴다");
+    expect(prompt).toContain("한 문장으로 맺는다");
+    expect(prompt).toContain("새 주제나 새 질문을 열지 말고");
   });
 });
 
@@ -130,7 +226,7 @@ describe("what a room turn may cost", () => {
     expect(prompt.length).toBeLessThan(30_000);
     // The end of the conversation is what a room is understood from.
     expect(prompt).toContain("23");
-    expect(prompt).not.toContain("김기범 (user): 0가");
+    expect(prompt).not.toContain("김기범(사람): 0가");
   });
 
   test("one line over budget is still shown, cut", () => {
@@ -140,7 +236,7 @@ describe("what a room turn may cost", () => {
       peers: [],
       lines: [said(null, "김기범", "나".repeat(40_000))],
     });
-    expect(prompt).toContain("김기범 (user): 나");
+    expect(prompt).toContain("김기범(사람): 나");
     expect(prompt.length).toBeLessThan(30_000);
   });
 });
@@ -158,6 +254,19 @@ describe("how a Bot is told to behave in a room", () => {
     expect(conduct).toContain("끝까지 리스크 분석가로 있는다");
     expect(conduct).toContain("send_message");
     expect(conduct).toContain("침묵은 제대로 된 선택이고");
+  });
+
+  /*
+   * The one rule that keeps a room conversation alive — only a colleague somebody NAMED speaks
+   * again — used to be stated in English, in `roomTurnPrompt`, and nowhere else. The Korean
+   * conduct said "call their name if it helps", which is not a rule and does not mention `@`.
+   * A model writing Korean follows what it was told in Korean.
+   */
+  test("says how to bring a colleague in, and what happens if nobody does", () => {
+    const conduct = roomKo(risk.name);
+    expect(conduct).toContain("`@이름`으로 부른다");
+    expect(conduct).toContain("부르지 않으면 대화는 여기서 끝난다");
+    expect(conduct).toContain("인사말·자기소개·동의만 하는 말은 하지 않는다");
   });
 
   /*

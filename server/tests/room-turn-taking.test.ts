@@ -58,12 +58,58 @@ describe("reading who a message names", () => {
     expect(mentionsIn("email me at a@b.com", members)).toEqual([]);
   });
 
+  /*
+   * THIS RUNS ON WHAT A PERSON TYPED, WHICH IS BOUNDED BY NOTHING (`rooms/service.ts`). The scan
+   * walks every character, and a version of it that sliced the rest of the string at each one was
+   * quadratic: a pasted spreadsheet would have held the room's turn for as long as it took to walk
+   * that paste several million times over. Two hundred thousand characters, measured at ~50ms.
+   */
+  test("a name at the end of a very long paste is still read, and reading it stays cheap", () => {
+    const pasted = `${"가나다라 마바사아 ".repeat(24_000)}민수님 확인 부탁해요.`;
+    expect(pasted.length).toBeGreaterThan(200_000);
+    const started = performance.now();
+    expect(mentionsIn(pasted, members)).toEqual(["minsu"]);
+    // Generous by two orders of magnitude against the measurement: this is here to catch the
+    // quadratic shape coming back, not to hold a millisecond count on somebody's laptop.
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
   test("a bare name that opens the message is addressing that colleague", () => {
     expect(mentionsIn("민수님, 이거 봐 줘", members)).toEqual(["minsu"]);
     expect(mentionsIn("민수야 이거 봐", members)).toEqual(["minsu"]);
     expect(mentionsIn("  리스크 분석가: 규정은요?", members)).toEqual(["risk"]);
     expect(mentionsIn("민수", members)).toEqual(["minsu"]);
     expect(mentionsIn("민수에게 묻겠습니다", members)).toEqual(["minsu"]);
+  });
+
+  /*
+   * WHERE THE CONVERSATION USED TO DIE. A bare name counted only at the START of a message, and
+   * polite Korean puts the report first and the question second — so the sentence a member
+   * actually writes to bring a colleague in named nobody, and the round after it ended
+   * `nobody-named`. Measured before this on nine sentences of the kind these prompts produce:
+   * four named nobody, every one of them a direct question to a colleague.
+   */
+  test("an honorific makes a name an address wherever it sits in the sentence", () => {
+    expect(
+      mentionsIn("매출은 12% 올랐어요. 민수님은 어떻게 보세요?", members),
+    ).toEqual(["minsu"]);
+    expect(mentionsIn("매출은 올랐고, 민수님 재고 좀 봐 주세요.", members)) //
+      .toEqual(["minsu"]);
+    expect(mentionsIn("이건 민수에게 물어봐야겠네요", members)).toEqual([
+      "minsu",
+    ]);
+    expect(mentionsIn("그럼 리스크 분석가님께 넘기겠습니다", members)).toEqual([
+      "risk",
+    ]);
+  });
+
+  test("everybody in a list of names is being asked, not only the first", () => {
+    expect(mentionsIn("민수, 리스크 분석가 둘 다 봐 주세요", members)).toEqual([
+      "minsu",
+      "risk",
+    ]);
+    expect(mentionsIn("확인은 민수님과 리스크 분석가님이 해 주세요", members)) //
+      .toEqual(["minsu", "risk"]);
   });
 
   test("a bare name in the middle of a sentence is talking about, not to", () => {
@@ -74,6 +120,10 @@ describe("reading who a message names", () => {
     expect(mentionsIn("리스크 분석가의 의견에 동의합니다", members)).toEqual(
       [],
     );
+    // 와/과 joins two names being TALKED ABOUT; neither of them is addressed, so the list rule
+    // above must not reach it — it only ever runs on from a name that already counted.
+    expect(mentionsIn("민수와 리스크 분석가의 의견이 갈렸네요", members)) //
+      .toEqual([]);
   });
 });
 

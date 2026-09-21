@@ -28,13 +28,10 @@ import {
   ROOM_MESSAGES_PER_TURN,
   ROOM_ROUNDS,
   type RoomMember,
+  type SpeakReason,
   WIND_DOWN_SLOTS,
 } from "./prompt";
-import {
-  type SpeakReason,
-  speakersForRound,
-  type TurnLine,
-} from "./turn-taking";
+import { speakersForRound, type TurnLine } from "./turn-taking";
 
 /** What a member is asked with: who, whether to wrap up, and why it is being asked at all. */
 export type MemberAsk = {
@@ -46,6 +43,14 @@ export type MemberAsk = {
   reason: SpeakReason;
   /** The colleague whose naming pulled it in, when that is the reason. */
   namedBy?: string;
+  /**
+   * How many members are being asked this round, this one included.
+   *
+   * Carried because the PROMPT needs it and only this loop knows it: a member answering alongside
+   * five colleagues that it cannot see opens with a greeting and a restatement of the question,
+   * five times over. See `roomTurnPrompt`.
+   */
+  answeringNow: number;
 };
 
 export type MemberSaid = {
@@ -138,6 +143,7 @@ export async function runRoomTurn(
         windingDown,
         round,
         reason: speaker.reason,
+        answeringNow: speaking.length,
         ...(speaker.namedBy ? { namedBy: speaker.namedBy } : {}),
       });
       posted += result.spoke;

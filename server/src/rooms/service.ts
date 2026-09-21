@@ -442,13 +442,27 @@ export function createRoomService(options: RoomServiceOptions) {
         members: input.members,
         addressedIds: input.addressed,
         isCurrent,
-        runMember: async ({ member, windingDown, round, reason, namedBy }) => {
+        runMember: async ({
+          member,
+          windingDown,
+          round,
+          reason,
+          namedBy,
+          answeringNow,
+        }) => {
           const ask = {
             member,
             round,
             reason,
             ...(namedBy ? { namedBy } : {}),
           };
+          /*
+           * The trail keeps the id — it is what a row is joined on — and the PROMPT gets the name,
+           * because "a4f1c… 가 너를 불렀다" is not a sentence anybody can answer. A colleague that
+           * has since left the room resolves to nothing, and the prompt then says only that this
+           * member was called in.
+           */
+          const namedByName = namedBy ? names.get(namedBy) : undefined;
           // Minted here rather than in the member's turn, because the messages it delivers are
           // written under it before the turn returns. See `MemberTurnInput.runId`.
           const runId = randomUUID();
@@ -546,6 +560,9 @@ export function createRoomService(options: RoomServiceOptions) {
                 lines,
                 history,
                 windingDown,
+                reason,
+                answeringNow,
+                ...(namedByName ? { namedBy: namedByName } : {}),
                 agent: agents[member.id] ?? null,
                 toolkit,
                 userId: input.actor.id,

@@ -27,6 +27,21 @@
  * scratch space; only `send_message` puts words in the room. That is what makes silence
  * unambiguous — a turn with no call is a Bot with nothing to add — and it is what lets a Bot do
  * real work mid-turn (open a page, read a file) without narrating it at everybody.
+ *
+ * IT IS WRITTEN IN KOREAN, AND THAT IS NOT A TRANSLATION JOB. Everything else a Bot reads is
+ * Korean — the base prompt, the room mode (`shared/prompt/mode/room.ko.ts`), the person's own
+ * words — and this block used to be the last eight lines of the request, in English, in capitals.
+ * Measured on the assembled prompt: a member's request ended `DO NOT reply in plain text …` after
+ * a thousand characters of Korean, with every room line tagged `(user)` and `(you)`. The last
+ * instruction is the strongest one a model reads, and in a product whose whole surface is Korean
+ * the last instruction was in another language.
+ *
+ * IT SAYS WHY THIS MEMBER IS SPEAKING. `turn-taking.ts` already decides that — the person named
+ * it, the person named nobody, or a colleague called it in — and the reason went to the audit row
+ * and nowhere else. A Bot pulled in because 재고봇 asked it something got the same prompt as one
+ * answering the person, and had to guess from two dozen lines which sentence was for it. That is
+ * where "인사·동의·요약" comes from: a member that does not know what it is answering answers the
+ * room in general.
  */
 
 /** One line of a room, as the transcript records it. */
@@ -45,11 +60,24 @@ export type RoomMember = {
   description?: string;
 };
 
+/**
+ * Why a member is being asked to speak.
+ *
+ * `addressed`: the person named it. `everybody`: the person named nobody, so everybody opens.
+ * `named`: a colleague named it in this turn and it has not answered since — the only reason a
+ * Bot speaks after the first round.
+ *
+ * Declared here rather than in `turn-taking.ts`, which decides it, because the prompt is the other
+ * thing that reads it and `turn-taking.ts` already imports from this file. It is re-exported there
+ * so the rule and its type still read as one thing.
+ */
+export type SpeakReason = "addressed" | "everybody" | "named";
+
 /** How many lines of the room a Bot is shown at most. The reference's `CNa`. */
 export const ROOM_LINES = 24;
 
 /** The header every room turn carries, so a Bot can see at a glance where it is. */
-export const ROOM_TAG = "[Room: ";
+export const ROOM_TAG = "[방: ";
 
 /**
  * The caps, all from the reference, all deliberately small.
@@ -89,17 +117,23 @@ export function clamp(text: string, limit: number): string {
     : `${points.slice(0, limit - 1).join("")}…`;
 }
 
+/** What an unnamed person is called in a room line. `users.name` is nullable. */
+const PERSON_FALLBACK = "사장님";
+
 function renderLine(line: RoomLine, memberId: string): string {
   /*
    * Both halves are cut. A person can paste a novel into a room and a Bot can answer with one, and
    * a prompt built from two dozen of those is a request no provider accepts — the turn would fail
-   * for everybody because of one line. `users.name` is nullable, so an unnamed person is "User"
-   * rather than a line that starts with a space and a bracket.
+   * for everybody because of one line.
+   *
+   * The tags are Korean now. They used to be `(user)` and `(you)`, and a Bot shown
+   * `User (user): 지난주 어땠어?` answers a person called "User" — measured on the assembled
+   * prompt, in a room whose every other word is Korean.
    */
-  const name = clamp(line.name.trim() || "User", ROOM_NAME_CHARS);
+  const name = clamp(line.name.trim() || PERSON_FALLBACK, ROOM_NAME_CHARS);
   const text = clamp(line.text, ROOM_LINE_CHARS);
-  if (line.agentId === null) return `${name} (user): ${text}`;
-  const you = line.agentId === memberId ? " (you)" : "";
+  if (line.agentId === null) return `${name}(사람): ${text}`;
+  const you = line.agentId === memberId ? "(나)" : "";
   return `${name}${you}: ${text}`;
 }
 
@@ -148,15 +182,29 @@ export function roomTurnPrompt(input: {
   member: RoomMember;
   peers: readonly RoomMember[];
   lines: readonly RoomLine[];
-  /** The last round, or nearly out of room: reply only if it matters. */
+  /** The last round, or nearly out of room: settle what is open rather than opening more. */
   windingDown?: boolean;
+  /** Why this member is speaking. Absent reads as the person having named it. */
+  reason?: SpeakReason;
+  /** The colleague that called it in, BY NAME. Only meaningful with `reason: "named"`. */
+  namedBy?: string;
+  /**
+   * How many members are answering this same round, this one included.
+   *
+   * Without it every member of a six-Bot room opens with a greeting and a restatement of the
+   * question, because each one believes it is the answer rather than one of six. Measured with
+   * fakes: `addressedIds` empty asks all six in round 0, and none of them is told the other five
+   * are answering the same sentence.
+   */
+  answeringNow?: number;
 }): string {
-  const { room, member, peers, lines, windingDown } = input;
-  const roomName = room.name.trim() || "the room";
+  const { room, member, peers, lines, windingDown, namedBy } = input;
+  const reason = input.reason ?? "addressed";
+  const roomName = room.name.trim() || "이름 없는 방";
   const others = peers.filter((peer) => peer.id !== member.id);
   const withWhom =
     others.length > 0
-      ? ` - with ${others.map((peer) => peer.name).join(", ")}`
+      ? ` — 함께 있는 참가자: ${others.map((peer) => peer.name).join(", ")}`
       : "";
   const parts: string[] = [`${ROOM_TAG}"${roomName}"${withWhom}]`];
 
@@ -166,22 +214,22 @@ export function roomTurnPrompt(input: {
    * obvious next thing, and a prompt that has nowhere to put it is the reason it never gets added.
    */
   const description = room.description?.trim();
-  if (description) parts.push(`About this room: ${description}`);
+  if (description) parts.push(`이 방은: ${description}`);
 
   const introduced = others.filter((peer) => peer.description?.trim());
   if (introduced.length > 0) {
     parts.push(
-      `Participants: ${introduced
-        .map((peer) => `${peer.name} (${peer.description?.trim()})`)
+      `참가자: ${introduced
+        .map((peer) => `${peer.name}(${peer.description?.trim()})`)
         .join(", ")}`,
     );
   }
 
   const recent = withinBudget(lines.slice(-ROOM_LINES), member.id);
   if (recent.length === 0) {
-    parts.push("Nothing has been said in the room yet.");
+    parts.push("아직 방에서 오간 말이 없다.");
   } else {
-    parts.push("The room so far (oldest first):");
+    parts.push("지금까지 방에서 오간 말 (오래된 것부터):");
     parts.push(recent.join("\n"));
   }
 
@@ -193,28 +241,71 @@ export function roomTurnPrompt(input: {
    * Measured: with a polite "say something with send_message if you like", both members answered in
    * prose and the room stayed empty. The instruction has to be unmistakable and it has to be last.
    */
+  parts.push("", `${clamp(member.name, ROOM_NAME_CHARS)}, 네 차례다.`);
+
+  /*
+   * WHAT THIS MEMBER IS ANSWERING, IN ONE LINE. The three reasons are three different turns and
+   * used to be one prompt: `named` is a colleague's question that is sitting unanswered in the
+   * lines above, `everybody` is one of several parallel answers to the person, and `addressed` is
+   * the person asking this Bot in particular.
+   */
+  if (reason === "named" && namedBy) {
+    parts.push(
+      `${namedBy}${asSubject(namedBy)} 너를 불렀다. 방의 말 중 너에게 온 것에 먼저 답한다.`,
+    );
+  } else if (reason === "everybody") {
+    const answering = input.answeringNow ?? 0;
+    parts.push(
+      answering > 1
+        ? `사람이 아무도 지목하지 않아서 이번 바퀴에는 ${answering}명이 같은 질문에 함께 답한다. 인사와 질문 되풀이는 빼고, 네 담당인 부분만 말한다. 남이 이미 말한 것은 다시 말하지 않는다.`
+        : "사람이 아무도 지목하지 않았다. 네 담당인 부분만 말한다.",
+    );
+  } else {
+    parts.push("사람이 너를 지목했다. 그 질문에 답한다.");
+  }
+
   parts.push(
-    "",
-    `It's your turn, ${clamp(member.name, ROOM_NAME_CHARS)}.`,
-    "DO NOT reply in plain text — nobody in the room can see plain text. To say anything at all you",
-    "must call the send_message tool with what you want to say.",
-    "If you have nothing worth adding, call nothing and end your turn. That is staying silent, and",
-    "it is a perfectly good answer.",
+    "그냥 쓴 글은 방의 누구에게도 보이지 않는다. 한마디라도 하려면 send_message 툴을 불러야 한다.",
+    "보탤 것이 없으면 아무것도 부르지 말고 차례를 끝낸다. 그것이 침묵이고, 제대로 된 답이다.",
     /*
      * The turn-taking rule, said to the one party that can work it: after the first round only a
-     * colleague somebody NAMED speaks again (`turn-taking.ts`). A Bot that wants an answer from a
-     * colleague has to say so by name, and one told this writes "@민수" where it would otherwise
-     * have written "someone should check".
+     * colleague somebody NAMED speaks again (`turn-taking.ts`). Said in Korean and with the shape
+     * spelled out, because the rule was stated only in English and only here — while the Korean
+     * conduct said "call their name if it helps" — and a model writing Korean answers what it was
+     * asked in Korean. Measured on nine sentences of the kind these prompts produce: four named
+     * nobody, "리뷰봇님은 어떻게 보세요?" among them, and the room ended one round in.
      */
-    "To bring a colleague in, name them with @ and their name in what you send. Only a colleague",
-    "somebody has named speaks again this turn.",
+    "동료의 답이 필요하면 보내는 말 안에서 `@이름`으로 부른다. 이번 차례에 다시 말할 수 있는 동료는 누군가가 그렇게 부른 동료뿐이다.",
   );
   if (windingDown) {
+    /*
+     * IT USED TO ASK FOR SILENCE — "reply only if it's essential, otherwise stay silent" — so the
+     * last round of a room was usually empty and the conversation simply stopped mid-air. Asking
+     * to CLOSE rather than to be quiet is what makes a turn end instead of run out.
+     */
     parts.push(
-      "The room is wrapping up this turn: reply only if it's essential, otherwise stay silent.",
+      "이번이 이 차례의 마지막 바퀴다. 새 주제나 새 질문을 열지 말고, 네가 맡은 것만 한 문장으로 맺는다. 맺을 것이 없으면 침묵.",
     );
   }
   return parts.join("\n");
+}
+
+/**
+ * "…가" or "…이", for a name this file did not choose.
+ *
+ * The same reason `shared/prompt/particles.ts` exists: the names are the person's, so a prompt
+ * that picks one particle is wrong half the time — and "재고봇이 너를 불렀다" against
+ * "매출봇가 너를 불렀다" is the Bot's own first sentence reading as broken Korean. Kept here
+ * rather than imported because the server's room prompt is the only caller and the shared file's
+ * two helpers are `이다`/`으로`, neither of which is this one.
+ */
+function asSubject(word: string): string {
+  const last = word.trim().at(-1) ?? "";
+  const code = last.codePointAt(0) ?? 0;
+  const isHangulSyllable = code >= 0xac00 && code <= 0xd7a3;
+  // A non-Hangul last character (a Latin name, a digit) takes the with-final-consonant form.
+  if (!isHangulSyllable) return "이";
+  return (code - 0xac00) % 28 === 0 ? "가" : "이";
 }
 
 /*

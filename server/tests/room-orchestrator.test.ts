@@ -168,8 +168,21 @@ describe("who speaks, in what order, and why", () => {
         windingDown: false,
         round: 0,
         reason: "addressed",
+        answeringNow: 1,
       },
     ]);
+  });
+
+  /*
+   * HOW MANY ARE ANSWERING THIS SAME ROUND, which only this loop knows and which the prompt needs:
+   * a member that cannot see the other five answering the same sentence opens with a greeting and
+   * a restatement of the question, five times over.
+   */
+  test("every ask says how many members are answering that round", async () => {
+    const it = spy((member) => (member.id === "c" ? ["@A 의견은요?"] : ["네"]));
+    await runRoomTurn(it.deps);
+
+    expect(it.asked.map((entry) => entry.answeringNow)).toEqual([3, 3, 3, 1]);
   });
 
   test("a colleague's naming pulls a Bot into the next round, and the ask says who named it", async () => {

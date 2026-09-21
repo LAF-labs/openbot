@@ -14,7 +14,12 @@
 import type { AbstractAgent, Message } from "@ag-ui/client";
 import type { RunLedger } from "../runner/run-ledger";
 import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
-import { roomTurnPrompt, type RoomLine, type RoomMember } from "./prompt";
+import {
+  roomTurnPrompt,
+  type RoomLine,
+  type RoomMember,
+  type SpeakReason,
+} from "./prompt";
 import { roomToolkit } from "./send-message";
 import { watchRoomSpeech } from "./stream";
 
@@ -48,6 +53,18 @@ export type MemberTurnInput = {
   peers: readonly RoomMember[];
   lines: readonly RoomLine[];
   windingDown: boolean;
+  /**
+   * Why this member is being asked, and who by — the same facts the audit row records.
+   *
+   * They used to stop at the audit row. The Bot was handed two dozen lines and left to work out
+   * which of them was for it, which is what a member pulled in by a colleague's question did
+   * instead of answering the question: greeted, agreed, and summarised. See `roomTurnPrompt`.
+   */
+  reason: SpeakReason;
+  /** The colleague that called it in, BY NAME rather than by id — the prompt says it out loud. */
+  namedBy?: string;
+  /** How many members answer this same round, this one included. See `MemberAsk`. */
+  answeringNow: number;
   /** The tail of this Bot's private conversation with the person. See `private-history.ts`. */
   history?: Message[];
   /** The Bot itself, resolved for the person whose room it is. Null when it can no longer answer. */
