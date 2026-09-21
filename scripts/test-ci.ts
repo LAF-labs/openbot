@@ -300,13 +300,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * registered on the canvas and not passively, and the unread-pause banner's line that outlives it —
  * nineteen tests to `app`. Measured at server 2,680 / app 1,161; `app` re-raised to 3% under.
  *
+ * RAISED 2026-09-21, with one honest reading of remote data on every main screen: the helper that
+ * turns a query into loading / ready / empty / unavailable / failed — against a real `QueryObserver`
+ * and against the refusal codes walked out of the server's own source — the line each state says,
+ * the roster's, the routines list's and the screen card's verdicts as pure functions, and the main
+ * screens drawn in each of those states. Fifty-nine tests to `app`, measured at server 2,680 /
+ * app 1,220 / agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not
+ * grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2599, roots: ["server"] },
-  { name: "app", floor: 1126, roots: ["app"] },
+  { name: "app", floor: 1183, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
