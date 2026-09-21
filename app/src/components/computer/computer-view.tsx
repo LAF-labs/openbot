@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readRecording, type Recording } from "@/lib/computer/demonstration";
 import { SCREEN_UNAVAILABLE } from "@/lib/computer/screen-problems";
-import { screenView } from "@/lib/computer/screen-state";
+import { screenLine, screenView } from "@/lib/computer/screen-state";
 import { focusRing, focusRingInset } from "@/components/ui/focus";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
@@ -98,6 +98,20 @@ const SETTLE_TIMEOUT_MS = 30_000;
 /** Short confirmation window after a secret is sent to the page. */
 const SECRET_CONFIRM_MS = 6_000;
 
+/**
+ * How much slower a folded card looks, as a multiple of its own interval.
+ *
+ * Folded there is no picture, so nothing is decoded and nothing is painted — the only thing the
+ * answer is read for is which page the Bot is on, and a line of text does not need a frame a
+ * second. Ten times is ten seconds at the default 1 Hz: the pace of noticing a Bot has moved on.
+ *
+ * A MULTIPLE RATHER THAN A CONSTANT, so `intervalMs` still means what it says. Written as a fixed
+ * 10,000 ms it silently outranked the prop, and a caller that had asked for a different pace — a
+ * test, or a card somewhere that wants a slower one — got this number instead with nothing saying
+ * so. That is the shape of a setting that reaches nothing.
+ */
+const FOLDED_INTERVAL_RATIO = 10;
+
 type Props = {
   /** Which computer to watch. One shared computer unless each Bot has been given its own. */
   computerId: string;
@@ -116,6 +130,15 @@ type Props = {
    * recording with four separate drafts.
    */
   teachable?: boolean;
+  /**
+   * Drawn as one line instead of a picture.
+   *
+   * The picture and the teaching panel go; everything that ASKS something of the person stays —
+   * the password the Bot is waiting for, "봇이 기다리고 있습니다", the wheel. Folding is a decision
+   * about how much room a picture may have, and a card that swallowed a request for a password
+   * along with it would make the fold a thing nobody could safely use.
+   */
+  isFolded?: boolean;
 };
 
 export function ComputerView({
@@ -126,8 +149,18 @@ export function ComputerView({
   minWidth = DEFAULT_MIN_WIDTH,
   minHeight = DEFAULT_MIN_HEIGHT,
   teachable = false,
+  isFolded = false,
 }: Props) {
   const [shot, setShot] = useState<Screenshot | null>(null);
+  /**
+   * The computer this pane has already watched a real page on, or null.
+   *
+   * The computer's id rather than a boolean, and the reason is that this card is handed a different
+   * one when somebody switches Bot: a boolean would carry "it had a page" across to a Bot whose
+   * browser this pane has never seen, and that Bot's blank screen would then claim it had closed
+   * something. Compared against the current id at render, so nothing has to be reset in an effect.
+   */
+  const [pageSeenOn, setPageSeenOn] = useState<string | null>(null);
   /**
    * Why the screen cannot be shown, as a fact code (`laf:…`), or null while it can.
    *
@@ -312,8 +345,14 @@ export function ComputerView({
         // Exact byte comparison is the settling signal.
         unchanged = next.base64 === lastFrame ? unchanged + 1 : 0;
         lastFrame = next.base64;
-        // Decode before swapping so the visible frame is never blank between polls.
-        const bitmap = await decodeFrame(next.base64, "image/png");
+        /*
+         * NOT DECODED WHILE FOLDED. There is no canvas to paint onto — the answer is read for its
+         * address and nothing else — and `decodeFrame` is the expensive half of this loop.
+         */
+        const bitmap = isFolded
+          ? null
+          : // Decoded before swapping so the visible frame is never blank between polls.
+            await decodeFrame(next.base64, "image/png");
         if (generation.current !== mine) {
           bitmap?.close();
           return;
@@ -321,6 +360,8 @@ export function ComputerView({
         const canvas = canvasRef.current;
         if (bitmap && canvas) paintFrame(canvas, bitmap);
         bitmap?.close();
+        // A page, and so the fact that tells a closed browser from one that was never used.
+        if (!isBlankBrowser(next)) setPageSeenOn(computerId);
         setShot(next);
         setProblem(null);
       }
@@ -340,7 +381,10 @@ export function ComputerView({
           }),
         () => {
           if (generation.current === mine && shouldContinue()) {
-            timer = setTimeout(tick, intervalMs);
+            timer = setTimeout(
+              tick,
+              isFolded ? intervalMs * FOLDED_INTERVAL_RATIO : intervalMs,
+            );
           }
         },
       );
@@ -350,7 +394,9 @@ export function ComputerView({
       generation.current++;
       clearTimeout(timer);
     };
-  }, [computerId, active, intervalMs, secretPending]);
+    // `isFolded` restarts it on purpose: unfolding must fetch and paint a frame now rather than
+    // leave the canvas it has just mounted grey until the ten-second timer comes round.
+  }, [computerId, active, intervalMs, secretPending, isFolded]);
 
   /*
    * Control state, on the shared loop rather than one of this card's own.
@@ -423,6 +469,7 @@ export function ComputerView({
     hasFrame: shot !== null,
     isBlank: shot ? isBlankBrowser(shot) : false,
     problem,
+    sawPage: pageSeenOn === computerId,
   });
   /** Blank browser placeholders should not be opened as readable screens. */
   const showScreen = view.kind === "showing";
@@ -430,96 +477,114 @@ export function ComputerView({
   /** Nothing has arrived yet and nothing has gone wrong: the one state that is genuinely loading. */
   const isLoadingFirstFrame = view.kind === "waiting";
 
+  /** A card with no picture has one sentence to carry the whole of it. */
+  const foldedLine = screenLine(view, shot?.url ?? null);
+
   return (
     <>
       <figure
         className={`flex flex-col gap-2 rounded-2xl border ${CARD_PADDING}`}
       >
         {/* Inline preview remains in transcript; click opens a readable full-size view. */}
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          ref={pictureRef}
-          // Disabled while blank/waiting but still reserves the frame.
-          disabled={!showScreen}
-          /*
-           * ITS OWN ROUNDED RECTANGLE, INSET FROM THE CARD.
-           *
-           * The picture used to run edge to edge inside a rounded, clipped card, so the panel that
-           * followed it cut straight across the bottom of the screen and the box's shape simply
-           * stopped where that panel began. A complete rectangle cannot be crossed: whatever comes
-           * next sits below it, on the same left rule.
-           *
-           * `bg-muted` is the letterbox behind `object-contain`, and it is dropped while loading so
-           * the Skeleton's pulse is not muted-on-muted and therefore invisible.
-           */
-          className={`relative block w-full overflow-hidden rounded-xl enabled:cursor-zoom-in ${FOCUS_RING} ${isLoadingFirstFrame ? "" : "bg-muted"}`}
-          style={frameStyle}
-          aria-label={t("Open the Bot's screen full size")}
-        >
-          {/*
-           * Mounted in every state, painted by the poll, revealed when there is something to see.
-           * See `canvasRef` above for why it cannot be conditional.
-           */}
-          <canvas
-            ref={canvasRef}
-            aria-hidden={!showScreen}
-            aria-label={t("What the Bot is looking at")}
-            // A canvas has no implicit role, so without this the label it carries is announced by
-            // nothing. The `<img>` it replaced got that for free from its `alt`.
-            role="img"
-            // Keep unexpected screenshot dimensions inside the reserved frame.
-            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${showScreen ? "opacity-100" : "opacity-0"}`}
-          />
+        {isFolded ? null : (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            ref={pictureRef}
+            // Disabled while blank/waiting but still reserves the frame.
+            disabled={!showScreen}
+            /*
+             * ITS OWN ROUNDED RECTANGLE, INSET FROM THE CARD.
+             *
+             * The picture used to run edge to edge inside a rounded, clipped card, so the panel that
+             * followed it cut straight across the bottom of the screen and the box's shape simply
+             * stopped where that panel began. A complete rectangle cannot be crossed: whatever comes
+             * next sits below it, on the same left rule.
+             *
+             * `bg-muted` is the letterbox behind `object-contain`, and it is dropped while loading so
+             * the Skeleton's pulse is not muted-on-muted and therefore invisible.
+             */
+            className={`relative block w-full overflow-hidden rounded-xl enabled:cursor-zoom-in ${FOCUS_RING} ${isLoadingFirstFrame ? "" : "bg-muted"}`}
+            style={frameStyle}
+            aria-label={t("Open the Bot's screen full size")}
+          >
+            {/*
+             * Mounted in every state, painted by the poll, revealed when there is something to see.
+             * See `canvasRef` above for why it cannot be conditional.
+             */}
+            <canvas
+              ref={canvasRef}
+              aria-hidden={!showScreen}
+              aria-label={t("What the Bot is looking at")}
+              // A canvas has no implicit role, so without this the label it carries is announced by
+              // nothing. The `<img>` it replaced got that for free from its `alt`.
+              role="img"
+              // Keep unexpected screenshot dimensions inside the reserved frame.
+              className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${showScreen ? "opacity-100" : "opacity-0"}`}
+            />
 
-          {/*
-           * NO ARTWORK BEHIND THE WAITING STATE.
-           *
-           * A blank browser used to be covered by a full-bleed pink-to-mint-to-chartreuse gradient
-           * illustration on a hardcoded white base — a visual language from no part of this product,
-           * which then forced the message on top of it into a black scrim and white text that
-           * ignored the theme in both directions. The frame is a themed surface now, and the
-           * sentence sits on it in the ordinary muted colour, which is what the rest of the app does
-           * when it has nothing to show.
-           *
-           * Waiting is the exception, and it is not artwork: it is the same `Skeleton` the routines
-           * below this card use while they load, so a screen on its way looks like everything else
-           * on its way instead of like a grey rectangle that might be all there is. The sentence
-           * stays for anyone reading the page rather than looking at it.
-           */}
-          {view.kind === "waiting" ? (
-            <>
-              <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
-              <span className="sr-only">{view.label}</span>
-            </>
-          ) : view.kind === "showing" ? null : (
-            <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
-              {view.kind === "problem" ? (
-                <>
+            {/*
+             * NO ARTWORK BEHIND THE WAITING STATE.
+             *
+             * A blank browser used to be covered by a full-bleed pink-to-mint-to-chartreuse gradient
+             * illustration on a hardcoded white base — a visual language from no part of this product,
+             * which then forced the message on top of it into a black scrim and white text that
+             * ignored the theme in both directions. The frame is a themed surface now, and the
+             * sentence sits on it in the ordinary muted colour, which is what the rest of the app does
+             * when it has nothing to show.
+             *
+             * Waiting is the exception, and it is not artwork: it is the same `Skeleton` the routines
+             * below this card use while they load, so a screen on its way looks like everything else
+             * on its way instead of like a grey rectangle that might be all there is. The sentence
+             * stays for anyone reading the page rather than looking at it.
+             */}
+            {view.kind === "waiting" ? (
+              <>
+                <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
+                <span className="sr-only">{view.label}</span>
+              </>
+            ) : view.kind === "showing" ? null : (
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
+                {view.kind === "problem" ? (
                   <span className="font-medium text-foreground">
                     {view.heading}
                   </span>
-                  <span>{view.sentence}</span>
-                  {view.advice ? <span>{view.advice}</span> : null}
-                </>
-              ) : (
+                ) : null}
                 <span>{view.sentence}</span>
-              )}
-            </span>
-          )}
-        </button>
+                {/*
+                 * The second line a closed page has as surely as a problem does — and it is the half
+                 * that says this is not one. Drawn from the state rather than from the kind, so a
+                 * later state with advice cannot silently lose it the way `closed` first did.
+                 */}
+                {"advice" in view && view.advice ? (
+                  <span>{view.advice}</span>
+                ) : null}
+              </span>
+            )}
+          </button>
+        )}
 
         {/*
-         * THE PICTURE ABOVE IS OLD, AND SAYS SO. Until the next frame lands, which clears it: a
-         * frozen frame drawn with nothing under it is a screen somebody watches for a minute before
-         * realising nothing is moving. Mounted with the card, so the line is heard when it is said.
+         * THE PICTURE ABOVE IS OLD, AND SAYS SO — OR, FOLDED, IT IS THE WHOLE CARD.
+         *
+         * Stale: until the next frame lands, which clears it. A frozen frame drawn with nothing
+         * under it is a screen somebody watches for a minute before realising nothing is moving.
+         *
+         * Folded: this line is all that is left of the panel, so it always has words and never goes
+         * quiet. It is the SAME region in the same slot either way, mounted with the card, because
+         * a region that appears when the card is folded arrives together with its first sentence
+         * and most screen readers announce nothing at all (`docs/laf/dialogs.md`).
          */}
         <LiveRegion
           as="p"
-          // A row like the card's others once it speaks: on the rule, under a hairline.
-          className="border-t pt-2 text-pretty text-muted-foreground text-xs"
+          // A row like the card's others once it speaks: on the rule, under a hairline. Folded there
+          // is nothing above it to be separated from, so the hairline goes with the picture.
+          className={cn(
+            "text-pretty text-muted-foreground text-xs",
+            isFolded ? "" : "border-t pt-2",
+          )}
         >
-          {view.kind === "showing" ? view.stale : null}
+          {isFolded ? foldedLine : view.kind === "showing" ? view.stale : null}
         </LiveRegion>
 
         {/*
@@ -628,7 +693,12 @@ export function ComputerView({
          * showing what they showed before. Teaching is a standing control of the workspace, not a
          * thing that belongs on the line of one action that has already happened.
          */}
-        {teachable ? (
+        {/*
+         * Not while folded: teaching is a panel with a draft, a list of recorded steps and a name
+         * to type, and a person who has just asked for this card to take less room has said the
+         * clearest thing they can about where that belongs.
+         */}
+        {teachable && !isFolded ? (
           <TeachATask
             computerId={computerId}
             driving={driving}

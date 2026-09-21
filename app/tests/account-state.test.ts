@@ -53,6 +53,19 @@ const DEVICE_SCOPED = [
    * their phone is told twice, which is the harmless direction. A Bot's work never reads it.
    */
   "lib/usage/today.ts",
+  /*
+   * How wide the Bot's screen pane is on THIS screen, and whether it is folded away
+   * (`lib/computer/screen-panel.ts`).
+   *
+   * A DECISION, and the argument is that the answer is about the window rather than about the
+   * person. 440px is a choice on a 27-inch monitor and covers a phone entirely, so a preference
+   * synced across devices would arrive on the small one as the wrong answer — and the module
+   * already refuses to honour a width the window cannot take, which is the same reasoning one step
+   * further on. Nothing a Bot does reads it, the pane draws at its old default when the value
+   * cannot be read, and the worst it can be wrong about is how much room a picture has in front of
+   * somebody who is looking at it and can press the other button.
+   */
+  "lib/computer/screen-panel.ts",
 ];
 
 /**

@@ -1822,6 +1822,24 @@ export const ko: Record<string, string> = {
   "The picture is not updating. This is the last one that arrived.":
     "화면이 새로 오지 않고 있습니다. 마지막으로 받은 화면입니다.",
 
+  /*
+   * 빈 브라우저 세 가지는 서로 다른 말이어야 한다 — `lib/computer/screen-state.ts` 참고.
+   * 게이트웨이는 "닫았다"와 "아직 안 열었다"에 똑같은 흰 화면을 돌려준다(2026-09-21 측정).
+   */
+  "The Bot closed the page it was looking at.":
+    "봇이 보고 있던 페이지를 닫았습니다.",
+  "Nothing has gone wrong. It opens another when it needs one.":
+    "문제가 생긴 것은 아닙니다. 필요하면 봇이 다시 페이지를 엽니다.",
+  // 접힌 패널에 한 줄로 남는 말.
+  "The Bot is on {site}.": "봇이 {site} 페이지를 보고 있습니다.",
+  "The Bot is looking at a page.": "봇이 어떤 페이지를 보고 있습니다.",
+  "Collapse the screen": "화면 접기",
+  "Expand the screen": "화면 펴기",
+  "Screen size": "화면 크기",
+  Small: "작게",
+  Medium: "보통",
+  Large: "크게",
+
   // 입력칸 옆에 그대로 붙는 문장. zod가 던지고 `field.tsx`가 그린다.
   "A command is required.": "명령을 입력해 주세요.",
   "Lower-case letters, numbers and hyphens, 2 to 40 characters.":

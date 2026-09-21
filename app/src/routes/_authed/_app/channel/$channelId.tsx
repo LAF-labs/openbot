@@ -20,6 +20,7 @@ import {
   channelKeys,
   channelQueryOptions,
 } from "@/lib/channels/queries";
+import { useScreenPanelWidth } from "@/lib/computer/screen-panel";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
@@ -39,15 +40,16 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const HEADING_ENTRANCE_SECONDS = 0.18;
 const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
-/** Shared detail pane width for the live screen view. */
 /*
- * 320px, the same as the pane's resting width — see DEFAULT_DETAIL_WIDTH.
+ * THE WATCHING PANE'S WIDTH IS THE PERSON'S, NOT A CONSTANT — see `lib/computer/screen-panel.ts`.
  *
- * Watching used to widen the pane to 400px, which took 80px off the conversation every time
- * somebody glanced at the screen and gave it back when they looked away. The thumbnail is a
- * thumbnail; full size is a click on it.
+ * It was 320px here, fixed: the same as the pane's resting width, chosen because watching used to
+ * widen it to 400 and take 80px off the conversation every time somebody glanced at the screen. The
+ * measurement was right and the answer was one number for everybody, with no way to change it and
+ * nothing to press but 닫기 — which also stops the pane saying anything at all. The three widths and
+ * the fold are that number made a choice, kept in `localStorage`, and clamped to what the window
+ * can actually honour.
  */
-const SCREEN_PANEL_WIDTH = 320;
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
@@ -119,6 +121,13 @@ function RouteComponent() {
    * screen could not be dismissed at all.
    */
   const needsYou = useNeedsYou(agentId, true);
+  /*
+   * Read here and not in `BotPanel`, because the width belongs to the pane and the pane is
+   * `DetailPanel`'s: the panel inside it is handed that width outright and lays itself out once.
+   * Read on every render of this screen whether or not it is watching — a hook cannot be
+   * conditional — and it costs a `localStorage` read once per tab (`screen-panel.ts`).
+   */
+  const screenWidth = useScreenPanelWidth();
 
   // Browser activity may auto-open the screen once per run unless this run was dismissed.
   const dismissedEpoch = useRef<number | null>(null);
@@ -178,7 +187,7 @@ function RouteComponent() {
     <DetailPanel
       onClose={() => show(null)}
       open={(isSettingsOpen || isWatching) && agentId !== undefined}
-      detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
+      detailWidth={isWatching ? screenWidth : undefined}
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action. Named after

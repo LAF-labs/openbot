@@ -19,6 +19,19 @@ import { UNAVAILABLE_REFUSALS, type Unavailability } from "@/lib/reading";
  * "the Bot may still be working — an administrator can check whether its computer is running",
  * which sends somebody to check on a computer that does not exist or is not theirs.
  *
+ * A CLOSED PAGE WAS CALLED A BROWSER THAT HAD NEVER BEEN USED. Fourth fact, and the reason it has
+ * to be one. MEASURED 2026-09-21 against the shipping `agent-computer` image: with the Bot's tabs
+ * closed, `GET /api/computers/:bot/screenshot` answers **200** with a white PNG and
+ * `url: "about:blank"` — byte for byte the same 6,288-character frame a browser that has never been
+ * sent anywhere returns, same sha256, same `url`. The container opens a fresh blank tab on the very
+ * request that asks (`profiles.page`), so looking is what turns "closed" into "blank". Nothing 404s
+ * and no socket drops, so there is no fact in the ANSWER that tells the two apart.
+ *
+ * The fact that does is the pane's own: it watched a real page here a moment ago. `sawPage` carries
+ * it, and the difference matters to a person — "봇이 보고 있던 페이지를 닫았습니다" is the Bot having
+ * finished with something, "아직 페이지를 열지 않았습니다" is a Bot that has not started, and a
+ * connection that dropped is `problem`. Three states, three sentences, one blank white rectangle.
+ *
  * The sentences for each code stay in `screen-problems.ts`, the one table the pane reads them from.
  */
 
@@ -44,8 +57,10 @@ export type ScreenView =
   | { kind: "waiting"; label: string }
   /** A page on screen — with a line under it when it has stopped updating. */
   | { kind: "showing"; stale: string | null }
-  /** The browser is open on nothing. */
+  /** The browser is open on nothing, and never was on anything. */
   | { kind: "blank"; sentence: string }
+  /** The browser is open on nothing, and a page this pane was watching has gone. */
+  | { kind: "closed"; sentence: string; advice: string }
   | { kind: "unavailable"; sentence: string }
   | {
       kind: "problem";
@@ -58,10 +73,20 @@ export function screenView({
   hasFrame,
   isBlank,
   problem,
+  sawPage = false,
 }: {
   hasFrame: boolean;
   isBlank: boolean;
   problem: string | null;
+  /**
+   * Whether this pane has already watched a real page on this computer.
+   *
+   * The server cannot answer this — see the header. It is deliberately not remembered across a
+   * reload either: a pane that reopens on a blank browser genuinely does not know whether the Bot
+   * closed something an hour ago, and "봇이 페이지를 닫았습니다" about a Bot that has been idle since
+   * yesterday would be the same lie in the other direction.
+   */
+  sawPage?: boolean;
 }): ScreenView {
   const unavailable = problem
     ? SCREEN_UNAVAILABLE_REFUSALS[problem]
@@ -98,8 +123,48 @@ export function screenView({
           ),
     };
   }
+  if (hasFrame && sawPage) {
+    return {
+      kind: "closed",
+      sentence: t("The Bot closed the page it was looking at."),
+      // Said because a white rectangle where a page was reads as a fault, and it is not one: the
+      // Bot finishing with a tab is the ordinary end of a piece of work.
+      advice: t("Nothing has gone wrong. It opens another when it needs one."),
+    };
+  }
   if (hasFrame) {
     return { kind: "blank", sentence: t("The Bot has not opened a page yet.") };
   }
   return { kind: "waiting", label: t("Waiting for the Bot's screen…") };
+}
+
+/** The host of the page on screen, or null when there is not one to name. */
+function hostOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host || null;
+  } catch {
+    // A URL the browser reports and this parser cannot read is still a page; it just has no name.
+    return null;
+  }
+}
+
+/**
+ * THE WHOLE CARD IN ONE LINE — what the folded panel keeps.
+ *
+ * A screen that can be folded away has to leave something behind, or folding it is the same gesture
+ * as closing it. This is that line, and it is the card's own state said in one sentence rather than
+ * a second opinion about it: every branch below is a `ScreenView` this file already decided.
+ *
+ * `showing` is the only kind with nothing to say for itself — the picture was the sentence — so it
+ * is the one that reads the address. A page whose host cannot be parsed is still a page.
+ */
+export function screenLine(view: ScreenView, url: string | null): string {
+  if (view.kind === "waiting") return view.label;
+  if (view.kind !== "showing") return view.sentence;
+  if (view.stale) return view.stale;
+  const host = hostOf(url);
+  return host
+    ? t("The Bot is on {site}.", { site: host })
+    : t("The Bot is looking at a page.");
 }

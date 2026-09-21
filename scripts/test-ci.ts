@@ -318,13 +318,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * Measured at server 2,690 / app 1,228 / agent-computer 261 / root 367; `server` and `app` had
  * drifted past 3% and are re-raised to 3% under, the other two did not grow.
  *
+ * RAISED 2026-09-21, with the Bot's screen pane made foldable and the page it closed given words of
+ * its own: the state a closed browser is in against one that was never used (measured against the
+ * shipping computer image, which answers both with the same white frame), the one line a folded
+ * pane keeps, the folded card rendered without its picture and still asking for a password, and the
+ * width store — what a stored value that is not its shape reads as, a `localStorage` that throws in
+ * either direction, and the clamp that decides a 390px phone. Twenty-eight tests to `app`. Measured
+ * on the rebased tree, with the room pass above already in it, at server 2,690 / app 1,256 /
+ * agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2609, roots: ["server"] },
-  { name: "app", floor: 1191, roots: ["app"] },
+  { name: "app", floor: 1218, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
