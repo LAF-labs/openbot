@@ -18,6 +18,7 @@ import {
 import type { AgentProfile } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { isImeKey } from "@/lib/ime";
 import { useSavedFlash } from "@/lib/saved-flash";
 
 /**
@@ -152,6 +153,8 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
             }}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
+              // The Enter that accepts a Korean syllable is not the Enter that finishes the name.
+              if (isImeKey(event)) return;
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") setName(agent.name);
             }}
@@ -167,6 +170,7 @@ export function BotIntroCard({ agent }: { agent: AgentProfile }) {
             }}
             onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => {
+              if (isImeKey(event)) return;
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") setTitle(agent.title);
             }}

@@ -18,6 +18,7 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { type AskSubject, describeSubject } from "@/lib/approvals";
 import { BOUNDARY_REFUSALS, refusalText } from "@/lib/computer/refusals";
 import { ensure } from "@/lib/ensure";
+import { isImeKey } from "@/lib/ime";
 import { activeLocale, t } from "@/lib/i18n";
 
 /**
@@ -428,6 +429,8 @@ function BoundariesPage() {
               setSaved(false);
             }}
             onKeyDown={(event) => {
+              // A rule can hold a Korean string literal, and Enter accepts the syllable first.
+              if (isImeKey(event)) return;
               if (event.key === "Enter") void addRule(draft);
             }}
             placeholder='tool.name == "computer_click" && contains(element.name, "submit")'
@@ -509,6 +512,7 @@ function BoundariesPage() {
               setSaved(false);
             }}
             onKeyDown={(event) => {
+              if (isImeKey(event)) return;
               if (event.key === "Enter") void addAskRule(askDraft);
             }}
             placeholder='intent == "write_file" && !matches(file.path, "^notes/")'

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
@@ -51,6 +51,7 @@ function RouteComponent() {
     refetch,
   } = useQuery(agentListQueryOptions());
   const roster = agents ?? [];
+  const queryClient = useQueryClient();
   const { start, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -58,6 +59,25 @@ function RouteComponent() {
 
   const selected = roster.find((agent) => agent.id === selectedId) ?? roster[0];
   const skillCommands = useSkillCommands(selected?.id ?? "");
+
+  /**
+   * THE BOX TAKES TYPING FROM THE FIRST PAINT, AND THAT IS WHAT KEEPS KOREAN WHOLE.
+   *
+   * `disabled={!selected}` read as "there is nobody to send to", but until the roster answers
+   * there is nobody to send to YET, which is a different sentence. Measured 2026-09-21 against the
+   * built app with 300 ms on the API calls — a deployment is not localhost: the box appeared at
+   * 140 ms with `contenteditable="false"` and turned editable, and took the caret, at 179 ms on a
+   * warm local server and hundreds of milliseconds later over a network. A person who opens the
+   * app and starts typing types into that window, and the first thing they type is lost — with a
+   * Korean IME it is worse than lost: the composition has nowhere to live, so "오" arrives as the
+   * two jamo "ㅇㅗ", which is exactly what was reported. Driven through CDP the same way, flipping
+   * the box from disabled to enabled mid-syllable split it every time and nothing else did.
+   *
+   * So the box is disabled only once the roster has ANSWERED and has nobody in it — the screen
+   * that then says "No Bots on your team yet" — and never flips under somebody's hands on the way
+   * to a team that does exist.
+   */
+  const nobodyToSendTo = !isPending && !selected;
 
   return (
     /*
@@ -156,15 +176,29 @@ function RouteComponent() {
           // The chosen Bot's real granted skills, the way a channel does it. Home used to inherit
           // the placeholder list, so `/` here offered a command no Bot had.
           commands={skillCommands}
-          disabled={!selected}
+          disabled={nobodyToSendTo}
           onSubmit={async (draft) => {
             /*
-             * A channel is pinned to its coworkers for the life of its thread — all of them.
-             * Naming two colleagues here opens a room with both, which is what a channel with more
-             * than one Bot is; naming nobody sends to the face that is lit.
+             * A channel is pinned to its coworkers for the life of its thread.
+             *
+             * The roster is waited for rather than read, because the box now accepts a message
+             * before the roster has answered (see `nobodyToSendTo`). `ensureQueryData` returns the
+             * cached list at once when there is one and joins the request in flight otherwise — a
+             * `return` here would drop the message, since the composer clears the box before
+             * awaiting this and only puts it back if it throws.
              */
             const named = [...draft.agentIds];
-            const ids = named.length > 0 ? named : selected ? [selected.id] : [];
+            const ids =
+              named.length > 0
+                ? named
+                : [
+                    selected?.id ??
+                      (
+                        await queryClient.ensureQueryData(
+                          agentListQueryOptions(),
+                        )
+                      )[0]?.id,
+                  ].filter((id): id is string => Boolean(id));
             if (ids.length === 0) return;
 
             setError(null);

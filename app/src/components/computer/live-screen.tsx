@@ -5,6 +5,7 @@ import {
   SCREEN_UNREACHABLE,
 } from "@/lib/computer/screen-problems";
 import { t } from "@/lib/i18n";
+import { isImeKey } from "@/lib/ime";
 import { pokeControl } from "./control-poll";
 import { decodeFrame, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
@@ -299,7 +300,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
      * appeared. The composed word arrives once, at `compositionend`, and that is what is sent —
      * which is the same door a paste already uses.
      */
-    if (event.nativeEvent.isComposing || event.key === "Process") {
+    if (isImeKey(event)) {
       event.preventDefault();
       return;
     }
@@ -317,7 +318,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   };
   const handleKeyUp = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape" || event.key === "Tab") return;
-    if (event.nativeEvent.isComposing || event.key === "Process") {
+    if (isImeKey(event)) {
       event.preventDefault();
       return;
     }
