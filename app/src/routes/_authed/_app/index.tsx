@@ -158,13 +158,18 @@ function RouteComponent() {
           commands={skillCommands}
           disabled={!selected}
           onSubmit={async (draft) => {
-            // A channel is pinned to one coworker for the life of its thread.
-            const agentId = draft.agentId ?? selected?.id;
-            if (!agentId) return;
+            /*
+             * A channel is pinned to its coworkers for the life of its thread — all of them.
+             * Naming two colleagues here opens a room with both, which is what a channel with more
+             * than one Bot is; naming nobody sends to the face that is lit.
+             */
+            const named = [...draft.agentIds];
+            const ids = named.length > 0 ? named : selected ? [selected.id] : [];
+            if (ids.length === 0) return;
 
             setError(null);
             try {
-              await start([agentId], draft.text);
+              await start(ids, draft.text);
             } catch (caught) {
               setError(
                 caught instanceof Error
@@ -178,8 +183,12 @@ function RouteComponent() {
         />
         {selected ? (
           <p className="mt-2 w-full max-w-2xl text-center text-muted-foreground text-xs">
-            {t("Goes to {name}.", { name: selected.name })}{" "}
-            {t("Type @ to reach somebody else.")}
+            {t("Goes to {name}.", { name: selected.name })} {/*
+             * The line says what `@` can now do, because otherwise nobody would find it: naming
+             * two colleagues here opens a room with both of them in it, which is what a channel
+             * with more than one Bot is.
+             */}
+            {t("Type @ to reach somebody else, or two for a room with both.")}
           </p>
         ) : null}
         {error ? (

@@ -1177,7 +1177,8 @@ export const ko: Record<string, string> = {
   "What Bots can reach": "봇이 닿을 수 있는 곳",
   "What happened": "무슨 일이 있었나",
   "Goes to {name}.": "{name}에게 전달됩니다.",
-  "Type @ to reach somebody else.": "@를 입력하면 다른 봇을 부를 수 있습니다.",
+  "Type @ to reach somebody else, or two for a room with both.":
+    "@를 입력하면 다른 봇을 부를 수 있고, 둘을 부르면 둘이 함께 있는 대화방이 열립니다.",
   "changes things": "변경함",
   reads: "읽기 전용",
   "asks a person every time": "매번 사람에게 물음",

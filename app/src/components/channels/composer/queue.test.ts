@@ -5,9 +5,9 @@ import { type QueuedMessage, reduceQueue } from "./queue";
 function draft(
   text: string,
   commandIds: string[] = [],
-  agentId: string | null = null,
+  agentIds: readonly string[] = [],
 ): ComposerDraft {
-  return { text, agentId, commandIds, isEmpty: false };
+  return { text, agentIds, commandIds, isEmpty: false };
 }
 
 /** Park one message and hand back the queue it produced, which is what every case starts from. */
@@ -16,11 +16,11 @@ function park(
   id: string,
   text: string,
   commandIds: string[] = [],
-  agentId: string | null = null,
+  agentIds: readonly string[] = [],
 ): readonly QueuedMessage[] {
   return reduceQueue(queue, {
     busy: true,
-    draft: draft(text, commandIds, agentId),
+    draft: draft(text, commandIds, agentIds),
     id,
     type: "submit",
   }).queue;
@@ -77,7 +77,7 @@ describe("submitting", () => {
 
     expect(result.run).toBeNull();
     expect(result.queue).toEqual([
-      { id: "one", text: "no, the other one", commandIds: [], agentId: null },
+      { id: "one", text: "no, the other one", commandIds: [], agentIds: [] },
     ]);
   });
 
@@ -132,48 +132,101 @@ describe("settling", () => {
       "one",
       "@Knowledge check that again",
       [],
-      "knowledge",
+      ["knowledge"],
     );
 
-    expect(reduceQueue(queue, { type: "settle" }).run?.agentId).toBe(
+    expect(reduceQueue(queue, { type: "settle" }).run?.agentIds).toEqual([
       "knowledge",
-    );
+    ]);
   });
 
-  test("two colleagues asked in one breath are two turns, not one merged turn", () => {
+  test("two colleagues named in one message stay named together", () => {
+    const queue = park(
+      [],
+      "one",
+      "@Knowledge @Risk both look at this",
+      [],
+      ["knowledge", "risk-analyst"],
+    );
+
+    expect(reduceQueue(queue, { type: "settle" }).run?.agentIds).toEqual([
+      "knowledge",
+      "risk-analyst",
+    ]);
+  });
+
+  test("two colleagues asked in two breaths are two turns, not one merged turn", () => {
     /*
-     * `routeTo` refuses, with a visible error, to send a message to a Bot other than the one it
-     * named. Joining these would have done exactly that: both sentences to whoever came last.
+     * A room gives the turn to whoever was named. Joining these would have handed both sentences
+     * to the same colleague — the first person's question asked of the second.
      */
-    let queue = park([], "one", "@Knowledge check that", [], "knowledge");
-    queue = park(queue, "two", "@Risk take a look", [], "risk-analyst");
+    let queue = park([], "one", "@Knowledge check that", [], ["knowledge"]);
+    queue = park(queue, "two", "@Risk take a look", [], ["risk-analyst"]);
 
     const first = reduceQueue(queue, { type: "settle" });
-    expect(first.run?.agentId).toBe("knowledge");
+    expect(first.run?.agentIds).toEqual(["knowledge"]);
     expect(first.run?.text).toBe("@Knowledge check that");
     expect(first.queue).toHaveLength(1);
 
     const second = reduceQueue(first.queue, { type: "settle" });
-    expect(second.run?.agentId).toBe("risk-analyst");
+    expect(second.run?.agentIds).toEqual(["risk-analyst"]);
     expect(second.run?.text).toBe("@Risk take a look");
+  });
+
+  test("the same two colleagues named in either order are one audience", () => {
+    let queue = park(
+      [],
+      "one",
+      "@Knowledge @Risk have a look",
+      [],
+      ["knowledge", "risk-analyst"],
+    );
+    queue = park(
+      queue,
+      "two",
+      "@Risk @Knowledge by this evening",
+      [],
+      ["risk-analyst", "knowledge"],
+    );
+
+    const drained = reduceQueue(queue, { type: "settle" });
+    expect(drained.run?.text).toBe(
+      "@Knowledge @Risk have a look\n@Risk @Knowledge by this evening",
+    );
+    expect(drained.queue).toEqual([]);
+  });
+
+  test("a message naming one of the two starts a turn of its own", () => {
+    let queue = park(
+      [],
+      "one",
+      "@Knowledge @Risk have a look",
+      [],
+      ["knowledge", "risk-analyst"],
+    );
+    queue = park(queue, "two", "@Risk just you then", [], ["risk-analyst"]);
+
+    const first = reduceQueue(queue, { type: "settle" });
+    expect(first.run?.agentIds).toEqual(["knowledge", "risk-analyst"]);
+    expect(first.queue).toHaveLength(1);
   });
 
   test("naming nobody leaves the room asking whoever it was already asking", () => {
     let queue = park([], "one", "check that again");
     queue = park(queue, "two", "and summarise it");
 
-    expect(reduceQueue(queue, { type: "settle" }).run?.agentId).toBeNull();
+    expect(reduceQueue(queue, { type: "settle" }).run?.agentIds).toEqual([]);
   });
 
   test("an earlier mention survives a later message that names nobody", () => {
     // "Ask Risk. ... and be brief" is one instruction for Risk, not one for Risk and one for
     // whoever happens to be bound.
-    let queue = park([], "one", "@Risk take a look", [], "risk-analyst");
+    let queue = park([], "one", "@Risk take a look", [], ["risk-analyst"]);
     queue = park(queue, "two", "and be brief");
 
-    expect(reduceQueue(queue, { type: "settle" }).run?.agentId).toBe(
+    expect(reduceQueue(queue, { type: "settle" }).run?.agentIds).toEqual([
       "risk-analyst",
-    );
+    ]);
   });
 
   test("carries the skills that were invoked, once each", () => {
@@ -240,7 +293,7 @@ describe("removing", () => {
     const result = reduceQueue(queue, { id: "one", type: "remove" });
 
     expect(result.queue).toEqual([
-      { id: "two", text: "no, the other one", commandIds: [], agentId: null },
+      { id: "two", text: "no, the other one", commandIds: [], agentIds: [] },
     ]);
   });
 });

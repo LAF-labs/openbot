@@ -18,7 +18,6 @@ import {
   applyCommandChips,
   type CommandOption,
   type ComposerDraft,
-  enforceSingleAgent,
   toDraft,
 } from "./draft";
 import { PLACEHOLDER_COMMANDS } from "./sources";
@@ -172,10 +171,25 @@ export function Composer({
   );
   const draft = useMemo(() => toDraft(value), [value]);
 
+  /*
+   * WHAT COMES BACK OUT OF HERE IS WHAT WENT IN, UNLESS A `/` CHIP REALLY HAD TO BE REWRITTEN.
+   *
+   * The editor compares the value handed back with its own record of the DOM, and rebuilds the box
+   * from scratch when they differ (`prompt-area`: `renderSegmentsToDOM`). A rebuild removes every
+   * node the caret is in, so a rebuild in the middle of a keystroke throws away a Korean syllable
+   * that is still being assembled — measured 2026-09-21 by driving the built composer with a real
+   * IME composition over CDP: the only interruptions that split "오" into two jamo were the ones
+   * that took the editor's nodes or its `contenteditable` away mid-syllable.
+   *
+   * `applyCommandChips` returns the same array when it changed nothing, and nothing else here
+   * touches the segments — the mention chips are read on the way out (`toDraft`) rather than
+   * rewritten on the way in, which is what `enforceSingleAgent` used to do on every keystroke that
+   * followed a second `@`.
+   */
   const handleChange = useCallback(
     (next: Segment[]) => {
       const { segments, actions } = applyCommandChips(
-        enforceSingleAgent(next),
+        next,
         sources.read().commands,
       );
       setValue(segments);

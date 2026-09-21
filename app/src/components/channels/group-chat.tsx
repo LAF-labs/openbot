@@ -619,9 +619,16 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         </>
       }
       onStop={() => void stop()}
-      onSubmit={(draft) =>
-        post(draft.text, draft.agentId ? [draft.agentId] : [])
-      }
+      /*
+       * EVERYBODY NAMED, NOT THE LAST ONE NAMED.
+       *
+       * `addressedIds` has been a list on the server since rooms existed — "Who the person named —
+       * chips and @-mentions, as ids. Empty means everybody" (`rooms/orchestrator.ts`) — and the
+       * room's turn-taking gives each of them the turn. What arrived here was one id, because the
+       * composer deleted every mention chip but the last as you typed. Asking two colleagues one
+       * question in a room is the ordinary thing to want in a room.
+       */
+      onSubmit={(draft) => post(draft.text, [...draft.agentIds])}
       pending={posting || inTurn}
       queueWhileBusy
       {...(readWindow ? { readWindow } : {})}

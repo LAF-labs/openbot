@@ -773,6 +773,16 @@ export function ChannelChat({
         }
         onSubmit={async (draft) => {
           /*
+           * `draft.agentIds` IS READ BY NOBODY HERE, AND THAT IS THE ANSWER RATHER THAN AN OMISSION.
+           *
+           * A channel is pinned to its coworker for the life of its thread, and a channel with more
+           * than one never reaches this component — the route sends it to `GroupChat`. So the one
+           * name `@` can produce here is the name of the Bot already answering: the mention menu is
+           * built from `channel.agentIds` (`agentOptions` above), which in a one-to-one conversation
+           * holds exactly that Bot. Naming a second colleague is not refused here because it cannot
+           * be typed here; to put a question to two Bots, start it from Home, where `@` offers the
+           * whole team and naming two of them opens a room with both.
+           *
            * `commandIds` are the `/` chips that survived into the send, in the order they were
            * typed. Resolved against the same list the menu was built from, so a chip left over
            * from a skill that has since been revoked resolves to nothing rather than to a stale

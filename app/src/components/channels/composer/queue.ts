@@ -45,11 +45,11 @@ export type QueuedMessage = {
    */
   commandIds: string[];
   /**
-   * The Bot it named with `@`, for the same reason the chips are kept: a room with several Bots
+   * Everybody it named with `@`, for the same reason the chips are kept: a room with several Bots
    * routes on this, and dropping it here would mean a correction typed mid-turn went to whoever
-   * happened to be answering rather than to the colleague it was addressed to.
+   * happened to be answering rather than to the colleagues it was addressed to.
    */
-  agentId: string | null;
+  agentIds: readonly string[];
 };
 
 export type QueueAction =
@@ -107,7 +107,7 @@ export function reduceQueue(
             id: action.id,
             text: action.draft.text,
             commandIds: [...action.draft.commandIds],
-            agentId: action.draft.agentId,
+            agentIds: [...action.draft.agentIds],
           },
         ]);
         return { queue: later, run: joinQueued(now) };
@@ -119,7 +119,7 @@ export function reduceQueue(
             id: action.id,
             text: action.draft.text,
             commandIds: [...action.draft.commandIds],
-            agentId: action.draft.agentId,
+            agentIds: [...action.draft.agentIds],
           },
         ],
         run: null,
@@ -130,7 +130,7 @@ export function reduceQueue(
       if (queue.length === 0) {
         return { queue, run: null };
       }
-      // Only what is addressed to one Bot drains now; the rest waits for the turn after.
+      // Only what is addressed to the same Bots drains now; the rest waits for the turn after.
       const [now, later] = drainable(queue);
       return { queue: later, run: joinQueued(now) };
     }
@@ -145,24 +145,37 @@ export function reduceQueue(
   }
 }
 
+/** The names in a message, as one comparable string. Order does not make a different audience. */
+/*
+ * JSON rather than a join: ids are the person's to name but not the app's to trust the shape
+ * of, and a separator that could appear inside one would make two different audiences compare
+ * equal.
+ */
+const audienceOf = (message: QueuedMessage): string =>
+  JSON.stringify([...message.agentIds].sort());
+
 /**
- * The front of the queue that is addressed to ONE Bot, and whatever is left for the turn after.
+ * The front of the queue addressed to the SAME Bots, and whatever is left for the turn after.
  *
- * A message that names nobody belongs to the recipient in front of it — that is what a correction
+ * A message that names nobody belongs to the recipients in front of it — that is what a correction
  * is. A message that names somebody ELSE starts a new turn: two colleagues asked in one breath are
  * two questions, and joining them would put the first person's question in front of the second.
+ *
+ * "Somebody else" means a different audience, not a different name: "@초롱 @달수 …" followed by
+ * "@달수 @초롱 …" is the same two people asked twice, so those join.
  */
 function drainable(
   queue: readonly QueuedMessage[],
 ): [QueuedMessage[], QueuedMessage[]] {
-  let recipient: string | null = null;
+  let audience: string | null = null;
   for (const [at, message] of queue.entries()) {
-    if (!message.agentId) continue;
-    if (recipient === null) {
-      recipient = message.agentId;
+    if (message.agentIds.length === 0) continue;
+    const named = audienceOf(message);
+    if (audience === null) {
+      audience = named;
       continue;
     }
-    if (message.agentId !== recipient) {
+    if (named !== audience) {
       return [queue.slice(0, at), queue.slice(at)];
     }
   }
@@ -183,16 +196,17 @@ function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
   return {
     text: queue.map((message) => message.text).join("\n"),
     /*
-     * ONE RECIPIENT, AND `drainable` HAS ALREADY GUARANTEED IT.
+     * ONE AUDIENCE, AND `drainable` HAS ALREADY GUARANTEED IT.
      *
      * Three corrections typed in three breaths are one instruction, and a message with no `@` in
-     * that burst is part of the same thought — so the name anywhere in the slice is the name.
-     * Two DIFFERENT names are not: merging "@analyst check the numbers" with "@assistant book the
-     * room" would send both sentences to the assistant, which is the very thing `routeTo` refuses
-     * to do with a visible error. `drainable` splits the queue there, so this only ever joins
-     * messages meant for one recipient.
+     * that burst is part of the same thought — so the names anywhere in the slice are the names.
+     * Two DIFFERENT audiences are not: merging "@analyst check the numbers" with "@assistant book
+     * the room" would send both sentences to the assistant, which is the very thing the room's
+     * turn-taking refuses to do. `drainable` splits the queue there, so this only ever joins
+     * messages meant for the same people.
      */
-    agentId: queue.find((message) => message.agentId)?.agentId ?? null,
+    agentIds:
+      queue.find((message) => message.agentIds.length > 0)?.agentIds ?? [],
     // The same skill queued twice is still one instruction. Sending it twice would put the same
     // paragraph in front of the Bot two times and say nothing new by doing it.
     commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],

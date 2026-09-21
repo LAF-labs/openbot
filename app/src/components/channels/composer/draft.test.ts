@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { chip, type Segment, text } from "prompt-area/helpers";
-import {
-  applyCommandChips,
-  type CommandOption,
-  enforceSingleAgent,
-  toDraft,
-} from "./draft";
+import { applyCommandChips, type CommandOption, toDraft } from "./draft";
 
 function agent(id: string, name: string) {
   return chip({ trigger: "@", value: id, displayText: name });
@@ -23,12 +18,37 @@ describe("toDraft", () => {
     ]);
 
     expect(draft.text).toBe("@Knowledge what changed last week?");
-    expect(draft.agentId).toBe("knowledge");
+    expect(draft.agentIds).toEqual(["knowledge"]);
     expect(draft.isEmpty).toBe(false);
   });
 
-  test("reports no agent when the message does not address one", () => {
-    expect(toDraft([text("hello")]).agentId).toBeNull();
+  test("reports nobody when the message does not name one", () => {
+    expect(toDraft([text("hello")]).agentIds).toEqual([]);
+  });
+
+  test("keeps every Bot the message names, in the order they were typed", () => {
+    const draft = toDraft([
+      agent("knowledge", "Knowledge"),
+      text(" and "),
+      agent("computer", "Computer"),
+      text(" check this"),
+    ]);
+
+    expect(draft.agentIds).toEqual(["knowledge", "computer"]);
+    expect(draft.text).toBe("@Knowledge and @Computer check this");
+  });
+
+  test("counts a Bot named twice once", () => {
+    const draft = toDraft([
+      agent("knowledge", "Knowledge"),
+      text(" then "),
+      agent("knowledge", "Knowledge"),
+      text(" again"),
+    ]);
+
+    expect(draft.agentIds).toEqual(["knowledge"]);
+    // The repetition stays in the words: it is what the person wrote.
+    expect(draft.text).toBe("@Knowledge then @Knowledge again");
   });
 
   test("collects command chips in the order they were typed", () => {
@@ -44,27 +64,6 @@ describe("toDraft", () => {
   test("treats whitespace-only content as empty", () => {
     expect(toDraft([text("   ")]).isEmpty).toBe(true);
     expect(toDraft([]).isEmpty).toBe(true);
-  });
-});
-
-describe("enforceSingleAgent", () => {
-  test("keeps the most recent mention when a second agent is added", () => {
-    const segments: Segment[] = [
-      agent("knowledge", "Knowledge"),
-      text(" and "),
-      agent("computer", "Computer"),
-      text(" check this"),
-    ];
-
-    const result = enforceSingleAgent(segments);
-
-    expect(toDraft(result).agentId).toBe("computer");
-    expect(toDraft(result).text).toBe("and @Computer check this");
-  });
-
-  test("returns the same array when there is nothing to collapse", () => {
-    const segments: Segment[] = [agent("knowledge", "Knowledge"), text(" hi")];
-    expect(enforceSingleAgent(segments)).toBe(segments);
   });
 });
 
