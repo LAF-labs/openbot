@@ -145,11 +145,11 @@ LAF 계약(어노테이션 신뢰 + 정의 해시 동의 고정, docs/laf/mcp-co
 
 | 서비스 | 방법 | 비고 |
 |---|---|---|
-| Google Sheets | ✅ 한 번 누르면 연결 | LAF 구글 앱. 읽기+쓰기 — 시트는 작은 가게가 "한 줄 추가해줘"를 시키는 곳이다. 덮어쓰기는 물어본다(항상 허용을 누르면 그 뒤로는 묻지 않는다) |
-| Gmail | ✅ 한 번 누르면 연결 | LAF 구글 앱. `gmail.readonly` + `gmail.compose`(초안·발송 겸용). **restricted scope — 구글 보안 심사 전에는 테스트 사용자만** |
-| Google Calendar | ✅ 한 번 누르면 연결 | LAF 구글 앱. `calendar.events`. 일정 생성은 참석자에게 메일이 나가므로 물어본다 — 카드에 제목·시간·참석자가 보인다. 항상 허용을 누르면 그 뒤로는 묻지 않는다 |
-| Google Business Profile | ✅ 한 번 누르면 연결 | LAF 구글 앱. `business.manage`(구글이 내는 유일한 스코프). 리뷰 답글은 가게 이름으로 공개된다 |
-| Google Drive | ✅ 한 번 누르면 연결 (읽기 전용) | LAF 구글 앱. `drive.readonly` — 역시 restricted |
+| Google Sheets | ⚠️ 테스트 계정만 (아래) | LAF 구글 앱. `spreadsheets` — **민감(sensitive)**. 읽기+쓰기 — 시트는 작은 가게가 "한 줄 추가해줘"를 시키는 곳이다. 덮어쓰기는 물어본다(항상 허용을 누르면 그 뒤로는 묻지 않는다) |
+| Gmail | ⚠️ 테스트 계정만 (아래) | LAF 구글 앱. `gmail.readonly` + `gmail.compose`(초안·발송 겸용) — **제한(restricted)**, 연 1회 보안 평가까지 필요 |
+| Google Calendar | ⚠️ 테스트 계정만 (아래) | LAF 구글 앱. `calendar.events` — **민감**. 일정 생성은 참석자에게 메일이 나가므로 물어본다 — 카드에 제목·시간·참석자가 보인다. 항상 허용을 누르면 그 뒤로는 묻지 않는다 |
+| Google Business Profile | ⚠️ 테스트 계정만 (아래) | LAF 구글 앱. `business.manage`(구글이 내는 유일한 스코프) — **민감**이고, 그 위에 Business Profile API 자체의 별도 사용 승인(신청 양식)이 필요하다. 리뷰 답글은 가게 이름으로 공개된다 |
+| Google Drive | ⚠️ 테스트 계정만 (아래) | LAF 구글 앱. `drive.readonly` — **제한**, 보안 평가까지 필요 |
 | 카페24 | ✅ 한 번 누르면 연결 (몰 ID 입력) | LAF 카페24 앱. 몰마다 호스트가 다르므로 몰 ID 한 줄을 받는다 — 쇼핑몰 주소창에 있는 값이고 비밀이 아니다. 토큰 엔드포인트도 그 몰의 것이며 클라이언트는 Basic 헤더로 증명한다 |
 | Notion | ✅ 한 번 누르면 연결 | 호스티드 MCP + 동적 등록(RFC 7591). 함대 앱이 아니라 배포가 스스로 등록한다 — 콘솔 작업 0 |
 | 네이버 스마트스토어·스마트플레이스·예약 | 봇 브라우저 | 공개 OAuth 없음. 사람이 한 번 로그인하면 세션이 남는다 (docs/laf/browser-limits.md) |
@@ -186,12 +186,43 @@ LAF 계약(어노테이션 신뢰 + 정의 해시 동의 고정, docs/laf/mcp-co
   `LAF_OAUTH_RELAY_URL`, 그리고 필요할 때만 `LAF_PRODUCT_DOMAIN`. 구글 쌍은
   로그인용으로 이미 있는 그 값이다. 모든 VM에 같은 값을 심는 것이 provisioner의
   일이고, 반쪽만 설정된 쌍은 서버가 뜨지 않는다.
-- **구글 심사는 남아 있다.** `drive.readonly`, `gmail.readonly`,
-  `gmail.compose`는 restricted scope라 프로덕션 승인(보안 심사) 전에는 테스트
-  사용자만 동의할 수 있다. 다만 그건 이제 **함대의 서류 작업 한 번**이지
-  고객마다 반복되는 콘솔 작업이 아니다 — 등록할 redirect URI가 릴레이 하나로
-  고정됐으므로, 콘솔 목록에 고객 도메인이 쌓이던 모양 자체가 사라졌다.
-  `business.manage`와 `calendar.events`, 카페24 스코프는 심사 대상이 아니다.
+- **구글 심사는 남아 있고, 그때까지는 구글 연결이 테스트 계정만 된다.**
+  (2026-09-21에 구글 문서로 다시 확인했다. 그 전 판은 `calendar.events`와
+  `business.manage`를 "심사 대상이 아니다"라고 적었는데 **틀렸다** — 둘 다
+  민감 스코프다.)
+
+  앱의 게시 상태가 `테스트`인 동안에는 **콘솔에 테스트 사용자로 올린 계정만**
+  동의할 수 있고, 다른 계정은 구글 화면에서 `403 access_denied`로 끝난다 —
+  우리 서버로 돌아오지도 않으므로 우리가 할 말을 할 기회조차 없다. 테스터가
+  "스프레드시트 연결이 안 된다"고 하면 열에 아홉 이것이다.
+
+  | 우리가 요청하는 스코프 | 등급 | 프로덕션에 필요한 것 |
+  |---|---|---|
+  | `spreadsheets`, `calendar.events`, `business.manage` | 민감 | 브랜드 심사 + 개인정보처리방침(앱 도메인에) + 도메인 소유 확인(Search Console) + 데모 영상 + 스코프별 사유. 영업일 3~5일 |
+  | `drive.readonly`, `gmail.readonly`, `gmail.compose` | 제한 | 위 전부 + **연 1회 독립 보안 평가(CASA)**. 몇 주, 매년 재평가 |
+  | `drive.file` | 비민감 | 기본 확인만. 사람이 고른 파일에만 닿는다 |
+
+  **오늘 테스터를 뚫는 법** (콘솔 작업, 2분): Google Cloud 콘솔에서 이 앱의
+  프로젝트(클라이언트 ID 앞 번호 `705485361163`)를 열고 → Google 인증 플랫폼
+  → 대상(Audience) → 테스트 사용자 → 추가 → 그 사람의 구글 주소. 최대 100명.
+  **단, 테스트 상태에서는 새로고침 토큰이 7일 뒤 만료된다** — 테스터는 일주일에
+  한 번씩 다시 연결해야 하고, 그건 우리 버그가 아니다.
+
+  **심사를 미루고 출시하는 길도 있다.** Sheets API는 `drive.file`도 받는다 —
+  사람이 파일 선택기로 고른 시트에만 닿는 대신 심사가 필요 없다. Drive의
+  `drive.readonly`(드라이브 전체 읽기)를 `drive.file`로 낮추면 "드라이브에서
+  찾아줘"가 사라지는 대신 제한 스코프가 사라진다. Gmail은 비민감으로 낮출 길이
+  없다. 무엇을 포기할지는 제품 결정이라 여기서 정하지 않는다.
+
+  릴레이 덕에 심사는 **함대의 서류 작업 한 번**이지 고객마다 반복되는 콘솔
+  작업이 아니다 — 등록할 redirect URI가 하나로 고정됐으므로 콘솔 목록에 고객
+  도메인이 쌓이던 모양 자체가 사라졌다. 카페24 스코프는 심사 대상이 아니다.
+
+  출처: [민감 스코프 심사](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification) ·
+  [제한 스코프 심사](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification) ·
+  [7일 만료](https://developers.google.com/identity/protocols/oauth2) ·
+  [Drive 스코프 등급](https://developers.google.com/drive/api/guides/api-specific-auth) ·
+  [Sheets가 받는 스코프](https://developers.google.com/sheets/api/scopes)
 - **데스크톱 셸에서의 동의 화면**: 셸(웹뷰) 안에서 벤더 동의 페이지로
   넘어가는데, 그 페이지 안의 구글 SSO는 웹뷰를 거부할 수 있다
   (`disallowed_useragent`). 그때의 우회는 링크를 시스템 브라우저로 여는 것 —
