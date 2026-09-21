@@ -308,13 +308,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * app 1,220 / agent-computer 261 / root 367; `app` re-raised to 3% under, the other three did not
  * grow.
  *
+ * RAISED 2026-09-21, with the room pass — a conversation between Bots read as a set of minutes and
+ * went dead between speakers. Ten tests to `server` (the turn block in Korean with nothing English
+ * left in it, the three reasons a member is asked and the particle on the colleague's name, the
+ * wind-down asking for a close rather than for silence, an honorific making a name an address
+ * wherever it sits, a list of names being asked together, and a very long paste still being read
+ * cheaply) and eight to `app` (who has the floor as frames arrive, and a room's transcript drawn:
+ * a face and a name per turn, the colleague that is working named on screen and announced).
+ * Measured at server 2,690 / app 1,228 / agent-computer 261 / root 367; `server` and `app` had
+ * drifted past 3% and are re-raised to 3% under, the other two did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2599, roots: ["server"] },
-  { name: "app", floor: 1183, roots: ["app"] },
+  { name: "server", floor: 2609, roots: ["server"] },
+  { name: "app", floor: 1191, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

@@ -20,6 +20,7 @@ import {
   type QueuedMessage,
   reduceQueue,
 } from "@/components/channels/composer";
+import type { ChatSpeaker } from "@/components/channels/chat-messages";
 import { UsageNotice } from "@/components/channels/usage-notice";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
@@ -31,6 +32,7 @@ export function ConversationView({
   messageTimes,
   readWindow,
   speakers,
+  working,
   busy = false,
   notice,
   agents = [],
@@ -54,8 +56,10 @@ export function ConversationView({
   messageTimes?: Readonly<Record<string, string>>;
   /** Where this person's reading stopped and resumed (ISO-8601), for the "unread" line. */
   readWindow?: { from: string; until: string };
-  /** Message id to the name of the Bot that said it, for a room with several. See ChatTranscript. */
-  speakers?: Readonly<Record<string, string>>;
+  /** Message id to the Bot that said it, for a room with several. See ChatTranscript. */
+  speakers?: Readonly<Record<string, ChatSpeaker>>;
+  /** The room member that has the floor and has not said anything yet. See ChatTranscript. */
+  working?: { name: string; avatarSeed?: string };
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
@@ -274,6 +278,7 @@ export function ConversationView({
             {...(messageTimes ? { messageTimes } : {})}
             {...(readWindow ? { readWindow } : {})}
             {...(speakers ? { speakers } : {})}
+            {...(working ? { working } : {})}
             onRemoveQueued={(id) => {
               apply({ id, type: "remove" });
             }}

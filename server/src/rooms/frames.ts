@@ -20,6 +20,7 @@ import type { AskSubject, CallPreview } from "../computer/approvals";
 
 export const ROOM_FRAME_KINDS = [
   "room.turn",
+  "room.asked",
   "room.open",
   "room.delta",
   "room.end",
@@ -44,6 +45,20 @@ export type RoomFrame =
       kind: "room.turn";
       members: Array<{ id: string; name: string }>;
     })
+  /**
+   * A member has the floor: it has been asked, and has not finished its turn.
+   *
+   * THE ROOM LOOKED DEAD BETWEEN MEMBERS WITHOUT IT. `room.open` is sent when a member starts
+   * WRITING its message, which is after it has waited for its Bot's lane, read the room, thought,
+   * and possibly opened a page — up to `MEMBER_TURN_TIMEOUT_MS`, five minutes. Until then nothing
+   * at all was on screen: the transcript's thinking line is drawn only while the last thing in the
+   * conversation is the person's own message, so it went away the moment the FIRST member replied
+   * and every colleague after that worked in silence.
+   *
+   * One at a time, because one member holds the floor at a time; the next one replaces it and
+   * `room.done` clears it.
+   */
+  | (Base & { kind: "room.asked"; memberId: string; memberName: string })
   /** A member has started saying something. The text may still be empty. */
   | (Base & {
       kind: "room.open";

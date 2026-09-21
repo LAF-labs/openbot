@@ -75,6 +75,13 @@ export type RoomState = {
   times: Readonly<Record<string, string>>;
   /** The turn in flight, or null when nobody is speaking. */
   turnId: string | null;
+  /**
+   * The member that has the floor: asked, and not finished. Null between turns.
+   *
+   * One at a time, because the turn asks one at a time. Cleared by `room.done` and by a reconnect,
+   * both of which mean this tab no longer knows whether anybody is still working.
+   */
+  asked: { id: string; name: string } | null;
   epoch: number;
 };
 
@@ -84,6 +91,7 @@ export const EMPTY_ROOM: RoomState = {
   speakers: {},
   times: {},
   turnId: null,
+  asked: null,
   epoch: 0,
 };
 
@@ -105,6 +113,8 @@ export function applyRoomFrame(
       ...state,
       messages: state.messages.filter((message) => !message.streaming),
       turnId: frame.turnId,
+      // Nobody has been asked yet in the turn that is starting.
+      asked: null,
       epoch: frame.epoch,
     };
   }
@@ -167,6 +177,14 @@ export function applyRoomFrame(
         : state;
 
   switch (frame.kind) {
+    case "room.asked": {
+      if (adopted.asked?.id === frame.memberId) return adopted;
+      return {
+        ...adopted,
+        asked: { id: frame.memberId, name: frame.memberName },
+      };
+    }
+
     case "room.open": {
       // An id already on screen — a replayed frame, or a settled message with the same id — is
       // left alone: re-opening it would wipe text the person has already read.
@@ -263,9 +281,35 @@ export function applyRoomFrame(
       // By here the frame's epoch equals ours (older returned early, newer was adopted), so there
       // is nothing left to check: the turn this frame ends is the one on screen.
       const messages = adopted.messages.filter((message) => !message.streaming);
-      return { ...adopted, messages, turnId: null };
+      return { ...adopted, messages, turnId: null, asked: null };
     }
   }
+}
+
+/**
+ * The member to say is working, or null when saying so would be telling the reader what they can
+ * already see.
+ *
+ * A MEMBER MID-SENTENCE NEEDS NO LINE. Once its words are arriving, the bubble itself is the
+ * evidence; a "thinking" line under a reply that is visibly being written claims the room has
+ * stalled. So this answers only for the stretch between being asked and the first word — which is
+ * the stretch that used to be blank, and which is as long as that Bot takes to read the room, wait
+ * for its lane and do whatever work it decided to do first.
+ *
+ * Separate from the reducer and exported so it can be asserted: what a frame does to the screen is
+ * decided in this file, not in a component.
+ */
+export function memberWorking(
+  state: RoomState,
+): { id: string; name: string } | null {
+  if (state.turnId === null || state.asked === null) return null;
+  const writing = state.messages.some(
+    (message) =>
+      message.streaming &&
+      typeof message.content === "string" &&
+      message.content.length > 0,
+  );
+  return writing ? null : state.asked;
 }
 
 /**
@@ -281,13 +325,20 @@ export function applyRoomFrame(
  * beside this reads them from the server.
  */
 export function turnLost(state: RoomState): RoomState {
-  if (state.turnId === null && !state.messages.some((m) => m.streaming)) {
+  if (
+    state.turnId === null &&
+    state.asked === null &&
+    !state.messages.some((m) => m.streaming)
+  ) {
     return state;
   }
   return {
     ...state,
     messages: state.messages.filter((message) => !message.streaming),
     turnId: null,
+    // Whoever had the floor may have finished while the socket was away; claiming otherwise would
+    // leave a member "working" on screen for as long as the room stays open.
+    asked: null,
   };
 }
 

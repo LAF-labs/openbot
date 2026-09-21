@@ -13,6 +13,7 @@
 
 export const ROOM_FRAME_KINDS = [
   "room.turn",
+  "room.asked",
   "room.open",
   "room.delta",
   "room.end",
@@ -29,6 +30,15 @@ type Base = {
 
 export type RoomFrame =
   | (Base & { kind: "room.turn"; members: Array<{ id: string; name: string }> })
+  /**
+   * A member has the floor and has not finished its turn — asked, but not yet writing.
+   *
+   * The gap this fills is the one between a member's reply landing and the next member's first
+   * word, which is however long that Bot takes to read the room and do any work it decides to do.
+   * The transcript's thinking line cannot cover it: that is drawn only while the last thing in
+   * the conversation is the person's own message.
+   */
+  | (Base & { kind: "room.asked"; memberId: string; memberName: string })
   | (Base & {
       kind: "room.open";
       messageId: string;

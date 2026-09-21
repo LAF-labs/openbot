@@ -52,8 +52,13 @@ import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useNow } from "@/lib/use-now";
+import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { AnswerRatingControls } from "./answer-rating";
-import { toVisibleChatItems, unsettledFrom } from "./chat-messages";
+import {
+  type ChatSpeaker,
+  toVisibleChatItems,
+  unsettledFrom,
+} from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
@@ -79,13 +84,20 @@ type ChatTranscriptProps = {
    */
   readWindow?: { from: string; until: string };
   /**
-   * Message id to the NAME of the Bot that said it, for a room where more than one can answer.
+   * Message id to the Bot that said it — name and face — for a room where more than one answers.
    *
    * Per message rather than one name for the room, because a group room's turns are not all the
    * same Bot's: the name comes from what the server recorded for that message. Empty in a room
    * with one Bot, whose name is in the header and does not need repeating over every bubble.
    */
-  speakers?: Readonly<Record<string, string>>;
+  speakers?: Readonly<Record<string, ChatSpeaker>>;
+  /**
+   * The colleague that has the floor in a room and has not said anything yet, with its face.
+   *
+   * Absent on every screen with one Bot, where the thinking line already covers the only gap
+   * there is. See `MemberWorking` for the gap it covers in a room.
+   */
+  working?: { name: string; avatarSeed?: string };
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -188,6 +200,41 @@ function Thinking() {
     <p className="tool-line-running text-muted-foreground text-sm">
       {t("Thinking")}
     </p>
+  );
+}
+
+/**
+ * Whose name it is, wherever a room says who is talking.
+ *
+ * One string and not two: the line over a colleague's turn and the line saying a colleague is
+ * working are the same label, so they have to be the same size — and 12px is off the type scale
+ * (`app/tests/design-tokens.test.ts`), which is a budget of one, not a licence to repeat it.
+ */
+const SPEAKER_NAME = "text-[12px] text-muted-foreground leading-4";
+
+/**
+ * A colleague in a room has the floor and has not said anything yet.
+ *
+ * THE ROOM WENT DEAD BETWEEN MEMBERS. `Thinking` above is drawn only while the last thing in the
+ * conversation is the person's own message, which in a room is true exactly once — before the
+ * first reply. Every member after that read the room, waited for its Bot's lane and did whatever
+ * work it chose, for up to five minutes, with nothing at all on the screen. A person watching that
+ * has no way to tell a room that is working from a room that has stopped.
+ *
+ * The name and the face rather than a sentence with the name inside it: a Korean sentence about a
+ * name somebody else chose needs a particle this surface would have to guess at, and "재고봇 /
+ * 생각하는 중" says the same thing without inventing grammar.
+ */
+function MemberWorking({ name, seed }: { name: string; seed?: string }) {
+  return (
+    <div className="flex items-center gap-1.5 py-1 pl-1">
+      {seed ? <BotAvatar seed={seed} size={18} state="working" /> : null}
+      <span className={SPEAKER_NAME}>{name}</span>
+      {/* Not a live region: the transcript's always-mounted one says it. Same as `Thinking`. */}
+      <p className="tool-line-running text-muted-foreground text-sm">
+        {t("Thinking")}
+      </p>
+    </div>
   );
 }
 
@@ -550,6 +597,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   rateable = false,
   role,
   speaker,
+  speakerSeed,
   text,
 }: {
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
@@ -567,6 +615,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
   role: "user" | "assistant";
   /** The Bot's name, drawn above the first bubble of each of its turns. See ChatTranscriptProps. */
   speaker?: string;
+  /** That Bot's face, drawn beside the name. Absent draws the name alone, as it always did. */
+  speakerSeed?: string;
   text: string;
 }) {
   const isUser = role === "user";
@@ -578,8 +628,26 @@ const TranscriptMessage = memo(function TranscriptMessage({
       <MessageContent>
         <Arriving delay={delay}>
           {!isUser && speaker && !joinedPrev && (
-            // The sender line a group thread draws: small, quiet, once per turn.
-            <span className="mb-1 block pl-3 text-[12px] text-muted-foreground leading-4">
+            /*
+             * WHO IS TALKING, WITH A FACE ON IT.
+             *
+             * This was a 12px grey name and nothing else, over bubbles that are identical for
+             * every Bot in the room — so a room of three read as a set of minutes with the
+             * speaker's name typed above each paragraph, which is exactly what it looked like.
+             * The faces are already drawn on the room's empty state, in the participants menu and
+             * beside the room in the sidebar; the one place they were missing is the place a
+             * person actually reads the conversation.
+             *
+             * `paused`: a face in the transcript is a label, not a status. `BotAvatar` is a frame
+             * loop, and a scrolled-back room would otherwise be running one per turn on screen to
+             * animate something that finished saying its sentence ten minutes ago.
+             */
+            <span
+              className={`mb-1 flex items-center gap-1.5 pl-1 ${SPEAKER_NAME}`}
+            >
+              {speakerSeed ? (
+                <BotAvatar paused seed={speakerSeed} size={18} />
+              ) : null}
               {speaker}
             </span>
           )}
@@ -802,7 +870,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** The same, for a room with one Bot, where no bubble carries a name. */
-const EMPTY_SPEAKERS: Readonly<Record<string, string>> = Object.freeze({});
+const EMPTY_SPEAKERS: Readonly<Record<string, ChatSpeaker>> = Object.freeze({});
 
 /**
  * The line that says "you had read up to here".
@@ -869,6 +937,7 @@ export function ChatTranscript({
   messages,
   readWindow,
   speakers = EMPTY_SPEAKERS,
+  working,
   onRemoveQueued,
   onRetry,
   retryKeepsReplies = false,
@@ -1053,9 +1122,14 @@ export function ChatTranscript({
             <LiveRegion className="sr-only">
               {awaitingAnswer
                 ? t("Waiting for your answer")
-                : !stoppedCode && waitingOnFirstToken
-                  ? t("Thinking")
-                  : null}
+                : stoppedCode
+                  ? null
+                  : working
+                    ? // Who is working, not only that somebody is: in a room that is the fact.
+                      t("{name} is thinking", { name: working.name })
+                    : waitingOnFirstToken
+                      ? t("Thinking")
+                      : null}
             </LiveRegion>
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
@@ -1117,6 +1191,9 @@ export function ChatTranscript({
                       )}
                       role={item.role}
                       {...(item.speaker ? { speaker: item.speaker } : {})}
+                      {...(item.speakerSeed
+                        ? { speakerSeed: item.speakerSeed }
+                        : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>
@@ -1188,6 +1265,15 @@ export function ChatTranscript({
                     ? () => onRetry({ id: lastAsked.id, text: lastAsked.text })
                     : undefined
                 }
+              />
+            ) : working ? (
+              /*
+               * Before the plain thinking line, because it says the same thing with who it is
+               * about. A room's very first member matches both: this one is the better answer.
+               */
+              <MemberWorking
+                name={working.name}
+                {...(working.avatarSeed ? { seed: working.avatarSeed } : {})}
               />
             ) : waitingOnFirstToken ? (
               <Thinking />

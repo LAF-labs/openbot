@@ -313,6 +313,8 @@ export const ko: Record<string, string> = {
   "(Optional)": "(선택)",
   "Nobody had anything to add this time.":
     "이번에는 아무도 덧붙일 말이 없었습니다.",
+  "The room reached this turn's limit. Say more to carry on.":
+    "이번 차례에 할 수 있는 말을 다 썼습니다. 더 물어보시면 이어서 이야기합니다.",
   "A Bot": "봇",
   "This room is no longer available.":
     "이 대화방은 더 이상 사용할 수 없습니다.",
@@ -1116,6 +1118,8 @@ export const ko: Record<string, string> = {
   "There is no data to chart.": "차트로 그릴 데이터가 없습니다.",
   "There is nothing to quote.": "인용할 것이 없습니다.",
   Thinking: "생각 중",
+  // 이름은 사람이 지은 값이라 조사를 고를 수 없다. 이름과 상태를 붙여 읽히게만 둔다.
+  "{name} is thinking": "{name} 생각 중",
   "This deployment has refused nothing.":
     "이 배포가 거부한 행동이 아직 없습니다.",
   "This deployment ships no components.": "이 배포에는 컴포넌트가 없습니다.",

@@ -4,6 +4,18 @@ import type { Message, ToolCall } from "@ag-ui/core";
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
  */
 
+/**
+ * Who said a message in a room, as the transcript needs it: a name to write and a face to draw.
+ *
+ * Both resolved by the caller from the roster, because only the caller knows about the Bots that
+ * 숨기기 took out of the list and are still talking in rooms they were already in.
+ */
+export type ChatSpeaker = {
+  name: string;
+  /** What `BotAvatar` draws. Absent for a Bot whose profile the roster could not answer for. */
+  avatarSeed?: string;
+};
+
 export type VisibleChatItem =
   | {
       kind: "text";
@@ -18,6 +30,16 @@ export type VisibleChatItem =
        * spoke — a name guessed would be one colleague's words under another's.
        */
       speaker?: string;
+      /**
+       * That speaker's face, flattened out of `speaker` rather than nested with it.
+       *
+       * TWO PRIMITIVES AND NOT ONE OBJECT, on purpose. `TranscriptMessage` is memoised on
+       * primitives because a streamed answer rebuilds every item on every chunk, and `continues()`
+       * decides whether two bubbles are one turn by comparing speakers with `===`. An object here
+       * would be a new one per render: the memo would miss on every message and every reply in a
+       * room would start its own turn.
+       */
+      speakerSeed?: string;
     }
   | {
       kind: "tool";
@@ -44,10 +66,10 @@ export function toVisibleChatItems(
    */
   times: Readonly<Record<string, string>> = {},
   /**
-   * Message id to the NAME of the Bot that said it, already resolved by the caller. Empty in a
-   * room with one Bot, where the header already says whose room it is.
+   * Message id to the Bot that said it, already resolved by the caller. Empty in a room with one
+   * Bot, where the header already says whose room it is.
    */
-  speakers: Readonly<Record<string, string>> = {},
+  speakers: Readonly<Record<string, ChatSpeaker>> = {},
 ): VisibleChatItem[] {
   // Gather results first so calls render with their current completion state in the same pass.
   const results = new Map<string, string | undefined>();
@@ -59,13 +81,15 @@ export function toVisibleChatItems(
     if (message.role === "assistant") {
       const items: VisibleChatItem[] = [];
       if (message.content) {
+        const said = speakers[message.id];
         items.push({
           kind: "text",
           id: message.id,
           role: "assistant",
           text: message.content,
           ...(times[message.id] ? { at: times[message.id] } : {}),
-          ...(speakers[message.id] ? { speaker: speakers[message.id] } : {}),
+          ...(said ? { speaker: said.name } : {}),
+          ...(said?.avatarSeed ? { speakerSeed: said.avatarSeed } : {}),
         });
       }
       for (const toolCall of message.toolCalls ?? []) {

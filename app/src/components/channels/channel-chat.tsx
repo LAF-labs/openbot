@@ -6,6 +6,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChatSpeaker } from "@/components/channels/chat-messages";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -54,7 +55,7 @@ const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** The same, for a room with one Bot: nothing to name, and one identity to hand down. */
-const EMPTY_SPEAKERS: Readonly<Record<string, string>> = Object.freeze({});
+const EMPTY_SPEAKERS: Readonly<Record<string, ChatSpeaker>> = Object.freeze({});
 
 /**
  * One channel's conversation with one coworker.

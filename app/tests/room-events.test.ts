@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyRoomFrame,
   EMPTY_ROOM,
+  memberWorking,
   mergeApprovals,
   mergeStored,
   type RoomState,
@@ -37,6 +38,12 @@ const delta = (text: string): RoomFrame => ({
   kind: "room.delta",
   messageId: "call_1",
   text,
+});
+const asked = (memberId: string, memberName: string): RoomFrame => ({
+  ...base,
+  kind: "room.asked",
+  memberId,
+  memberName,
 });
 
 function after(frames: RoomFrame[], from: RoomState = EMPTY_ROOM): RoomState {
@@ -196,6 +203,69 @@ describe("turns that are not this one", () => {
     expect(
       applyRoomFrame(current, { ...open, channelId: "channel_b" }, ROOM),
     ).toBe(current);
+  });
+});
+
+/*
+ * WHO HAS THE FLOOR, AND THE GAP IT FILLS.
+ *
+ * `room.open` arrives when a member starts WRITING, which is after it has waited for its Bot's
+ * lane, read the room and done any work it chose — up to five minutes. Before `room.asked` the
+ * screen said nothing at all for that whole stretch, because the transcript's thinking line is
+ * drawn only while the last thing in the conversation is the person's own message, and in a room
+ * that is true exactly once: before the first reply.
+ */
+describe("who has the floor", () => {
+  test("a member that was asked is the one working, until the next one is asked", () => {
+    const one = after([turn, asked("risk", "리스크 분석가")]);
+    expect(memberWorking(one)).toEqual({ id: "risk", name: "리스크 분석가" });
+
+    const two = applyRoomFrame(one, asked("sales", "매출봇"), ROOM);
+    expect(memberWorking(two)).toEqual({ id: "sales", name: "매출봇" });
+  });
+
+  test("a member with words on screen needs no line saying it is working", () => {
+    // The bubble is the evidence. A thinking line under a reply that is visibly being written
+    // claims the room stalled.
+    const typing = after([turn, asked("risk", "리스크 분석가"), open]);
+    // Opened and still empty: nothing is drawn for it, so the line still belongs.
+    expect(memberWorking(typing)).toEqual({
+      id: "risk",
+      name: "리스크 분석가",
+    });
+    expect(
+      memberWorking(applyRoomFrame(typing, delta("확인"), ROOM)),
+    ).toBeNull();
+  });
+
+  test("the turn ending clears it, and so does a reconnect", () => {
+    const working = after([turn, asked("risk", "리스크 분석가")]);
+    const done = applyRoomFrame(
+      working,
+      { ...base, kind: "room.done", reason: "rounds" },
+      ROOM,
+    );
+    expect(done.asked).toBeNull();
+    expect(memberWorking(done)).toBeNull();
+    // A socket that was away cannot know whether that member ever finished.
+    expect(turnLost(working).asked).toBeNull();
+  });
+
+  test("a new turn starts with nobody working", () => {
+    const working = after([turn, asked("risk", "리스크 분석가")]);
+    const next = applyRoomFrame(
+      working,
+      { ...turn, turnId: "t2", epoch: 4 },
+      ROOM,
+    );
+    expect(memberWorking(next)).toBeNull();
+  });
+
+  test("the same member asked twice returns the very same state object", () => {
+    const working = after([turn, asked("risk", "리스크 분석가")]);
+    expect(applyRoomFrame(working, asked("risk", "리스크 분석가"), ROOM)).toBe(
+      working,
+    );
   });
 });
 

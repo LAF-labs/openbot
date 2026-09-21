@@ -523,6 +523,22 @@ export function createRoomService(options: RoomServiceOptions) {
                 }),
             });
 
+            /*
+             * SAID BEFORE THE LANE, NOT AFTER IT. Waiting for this Bot's lane is part of the wait
+             * the person is watching — a member whose Bot is busy with a routine can sit here for
+             * minutes — and a screen that only says "working" once the work starts is silent for
+             * exactly the stretch that most needs explaining.
+             */
+            options.emit({
+              kind: "room.asked",
+              channelId: input.channelId,
+              memberIds: input.memberIds,
+              turnId: input.turnId,
+              epoch: input.epoch,
+              memberId: member.id,
+              memberName: member.name,
+            });
+
             const open = new Set<string>();
             const result = await options.lane.run(member.id, async () => {
               /*

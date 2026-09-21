@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ChatSpeaker } from "@/components/channels/chat-messages";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { RoomIntro } from "@/components/channels/room-intro";
@@ -30,6 +31,7 @@ import { retriesInPlace, standingFailures } from "@/lib/channels/retry";
 import {
   applyRoomFrame,
   EMPTY_ROOM,
+  memberWorking,
   mergeApprovals,
   mergeStored,
   type RoomState,
@@ -293,6 +295,20 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
          */
         if (frame.posted === 0 && frame.reason !== "stopped") {
           setQuiet(t("Nobody had anything to add this time."));
+          return;
+        }
+        /*
+         * A TURN THAT RAN OUT OF ROOM LOOKED EXACTLY LIKE A TURN THAT SETTLED.
+         *
+         * The room caps a turn at ten messages whatever the rounds do, and `full` means the cap
+         * stopped it mid-round — members that were about to speak never were. On screen that is
+         * replies that simply stop, which reads as the conversation being cut off, because it
+         * was. The reason has been on `room.done` all along and nothing read it.
+         */
+        if (frame.reason === "full") {
+          setQuiet(
+            t("The room reached this turn's limit. Say more to carry on."),
+          );
         }
       }
     };
@@ -488,16 +504,21 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     );
   }, [channel.id]);
 
-  /** Message id → the NAME of the Bot that said it, which is what the transcript draws. */
+  /** Message id → the Bot that said it, name and face, which is what the transcript draws. */
   const speakers = useMemo(() => {
-    const names = new Map(roster.map((profile) => [profile.id, profile.name]));
-    const resolved: Record<string, string> = {};
+    const byId = new Map(roster.map((profile) => [profile.id, profile]));
+    const resolved: Record<string, ChatSpeaker> = {};
     for (const [messageId, agentId] of Object.entries({
       ...(marks.data?.speakers ?? {}),
       ...room.speakers,
     })) {
-      const name = names.get(agentId);
-      if (name) resolved[messageId] = name;
+      const profile = byId.get(agentId);
+      if (profile) {
+        resolved[messageId] = {
+          name: profile.name,
+          ...(profile.avatarSeed ? { avatarSeed: profile.avatarSeed } : {}),
+        };
+      }
     }
     return resolved;
   }, [roster, marks.data?.speakers, room.speakers]);
@@ -535,6 +556,23 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   );
 
   const inTurn = room.turnId !== null;
+
+  /**
+   * The member that has the floor and has not said anything yet, with its face.
+   *
+   * The decision is `memberWorking`'s, in `room-events.ts`, so that what a frame does to the
+   * screen stays in one tested place; the roster lookup is here because only this component knows
+   * about the Bots 숨기기 took out of the visible list and that are still talking in this room.
+   */
+  const working = useMemo(() => {
+    const asked = memberWorking(room);
+    if (!asked) return undefined;
+    const profile = roster.find((agent) => agent.id === asked.id);
+    return {
+      name: profile?.name ?? asked.name,
+      ...(profile?.avatarSeed ? { avatarSeed: profile.avatarSeed } : {}),
+    };
+  }, [room, roster]);
 
   /*
    * While a turn runs, look again every ten seconds. A question raised on another instance has no
@@ -610,6 +648,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       retryKeepsReplies
       speakers={speakers}
       stoppable={inTurn && !stopping}
+      {...(working ? { working } : {})}
     />
   );
 }

@@ -119,6 +119,7 @@
   "app/tests/repair-history.test.ts",
   "app/tests/room-events.test.ts",
   "app/tests/room-intro.test.ts",
+  "app/tests/room-transcript-render.test.ts",
   "app/tests/roster-state.test.ts",
   "app/tests/router.test.ts",
   "app/tests/routine-edit-form.test.ts",
