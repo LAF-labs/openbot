@@ -14,7 +14,7 @@
  * one-to-one conversation, which has no room messages in it. Shown only what arrived since it last
  * spoke, a member would have no idea what IT had said two lines ago — and "do not repeat points
  * already made" is not something you can ask of a Bot that cannot see its own points. So the window
- * is the last `ROOM_LINES`, its own lines marked `(you)`.
+ * is the last `ROOM_LINES`, its own lines marked `(나)`.
  *
  * WHAT A ROOM TURN CONTAINS: this prompt, behind the tail of the Bot's own conversation with this
  * person. The reference's members answer from their unified history and so do ours, with one bound
@@ -43,6 +43,8 @@
  * where "인사·동의·요약" comes from: a member that does not know what it is answering answers the
  * room in general.
  */
+
+import { asSubject } from "../../../shared/prompt/particles";
 
 /** One line of a room, as the transcript records it. */
 export type RoomLine = {
@@ -288,24 +290,6 @@ export function roomTurnPrompt(input: {
     );
   }
   return parts.join("\n");
-}
-
-/**
- * "…가" or "…이", for a name this file did not choose.
- *
- * The same reason `shared/prompt/particles.ts` exists: the names are the person's, so a prompt
- * that picks one particle is wrong half the time — and "재고봇이 너를 불렀다" against
- * "매출봇가 너를 불렀다" is the Bot's own first sentence reading as broken Korean. Kept here
- * rather than imported because the server's room prompt is the only caller and the shared file's
- * two helpers are `이다`/`으로`, neither of which is this one.
- */
-function asSubject(word: string): string {
-  const last = word.trim().at(-1) ?? "";
-  const code = last.codePointAt(0) ?? 0;
-  const isHangulSyllable = code >= 0xac00 && code <= 0xd7a3;
-  // A non-Hangul last character (a Latin name, a digit) takes the with-final-consonant form.
-  if (!isHangulSyllable) return "이";
-  return (code - 0xac00) % 28 === 0 ? "가" : "이";
 }
 
 /*
