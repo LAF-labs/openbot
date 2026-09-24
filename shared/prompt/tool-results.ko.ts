@@ -199,7 +199,17 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:nobody_answered":
     "사장님이 지금 답하지 않아 요청이 대기 중이고, 그래서 이 행동은 일어나지 않았다. 무엇을 기다리고 있었는지 말하고 멈춰라. 다른 길로 돌아가지 마라.",
 
-  "laf:person_declined": "사장님이 그것을 거절했다.",
+  /*
+   * THE REASON IS SAID, NOT LEFT TO BE GUESSED. "사람이 그것을 거절했다." was the whole sentence, and
+   * measured on glm-5.3-flash (0.5.3 audit, item 3): after the owner pressed 거부 on a toss.im menu
+   * the Bot said it had stopped because it "was not sure which of these the 고객센터 belonged to";
+   * in the eval, 0 of 3 runs said the owner declined — it offered to press again, asked whether they
+   * had cancelled, or asked them to press it themselves. A Bot that gives a different reason for
+   * stopping than the boundary's is the boundary lying second-hand (CLAUDE.md). The approval card's
+   * own words (package C) and this sentence describe the same fact: this code.
+   */
+  "laf:person_declined":
+    "사장님이 승인 카드에서 이 행동을 거부했다. 이 행동은 일어나지 않았다. 다시 하거나, 다른 길로 가거나, 사장님께 직접 해 달라고 하지 마라. 멈춘 까닭은 사장님이 거부하셔서라고 그대로 말해라.",
 
   "laf:stopped": "사장님이 정지를 눌러 이 실행은 중단됐다.",
 
@@ -239,7 +249,7 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "이 서버가 아직 그 컴퓨터의 화면을 보지 못해서, 페이지나 요소에 대한 규칙을 판정할 수 없었다. computer_snapshot을 먼저 찍고 다시 하라.",
 
   "laf:declined_recently":
-    "사장님이 그것을 이미 거부했고, 그 답이 아직 유효하다. 다시 묻지 마라. 다른 일을 하거나, 무엇이 막혔는지 말해라.",
+    "사장님이 그것을 이미 거부했고, 그 답이 아직 유효하다. 다시 묻지 마라. 다른 일을 하거나, 사장님이 거부하셔서 막혔다고 말해라.",
 
   "laf:use_request_secret":
     "비밀번호 칸이라 네가 값을 넣을 수 없다. 값을 어디서든 알아내려 하지 말고, computer_request_secret으로 사장님이 직접 입력하게 해라.",

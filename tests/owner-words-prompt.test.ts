@@ -59,4 +59,13 @@ describe("the tool results", () => {
     );
     expect(leftover).toEqual([]);
   });
+
+  test("a decline is said as the owner's decline, and not offered again", () => {
+    const declined = TOOL_RESULT_KO["laf:person_declined"] ?? "";
+    expect(declined).toContain("사장님이 승인 카드에서 이 행동을 거부했다");
+    expect(declined).toContain("사장님이 거부하셔서");
+    expect(declined).toContain("다시 하거나");
+    const recently = TOOL_RESULT_KO["laf:declined_recently"] ?? "";
+    expect(recently).toContain("사장님이 거부하셔서");
+  });
 });
