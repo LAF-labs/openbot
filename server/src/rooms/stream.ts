@@ -37,8 +37,12 @@ export type RoomStreamWatcher = {
   /**
    * The member stopped writing this message. NOT the moment it is delivered — the tool has not
    * run yet when this fires — so a caller must not take the bubble down here. See service.ts.
+   *
+   * `text` is the finished message when the client could read it whole: what a member had finished
+   * writing when its time ran out is still delivered (`member-turn.ts`), and only a complete
+   * message may be — the running text trails the model by a fragment (fact #2 above).
    */
-  close: (toolCallId: string) => void;
+  close: (toolCallId: string, text?: string) => void;
 };
 
 /**
@@ -98,7 +102,7 @@ export function watchRoomSpeech(watcher: RoomStreamWatcher): AgentSubscriber {
       const text = (toolCallArgs as { text?: unknown } | undefined)?.text;
       if (typeof text === "string") watcher.text(toolCallId, text);
       speaking.delete(toolCallId);
-      watcher.close(toolCallId);
+      watcher.close(toolCallId, typeof text === "string" ? text : undefined);
     },
   };
 }

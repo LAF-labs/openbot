@@ -12,15 +12,25 @@
  * reaches the room while it is still deciding whether to add a second.
  */
 import type { AbstractAgent, Message } from "@ag-ui/client";
+import {
+  classifyTurnFailure,
+  TURN_FAILURE_CODES,
+} from "../channels/turn-failures";
+import { log } from "../log";
 import type { RunLedger } from "../runner/run-ledger";
-import { runUnattended, type UnattendedToolkit } from "../runner/unattended";
+import {
+  isRunDeadline,
+  runUnattended,
+  type UnattendedToolkit,
+} from "../runner/unattended";
+import type { MemberOutcome } from "./outcomes";
 import {
   roomTurnPrompt,
   type RoomLine,
   type RoomMember,
   type SpeakReason,
 } from "./prompt";
-import { roomToolkit } from "./send-message";
+import { roomToolkit, SEND_MESSAGE } from "./send-message";
 import { watchRoomSpeech } from "./stream";
 
 export type MemberTurnResult = {
@@ -30,7 +40,39 @@ export type MemberTurnResult = {
   failed: string | null;
   /** A person stopped it mid-turn (`모두 멈추기`). Not a failure: `failed` stays null. */
   stopped?: boolean;
+  /**
+   * The same three facts as one kind, which is what the room shows and keeps: silence and failure
+   * were the same zero in `spoke`, and to the person a Bot that chose not to answer looked like a
+   * Bot that was not in the room. See `outcomes.ts`.
+   */
+  outcome: MemberOutcome;
 };
+
+/**
+ * One asking of one member, reduced to its kind.
+ *
+ * WORDS FIRST. A member that spoke and then failed — its stream cut after the message was delivered
+ * — is a member whose words are in the room, and "could not answer" under its own answer would be a
+ * false thing to say. The failure is still on the trail and in the ledger; it does not unsay anything.
+ *
+ * A timeout is told apart from every other failure by the classifier the transcript's own failure
+ * line uses, so "ran out of time" means the same thing in both places: the member deadline's
+ * sentence and agent-bot's `laf:model_timed_out` alike.
+ */
+export function outcomeOf(result: {
+  spoke: number;
+  failed: string | null;
+  stopped?: boolean;
+}): MemberOutcome {
+  if (result.spoke > 0) return "spoke";
+  if (result.stopped) return "stopped";
+  if (result.failed !== null) {
+    return classifyTurnFailure(result.failed) === TURN_FAILURE_CODES.timedOut
+      ? "timed_out"
+      : "failed";
+  }
+  return "passed";
+}
 
 export type MemberTurnInput = {
   room: { channelId: string; name: string; description?: string };
@@ -100,10 +142,37 @@ export async function runMemberTurn(
    * but it is a cost worth knowing about, and the place to stop paying it is `resolveRoomMembers`.
    */
   if (!input.agent) {
-    return { spoke: 0, failed: "This Bot is no longer available." };
+    return {
+      spoke: 0,
+      failed: "This Bot is no longer available.",
+      outcome: "failed",
+    };
   }
 
-  const toolkit = roomToolkit(input.toolkit, input.deliver);
+  /*
+   * WHAT THE MEMBER HAD FINISHED WRITING, AND WHAT HAS GONE OUT. A `send_message` is written by the
+   * model and then run by the loop, and the deadline can fall between the two: the call is whole,
+   * its words have been on the person's screen as the member typed them, and the clock runs out
+   * before the loop gets to it — or while an earlier call in the same step is still running. The
+   * deadline then threw, and the sweep in `service.ts` took the finished message off the screen.
+   * Hermes keeps such a reply (`harvestStrandedGroupReply`); so does this, in the `catch` below.
+   */
+  const written = new Map<string, string>();
+  const sent = new Set<string>();
+  const toolkit = roomToolkit(input.toolkit, (text, toolCallId) => {
+    // Marked before the append, not after: an append the deadline walked away from is still
+    // landing, and delivering the same call a second time would say it twice.
+    sent.add(toolCallId);
+    return input.deliver(text, toolCallId);
+  });
+  const watch = {
+    open: input.watch.open,
+    text: input.watch.text,
+    close: (toolCallId: string, text?: string) => {
+      if (text !== undefined) written.set(toolCallId, text);
+      input.watch.close(toolCallId);
+    },
+  };
   const runId = await input.ledger
     ?.begin({
       runId: input.runId,
@@ -125,13 +194,33 @@ export async function runMemberTurn(
       // This only says where the run is; `roomTurnPrompt` still ends the request with the turn.
       mode: "room",
       ...(input.history ? { history: input.history } : {}),
-      watch: watchRoomSpeech(input.watch),
+      watch: watchRoomSpeech(watch),
       ...(input.signal ? { signal: input.signal } : {}),
     });
   } catch (error) {
     // The signal, not the error's shape, says whether a person asked for this: see `routines/run.ts`.
     if (input.signal?.aborted) stopped = true;
-    else failed = error instanceof Error ? error.message : String(error);
+    else {
+      failed = error instanceof Error ? error.message : String(error);
+      /*
+       * ONLY THE CLOCK, AND ONLY WHOLE MESSAGES. A person's stop is a person saying "not now", and
+       * a model whose stream failed has no finished call that the loop would not already have run.
+       * Through the toolkit rather than around it, so the member's message limit still holds.
+       */
+      if (isRunDeadline(error)) {
+        for (const [toolCallId, text] of written) {
+          if (sent.has(toolCallId)) continue;
+          try {
+            await toolkit.execute(SEND_MESSAGE, { text }, { id: toolCallId });
+          } catch (late) {
+            log.error("room_late_reply_lost", {
+              member: input.member.id,
+              reason: late,
+            });
+          }
+        }
+      }
+    }
   } finally {
     if (runId) {
       await (stopped
@@ -146,5 +235,11 @@ export async function runMemberTurn(
    * member said is what it sent, and that has already been posted. A failure that happened AFTER
    * the member spoke is still a failure worth recording, but it does not unsay anything.
    */
-  return { spoke: toolkit.spoken(), failed, ...(stopped ? { stopped } : {}) };
+  const spoke = toolkit.spoken();
+  return {
+    spoke,
+    failed,
+    ...(stopped ? { stopped } : {}),
+    outcome: outcomeOf({ spoke, failed, stopped }),
+  };
 }

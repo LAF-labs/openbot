@@ -17,10 +17,12 @@
  */
 
 import type { AskSubject, CallPreview } from "../computer/approvals";
+import type { MemberOutcome, MemberReceipt } from "./outcomes";
 
 export const ROOM_FRAME_KINDS = [
   "room.turn",
   "room.asked",
+  "room.settled",
   "room.open",
   "room.delta",
   "room.end",
@@ -59,6 +61,19 @@ export type RoomFrame =
    * `room.done` clears it.
    */
   | (Base & { kind: "room.asked"; memberId: string; memberName: string })
+  /**
+   * A member's turn is over, and this is how it came out — spoke, passed, failed, timed out, or cut
+   * by a stop. Sent once per asking, the moment it ends, so the face that was working can settle
+   * into the turn's receipt while the next member is asked, rather than all at once at the end.
+   *
+   * A NEW KIND, AND SAFE FOR AN OLD BUNDLE for the reason the header gives: none of its keys is one a
+   * roster row draws (`name`, `lastMessage`, `lastMessageAt`, `lastMessageAgentId`).
+   */
+  | (Base & {
+      kind: "room.settled";
+      memberId: string;
+      outcome: MemberOutcome;
+    })
   /** A member has started saying something. The text may still be empty. */
   | (Base & {
       kind: "room.open";
@@ -122,6 +137,17 @@ export type RoomFrame =
       failures?: number;
       /** Messages put in the room this turn. Zero with no failures is everybody choosing silence. */
       posted?: number;
+      /**
+       * The person's message this turn answered — the row the outcomes below are kept on, and so the
+       * key a reload finds them under (`recordRoomReceipts`).
+       */
+      questionId?: string;
+      /**
+       * Each member that was asked and how that came out, once per member. What `failures` and
+       * `posted` count, member by member: the screen draws the ones that stayed quiet as a receipt
+       * under the turn, and the ones that could not answer as needing help.
+       */
+      members?: MemberReceipt[];
     });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {

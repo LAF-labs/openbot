@@ -61,9 +61,14 @@ export type ThreadMarks = {
   times: Record<string, string>;
   /** Message id to the id of the Bot that said it. Only assistant messages carry one. */
   speakers: Record<string, string>;
+  /**
+   * A room's question to member id to how that member's part in its turn came out — the receipt
+   * under the turn. Unchecked here; `heardOf` in `room-receipts.ts` reads it.
+   */
+  receipts: Record<string, unknown>;
 };
 
-const NO_MARKS: ThreadMarks = { times: {}, speakers: {} };
+const NO_MARKS: ThreadMarks = { times: {}, speakers: {}, receipts: {} };
 
 /**
  * When each message in a channel was first seen, and which Bot said it.
@@ -86,7 +91,11 @@ export function messageTimesQueryOptions(channelId: string) {
       // throw here would take the conversation down with it.
       if (!response.ok) return NO_MARKS;
       const body = (await response.json()) as Partial<ThreadMarks>;
-      return { times: body.times ?? {}, speakers: body.speakers ?? {} };
+      return {
+        times: body.times ?? {},
+        speakers: body.speakers ?? {},
+        receipts: body.receipts ?? {},
+      };
     },
     // What the server records about a message never changes once written, so a refetch buys nothing.
     staleTime: Number.POSITIVE_INFINITY,

@@ -14,6 +14,10 @@ import { ConversationView } from "@/components/channels/conversation-view";
 import { RoomIntro } from "@/components/channels/room-intro";
 import { RoomApprovals } from "@/components/channels/room-approvals";
 import {
+  type ReceiptFace,
+  receiptLabel,
+} from "@/components/channels/room-receipt";
+import {
   seedMessage,
   takeFirstMessage,
   transcriptMessages,
@@ -39,6 +43,12 @@ import {
   withoutApproval,
 } from "@/lib/channels/room-events";
 import type { RoomFrame } from "@/lib/channels/room-frames";
+import {
+  type Heard,
+  heardFromList,
+  placeReceipts,
+  receiptTurns,
+} from "@/lib/channels/room-receipts";
 import { normalizeStoredMessages } from "@/lib/channels/thread-history";
 import {
   CHANNEL_ACTIVITY,
@@ -124,6 +134,11 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
   const [notice, setNotice] = useState<string | null>(null);
   /** Something worth saying that is not a fault — a turn where nobody had anything to add. */
   const [quiet, setQuiet] = useState<string | null>(null);
+  /**
+   * How the last turn came out, member by member, for a reader who cannot see its receipt. Kept as
+   * the facts rather than the sentence, so the names in it are the roster's as it renders.
+   */
+  const [lastHeard, setLastHeard] = useState<Heard | null>(null);
 
   /**
    * First-message seed from the compose screen, taken once per mount and shown until the stored
@@ -202,6 +217,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       mergeStored(state, stored, {
         speakers: fresh.speakers,
         times: fresh.times,
+        receipts: fresh.receipts,
       }),
     );
   }, [channel.id, queryClient]);
@@ -277,6 +293,18 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       if (frame.kind === "room.done" && frame.channelId === channel.id) {
         // The room's turn spent the day's tokens too; on a trial, the meter catches up.
         refreshTodayUsage(queryClient);
+        /*
+         * THE RECEIPT SAYS IT NOW, under the turn: who read the question and stayed quiet, and who
+         * could not answer and can be asked again. The two sentences below said the same things
+         * above the composer, for the whole room at once and gone by the next message — kept for a
+         * server that does not send the members yet. What is left to do here is say it to a reader
+         * who cannot see the faces.
+         */
+        const heard = heardFromList(frame.members);
+        if (Object.keys(heard).length > 0) {
+          setLastHeard(heard);
+          return;
+        }
         if ((frame.failures ?? 0) > 0) {
           setNotice(
             t("{count} of the Bots could not answer this time.", {
@@ -372,6 +400,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       if (!trimmed) return;
       setNotice(null);
       setQuiet(null);
+      setLastHeard(null);
       setPosting(true);
       // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
       await ensure(
@@ -545,17 +574,100 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
    * since answered, which the server's record keeps. A member that answered during the failed turn
    * was stamped before the failure and leaves it standing. See `standingFailures`.
    */
-  const failuresById = useMemo(
-    () =>
-      standingFailures(
-        storedFailures.data,
-        room.messages,
-        marks.data ? messageTimes : undefined,
-      ),
-    [storedFailures.data, room.messages, marks.data, messageTimes],
-  );
+  const failuresById = useMemo(() => {
+    const standing = standingFailures(
+      storedFailures.data,
+      room.messages,
+      marks.data ? messageTimes : undefined,
+    );
+    /*
+     * A turn that left a receipt says member by member who could not answer, with a way to ask just
+     * them again. The turn-wide line — "no answer came back" under the question even when two of
+     * three answered, or under a member's whole reply when its run failed after it — would say it a
+     * second time, and less truly. See `receiptTurns`. Turns from before receipts keep it.
+     */
+    const covered = receiptTurns(room.messages, room.receipts);
+    for (const messageId of Object.keys(standing)) {
+      if (covered.has(messageId)) delete standing[messageId];
+    }
+    return standing;
+  }, [
+    storedFailures.data,
+    room.messages,
+    room.receipts,
+    marks.data,
+    messageTimes,
+  ]);
 
   const inTurn = room.turnId !== null;
+
+  const transcript = useMemo(
+    () => transcriptMessages(room.messages, seed),
+    [room.messages, seed],
+  );
+
+  /**
+   * The room's read receipts, placed under the turns they belong to and given names and faces.
+   *
+   * Placing is `placeReceipts`' (room-receipts.ts), so the rule is tested where it is written; the
+   * roster lookup is here for the same reason `working` does its own — only this component knows
+   * about the Bots 숨기기 took out of the visible list that still sit in this room.
+   */
+  const receipts = useMemo(() => {
+    const byId = new Map(roster.map((profile) => [profile.id, profile]));
+    const placed = placeReceipts(
+      transcript,
+      room.receipts,
+      inTurn ? { asked: room.turnAsked, settled: room.turnSettled } : null,
+      memberIds,
+    );
+    const drawn: Record<string, ReceiptFace[]> = {};
+    for (const [anchor, marks] of Object.entries(placed)) {
+      drawn[anchor] = marks.map((mark) => {
+        const profile = byId.get(mark.memberId);
+        return {
+          ...mark,
+          name: profile?.name ?? t("A Bot"),
+          ...(profile?.avatarSeed ? { avatarSeed: profile.avatarSeed } : {}),
+        };
+      });
+    }
+    return drawn;
+  }, [
+    roster,
+    transcript,
+    room.receipts,
+    inTurn,
+    room.turnAsked,
+    room.turnSettled,
+    memberIds,
+  ]);
+
+  /** The receipt of the turn still running: the one whose faces can still arrive. */
+  const lastQuestion = [...transcript].reverse().find((m) => m.role === "user");
+  const liveReceipt = inTurn
+    ? Object.keys(receipts).find(
+        (anchor) => receipts[anchor]?.[0]?.questionId === lastQuestion?.id,
+      )
+    : undefined;
+
+  /** What the last turn's receipt says, for a reader who cannot see the faces. */
+  const heardAloud = useMemo(() => {
+    if (!lastHeard) return "";
+    const faces = Object.entries(lastHeard).flatMap(([memberId, outcome]) =>
+      outcome === "passed" || outcome === "failed" || outcome === "timed_out"
+        ? [
+            {
+              memberId,
+              outcome,
+              questionId: "",
+              name: memberNames.get(memberId) ?? t("A Bot"),
+            },
+          ]
+        : [],
+    );
+    return receiptLabel(faces);
+  }, [lastHeard, memberNames]);
 
   /**
    * The member that has the floor and has not said anything yet, with its face.
@@ -569,6 +681,7 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
     if (!asked) return undefined;
     const profile = roster.find((agent) => agent.id === asked.id);
     return {
+      id: asked.id,
       name: profile?.name ?? asked.name,
       ...(profile?.avatarSeed ? { avatarSeed: profile.avatarSeed } : {}),
     };
@@ -592,9 +705,16 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
       channelId={channel.id}
       disabled={!channel.active}
       messageTimes={messageTimes}
-      messages={transcriptMessages(room.messages, seed)}
+      messages={transcript}
       notice={
         <>
+          {/*
+           * Always mounted, so the words are announced when they change: the receipt under the turn
+           * is a row of faces, and a reader who cannot see it is owed what it says.
+           */}
+          <p className="sr-only" role="status">
+            {heardAloud}
+          </p>
           <RoomApprovals
             approvals={room.approvals}
             onAnswered={(approvalId) =>
@@ -653,6 +773,27 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
         void post(text, [], id);
       }}
       retryKeepsReplies
+      receipts={receipts}
+      {...(liveReceipt ? { liveReceipt } : {})}
+      onAskAgain={(questionId, memberIds) => {
+        /*
+         * THE SAME PATH AS 다시 시도, NARROWED TO WHO COULD NOT ANSWER. The question is sent again
+         * under its own id — an edit of the row, never a second copy — with those members named, and
+         * a named member is who the room asks first (`turn-taking.ts`). The members that already
+         * answered or read it stay as they were, on screen and on the question's record.
+         */
+        if (
+          !retriesInPlace(room.messages, questionId, { keepsReplies: true })
+        ) {
+          return;
+        }
+        const question = room.messages.find(
+          (message) => message.id === questionId,
+        );
+        const text =
+          typeof question?.content === "string" ? question.content : "";
+        if (text) void post(text, memberIds, questionId);
+      }}
       speakers={speakers}
       stoppable={inTurn && !stopping}
       {...(working ? { working } : {})}

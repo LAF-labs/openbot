@@ -324,6 +324,12 @@ export const ko: Record<string, string> = {
     "대화를 멈추지 못했습니다. 다시 시도해 주세요.",
   "{count} of the Bots could not answer this time.":
     "이번에는 봇 {count}명이 답하지 못했습니다.",
+  // 대화방 읽음 표시 — 메신저의 "읽음"처럼, 문장이 아니라 봇 얼굴로 남긴다(room-receipt.tsx).
+  "Read it": "읽었어요",
+  "Could not answer": "답하지 못했어요",
+  "Ran out of time": "시간 안에 못 끝냈어요",
+  "Ask again": "다시 묻기",
+  "Ask {names} again": "{names}에게 다시 묻기",
   "Allow: {question}": "허용: {question}",
   "Deny: {question}": "거부: {question}",
   "That answer could not be recorded. Try again.":

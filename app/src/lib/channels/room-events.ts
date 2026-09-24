@@ -7,6 +7,13 @@ import {
 } from "@/lib/approvals";
 import { type CallPreview, callPreviewOf } from "@/lib/call-preview";
 import type { RoomFrame } from "./room-frames";
+import {
+  type Heard,
+  heardFromList,
+  heardOf,
+  memberOutcomeOf,
+  settleOutcome,
+} from "./room-receipts";
 
 /**
  * What a room looks like on screen, and how one frame changes it.
@@ -83,6 +90,19 @@ export type RoomState = {
    */
   asked: { id: string; name: string } | null;
   epoch: number;
+  /**
+   * The person's message to how each member's part in the turn it started came out — the room's
+   * read receipts. From the thread's marks on load and from `room.done` as each turn ends. See
+   * `room-receipts.ts`.
+   */
+  receipts: Readonly<Record<string, Heard>>;
+  /**
+   * The turn in flight, member by member: who has been asked so far, and how the ones that finished
+   * came out (`room.settled`). What lets a quiet member's face settle into the receipt the moment it
+   * is done rather than when the whole turn is. Emptied when a turn starts and when one ends.
+   */
+  turnAsked: readonly string[];
+  turnSettled: Heard;
 };
 
 export const EMPTY_ROOM: RoomState = {
@@ -93,6 +113,9 @@ export const EMPTY_ROOM: RoomState = {
   turnId: null,
   asked: null,
   epoch: 0,
+  receipts: {},
+  turnAsked: [],
+  turnSettled: {},
 };
 
 export function applyRoomFrame(
@@ -115,6 +138,8 @@ export function applyRoomFrame(
       turnId: frame.turnId,
       // Nobody has been asked yet in the turn that is starting.
       asked: null,
+      turnAsked: [],
+      turnSettled: {},
       epoch: frame.epoch,
     };
   }
@@ -171,6 +196,9 @@ export function applyRoomFrame(
           messages: state.messages.filter((message) => !message.streaming),
           turnId: frame.turnId,
           epoch: frame.epoch,
+          // Whoever the old turn had asked belongs to a question nobody is answering any more.
+          turnAsked: [],
+          turnSettled: {},
         }
       : state.turnId === null
         ? { ...state, turnId: frame.turnId, epoch: frame.epoch }
@@ -182,6 +210,36 @@ export function applyRoomFrame(
       return {
         ...adopted,
         asked: { id: frame.memberId, name: frame.memberName },
+        turnAsked: adopted.turnAsked.includes(frame.memberId)
+          ? adopted.turnAsked
+          : [...adopted.turnAsked, frame.memberId],
+      };
+    }
+
+    case "room.settled": {
+      /*
+       * THE FLOOR IS GIVEN UP HERE, NOT WHEN THE NEXT MEMBER IS ASKED. The working line and the
+       * receipt are one face in two places: clearing `asked` in the same state change that puts the
+       * member in the receipt is what lets the face travel from one to the other rather than
+       * blinking out of one and, a moment later, into the other.
+       */
+      const asked = adopted.asked?.id === frame.memberId ? null : adopted.asked;
+      const outcome = memberOutcomeOf(frame.outcome);
+      if (!outcome)
+        return asked === adopted.asked ? adopted : { ...adopted, asked };
+      return {
+        ...adopted,
+        asked,
+        turnAsked: adopted.turnAsked.includes(frame.memberId)
+          ? adopted.turnAsked
+          : [...adopted.turnAsked, frame.memberId],
+        turnSettled: {
+          ...adopted.turnSettled,
+          [frame.memberId]: settleOutcome(
+            adopted.turnSettled[frame.memberId],
+            outcome,
+          ),
+        },
       };
     }
 
@@ -281,7 +339,31 @@ export function applyRoomFrame(
       // By here the frame's epoch equals ours (older returned early, newer was adopted), so there
       // is nothing left to check: the turn this frame ends is the one on screen.
       const messages = adopted.messages.filter((message) => !message.streaming);
-      return { ...adopted, messages, turnId: null, asked: null };
+      /*
+       * The turn's receipt, as the server summarised it, onto the question it answered — merged
+       * member by member, because asking one colleague again hears from that colleague alone and
+       * the others' receipts still stand.
+       */
+      const heard = heardFromList(frame.members);
+      const receipts =
+        frame.questionId && Object.keys(heard).length > 0
+          ? {
+              ...adopted.receipts,
+              [frame.questionId]: {
+                ...adopted.receipts[frame.questionId],
+                ...heard,
+              },
+            }
+          : adopted.receipts;
+      return {
+        ...adopted,
+        messages,
+        turnId: null,
+        asked: null,
+        receipts,
+        turnAsked: [],
+        turnSettled: {},
+      };
     }
   }
 }
@@ -328,6 +410,7 @@ export function turnLost(state: RoomState): RoomState {
   if (
     state.turnId === null &&
     state.asked === null &&
+    state.turnAsked.length === 0 &&
     !state.messages.some((m) => m.streaming)
   ) {
     return state;
@@ -339,6 +422,10 @@ export function turnLost(state: RoomState): RoomState {
     // Whoever had the floor may have finished while the socket was away; claiming otherwise would
     // leave a member "working" on screen for as long as the room stays open.
     asked: null,
+    // And how the turn came out is the stored receipt's to say now, which the catch-up beside this
+    // reads; a half-heard turn held here would stand in front of it.
+    turnAsked: [],
+    turnSettled: {},
   };
 }
 
@@ -394,7 +481,12 @@ export function withoutApproval(
 export function mergeStored(
   state: RoomState,
   stored: readonly Message[],
-  marks: { speakers: Record<string, string>; times: Record<string, string> },
+  marks: {
+    speakers: Record<string, string>;
+    times: Record<string, string>;
+    /** Question id to member id to outcome, as the server kept them. See `room-receipts.ts`. */
+    receipts?: Readonly<Record<string, unknown>>;
+  },
 ): RoomState {
   const known = new Map(state.messages.map((message) => [message.id, message]));
   const merged: RoomMessage[] = stored.map(
@@ -407,10 +499,24 @@ export function mergeStored(
       merged.push(message);
     }
   }
+  /*
+   * WHAT THIS TAB HEARD WINS, member by member. A catch-up that set off before a turn ended can land
+   * after its `room.done`, carrying the receipt as it stood before — and letting it win would take
+   * the turn's outcome back off the screen until the next read. The stored copy fills in the rest:
+   * everything that happened before this tab opened.
+   */
+  const receipts: Record<string, Heard> = { ...state.receipts };
+  for (const [questionId, stored] of Object.entries(marks.receipts ?? {})) {
+    receipts[questionId] = {
+      ...heardOf(stored),
+      ...state.receipts[questionId],
+    };
+  }
   return {
     ...state,
     messages: merged,
     speakers: { ...state.speakers, ...marks.speakers },
     times: { ...state.times, ...marks.times },
+    receipts,
   };
 }

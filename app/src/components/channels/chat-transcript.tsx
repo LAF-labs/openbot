@@ -60,6 +60,11 @@ import {
   unsettledFrom,
 } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
+import {
+  type ReceiptFace,
+  RoomReceipt,
+  roomFaceLayoutId,
+} from "./room-receipt";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -95,9 +100,26 @@ type ChatTranscriptProps = {
    * The colleague that has the floor in a room and has not said anything yet, with its face.
    *
    * Absent on every screen with one Bot, where the thinking line already covers the only gap
-   * there is. See `MemberWorking` for the gap it covers in a room.
+   * there is. See `MemberWorking` for the gap it covers in a room. `id` is what lets its face travel
+   * into the turn's receipt when it finishes without a word (`RoomReceipt`).
    */
-  working?: { name: string; avatarSeed?: string };
+  working?: { id?: string; name: string; avatarSeed?: string };
+  /**
+   * A room's read receipts: the id of the message a turn ended on, to the members that read the
+   * question and stayed quiet, or could not answer it. Placed by `placeReceipts`
+   * (lib/channels/room-receipts.ts). Absent on every screen with one Bot.
+   *
+   * NOT MERGED INTO THE MESSAGES, for the reason failures are not: nobody said it, and a room's
+   * members are shown the room by what was said.
+   */
+  receipts?: Readonly<Record<string, readonly ReceiptFace[]>>;
+  /** The message whose receipt belongs to the turn still running, whose faces may still move. */
+  liveReceipt?: string;
+  /**
+   * Ask these members the question again. Offered only where the question can be asked again in
+   * place — the same rule as 다시 시도 (`retriesInPlace`) — so asking again never says it twice.
+   */
+  onAskAgain?: (questionId: string, memberIds: string[]) => void;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -225,10 +247,31 @@ const SPEAKER_NAME = "text-[12px] text-muted-foreground leading-4";
  * name somebody else chose needs a particle this surface would have to guess at, and "재고봇 /
  * 생각하는 중" says the same thing without inventing grammar.
  */
-function MemberWorking({ name, seed }: { name: string; seed?: string }) {
+function MemberWorking({
+  id,
+  name,
+  seed,
+}: {
+  id?: string;
+  name: string;
+  seed?: string;
+}) {
+  const reduceMotion = useReducedMotion();
   return (
     <div className="flex items-center gap-1.5 py-1 pl-1">
-      {seed ? <BotAvatar seed={seed} size={18} state="working" /> : null}
+      {seed ? (
+        /*
+         * The same shared-layout id the receipt gives this member's face, so when it finishes
+         * without a word the face moves from here into the receipt instead of vanishing here and
+         * appearing there. See `RoomReceipt`.
+         */
+        <motion.span
+          className="inline-flex"
+          layoutId={id && !reduceMotion ? roomFaceLayoutId(id) : undefined}
+        >
+          <BotAvatar seed={seed} size={18} state="working" />
+        </motion.span>
+      ) : null}
       <span className={SPEAKER_NAME}>{name}</span>
       {/* Not a live region: the transcript's always-mounted one says it. Same as `Thinking`. */}
       <p className="tool-line-running text-muted-foreground text-sm">
@@ -872,6 +915,10 @@ const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 /** The same, for a room with one Bot, where no bubble carries a name. */
 const EMPTY_SPEAKERS: Readonly<Record<string, ChatSpeaker>> = Object.freeze({});
 
+/** The same, for every screen that is not a room: no turn there leaves a receipt. */
+const EMPTY_RECEIPTS: Readonly<Record<string, readonly ReceiptFace[]>> =
+  Object.freeze({});
+
 /**
  * The line that says "you had read up to here".
  *
@@ -938,6 +985,9 @@ export function ChatTranscript({
   readWindow,
   speakers = EMPTY_SPEAKERS,
   working,
+  receipts = EMPTY_RECEIPTS,
+  liveReceipt,
+  onAskAgain,
   onRemoveQueued,
   onRetry,
   retryKeepsReplies = false,
@@ -995,6 +1045,15 @@ export function ChatTranscript({
   const retryable = (messageId: string) =>
     !busy &&
     retriesInPlace(messages, messageId, { keepsReplies: retryKeepsReplies });
+  /**
+   * 다시 묻기 under a receipt: the members that could not answer, asked the question again — only
+   * where 다시 시도 could be, and for the same reason. Every face on one receipt shares its question.
+   */
+  const askAgainUnder = (anchorId: string) => {
+    const questionId = receipts[anchorId]?.[0]?.questionId;
+    if (!onAskAgain || !questionId || !retryable(questionId)) return undefined;
+    return (memberIds: string[]) => onAskAgain(questionId, memberIds);
+  };
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
@@ -1236,6 +1295,21 @@ export function ChatTranscript({
                       />
                     ) : null
                   }
+                  {
+                    /*
+                     * THE TURN'S RECEIPT, under the last thing said in it — outside the scroller item
+                     * for the reason the failure line is: it is not a message and must not be
+                     * measured, anchored, or handed back to the model as one.
+                     */
+                    receipts[item.id]?.length ? (
+                      <RoomReceipt
+                        delay={delays.delayFor(item.id, index, items.length)}
+                        faces={receipts[item.id] ?? []}
+                        live={busy && item.id === liveReceipt}
+                        onAskAgain={askAgainUnder(item.id)}
+                      />
+                    ) : null
+                  }
                 </Fragment>
               ),
             )}
@@ -1273,6 +1347,7 @@ export function ChatTranscript({
                */
               <MemberWorking
                 name={working.name}
+                {...(working.id ? { id: working.id } : {})}
                 {...(working.avatarSeed ? { seed: working.avatarSeed } : {})}
               />
             ) : waitingOnFirstToken ? (

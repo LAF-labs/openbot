@@ -46,6 +46,22 @@ export type RoomDrawn = {
   announced: string;
   /** The same, with nobody holding the floor and the person's question last: the plain line. */
   firstWaitLine: string | null;
+  /** A settled turn with one quiet member and one that could not answer. */
+  receipt: {
+    /** The text of the bubble it sits under. */
+    under: string | null;
+    /** What the receipt is called, for a reader and on hover. */
+    label: string | null;
+    /** Faces drawn, by the outcome each carries. */
+    faces: string[];
+    /** Whether any sentence was drawn in the flow beside the faces. */
+    visibleText: string;
+    /** The 다시 묻기 button's name, and what a press handed back. */
+    askAgain: string | null;
+    asked: string[] | null;
+    /** The same turn while the room is still busy: nothing can be asked again then. */
+    askAgainWhileBusy: boolean;
+  };
 };
 
 const { act, createElement } = await import("react");
@@ -120,6 +136,15 @@ const drawn: RoomDrawn = {
       .map((region) => region.textContent ?? "")
       .find((words) => words.length > 0) ?? "",
   firstWaitLine: null,
+  receipt: {
+    under: null,
+    label: null,
+    faces: [],
+    visibleText: "",
+    askAgain: null,
+    asked: null,
+    askAgainWhileBusy: false,
+  },
 };
 
 // --- nobody named yet, the person's question last: the plain thinking line --------------------
@@ -127,6 +152,71 @@ const drawn: RoomDrawn = {
 await draw({ busy: true, messages: [messages[0]] });
 drawn.firstWaitLine =
   host.querySelector("p.tool-line-running")?.textContent ?? null;
+
+// --- a turn that settled: 재고봇 read it and stayed quiet, 리뷰봇 could not answer ---------------
+
+const settled = [messages[0], messages[1]];
+const receipts = {
+  a1: [
+    {
+      memberId: "stock",
+      name: "재고봇",
+      avatarSeed: "stock-seed",
+      outcome: "passed",
+      questionId: "u1",
+    },
+    {
+      memberId: "review",
+      name: "리뷰봇",
+      avatarSeed: "review-seed",
+      outcome: "failed",
+      questionId: "u1",
+    },
+  ],
+};
+let askedAgain: { questionId: string; memberIds: string[] } | null = null;
+await draw({
+  busy: false,
+  messages: settled,
+  speakers,
+  receipts,
+  retryKeepsReplies: true,
+  onAskAgain: (questionId: string, memberIds: string[]) => {
+    askedAgain = { questionId, memberIds };
+  },
+});
+const receiptRow = host.querySelector("[data-slot='room-receipt']");
+const before = receiptRow?.previousElementSibling ?? null;
+const askButton = [...(receiptRow?.querySelectorAll("button") ?? [])].find(
+  (button) => (button.textContent ?? "").includes("다시 묻기"),
+);
+askButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+drawn.receipt = {
+  under: before?.querySelector("[data-slot='bubble']")?.textContent ?? null,
+  label:
+    receiptRow?.querySelector("button")?.getAttribute("aria-label") ?? null,
+  faces: [...(receiptRow?.querySelectorAll("[data-outcome]") ?? [])].map(
+    (face) => face.getAttribute("data-outcome") ?? "",
+  ),
+  visibleText: receiptRow?.textContent ?? "",
+  askAgain: askButton?.getAttribute("aria-label") ?? null,
+  asked: (askedAgain as { memberIds: string[] } | null)?.memberIds ?? null,
+  askAgainWhileBusy: false,
+};
+
+await draw({
+  busy: true,
+  messages: settled,
+  speakers,
+  receipts,
+  retryKeepsReplies: true,
+  onAskAgain: () => {},
+});
+drawn.receipt.askAgainWhileBusy = [
+  ...(host
+    .querySelector("[data-slot='room-receipt']")
+    ?.querySelectorAll("button") ?? []),
+].some((button) => (button.textContent ?? "").includes("다시 묻기"));
 
 await act(async () => {
   root.unmount();

@@ -25,6 +25,11 @@
  * has moved on; dropping it would lose work that was done and paid for.
  */
 import {
+  type MemberOutcome,
+  type MemberReceipt,
+  summariseOutcomes,
+} from "./outcomes";
+import {
   ROOM_MESSAGES_PER_TURN,
   ROOM_ROUNDS,
   type RoomMember,
@@ -62,6 +67,11 @@ export type MemberSaid = {
   spoke: number;
   /** What it said, in order, so the next round can read who it named. */
   said: readonly string[];
+  /**
+   * How its turn came out. Optional so a caller that only counts words still type-checks; absent is
+   * read off `spoke`, which is right for everything but a failure — and a caller that can fail says so.
+   */
+  outcome?: MemberOutcome;
 };
 
 export type RoomTurnDeps = {
@@ -95,11 +105,26 @@ export type RoomTurnOutcome = {
     | "full"
     | "superseded"
     | "alone";
+  /**
+   * Each member that was asked, and how that came out — once per member, however many rounds it
+   * was asked in (`summariseOutcomes`). Silence, failure and a timeout used to be the same zero in
+   * `posted`, and nothing about any of them reached the screen. See `outcomes.ts`.
+   */
+  members: MemberReceipt[];
 };
 
 export async function runRoomTurn(
   deps: RoomTurnDeps,
 ): Promise<RoomTurnOutcome> {
+  const heard: MemberReceipt[] = [];
+  const ended = await runRounds(deps, heard);
+  return { ...ended, members: summariseOutcomes(heard) };
+}
+
+async function runRounds(
+  deps: RoomTurnDeps,
+  heard: MemberReceipt[],
+): Promise<Omit<RoomTurnOutcome, "members">> {
   let posted = 0;
   let rounds = 0;
   const said: TurnLine[] = [];
@@ -155,6 +180,10 @@ export async function runRoomTurn(
         reason: speaker.reason,
         answeringNow: speaking.length,
         ...(speaker.namedBy ? { namedBy: speaker.namedBy } : {}),
+      });
+      heard.push({
+        id: speaker.member.id,
+        outcome: result.outcome ?? (result.spoke > 0 ? "spoke" : "passed"),
       });
       posted += result.spoke;
       spokeThisRound += result.spoke;

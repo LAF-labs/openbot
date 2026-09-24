@@ -17,13 +17,14 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { ChannelActivityEvent } from "../channels/events";
 import { previewOf } from "../channels/preview";
-import { channels, channelThreads } from "../db/schema";
+import { channels, channelThreads, lafThreadMessages } from "../db/schema";
 import {
   appendMessages,
   type Executor,
   messagesFor,
   type StoredMessage,
 } from "../runner/thread-store";
+import type { MemberReceipt } from "./outcomes";
 import type { RoomLine } from "./prompt";
 
 export type { Executor, StoredMessage } from "../runner/thread-store";
@@ -206,4 +207,50 @@ export async function appendRoomMessage(
       lastMessageAgentId: append.agentId,
     },
   };
+}
+
+/**
+ * Keep how each member's part in a turn came out, on the person's message that started the turn.
+ *
+ * WHY THE QUESTION'S OWN ROW, AND NOT A TABLE. The footprint ladder: the fact belongs to one message
+ * — "who read this, and who could not answer it" — and that message is already a row, already keyed
+ * by the id the screen holds, already read by the one route that hands the transcript its marks
+ * (`createMessageMarkReader`). A table would be a second record of a thing the thread already names.
+ * And not a message of its own: the transcript is what the members are shown the room by, and a
+ * row nobody said is one they would read as somebody's words.
+ *
+ * MERGED, member by member. Asking one colleague again (다시 묻기) runs a turn that hears from that
+ * colleague alone; the members that had already read the question and stayed quiet are still the
+ * record, and only the one asked again changes. `jsonb ||` on two objects is exactly that merge.
+ *
+ * A turn that asked nobody — superseded before its first member, or stopped — writes nothing.
+ */
+export async function recordRoomReceipts(
+  executor: Executor,
+  receipt: {
+    threadId: string;
+    /** The person's message the turn answered. */
+    messageId: string;
+    members: readonly MemberReceipt[];
+  },
+): Promise<void> {
+  if (receipt.members.length === 0) return;
+  const heard = Object.fromEntries(
+    receipt.members.map((member) => [member.id, member.outcome]),
+  );
+  /*
+   * Through `text` for the reason `unstoredOf` gives in thread-store.ts: the driver sends a string
+   * bound straight to `jsonb` as a JSON string scalar, and `||` onto a string makes an array.
+   */
+  await executor
+    .update(lafThreadMessages)
+    .set({
+      message: sql`jsonb_set(${lafThreadMessages.message}, '{lafRoomReceipts}', coalesce(${lafThreadMessages.message} -> 'lafRoomReceipts', '{}'::jsonb) || ${JSON.stringify(heard)}::text::jsonb)`,
+    })
+    .where(
+      and(
+        eq(lafThreadMessages.threadId, receipt.threadId),
+        sql`${lafThreadMessages.message} ->> 'id' = ${receipt.messageId}`,
+      ),
+    );
 }

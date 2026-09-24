@@ -285,7 +285,117 @@ describe("catching up from the server", () => {
   });
 });
 
+describe("a member finishing its turn", () => {
+  const settled = (memberId: string, outcome: unknown): RoomFrame => ({
+    ...base,
+    kind: "room.settled",
+    memberId,
+    outcome,
+  });
+
+  test("gives up the floor in the same change that puts it on the turn's receipt", () => {
+    const state = after([
+      turn,
+      asked("stock", "재고봇"),
+      settled("stock", "passed"),
+    ]);
+    // One state change, so the face can travel from the working line into the receipt.
+    expect(state.asked).toBeNull();
+    expect(memberWorking(state)).toBeNull();
+    expect(state.turnAsked).toEqual(["stock"]);
+    expect(state.turnSettled).toEqual({ stock: "passed" });
+  });
+
+  test("a member that spoke stays spoke when a colleague's question gets nothing more from it", () => {
+    const state = after([
+      turn,
+      asked("stock", "재고봇"),
+      settled("stock", "spoke"),
+      asked("stock", "재고봇"),
+      settled("stock", "passed"),
+    ]);
+    expect(state.turnSettled).toEqual({ stock: "spoke" });
+  });
+
+  test("an outcome this surface has no words for draws nothing", () => {
+    const state = after([
+      turn,
+      asked("stock", "재고봇"),
+      settled("stock", "shrugged"),
+    ]);
+    expect(state.turnSettled).toEqual({});
+    expect(state.asked).toBeNull();
+  });
+
+  test("the turn's end keeps its receipt on the question, merged member by member", () => {
+    const earlier: RoomState = {
+      ...EMPTY_ROOM,
+      receipts: { q1: { stock: "passed", review: "failed" } },
+    };
+    const state = after(
+      [
+        turn,
+        asked("review", "리뷰봇"),
+        settled("review", "spoke"),
+        {
+          ...base,
+          kind: "room.done",
+          reason: "silent-round",
+          questionId: "q1",
+          members: [
+            { id: "review", outcome: "spoke" },
+            { id: "ghost", outcome: "not-a-kind" },
+          ],
+        },
+      ],
+      earlier,
+    );
+    // Asked again: the colleague that already read it and stayed quiet still has.
+    expect(state.receipts).toEqual({
+      q1: { stock: "passed", review: "spoke" },
+    });
+    expect(state.turnAsked).toEqual([]);
+    expect(state.turnSettled).toEqual({});
+  });
+
+  test("a connection that went away lets the half-heard turn go", () => {
+    const state = turnLost(
+      after([turn, asked("stock", "재고봇"), settled("stock", "passed")]),
+    );
+    expect(state.turnAsked).toEqual([]);
+    expect(state.turnSettled).toEqual({});
+  });
+
+  test("a stored receipt fills in, but what this tab heard wins", () => {
+    const heard: RoomState = {
+      ...EMPTY_ROOM,
+      receipts: { q1: { review: "spoke" } },
+    };
+    const merged = mergeStored(heard, [], {
+      speakers: {},
+      times: {},
+      receipts: {
+        // A read that set off before the turn ended, landing after it.
+        q1: { review: "failed", stock: "passed" },
+        q0: { stock: "timed_out", junk: 7 },
+      },
+    });
+    expect(merged.receipts).toEqual({
+      q1: { review: "spoke", stock: "passed" },
+      q0: { stock: "timed_out" },
+    });
+  });
+});
+
 describe("the two halves of the contract", () => {
+  test("the outcome kinds are the server's, by value", async () => {
+    const server = await import("../../server/src/rooms/outcomes");
+    const { MEMBER_OUTCOMES } = await import(
+      "../src/lib/channels/room-receipts"
+    );
+    expect([...MEMBER_OUTCOMES]).toEqual([...server.MEMBER_OUTCOMES]);
+  });
+
   test("the client's frame kinds are the server's, by value", async () => {
     const server = await import("../../server/src/rooms/frames");
     expect([...ROOM_FRAME_KINDS]).toEqual([...server.ROOM_FRAME_KINDS]);

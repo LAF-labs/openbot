@@ -29,6 +29,8 @@ export type ChannelSummary = AgentChannel & {
 export type ReadMessageTimes = (threadId: string) => Promise<{
   times: Record<string, string>;
   speakers: Record<string, string>;
+  /** A room's question to how each member's part in its turn came out. See rooms/outcomes. */
+  receipts?: Record<string, Record<string, string>>;
 }>;
 
 /** A room's transcript, straight out of the snapshot column. See rooms/messages. */

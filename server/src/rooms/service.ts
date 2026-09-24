@@ -29,9 +29,14 @@ import { runMemberTurn } from "./member-turn";
 import { log } from "../log";
 import { namesOf, resolveRoomMembers } from "./members";
 import { runRoomTurn } from "./orchestrator";
+import type { MemberOutcome, MemberReceipt } from "./outcomes";
 import { readPrivateHistory } from "./private-history";
 import type { RoomMember } from "./prompt";
-import { appendRoomMessage, readRoomLines } from "./transcript";
+import {
+  appendRoomMessage,
+  readRoomLines,
+  recordRoomReceipts,
+} from "./transcript";
 import { mentionsIn } from "./turn-taking";
 import type { ApprovalWaiter } from "./wait-for-approval";
 
@@ -239,6 +244,7 @@ export function createRoomService(options: RoomServiceOptions) {
             turnId,
             epoch: posted.epoch,
             memberIds,
+            questionId: posted.written.messageId,
           }),
         )
         .catch((error: unknown) => {
@@ -287,8 +293,12 @@ export function createRoomService(options: RoomServiceOptions) {
     turnId: string;
     epoch: number;
     memberIds: string[];
+    /** The person's message this turn answers: where its members' outcomes are kept. */
+    questionId: string;
   }): Promise<void> {
     let ended = "failed";
+    /** How each member that was asked came out, once per member. See `outcomes.ts`. */
+    let heard: MemberReceipt[] = [];
     /*
      * A PERSON'S STOP FOR THE WHOLE TURN — `모두 멈추기`, not the room's own Stop.
      *
@@ -356,6 +366,22 @@ export function createRoomService(options: RoomServiceOptions) {
         )?.catch(() => {});
       }
       /*
+       * Written BEFORE `room.done`, so a tab that reads the thread's marks on hearing the turn end
+       * finds them. Never allowed to fail the turn: what the members said is already in the room,
+       * and a receipt that could not be kept costs a reload's worth of memory, not the answer.
+       */
+      await recordRoomReceipts(database, {
+        threadId: input.threadId,
+        messageId: input.questionId,
+        members: heard,
+      }).catch((error: unknown) => {
+        log.error("room_receipts_unwritten", {
+          channel: input.channelId,
+          turn: input.turnId,
+          reason: error,
+        });
+      });
+      /*
        * ALWAYS, whatever threw. The browser was told the turn started and holds the composer
        * parked on it; a turn that failed before its first member — agents that would not resolve,
        * a plugin store that was down — used to leave the room stuck with Stop showing until a
@@ -370,6 +396,8 @@ export function createRoomService(options: RoomServiceOptions) {
         reason: ended,
         failures,
         posted,
+        questionId: input.questionId,
+        members: heard,
       });
     }
 
@@ -406,8 +434,23 @@ export function createRoomService(options: RoomServiceOptions) {
           failed: string | boolean | null;
           /** A person stopped the turn while this member had it. Not a failure. */
           stopped?: boolean;
+          outcome: MemberOutcome;
         },
       ) => {
+        /*
+         * Said to the room the moment the member's turn is over, before the trail is written: the
+         * face that was working settles into the turn's receipt while the next member is being
+         * asked, rather than every quiet member appearing at once when the turn ends.
+         */
+        options.emit({
+          kind: "room.settled",
+          channelId: input.channelId,
+          memberIds: input.memberIds,
+          turnId: input.turnId,
+          epoch: input.epoch,
+          memberId: ask.member.id,
+          outcome: result.outcome,
+        });
         try {
           await options.auditStore?.insert({
             eventType: "room.member_turn",
@@ -431,6 +474,7 @@ export function createRoomService(options: RoomServiceOptions) {
                 ? { failure: result.failed }
                 : {}),
               ...(result.stopped ? { stopped: true } : {}),
+              outcome: result.outcome,
             },
           });
         } catch {
@@ -547,7 +591,10 @@ export function createRoomService(options: RoomServiceOptions) {
                * and the person may well have said something else by the time it is this member's
                * turn. Answering then is answering a question nobody is still asking.
                */
-              if (!(await isCurrent())) return { spoke: 0, failed: null };
+              // Not asked at all, which is not the same as reading it and staying quiet.
+              if (!(await isCurrent())) {
+                return { spoke: 0, failed: null, outcome: "stopped" as const };
+              }
               /*
                * READ INSIDE THE LANE, NOT BEFORE IT. Both of these are snapshots of a conversation
                * and both go stale: the lane is a queue, and a member whose Bot is busy with a routine
@@ -677,18 +724,21 @@ export function createRoomService(options: RoomServiceOptions) {
               spoke: result.spoke,
               failed: result.failed,
               ...(result.stopped ? { stopped: true } : {}),
+              outcome: result.outcome,
             });
-            return { spoke: result.spoke, said };
+            return { spoke: result.spoke, said, outcome: result.outcome };
           } catch (error) {
             // Whatever a stop interrupted on its way here is the stop, not this member failing.
             if (stopping.signal.aborted) {
+              const outcome = said.length > 0 ? "spoke" : "stopped";
               await record(ask, {
                 runId,
                 spoke: said.length,
                 failed: null,
                 stopped: true,
+                outcome,
               });
-              return { spoke: said.length, said };
+              return { spoke: said.length, said, outcome };
             }
             /*
              * ONE MEMBER'S BAD DAY IS NOT THE ROOM'S. Everything above can throw before the model
@@ -706,14 +756,21 @@ export function createRoomService(options: RoomServiceOptions) {
               member: member.id,
               reason: error,
             });
-            await record(ask, { runId, spoke: said.length, failed: reason });
-            return { spoke: said.length, said };
+            const outcome = said.length > 0 ? "spoke" : "failed";
+            await record(ask, {
+              runId,
+              spoke: said.length,
+              failed: reason,
+              outcome,
+            });
+            return { spoke: said.length, said, outcome };
           }
         },
       });
 
       ended = outcome.ended;
       posted = outcome.posted;
+      heard = outcome.members;
     }
   }
 }

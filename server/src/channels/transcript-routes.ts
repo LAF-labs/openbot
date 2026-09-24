@@ -72,7 +72,7 @@ export function createTranscriptRoutes(
       async (threadId) => {
         const marks = readMessageTimes
           ? await readMessageTimes(threadId)
-          : { times: {}, speakers: {} };
+          : { times: {}, speakers: {}, receipts: {} };
         /*
          * No backfill for rows written before speakers were recorded. It used to fill them in with
          * the room's first member — true of how the old code ran, but recomputed on every request
@@ -81,7 +81,16 @@ export function createTranscriptRoutes(
          * `attribute()` refuses to guess a speaker for exactly this reason; this now refuses too,
          * and an old message simply carries no name.
          */
-        return { times: marks.times, speakers: marks.speakers };
+        /*
+         * And who read each room question and stayed quiet, or could not answer it — the receipt a
+         * room turn leaves on the person's message (`recordRoomReceipts`). Beside the stamps rather
+         * than in the messages, for the reason the stamps are: it is ours, not something said.
+         */
+        return {
+          times: marks.times,
+          speakers: marks.speakers,
+          receipts: marks.receipts ?? {},
+        };
       },
     ),
   );

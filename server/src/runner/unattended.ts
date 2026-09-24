@@ -187,6 +187,17 @@ class RunDeadline extends UnattendedRunError {
   }
 }
 
+/**
+ * Whether a run ended on its own deadline — the clock, and not the model or a person.
+ *
+ * A room asks, because words a member had finished writing when the clock ran out are kept rather
+ * than dropped (`rooms/member-turn.ts`). The model's own timeout is a different fact: its stream was
+ * cut by its provider, and what it had written is whatever the provider let through.
+ */
+export function isRunDeadline(error: unknown): boolean {
+  return error instanceof RunDeadline;
+}
+
 /** The fact a stopped run ends on — in the error, the ledger and a routine's receipt alike. */
 export const RUN_STOPPED = "laf:run_stopped";
 

@@ -21,6 +21,7 @@ import {
   reduceQueue,
 } from "@/components/channels/composer";
 import type { ChatSpeaker } from "@/components/channels/chat-messages";
+import type { ReceiptFace } from "@/components/channels/room-receipt";
 import { UsageNotice } from "@/components/channels/usage-notice";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
@@ -33,6 +34,9 @@ export function ConversationView({
   readWindow,
   speakers,
   working,
+  receipts,
+  liveReceipt,
+  onAskAgain,
   busy = false,
   notice,
   agents = [],
@@ -59,7 +63,13 @@ export function ConversationView({
   /** Message id to the Bot that said it, for a room with several. See ChatTranscript. */
   speakers?: Readonly<Record<string, ChatSpeaker>>;
   /** The room member that has the floor and has not said anything yet. See ChatTranscript. */
-  working?: { name: string; avatarSeed?: string };
+  working?: { id?: string; name: string; avatarSeed?: string };
+  /** A room's read receipts, by the message each turn ended on. See ChatTranscript. */
+  receipts?: Readonly<Record<string, readonly ReceiptFace[]>>;
+  /** The message whose receipt belongs to the turn still running. See ChatTranscript. */
+  liveReceipt?: string;
+  /** Ask members that could not answer, again. See ChatTranscript. */
+  onAskAgain?: (questionId: string, memberIds: string[]) => void;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
@@ -279,6 +289,9 @@ export function ConversationView({
             {...(readWindow ? { readWindow } : {})}
             {...(speakers ? { speakers } : {})}
             {...(working ? { working } : {})}
+            {...(receipts ? { receipts } : {})}
+            {...(liveReceipt ? { liveReceipt } : {})}
+            {...(onAskAgain ? { onAskAgain } : {})}
             onRemoveQueued={(id) => {
               apply({ id, type: "remove" });
             }}

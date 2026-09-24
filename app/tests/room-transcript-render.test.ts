@@ -67,4 +67,27 @@ describe("a room's transcript", () => {
     // A conversation with one Bot reaches this too, and must not grow a name it does not have.
     expect((await drawn()).firstWaitLine).toBe("생각 중");
   });
+
+  /*
+   * A BOT THAT CHOSE NOT TO SPEAK LOOKED AS IF IT WERE NOT IN THE ROOM (measured 2026-09-21). The
+   * turn now ends with a receipt: faces, not a sentence, under the turn's last bubble — and a
+   * member that could not answer is drawn as needing help, with a way to ask it again.
+   */
+  test("a settled turn leaves faces under its last bubble, with the words in the label", async () => {
+    const { receipt } = await drawn();
+
+    expect(receipt.under).toBe("매출은 12% 올랐어요.");
+    expect(receipt.faces).toEqual(["failed", "passed"]);
+    expect(receipt.label).toBe("재고봇 · 읽었어요, 리뷰봇 · 답하지 못했어요");
+    // No sentence in the flow: the only words on the row are the button's.
+    expect(receipt.visibleText).toBe("다시 묻기");
+  });
+
+  test("a member that could not answer can be asked again, by name, and only when nothing is running", async () => {
+    const { receipt } = await drawn();
+
+    expect(receipt.askAgain).toBe("리뷰봇에게 다시 묻기");
+    expect(receipt.asked).toEqual(["review"]);
+    expect(receipt.askAgainWhileBusy).toBe(false);
+  });
 });

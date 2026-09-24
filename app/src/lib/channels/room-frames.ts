@@ -14,6 +14,7 @@
 export const ROOM_FRAME_KINDS = [
   "room.turn",
   "room.asked",
+  "room.settled",
   "room.open",
   "room.delta",
   "room.end",
@@ -39,6 +40,12 @@ export type RoomFrame =
    * the conversation is the person's own message.
    */
   | (Base & { kind: "room.asked"; memberId: string; memberName: string })
+  /**
+   * A member's turn is over, and how it came out. `unknown` and read by `memberOutcomeOf`, like a
+   * subject: it arrives over a socket, and a receipt must not be drawn for a kind this surface does
+   * not know the words for.
+   */
+  | (Base & { kind: "room.settled"; memberId: string; outcome: unknown })
   | (Base & {
       kind: "room.open";
       messageId: string;
@@ -93,6 +100,10 @@ export type RoomFrame =
       failures?: number;
       /** Messages put in the room this turn. Zero with no failures is everybody choosing silence. */
       posted?: number;
+      /** The person's message the turn answered, which the members' outcomes are kept on. */
+      questionId?: string;
+      /** Each member asked and how that came out, once per member. Read by `receiptsOf`. */
+      members?: unknown;
     });
 
 export function isRoomFrame(value: unknown): value is RoomFrame {
