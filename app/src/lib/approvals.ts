@@ -793,6 +793,20 @@ export function openQuestions(): OpenQuestion[] {
 }
 
 /**
+ * The same set with the tool call each question is on — for a reader that points back at the card,
+ * like the header's drawer ("사장님 차례" → the card in the conversation).
+ */
+export function openQuestionCalls(): {
+  toolCallId: string;
+  question: OpenQuestion;
+}[] {
+  return [...open.entries()].map(([toolCallId, question]) => ({
+    toolCallId,
+    question,
+  }));
+}
+
+/**
  * Whether anything at all is waiting on an answer.
  *
  * The card itself is a transcript row, so scrolling up past it takes the only sign that a Bot is

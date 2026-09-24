@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { LEADING_SKILL } from "@/components/channels/composer/draft";
-import { DraftScope } from "@/components/channels/composer/prefill";
 import {
   claimAutoSend,
   forgetUnsent,
@@ -18,14 +17,16 @@ import {
   type UnsentMessage,
   useUnsent,
 } from "@/components/channels/composer/outbox";
+import { DraftScope } from "@/components/channels/composer/prefill";
 import { ConversationView } from "@/components/channels/conversation-view";
-import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import {
   forgetFirstMessage,
   peekFirstMessage,
   seedMessage,
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
+import { BrowsingBanner } from "@/components/computer/browsing-banner";
+import { turnPhaseOf, usePublishTurn } from "@/lib/agents/presence";
 import {
   recordChannelActivityMutationOptions,
   setChannelReadMutationOptions,
@@ -41,7 +42,6 @@ import {
   mergeStoredHistory,
 } from "@/lib/channels/thread-history";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
-import { useBrowsingTasks } from "@/lib/computer/use-browsing-tasks";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -50,6 +50,7 @@ import {
   SOCKET_RECONNECTED,
   socketState,
 } from "@/lib/channels/use-channel-events";
+import { useBrowsingTasks } from "@/lib/computer/use-browsing-tasks";
 import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { holdChat } from "@/lib/copilot/held-chats";
@@ -967,6 +968,15 @@ export function ChannelChat({
     messages: thread,
     busy: agent.isRunning || turnsInFlight > 0,
   });
+
+  /*
+   * Where the turn is — thinking, working, answering — told to the header's pill (`presence.ts`).
+   * The same turn-shaped fact the transcript draws from, read from the same copy of the thread.
+   */
+  usePublishTurn(
+    runtimeAgentId,
+    turnPhaseOf(thread, agent.isRunning || turnsInFlight > 0),
+  );
 
   /*
    * STABLE BY HAND, BECAUSE NOTHING HERE IS MEMOISED FOR US.

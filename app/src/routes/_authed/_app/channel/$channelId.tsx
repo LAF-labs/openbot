@@ -1,11 +1,10 @@
 import { IconDeviceDesktop, IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "motion/react";
 import { useEffect } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import { AgentAvatar } from "@/components/channels/avatar";
+import { BotHeader } from "@/components/channels/bot-header";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import {
   offerDraft,
@@ -21,6 +20,7 @@ import {
   type AgentChannel,
   ChannelGoneError,
   channelKeys,
+  channelListQueryOptions,
   channelQueryOptions,
 } from "@/lib/channels/queries";
 import { isInUse, useBrowsingNow } from "@/lib/computer/browsing-now";
@@ -46,11 +46,6 @@ const chatSearchSchema = z
   /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
    * validateSearch and taking the whole route down with it. */
   .catch({});
-
-const EASE_OUT = [0.23, 1, 0.32, 1] as const;
-
-const HEADING_ENTRANCE_SECONDS = 0.18;
-const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
 /*
  * THE BOT'S SCREEN OPENS WHEN A PERSON ASKS, AND ONLY THEN.
@@ -127,11 +122,15 @@ function RouteComponent() {
   // Leaving before its composer took it: it was for this conversation, and nowhere else.
   useEffect(() => () => withdrawDraft(channelId), [channelId]);
   const isSettingsOpen = settings === true;
-  const prefersReducedMotion = useReducedMotion();
   /** Whose profile the settings pane edits, and whose name titles the conversation. */
   const agentId = channel.data?.agentIds[0];
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
+  // When it last spoke, for the face: a Bot quiet for half an hour dozes (`useBotMood`).
+  const conversations = useQuery(channelListQueryOptions());
+  const lastSpokenAt = conversations.data?.find(
+    (summary) => summary.id === channelId,
+  )?.lastMessageAt;
   const panel = useScreenPanel();
   const isWatching = panel.isOpen && agentId !== undefined;
   // Only while the screen is open: that is the one place a person can be holding the wheel from.
@@ -185,83 +184,15 @@ function RouteComponent() {
         )
       }
     >
-      <div className="flex flex-col">
-        {/*
-         * 44px, and NO RULE UNDER IT.
-         *
-         * The header is the height of the window chrome beside it, so the roster's title row and
-         * this one share a baseline across the whole window. The divider is gone because there is
-         * nothing to divide: the transcript below is the same surface, and a line drawn across the
-         * top of a conversation reads as a toolbar the conversation is filed under.
-         *
-         * It is also what the window is dragged by. `titleBarStyle: "Overlay"` in the shell means
-         * there is no title bar left to grab; `data-tauri-drag-region` gives this row that job and
-         * is inert in a browser tab.
-         */}
-        <div
-          className="sticky top-0 flex h-[var(--sand-titlebar-block)] flex-row items-center justify-between gap-2 px-3"
-          data-tauri-drag-region
-        >
-          {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
-          <div className="flex min-w-0 items-center gap-1.5">
-            <motion.div
-              animate={{ opacity: 1 }}
-              className="shrink-0"
-              initial={{ opacity: 0 }}
-              /*
-               * Keyed on WHO, not on what the channel is called. Keyed on the name, the face
-               * remounted and faded in again the moment a first message retitled the channel —
-               * an avatar that re-announces itself because the words beside it changed.
-               */
-              key={`avatar:${(channel.data?.agentIds ?? []).join(",")}`}
-              transition={{
-                duration: HEADING_ENTRANCE_SECONDS,
-                ease: EASE_OUT,
-              }}
-            >
-              {/*
-               * 24, not 20. A generated face carries a silhouette and an accessory as well as a
-               * colour, and at 20 the accessory is three pixels of noise — measured beside the
-               * 14px title it sits next to, 24 is where the shape starts reading as a shape.
-               */}
-              <AgentAvatar agentId={agentId} size={24} />
-            </motion.div>
-            <motion.span
-              animate={
-                prefersReducedMotion
-                  ? { opacity: 1 }
-                  : { opacity: 1, transform: "translateY(0px)" }
-              }
-              className="min-w-0 text-sm tracking-tight truncate"
-              initial={
-                prefersReducedMotion
-                  ? { opacity: 0 }
-                  : { opacity: 0, transform: HEADING_ENTRANCE_OFFSET }
-              }
-              key={`name:${headerAgent?.id ?? channel.data?.name ?? channelId}`}
-              transition={{
-                duration: HEADING_ENTRANCE_SECONDS,
-                ease: EASE_OUT,
-              }}
-            >
-              {/*
-               * THE COLLEAGUE, THE WAY A MESSAGING APP NAMES A THREAD.
-               *
-               * A Bot has one conversation now, so the room IS the Bot, and the header is their
-               * name — one line, the way a messaging app titles a thread. It used to lead with a
-               * title taken from the first message, which was right while every task minted its own
-               * channel and is now just the Bot's name said twice.
-               *
-               * The standing role that used to sit under it has gone with it: the roster row beside
-               * this header already carries it, and repeating it here made the header two lines
-               * tall to say nothing new.
-               */}
-              <span className="truncate font-semibold text-base">
-                {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
-              </span>
-            </motion.span>
-          </div>
-          <div className="flex flex-row gap-1.5">
+      {/*
+       * THE BOT, AS A PRESENCE: its face with the expression of what it is doing, its name, and the
+       * pill that says it in a word and opens the drawer (`BotHeader`). No rule under it — the
+       * transcript below is the same surface, and a line across the top of a conversation reads as
+       * a toolbar the conversation is filed under.
+       */}
+      <BotHeader
+        actions={
+          <>
             {/*
              * THE SCREEN'S BUTTON, WHICH SAYS WHEN THE BROWSER IS IN USE — and stays saying it for a
              * moment after (`LINGER_MS`), so it does not blink between one step and the next. This
@@ -313,9 +244,13 @@ function RouteComponent() {
             >
               <IconSettings className="size-4.5" />
             </Button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        agentId={agentId}
+        avatarSeed={headerAgent?.avatarSeed}
+        lastMessageAt={lastSpokenAt ?? undefined}
+        name={headerAgent?.name ?? channel.data?.name ?? t("Channel")}
+      />
       {/*
        * THE CONVERSATION, BELOW ITS HEADER. The header stays out of it on purpose: it holds the two
        * buttons that open the Bot's screen and its profile, and a conversation that failed is

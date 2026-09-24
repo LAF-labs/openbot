@@ -2587,4 +2587,10 @@ export const ko: Record<string, string> = {
   "That place was not saved. Only a city and district can be kept.":
     "위치를 저장하지 못했어요. 시·구까지만 적을 수 있어요.",
   "Saved the shop's location": "가게 위치를 저장했습니다",
+  // design
+  "Needs your OK": "사장님 확인 필요",
+  "Needs your help": "사장님 도움 필요",
+  "Busy working": "일하는 중",
+  Answering: "답하는 중",
+  Ready: "대기 중",
 };

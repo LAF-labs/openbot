@@ -112,6 +112,7 @@
   "app/tests/plugin-catalogue-copy.test.ts",
   "app/tests/plugin-refusals.test.ts",
   "app/tests/polling.test.tsx",
+  "app/tests/presence.test.ts",
   "app/tests/press.test.ts",
   "app/tests/profile-words.test.ts",
   "app/tests/query-client.test.ts",

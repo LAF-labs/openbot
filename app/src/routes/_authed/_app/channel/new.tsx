@@ -5,12 +5,14 @@ import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { FirstTaskChips } from "@/components/agents/first-task-chips";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { BotHeader } from "@/components/channels/bot-header";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isFirstConversation, pickFirstTasks } from "@/lib/agents/first-tasks";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
+import { usePublishTurn } from "@/lib/agents/presence";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useStartChannel } from "@/lib/channels/start";
@@ -103,6 +105,9 @@ function FirstConversation({ botId }: { botId: string }) {
       ? pickFirstTasks(overview, { shop: user?.shop })
       : null;
 
+  // The first message is on its way: the header says the Bot is thinking before the channel exists.
+  usePublishTurn(botId, pending || sent !== null ? "thinking" : "idle");
+
   /**
    * One send for the composer and the chips alike. The chip is a sentence typed on the person's
    * behalf, so it goes out exactly as a typed one would: seeded into the transcript, then the
@@ -129,25 +134,21 @@ function FirstConversation({ botId }: { botId: string }) {
   return (
     <div className="flex h-full flex-col">
       {/* The same header a conversation has, so the first message does not move anything. */}
-      <div
-        className="sticky top-0 flex h-[var(--sand-titlebar-block)] shrink-0 flex-row items-center justify-between gap-2 px-3"
-        data-tauri-drag-region
-      >
-        <div className="flex min-w-0 items-center gap-1.5">
-          {bot ? <BotAvatar seed={bot.avatarSeed} size={24} /> : null}
-          <span className="min-w-0 truncate font-semibold text-base tracking-tight">
-            {bot?.name}
-          </span>
-        </div>
-        <Link
-          aria-label={t("Bot profile")}
-          className={buttonVariants({ size: "icon", variant: "ghost" })}
-          search={{ agent: botId }}
-          to="/agents"
-        >
-          <IconSettings className="size-4.5" />
-        </Link>
-      </div>
+      <BotHeader
+        actions={
+          <Link
+            aria-label={t("Bot profile")}
+            className={buttonVariants({ size: "icon", variant: "ghost" })}
+            search={{ agent: botId }}
+            to="/agents"
+          >
+            <IconSettings className="size-4.5" />
+          </Link>
+        }
+        agentId={botId}
+        avatarSeed={bot?.avatarSeed}
+        name={bot?.name}
+      />
       <ConversationView
         // Commands must be loaded before the first channel message is sent.
         commands={skillCommands}
