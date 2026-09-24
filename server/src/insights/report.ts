@@ -114,6 +114,24 @@ export type PeopleInsight = {
   perPerson: Array<[number, number]>;
   turnsByOrigin: Record<string, number>;
   tokensByOrigin: Record<string, number>;
+  /**
+   * The prompt cache, over the Bots' own requests that reported a cache read (`read.ts`). An extra
+   * field inside the section, which a reader that does not know it ignores.
+   */
+  cache?: CacheInsight;
+};
+
+export type CacheInsight = {
+  requests: number;
+  promptTokens: number;
+  cachedTokens: number;
+  /** `(requests, promptTokens, cachedTokens)` in an established epoch on a warm cache. */
+  established: [number, number, number];
+  /** Requests flagged as a break: a warm, established request that read under half from cache. */
+  lowHitRequests: number;
+  costUsd: number;
+  /** `(requests, promptTokens, cachedTokens)` per provider, named or `other`. */
+  byProvider: Record<string, [number, number, number]>;
 };
 
 /** Each section, or null where its statement could not answer. Null is not zero. */

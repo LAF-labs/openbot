@@ -595,6 +595,39 @@ async function seed() {
   );
   await audit("model.usage", { totalTokens: 46, source: "judge" }, at(10));
   await audit("model.usage", { totalTokens: "lots" }, at(10));
+  /*
+   * The Bots' own requests, for the cache: an epoch's cold start, a warm established one, one
+   * flagged as a break whose provider's "name" is markup, and one whose endpoint reported no cache
+   * read at all — which says nothing about caching and is not counted. No run and no tokens total,
+   * so the per-person sums above do not move.
+   */
+  const botTurn = (payload: Record<string, unknown>) =>
+    audit("model.usage", { source: "bot-turn", ...payload }, at(10));
+  await botTurn({
+    promptTokens: 8000,
+    cachedPromptTokens: 0,
+    epochStart: true,
+    provider: "Z.AI",
+    costUsd: 0.0012,
+  });
+  await botTurn({
+    promptTokens: 9000,
+    cachedPromptTokens: 8960,
+    epochStart: false,
+    idleSeconds: 60,
+    provider: "Z.AI",
+    costUsd: 0.0004,
+  });
+  await botTurn({
+    promptTokens: 10000,
+    cachedPromptTokens: 1024,
+    epochStart: false,
+    idleSeconds: 30,
+    cacheLow: true,
+    provider: "<script>Wafer</script>",
+    costUsd: 0.0014,
+  });
+  await botTurn({ promptTokens: 500 });
   await audit(
     "model.usage",
     { runId: RUN("run-u2"), totalTokens: 9999 },
@@ -973,6 +1006,31 @@ describe("what the insights read counts, against the product's own tables", () =
       wake: 2,
     });
     expect(after.people?.tokensByOrigin).toEqual({ chat: 2800, server: 46 });
+  });
+
+  test("people.cache: the prompt cache, treated like uptime — by epoch, by provider, in counts", () => {
+    const was = before.people?.cache;
+    const now = after.people?.cache;
+    const delta = (key: "requests" | "promptTokens" | "cachedTokens") =>
+      (now?.[key] ?? 0) - (was?.[key] ?? 0);
+    expect(delta("requests")).toBe(3);
+    expect(delta("promptTokens")).toBe(27_000);
+    expect(delta("cachedTokens")).toBe(9_984);
+    expect(
+      (now?.established ?? [0, 0, 0]).map(
+        (value, at) => value - (was?.established[at] ?? 0),
+      ),
+    ).toEqual([2, 19_000, 9_984]);
+    expect((now?.lowHitRequests ?? 0) - (was?.lowHitRequests ?? 0)).toBe(1);
+    expect((now?.costUsd ?? 0) - (was?.costUsd ?? 0)).toBeCloseTo(0.003, 6);
+    const provider = (name: string) =>
+      (now?.byProvider[name] ?? [0, 0, 0]).map(
+        (value, at) => value - (was?.byProvider[name]?.[at] ?? 0),
+      );
+    expect(provider("Z.AI")).toEqual([2, 17_000, 8_960]);
+    // A name that is not a name's shape leaves as `other`, never as itself.
+    expect(provider("other")).toEqual([1, 10_000, 1_024]);
+    expect(JSON.stringify(after)).not.toContain("script");
   });
 
   test("none of the content sitting beside the counted rows comes back", () => {

@@ -48,6 +48,7 @@ import { CATALOGUE } from "../plugins/catalogue";
 import { ROUTINE_RUN_TIMEOUT_MS } from "../routines/run";
 import { MAX_ROUTINES } from "../routines/store";
 import { DEFAULT_MAX_STEPS } from "../runner/unattended";
+import { CACHE_WARM_SECONDS, PROVIDER_NAME_SOURCE } from "../usage/model-usage";
 import { ANSWER_RATING_REASONS } from "../support/answer-ratings";
 import { CATALOGUE_KEY_SOURCE } from "./catalogue-key";
 import {
@@ -367,6 +368,14 @@ export function insightStatements(options: {
    * Turns are runs STARTED in the window; tokens are `model.usage` rows WRITTEN in it, attributed to
    * a person through the run they belong to (whenever it started). Usage with no run behind it —
    * the server's own calls, the auto-review judge — is nobody's and is counted as `server`.
+   *
+   * `cache` is the prompt cache, TREATED LIKE UPTIME (Claude Code's words;
+   * `~/laf/docs/agent-harness-design.md` row 11): the Bots' own requests that reported a cache read,
+   * how much of their prompt came from the cache, the same for the requests in an established epoch
+   * on a warm cache (where anything under ~95% is a break — `copilot.ts`), how many were flagged as
+   * one, what they cost, and the same split by provider, since each provider keeps its own cache. A
+   * provider's name leaves only when it has a name's shape; anything else is `other`. Counts only,
+   * like everything here — a hit rate is theirs to divide, as the medians are.
    */
   const people = sql`
     WITH usage AS (
@@ -388,6 +397,22 @@ export function insightStatements(options: {
     ), per_person AS (
       SELECT coalesce(t.turns, 0) AS turns, coalesce(a.tokens, 0) AS tokens
         FROM turns t FULL JOIN attributed a ON a.user_id = t.user_id
+    ), bot_usage AS (
+      SELECT (payload->>'promptTokens')::bigint AS prompt,
+             (payload->>'cachedPromptTokens')::bigint AS cached,
+             CASE WHEN payload->>'costUsd' ~ '^[0-9]{1,6}([.][0-9]{1,20})?$'
+                  THEN (payload->>'costUsd')::numeric ELSE 0 END AS cost,
+             CASE WHEN payload->>'provider' ~ ${PROVIDER_NAME_SOURCE}
+                  THEN payload->>'provider' ELSE 'other' END AS provider,
+             payload->>'epochStart' = 'false'
+               AND payload->>'idleSeconds' ~ '^[0-9]{1,9}$'
+               AND (payload->>'idleSeconds')::bigint <= ${CACHE_WARM_SECONDS}::bigint AS established,
+             payload->>'cacheLow' = 'true' AS low
+        FROM audit_events
+       WHERE event_type = 'model.usage' AND created_at >= ${since} AND created_at < ${to}
+         AND payload->>'source' = 'bot-turn'
+         AND payload->>'promptTokens' ~ '^[0-9]{1,15}$'
+         AND payload->>'cachedPromptTokens' ~ '^[0-9]{1,15}$'
     )
     SELECT jsonb_build_object(
       'accounts', (SELECT count(*) FROM users),
@@ -405,7 +430,25 @@ export function insightStatements(options: {
           FROM (SELECT coalesce(r.origin::text, 'server') AS origin, sum(u.tokens) AS n
                   FROM usage u LEFT JOIN laf_thread_runs r ON r.run_id = u.run_id
                  GROUP BY 1) by_origin
-      ), '{}'::jsonb)
+      ), '{}'::jsonb),
+      'cache', (
+        SELECT jsonb_build_object(
+          'requests', count(*),
+          'promptTokens', coalesce(sum(prompt), 0),
+          'cachedTokens', coalesce(sum(cached), 0),
+          'established', jsonb_build_array(
+            count(*) FILTER (WHERE established),
+            coalesce(sum(prompt) FILTER (WHERE established), 0),
+            coalesce(sum(cached) FILTER (WHERE established), 0)),
+          'lowHitRequests', count(*) FILTER (WHERE low),
+          'costUsd', round(coalesce(sum(cost), 0), 6),
+          'byProvider', coalesce((
+            SELECT jsonb_object_agg(provider, jsonb_build_array(n, p, c))
+              FROM (SELECT provider, count(*) AS n, sum(prompt) AS p, sum(cached) AS c
+                      FROM bot_usage GROUP BY 1) named
+          ), '{}'::jsonb)
+        ) FROM bot_usage
+      )
     )::text AS value`;
 
   return {
