@@ -107,8 +107,9 @@ export function repeatedFailureLine(
  */
 export const TURN_FAILURE_SENTENCES: Record<string, string> = {
   /*
-   * Not a fault: the Bot kept working and the question reached what one question may cost
-   * (agent-bot's `ASK_TOKEN_BUDGET`). Carrying on is a new question with a budget of its own.
+   * Not a fault: the Bot kept working and the question reached what one question may take — its
+   * steps or its dollars (agent-bot's `MAX_QUESTION_STEPS` / `MAX_QUESTION_COST_USD`). Carrying on
+   * is a new question with a budget of its own.
    */
   "laf:turn_budget_spent":
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
@@ -245,7 +246,14 @@ function classifyLive(reported: unknown): TurnFailureCode {
   ) {
     return "laf:turn_tool_failed";
   }
-  if (said.includes("laf:tool_budget_spent")) return "laf:turn_budget_spent";
+  // The question's two bounds (agent-bot's `guards.ts`), and the one they replaced, for old rows.
+  if (
+    said.includes("laf:question_max_steps") ||
+    said.includes("laf:question_max_cost") ||
+    said.includes("laf:tool_budget_spent")
+  ) {
+    return "laf:turn_budget_spent";
+  }
   if (said.includes("laf:daily_budget_reached")) {
     return "laf:turn_daily_budget_reached";
   }

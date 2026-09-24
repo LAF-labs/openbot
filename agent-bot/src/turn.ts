@@ -2,6 +2,7 @@ import type { BaseEvent } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { describeFailure } from "../../shared/failure-text";
 import type { CompletionProvider } from "./provider";
+import type { ProviderEffort } from "./transcript";
 
 /**
  * One request to the model, streamed out as AG-UI events as it arrives.
@@ -27,10 +28,11 @@ export type ToolCallRecord = {
   started: boolean;
   /**
    * Why nothing of this call goes on the wire as it streams. `bridge`: its arguments name the
-   * REAL tool, and that is only known once they are complete. `unknown`: a name the run was never
+   * REAL tool, and that is only known once they are complete. `service`: a tool this service
+   * answers itself (`now`), which no surface has a handler for. `unknown`: a name the run was never
    * handed, which no surface can execute and which the loop answers itself.
    */
-  held: "bridge" | "unknown" | null;
+  held: "bridge" | "service" | "unknown" | null;
 };
 
 /**
@@ -54,6 +56,12 @@ export type Turn = {
   textOpen: boolean;
   toolCalls: Map<number, ToolCallRecord>;
   usage: OpenAI.CompletionUsage | null;
+  /**
+   * Which provider answered, where the endpoint says so. OpenRouter puts `provider` on every chunk;
+   * a plain OpenAI-compatible endpoint says nothing and this stays null. Recorded because a prefix
+   * cache lives with one provider (agent-harness-review §3), so a hit rate means nothing without it.
+   */
+  provider: string | null;
   /** Why the model stopped. `length` means the answer was cut off mid-sentence. */
   finishReason: string | null;
   /**
@@ -88,10 +96,23 @@ export class ConsumerGone extends Error {
   }
 }
 
+/**
+ * Who this conversation is, to the provider, in hashes (`./session`). Never an email, a name or a
+ * thread id as it is: the provider is told only that two requests belong together.
+ */
+export type ProviderSession = {
+  /** Sent as `x-session-id`: OpenRouter keeps one conversation on the provider holding its cache. */
+  id: string;
+  /** Sent as `user`: a stable end-user id — the Bot's, hashed. */
+  user: string;
+};
+
 export type TurnOptions = {
   provider: CompletionProvider;
   model: string;
-  effort: "low" | "medium" | "high" | undefined;
+  effort: ProviderEffort | undefined;
+  /** Absent sends neither: a test, or a caller that named no conversation. */
+  session?: ProviderSession;
   /**
    * Which request of the run this is. A later round is a second assistant message in the same
    * run, so it needs its own message id.
@@ -150,6 +171,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
    */
   const toolCalls = new Map<number, ToolCallRecord>();
   let usage: OpenAI.CompletionUsage | null = null;
+  let answeredBy: string | null = null;
   let finishReason: string | null = null;
   /** Whether any prose or any tool-call fragment arrived. What separates a cut from an empty turn. */
   let delivered = false;
@@ -160,6 +182,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     textOpen,
     toolCalls,
     usage,
+    provider: answeredBy,
     finishReason,
     cut,
   });
@@ -178,14 +201,37 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
         // Omitted rather than sent as a default: a model that does not reason answers a
         // request carrying this with a 400 on some providers and silence on others, and a
         // deployment that has not said its model reasons must get the request it always got.
-        ...(options.effort ? { reasoning_effort: options.effort } : {}),
+        // `max` is GLM's own word, which the OpenAI SDK's type does not name; it is sent as is.
+        ...(options.effort
+          ? {
+              reasoning_effort:
+                options.effort as OpenAI.Chat.ChatCompletionCreateParams["reasoning_effort"],
+            }
+          : {}),
+        // The Bot, hashed, as the end user: a standard field of this API, which every
+        // compatible endpoint accepts.
+        ...(options.session ? { user: options.session.user } : {}),
       },
-      { signal: abort.signal },
+      {
+        signal: abort.signal,
+        /*
+         * STICKY ROUTING, ASKED FOR. OpenRouter spreads this model over 31 endpoints, each with its
+         * own cache, and without a session it pins a conversation by hashing the first system
+         * message — which, while the clock sat in it, changed every minute (agent-harness-review
+         * §2). A header rather than the body's `session_id`, because a header an endpoint does not
+         * know is ignored, where an unknown body field is a 400 on OpenAI's own API.
+         */
+        ...(options.session
+          ? { headers: { "x-session-id": options.session.id } }
+          : {}),
+      },
     );
 
     for await (const chunk of completion) {
       // The usage chunk has no choices; read it before the delta guard skips it.
       if (chunk.usage) usage = chunk.usage;
+      const named = (chunk as { provider?: unknown }).provider;
+      if (typeof named === "string" && named) answeredBy = named;
       const reason = chunk.choices[0]?.finish_reason;
       if (reason) finishReason = reason;
       const delta = chunk.choices[0]?.delta;

@@ -46,8 +46,12 @@ export const REQUEST_TIMEOUT_MS = 120_000;
  */
 export type CompletionProvider = (
   request: Parameters<OpenAI["chat"]["completions"]["create"]>[0],
-  /** Aborted when the request outlives `REQUEST_TIMEOUT_MS`. Optional, so a test fake may ignore it. */
-  options?: { signal?: AbortSignal },
+  options?: {
+    /** Aborted when the request outlives `REQUEST_TIMEOUT_MS`. Optional, so a test fake may ignore it. */
+    signal?: AbortSignal;
+    /** Per-request headers — the conversation's `x-session-id` (`./turn`). */
+    headers?: Record<string, string>;
+  },
 ) => Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
 
 /**
@@ -59,7 +63,13 @@ export type CompletionProvider = (
  */
 export function createProvider(client: OpenAI): CompletionProvider {
   return (request, options) =>
-    client.chat.completions.create({ ...request, stream: true }, options);
+    client.chat.completions.create(
+      { ...request, stream: true },
+      {
+        ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.headers ? { headers: options.headers } : {}),
+      },
+    );
 }
 
 export const liveProvider: CompletionProvider = createProvider(

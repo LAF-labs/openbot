@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { textOf } from "../../shared/message-content";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { spillLineOf } from "../../shared/spillover";
+import type { ProviderSession } from "./turn";
 
 /**
  * The conversation as AG-UI carries it, turned into what the model provider expects — and what
@@ -187,8 +189,57 @@ function readableArguments(raw: string): string {
   return parseToolArguments(raw) === null ? "{}" : raw;
 }
 
+/** The product's three words for how hard a Bot thinks. */
+export type ProductEffort = "quick" | "balanced" | "thorough";
+
+/** What a provider is sent as `reasoning_effort`. `max` is GLM's own top, which OpenAI does not name. */
+export type ProviderEffort = "low" | "medium" | "high" | "max";
+
 /**
- * How hard to think, as the caller asked and this API spells it.
+ * The product's words in a model's own vocabulary, where the model has one of its own.
+ *
+ * GLM-5.3 AND 5.3-FLASH DEFINE `low`, `high` AND `max` — AND NOT `medium`, which is what `balanced`
+ * was sent as. Z.ai's docs name the three and default to `max`; OpenRouter's listing says
+ * `supported_efforts: [max, high, low]`; the model's own chat template turns anything that is not
+ * low or high into Max. So `medium` meant whatever each of the 31 endpoints decided, and measured
+ * (agent-harness-review §4.4) Wafer rendered it exactly like `low` while others rendered Max. An
+ * effort that means a different thing per provider is a setting going nowhere in particular.
+ *
+ * So the model's three, in order: `quick` → `low`, `balanced` → `high`, `thorough` → `max`. Three
+ * settings on the Bot's profile must stay three different requests — two that sent the same word
+ * would be a control that saves and does nothing (CLAUDE.md).
+ *
+ * `balanced`, the default, by the eval (`bun run eval:model`, 2026-09-25, docs/laf/eval-pack.md).
+ * Pinned to one provider (Z.AI, two runs a scenario) the pack's 22 scenarios went from 40 of 44 at
+ * `medium` to 42 of 44 at `high`, and the five new time and place scenarios 10 of 10. Unpinned,
+ * three runs each, `low` and `high` were the same within the noise (57 and 56 of 66), and the noise
+ * was a provider: Wafer sends a bridged call's arguments empty at either effort (2 of 4, where Z.AI
+ * and Relace were 4 of 4). `high` spent 15% more tokens than `low` at about the same latency, and
+ * `low` on Z.AI reasoned not at all. The default is the Bot every person has, so it takes the
+ * model's middle, not its floor; `max` for `thorough` was accepted by the provider and measured
+ * 25 of 27 at 18 s a scenario.
+ *
+ * Matched on the name `BOT_MODEL` sends, because that is the only thing this service knows about
+ * the model. Any other model keeps the OpenAI words, which every OpenAI reasoning model defines.
+ */
+const MODEL_EFFORTS: ReadonlyArray<{
+  model: RegExp;
+  words: Record<ProductEffort, ProviderEffort>;
+}> = [
+  {
+    model: /(^|\/)glm-5\.3/i,
+    words: { quick: "low", balanced: "high", thorough: "max" },
+  },
+];
+
+const OPENAI_EFFORTS: Record<ProductEffort, ProviderEffort> = {
+  quick: "low",
+  balanced: "medium",
+  thorough: "high",
+};
+
+/**
+ * How hard to think, as the caller asked and this model spells it.
  *
  * The words on the wire are the product's — `quick`, `balanced`, `thorough` — because the server
  * and this service speak different APIs and would otherwise each need the other's spelling. Each
@@ -200,14 +251,48 @@ function readableArguments(raw: string): string {
  */
 export function reasoningEffortOf(
   input: RunAgentInput,
-): "low" | "medium" | "high" | undefined {
+  model = "",
+): ProviderEffort | undefined {
   const forwarded = input.forwardedProps;
   if (!forwarded || typeof forwarded !== "object") return undefined;
   const effort = (forwarded as Record<string, unknown>).effort;
-  if (effort === "quick") return "low";
-  if (effort === "balanced") return "medium";
-  if (effort === "thorough") return "high";
-  return undefined;
+  if (effort !== "quick" && effort !== "balanced" && effort !== "thorough") {
+    return undefined;
+  }
+  const words =
+    MODEL_EFFORTS.find((entry) => entry.model.test(model))?.words ??
+    OPENAI_EFFORTS;
+  return words[effort];
+}
+
+/**
+ * The person's time zone, as the server's middleware forwards it for the `now` tool.
+ *
+ * Undefined when nothing was said — the tool then reads Seoul (`resolveTimeZone`), which is the
+ * deployment's default, rather than this container's clock zone, which is nobody's.
+ */
+export function timeZoneOf(input: RunAgentInput): string | undefined {
+  const forwarded = input.forwardedProps;
+  if (!forwarded || typeof forwarded !== "object") return undefined;
+  const zone = (forwarded as Record<string, unknown>).timeZone;
+  return typeof zone === "string" && zone.trim() ? zone.trim() : undefined;
+}
+
+/**
+ * What this question has cost in dollars before this run, as the server counted it from the usage
+ * rows it filed (`server/src/context/conversations.ts`). Zero when nothing was said: this service
+ * holds no record of earlier runs, and a caller that sends nothing gets the bound from this run's
+ * own spend alone.
+ */
+export function questionCostOf(input: RunAgentInput): number {
+  const forwarded = input.forwardedProps;
+  if (!forwarded || typeof forwarded !== "object") return 0;
+  const question = (forwarded as Record<string, unknown>).question;
+  if (!question || typeof question !== "object") return 0;
+  const cost = (question as Record<string, unknown>).costUsd;
+  return typeof cost === "number" && Number.isFinite(cost) && cost > 0
+    ? cost
+    : 0;
 }
 
 /**
@@ -222,4 +307,25 @@ export function botIdOf(input: RunAgentInput): string {
   if (!forwarded || typeof forwarded !== "object") return "unknown-bot";
   const botId = (forwarded as Record<string, unknown>).botId;
   return typeof botId === "string" && botId ? botId : "unknown-bot";
+}
+
+const hashed = (text: string) =>
+  createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
+
+/**
+ * Who this conversation is, to the provider: the thread and the Bot, hashed.
+ *
+ * One session per Bot conversation, not per epoch: the tools and the static prompt at the head of
+ * every request are the same across epochs, and a new epoch on the same provider still reads them
+ * from its cache. Hashed although a thread id is an id this deployment mints and carries nothing
+ * personal — what leaves for a third party is what could never be read back into anything.
+ */
+export function providerSessionOf(
+  input: RunAgentInput,
+): ProviderSession | undefined {
+  if (typeof input.threadId !== "string" || !input.threadId) return undefined;
+  return {
+    id: hashed(`laf-conversation:${input.threadId}`),
+    user: hashed(`laf-bot:${botIdOf(input)}`),
+  };
 }

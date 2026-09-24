@@ -24,12 +24,17 @@ export type Behaviour =
   | {
       kind: "stream";
       choices: Choice[];
-      /** The usage chunk after the last choice, as OpenAI sends it. Absent: none. */
+      /**
+       * The usage chunk after the last choice, as OpenAI sends it — and OpenRouter, with `cost`
+       * and the details beside the counts. Absent: none.
+       */
       usage?: {
         prompt_tokens: number;
         completion_tokens: number;
         total_tokens: number;
-      };
+      } & Record<string, unknown>;
+      /** OpenRouter's `provider` on every chunk: who answered. Absent: an endpoint that says nothing. */
+      provider?: string;
       /**
        * `done`: `data: [DONE]` then close, which is a finished stream. `eof`: close the body
        * with no `[DONE]` — a proxy's idle limit, a provider redeploying. `reset`: error the body
@@ -48,6 +53,8 @@ export type RecordedRequest = {
   /** Milliseconds since the fake started. */
   at: number;
   body: Record<string, unknown>;
+  /** The request's headers, lower-cased, as the SDK sent them. */
+  headers: Record<string, string>;
   /** When the client gave up on this request, if it did. */
   abortedAt?: number;
   /** When the response body was fully written or ended. */
@@ -100,6 +107,7 @@ export function startFakeProvider(
       const record: RecordedRequest = {
         at: now(),
         body: (await request.json()) as Record<string, unknown>,
+        headers: Object.fromEntries(request.headers.entries()),
       };
       requests.push(record);
       request.signal.addEventListener("abort", () => {
@@ -175,6 +183,7 @@ function sseBody(
     object: "chat.completion.chunk",
     created: 0,
     model: "fake-model",
+    ...(behaviour.provider ? { provider: behaviour.provider } : {}),
     choices: [
       {
         index: 0,

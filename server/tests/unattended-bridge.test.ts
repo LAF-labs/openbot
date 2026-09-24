@@ -135,11 +135,13 @@ describe("a routine reaching Gmail through the bridge", () => {
     expect(result.answer).toBe("kim@shop.kr에게 보냈다.");
 
     // The model was offered the bridge, not Gmail's four tools.
+    // In one sorted order, with `now`, which agent-bot answers itself on every run.
     expect(requests[0]?.tools?.map((entry) => entry.function.name)).toEqual([
       "computer_navigate",
-      "tool_search",
-      "tool_describe",
+      "now",
       "tool_call",
+      "tool_describe",
+      "tool_search",
     ]);
 
     // The lookup is in the thread as an answered call, filed by the client from TOOL_CALL_RESULT.

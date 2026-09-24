@@ -145,7 +145,12 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   ) {
     return TURN_FAILURE_CODES.toolFailed;
   }
-  if (said.includes("laf:tool_budget_spent")) {
+  // The question's two bounds (agent-bot's `guards.ts`), and the one they replaced, for old rows.
+  if (
+    said.includes("laf:question_max_steps") ||
+    said.includes("laf:question_max_cost") ||
+    said.includes("laf:tool_budget_spent")
+  ) {
     return TURN_FAILURE_CODES.budgetSpent;
   }
   if (said.includes("laf:daily_budget_reached")) {

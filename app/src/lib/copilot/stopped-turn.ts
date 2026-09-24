@@ -53,6 +53,11 @@ export const MODEL_FAILURES: Record<string, string> = {
     "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
   "laf:tool_budget_spent":
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
+  // The question's two bounds that replaced it (agent-bot's `guards.ts`): the same sentence.
+  "laf:question_max_steps":
+    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
+  "laf:question_max_cost":
+    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
   "laf:agent_stalled":
     "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.",
   /*

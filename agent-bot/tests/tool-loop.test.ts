@@ -10,8 +10,9 @@ import { describe, expect, spyOn, test } from "bun:test";
  * and this service had no turn bound at all.
  *
  * Two bounds now, both answered inside the run so the model hears why: the same call three times in
- * a row is `laf:tool_loop`, and a question that has cost `ASK_TOKEN_BUDGET` is `laf:tool_budget_spent`
- * followed by one request with no tools, so the Bot says what it found.
+ * a row is `laf:tool_loop`, and a question that has taken `MAX_QUESTION_STEPS` requests or cost
+ * `MAX_QUESTION_COST_USD` is answered with that bound, followed by one request with no tools, so the
+ * Bot says what it found — and the run then ends on the bound, so the record says why.
  *
  * Driven the way the surface drives it — run, execute whatever was forwarded, append the calls and
  * results the run put on the wire, run again — because both bounds read the conversation the
@@ -128,10 +129,13 @@ function fileEvents(transcript: Message[], events: Event[]): void {
 async function driveLoop(
   script: (ordinal: number, request: Request) => Chunk[],
   tools: unknown[] = TOOLS,
+  /** The conversation before the question, and what the server forwards beside it. */
+  options: { history?: Message[]; forwardedProps?: object } = {},
 ) {
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
   const transcript: Message[] = [
+    ...(options.history ?? []),
     { id: "u1", role: "user", content: "부산 매장 재고 확인해줘" },
   ];
   const requests: Request[] = [];
@@ -153,7 +157,7 @@ async function driveLoop(
           messages: structuredClone(transcript),
           tools,
           context: [],
-          forwardedProps: {},
+          forwardedProps: options.forwardedProps ?? {},
           state: {},
         } as never,
         (async (request: Request) => {
@@ -171,6 +175,18 @@ async function driveLoop(
         .filter((line) => line.startsWith("data:"))
         .map((line) => JSON.parse(line.slice(5).trim()) as Event);
       fileEvents(transcript, events);
+      // What the server does with the usage it files: the question's dollars, forwarded next run.
+      const question = (
+        options.forwardedProps as { question?: { costUsd: number } }
+      )?.question;
+      if (question) {
+        for (const event of events) {
+          const value = event.value as { costUsd?: number } | undefined;
+          if (event.name === "laf.model.usage" && value?.costUsd) {
+            question.costUsd += value.costUsd;
+          }
+        }
+      }
 
       // What the surface executes: every call that ended without a result of its own.
       const answered = new Set(
@@ -205,14 +221,43 @@ const codesOf = (events: Event[]) =>
       (event) => (JSON.parse(String(event.content)) as { code?: string }).code,
     );
 
-/** What every request weighed, counted the way the budget counts it. */
-async function weights(requests: Request[]): Promise<number[]> {
-  const { charsOf } = await import("../src/guards");
-  return requests.map((request) => charsOf(request.messages as never));
-}
+/** A turn that asks for one tool and says what it cost, as OpenRouter's usage chunk does. */
+const costing = (id: string, name: string, args: object, cost: number) => [
+  ...calls(id, name, args),
+  {
+    choices: [],
+    usage: {
+      prompt_tokens: 1000,
+      completion_tokens: 10,
+      total_tokens: 1010,
+      cost,
+    },
+  } as Chunk,
+];
 
-const sum = (values: number[]) =>
-  values.reduce((total, value) => total + value, 0);
+/** A conversation that has gone on for a long time: a week of browsing, 240K characters of it. */
+function longHistory(): Message[] {
+  const history: Message[] = [];
+  for (let day = 0; day < 40; day += 1) {
+    history.push(
+      { id: `h_u${day}`, role: "user", content: `${day}번째 날의 부탁` },
+      {
+        id: `h_a${day}`,
+        role: "assistant",
+        toolCalls: [
+          {
+            id: `h_c${day}`,
+            type: "function",
+            function: { name: "computer_read", arguments: "{}" },
+          },
+        ],
+      },
+      { id: `h_t${day}`, role: "tool", toolCallId: `h_c${day}`, content: PAGE },
+      { id: `h_s${day}`, role: "assistant", content: "다 읽었다." },
+    );
+  }
+  return history;
+}
 
 describe("the same call over and over", () => {
   test("the third is answered with laf:tool_loop, and a fourth ends the run on it", async () => {
@@ -232,7 +277,10 @@ describe("the same call over and over", () => {
       message: "laf:tool_loop",
     });
     // About two pages' worth in all, where the audit's run was heading for two million.
-    expect(sum(await weights(requests))).toBeLessThan(40_000);
+    const sent = requests.map((request) => JSON.stringify(request.messages));
+    expect(sent.reduce((total, body) => total + body.length, 0)).toBeLessThan(
+      60_000,
+    );
   });
 
   test("the warning is enough for a model that listens", async () => {
@@ -302,50 +350,88 @@ describe("the same call over and over", () => {
 });
 
 describe("a question that keeps costing", () => {
-  test("is told its budget is spent, offered no tools, and answers — far below a hundred runs", async () => {
-    const { ASK_TOKEN_BUDGET } = await import("../src/guards");
-    // A model that reads a different page every time, and speaks only when it has no tools.
-    const { runs, requests, events, transcript } = await driveLoop(
-      (ordinal, request) =>
-        request.tools
-          ? calls(`c${ordinal}`, "computer_read", { page: ordinal })
-          : said("지금까지 읽은 것으로 답한다."),
-    );
+  /** A model that reads a different page every time, and speaks only when it has no tools. */
+  const reader = (ordinal: number, request: Request) =>
+    request.tools
+      ? calls(`c${ordinal}`, "computer_read", { page: ordinal })
+      : said("지금까지 읽은 것으로 답한다.");
 
-    expect(runs).toBeGreaterThan(10);
-    expect(runs).toBeLessThan(40);
-    expect(codesOf(events)).toEqual(["laf:tool_budget_spent"]);
+  test("is told its steps are spent, offered no tools, answers — and the run ends on the bound", async () => {
+    const { MAX_QUESTION_STEPS, QUESTION_MAX_STEPS } = await import(
+      "../src/guards"
+    );
+    const { runs, requests, events, transcript } = await driveLoop(reader);
+
+    // Every step it was allowed, one more whose call was answered with the bound, then the answer.
+    expect(requests).toHaveLength(MAX_QUESTION_STEPS + 2);
+    expect(runs).toBe(MAX_QUESTION_STEPS + 1);
+    expect(codesOf(events)).toEqual([QUESTION_MAX_STEPS]);
     // The last request is the one with no tools, and it was answered in words.
     expect(requests.at(-1)?.tools).toBeUndefined();
     expect(requests.at(-2)?.tools).toBeDefined();
-    expect(events.at(-1)?.type).toBe("RUN_FINISHED");
     expect(transcript.at(-1)?.content).toBe("지금까지 읽은 것으로 답한다.");
-    // What it cost, as the budget counts it: at least the budget — nothing else stopped it — and at
-    // most the budget plus the request that crossed it and the two made once it was spent.
-    const sent = await weights(requests);
-    expect(sum(sent)).toBeGreaterThanOrEqual(ASK_TOKEN_BUDGET);
-    expect(sum(sent)).toBeLessThanOrEqual(
-      ASK_TOKEN_BUDGET + 3 * Math.max(...sent),
-    );
-  });
-
-  test("a model that asks for a tool when it was offered none ends the run on the fact", async () => {
-    const { runs, events } = await driveLoop((ordinal) =>
-      calls(`c${ordinal}`, "computer_read", { page: ordinal }),
-    );
-    expect(runs).toBeLessThan(40);
-    expect(codesOf(events)).toEqual([
-      "laf:tool_budget_spent",
-      "laf:tool_budget_spent",
-    ]);
+    // The answer stays, and the record says why the question stopped: error_max_turns.
     expect(events.at(-1)).toMatchObject({
       type: "RUN_ERROR",
-      message: "laf:tool_budget_spent",
+      message: QUESTION_MAX_STEPS,
     });
   });
 
-  test("the person speaking again starts a new question with its own budget", async () => {
-    const { spentSinceLastAsk } = await import("../src/guards");
+  test("THE BOUND DOES NOT SHRINK AS THE BOT AGES: a week of history leaves every step", async () => {
+    const { MAX_QUESTION_STEPS } = await import("../src/guards");
+    /*
+     * The old bound summed the characters of every request since the question, whole history
+     * included, and 240K characters of history left a question three requests.
+     */
+    const { requests } = await driveLoop(reader, TOOLS, {
+      history: longHistory(),
+    });
+    expect(requests).toHaveLength(MAX_QUESTION_STEPS + 2);
+  });
+
+  test("a question that has cost what it may is stopped on the dollars — the server's and this run's", async () => {
+    const { MAX_QUESTION_COST_USD, QUESTION_MAX_COST } = await import(
+      "../src/guards"
+    );
+    // The server says the question has already cost all but three cents; each request costs two.
+    const { requests, events } = await driveLoop(
+      (ordinal, request) =>
+        request.tools
+          ? costing(`c${ordinal}`, "computer_read", { page: ordinal }, 0.02)
+          : said("여기까지 알아낸 것."),
+      TOOLS,
+      {
+        forwardedProps: {
+          question: { costUsd: MAX_QUESTION_COST_USD - 0.03 },
+        },
+      },
+    );
+    // Two requests fit under the bound; the third's call is answered, and the fourth speaks.
+    expect(requests).toHaveLength(4);
+    expect(codesOf(events)).toEqual([QUESTION_MAX_COST]);
+    expect(events.at(-1)).toMatchObject({
+      type: "RUN_ERROR",
+      message: QUESTION_MAX_COST,
+    });
+  });
+
+  test("a model that asks for a tool when it was offered none ends the run on the fact", async () => {
+    const { MAX_QUESTION_STEPS, QUESTION_MAX_STEPS } = await import(
+      "../src/guards"
+    );
+    const { runs, events } = await driveLoop((ordinal) =>
+      calls(`c${ordinal}`, "computer_read", { page: ordinal }),
+    );
+    expect(runs).toBe(MAX_QUESTION_STEPS + 1);
+    expect(codesOf(events)).toEqual([QUESTION_MAX_STEPS, QUESTION_MAX_STEPS]);
+    expect(events.at(-1)).toMatchObject({
+      type: "RUN_ERROR",
+      message: QUESTION_MAX_STEPS,
+    });
+  });
+
+  test("the person speaking again starts a new question with its own steps", async () => {
+    const { stepsSinceLastAsk } = await import("../src/guards");
     const call = {
       id: "a1",
       role: "assistant",
@@ -363,9 +449,9 @@ describe("a question that keeps costing", () => {
       call,
       page,
     ] as never[];
-    expect(spentSinceLastAsk(before)).toBeGreaterThan(0);
+    expect(stepsSinceLastAsk(before)).toBe(1);
     expect(
-      spentSinceLastAsk([
+      stepsSinceLastAsk([
         ...before,
         { id: "u2", role: "user", content: "다른 것" },
       ] as never[]),

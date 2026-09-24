@@ -261,16 +261,21 @@ describe("a turn that did not come back whole", () => {
    * it — the same answer `model-call.ts` records for `askModel`. Once only: a model that comes back
    * empty twice is not going to come back full on the third.
    */
-  test("asks again one step lower when nothing came back", async () => {
+  test("asks again once, AT THE SAME EFFORT, when nothing came back", async () => {
     const { requests, events } = await turnFor(
       [{ id: "u1", role: "user", content: "안녕" }],
       [[], said("안녕하세요.")],
       { effort: "thorough" },
     );
 
+    /*
+     * It used to drop one step (high → medium). The effort is rendered at the head of the prompt,
+     * in front of the tools, so the lower retry re-read the whole conversation uncached
+     * (agent-harness-review §4.4) — Claude Code's rule: never change effort inside a session.
+     */
     expect(requests.map((request) => request.reasoning_effort)).toEqual([
       "high",
-      "medium",
+      "high",
     ]);
     // The retry answered, so nothing is reported: this is a recovery, not an incident.
     expect(
@@ -344,22 +349,26 @@ describe("a turn that did not come back whole", () => {
     expect(events.at(-1)?.type).toBe("RUN_FINISHED");
   });
 
-  test("does not retry when there is no lower effort to drop to", async () => {
-    // `quick` is the floor, and a deployment whose model does not reason sends none at all. Asking
-    // the same question twice for nothing is latency the person pays and no better answer.
+  test("retries once whatever the effort, and a second empty answer is reported", async () => {
+    // `quick`, and a deployment whose model sends no effort at all: the same one retry, the same
+    // request, and no third.
     const { requests, events } = await turnFor(
       [{ id: "u1", role: "user", content: "안녕" }],
       [[], []],
       { effort: "quick" },
     );
-    expect(requests).toHaveLength(1);
+    expect(requests.map((request) => request.reasoning_effort)).toEqual([
+      "low",
+      "low",
+    ]);
     expect(events.map((event) => event.name)).toContain("laf.empty_answer");
 
     const none = await turnFor(
       [{ id: "u1", role: "user", content: "안녕" }],
       [[], []],
     );
-    expect(none.requests).toHaveLength(1);
+    expect(none.requests).toHaveLength(2);
+    expect(none.requests[1]).not.toHaveProperty("reasoning_effort");
   });
 
   test("a turn that answered is not an empty one", async () => {

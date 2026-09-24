@@ -16,8 +16,9 @@
  * JUDGED WHEN A RUN STARTS, AND ONLY THEN. A run already streaming is not stopped part-way: an answer
  * cut off at a token count is worse than one that goes a little over, and the trail does not know a
  * run's cost until the run reports it. So a day can overrun by what the runs in flight at the moment
- * it filled go on to spend — each bounded by agent-bot's per-question budget (`ASK_TOKEN_BUDGET`,
- * 600,000 tokens). That ceiling is written down in docs/laf/data-lifecycle.md, as the contract asks.
+ * it filled go on to spend — each bounded by agent-bot's per-question bounds (`MAX_QUESTION_STEPS`,
+ * `MAX_QUESTION_COST_USD`). That ceiling is written down in docs/laf/data-lifecycle.md, as the
+ * contract asks.
  *
  * A TRAIL THAT CANNOT BE READ IS NOT A REFUSAL. "Today's allowance is used up" is a sentence only a
  * count may say; saying it because a read failed would tell somebody a false thing about their own

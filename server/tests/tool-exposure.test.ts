@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { exposeTools, schemaBytesOf } from "../../agent-bot/src/deferral";
+import {
+  exposeTools,
+  schemaBytesOf,
+  sortedTools,
+} from "../../agent-bot/src/deferral";
 import {
   connectedServiceTools,
   measureSchema,
@@ -9,9 +13,11 @@ import {
   DEFERRED_TOOL_PREFIX,
   exposureOf,
   FAMILY_LABELS_KO,
+  isBridgeToolName,
   isDeferredToolName,
   searchTools,
 } from "../../shared/tools/bridge";
+import { NOW_TOOL } from "../../shared/tools/now";
 import { ALIMTALK_TOOLS } from "../src/plugins/alimtalk/tools";
 import { CATALOGUE } from "../src/plugins/catalogue";
 import { toolNameFor } from "../src/plugins/store";
@@ -108,7 +114,12 @@ describe("what the bridge saves on the product's whole schema", () => {
       (tool) => !isDeferredToolName(tool.name),
     );
     const exposed = exposeTools(core, true);
-    expect(exposed.provider).toEqual(core);
-    expect(schemaBytesOf(exposed.provider)).toBe(schemaBytesOf(core));
+    // No bridge: the same tools, in one sorted order, plus `now`, which every run carries.
+    const carried = sortedTools([...core, NOW_TOOL]);
+    expect(exposed.provider).toEqual(carried);
+    expect(exposed.provider.some((tool) => isBridgeToolName(tool.name))).toBe(
+      false,
+    );
+    expect(schemaBytesOf(exposed.provider)).toBe(schemaBytesOf(carried));
   });
 });

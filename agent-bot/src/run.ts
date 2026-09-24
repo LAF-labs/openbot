@@ -1,22 +1,26 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import { nowResultText } from "../../shared/tools/now";
 import {
   answerBridgeCall,
   exposeTools,
   isBridgeCall,
+  isServiceCall,
   MAX_BRIDGE_ROUNDS,
   toolDeferralOf,
   toProviderTools,
 } from "./deferral";
 import {
-  ASK_TOKEN_BUDGET,
   canonicalArguments,
-  charsOf,
   knownToolNames,
+  MAX_QUESTION_COST_USD,
+  MAX_QUESTION_STEPS,
   MAX_TOOL_RECOVERIES,
+  QUESTION_MAX_COST,
+  QUESTION_MAX_STEPS,
   repeatsOf,
-  spentSinceLastAsk,
+  stepsSinceLastAsk,
   TOOL_LOOP_LIMIT,
 } from "./guards";
 import { log, runErrorCodeOf, runFailureOf } from "./log";
@@ -29,9 +33,12 @@ import {
 import {
   botIdOf,
   parseToolArguments,
+  providerSessionOf,
+  questionCostOf,
   reasoningEffortOf,
-  toProviderMessages,
   type TranscriptMessage,
+  timeZoneOf,
+  toProviderMessages,
 } from "./transcript";
 import {
   ConsumerGone,
@@ -70,12 +77,6 @@ import {
 
 /** Often enough that no sane stall timeout fires between two; rare enough to be nothing on the wire. */
 const HEARTBEAT_MS = 15_000;
-
-/** Effort, one step down. Lowered once when a completion comes back empty — see `runRounds`. */
-const LOWER_EFFORT: Record<string, "low" | "medium"> = {
-  high: "medium",
-  medium: "low",
-};
 
 /**
  * The backstop on requests per run.
@@ -279,7 +280,8 @@ async function runRounds(context: RunContext): Promise<void> {
    * have ridden past the budget uncounted.
    */
   const inRun: TranscriptMessage[] = [];
-  const effort = reasoningEffortOf(input);
+  const effort = reasoningEffortOf(input, MODEL);
+  const session = providerSessionOf(input);
 
   /** Calls this run answered with `laf:tool_unknown` or `laf:tool_arguments_invalid`. */
   let recoveries = 0;
@@ -292,11 +294,19 @@ async function runRounds(context: RunContext): Promise<void> {
    */
   let mustSpeak = false;
   /**
-   * What this question cost before this run, read off the transcript once; the rounds of this
-   * run add what they send. See `ASK_TOKEN_BUDGET` for what the number is and is not.
+   * What this question took before this run: its model requests, read off the transcript, and its
+   * dollars, as the server counted them. This run adds its own rounds and what they cost. See
+   * `MAX_QUESTION_STEPS` and `MAX_QUESTION_COST_USD`.
    */
-  const spentBefore = spentSinceLastAsk(input.messages);
-  let spentInRun = 0;
+  const stepsBefore = stepsSinceLastAsk(input.messages);
+  const costBefore = questionCostOf(input);
+  let costInRun = 0;
+  /**
+   * Which bound this question met, once the model has been told. The run then ends on it even when
+   * the model answers well with what it has — the Agent SDK's `error_max_turns`: the record says
+   * the question was cut short, not that it was finished.
+   */
+  let spentOn: string | null = null;
   /** How the run ends when a guard has had the last word. Null while the model still may. */
   let endsOn: string | null = null;
 
@@ -305,8 +315,8 @@ async function runRounds(context: RunContext): Promise<void> {
      * THE TRANSCRIPT IS CONVERTED ONCE PER ROUND, NOT ONCE PER TURN.
      *
      * The system message it starts with carries the Bot's memory as the server snapshotted
-     * it for this run, and the tool results in it are trimmed against one budget. A retry
-     * at lower effort is the same round asked again, so it is sent the same transcript —
+     * it for this run, and the tool results in it are trimmed against one budget. The retry
+     * an empty answer gets is the same round asked again, so it is sent the same transcript —
      * converting it inside each turn would let the two attempts of one round disagree
      * about what was cut. A new round IS a different transcript: the lookups the last one
      * answered are in it now, counted against the budget and cut like every other result.
@@ -318,14 +328,19 @@ async function runRounds(context: RunContext): Promise<void> {
       : toProviderTools(
           round < MAX_BRIDGE_ROUNDS ? exposed.provider : exposed.withoutBridge,
         );
-    /** Whether the question had already cost what it may before this request was made. */
-    const overBudget = spentBefore + spentInRun >= ASK_TOKEN_BUDGET;
-    spentInRun += charsOf(messages);
-    const request = (attemptEffort: typeof effort) =>
+    /** Which bound, if any, the question had already met before this request was made. */
+    const overBudget =
+      stepsBefore + round >= MAX_QUESTION_STEPS
+        ? QUESTION_MAX_STEPS
+        : costBefore + costInRun >= MAX_QUESTION_COST_USD
+          ? QUESTION_MAX_COST
+          : null;
+    const request = () =>
       runTurn({
         provider: context.provider,
         model: MODEL,
-        effort: attemptEffort,
+        effort,
+        ...(session ? { session } : {}),
         round,
         runId: input.runId,
         messages,
@@ -342,35 +357,38 @@ async function runRounds(context: RunContext): Promise<void> {
         holdOf: (name) =>
           isBridgeCall(name, exposed)
             ? "bridge"
-            : known.has(name)
-              ? null
-              : "unknown",
+            : isServiceCall(name)
+              ? "service"
+              : known.has(name)
+                ? null
+                : "unknown",
       });
-    let turn = await request(effort);
+    let turn = await request();
 
     /*
-     * AN EMPTY COMPLETION IS A REASONING BUDGET SPENT ON THINKING.
+     * AN EMPTY COMPLETION IS ASKED AGAIN, ONCE, AT THE SAME EFFORT.
      *
      * No text, no tool calls, RUN_FINISHED — which every reader downstream takes for a Bot that
-     * chose to say nothing. In a room that is a legitimate silence; in a chat it is a Bot that
-     * ignored the person. Same trap `model-call.ts` records for `askModel`, same answer: ask
-     * again with less of the budget going to deliberation. Once only — a model that comes back
-     * empty twice is not going to come back full on the third.
+     * chose to say nothing, and in a chat that is a Bot that ignored the person. It used to be
+     * asked again one effort lower, on the theory that the reasoning budget had gone on thinking.
+     * But the effort is rendered at the very head of the prompt, in front of the tools
+     * (agent-harness-review §4.4: `high` read 0 cached on the first request after a switch), so
+     * the lower retry re-billed the whole conversation at the moment it was already failing — and
+     * no token ceiling is sent (CLAUDE.md, "Model calls"), so there is no budget for the thinking
+     * to have run out of. Claude Code's rule is the one kept: never change effort inside a
+     * session. Once only — a model that comes back empty twice is not going to come back full on
+     * the third.
      */
     if (isEmptyTurn(turn)) {
-      const lowered = effort ? LOWER_EFFORT[effort] : undefined;
-      if (lowered) {
-        log.warn("reply_empty_retrying", {
-          bot: botId,
-          run: input.runId,
-          effort,
-          retryingAt: lowered,
-        });
-        // The first attempt was paid for too. Overwriting it here is how the monthly cost KPI
-        // missed exactly the days a reasoning model spent its budget on nothing (audit A2, S3-5).
-        emitUsage(context, turn);
-        turn = await request(lowered);
-      }
+      log.warn("reply_empty_retrying", {
+        bot: botId,
+        run: input.runId,
+        effort,
+      });
+      // The first attempt was paid for too. Overwriting it here is how the monthly cost KPI
+      // missed exactly the days a reasoning model spent its budget on nothing (audit A2, S3-5).
+      costInRun += emitUsage(context, turn);
+      turn = await request();
       if (isEmptyTurn(turn)) {
         log.warn("reply_empty", { bot: botId, run: input.runId });
         emit({
@@ -482,8 +500,9 @@ async function runRounds(context: RunContext): Promise<void> {
       opened: boolean,
     ): boolean => {
       if (overBudget) {
-        answer(call, "laf:tool_budget_spent", opened);
+        answer(call, overBudget, opened);
         mustSpeak = true;
+        spentOn = overBudget;
         return true;
       }
       const repeats = repeatsOf(
@@ -521,8 +540,46 @@ async function runRounds(context: RunContext): Promise<void> {
        * would say what this one did.
        */
       if (mustSpeak && tools === undefined) {
-        answer(call, "laf:tool_budget_spent", call.started && !call.held);
-        endsOn = "laf:tool_budget_spent";
+        const spent = spentOn ?? QUESTION_MAX_STEPS;
+        answer(call, spent, call.started && !call.held);
+        endsOn = spent;
+        continue;
+      }
+
+      /*
+       * `now`, answered here from the clock in the person's zone — the Bot's `date`
+       * (`shared/tools/now.ts`). On the wire in full like a lookup, so the transcript says the Bot
+       * looked rather than the Bot appearing to know the minute.
+       */
+      if (call.held === "service") {
+        const rawArguments = call.arguments || "{}";
+        const text = nowResultText(new Date(), timeZoneOf(input));
+        emit({
+          type: "TOOL_CALL_START",
+          toolCallId: call.id,
+          toolCallName: call.name,
+          parentMessageId: messageId,
+        } as BaseEvent);
+        emit({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: call.id,
+          delta: rawArguments,
+        } as BaseEvent);
+        emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
+        emit({
+          type: "TOOL_CALL_RESULT",
+          messageId: `tool_${call.id}`,
+          toolCallId: call.id,
+          content: text,
+          role: "tool",
+        } as BaseEvent);
+        answered.push({
+          id: call.id,
+          name: call.name,
+          arguments: rawArguments,
+          text,
+          kind: "lookup",
+        });
         continue;
       }
 
@@ -659,7 +716,7 @@ async function runRounds(context: RunContext): Promise<void> {
       } as BaseEvent);
     }
 
-    emitUsage(context, turn);
+    costInRun += emitUsage(context, turn);
 
     /*
      * A guard has had the last word. Its answer is on the wire, so the thread holds no open call,
@@ -728,6 +785,25 @@ async function runRounds(context: RunContext): Promise<void> {
    * numbers an operator asks for when a turn was slow or a Bot could not find a tool; the
    * names, the transcript and the answer are the person's and never go here.
    */
+  /*
+   * THE QUESTION MET ITS BOUND, AND THE MODEL ANSWERED WITH WHAT IT HAD. The answer is on the wire
+   * and stays; the run ends on the bound rather than RUN_FINISHED, so the ledger says why the
+   * question stopped (`error_max_turns` / `error_max_budget_usd` in the Agent SDK's words) and the
+   * surface says, under the answer, that the Bot stopped because of it.
+   */
+  if (spentOn) {
+    log.warn("run_failed", {
+      bot: botId,
+      run: input.runId,
+      code: spentOn,
+      reason: "budget",
+      steps: stepsBefore,
+      ms: Date.now() - context.startedAt,
+    });
+    emit({ type: "RUN_ERROR", message: spentOn } as BaseEvent);
+    return;
+  }
+
   log.info("run_finished", {
     bot: botId,
     run: input.runId,
@@ -750,26 +826,44 @@ async function runRounds(context: RunContext): Promise<void> {
  * from. Counts only, never content. One per request: a run that looked twice paid three times,
  * and the audit row says so.
  */
-function emitUsage(context: RunContext, turn: Turn): void {
+function emitUsage(context: RunContext, turn: Turn): number {
   const { usage } = turn;
-  if (!usage) return;
+  if (!usage) return 0;
   /*
    * How much of the prompt the provider served from its cache, where it says so.
    * OpenAI-style endpoints put it in `prompt_tokens_details.cached_tokens` and OpenRouter
    * normalises to the same field; Anthropic-shaped ones say `cache_read_input_tokens`.
    * Left OUT rather than written as zero when neither is there — a zero would read as
    * "measured, nothing hit", which is a different fact from "this endpoint does not say".
+   *
+   * The rest is what caching needs and the row never had (agent-harness-review §5.9): what the
+   * provider WROTE to its cache, the reasoning tokens, the dollars and which provider it was.
+   * OpenRouter reports all four (`usage.cost`, `prompt_tokens_details.cache_write_tokens`,
+   * `completion_tokens_details.reasoning_tokens`, `provider` on the chunk); each is left out where
+   * an endpoint does not say, for the same reason `cached` is.
    */
   const said = usage as {
-    prompt_tokens_details?: { cached_tokens?: unknown };
+    prompt_tokens_details?: {
+      cached_tokens?: unknown;
+      cache_write_tokens?: unknown;
+    };
+    completion_tokens_details?: { reasoning_tokens?: unknown };
     cache_read_input_tokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+    cost?: unknown;
   };
+  const count = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
   const cached =
-    typeof said.prompt_tokens_details?.cached_tokens === "number"
-      ? said.prompt_tokens_details.cached_tokens
-      : typeof said.cache_read_input_tokens === "number"
-        ? said.cache_read_input_tokens
-        : undefined;
+    count(said.prompt_tokens_details?.cached_tokens) ??
+    count(said.cache_read_input_tokens);
+  const written =
+    count(said.prompt_tokens_details?.cache_write_tokens) ??
+    count(said.cache_creation_input_tokens);
+  const reasoning = count(said.completion_tokens_details?.reasoning_tokens);
+  const cost = count(said.cost);
   context.emit({
     type: "CUSTOM",
     name: "laf.model.usage",
@@ -779,6 +873,11 @@ function emitUsage(context: RunContext, turn: Turn): void {
       completionTokens: usage.completion_tokens,
       totalTokens: usage.total_tokens,
       ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
+      ...(written === undefined ? {} : { cacheWriteTokens: written }),
+      ...(reasoning === undefined ? {} : { reasoningTokens: reasoning }),
+      ...(cost === undefined ? {} : { costUsd: cost }),
+      ...(turn.provider ? { provider: turn.provider } : {}),
     },
   } as BaseEvent);
+  return cost ?? 0;
 }

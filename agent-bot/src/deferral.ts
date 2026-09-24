@@ -12,6 +12,7 @@ import {
   unwrapToolCall,
   type WireTool,
 } from "../../shared/tools/bridge";
+import { NOW_TOOL, NOW_TOOL_NAME } from "../../shared/tools/now";
 
 /**
  * Which of the tools this service was handed actually go to the model, and how a call to one of
@@ -60,27 +61,62 @@ export function toolDeferralOf(input: RunAgentInput): boolean {
 }
 
 /**
+ * One order for every list the model is offered: by name, by code point.
+ *
+ * THE TOOLS ARE THE HEAD OF THE PROMPT. GLM's template renders them before the system message
+ * (agent-harness-review §1: a nonce in the first tool's description made the whole prompt a
+ * miss), so a list that arrives in a different order is a different prompt from its first byte.
+ * The order used to be the surface's mount order — stable in practice, enforced by nothing, and
+ * one late-mounting component away from re-billing a whole conversation. Sorted here, at the seam
+ * every run passes, it is the same whatever order the surface or the routine loop registered in.
+ */
+export function sortedTools<T extends { name: string }>(
+  tools: readonly T[],
+): T[] {
+  return [...tools].sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
+}
+
+/**
  * The schema a run is offered.
  *
  * With nothing to defer the list goes through untouched — no bridge for a Bot with no connected
  * services, because three tools that can find nothing are three tools' worth of tokens for
  * nothing. With deferral off (the measurement arm) likewise. Otherwise the core tools plus the
  * bridge, whose `tool_search` names the services actually connected this run.
+ *
+ * `now` is on every list, answered by this service (`shared/tools/now.ts`). A caller's own tool by
+ * that name is dropped rather than offered twice: the answer is this service's either way.
  */
 export function exposeTools(
   tools: readonly WireTool[] | undefined,
   deferral: boolean,
 ): ExposedTools {
-  const all = [...(tools ?? [])];
+  /*
+   * Sorted BEFORE the split as well as after: `tool_search`'s description names the connected
+   * services in the order their tools arrive (`familiesOf`), so an unsorted list made the same
+   * services a different description — measured by the test that registers them backwards.
+   */
+  const all = sortedTools(
+    (tools ?? []).filter((tool) => tool.name !== NOW_TOOL_NAME),
+  );
+  const own: WireTool[] = [NOW_TOOL];
   const { core, deferred } = splitExposure(all);
   if (!deferral || deferred.length === 0) {
-    return { provider: all, withoutBridge: all, deferred: [] };
+    const offered = sortedTools([...all, ...own]);
+    return { provider: offered, withoutBridge: offered, deferred: [] };
   }
   return {
-    provider: [...core, ...bridgeTools(deferred)],
-    withoutBridge: core,
+    provider: sortedTools([...core, ...own, ...bridgeTools(deferred)]),
+    withoutBridge: sortedTools([...core, ...own]),
     deferred,
   };
+}
+
+/** A call this service answers itself, from nothing but the clock: `now`. */
+export function isServiceCall(name: string): boolean {
+  return name === NOW_TOOL_NAME;
 }
 
 /** A bridge call by name only when a bridge was actually offered; otherwise every name is forwarded. */

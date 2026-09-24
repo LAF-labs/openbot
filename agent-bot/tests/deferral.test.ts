@@ -201,11 +201,41 @@ describe("what the model is offered", () => {
     expect(namesOf(requests[0])).toEqual([
       "computer_navigate",
       "computer_request_help",
+      "now",
       "remember",
-      "tool_search",
-      "tool_describe",
       "tool_call",
+      "tool_describe",
+      "tool_search",
     ]);
+  });
+
+  /*
+   * THE TOOLS ARE THE HEAD OF THE PROMPT, so their order is part of the prompt. It was the
+   * surface's mount order, which nothing enforced; one late-mounting component would have made
+   * every request after it a different prompt from the first byte (agent-harness-review §2).
+   */
+  test("one order, by name, however the caller registered them", async () => {
+    const forwards = await runFor([...CORE, ...CONNECTED], [said("네.")]);
+    const backwards = await runFor([...CORE, ...CONNECTED].reverse(), [
+      said("네."),
+    ]);
+    expect(JSON.stringify(backwards.requests[0]?.tools)).toBe(
+      JSON.stringify(forwards.requests[0]?.tools),
+    );
+    const names = namesOf(forwards.requests[0]);
+    expect(names).toEqual([...names].sort());
+  });
+
+  test("now is always offered, and a caller's own now is not offered twice", async () => {
+    const { requests } = await runFor(
+      [...CORE, { ...NAVIGATE, name: "now", description: "다른 now" }],
+      [said("네.")],
+    );
+    const nows = (requests[0]?.tools ?? []).filter(
+      (entry) => entry.function.name === "now",
+    );
+    expect(nows).toHaveLength(1);
+    expect(nows[0]?.function.description).not.toBe("다른 now");
   });
 
   test("tool_search says which services are connected this run", async () => {
@@ -222,6 +252,7 @@ describe("what the model is offered", () => {
     expect(namesOf(requests[0])).toEqual([
       "computer_navigate",
       "computer_request_help",
+      "now",
       "remember",
     ]);
   });
@@ -231,10 +262,12 @@ describe("what the model is offered", () => {
     const { requests } = await runFor([...CORE, ...CONNECTED], [said("네.")], {
       toolDeferral: "off",
     });
-    expect(namesOf(requests[0])).toEqual([
-      ...CORE.map((entry) => entry.name),
-      ...CONNECTED.map((entry) => entry.name),
-    ]);
+    expect(namesOf(requests[0])).toEqual(
+      [...CORE, ...CONNECTED]
+        .map((entry) => entry.name)
+        .concat("now")
+        .sort(),
+    );
   });
 });
 
@@ -497,6 +530,7 @@ describe("what the bridge leaves alone", () => {
     expect(namesOf(requests[4])).toEqual([
       "computer_navigate",
       "computer_request_help",
+      "now",
       "remember",
     ]);
   });

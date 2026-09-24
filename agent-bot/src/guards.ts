@@ -1,11 +1,8 @@
 import type { RunAgentInput } from "@ag-ui/core";
 import { BRIDGE_TOOL_NAMES } from "../../shared/tools/bridge";
+import { NOW_TOOL_NAME } from "../../shared/tools/now";
 import type { ExposedTools } from "./deferral";
-import {
-  parseToolArguments,
-  toProviderMessages,
-  type TranscriptMessage,
-} from "./transcript";
+import { parseToolArguments, type TranscriptMessage } from "./transcript";
 
 /**
  * What the loop refuses to forward, and the bounds it puts on one question.
@@ -45,23 +42,60 @@ export const MAX_TOOL_RECOVERIES = 2;
  */
 export const TOOL_LOOP_LIMIT = 3;
 
-/**
- * What one question may cost before the Bot is told to answer with what it has, in tokens — as
- * estimated from characters.
+/*
+ * WHAT ONE QUESTION MAY TAKE: STEPS AND DOLLARS, NOT HISTORY.
  *
- * Estimated because this service holds no database: the `laf.model.usage` events it emits are filed
- * by the server, and the only record of what this question has cost so far that reaches this
- * process is the transcript itself. So the estimate is the characters of every request this
- * question has produced, rebuilt from the transcript the way the converter built them (trimmed like
- * the real ones). A Korean character is about a token, which is the approximation the audit
- * measured with; English is three or four characters to a token, which errs towards stopping
- * sooner, never later. The real number is the sum of the usage rows.
+ * The bound used to be `ASK_TOKEN_BUDGET`, six hundred thousand characters summed over every
+ * request since the person last spoke — and every request carries the WHOLE conversation. A Bot
+ * has one conversation for life, so the bound shrank as the Bot aged: at 100K characters of
+ * history a question got six requests before the Bot was made to stop, at 200K three
+ * (agent-harness-review §5.1). A long-lived Bot became less able to finish anything, and it was
+ * paying for history the provider was serving from its cache at a fifth of the price.
  *
- * Six hundred thousand is thirty requests of the size the audit measured a browsing Bot settling
- * at (§5, ~20,000 characters each), against the hundred the browser would have allowed: more than
- * a long honest task needs, and a third of a runaway one.
+ * Claude Code bounds a task the way the Agent SDK does: `maxTurns` and `maxBudgetUsd`, ending in
+ * `error_max_turns` and `error_max_budget_usd`. These are the same two bounds, per question.
  */
-export const ASK_TOKEN_BUDGET = 600_000;
+
+/**
+ * How many model requests one question may take before the Bot is made to answer with what it
+ * has: every assistant turn since the person last spoke, plus this run's rounds.
+ *
+ * Thirty is what the old budget allowed a browsing Bot on a fresh conversation (thirty requests of
+ * ~20,000 characters), against the hundred the browser would have allowed: more than a long
+ * honest task needs, and a third of a runaway one — now whatever the history weighs.
+ */
+export const MAX_QUESTION_STEPS = 30;
+
+/**
+ * What one question may cost, in dollars, as the provider reported it (`usage.cost`).
+ *
+ * The server sums the rows it filed for this question and forwards the total
+ * (`forwardedProps.question.costUsd`); this run adds its own. Twenty cents: a twenty-step browsing
+ * task on the deployment's model measured about three and a half cents with the conversation
+ * cached (agent-harness-review §4), so this is a runaway's bound and never an honest task's. An
+ * endpoint that reports no cost is bounded by the steps alone.
+ */
+export const MAX_QUESTION_COST_USD = 0.2;
+
+/** The end reasons, as the run record and the surface read them. */
+export const QUESTION_MAX_STEPS = "laf:question_max_steps";
+export const QUESTION_MAX_COST = "laf:question_max_cost";
+
+/**
+ * How many model requests this question has already taken: the assistant turns since the person
+ * last spoke. Each one was produced by exactly one request. The retry an empty answer gets is not
+ * in the transcript and is not counted.
+ */
+export function stepsSinceLastAsk(
+  transcript: readonly TranscriptMessage[],
+): number {
+  let steps = 0;
+  for (const message of transcript) {
+    if (message.role === "user") steps = 0;
+    else if (message.role === "assistant") steps += 1;
+  }
+  return steps;
+}
 
 /**
  * The names a call may be forwarded under: every tool the run was handed, and the bridge where one
@@ -77,6 +111,8 @@ export function knownToolNames(
   exposed: ExposedTools,
 ): Set<string> {
   const names = new Set((tools ?? []).map((tool) => tool.name));
+  // Answered by this service on every run (`./deferral`), whatever the caller handed.
+  names.add(NOW_TOOL_NAME);
   if (exposed.deferred.length > 0) {
     for (const name of BRIDGE_TOOL_NAMES) names.add(name);
   }
@@ -127,44 +163,4 @@ export function repeatsOf(
     repeats += 1;
   }
   return repeats;
-}
-
-/**
- * What this question has cost so far, estimated — see `ASK_TOKEN_BUDGET`.
- *
- * Every assistant turn since the person last spoke was produced by one request carrying the
- * transcript up to that point, converted and trimmed as `toProviderMessages` does it; summing those
- * requests is the whole calculation. The retry an empty answer gets is not in the transcript and is
- * not counted, and neither is the request about to be made.
- */
-export function spentSinceLastAsk(
-  transcript: readonly TranscriptMessage[],
-): number {
-  let spent = 0;
-  transcript.forEach((message, at) => {
-    if (message.role === "user") {
-      spent = 0;
-      return;
-    }
-    if (message.role !== "assistant") return;
-    spent += charsOf(toProviderMessages(transcript.slice(0, at)));
-  });
-  return spent;
-}
-
-/** What one request weighs, in the characters of the messages the model is sent. */
-export function charsOf(
-  messages: ReturnType<typeof toProviderMessages>,
-): number {
-  let chars = 0;
-  for (const message of messages) {
-    if (typeof message.content === "string") chars += message.content.length;
-    if ("tool_calls" in message) {
-      for (const call of message.tool_calls ?? []) {
-        if (call.type !== "function") continue;
-        chars += call.function.name.length + call.function.arguments.length;
-      }
-    }
-  }
-  return chars;
 }
