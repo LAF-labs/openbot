@@ -50,18 +50,24 @@ const mapError = (error: unknown) => {
 };
 
 /**
- * The three fields an edit reaches, out of whatever arrived. A field that is absent or `null` is not
- * being changed; a name or an instruction is read as text the way create reads it, and a schedule
- * is handed on as sent for `parseSchedule` to accept or refuse with its code.
+ * The four fields an edit reaches, out of whatever arrived. A field that is absent or `null` is not
+ * being changed; a name, an instruction or a summary is read as text the way create reads it, and a
+ * schedule is handed on as sent for `parseSchedule` to accept or refuse with its code.
  */
 function changeOf(body: unknown): RoutineChange {
   if (!body || typeof body !== "object") return {};
-  const { name, instruction, schedule } = body as Record<string, unknown>;
+  const { name, instruction, summary, schedule } = body as Record<
+    string,
+    unknown
+  >;
   return {
     ...(name === undefined || name === null ? {} : { name: String(name) }),
     ...(instruction === undefined || instruction === null
       ? {}
       : { instruction: String(instruction) }),
+    ...(summary === undefined || summary === null
+      ? {}
+      : { summary: String(summary) }),
     ...(schedule === undefined || schedule === null
       ? {}
       : { schedule: schedule as RoutineSchedule }),
@@ -109,6 +115,9 @@ function addCollection(
         agentId: String(body.agentId),
         name: String(body.name ?? ""),
         instruction: String(body.instruction ?? ""),
+        // The person's line, when the Bot wrote one. Absent from the form, which is fine: a
+        // routine somebody wrote by hand is already in their own words.
+        ...(typeof body.summary === "string" ? { summary: body.summary } : {}),
         schedule: body.schedule,
       });
       return context.json({ routine }, 201);
@@ -286,7 +295,7 @@ function addRoutineVerbs(
   /*
    * Its name, what it says, when it runs — changed in place, and nothing else here.
    *
-   * THE BODY IS READ FOR THREE FIELDS AND THE REST IS DROPPED, not refused. A Bot's `manage_routine`
+   * THE BODY IS READ FOR FOUR FIELDS AND THE REST IS DROPPED, not refused. A Bot's `manage_routine`
    * posts here, and whether a routine runs, which Bot it drives and whether the unread rule may
    * pause it are each somebody's decision behind a door of their own. A body naming them changes
    * nothing rather than failing — the line the profile route draws around `autoReview`, and for

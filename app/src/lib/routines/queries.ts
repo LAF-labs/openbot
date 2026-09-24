@@ -9,6 +9,12 @@ export type Routine = {
   agentId: string;
   name: string;
   instruction: string;
+  /**
+   * What it does, in one line written for the person by the Bot that made it. Null on routines
+   * written by hand, made before 2026-09-24, or reworded since; the screen then shows the
+   * instruction, folded. Optional because an older server does not send it.
+   */
+  summary?: string | null;
   scheduleKind: "interval" | "daily";
   intervalMinutes: number | null;
   /** "HH:MM" in `dailyTimeZone`. Called `dailyUtc` until the column stopped claiming to be UTC. */
@@ -319,8 +325,16 @@ export function scheduleLabel(routine: Routine): string {
   if (isWeekdays) {
     return `${t("Weekdays at {time}", { time })}${suffix}`;
   }
-  return `${[...days]
-    .sort((a, b) => a - b)
-    .map((day) => names[day])
-    .join(", ")} ${time}${suffix}`;
+  /*
+   * "매주 월 오전 9:00", not "월 오전 9:00": a bare weekday beside a time reads as one day — this
+   * Monday — and the question a person has of the line is whether it comes round again (UI/UX audit
+   * 0.5.3, item 8).
+   */
+  return `${t("Every {days} at {time}", {
+    days: [...days]
+      .sort((a, b) => a - b)
+      .map((day) => names[day])
+      .join(", "),
+    time,
+  })}${suffix}`;
 }

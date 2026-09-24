@@ -204,15 +204,23 @@ describe("the row", () => {
  * notepad, and writing it again.
  */
 describe("editing a routine", () => {
-  test("the ⋯ menu offers 수정 above 삭제, and it opens the panel on that routine", () => {
+  /*
+   * 고치기 is a sentence in the Bot's conversation since 2026-09-24 (UI/UX audit 0.5.3, item 8);
+   * the form is 직접 고치기, below it and still above 삭제. The address 고치기 goes to is
+   * `editInChatHref`'s, pressed on the conversation's card in `routine-card.test.tsx`.
+   */
+  test("the ⋯ menu offers 고치기, then 직접 고치기 — the panel on that routine — above 삭제", () => {
     const menu = page.indexOf('<DropdownMenuContent align="end"');
-    const edit = page.indexOf('{t("Edit")}', menu);
+    const change = page.indexOf('{t("Change it")}', menu);
+    const form = page.indexOf('{t("Change it yourself")}', menu);
     const del = page.indexOf('{t("Delete")}', menu);
     expect(menu).toBeGreaterThan(0);
-    expect(edit).toBeGreaterThan(menu);
-    expect(edit).toBeLessThan(del);
+    expect(change).toBeGreaterThan(menu);
+    expect(form).toBeGreaterThan(change);
+    expect(form).toBeLessThan(del);
     expect(page).toContain("search: { edit: routine.id }");
-    expect(ko.Edit).toBe("수정");
+    expect(ko["Change it"]).toBe("고치기");
+    expect(ko["Change it yourself"]).toBe("직접 고치기");
   });
 
   test("the panel it opens is the same form, handed the routine", () => {

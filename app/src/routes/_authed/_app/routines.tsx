@@ -1,7 +1,12 @@
-import { IconClockPlay, IconDots, IconPlus } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconClockPlay,
+  IconDots,
+  IconPlus,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
@@ -9,10 +14,16 @@ import { DetailPanel } from "@/components/layout/detail-panel";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
+import {
+  editInChatHref,
+  useConversationWith,
+} from "@/components/routines/edit-in-chat";
 import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineForm } from "@/components/routines/routine-form";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
 import { UnreadPauseBanners } from "@/components/routines/unread-pause-banner";
+import { useRoutineSwitch } from "@/components/routines/use-routine-switch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -33,7 +44,6 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
-import { failureSentence } from "@/lib/press";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { routineDeleteRecheck } from "@/lib/rechecks";
@@ -52,11 +62,12 @@ import { pausedForUnread, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
 import { useNow } from "@/lib/use-now";
 
 /**
- * Routines: an instruction, a Bot, and a clock.
+ * Routines: something the Bot does on its own, at a time.
  *
- * A routine here is a sentence, on purpose — something its owner can read back and edit — and the
- * page is built accordingly: the instruction is the biggest field on it, and a routine's row leads
- * with what it says, not with its schedule.
+ * A routine's row leads with its name and when it goes, then the line its Bot wrote for the person
+ * about what it does. The instruction the Bot runs is kept, folded under 자세히 with the runs: it is
+ * written to the Bot's future self, and as the row's body it read like a system prompt (UI/UX audit
+ * 0.5.3, item 8). Changing one starts a sentence in the Bot's conversation; the form is still there.
  */
 
 function RunHistory({ routineId }: { routineId: string }) {
@@ -136,47 +147,31 @@ function RunHistory({ routineId }: { routineId: string }) {
   );
 }
 
-function RoutineRow({ routine }: { routine: Routine }) {
+function RoutineRow({
+  routine,
+  showBot,
+}: {
+  routine: Routine;
+  /**
+   * Whether to say which Bot it is. Only for an account from before 2026-09-24 that still has
+   * several: with one Bot, "연남이 · 월 오전 9:00" on every row names the only Bot there is, and at
+   * 375 it was the part that pushed the schedule off the card (UI/UX audit 0.5.3, items 8 and 9).
+   */
+  showBot: boolean;
+}) {
   const queryClient = useQueryClient();
   const navigate = Route.useNavigate();
+  const goTo = useNavigate();
   const agents = useQuery(agentListQueryOptions());
   const [showRuns, setShowRuns] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // What 오늘 and 내일 are measured from; see `useNow` for why it is not read inside `whenLabel`.
   const now = useNow();
+  const conversation = useConversationWith(routine.agentId);
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: routineKeys.all });
 
-  /*
-   * THE SWITCH MOVES WHEN IT IS CLICKED. It was driven straight off server state, so nothing
-   * happened until the round trip landed — a control that ignores you for half a second reads as
-   * broken, and people click it twice. The optimistic write is rolled back on failure, which is the
-   * only honest way to show a switch that did not take.
-   */
-  const toggle = useMutation({
-    mutationFn: async (enabled: boolean) =>
-      routineRequest(`/api/routines/${routine.id}/enabled`, {
-        method: "POST",
-        body: JSON.stringify({ enabled }),
-      }),
-    onMutate: async (enabled: boolean) => {
-      await queryClient.cancelQueries({ queryKey: routineKeys.all });
-      const previous = queryClient.getQueryData<Routine[]>(routineKeys.all);
-      // The server clears the unread rule's reason on either press (`setRoutineEnabled`).
-      queryClient.setQueryData<Routine[]>(routineKeys.all, (rows) =>
-        rows?.map((row) =>
-          row.id === routine.id ? { ...row, enabled, pausedReason: null } : row,
-        ),
-      );
-      return { previous };
-    },
-    onError: (_error, _enabled, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(routineKeys.all, context.previous);
-      }
-    },
-    onSettled: invalidate,
-  });
+  const toggle = useRoutineSwitch(routine);
   const runNow = useMutation({
     mutationFn: async () =>
       routineRequest(`/api/routines/${routine.id}/run`, { method: "POST" }),
@@ -210,46 +205,65 @@ function RoutineRow({ routine }: { routine: Routine }) {
     onSuccess: invalidate,
   });
 
-  const bot = agents.data?.find((agent) => agent.id === routine.agentId);
+  const bot = showBot
+    ? agents.data?.find((agent) => agent.id === routine.agentId)
+    : undefined;
+  const openForm = () => void navigate({ search: { edit: routine.id } });
 
   return (
     <div className="rounded-xl border border-border bg-card">
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex items-start gap-3 p-4">
         {/*
          * The routine's Bot, and the Bot's id when the roster has not answered yet — a face from
-         * the id is stable and merely not the right one, which beats a hole in the row.
+         * the id is stable and merely not the right one, which beats a hole in the row. Only where
+         * there is more than one Bot to tell apart, and not on a phone, where it took a fifth of
+         * the width from the name.
          */}
-        <BotAvatar
-          className="shrink-0"
-          seed={bot?.avatarSeed ?? routine.agentId}
-          size={36}
-        />
+        {showBot ? (
+          <BotAvatar
+            className="hidden shrink-0 sm:block"
+            seed={bot?.avatarSeed ?? routine.agentId}
+            size={36}
+          />
+        ) : null}
         <button
           aria-expanded={showRuns}
           // The house ring. It had none at all, so tabbing across a list of routines went dark.
-          className={`min-w-0 flex-1 rounded-md text-left ${focusRing}`}
+          className={`flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md text-left ${focusRing}`}
           onClick={() => setShowRuns((open) => !open)}
           type="button"
         >
-          <div className="flex items-baseline gap-2">
-            <span className="truncate font-medium text-sm">{routine.name}</span>
-            <span className="min-w-0 truncate text-xs text-muted-foreground">
-              {bot?.name ? `${bot.name} · ` : ""}
-              {scheduleLabel(routine)}
+          {/*
+           * TWO LINES, WRAPPED, NEVER CUT. At 375 the name read "주…", the Bot "연남이…" and the next
+           * run "9월 2…" — every fact on the card truncated to its first syllable. What it is called,
+           * then when it goes; a long name takes a second line rather than the schedule's place.
+           */}
+          <span className="wrap-break-word font-medium text-sm">
+            {routine.name}
+          </span>
+          <span className="text-muted-foreground text-xs">
+            {bot?.name ? `${bot.name} · ` : ""}
+            {scheduleLabel(routine)}
+          </span>
+          {/*
+           * WHAT IT DOES, IN THE PERSON'S WORDS — the line its Bot wrote for them. The instruction
+           * is the Bot's note to its future self ("매주 월요일 아침이다. 사용자에게 …"), and it was
+           * the row's body; it is under 자세히 now, beside the runs it produced.
+           */}
+          {routine.summary ? (
+            <span className="mt-0.5 wrap-break-word text-sm">
+              {routine.summary}
             </span>
-          </div>
-          <p className="truncate text-xs text-muted-foreground">
-            {routine.instruction}
-          </p>
+          ) : null}
           {/*
            * WHY IT IS OFF, when nobody here turned it off. A switch at off reads as something the
            * person did and forgot; this line says the rule did it, and the banner above has the
            * answers (`UnreadPauseBanners`).
            */}
           {pausedForUnread(routine) ? (
-            <p className="truncate text-warning text-xs">
+            <span className="text-warning text-xs">
               {t(UNREAD_PAUSE_SENTENCES.row)}
-            </p>
+            </span>
           ) : null}
           {/*
            * WHEN IT LAST WENT AND WHEN IT GOES NEXT.
@@ -259,115 +273,146 @@ function RoutineRow({ routine }: { routine: Routine }) {
            * actually running — could only be answered by opening the run history. 다음 실행 is the
            * promise the switch is making; 마지막 실행 is the evidence it kept it.
            */}
-          <p className="truncate text-muted-foreground/80 text-xs">
+          <span className="text-muted-foreground/80 text-xs">
             {t("Next {when}", { when: whenLabel(routine.nextRunAt, now) })}
             {routine.lastRunAt
               ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt, now) })}`
               : ` · ${t("Not run yet")}`}
-          </p>
+          </span>
+          {/* Said, because a row that opens on a press looked like a row with nothing more in it. */}
+          <span className="mt-0.5 inline-flex items-center gap-0.5 text-muted-foreground text-xs">
+            {showRuns ? t("Less") : t("Details")}
+            <IconChevronDown
+              aria-hidden="true"
+              className={`size-3.5 transition-transform ${showRuns ? "rotate-180" : ""}`}
+            />
+          </span>
         </button>
-        {/*
-         * THREE UNLABELLED ICONS, ONE OF THEM PERMANENT, ALL THE SAME SIZE AND COLOUR.
-         *
-         * 지금 실행 and 삭제 were two grey glyphs either side of a switch, and the destructive one
-         * was the easier of the two to hit by accident. 삭제 moves into the ⋯ menu — the same place
-         * a Bot's does — and the two that are left say what they are, in a tooltip for the mouse and
-         * in `aria-label` for everybody else.
-         */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                aria-label={
-                  runNow.isPending
-                    ? t("Running {name}…", { name: routine.name })
-                    : t("Run {name} now", { name: routine.name })
-                }
-                disabled={runNow.isPending}
-                // Opened here rather than in onSuccess: the panel the answer lands in should
-                // already be open while the Bot is working, or the click looks like it did nothing
-                // for a minute.
-                onClick={() => {
-                  setShowRuns(true);
-                  runNow.mutate();
-                }}
-                size="icon-sm"
-                variant="ghost"
-              >
-                <IconClockPlay />
-              </Button>
-            }
-          />
-          <TooltipContent>{t("Run now")}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Switch
-                /*
-                 * NAMED FOR THE ROUTINE, NOT FOR ITS STATE. It read "'재고 확인' 켜짐" whether it was
-                 * on or off — a label that lies in one of the two states it has. `role="switch"`
-                 * already carries `aria-checked`; the name only has to say which switch this is.
-                 */
-                aria-label={t("Scheduled runs for {name}", {
-                  name: routine.name,
-                })}
-                checked={routine.enabled}
-                onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
-              />
-            }
-          />
-          <TooltipContent>
-            {routine.enabled ? t("On schedule") : t("Paused")}
-          </TooltipContent>
-        </Tooltip>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                aria-label={t("Actions for {name}", { name: routine.name })}
-                size="icon-sm"
-                variant="ghost"
-              >
-                <IconDots />
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="end" className="w-auto">
-            {/*
-             * 수정 FIRST. It is the verb a person reaches for more often than the one below it, and
-             * the one below it is the only irreversible thing on the page.
-             */}
-            <DropdownMenuItem
-              onClick={() => void navigate({ search: { edit: routine.id } })}
-            >
-              {t("Edit")}
-            </DropdownMenuItem>
-            {/*
-             * 안 읽어도 계속 돌리기: the exemption from the unread rule, for one routine, as a check
-             * the person can see the state of. The banner's 계속 돌리기 sets the same thing for all of
-             * a Bot's paused routines at once.
-             */}
-            <DropdownMenuCheckboxItem
-              checked={routine.keepRunning === true}
-              // One line: measured wrapping to "안 읽어도 계속 / 돌리기" in the menu's default width.
-              className="whitespace-nowrap"
-              disabled={keepRunning.isPending}
-              onCheckedChange={(checked) =>
-                keepRunning.mutate(checked === true)
+        <div className="flex shrink-0 items-center gap-1">
+          {/*
+           * THREE UNLABELLED ICONS, ONE OF THEM PERMANENT, ALL THE SAME SIZE AND COLOUR.
+           *
+           * 지금 실행 and 삭제 were two grey glyphs either side of a switch, and the destructive one
+           * was the easier of the two to hit by accident. 삭제 moves into the ⋯ menu — the same
+           * place a Bot's does — and the two that are left say what they are, in a tooltip for the
+           * mouse and in `aria-label` for everybody else.
+           */}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label={
+                    runNow.isPending
+                      ? t("Running {name}…", { name: routine.name })
+                      : t("Run {name} now", { name: routine.name })
+                  }
+                  disabled={runNow.isPending}
+                  // Opened here rather than in onSuccess: the panel the answer lands in should
+                  // already be open while the Bot is working, or the click looks like it did
+                  // nothing for a minute.
+                  onClick={() => {
+                    setShowRuns(true);
+                    runNow.mutate();
+                  }}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <IconClockPlay />
+                </Button>
               }
-            >
-              {t(UNREAD_PAUSE_SENTENCES.menu)}
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => setConfirmingDelete(true)}
-              variant="destructive"
-            >
-              {t("Delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            />
+            <TooltipContent>{t("Run now")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Switch
+                  /*
+                   * NAMED FOR THE ROUTINE, NOT FOR ITS STATE. It read "'재고 확인' 켜짐" whether it
+                   * was on or off — a label that lies in one of the two states it has.
+                   * `role="switch"` already carries `aria-checked`; the name only has to say which
+                   * switch this is.
+                   */
+                  aria-label={t("Scheduled runs for {name}", {
+                    name: routine.name,
+                  })}
+                  checked={routine.enabled}
+                  onCheckedChange={(enabled) => toggle.mutate(enabled === true)}
+                />
+              }
+            />
+            <TooltipContent>
+              {routine.enabled ? t("On schedule") : t("Paused")}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  aria-label={t("Actions for {name}", { name: routine.name })}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <IconDots />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-auto">
+              {/*
+               * 고치기 FIRST, AND IT IS A SENTENCE, NOT A FORM. The person says what to change in
+               * the Bot's conversation, the way the routine was made; the composer opens holding
+               * "‘주간 매출 요약’을 이렇게 바꿔 줘: " (`edit-in-chat.ts`). A Bot that has never
+               * been spoken to has no conversation to open, and then 고치기 is the form.
+               *
+               * 직접 고치기 is the form, kept for somebody who would rather set the hour themselves.
+               * Both above 삭제, the only irreversible thing on the page.
+               */}
+              <DropdownMenuItem
+                className="whitespace-nowrap"
+                onClick={() =>
+                  conversation
+                    ? void goTo({
+                        href: editInChatHref(conversation, routine.name),
+                      })
+                    : openForm()
+                }
+              >
+                {t("Change it")}
+              </DropdownMenuItem>
+              {conversation ? (
+                <DropdownMenuItem
+                  className="whitespace-nowrap"
+                  onClick={openForm}
+                >
+                  {t("Change it yourself")}
+                </DropdownMenuItem>
+              ) : null}
+              {/*
+               * 안 읽어도 계속 돌리기: the exemption from the unread rule, for one routine, as a check
+               * the person can see the state of. The banner's 계속 돌리기 sets the same thing for
+               * all of a Bot's paused routines at once.
+               */}
+              <DropdownMenuCheckboxItem
+                checked={routine.keepRunning === true}
+                // One line: measured wrapping to "안 읽어도 계속 / 돌리기" in the menu's default width.
+                className="whitespace-nowrap"
+                disabled={keepRunning.isPending}
+                onCheckedChange={(checked) =>
+                  keepRunning.mutate(checked === true)
+                }
+              >
+                {t(UNREAD_PAUSE_SENTENCES.menu)}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setConfirmingDelete(true)}
+                variant="destructive"
+              >
+                {t("Delete")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       {/*
        * 지금 실행 SAID NOTHING. It opened the history panel and the row sat there — the request can
@@ -388,7 +433,13 @@ function RoutineRow({ routine }: { routine: Routine }) {
         className="px-4 pb-3 text-destructive text-xs"
         tone="alert"
       >
-        {runNow.isError ? failureSentence(runNow.error) : null}
+        {runNow.isError
+          ? savingFailure(runNow.error)
+          : toggle.isError
+            ? savingFailure(toggle.error)
+            : keepRunning.isError
+              ? savingFailure(keepRunning.error)
+              : null}
       </LiveRegion>
       {/*
        * A routine and every run it ever made, gone on one click of a small grey icon next to a
@@ -413,6 +464,19 @@ function RoutineRow({ routine }: { routine: Routine }) {
       />
       {showRuns ? (
         <div className="border-border border-t px-4">
+          {/*
+           * WHAT THE BOT IS TOLD, FIRST IN 자세히. The words that actually run — kept, because the
+           * summary is a description of them and somebody checking why a run went the way it did
+           * needs the real thing; folded, because they are written to the Bot, not to the person.
+           */}
+          <div className="py-3">
+            <p className="text-muted-foreground text-xs">
+              {t("What the Bot is told each time")}
+            </p>
+            <p className="mt-1 wrap-break-word whitespace-pre-wrap text-sm leading-relaxed">
+              {routine.instruction}
+            </p>
+          </div>
           {/* Where it left off before what it said: the notepad is what the next run starts from. */}
           <RoutineNotepad routineId={routine.id} />
           <RunHistory routineId={routine.id} />
@@ -484,6 +548,27 @@ const EditRoutine = ({ id, onDone }: { id: string; onDone: () => void }) => {
   );
 };
 
+/**
+ * Whether the window is wide enough for the 400px form beside, or over, the list: the rail and
+ * 400px with a little of the list left showing. Watched rather than read once, so turning a
+ * tablet or widening the app's window changes it.
+ */
+const ROOM_FOR_THE_WIDE_FORM = "(min-width: 640px)";
+
+function hasRoom(): boolean {
+  return (
+    typeof window.matchMedia !== "function" ||
+    window.matchMedia(ROOM_FOR_THE_WIDE_FORM).matches
+  );
+}
+
+function watchRoom(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== "function") return () => {};
+  const query = window.matchMedia(ROOM_FOR_THE_WIDE_FORM);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
 function RoutinesPage() {
   const queryClient = useQueryClient();
   const { new: isCreating, edit: editingId } = Route.useSearch();
@@ -493,6 +578,10 @@ function RoutinesPage() {
   const editing = typeof editingId === "string" && editingId.length > 0;
   const routinesReading = useReading(routines);
   const list = routineListView(routinesReading, { isCreating: creating });
+  const agents = useQuery(agentListQueryOptions());
+  // One Bot is the product (2026-09-24); only an older account with several is told which is which.
+  const showBot = (agents.data?.length ?? 0) > 1;
+  const isRoomy = useSyncExternalStore(watchRoom, hasRoom, () => true);
   const handleDone = () => {
     void navigate({ search: {} });
     void queryClient.invalidateQueries({ queryKey: routineKeys.all });
@@ -508,15 +597,19 @@ function RoutinesPage() {
         ) : null
       }
       // 400px like a Bot's profile, not 320: this is a form with a select, two more selects and
-      // seven day chips on one line, and at 320 the chips wrapped to three rows.
-      detailWidth={400}
+      // seven day chips on one line, and at 320 the chips wrapped to three rows. But only where
+      // 400 fits: laid over a phone's 319px column, the form ran under the rail and lost its left
+      // edge — "새 루틴" read "‥틴" (measured at 375, 2026-09-24).
+      detailWidth={isRoomy ? 400 : 320}
       onClose={() => navigate({ search: {} })}
       open={creating || editing}
     >
       <PageShell
         title={t("Routines")}
+        // Examples from a shop's week, not "다이제스트": that word was the one on this page nobody
+        // who runs a shop would use (UI/UX audit 0.5.3, item 8).
         description={t(
-          "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.",
+          "Things your Bot does on its own at set times — a weekly sales summary, a daily look at new reviews.",
         )}
         action={
           <Button
@@ -560,7 +653,11 @@ function RoutinesPage() {
                 ))
               : null}
             {list.rows.map((routine) => (
-              <RoutineRow key={routine.id} routine={routine} />
+              <RoutineRow
+                key={routine.id}
+                routine={routine}
+                showBot={showBot}
+              />
             ))}
             {list.empty ? (
               <div className="flex flex-col items-center gap-3 py-10">

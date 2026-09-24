@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
@@ -130,7 +131,7 @@ const UnreadPauseBanner = ({
       </p>
       {/* A refusal keeps the banner, so its line is the banner's, mounted with it. */}
       <LiveRegion as="p" className="mt-2 text-destructive text-xs" tone="alert">
-        {resume.error?.message}
+        {resume.error ? savingFailure(resume.error) : null}
       </LiveRegion>
     </section>
   );

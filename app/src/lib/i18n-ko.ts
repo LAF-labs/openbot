@@ -2455,4 +2455,27 @@ export const ko: Record<string, string> = {
   "using “{tool}” on {server}": "{server}의 ‘{tool}’ 쓰기",
   "doing something on {host}": "{host}에서 무언가 하기",
   "doing something on the page": "열린 페이지에서 무언가 하기",
+  /*
+   * 루틴(감사 0.5.3 항목 8·9·15). 대화 속 루틴 카드, 사람에게 보일 한 줄과 접힌 지시문, 대화로
+   * 고치기, 봇이 하나일 때 봇 고르는 칸 없애기, 이유가 있는 저장 실패 문장.
+   */
+  "Every {days} at {time}": "매주 {days} {time}",
+  "Change “{name}” like this: ": "‘{name}’{josa} 이렇게 바꿔 줘: ",
+  "Routine {name}": "루틴 {name}",
+  "Changed a routine · {name} · now {schedule}":
+    "루틴을 바꿨습니다 · {name} · 지금은 {schedule}",
+  "Turned off": "꺼져 있음",
+  "Turn off": "끄기",
+  "Turn on": "켜기",
+  "Change it": "고치기",
+  "Change it yourself": "직접 고치기",
+  Less: "접기",
+  "What the Bot is told each time": "봇이 매번 받는 지시",
+  "Things your Bot does on its own at set times — a weekly sales summary, a daily look at new reviews.":
+    "봇이 정해진 시각에 알아서 하는 일이에요. 주간 매출 요약이나 매일 새 리뷰 확인처럼요.",
+  "What it does, and when. You can change all of it later.":
+    "무엇을, 언제 할지. 나중에 모두 바꿀 수 있어요.",
+  "Name, e.g. Weekly sales summary": "이름 (예: 주간 매출 요약)",
+  "The internet connection is down, so this was not saved.":
+    "인터넷 연결이 끊겨 저장하지 못했어요.",
 };

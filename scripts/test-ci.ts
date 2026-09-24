@@ -366,13 +366,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` (why it asked, the line an answer leaves, the rule behind 자세히) and one to `server` (the
  * shipped rules' text, pinned). Each floor rises by exactly what was added.
  *
+ * RAISED 2026-09-24 with the routine card and the person's line (UI/UX audit 0.5.3, item 8):
+ * twelve tests to `app` (the card in the conversation, 고치기 as a sentence, the screen's fold, the
+ * tool's field and its size) and three to `server` (the line kept, cleared when the routine it
+ * describes changes, and carried by the routes). Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2471, roots: ["server"] },
-  { name: "app", floor: 1112, roots: ["app"] },
+  { name: "server", floor: 2474, roots: ["server"] },
+  { name: "app", floor: 1124, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

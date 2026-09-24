@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -149,8 +150,16 @@ export const RoutineForm = ({
   );
   const update = (patch: Partial<RoutineFormState>) =>
     setForm((current) => ({ ...current, ...patch }));
-  const { agentId, name, instruction, repeat, minutes, hour, minute, days } =
-    form;
+  const { name, instruction, repeat, minutes, hour, minute, days } = form;
+  /*
+   * ONE BOT, NO QUESTION. "어느 봇이" was a required select on every new routine for a person who has
+   * exactly one Bot to pick (UI/UX audit 0.5.3, item 9): the only answer, asked for anyway, and the
+   * form refused to save until it was given. With one Bot it is that Bot and the field is not drawn;
+   * an older account with several still chooses.
+   */
+  const onlyBot = agents.data?.length === 1 ? agents.data[0] : undefined;
+  const hasSeveralBots = (agents.data?.length ?? 0) > 1;
+  const agentId = form.agentId || onlyBot?.id || "";
   /** Shown only after a press. Nothing is red before somebody has tried. */
   const [problems, setProblems] = useState<Problems>({});
 
@@ -241,7 +250,8 @@ export const RoutineForm = ({
    */
   const check = (): boolean => {
     const found: Problems = {};
-    if (!agentId) found.agent = t("Pick a Bot first.");
+    // Only where there is a field to say it beside; with one Bot the server names the Bot.
+    if (!agentId && hasSeveralBots) found.agent = t("Pick a Bot first.");
     if (!name.trim()) found.name = t("Give the routine a name.");
     if (!instruction.trim())
       found.instruction = t("Say what the routine should do each time.");
@@ -285,9 +295,7 @@ export const RoutineForm = ({
             ? t(
                 "Its run history, its notepad and its webhook stay as they are.",
               )
-            : t(
-                "An instruction, a Bot, and a clock. You can change all of it later.",
-              )}
+            : t("What it does, and when. You can change all of it later.")}
         </p>
       </header>
 
@@ -299,7 +307,7 @@ export const RoutineForm = ({
             autoFocus
             id={nameId}
             onChange={(event) => update({ name: event.target.value })}
-            placeholder={t("Name, e.g. Morning review digest")}
+            placeholder={t("Name, e.g. Weekly sales summary")}
             value={name}
           />
           {problems.name ? (
@@ -326,41 +334,43 @@ export const RoutineForm = ({
           ) : null}
         </Field>
 
-        <Field data-invalid={Boolean(problems.agent)}>
-          <FieldLabel htmlFor={agentFieldId}>{t("Which Bot")}</FieldLabel>
-          <Select
-            disabled={isEditing}
-            onValueChange={(value) => update({ agentId: value ?? "" })}
-            value={agentId}
-          >
-            <SelectTrigger
-              aria-invalid={Boolean(problems.agent)}
-              id={agentFieldId}
+        {hasSeveralBots ? (
+          <Field data-invalid={Boolean(problems.agent)}>
+            <FieldLabel htmlFor={agentFieldId}>{t("Which Bot")}</FieldLabel>
+            <Select
+              disabled={isEditing}
+              onValueChange={(value) => update({ agentId: value ?? "" })}
+              value={agentId}
             >
-              {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
-              <SelectValue placeholder={t("Which Bot")}>
-                {agents.data?.find((agent) => agent.id === agentId)?.name ??
-                  t("Which Bot")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {(agents.data ?? []).map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* Said, because a control that does not open with nothing beside it reads as broken. */}
-          {isEditing ? (
-            <FieldDescription>
-              {t("A routine stays with the Bot it was made for.")}
-            </FieldDescription>
-          ) : null}
-          {problems.agent ? (
-            <FieldError errors={[{ message: problems.agent }]} />
-          ) : null}
-        </Field>
+              <SelectTrigger
+                aria-invalid={Boolean(problems.agent)}
+                id={agentFieldId}
+              >
+                {/* Explicit children: the bare fallback renders the raw `agent_<uuid>`. */}
+                <SelectValue placeholder={t("Which Bot")}>
+                  {agents.data?.find((agent) => agent.id === agentId)?.name ??
+                    t("Which Bot")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(agents.data ?? []).map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Said, because a control that does not open with nothing beside it reads as broken. */}
+            {isEditing ? (
+              <FieldDescription>
+                {t("A routine stays with the Bot it was made for.")}
+              </FieldDescription>
+            ) : null}
+            {problems.agent ? (
+              <FieldError errors={[{ message: problems.agent }]} />
+            ) : null}
+          </Field>
+        ) : null}
 
         <Field>
           <FieldLabel htmlFor={repeatId}>{t("When")}</FieldLabel>
@@ -492,7 +502,7 @@ export const RoutineForm = ({
 
       {save.error ? (
         <p className="text-destructive text-sm" role="alert">
-          {save.error.message}
+          {savingFailure(save.error)}
         </p>
       ) : null}
 

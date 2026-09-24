@@ -11,12 +11,13 @@ import { asStandardSchema } from "@shared/tools/standard-schema";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ToolLine } from "@/components/channels/tool-line";
+import { RoutineCard } from "@/components/routines/routine-card";
 import { type AgentEffort, effortLabel } from "@/lib/agents/effort-label";
 import { AGENT_REFUSALS } from "@/lib/agents/mutations";
 import { agentKeys } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
-import { useActiveBotHolder } from "./active-bot";
+import { useActiveBotHolder, useDeclaredBotId } from "./active-bot";
 
 /**
  * A Bot rewriting its own profile, and its own routines, from inside the conversation.
@@ -74,6 +75,8 @@ export type RoutineArgs = {
   /** Which routine, for update and delete: its id, or its exact name. See `findRoutine`. */
   routineId?: string;
   instruction?: string;
+  /** The line the person reads on the Routines screen and the card. See `shared/tools/self.ts`. */
+  summary?: string;
   enabled?: boolean;
   schedule?: {
     kind: "daily" | "interval";
@@ -87,8 +90,17 @@ export type RoutineArgs = {
 /** A routine as the list answers it, as far as the tool needs to read one. */
 type ListedRoutine = { id: string; agentId: string; name: string };
 
-/** What a line in the transcript says a call did. */
-type Line = { done: string; doing: string; note?: string };
+/**
+ * What a line in the transcript says a call did — and which routine, so a save or an edit can be
+ * drawn as that routine's card rather than as a sentence about it.
+ */
+type Line = { done: string; doing: string; note?: string; routineId?: string };
+
+/** The id out of a routine the routes answered with, or undefined for a shape this cannot read. */
+function idOf(routine: unknown): string | undefined {
+  const id = (routine as { id?: unknown } | null | undefined)?.id;
+  return typeof id === "string" && id ? id : undefined;
+}
 
 /**
  * THIS BOT'S ROUTINES, and nothing else of the person's.
@@ -169,10 +181,16 @@ export async function routineAction(
   remember: (entry: Line, failed?: boolean) => void,
   queryClient: QueryClient,
 ): Promise<string> {
-  const line = (doing: string, done: string, note?: string): Line => ({
+  const line = (
+    doing: string,
+    done: string,
+    note?: string,
+    routineId?: string,
+  ): Line => ({
     doing,
     done,
     ...(note ? { note } : {}),
+    ...(routineId ? { routineId } : {}),
   });
   const say = (entry: Line, failed: boolean, said: string) => {
     remember(entry, failed);
@@ -196,6 +214,7 @@ export async function routineAction(
         agentId: botId,
         name: args.name?.trim() ?? "",
         instruction: args.instruction?.trim() ?? "",
+        ...(args.summary?.trim() ? { summary: args.summary.trim() } : {}),
         ...(args.schedule ? { schedule: args.schedule } : {}),
       }),
     });
@@ -219,7 +238,12 @@ export async function routineAction(
       routine?: unknown;
     } | null;
     return await done(
-      line(t("Saving a routine"), t("Saved a routine"), name),
+      line(
+        t("Saving a routine"),
+        t("Saved a routine"),
+        name,
+        idOf(saved?.routine),
+      ),
       routineSavedText(saved?.routine),
     );
   }
@@ -258,6 +282,7 @@ export async function routineAction(
     ...(args.instruction === undefined
       ? {}
       : { instruction: args.instruction }),
+    ...(args.summary === undefined ? {} : { summary: args.summary }),
     ...(args.schedule === undefined ? {} : { schedule: args.schedule }),
   };
   const edits = Object.keys(change).length > 0;
@@ -335,6 +360,7 @@ export async function routineAction(
       typeof saved?.routine?.name === "string"
         ? saved.routine.name
         : target.name,
+      target.id,
     );
   }
 
@@ -368,25 +394,19 @@ export async function routineAction(
 
 export function SelfTools() {
   const bot = useActiveBotHolder();
+  // Which Bot's routines a card may be drawn from. A value, where `bot` is a holder for handlers.
+  const declaredBot = useDeclaredBotId();
   const queryClient = useQueryClient();
   /*
    * What each call changed, for the transcript line. A ref because the handler outlives the render
    * that registered it — the same reason the coworker tool keeps its exchanges in one.
    */
-  const changes = useRef(
-    new Map<
-      string,
-      { done: string; doing: string; note?: string; failed?: boolean }
-    >(),
-  );
+  const changes = useRef(new Map<string, Line & { failed?: boolean }>());
 
   /** Note what this call did, so the line can say it rather than naming the tool. */
   const noteFor =
     (call: { toolCall?: { id?: string } }) =>
-    (
-      entry: { done: string; doing: string; note?: string },
-      failed?: boolean,
-    ) => {
+    (entry: Line, failed?: boolean) => {
       const id = call.toolCall?.id;
       if (id) {
         changes.current.set(id, { ...entry, ...(failed ? { failed } : {}) });
@@ -493,9 +513,10 @@ export function SelfTools() {
       args: RoutineArgs,
       call: { toolCall?: { id?: string } } = {},
     ) => routineAction(args, bot.current, noteFor(call), queryClient),
-    render: ({ args, status, toolCallId }) => {
+    render: ({ args, status, toolCallId, result }) => {
       const entry = changes.current.get(toolCallId ?? "");
       const running = status !== "complete";
+      const asked = args as RoutineArgs | undefined;
       /*
        * The line says what the Bot did. One tool does several things, and saying "saved a routine"
        * while it deleted one is the kind of small lie that makes a person stop reading these lines.
@@ -503,9 +524,7 @@ export function SelfTools() {
        * action the Bot asked for: a Bot that only listed its routines read "Changed a routine"
        * until 2026-09-24.
        */
-      const fallback = routineLineFor(
-        (args as RoutineArgs | undefined)?.action,
-      );
+      const fallback = routineLineFor(asked?.action);
       const label = entry
         ? running
           ? entry.doing
@@ -513,7 +532,7 @@ export function SelfTools() {
         : running
           ? fallback.doing
           : fallback.done;
-      return (
+      const line = (
         <ToolLine
           failed={entry?.failed === true}
           label={label}
@@ -521,6 +540,25 @@ export function SelfTools() {
         >
           {entry?.note ? <p>{entry.note}</p> : null}
         </ToolLine>
+      );
+      /*
+       * A SAVE OR AN EDIT THAT WENT THROUGH IS DRAWN AS THE ROUTINE, not as a sentence about it:
+       * name, "매주 월 오전 9:00", when it runs next, 끄기 and 고치기 (UI/UX audit 0.5.3, item 8).
+       * An edit is a line of its own with the schedule it has now, since the save's card above it
+       * already reads the routine as it is. Anything else — a list, a pause, a refusal — keeps the
+       * line, and so does a routine the list no longer holds.
+       */
+      if (running || !routineCallLanded(asked?.action, entry, result)) {
+        return line;
+      }
+      return (
+        <RoutineCard
+          agentId={declaredBot}
+          compact={asked?.action === "update"}
+          fallback={line}
+          names={[asked?.name ?? "", asked?.routineId ?? ""]}
+          routineId={entry?.routineId}
+        />
       );
     },
   });
@@ -620,6 +658,42 @@ export function SelfTools() {
   });
 
   return null;
+}
+
+/**
+ * Whether a routine call saved or changed a routine — the only two that are drawn as its card.
+ *
+ * This tab's own record says so directly: only a save or an edit that went through carries the
+ * routine's id. After a reload that record is gone and the Bot's answer is what is left, so the
+ * answer is read for the sentence a success hands the Bot — its opening words, from the same table
+ * the handler wrote it from, so the two cannot drift apart.
+ */
+export function routineCallLanded(
+  action: RoutineArgs["action"] | undefined,
+  entry: (Line & { failed?: boolean }) | undefined,
+  result: string | undefined,
+): boolean {
+  if (action !== "create" && action !== "update") return false;
+  if (entry) return entry.routineId !== undefined && entry.failed !== true;
+  const said = answerText(result);
+  const opening = (
+    TOOL_RESULT_KO[
+      action === "create" ? "laf:routine_saved" : "laf:routine_updated"
+    ] ?? ""
+  ).split("{")[0];
+  return Boolean(opening) && said.startsWith(opening ?? "");
+}
+
+/** A tool result as the transcript keeps it: the handler's string, sometimes JSON-quoted once. */
+function answerText(result: string | undefined): string {
+  if (!result) return "";
+  if (!result.startsWith('"')) return result;
+  try {
+    const parsed: unknown = JSON.parse(result);
+    return typeof parsed === "string" ? parsed : result;
+  } catch {
+    return result;
+  }
 }
 
 /** What a routine line says when this tab did not see the call happen (after a reload). */

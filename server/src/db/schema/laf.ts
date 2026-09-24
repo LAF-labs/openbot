@@ -234,6 +234,17 @@ export const lafRoutines = pgTable("laf_routines", {
   name: text("name").notNull(),
   /** What to do, in words. Sent to the Bot verbatim as the run's one user message. */
   instruction: text("instruction").notNull(),
+  /**
+   * What the routine does, in one line written for the person — never sent to the Bot.
+   *
+   * The instruction is written for the Bot's future self, and a routine a Bot made in conversation
+   * reads that way on the Routines screen: "매주 월요일 아침이다. 사용자에게 지난주 매출 요약을
+   * 요청하는 인사와 함께 … (사용자가 대화로 숫자를 알려 주기로 약정함)" (UI/UX audit 0.5.3, item 8).
+   * The Bot writes this beside it through `manage_routine`. Null on routines made before it existed,
+   * on ones written by hand, and after the instruction or the schedule changes without a new one —
+   * a line describing a routine that is no longer this one would be the screen misreporting it.
+   */
+  summary: text("summary"),
   scheduleKind: routineScheduleKind("schedule_kind").notNull(),
   intervalMinutes: integer("interval_minutes"),
   /**

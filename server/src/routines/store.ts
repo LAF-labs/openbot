@@ -37,6 +37,8 @@ export type RoutineInput = {
   agentId: string;
   name: string;
   instruction: string;
+  /** The line the person reads on the Routines screen. Optional; see `summaryOf`. */
+  summary?: string;
   schedule: RoutineSchedule;
   /**
    * The catalogue suggestion this routine is being made from, when it is. See the schema note:
@@ -51,13 +53,40 @@ export type RoutineInput = {
  *
  * Not `enabled`, not which Bot, and not whether the unread rule may pause it: each of those has a
  * door of its own, and this shape is what a Bot's `manage_routine` reaches (`routes.ts` picks these
- * three out of the body and drops everything else).
+ * four out of the body and drops everything else).
  */
 export type RoutineChange = {
   name?: string;
   instruction?: string;
+  /** The person's line. Only with or after the words it describes; see `updateRoutine`. */
+  summary?: string;
   schedule?: RoutineSchedule;
 };
+
+/**
+ * How long the person's line may be. One line on a phone is about forty Korean characters, two is
+ * eighty; a Bot that writes a paragraph here has written a second instruction, and the screen cuts
+ * it rather than refusing the routine it came with — refusing would lose the routine over its label.
+ */
+export const SUMMARY_MAX_CHARS = 120;
+
+/**
+ * The line as it is kept: one line, trimmed, bounded, or null for nothing.
+ *
+ * Newlines become spaces because it is drawn as a line, and a Bot's summary that opens with a
+ * heading and a list would push the schedule off the card.
+ */
+export function summaryOf(summary: string | undefined): string | null {
+  const line = (summary ?? "").replace(/\s+/g, " ").trim();
+  if (!line) return null;
+  const letters = [...line];
+  return letters.length > SUMMARY_MAX_CHARS
+    ? `${letters
+        .slice(0, SUMMARY_MAX_CHARS - 1)
+        .join("")
+        .trimEnd()}…`
+    : line;
+}
 
 /** What every verb here works with: the database, and the clock a new or re-armed routine reads. */
 export type RoutineStore = {
@@ -90,6 +119,7 @@ const publishedColumns = {
   agentId: lafRoutines.agentId,
   name: lafRoutines.name,
   instruction: lafRoutines.instruction,
+  summary: lafRoutines.summary,
   scheduleKind: lafRoutines.scheduleKind,
   intervalMinutes: lafRoutines.intervalMinutes,
   dailyLocal: lafRoutines.dailyLocal,
@@ -263,6 +293,7 @@ async function insertRoutine(
       agentId: input.agentId,
       name: made.name,
       instruction: made.instruction,
+      summary: summaryOf(input.summary),
       ...scheduleColumns(schedule, at),
       enabled: true,
       createdById: actor.id,
@@ -314,10 +345,11 @@ export async function updateRoutine(
   if (
     name === undefined &&
     instruction === undefined &&
+    change.summary === undefined &&
     change.schedule === undefined
   ) {
     throw new RoutineError(
-      "Say what to change: the name, the instruction or the schedule.",
+      "Say what to change: the name, the instruction, its summary or the schedule.",
       400,
       "laf:routine_nothing_to_change",
     );
@@ -341,11 +373,27 @@ export async function updateRoutine(
   const at = store.now();
   const rescheduled =
     schedule !== undefined && !sameSchedule(schedule, scheduleOf(row));
+  /*
+   * THE PERSON'S LINE FOLLOWS WHAT IT DESCRIBES. A new summary is kept as sent. New words or a new
+   * clock without one clear the old line: it described a routine that is no longer this one, and
+   * the screen showing it would be telling the person something that will not happen. Measured
+   * 2026-09-24: "월요일 말고 화요일 8시 반으로" moved the routine and left "매주 월요일 오전 9시에
+   * 매출 요약을 알려 드립니다" under a schedule that said 화 오전 8:30. With no line the screen shows
+   * the instruction itself, which is true if not pretty.
+   */
+  const reworded = instruction !== undefined && instruction !== row.instruction;
+  const summary =
+    change.summary !== undefined
+      ? { summary: summaryOf(change.summary) }
+      : reworded || rescheduled
+        ? { summary: null }
+        : {};
   const [updated] = await database
     .update(lafRoutines)
     .set({
       ...(name === undefined ? {} : { name }),
       ...(instruction === undefined ? {} : { instruction }),
+      ...summary,
       ...(rescheduled ? scheduleColumns(schedule, at) : {}),
       updatedAt: at,
     })

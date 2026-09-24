@@ -13,6 +13,7 @@ import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import { agents, lafRoutineRuns, lafRoutines, users } from "../src/db/schema";
 import { createRoutineRoutes } from "../src/routines/routes";
+import { SUMMARY_MAX_CHARS } from "../src/routines/store";
 import {
   createRoutineService,
   type RoutineServiceOptions,
@@ -403,5 +404,137 @@ describe("whose routine an edit reaches", () => {
       enabled: true,
       agentId: BOT_ID,
     });
+  });
+});
+
+/**
+ * THE LINE THE PERSON READS, beside the instruction the Bot runs (UI/UX audit 0.5.3, item 8).
+ *
+ * A routine a Bot made in conversation showed its instruction on the Routines screen — a note to its
+ * future self, "매주 월요일 아침이다. 사용자에게 …". The Bot writes a line for the person beside it
+ * now. It follows what it describes: new words or a new clock without a new line clear the old one,
+ * since a line about a routine that is no longer this one would be the screen misreporting it.
+ */
+describe("the person's line", () => {
+  test("is kept on one line, trimmed, and bounded", async () => {
+    const service = serviceAt({ now: AT });
+    const made = await service.create(ACTOR, {
+      ...MORNING,
+      summary: "  매일 아침\n오늘 할 일을  알려 드려요 ",
+      schedule: { kind: "interval", minutes: 60 },
+    });
+    expect(made.summary).toBe("매일 아침 오늘 할 일을 알려 드려요");
+
+    const long = await service.create(ACTOR, {
+      ...MORNING,
+      name: "긴 설명",
+      summary: "가".repeat(400),
+      schedule: { kind: "interval", minutes: 60 },
+    });
+    expect([...(long.summary ?? "")].length).toBe(SUMMARY_MAX_CHARS);
+    expect(long.summary?.endsWith("…")).toBe(true);
+
+    // Written by hand, a routine has no line and the screen shows its own words.
+    const plain = await service.create(ACTOR, {
+      ...MORNING,
+      name: "손으로 쓴 것",
+      schedule: { kind: "interval", minutes: 60 },
+    });
+    expect(plain.summary).toBeNull();
+    const listed = await service.list(ACTOR);
+    expect(listed.find((routine) => routine.id === made.id)?.summary).toBe(
+      "매일 아침 오늘 할 일을 알려 드려요",
+    );
+  });
+
+  test("follows what it describes: new words or a new clock without a line clear it", async () => {
+    const service = serviceAt({ now: AT }, { timeZone: "Asia/Seoul" });
+    const made = await service.create(ACTOR, {
+      ...MORNING,
+      summary: "지난주 매출을 정리해 드려요",
+      schedule: { kind: "daily", time: "09:00", days: [1] },
+    });
+
+    const renamed = await service.update(ACTOR, made.id, { name: "아침 요약" });
+    expect(renamed.summary).toBe("지난주 매출을 정리해 드려요");
+
+    // The same words and clock sent back — the form sends every field — are not a change.
+    const same = await service.update(ACTOR, made.id, {
+      instruction: MORNING.instruction,
+      schedule: { kind: "daily", time: "09:00", days: [1] },
+    });
+    expect(same.summary).toBe("지난주 매출을 정리해 드려요");
+
+    // Measured: "월요일 말고 화요일 8시 반으로" left a line about Monday under a Tuesday schedule.
+    const moved = await service.update(ACTOR, made.id, {
+      schedule: { kind: "daily", time: "08:30", days: [2] },
+    });
+    expect(moved.summary).toBeNull();
+
+    const described = await service.update(ACTOR, made.id, {
+      instruction: "지난주 매출을 요약해줘",
+      summary: "지난주 매출을 정리해 드려요",
+    });
+    expect(described.summary).toBe("지난주 매출을 정리해 드려요");
+
+    const reworded = await service.update(ACTOR, made.id, {
+      instruction: "어제 매출만 알려줘",
+    });
+    expect(reworded.summary).toBeNull();
+
+    // A line on its own is a change, and an empty one takes the line away.
+    const relabelled = await service.update(ACTOR, made.id, {
+      summary: "어제 매출을 알려 드려요",
+    });
+    expect(relabelled.summary).toBe("어제 매출을 알려 드려요");
+    const cleared = await service.update(ACTOR, made.id, { summary: "  " });
+    expect(cleared.summary).toBeNull();
+  });
+
+  test("through the routes: made and changed by what the Bot's tool sends", async () => {
+    const service = serviceAt({ now: AT }, { timeZone: "Asia/Seoul" });
+    const person: AuthenticatedActor = {
+      id: ACTOR.id,
+      email: `${ACTOR.id}@laf.test`,
+      role: ACTOR.role,
+    };
+    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", person);
+      await next();
+    };
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route("/api/routines", createRoutineRoutes(service, requireUser));
+
+    const created = await app.request("http://laf.test/api/routines", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agentId: BOT_ID,
+        name: "주간 매출 요약",
+        instruction:
+          "매주 월요일 아침이다. 지난주 매출을 요약해 사장님께 전한다.",
+        summary: "지난주 매출을 정리해 드려요",
+        schedule: { kind: "daily", time: "09:00", days: [1] },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const { routine } = (await created.json()) as {
+      routine: { id: string; summary: string | null };
+    };
+    expect(routine.summary).toBe("지난주 매출을 정리해 드려요");
+
+    const patched = await app.request(
+      `http://laf.test/api/routines/${routine.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ summary: "매주 매출을 알려 드려요" }),
+      },
+    );
+    expect(patched.status).toBe(200);
+    expect((await stored(routine.id))?.summary).toBe("매주 매출을 알려 드려요");
   });
 });

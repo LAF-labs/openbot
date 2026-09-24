@@ -57,33 +57,44 @@ export const UPDATE_PROFILE: SelfTool = {
  * 거절에 곁들여지는 목록뿐이다. 계속 돌리기(읽지 않아도 멈추지 않기)와 어느 봇인지는 이 툴에 칸이 없다
  * — 사람이 정하는 것이다.
  */
+/*
+ * `summary`는 사람이 루틴 화면과 대화의 루틴 카드에서 읽는 한 줄이다(UI/UX 감사 0.5.3 항목 8).
+ * instruction은 미래의 봇에게 쓰는 지시문이라 사람에게 보이면 낯설었다. 칸이 하나 늘었으므로 다른
+ * 설명을 그만큼 줄여, 매 턴 모델 앞에 서는 이 툴의 크기는 전보다 크지 않다(`routine-tool-edit.test.ts`가
+ * 잰다). 한 줄에 시각을 빼라는 것은, 일정만 바꾼 뒤 "매주 월요일 오전 9시에…"가 화요일 루틴 밑에
+ * 남았던 것(2026-09-24 실측) 때문이다 — 서버는 일정이나 지시가 바뀌고 새 한 줄이 없으면 옛 줄을 지운다.
+ */
 export const MANAGE_ROUTINE: SelfTool = {
   name: "manage_routine",
   description:
-    "일정에 맞춰 저절로 도는 일을 만들고, 보고, 고치고, 멈추거나 다시 돌리고, 지운다. " +
+    "일정에 맞춰 저절로 도는 일(루틴)을 만들고, 보고, 고치고, 멈추고, 지운다. " +
     "사람이 실제로 시각이나 요일이나 주기를 말했을 때만 만든다 — 시간이 붙지 않은 일은 루틴이 아니라 네 직무이므로 update_profile로 간다. " +
-    "있는 루틴의 이름·지시·일정을 바꿀 때는 지우고 새로 만들지 말고 update로 고친다.",
+    "있는 루틴을 바꿀 때는 지우고 새로 만들지 말고 update로 고친다.",
   parameters: object(
     {
       action: {
         type: "string",
         enum: ["create", "list", "update", "delete"],
         description:
-          "create: 새 루틴을 만든다(name, instruction, schedule 필요). list: 네 루틴을 id·일정과 함께 본다. update: 있는 루틴을 고친다(routineId와, 바뀌는 것만). delete: 지운다(routineId 필요).",
+          "create: name·instruction·summary·schedule로 만든다. list: 네 루틴과 id·일정. update: routineId와 바뀌는 것만. delete: routineId로 지운다.",
       },
       routineId: {
         type: "string",
         description:
-          "update와 delete에서 어느 루틴인지: 그 루틴의 id, 또는 지금 이름을 정확히. 모르면 list로 먼저 본다",
+          "update·delete할 루틴의 id나 지금 이름 그대로. 모르면 list로 본다",
       },
       name: {
         type: "string",
-        description: "루틴 이름. create에 필요, update에서는 새 이름",
+        description: "루틴 이름",
       },
       instruction: {
         type: "string",
+        description: "그 시각마다 무엇을 할지, 미래의 너에게 쓰듯이",
+      },
+      summary: {
+        type: "string",
         description:
-          "그 시각마다 무엇을 할지, 미래의 너에게 쓰듯이. create에 필요, update에서는 새 지시",
+          "사장님이 화면에서 읽을 한 줄, 존댓말로, 시각은 빼고. instruction이나 schedule을 줄 때마다 함께 준다",
       },
       enabled: {
         type: "boolean",
@@ -91,7 +102,7 @@ export const MANAGE_ROUTINE: SelfTool = {
       },
       schedule: {
         type: "object",
-        description: "언제 도는지. create에 필요, update에서는 새 일정",
+        description: "언제 도는지",
         properties: {
           kind: { type: "string", enum: ["daily", "interval"] },
           time: {

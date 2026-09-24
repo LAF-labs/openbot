@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { ReadNotice } from "@/components/layout/read-states";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -104,7 +105,9 @@ const SuggestionCard = ({
   });
 
   const why = SUGGESTION_WHY[suggestion.key];
-  const problem = accept.error?.message ?? dismiss.error?.message;
+  // Said as a reason, never as the browser's "Failed to fetch" (UI/UX audit 0.5.3, item 15).
+  const failed = accept.error ?? dismiss.error;
+  const problem = failed ? savingFailure(failed) : null;
 
   return (
     <li className="rounded-xl border border-border bg-card p-4">

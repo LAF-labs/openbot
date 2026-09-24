@@ -255,7 +255,7 @@ describe("the row and its menu", () => {
     expect(page).toContain("t(UNREAD_PAUSE_SENTENCES.row)");
     expect(page.indexOf("<UnreadPauseBanners />")).toBeGreaterThan(0);
     expect(page.indexOf("<UnreadPauseBanners />")).toBeLessThan(
-      page.indexOf("<RoutineRow key={routine.id}"),
+      page.indexOf("<RoutineRow"),
     );
   });
 

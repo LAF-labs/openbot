@@ -116,6 +116,7 @@
   "app/tests/repair-history.test.ts",
   "app/tests/roster-state.test.ts",
   "app/tests/router.test.ts",
+  "app/tests/routine-card.test.tsx",
   "app/tests/routine-edit-form.test.ts",
   "app/tests/routine-form.test.ts",
   "app/tests/routine-line.test.ts",
