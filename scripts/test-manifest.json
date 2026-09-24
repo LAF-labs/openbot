@@ -81,6 +81,7 @@
   "app/tests/current-user-guard.test.ts",
   "app/tests/design-tokens.test.ts",
   "app/tests/detail-sheet.test.tsx",
+  "app/tests/draft-to-composer.test.tsx",
   "app/tests/ensure.test.ts",
   "app/tests/failure-group-line.test.tsx",
   "app/tests/feedback-diagnostics.test.ts",

@@ -7,6 +7,10 @@ import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { AgentAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import {
+  offerDraft,
+  withdrawDraft,
+} from "@/components/channels/composer/prefill";
 import { LiveView } from "@/components/computer/live-view";
 import { useControl } from "@/components/computer/use-control";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -31,6 +35,13 @@ import { t } from "@/lib/i18n";
 const chatSearchSchema = z
   .object({
     settings: z.boolean().optional(),
+    /*
+     * A sentence to start the composer with, which the conversation takes and then drops from the
+     * address (below). The routines screen's 고치기 sends "'주간 매출 요약'을 이렇게 바꿔 줘: " here
+     * (UI/UX audit 0.5.3, item 8). Its own `.catch`, so a malformed one costs only itself and not
+     * the `settings` beside it.
+     */
+    draft: z.string().optional().catch(undefined),
   })
   /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
    * validateSearch and taking the whole route down with it. */
@@ -96,9 +107,25 @@ function ChannelScreen() {
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
-  const { settings } = Route.useSearch();
+  const { settings, draft } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
+
+  /*
+   * THE SENTENCE GOES TO THE COMPOSER, AND OUT OF THE ADDRESS. Offered to this conversation's
+   * composer (`composer/prefill.ts`), which takes it once it has loaded, and removed from the
+   * search with `replace`, so neither a reload nor the back button types it in a second time.
+   */
+  useEffect(() => {
+    if (draft === undefined) return;
+    offerDraft(channelId, draft);
+    void navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, draft: undefined }),
+    });
+  }, [channelId, draft, navigate]);
+  // Leaving before its composer took it: it was for this conversation, and nowhere else.
+  useEffect(() => () => withdrawDraft(channelId), [channelId]);
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
   /** Whose profile the settings pane edits, and whose name titles the conversation. */

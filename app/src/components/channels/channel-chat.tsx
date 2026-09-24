@@ -7,6 +7,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
+import { DraftScope } from "@/components/channels/composer/prefill";
 import {
   claimAutoSend,
   forgetUnsent,
@@ -986,98 +987,101 @@ export function ChannelChat({
 
   return (
     <ConversationProvider ask={askFromComponent}>
-      <ConversationView
-        banner={
-          <BrowsingBanner
-            asked={openTask?.asked}
-            botId={runtimeAgentId}
-            isStoppable={agent.isRunning || runsInFlight > 0}
-            onStop={handleStop}
-          />
-        }
-        /*
-         * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
-         * note above already gives. `agent.isRunning` stays false for the second and a half while
-         * `say` waits for the runtime agent, so the transcript drew nothing at all during the one
-         * window a person is most likely to wonder whether anything happened: right after pressing
-         * send. It was the only one of the three turn-shaped props still reading the wire.
-         */
-        busy={agent.isRunning || turnsInFlight > 0}
-        // What a 좋아요·아쉬워요 under an answer belongs to.
-        channelId={channel.id}
-        // The `/` menu exposes only skills granted to this Bot.
-        commands={skillCommands}
-        // Readiness is handled by `say`; deletion is the only disabled-chat state.
-        disabled={!channel.active}
-        messageTimes={messageTimes}
-        {...(readWindow ? { readWindow } : {})}
-        messages={thread}
-        notice={
-          channel.active ? null : (
-            <p className="pb-2 text-sm text-muted-foreground" role="status">
-              {t(
-                "This Bot has been deleted. The conversation stays readable, but it can no longer reply.",
-              )}
-            </p>
-          )
-        }
-        onSubmit={async (draft) => {
+      {/* The composer below takes a sentence offered to this conversation (`?draft=`), and no other. */}
+      <DraftScope.Provider value={channel.id}>
+        <ConversationView
+          banner={
+            <BrowsingBanner
+              asked={openTask?.asked}
+              botId={runtimeAgentId}
+              isStoppable={agent.isRunning || runsInFlight > 0}
+              onStop={handleStop}
+            />
+          }
           /*
-           * `commandIds` are the `/` chips that survived into the send, in the order they were
-           * typed. Resolved against the same list the menu was built from, so a chip left over
-           * from a skill that has since been revoked resolves to nothing rather than to a stale
-           * instruction — the menu is refetched, and this reads from it.
+           * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
+           * note above already gives. `agent.isRunning` stays false for the second and a half while
+           * `say` waits for the runtime agent, so the transcript drew nothing at all during the one
+           * window a person is most likely to wonder whether anything happened: right after pressing
+           * send. It was the only one of the three turn-shaped props still reading the wire.
            */
-          const skillInstructions = draft.commandIds
-            .map(
-              (id) =>
-                skillCommands.find((command) => command.id === id)?.prompt,
+          busy={agent.isRunning || turnsInFlight > 0}
+          // What a 좋아요·아쉬워요 under an answer belongs to.
+          channelId={channel.id}
+          // The `/` menu exposes only skills granted to this Bot.
+          commands={skillCommands}
+          // Readiness is handled by `say`; deletion is the only disabled-chat state.
+          disabled={!channel.active}
+          messageTimes={messageTimes}
+          {...(readWindow ? { readWindow } : {})}
+          messages={thread}
+          notice={
+            channel.active ? null : (
+              <p className="pb-2 text-sm text-muted-foreground" role="status">
+                {t(
+                  "This Bot has been deleted. The conversation stays readable, but it can no longer reply.",
+                )}
+              </p>
             )
-            .filter((instruction): instruction is string =>
-              Boolean(instruction),
-            );
+          }
+          onSubmit={async (draft) => {
+            /*
+             * `commandIds` are the `/` chips that survived into the send, in the order they were
+             * typed. Resolved against the same list the menu was built from, so a chip left over
+             * from a skill that has since been revoked resolves to nothing rather than to a stale
+             * instruction — the menu is refetched, and this reads from it.
+             */
+            const skillInstructions = draft.commandIds
+              .map(
+                (id) =>
+                  skillCommands.find((command) => command.id === id)?.prompt,
+              )
+              .filter((instruction): instruction is string =>
+                Boolean(instruction),
+              );
 
-          await say(draft.text, skillInstructions);
-        }}
-        onStop={handleStop}
-        /*
-         * The turn, not the run. A browser action ends one run and starts another, and telling the
-         * conversation it is idle in between is what would drain a parked correction into the
-         * middle of an answer: a second turn racing the first on one thread, with a fabricated
-         * result stitched over a tool call that is still executing.
-         */
-        pending={agent.isRunning || turnsInFlight > 0}
-        /*
-         * A channel outlives its turns, so it is the screen where waiting is worth offering. A
-         * correction typed mid-answer is held here, in this tab, and runs as one follow-up turn the
-         * moment this one is over — including when it is over because somebody pressed the button
-         * above.
-         */
-        queueWhileBusy
-        /*
-         * The run, not the turn. Stop reaches a run through the core's abort controller, and that
-         * controller does not exist until `say` has finished waiting for the runtime agent — so
-         * this is the one place the narrower fact is the honest one to draw a button from.
-         */
-        stoppable={agent.isRunning || runsInFlight > 0}
-        /*
-         * At the END OF THE TRANSCRIPT rather than above the composer, which is where this used to
-         * be. A turn that ends without an answer leaves a gap exactly where the reply was going to
-         * appear, and the person is already looking at it; an explanation in the composer area is a
-         * different part of the screen from the thing it explains.
-         *
-         * `runError` carries whatever ended the turn, in that thing's own words. A Bot that stopped
-         * streaming says so, because the deployment's stall watchdog writes that sentence into the
-         * run before closing it; see server/src/channels/stall-guard.ts.
-         */
-        stoppedCode={runError ?? undefined}
-        failures={failuresById}
-        onRetry={(message) => {
-          // The failure line is this tab's; clear it so the retry is not drawn as still failed.
-          setRunError(null);
-          void retryRef.current(message);
-        }}
-      />
+            await say(draft.text, skillInstructions);
+          }}
+          onStop={handleStop}
+          /*
+           * The turn, not the run. A browser action ends one run and starts another, and telling the
+           * conversation it is idle in between is what would drain a parked correction into the
+           * middle of an answer: a second turn racing the first on one thread, with a fabricated
+           * result stitched over a tool call that is still executing.
+           */
+          pending={agent.isRunning || turnsInFlight > 0}
+          /*
+           * A channel outlives its turns, so it is the screen where waiting is worth offering. A
+           * correction typed mid-answer is held here, in this tab, and runs as one follow-up turn the
+           * moment this one is over — including when it is over because somebody pressed the button
+           * above.
+           */
+          queueWhileBusy
+          /*
+           * The run, not the turn. Stop reaches a run through the core's abort controller, and that
+           * controller does not exist until `say` has finished waiting for the runtime agent — so
+           * this is the one place the narrower fact is the honest one to draw a button from.
+           */
+          stoppable={agent.isRunning || runsInFlight > 0}
+          /*
+           * At the END OF THE TRANSCRIPT rather than above the composer, which is where this used to
+           * be. A turn that ends without an answer leaves a gap exactly where the reply was going to
+           * appear, and the person is already looking at it; an explanation in the composer area is a
+           * different part of the screen from the thing it explains.
+           *
+           * `runError` carries whatever ended the turn, in that thing's own words. A Bot that stopped
+           * streaming says so, because the deployment's stall watchdog writes that sentence into the
+           * run before closing it; see server/src/channels/stall-guard.ts.
+           */
+          stoppedCode={runError ?? undefined}
+          failures={failuresById}
+          onRetry={(message) => {
+            // The failure line is this tab's; clear it so the retry is not drawn as still failed.
+            setRunError(null);
+            void retryRef.current(message);
+          }}
+        />
+      </DraftScope.Provider>
     </ConversationProvider>
   );
 }

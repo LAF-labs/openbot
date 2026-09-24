@@ -4,6 +4,7 @@ import type { Segment } from "prompt-area/helpers";
 import {
   type FormEvent,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -20,6 +21,7 @@ import {
   type ComposerDraft,
   toDraft,
 } from "./draft";
+import { DraftScope, takeOfferedDraft, useOfferedDraft } from "./prefill";
 import { PLACEHOLDER_COMMANDS } from "./sources";
 import { buildTriggers } from "./triggers";
 
@@ -298,6 +300,33 @@ export function Composer({
     }
     promptAreaRef.current?.focus();
   }, [disabled]);
+
+  /*
+   * A SENTENCE ANOTHER SCREEN STARTED FOR THE PERSON (`prefill.ts`): the routines screen's 고치기
+   * opens the conversation with "'주간 매출 요약'을 이렇게 바꿔 줘: " for them to finish.
+   *
+   * Through the editor's own `setText`, not by setting `value`: that replaces the box the way a
+   * paste does — undoable, the caret at the END where the person goes on typing — and hands the
+   * result back through `onChange` like any keystroke. A value set from outside is rendered over
+   * the box with the caret at the start (see the notes on `handleChange` above).
+   *
+   * Not into a box that already holds something: what the person was typing is theirs, and the
+   * offer waits rather than writing over it. And only an offer for the conversation this composer
+   * sits in (`DraftScope`); the compose screen sits in none and takes nothing.
+   */
+  const scope = useContext(DraftScope);
+  const offered = useOfferedDraft(scope);
+  useEffect(() => {
+    if (offered === null || disabled || !draft.isEmpty) {
+      return;
+    }
+    const text = takeOfferedDraft(scope);
+    if (text === null) {
+      return;
+    }
+    promptAreaRef.current?.setText(text);
+    promptAreaRef.current?.focus();
+  }, [offered, scope, disabled, draft.isEmpty]);
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
