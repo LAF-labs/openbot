@@ -151,6 +151,7 @@
   "app/tests/thread-history.test.ts",
   "app/tests/today-usage-render.test.tsx",
   "app/tests/today-usage.test.ts",
+  "app/tests/tool-line-shimmer.test.ts",
   "app/tests/tool-result-codes.test.ts",
   "app/tests/transcript-anchors.test.tsx",
   "app/tests/transcript-messages.test.ts",

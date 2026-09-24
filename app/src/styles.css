@@ -380,10 +380,11 @@ body {
 /*
  * A tool line that is still running.
  *
- * A light band sweeps left to right across the words. `background-clip: text` with a transparent
- * colour is what confines the gradient to the glyphs, and the band is built from the line's own
- * colour so it reads the same in either theme. Only `background-position` animates, which the
- * compositor handles without laying the text out again on every frame.
+ * A light band sweeps left to right across the words. `background-clip: text` with hollow glyphs
+ * is what confines the gradient to them, and the band is built from the line's own colour so it
+ * reads the same in either theme. Only `background-position` animates, which the compositor
+ * handles without laying the text out again on every frame. The rule itself is further down,
+ * behind its support query.
  */
 /* The chat measure. See --chat-font-size. */
 .chat-prose {
@@ -393,23 +394,34 @@ body {
 }
 
 /*
- * The shimmer only works where `background-clip: text` does. Where it does not, the declarations
- * below still apply `color: transparent` and the words vanish — so the whole effect is behind a
- * support query, and the fallback is ordinary readable text.
+ * THE GLYPHS ARE HOLLOWED WITH `-webkit-text-fill-color`, NEVER WITH `color`.
+ *
+ * It was `color: transparent`, and `currentColor` inside `background-image` is this element's own
+ * `color` — so the gradient that was meant to paint the words was built from the transparent it
+ * had just been given. Measured 2026-09-24: the computed gradient was `rgba(0, 0, 0, 0)` at every
+ * stop, and "생각하는 중" and every running tool line were blank, icon included (its stroke is
+ * `currentColor` too), in both themes. The fill property empties the glyphs and leaves `color` —
+ * the tone class, muted or otherwise — for the gradient and the icon to read.
+ *
+ * The band dips to 60% of the ink, not to a quarter of it: the line is still something to read
+ * while it moves, and a light pass over it says "working" as well as a dark gap does.
+ *
+ * Behind a support query so a browser without text clipping gets ordinary text, not hollow text.
  */
-@supports (background-clip: text) or (-webkit-background-clip: text) {
+@supports ((background-clip: text) or (-webkit-background-clip: text)) and
+  (-webkit-text-fill-color: transparent) {
   .tool-line-running {
     background-image: linear-gradient(
       100deg,
       currentColor 40%,
-      color-mix(in oklab, currentColor 25%, transparent) 50%,
+      color-mix(in oklab, currentColor 60%, transparent) 50%,
       currentColor 60%
     );
     background-size: 250% 100%;
     background-position: 100% 0;
     background-clip: text;
     -webkit-background-clip: text;
-    color: transparent;
+    -webkit-text-fill-color: transparent;
     animation: tool-line-sweep 1.6s linear infinite;
   }
 }
@@ -586,10 +598,11 @@ body {
     transition-delay: 0ms;
   }
 
+  /* Solid again: the tone class keeps its colour, and the hollowed glyphs are filled with it. */
   .tool-line-running {
     animation: none;
     background-image: none;
-    color: inherit;
+    -webkit-text-fill-color: currentColor;
   }
 
   /*

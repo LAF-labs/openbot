@@ -67,11 +67,11 @@ export const RosterUnreadDot = () => (
  * The second line is 13/18 with a fixed min-height, so a row whose preview is empty still holds its
  * name on the same baseline as its neighbours.
  *
- * SOLID TEXT, NOT THE SHIMMER. The tool line's shimmer paints its glyphs with `background-clip:
- * text` over a transparent colour, so the words exist only while the animation is being drawn. On a
- * backgrounded tab the label measured `rgba(0, 0, 0, 0)` and the row simply had a blank second line.
- * That is an acceptable trade for a decorative tool line and not for the roster, which is the most
- * read surface in the product.
+ * SOLID TEXT, NOT THE SHIMMER. The tool line's shimmer paints its glyphs through `background-clip:
+ * text`, so the words exist only while that painting works. Here the label once measured
+ * `rgba(0, 0, 0, 0)` and the row simply had a blank second line — the shimmer's gradient was built
+ * from a colour its own rule had made transparent, fixed 2026-09-24 (styles.css). The roster, the
+ * most read surface in the product, does not depend on a paint trick to say what a Bot is doing.
  */
 export const RosterRowLines = ({
   isSubtitleLive = false,
