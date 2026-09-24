@@ -733,8 +733,8 @@ export const ko: Record<string, string> = {
     "봇에 아직 권한이 남아 있지만, 이 서버가 더 이상 제공하지 않는 툴입니다:",
   "There is no Bot to remember this.": "이걸 기억할 봇이 없습니다.",
   "What it remembers": "기억하고 있는 것",
-  "Things this Bot worked out about you and keeps between conversations. Only you see yours.":
-    "이 봇이 당신에 대해 알아낸 것들이고, 대화가 끝나도 남습니다. 내 것은 나만 봅니다.",
+  "What this Bot has learned, kept between conversations.":
+    "봇이 알게 된 것들입니다. 대화가 끝나도 남습니다.",
   Forget: "잊기",
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They share its logins, its files and its session, so a Bot can reach what another signed into. That is the design — one computer per account — and what keeps a Bot in bounds is the boundary in front of it, not a separate computer.":
@@ -976,7 +976,7 @@ export const ko: Record<string, string> = {
     "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
   "Vendor documentation": "공급자 문서",
-  "Waiting on you": "당신을 기다리는 중",
+  "Waiting on you": "답을 기다려요",
   What: "무엇을",
   "What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit.":
     "봇이 답에 쓸 수 있는 것들입니다. 게시된 컴포넌트는 모든 봇이 쓸 수 있고, 여기서 끄면 그 봇은 존재조차 모릅니다. 모든 변경과 거부는 감사 기록에 한 줄로 남습니다.",
@@ -1049,7 +1049,7 @@ export const ko: Record<string, string> = {
   "It finished while you were away.": "자리를 비운 사이에 일을 마쳤습니다.",
   "It stopped before it finished.": "끝내지 못하고 멈췄습니다.",
   "It needs something only you can give.":
-    "당신만 줄 수 있는 것을 기다리고 있습니다.",
+    "직접 해 주셔야 할 일을 기다리고 있습니다.",
 
   // 새 봇이 아직 이름을 정하기 전에 쓰는 이름들 — BOT_NAME_WORDS(lib/agents/bot-names.ts).
   Lantern: "초롱",

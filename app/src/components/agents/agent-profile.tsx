@@ -40,10 +40,27 @@ import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { failureSentence } from "@/lib/press";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
+
+/**
+ * What a change on this page that did not save says.
+ *
+ * FOUR CARDS DREW WHATEVER THE ERROR SAID. That was a `t()`'d sentence when the server refused, and
+ * the browser's own English ("Failed to fetch", "Load failed") when nothing answered at all; offline,
+ * pressing 꼼꼼하게 said "전달되지 않았습니다. 다시 시도하세요." with no reason (0.5.3 audit, item
+ * 15). `failureSentence` keeps what is ours and replaces what is not, and a device that says it is
+ * offline gets the reason by name, since that is the one a person can do something about.
+ */
+function saveFailure(error: unknown): string {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return t("That was not saved. Check the connection and try again.");
+  }
+  return failureSentence(error);
+}
 
 /**
  * The shape of the profile, not a generic one: the face's tile, then the name.
@@ -309,12 +326,7 @@ function NameField({
     setProblem(null);
     await onSave(next).then(
       () => flashSaved(),
-      (caught: unknown) =>
-        setProblem(
-          caught instanceof Error
-            ? caught.message
-            : t("That was not saved. Try again."),
-        ),
+      (caught: unknown) => setProblem(saveFailure(caught)),
     );
   };
 
@@ -434,7 +446,7 @@ function EffortCard({
       </fieldset>
       {setEffort.error ? (
         <p className="text-destructive text-sm" role="alert">
-          {setEffort.error.message}
+          {saveFailure(setEffort.error)}
         </p>
       ) : null}
     </section>
@@ -518,9 +530,12 @@ function MemoriesCard({ agentId }: { agentId: string }) {
         <div className="flex flex-col gap-0.5">
           <h2 className="font-medium text-base">{t("What it remembers")}</h2>
           <p className="text-muted-foreground text-sm">
-            {t(
-              "Things this Bot worked out about you and keeps between conversations. Only you see yours.",
-            )}
+            {/*
+             * "당신에 대해 … 내 것은 나만 봅니다" was written for several people sharing a Bot. There is
+             * one account and one Bot now, and "당신" is not how this product speaks to anybody
+             * (0.5.3 audit, item 9).
+             */}
+            {t("What this Bot has learned, kept between conversations.")}
           </p>
         </div>
       )}
@@ -834,7 +849,7 @@ function AutoReviewCard({
         {saved ? t("Saved") : null}
       </LiveRegion>
       <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
-        {updateAgent.error?.message}
+        {updateAgent.error ? saveFailure(updateAgent.error) : null}
       </LiveRegion>
     </section>
   );
@@ -881,7 +896,7 @@ function NotifyCard({
         ) : null}
         {preferences.error ? (
           <p className="pt-1 text-destructive text-sm" role="alert">
-            {preferences.error.message}
+            {saveFailure(preferences.error)}
           </p>
         ) : null}
       </div>
