@@ -102,6 +102,11 @@ export type UnattendedRunOptions = {
    */
   notepad?: readonly RoutineNote[];
   /**
+   * When this run was meant for — the clock's window, or null for Run now — forwarded like the
+   * notepad: the middleware appends it to the instruction as a reminder, with the time it started.
+   */
+  routineRun?: { scheduledFor: Date | null };
+  /**
    * A person's stop — `모두 멈추기` (`stop-all.ts`) — for work nobody is watching.
    *
    * It cuts exactly where the deadline cuts, because it is the same cut on a person's word instead
@@ -259,6 +264,13 @@ function answeredOk(content: unknown): boolean {
   }
 }
 
+/** A routine run's times as they travel on the run: an ISO instant, or null when not scheduled. */
+export function routineForwarded(run: { scheduledFor: Date | null }): {
+  scheduledFor: string | null;
+} {
+  return { scheduledFor: run.scheduledFor?.toISOString() ?? null };
+}
+
 export async function runUnattended(
   target: LoopAgent,
   instruction: string,
@@ -351,6 +363,9 @@ export async function runUnattended(
           forwardedProps: {
             mode: options.mode,
             ...(options.notepad?.length ? { notepad: options.notepad } : {}),
+            ...(options.routineRun
+              ? { routine: routineForwarded(options.routineRun) }
+              : {}),
           },
         },
         {
@@ -724,9 +739,16 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         description: tool.description,
         parameters: tool.inputSchema,
       })),
-      // Only where there is a skill to read. Every tool costs every turn, and a door with nothing
-      // behind it is one the model will still try (CLAUDE.md, the footprint ladder).
-      ...(granted.skills.length > 0
+      /*
+       * ALWAYS, wherever skills can be read at all. It used to be offered only to a Bot holding a
+       * skill — every tool costs every turn — but the tools are the head of the prompt, so a tool
+       * that appears the day a skill is granted re-bills everything behind it, and one that comes
+       * and goes is a prefix that never settles (agent-harness-design row 5; Claude Code never adds
+       * or removes a tool mid-session). Its description says to read only a skill the prompt lists,
+       * and a Bot with none is answered `laf:skill_not_granted` by the store. Phase 2 puts the rare
+       * tools behind a stub and a search instead.
+       */
+      ...(pluginStore
         ? [
             {
               name: SKILL_VIEW.name,

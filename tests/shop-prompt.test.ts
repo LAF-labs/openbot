@@ -162,9 +162,18 @@ describe("where the shop line sits in the prompt", () => {
     expect(index("이 사람이 하는 일")).toBeLessThan(index("/재고정리"));
   });
 
-  test("keeps the clock last, where the cache wants it", () => {
+  /*
+   * The shop is the person's, and it rides in the context layer an epoch freezes — never in the
+   * static layer every conversation shares, which ends before the Bot's own name.
+   */
+  test("sits in the context layer, after the static layer and the Bot's name", () => {
     const content = compose({ shop: food });
-    expect(content.trimEnd().split("\n").at(-1)).toMatch(/^지금은 2026-09-18/);
+    expect(content.indexOf("너는 초롱이다.")).toBeLessThan(
+      content.indexOf("이 사람이 하는 일"),
+    );
+    expect(content.indexOf("now 툴로 본다")).toBeLessThan(
+      content.indexOf("너는 초롱이다."),
+    );
   });
 
   test("is one paragraph, and the prompt without it is the prompt with nothing answered", () => {

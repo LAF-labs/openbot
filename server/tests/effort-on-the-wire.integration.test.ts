@@ -128,10 +128,8 @@ describe("what reaches the model", () => {
   });
 
   /**
-   * The date line, computed per run from the server clock.
-   *
-   * The rest of the prompt could be written once and cached; this could not, and a deployment that
-   * built it at boot would tell every Bot the moment its process started for as long as it lived.
+   * The date line, from the server clock — the date and never the minute, which is the `now`
+   * tool's (`context/conversations.ts`: an epoch freezes the date, a new day is a reminder).
    */
   test("today's date, on the Korean wall clock", async () => {
     const prompt =
@@ -149,8 +147,8 @@ describe("what reaches the model", () => {
       .filter((part) => ["year", "month", "day"].includes(part.type))
       .map((part) => part.value);
 
-    expect(prompt).toContain(`지금은 ${expected.join("-")} (`);
-    expect(prompt).toContain("KST다.");
+    expect(prompt).toContain(`오늘은 ${expected.join("-")} (`);
+    expect(prompt).toContain("Asia/Seoul(KST) 기준");
   });
 
   test("the effort, translated by the service that speaks that API", async () => {

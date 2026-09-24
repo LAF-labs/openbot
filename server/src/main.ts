@@ -1,5 +1,6 @@
 import "./telemetry-off";
 import { serve } from "bun";
+import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
@@ -58,6 +59,10 @@ import { createSiteConnectionStore } from "./computer/site-connections";
 import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { loadConfig } from "./config";
+import {
+  conversationPersistence,
+  createConversationStore,
+} from "./context/conversations";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
@@ -165,9 +170,20 @@ const lafRunner = await LafPostgresRunner.create(
  * on a trial: see `usage/daily-budget.ts`.
  */
 const dailyBudget = dailyBudgetFor(config.trial, database);
+/**
+ * What each Bot conversation has been told — its frozen epoch and the reminders its person's
+ * messages carry (`context/conversations.ts`). Loaded whole before any run can be served: the
+ * middleware that reads it answers synchronously, and a conversation it did not know would start a
+ * new epoch and re-bill its whole history.
+ */
+const conversations = createConversationStore({
+  persistence: conversationPersistence(database),
+});
+const conversationsLoaded = await conversations.load();
 const runMeter = {
   auditStore: bootAuditStore,
   ...(dailyBudget ? { dailyBudget } : {}),
+  conversations,
 };
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -870,6 +886,7 @@ sayBooted({
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
+  harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
 });
 
 /*

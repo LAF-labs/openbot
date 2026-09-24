@@ -133,6 +133,12 @@ export function sayBooted(input: {
   model: TenantPackage["model"];
   port: number | undefined;
   fleetWebhook: boolean;
+  /**
+   * The harness this build puts in front of the model (`shared/prompt/harness.ts`) and how many
+   * conversations were loaded with an epoch already frozen. A deploy whose harness moved starts a
+   * new epoch in every one of them, and the line says so before the first cache miss does.
+   */
+  harness?: { version: string; conversations: number };
 }): void {
   const { config } = input;
   if (config.devNoAuth) {
@@ -154,5 +160,11 @@ export function sayBooted(input: {
     supportWebhook: Boolean(config.notifications.alertWebhookUrl),
     stallTimeoutMs: config.agentStallTimeoutMs,
     retentionDays: config.auditRetentionDays,
+    ...(input.harness
+      ? {
+          harness: input.harness.version,
+          conversations: input.harness.conversations,
+        }
+      : {}),
   });
 }

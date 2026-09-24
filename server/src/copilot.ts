@@ -1,26 +1,41 @@
+import { createHash } from "node:crypto";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import type { AgentRunner } from "@copilotkit/runtime/v2";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { textOf } from "../../shared/message-content";
 import {
+  type ComposePromptInput,
   composePrompt,
+  contextFactsFor,
+  contextLayerText,
   DEFAULT_TIME_ZONE,
+  notepadLayerText,
   notepadOf,
   type PromptMode,
   type PromptPerson,
   type PromptSkill,
   promptModeOf,
   type RoutineNote,
+  systemPromptText,
 } from "../../shared/prompt";
+import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "./audit";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
+import type { ConversationStore } from "./context/conversations";
+import { log } from "./log";
 import { type DailyBudget, withDailyBudget } from "./usage/daily-budget";
-import { modelUsageOf } from "./usage/model-usage";
+import {
+  CACHE_LOW_SHARE,
+  CACHE_WARM_SECONDS,
+  CACHE_WATCH_MIN_PROMPT,
+  cacheReadOf,
+  modelUsageOf,
+} from "./usage/model-usage";
 
 /**
  * The CopilotKit runtime, in the one mode this product has.
@@ -47,11 +62,11 @@ type RegisteredRemoteAgent = {
   type: "remote_ag_ui";
   endpoint: string;
   /**
-   * Who this Bot is, as the prompt composer needs it.
+   * Who this Bot is, as the prompt composer needs it — read fresh per request.
    *
-   * The finished system message is built per RUN rather than held here, because one of the things
-   * it says is what time it is. Built once at load, a long-lived deployment would tell every Bot
-   * the moment its process started, for as long as that process lived.
+   * What the Bot is TOLD is decided per conversation, not per load: the context layer is frozen
+   * when an epoch starts and what changed since arrives as a reminder (`context/conversations.ts`).
+   * The profile here is what is true now, which the store compares against what was told.
    */
   profile: AgentStandingProfile;
   /**
@@ -181,20 +196,76 @@ export function botPromptMessage(
   return {
     id: promptMessageId(profile.id),
     role: "system",
-    content: composePrompt({
-      mode: options.mode,
-      now: options.now,
-      timeZone: options.timeZone,
-      bot: { id: profile.id, name: profile.name },
-      standingRole: profile.roleDescription,
-      ...(profile.shop ? { shop: profile.shop } : {}),
-      ...(profile.memories ? { memories: profile.memories } : {}),
-      ...(profile.skills ? { skills: profile.skills } : {}),
-      ...(options.notepad?.length ? { notepad: options.notepad } : {}),
-      ...((options.person ?? profile.person)
-        ? { person: options.person ?? profile.person }
-        : {}),
-    }),
+    content: composePrompt(composeInputOf(profile, options)),
+  };
+}
+
+/** What the composer is given for this profile and this run. */
+function composeInputOf(
+  profile: AgentStandingProfile,
+  options: {
+    mode: PromptMode;
+    now: Date;
+    timeZone: string;
+    notepad?: readonly RoutineNote[];
+    person?: PromptPerson;
+  },
+): ComposePromptInput {
+  return {
+    mode: options.mode,
+    now: options.now,
+    timeZone: options.timeZone,
+    bot: { id: profile.id, name: profile.name },
+    standingRole: profile.roleDescription,
+    ...(profile.shop ? { shop: profile.shop } : {}),
+    ...(profile.memories ? { memories: profile.memories } : {}),
+    ...(profile.skills ? { skills: profile.skills } : {}),
+    ...(options.notepad?.length ? { notepad: options.notepad } : {}),
+    ...((options.person ?? profile.person)
+      ? { person: options.person ?? profile.person }
+      : {}),
+  };
+}
+
+/**
+ * The tool list a run carries, as a fingerprint: by name, so the order the surface registered in
+ * does not count — `agent-bot` sorts before sending (`deferral.ts`). A list that changes is a
+ * different head of the prompt, so it is a new epoch.
+ */
+export function toolsFingerprint(
+  tools:
+    | ReadonlyArray<{
+        name: string;
+        description?: string;
+        parameters?: unknown;
+      }>
+    | undefined,
+): string {
+  const sorted = [...(tools ?? [])]
+    .map((tool) => [tool.name, tool.description ?? "", tool.parameters ?? null])
+    .sort(([a], [b]) =>
+      String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0,
+    );
+  return createHash("sha256")
+    .update(JSON.stringify(sorted), "utf8")
+    .digest("hex")
+    .slice(0, 12);
+}
+
+/**
+ * A routine run's times, as `runner/unattended.ts` forwards them. Null for anything that is not a
+ * routine's — a chat run carries none, and a value that is not the shape is none.
+ */
+function routineRunOf(
+  forwarded: Record<string, unknown>,
+): { scheduledFor: Date | null } | null {
+  const routine = forwarded.routine;
+  if (!routine || typeof routine !== "object") return null;
+  const at = (routine as Record<string, unknown>).scheduledFor;
+  const scheduled = typeof at === "string" ? new Date(at) : null;
+  return {
+    scheduledFor:
+      scheduled && !Number.isNaN(scheduled.getTime()) ? scheduled : null,
   };
 }
 
@@ -299,6 +370,14 @@ export type RunMeter = {
    * deployment that is not a trial — nothing is judged and nothing is asked.
    */
   dailyBudget?: DailyBudget;
+  /**
+   * What each conversation has been told: its epoch, its reminders, what its question has cost
+   * (`context/conversations.ts`). Here because it is metering as much as prompting — the usage
+   * rows are what it counts a question's dollars and a cache's warmth from. Absent, every run is
+   * an epoch of its own: the prompt is composed fresh and nothing is appended, which is what a
+   * test that builds agents alone wants.
+   */
+  conversations?: ConversationStore;
 };
 
 /**
@@ -339,6 +418,7 @@ function buildAgent(
     return new UnavailableAgent(agent);
   }
   return remoteAgentWithPrompt(agent, model.supportsEffort, {
+    model: model.defaultModel,
     timeZone,
     ...(stallGuard ? { stallGuard } : {}),
     ...(spill ? { spill } : {}),
@@ -375,10 +455,14 @@ function filedToolResult(
  * request transformation on one provider's client, so the same Bot works against any endpoint that
  * speaks the protocol.
  *
- * Composed per run rather than per load, because it says what time it is. Any copy already in the
- * conversation — this run's id, or the old `standing-role:` message a thread was saved with before
- * the prompt moved — is dropped: the endpoint receives exactly one, first, however many times the
- * thread has been replayed.
+ * WHAT THE BOT IS TOLD IS DECIDED PER CONVERSATION (`context/conversations.ts`). The system message
+ * is the epoch's, frozen when the conversation started or last changed model, effort, harness or
+ * tools; what changed since is appended to the person's new message as a reminder. So every
+ * request in an epoch leads with the same bytes and the provider serves the history behind them
+ * from its cache. Without the store (a test building agents alone) each run is an epoch of its
+ * own. Any copy already in the conversation — this run's id, or the old `standing-role:` message
+ * a thread was saved with before the prompt moved — is dropped: the endpoint receives exactly
+ * one, first, however many times the thread has been replayed.
  *
  * The stall watch goes on the fetch rather than into this middleware, because the middleware works
  * in AG-UI events and a stall is the absence of one. The thing that has to be watched is the
@@ -400,6 +484,8 @@ function remoteAgentWithPrompt(
   /** Whether this deployment's model takes an effort setting. See `RuntimeModel.supportsEffort`. */
   supportsEffort: boolean,
   options: {
+    /** The deployment's model, by name: part of what an epoch is frozen against. */
+    model: string;
     timeZone: string;
     stallGuard?: StallGuard;
     spill?: ResultSpill;
@@ -407,6 +493,7 @@ function remoteAgentWithPrompt(
   },
 ) {
   const { timeZone, stallGuard, spill, meter } = options;
+  const conversations = meter?.conversations;
   const watched = stallGuard?.watch({ id: agent.id, name: agent.name });
   const reach: AgentFetch | undefined = meter?.dailyBudget
     ? withDailyBudget(
@@ -423,7 +510,7 @@ function remoteAgentWithPrompt(
     ...(reach ? { fetch: reach } : {}),
   });
   const auditStore = meter?.auditStore;
-  if (auditStore) {
+  if (auditStore || conversations) {
     remote.subscribe({
       /*
        * Written and not awaited: a subscriber is awaited between events, so a slow insert here would
@@ -432,6 +519,36 @@ function remoteAgentWithPrompt(
        */
       onCustomEvent: ({ event, input }) => {
         for (const usage of modelUsageOf([event])) {
+          /*
+           * TREAT THE CACHE HIT RATE LIKE UPTIME (Claude Code's words). Each row says which epoch
+           * it belongs to and why that epoch began, so a miss can be read against its cause; and a
+           * warm request in an established epoch that read under half its prompt from the cache
+           * is a break in the prefix — something rewrote bytes the provider had — and is said so
+           * in the log. Counts and ids only; nothing a person wrote.
+           */
+          const context = conversations?.recordUsage(input.threadId, usage);
+          const share = cacheReadOf(usage);
+          const cacheLow =
+            context !== undefined &&
+            context !== null &&
+            !context.epochStart &&
+            context.idleSeconds !== null &&
+            context.idleSeconds <= CACHE_WARM_SECONDS &&
+            usage.promptTokens >= CACHE_WATCH_MIN_PROMPT &&
+            share !== null &&
+            share < CACHE_LOW_SHARE;
+          if (cacheLow) {
+            log.warn("cache_hit_low", {
+              bot: agent.id,
+              run: input.runId,
+              epoch: context.epochId,
+              provider: usage.provider ?? null,
+              promptTokens: usage.promptTokens,
+              cachedPromptTokens: usage.cachedPromptTokens ?? 0,
+              idleSeconds: context.idleSeconds,
+            });
+          }
+          if (!auditStore) continue;
           void recordAuditEvent(auditStore, {
             eventType: "model.usage",
             targetType: "agent",
@@ -441,6 +558,17 @@ function remoteAgentWithPrompt(
               threadId: input.threadId,
               botId: agent.id,
               ...usage,
+              ...(context
+                ? {
+                    epochId: context.epochId,
+                    epochReason: context.epochReason,
+                    epochStart: context.epochStart,
+                    ...(context.idleSeconds === null
+                      ? {}
+                      : { idleSeconds: context.idleSeconds }),
+                  }
+                : {}),
+              ...(cacheLow ? { cacheLow: true } : {}),
               source: "bot-turn",
             },
           }).catch(() => undefined);
@@ -453,10 +581,12 @@ function remoteAgentWithPrompt(
       typeof input.forwardedProps === "object" && input.forwardedProps !== null
         ? (input.forwardedProps as Record<string, unknown>)
         : {};
-    const prompt = botPromptMessage(agent.profile, {
-      // What the run says it is. Chat says nothing, and silence is a chat.
-      mode: promptModeOf(forwarded),
-      now: new Date(),
+    // What the run says it is. Chat says nothing, and silence is a chat.
+    const mode = promptModeOf(forwarded);
+    const now = new Date();
+    const composing = composeInputOf(agent.profile, {
+      mode,
+      now,
       timeZone,
       /*
        * Where a routine left off. Parsed to its shape and its bounds here whoever forwarded it —
@@ -465,28 +595,51 @@ function remoteAgentWithPrompt(
       notepad: notepadOf(forwarded),
       /*
        * WHOSE CLOCK. The device a chat run was sent from says its zone and language on the run
-       * (`forwardedProps.device`, from the app's `Intl`), and that is what "지금 몇 시야" is asking
-       * about — not this VM's clock and not the deployment's. It goes over what the person's last
-       * session kept, which is all a routine has. A zone this runtime does not know was dropped by
-       * `deviceOf`, so a bad value falls back rather than throwing in the middle of a run.
+       * (`forwardedProps.device`, from the app's `Intl`), and that is what "오늘" and "지금 몇 시야"
+       * are asking about — not this VM's clock and not the deployment's. It goes over what the
+       * person's last session kept, which is all a routine has. A zone this runtime does not know
+       * was dropped by `deviceOf`, so a bad value falls back rather than throwing mid-run.
        *
        * The place is never taken from the run: it is the person's, kept on the account and changed
        * through their own session (`account/whereabouts.ts`), like the shop.
        */
       person: { ...agent.profile.person, ...deviceOf(forwarded) },
     });
+    const facts = contextFactsFor(composing);
+    const notepad = notepadLayerText(mode, composing.notepad);
+    const frozen = (told: typeof facts) =>
+      systemPromptText(mode, contextLayerText(told, notepad));
+    const history = input.messages
+      .filter((message) => !isSupersededPrompt(message.id, agent.id))
+      .map((message) =>
+        spill && message.role === "tool"
+          ? filedToolResult(message, agent.id, spill)
+          : message,
+      );
+    const prepared = conversations?.prepare({
+      threadId: input.threadId,
+      botId: agent.id,
+      mode,
+      messages: history,
+      key: {
+        harness: HARNESS_VERSION,
+        model: options.model,
+        effort: supportsEffort ? agent.effort : "none",
+        tools: toolsFingerprint(input.tools),
+      },
+      facts,
+      system: frozen,
+      routine: routineRunOf(forwarded),
+      now,
+    });
+    const prompt: StandingRoleMessage = {
+      id: promptMessageId(agent.id),
+      role: "system",
+      content: prepared?.system ?? frozen(facts),
+    };
     return next.run({
       ...input,
-      messages: [
-        prompt,
-        ...input.messages
-          .filter((message) => !isSupersededPrompt(message.id, agent.id))
-          .map((message) =>
-            spill && message.role === "tool"
-              ? filedToolResult(message, agent.id, spill)
-              : message,
-          ),
-      ],
+      messages: [prompt, ...(prepared?.messages ?? history)],
       /*
        * WHAT THE ENDPOINT IS TOLD ABOUT THIS RUN, beside the conversation.
        *
@@ -501,12 +654,24 @@ function remoteAgentWithPrompt(
        * its own spelling and adding a third API is then one file. Omitted entirely, not defaulted,
        * where the deployment's model takes no effort setting.
        *
+       * `timeZone` is the person's, resolved — what the `now` tool reads the clock in, since the
+       * minute is no longer in the prompt. `question` is what this question has cost in dollars
+       * so far, from the usage rows the store counted; `agent-bot` bounds a question by it and by
+       * its steps (`guards.ts`). `epoch` names the epoch, for that service's log.
+       *
        * Merged over whatever the caller forwarded rather than replacing it.
        */
       forwardedProps: {
         ...forwarded,
         botId: agent.id,
         ...(supportsEffort ? { effort: agent.effort } : {}),
+        timeZone: facts.timeZone,
+        ...(prepared
+          ? {
+              question: { costUsd: prepared.question.costUsd },
+              epoch: { id: prepared.epoch.id, reason: prepared.epoch.reason },
+            }
+          : {}),
       },
     });
   });

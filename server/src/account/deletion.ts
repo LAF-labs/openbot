@@ -89,6 +89,7 @@ import {
   computerStandingApprovals,
   credentials,
   lafAnswerRatings,
+  lafConversationContexts,
   lafRoutineRuns,
   lafRoutines,
   lafThreadMessages,
@@ -357,6 +358,21 @@ export function createAccountDeletion(
                 .delete(lafThreadMessages)
                 .where(inArray(lafThreadMessages.threadId, threadIds))
                 .returning({ seq: lafThreadMessages.seq })
+            : [],
+        );
+        /*
+         * What those conversations were told — the frozen layer holds the Bot's memories of this
+         * person, and the reminders the person's messages carried (`context/conversations.ts`).
+         * The Bots' cascade below would take them too; taken here, by the same thread ids, so the
+         * tally says so.
+         */
+        record(
+          "conversationContexts",
+          threadIds.length
+            ? await transaction
+                .delete(lafConversationContexts)
+                .where(inArray(lafConversationContexts.threadId, threadIds))
+                .returning({ threadId: lafConversationContexts.threadId })
             : [],
         );
 

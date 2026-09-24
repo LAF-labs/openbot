@@ -1,6 +1,7 @@
 [
   "agent-bot/tests/context-budget.test.ts",
   "agent-bot/tests/deferral.test.ts",
+  "agent-bot/tests/harness.test.ts",
   "agent-bot/tests/stream-cut.test.ts",
   "agent-bot/tests/streaming.test.ts",
   "agent-bot/tests/tool-calls.test.ts",
@@ -231,6 +232,8 @@
   "server/tests/connections-overview.test.ts",
   "server/tests/consent-routes.test.ts",
   "server/tests/consent-store.integration.test.ts",
+  "server/tests/conversation-contexts.integration.test.ts",
+  "server/tests/conversation-epochs.test.ts",
   "server/tests/copilot-guard.test.ts",
   "server/tests/copilot.test.ts",
   "server/tests/credentials.test.ts",

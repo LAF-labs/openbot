@@ -199,9 +199,15 @@ measured here:
 Every tool costs every turn — its name, its description and its schema ride
 in front of every message a Bot answers, whether or not it is used — so a new
 capability takes the lowest rung that does the job: **extend existing code →
-a CLI or a skill → a tool offered only when it applies (`skill_view` exists
-only for a Bot that holds a skill) → a plugin → an MCP server → a new core tool
+a CLI or a skill → a tool offered only when it applies (`routine_note` exists
+only in a routine's own run) → a plugin → an MCP server → a new core tool
 last.** A rung is skipped only with a reason written down.
+
+"When it applies" is decided per conversation, never mid-conversation. The tools
+are the head of the prompt, so a tool that appears or disappears re-bills the
+whole conversation behind it: `skill_view` used to appear with a Bot's first
+skill and is now always offered, and `now` is a core tool because the minute
+cannot sit in the prompt (`~/laf/docs/agent-harness-design.md`, rows 1–5).
 
 ### The tests have a database of their own
 

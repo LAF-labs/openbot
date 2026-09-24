@@ -7,6 +7,7 @@ import { GalleryTools } from "./gallery-tools";
 import { PluginTools } from "./plugin-tools";
 import { SandboxedTools } from "./sandboxed-tools";
 import { SelfTools } from "./self-tools";
+import { NowToolLine } from "./now-tool-line";
 import { SkillTools } from "./skill-tools";
 
 /**
@@ -46,8 +47,10 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         <GalleryTools />
         {/* MCP tools share the same active-Bot context and server-side grant checks. */}
         <PluginTools />
-        {/* The Bot reading its own skills; registered only for a Bot that holds one. */}
+        {/* The Bot reading its own skills; always registered, so the tool list never moves. */}
         <SkillTools />
+        {/* The `now` call agent-bot answers itself, drawn in the person's words. */}
+        <NowToolLine />
         {/* Browser-authored components use the same component grants as the compiled gallery. */}
         <SandboxedTools />
         {children}

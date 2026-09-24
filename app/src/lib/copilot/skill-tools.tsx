@@ -2,12 +2,11 @@ import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { normalizeSkillName, SKILL_VIEW } from "@shared/tools/skills";
 import { asStandardSchema } from "@shared/tools/standard-schema";
-import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ToolLine } from "@/components/channels/tool-line";
 import { t } from "@/lib/i18n";
-import { agentPluginsQueryOptions, viewSkill } from "@/lib/plugins/queries";
-import { useActiveBotHolder, useDeclaredBotId } from "./active-bot";
+import { viewSkill } from "@/lib/plugins/queries";
+import { useActiveBotHolder } from "./active-bot";
 
 /**
  * A Bot reading one of its own skills, from inside the conversation.
@@ -17,29 +16,19 @@ import { useActiveBotHolder, useDeclaredBotId } from "./active-bot";
  * unanswered unless the person remembered its name. The prompt now lists the Bot's skills by name
  * and one line (`shared/prompt/skill-index.ts`); this is the tool that fetches the body.
  *
- * REGISTERED ONLY WHEN THERE IS SOMETHING TO READ. Every tool costs every turn, and a Bot holding
- * no skill would be handed a door with nothing behind it. Once seen, it stays mounted for the
- * session, for the same reason `PluginTools` keeps its `seen` map: a grant revoked mid-run should
- * answer a call in flight with a refusal, not vanish from under it.
+ * REGISTERED ALWAYS, whether or not the Bot holds a skill (2026-09-25, agent-harness-design row 5).
+ * It used to appear only once a skill was granted, on the footprint ladder's reasoning that every
+ * tool costs every turn. But the tools are the head of the prompt: the day the first skill was
+ * granted, the tool list changed and the whole conversation behind it was billed again, and a
+ * tool that comes and goes is a prefix that never settles. Claude Code's rule is the one kept —
+ * never add or remove a tool mid-session. Its description says to read only a skill the prompt
+ * lists, and a Bot that holds none is answered `laf:skill_not_granted` by the server.
  *
  * The body and the audit row come from the server (`viewSkill`), which rechecks the grant. The
  * instructions are in the grants query already, but reading them here would leave no trace of a
  * Bot choosing a skill nobody typed with `/` — and that trace is the point.
  */
 export function SkillTools() {
-  const declared = useDeclaredBotId();
-  const { data } = useQuery(agentPluginsQueryOptions(declared));
-  const holdsOne = (data?.skills.length ?? 0) > 0;
-  /*
-   * State adjusted during render, not a ref set during render: the React Compiler refuses the
-   * second, and the first commits nothing until React has rendered again with the latch set.
-   */
-  const [everHeld, setEverHeld] = useState(holdsOne);
-  if (holdsOne && !everHeld) setEverHeld(true);
-  return everHeld ? <SkillViewTool /> : null;
-}
-
-function SkillViewTool() {
   const bot = useActiveBotHolder();
   /** Per-call render state. The SDK captures `render` at registration, so it reads a ref. */
   const calls = useRef(

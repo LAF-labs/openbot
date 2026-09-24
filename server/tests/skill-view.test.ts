@@ -48,19 +48,25 @@ function fakeStore(skills: string[], allowed = true) {
 }
 
 describe("skill_view in an unattended run", () => {
-  test("is offered only to a Bot that holds a skill", async () => {
+  /*
+   * OFFERED WHETHER OR NOT THE BOT HOLDS ONE (2026-09-25). The tools are the head of the prompt, so
+   * a tool that appeared with the first skill re-billed everything behind it; it is on every list
+   * now, the same words either way, and a Bot with nothing to read is answered by the store.
+   */
+  test("is offered to every Bot, in the same words, skill or none", async () => {
     const none = await createUnattendedTools({
       pluginStore: fakeStore([]).store,
     })("bot-1", actor);
-    expect(none.tools.map((tool) => tool.name)).not.toContain("skill_view");
-
     const some = await createUnattendedTools({
       pluginStore: fakeStore(["재고정리"]).store,
     })("bot-1", actor);
-    const offered = some.tools.find((tool) => tool.name === "skill_view");
-    // The catalogue's own words, not a copy.
-    expect(offered?.description).toBe(SKILL_VIEW.description);
-    expect(offered?.parameters).toBe(SKILL_VIEW.parameters);
+    for (const toolkit of [none, some]) {
+      const offered = toolkit.tools.find((tool) => tool.name === "skill_view");
+      // The catalogue's own words, not a copy.
+      expect(offered?.description).toBe(SKILL_VIEW.description);
+      expect(offered?.parameters).toBe(SKILL_VIEW.parameters);
+    }
+    expect(JSON.stringify(none.tools)).toBe(JSON.stringify(some.tools));
   });
 
   test("reads the body through the store, as this Bot for this person", async () => {

@@ -12,8 +12,8 @@
  * 한 번 묻고 `remember`의 `place`로 저장한다 — 저장되면 다음 실행부터는 이 줄이 그 곳을 말하므로
  * 다시 묻지 않는다.
  *
- * 시계 줄은 `index.ts`의 `nowLine`이 그대로 맡는다. 여기서는 그 줄 뒤에 붙는 "누구의 시계인가"와,
- * 가게 줄 뒤에 서는 위치 줄만 만든다.
+ * 날짜와 시간대 줄은 맥락 층의 시계 줄(`context.ko.ts`의 `clockText`)이 맡고, 시각은 `now` 툴이
+ * 맡는다. 여기서는 가게 줄 뒤에 서는 위치 줄만 만든다.
  */
 import type { Coordinates } from "../whereabouts";
 import type { PromptMode } from "./index";
@@ -22,7 +22,7 @@ import type { PromptMode } from "./index";
  * 이 실행의 사장님. 모든 칸이 선택이다 — 없는 칸은 "모른다"이지 "기본값"이 아니다.
  *
  * `timeZone`은 사장님의 것일 때만 온다: 대화면 그 기기가 방금 보낸 것, 루틴이면 마지막 세션이
- * 저장해 둔 것. 둘 다 없으면 비어 있고, 시계는 배포의 시간대(`BOT_TIME_ZONE`, 기본 서울)로 읽힌다.
+ * 저장해 둔 것. 둘 다 없으면 비어 있고, 날짜와 `now`는 배포의 시간대(`BOT_TIME_ZONE`, 기본 서울)로 읽힌다.
  */
 export type PromptPerson = {
   timeZone?: string;
@@ -75,15 +75,4 @@ export function placeText(
   return mode === "chat"
     ? `사장님 가게 위치는 아직 모른다. 날씨·가까운 곳처럼 위치가 필요한 일이면 먼저 사장님께 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한 다음 그 곳 기준으로 한다. ${NOT_THE_SITES_GUESS}`
     : `사장님 위치를 모른다. 위치가 필요한 일이면 위치를 몰라 하지 못했다고 적는다. ${NOT_THE_SITES_GUESS}`;
-}
-
-/**
- * 시계 줄 끝에 붙는 "누구의 시계인가". 사장님의 시간대를 알 때만 붙는다 — 배포의 기본 시간대로
- * 읽은 시각을 사장님 기기 시각이라고 말하면 그것이 거짓이다.
- */
-export function clockOwnerText(person: PromptPerson | undefined): string {
-  const zone = person?.timeZone;
-  if (!zone) return "";
-  const locale = person?.locale ? `, 언어 ${person.locale}` : "";
-  return ` (사장님 기기 시간대 ${zone}${locale})`;
 }

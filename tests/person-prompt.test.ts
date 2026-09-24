@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { composePrompt, nowLine, placeText } from "../shared/prompt";
+import { composePrompt, placeText } from "../shared/prompt";
 import {
   coarseCoordinates,
   deviceOf,
@@ -70,8 +70,14 @@ describe("the place line", () => {
   });
 });
 
-describe("the clock line", () => {
-  test("is the person's device's zone when there is one, and says whose it is", () => {
+/**
+ * THE DATE, NEVER THE MINUTE. The clock line used to end the system message with the minute
+ * ("지금은 … 07:30 …다"), in front of the whole conversation, so every minute re-billed all of it
+ * (agent-harness-review §4.3: 0–10% served from cache on a week-old conversation). The context
+ * layer now says today's date in the person's zone; the minute is the `now` tool's.
+ */
+describe("the date line", () => {
+  test("is today in the person's device's zone when there is one, and says whose it is", () => {
     const prompt = composePrompt({
       mode: "chat",
       now: NOW,
@@ -79,12 +85,12 @@ describe("the clock line", () => {
       bot: BOT,
       person: { timeZone: "Asia/Dubai", locale: "ko-KR" },
     });
-    expect(prompt.split("\n\n").at(-1)).toBe(
-      "지금은 2026-09-24 (목) 07:30 Asia/Dubai다 (사장님 기기 시간대 Asia/Dubai, 언어 ko-KR).",
+    expect(prompt).toContain(
+      "오늘은 2026-09-24 (목)이다(사장님 기기 시간대 Asia/Dubai, 기기 언어 ko-KR 기준).",
     );
   });
 
-  test("is the deployment's, unclaimed, when the person's zone is not known", () => {
+  test("is the deployment's, said to be, when the person's zone is not known", () => {
     const prompt = composePrompt({
       mode: "routine",
       now: NOW,
@@ -92,14 +98,29 @@ describe("the clock line", () => {
       bot: BOT,
       person: { place: "서울 강남구" },
     });
-    expect(prompt.split("\n\n").at(-1)).toBe(
-      "지금은 2026-09-24 (목) 12:30 KST다.",
+    expect(prompt).toContain(
+      "오늘은 2026-09-24 (목)이다(사장님 시간대를 몰라 이 배포의 시간대 Asia/Seoul(KST) 기준).",
     );
   });
 
-  test("keeps its old shape for a caller that says nothing of a person", () => {
-    expect(nowLine(NOW, "Asia/Seoul")).toBe(
-      "지금은 2026-09-24 (목) 12:30 KST다.",
+  test("no minute anywhere — a prompt composed a minute later is the same prompt", () => {
+    const at = (minutes: number) =>
+      composePrompt({
+        mode: "chat",
+        now: new Date(NOW.getTime() + minutes * 60_000),
+        timeZone: "Asia/Seoul",
+        bot: BOT,
+        person: { timeZone: "Asia/Seoul" },
+      });
+    expect(at(1)).toBe(at(0));
+    expect(at(0)).not.toMatch(/\d{2}:\d{2}/);
+    // The date moves at the person's midnight, and only then.
+    expect(at(12 * 60)).not.toBe(at(0));
+  });
+
+  test("the minute is the now tool's, and the static prompt says so", () => {
+    expect(composePrompt({ mode: "chat", now: NOW, bot: BOT })).toContain(
+      "now 툴로 본다",
     );
   });
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { RefusalCode } from "../failure-text";
+import { routineForwarded } from "../runner/unattended";
 
 /**
  * A routine's run when the deployment wired the routine service without tools: the instruction in,
@@ -48,6 +49,8 @@ export async function runAgentOnce(
    * and this rejects. A stop that came first asks the model nothing.
    */
   signal?: AbortSignal,
+  /** When the run was meant for, told to the Bot by the prompt middleware. See `runUnattended`. */
+  routineRun?: { scheduledFor: Date | null },
 ): Promise<string> {
   if (signal?.aborted) throw stopped();
   target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
@@ -65,7 +68,12 @@ export async function runAgentOnce(
 
   const outcome = await Promise.race([
     stop,
-    target.runAgent({ forwardedProps: { mode: "routine" } }),
+    target.runAgent({
+      forwardedProps: {
+        mode: "routine",
+        ...(routineRun ? { routine: routineForwarded(routineRun) } : {}),
+      },
+    }),
     new Promise<never>((_, reject) => {
       setTimeout(
         () =>

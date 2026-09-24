@@ -33,6 +33,8 @@ export const ko: Record<string, string> = {
   "The Bot read a skill": "봇이 스킬을 읽음",
   "Reading a skill": "스킬 읽는 중",
   "Read a skill": "스킬을 읽음",
+  "Checking the time": "시각 확인 중",
+  "Checked the time": "시각을 확인함",
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",

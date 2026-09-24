@@ -282,8 +282,8 @@ its line and open a "시스템:" line under it. An empty notepad draws nothing.
 
 **How a run writes it: `routine_note`, and why that rung.** One tool —
 `watermark`, `set`, `delete` — offered **only to a routine's own run**
-(`routines/notepad.ts`, `withNotepad`), the way `skill_view` exists only for a
-Bot that holds a skill. The rung below it on the footprint ladder, a structured
+(`routines/notepad.ts`, `withNotepad`) — a routine run is a conversation of
+its own, so the tool is there from its first request to its last. The rung below it on the footprint ladder, a structured
 field the run's final answer carries, costs no schema and was skipped: a write
 that fails validation has to be refused **to the run that made it**, and the
 final answer is the one thing a run does after which it can be told nothing — a

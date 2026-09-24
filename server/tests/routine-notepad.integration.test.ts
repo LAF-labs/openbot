@@ -328,11 +328,11 @@ describe("where a routine left off, across its runs", () => {
     expect(second).toContain(
       '- new_reviews 어디까지: id "R-1002", 시각 "2026-09-14T07:20:00+09:00"',
     );
-    // Read as run context: after what a routine is, before what time it is.
+    // Read as run context: after what a routine is and what day it is, last in the context layer.
     expect(second.indexOf("R-1002")).toBeGreaterThan(
       second.indexOf("화면 앞에는 아무도 없다"),
     );
-    expect(second.indexOf("R-1002")).toBeLessThan(second.indexOf("지금은 "));
+    expect(second.indexOf("R-1002")).toBeGreaterThan(second.indexOf("오늘은 "));
     // The instruction that was refused was never a record, so no run ever reads it.
     expect(second).not.toContain("송금");
 

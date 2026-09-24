@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseEvent } from "@ag-ui/client";
-import { modelUsageOf } from "../src/usage/model-usage";
+import { cacheReadOf, modelUsageOf } from "../src/usage/model-usage";
 
 const event = (value: unknown, name = "laf.model.usage") =>
   ({ type: "CUSTOM", name, value }) as unknown as BaseEvent;
@@ -41,6 +41,56 @@ describe("what a run's stream says a turn cost", () => {
     expect(said?.cachedPromptTokens).toBe(2816);
     // Absent, not zero: "not reported" and "nothing hit" are different facts about an endpoint.
     expect(silent).not.toHaveProperty("cachedPromptTokens");
+  });
+
+  /*
+   * WHAT CACHING NEEDS AND THE ROW NEVER HAD (agent-harness-review §5.9): the provider, the
+   * dollars, what was written to the cache, the reasoning, and what was billed at the full price.
+   * Without the provider a hit rate averages caches that never met.
+   */
+  test("the provider, the cost, cache writes, reasoning — and the uncached share derived", () => {
+    const [usage] = modelUsageOf([
+      event({
+        model: "z-ai/glm-5.3-flash",
+        promptTokens: 9192,
+        completionTokens: 120,
+        totalTokens: 9312,
+        cachedPromptTokens: 8960,
+        cacheWriteTokens: 0,
+        reasoningTokens: 64,
+        costUsd: 0.00041,
+        provider: "Z.AI",
+      }),
+    ]);
+    expect(usage).toEqual({
+      model: "z-ai/glm-5.3-flash",
+      promptTokens: 9192,
+      completionTokens: 120,
+      totalTokens: 9312,
+      cachedPromptTokens: 8960,
+      uncachedPromptTokens: 232,
+      cacheWriteTokens: 0,
+      reasoningTokens: 64,
+      costUsd: 0.00041,
+      provider: "Z.AI",
+    });
+    expect(usage && cacheReadOf(usage)).toBeCloseTo(0.975, 3);
+  });
+
+  test("a provider name that is not a name is not kept, and no cache read is no share", () => {
+    const [usage] = modelUsageOf([
+      event({
+        model: "m",
+        promptTokens: 100,
+        completionTokens: 1,
+        totalTokens: 101,
+        provider: "<script>alert(1)</script>",
+        costUsd: -3,
+      }),
+    ]);
+    expect(usage).not.toHaveProperty("provider");
+    expect(usage).not.toHaveProperty("costUsd");
+    expect(usage && cacheReadOf(usage)).toBeNull();
   });
 
   test("other CUSTOM events are not usage", () => {

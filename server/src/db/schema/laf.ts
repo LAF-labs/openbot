@@ -113,6 +113,44 @@ export const routineScheduleKind = pgEnum("laf_routine_schedule_kind", [
 ]);
 
 /**
+ * What a Bot's conversation was told, frozen: the epoch's system message and the reminders its
+ * person's messages carried (`context/conversations.ts`).
+ *
+ * WHY IT IS KEPT. The provider serves a prompt from its cache for exactly as long as the front of
+ * it is byte-identical to the last one. An epoch freezes the Bot's context layer so every request
+ * in it sends the same leading content, and a reminder appended to a person's message is part of
+ * the history from then on — so a reminder that is not sent again, word for word, on every later
+ * request is a history rewritten under the cache, and a restart that forgot them would do exactly
+ * that to every conversation on the VM. The messages themselves cannot carry them: every run
+ * hands the whole history back from the browser and a copy that differs is written over the row
+ * (`laf_thread_messages`), so a key the browser never saw would be erased by the next turn.
+ *
+ * One row per chat conversation — a routine run is a conversation of its own that lasts minutes
+ * and is kept in memory only. `known` is what the conversation has been told (the epoch's facts
+ * and every reminder since), which is what the next person message is compared against.
+ * `reminders` maps a person message's id to the reminder it carries.
+ *
+ * Content, like a message is: the frozen text holds the Bot's memories. Nothing outside the
+ * conversation reads it; the fleet reads counts (`insights/read.ts`) and never this table.
+ */
+export const lafConversationContexts = pgTable("laf_conversation_contexts", {
+  threadId: text("thread_id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  epoch: jsonb("epoch").notNull(),
+  known: jsonb("known").notNull(),
+  reminders: jsonb("reminders")
+    .$type<Record<string, string>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  lastUserMessageId: text("last_user_message_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * One row per run: when it started, how it ended, and how big it was.
  *
  * Deliberately not the full event stream — a streaming turn can be arbitrarily large and

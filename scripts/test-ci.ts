@@ -409,15 +409,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * profile, its conversation as the one row, the nav under it, the rail's names, and on a phone
  * the sheet and the button that opens it). The floor rises by exactly that.
  *
+ * RAISED 2026-09-25 with the agent harness, phase 1 (epochs, reminders, `now`, the question's
+ * bounds, the cache recorded): twenty-one to `server` (the front of every request byte for byte
+ * while the minute moves, a new day, a moved place, a rename and somebody else's memory as
+ * reminders, a forgotten memory as a new epoch, the model or a tool changing as one, a routine's
+ * scheduled time, a restart sending the same bytes, the usage row's epoch, provider and dollars,
+ * the break logged, the fleet's `people.cache`) and twelve to `root` (tools in one sorted order,
+ * `now` answered in the person's zone, the session in hashes, GLM's own effort words, the steps
+ * and dollars a question may take whatever the history weighs, the date and never the minute).
+ * Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2524, roots: ["server"] },
+  { name: "server", floor: 2545, roots: ["server"] },
   { name: "app", floor: 1216, roots: ["app"] },
   { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
-  { name: "root", floor: 380, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 392, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

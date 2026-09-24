@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
-import { BASE_KO } from "../../shared/prompt";
+import { BASE_KO, staticPrompt } from "../../shared/prompt";
 import {
   botPromptMessage,
   buildAgents,
@@ -194,30 +194,34 @@ describe("the composed prompt", () => {
    * that did not know what day it was, and the eval hid it by putting the date in the question.
    * Wall-clock Seoul, from the server clock, on every run.
    */
-  test("says what time it is, on the Korean wall clock", () => {
-    expect(composed().content).toContain("지금은 2026-09-02 (수) 22:40 KST다.");
+  test("says what day it is on the Korean wall clock — the day, never the minute", () => {
+    const content = composed().content;
+    expect(content).toContain("오늘은 2026-09-02 (수)이다");
+    // The minute moved to the `now` tool: in the prompt it re-billed the whole conversation.
+    expect(content).not.toContain("22:40");
   });
 
   /**
-   * STABLE FIRST, VOLATILE LAST. A provider's prefix cache reads the prompt from the front for as
-   * long as it matches the last one, and the clock line used to sit second — so every minute
-   * invalidated the role, the memories and the mode behind it. Now the one line that changes on
-   * every run is the last line, and everything a Bot is told about itself sits in the cacheable
-   * part. Measured (`bun run eval:cache`, docs/laf/eval-pack.md): 1.4% of prompt tokens served
-   * from cache with the clock second, 7.5% with it last, on the same ten-turn transcript.
+   * THE STATIC LAYER FIRST, BYTE FOR BYTE THE SAME FOR EVERY BOT. The provider serves the prompt
+   * from its cache for as long as it matches the last one; the base, the rule about reminders and
+   * the mode are the same for every conversation of a mode, so they come first, straight after the
+   * tools. Everything about THIS Bot — its name, job, place, date, memories — follows, in the
+   * context layer an epoch freezes (`context/conversations.ts`).
    */
-  test("keeps the text that never changes first and the clock last", () => {
+  test("keeps the static layer first and the Bot's own context after it", () => {
     const content = composed({ roleDescription: "Chase invoices." }).content;
-    expect(content.startsWith(BASE_KO)).toBe(true);
-    expect(content.trimEnd().split("\n").at(-1)).toBe(
-      "지금은 2026-09-02 (수) 22:40 KST다.",
-    );
-    // Identity, then the job, then the mode — the mode still wins a conflict by coming later.
+    expect(content.startsWith(staticPrompt("chat"))).toBe(true);
+    const other = botPromptMessage(
+      { ...profile, id: "agent_other", name: "다솜", roleDescription: "" },
+      { mode: "chat", now: new Date("2026-10-01T00:00:00Z"), timeZone: "UTC" },
+    ).content;
+    expect(other.startsWith(staticPrompt("chat"))).toBe(true);
     const at = (text: string) => content.indexOf(text);
-    expect(at("너는 Expense Manager")).toBeLessThan(at("Chase invoices."));
-    expect(at("Chase invoices.")).toBeLessThan(
-      at("사람이 화면 앞에서 지켜보는 대화다"),
+    expect(at("사람이 화면 앞에서 지켜보는 대화다")).toBeLessThan(
+      at("너는 Expense Manager"),
     );
+    expect(at("너는 Expense Manager")).toBeLessThan(at("Chase invoices."));
+    expect(at("Chase invoices.")).toBeLessThan(at("오늘은 2026-09-02"));
   });
 
   /**
@@ -313,7 +317,7 @@ describe("the composed prompt", () => {
    * with `/`, and the Bot did not know skills existed. The index sits in the context tier — after
    * what the Bot remembers, before the mode — and a Bot holding nothing reads nothing.
    */
-  test("lists the skills it holds, by name and one line, before the mode", () => {
+  test("lists the skills it holds, by name and one line, after what it remembers", () => {
     const message = botPromptMessage(
       {
         ...profile,
@@ -331,11 +335,13 @@ describe("the composed prompt", () => {
     expect(content).toContain("skill_view");
     const at_ = (text: string) => content.indexOf(text);
     expect(at_("한일상사")).toBeLessThan(at_("/재고정리"));
-    expect(at_("/재고정리")).toBeLessThan(
-      at_("사람이 화면 앞에서 지켜보는 대화다"),
+    // In the context layer, which the static layer (the mode among it) comes before.
+    expect(at_("사람이 화면 앞에서 지켜보는 대화다")).toBeLessThan(
+      at_("/재고정리"),
     );
 
-    expect(composed().content).not.toContain("skill_view");
+    // A Bot that holds none is shown no list — the tool is on every list, the index is not.
+    expect(composed().content).not.toContain("네가 받은 스킬들");
   });
 
   /*

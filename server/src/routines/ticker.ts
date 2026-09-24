@@ -26,8 +26,11 @@ export type RoutineTickerOptions = {
   /**
    * Runs a routine this ticker has claimed (`run.ts`), answering whether it ran — a routine whose
    * author the deployment no longer admits is claimed for its window and not run.
+   *
+   * `scheduledFor` is the window that was claimed — the time the routine was due, which the claim
+   * has already moved on from — so the run can tell its Bot what time it was meant for.
    */
-  execute: (row: RoutineRow) => Promise<boolean>;
+  execute: (row: RoutineRow, scheduledFor?: Date) => Promise<boolean>;
   /**
    * Pauses what has gone unread on these Bots (`unread.ts`) — the Bots with a routine due in this
    * pass, asked before anything is claimed. Absent, nothing is paused, which is what a test that
@@ -138,7 +141,7 @@ async function attend(
 
   if (!(await withinGrace(options, row, schedule, at, next))) return false;
 
-  return options.execute(claimed);
+  return options.execute(claimed, row.nextRunAt);
 }
 
 /**

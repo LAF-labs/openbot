@@ -90,6 +90,11 @@ async function systemMessageOf(
   return messages.find((message) => message.role === "system")?.content ?? "";
 }
 
+/** The context layer's date line: the paragraph that says what day it is, on whose clock. */
+const dateLineOf = (prompt: string) =>
+  prompt.split("\n\n").find((paragraph) => paragraph.startsWith("오늘은 ")) ??
+  "";
+
 describe("the clock a run is told", () => {
   test("a chat run is on the zone its device says, not the deployment's", async () => {
     await using endpoint = fakeAgUiEndpoint();
@@ -100,9 +105,10 @@ describe("the clock a run is told", () => {
     const prompt = await systemMessageOf(endpoint, registered, {
       device: { timeZone: "Asia/Dubai", locale: "ko-KR" },
     });
-    const clock = prompt.split("\n\n").at(-1) ?? "";
+    const clock = dateLineOf(prompt);
+    // The date and never the minute: the minute is the `now` tool's (shared/tools/now.ts).
     expect(clock).toMatch(
-      /^지금은 \d{4}-\d{2}-\d{2} \(.\) \d{2}:\d{2} Asia\/Dubai다 \(사장님 기기 시간대 Asia\/Dubai, 언어 ko-KR\)\.$/,
+      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai, 기기 언어 ko-KR 기준\)\.$/,
     );
     expect(clock).not.toContain("KST");
   });
@@ -114,21 +120,19 @@ describe("the clock a run is told", () => {
       timeZone: "Asia/Dubai",
       locale: "ko-KR",
     });
-    const clock =
-      (await systemMessageOf(endpoint, registered, { mode: "routine" }))
-        .split("\n\n")
-        .at(-1) ?? "";
+    const clock = dateLineOf(
+      await systemMessageOf(endpoint, registered, { mode: "routine" }),
+    );
     expect(clock).toMatch(
-      /^지금은 \d{4}-\d{2}-\d{2} \(.\) \d{2}:\d{2} Asia\/Dubai다/,
+      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai/,
     );
   });
 
   test("somebody whose device never said is on the deployment's clock, and is not told it is theirs", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const registered = await loadedFor(endpoint.url, NO_WHEREABOUTS);
-    const clock =
-      (await systemMessageOf(endpoint, registered)).split("\n\n").at(-1) ?? "";
-    expect(clock).toMatch(/KST다\.$/);
+    const clock = dateLineOf(await systemMessageOf(endpoint, registered));
+    expect(clock).toContain("이 배포의 시간대 Asia/Seoul(KST) 기준");
     expect(clock).not.toContain("사장님 기기");
   });
 
@@ -138,14 +142,11 @@ describe("the clock a run is told", () => {
       ...NO_WHEREABOUTS,
       timeZone: "Asia/Seoul",
     });
-    const clock =
-      (
-        await systemMessageOf(endpoint, registered, {
-          device: { timeZone: "Mars/Olympus" },
-        })
-      )
-        .split("\n\n")
-        .at(-1) ?? "";
+    const clock = dateLineOf(
+      await systemMessageOf(endpoint, registered, {
+        device: { timeZone: "Mars/Olympus" },
+      }),
+    );
     expect(clock).toContain("KST");
     expect(clock).toContain("Asia/Seoul");
   });
@@ -196,7 +197,7 @@ describe("the place a run is told", () => {
     const registered = await load({ id: "owner", role: "user" });
     const prompt = await systemMessageOf(endpoint, registered);
     expect(prompt).toContain("사장님 가게 위치는 아직 모른다");
-    expect(prompt.split("\n\n").at(-1)).toMatch(/KST다\.$/);
+    expect(dateLineOf(prompt)).toContain("Asia/Seoul(KST) 기준");
   });
 });
 

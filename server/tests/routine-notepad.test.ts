@@ -414,7 +414,7 @@ describe("what the next run reads", () => {
     expect(lines[1]?.startsWith('- note: "끝\\"')).toBe(true);
   });
 
-  test("drawn for a routine, after the mode and before the clock", () => {
+  test("drawn for a routine, after the mode and the date, last in the context layer", () => {
     const input = {
       now: NOW,
       timeZone: "Asia/Seoul",
@@ -425,7 +425,7 @@ describe("what the next run reads", () => {
     const routine = composePrompt({ ...input, mode: "routine" });
     const at = (text: string) => routine.indexOf(text);
     expect(at('id "R-1002"')).toBeGreaterThan(at("화면 앞에는 아무도 없다"));
-    expect(at('id "R-1002"')).toBeLessThan(at("지금은 2026-09-14"));
+    expect(at('id "R-1002"')).toBeGreaterThan(at("오늘은 2026-09-14"));
 
     // Anywhere else, a notepad that arrived is not drawn: it is not that run's to read.
     for (const mode of ["chat"] as const) {

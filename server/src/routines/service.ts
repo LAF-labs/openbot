@@ -186,7 +186,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
     database,
     auditStore: options.auditStore,
     now,
-    execute: (row) => routine.run(row, "clock"),
+    execute: (row, scheduledFor) => routine.run(row, "clock", scheduledFor),
     pauseUnread: (botIds, at) =>
       pauseUnreadRoutines({
         database,

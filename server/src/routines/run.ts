@@ -106,7 +106,12 @@ export type RoutineRun = {
    * Every door ends here, so this is where the author's admission is decided for all three — a
    * door that asks first (to answer its caller truthfully) is asked again here, and passes.
    */
-  run: (row: RoutineRow, door?: RoutineDoor) => Promise<boolean>;
+  run: (
+    row: RoutineRow,
+    door?: RoutineDoor,
+    /** The window the clock claimed. Absent for Run now and the webhook, which are not scheduled. */
+    scheduledFor?: Date,
+  ) => Promise<boolean>;
   /**
    * Whether the routine's author is still somebody this deployment admits, with the
    * `routine.skipped_not_admitted` row written when they are not.
@@ -129,7 +134,7 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
     authorIsAdmitted(options, row, door);
   return {
     authorAdmitted,
-    async run(row, door = "clock") {
+    async run(row, door = "clock", scheduledFor) {
       if (!(await authorAdmitted(row, door))) return false;
       /*
        * Listed as its author's work from here, before the lane, and stoppable from here: a run that
@@ -158,9 +163,9 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
          */
         await (options.lane
           ? options.lane.run(row.agentId, () =>
-              executeNow(options, row, stopping.signal),
+              executeNow(options, row, stopping.signal, scheduledFor),
             )
-          : executeNow(options, row, stopping.signal));
+          : executeNow(options, row, stopping.signal, scheduledFor));
       } finally {
         done?.();
       }
@@ -223,6 +228,8 @@ async function executeNow(
   row: RoutineRow,
   /** A person's stop (`모두 멈추기`). Already aborted when the run was stopped in the queue. */
   signal: AbortSignal,
+  /** The window the clock claimed; absent for Run now and the webhook. */
+  scheduledFor?: Date,
 ): Promise<void> {
   const startedAt = options.now();
   const runId = randomUUID();
@@ -237,7 +244,7 @@ async function executeNow(
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author);
-  const attempt = await askTheBot(options, row, author, signal);
+  const attempt = await askTheBot(options, row, author, signal, scheduledFor);
 
   /*
    * Nothing to report, said the way the routine prompt asks for it.
@@ -320,8 +327,15 @@ async function askTheBot(
   row: RoutineRow,
   author: string | null,
   signal: AbortSignal,
+  scheduledFor?: Date,
 ): Promise<Attempt> {
   let notepad: NotepadDraft | null = null;
+  /*
+   * When this run was meant for, beside the instruction. The prompt middleware appends it to the
+   * instruction as a reminder (`context/conversations.ts`): "오늘 주문 확인" at 07:30 has to know it
+   * is today's 07:30 run, and the clock's window is the one fact only the routine holds.
+   */
+  const routineRun = { scheduledFor: scheduledFor ?? null };
   /*
    * STOPPED, NOT FAILED — decided by the signal this run was handed rather than by what the stop
    * threw on its way out. The loop throws its own `RunStopped`, the toolless path its own, and a stop that landed mid-write could surface as anything; the signal is the one
@@ -384,6 +398,7 @@ async function askTheBot(
         mode: "routine",
         // And where this routine left off, as facts that middleware composes after the mode.
         notepad: notepad.read,
+        routineRun,
         signal,
       });
       /*
@@ -414,6 +429,7 @@ async function askTheBot(
       instruction,
       options.runTimeoutMs,
       signal,
+      routineRun,
     );
     return {
       ok: true,
