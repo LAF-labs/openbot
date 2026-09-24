@@ -116,6 +116,7 @@
   "app/tests/router.test.ts",
   "app/tests/routine-edit-form.test.ts",
   "app/tests/routine-form.test.ts",
+  "app/tests/routine-line.test.ts",
   "app/tests/routine-list-state.test.ts",
   "app/tests/routine-notepad.test.tsx",
   "app/tests/routine-saved.test.ts",
