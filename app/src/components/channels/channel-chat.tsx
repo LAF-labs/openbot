@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import {
   seedMessage,
   takeFirstMessage,
@@ -28,6 +29,7 @@ import {
   mergeStoredHistory,
 } from "@/lib/channels/thread-history";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
+import { useBrowsingTasks } from "@/lib/computer/use-browsing-tasks";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -705,6 +707,18 @@ export function ChannelChat({
   const thread = [...transcriptMessages(agent.messages, seed)];
 
   /*
+   * The task the Bot is doing in its browser, told to the banner and the header, and each task's
+   * last picture kept when it ends. From the same copy the transcript draws, so the banner and the
+   * card under it name the same task.
+   */
+  useBrowsingTasks({
+    channelId: channel.id,
+    botId: runtimeAgentId,
+    messages: thread,
+    busy: agent.isRunning || turnsInFlight > 0,
+  });
+
+  /*
    * STABLE BY HAND, BECAUSE NOTHING HERE IS MEMOISED FOR US.
    *
    * The compiled view keeps the composer it drew last time for as long as the composer's props are
@@ -725,6 +739,13 @@ export function ChannelChat({
   return (
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
+        banner={
+          <BrowsingBanner
+            botId={runtimeAgentId}
+            isStoppable={agent.isRunning || runsInFlight > 0}
+            onStop={handleStop}
+          />
+        }
         /*
          * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
          * note above already gives. `agent.isRunning` stays false for the second and a half while

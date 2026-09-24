@@ -77,6 +77,8 @@ describe("LAF Agent database schema", () => {
       "message",
       "at",
       "run_id",
+      // A browsing task's last picture, on its last result's row (`channels/frames.ts`).
+      "frame",
     ]);
     expect(
       config.primaryKeys.map((key) => key.columns.map((c) => c.name)),

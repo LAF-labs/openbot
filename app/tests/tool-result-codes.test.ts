@@ -26,18 +26,28 @@ import { TURN_NOTICES } from "../src/lib/copilot/stopped-turn";
  * The transcript line's table is imported since 2026-09-14, when it moved out of `computer-tools.tsx`
  * into a module of its own (`lib/computer/outcome-labels.ts`). It was parsed out of that file's source
  * before, so the test could not pass against a table that had moved; the import fails loudly instead.
+ *
+ * Since 2026-09-24 the words for a line are chosen in `lib/computer/browsing.ts`, which both the task
+ * card and the file lines in `computer-tools.tsx` read — so that is the file that must import it.
  */
 describe("what a tool result says to each of its readers", () => {
-  test("the transcript line is the table computer-tools.tsx draws from", () => {
+  test("the transcript line is the table the line's words are chosen from", () => {
+    const words = readFileSync(
+      join(import.meta.dir, "../src/lib/computer/browsing.ts"),
+      "utf8",
+    );
+    expect(words).toContain(
+      'import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";',
+    );
     const tools = readFileSync(
       join(import.meta.dir, "../src/lib/copilot/computer-tools.tsx"),
       "utf8",
     );
-    expect(tools).toContain(
-      'import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";',
-    );
-    // And no second table beside it for a code to be added to instead.
-    expect(tools).not.toMatch(/const OUTCOME_LABELS/);
+    // And no second table beside either for a code to be added to instead.
+    for (const source of [words, tools]) {
+      expect(source).not.toMatch(/const OUTCOME_LABELS/);
+    }
+    expect(tools).toContain('from "@/lib/computer/browsing"');
   });
 
   test("every code the surface labels has Korean for the person", () => {

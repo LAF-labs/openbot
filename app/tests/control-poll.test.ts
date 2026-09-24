@@ -11,8 +11,9 @@ import { stubFetch } from "./support/fetch";
 /**
  * The loop a transcript used to run one of per computer tool call.
  *
- * `ComputerView` mounts once beside the conversation and again on every browser action in the
- * thread, and the control read is 1 Hz. Nine cards meant nine requests a second to one endpoint,
+ * A view of the computer mounted once beside the conversation and again on every browser action in
+ * the thread (the live view and the help cards read it the same way now), and the control read is
+ * 1 Hz. Nine cards meant nine requests a second to one endpoint,
  * forever, whether or not anything on the screen was moving. Both halves of the fix are asserted
  * here, because neither is visible from the component: that the cards share one loop, and that it
  * stops once the answer stops changing.

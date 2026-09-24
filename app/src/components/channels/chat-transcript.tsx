@@ -52,8 +52,15 @@ import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useNow } from "@/lib/use-now";
+import { BrowsingCard } from "@/components/computer/browsing-card";
 import { AnswerRatingControls } from "./answer-rating";
-import { toVisibleChatItems, unsettledFrom } from "./chat-messages";
+import {
+  openBrowsingTask,
+  type TranscriptItem,
+  toVisibleChatItems,
+  unsettledFrom,
+  withBrowsingTasks,
+} from "./chat-messages";
 import type { QueuedMessage } from "./composer";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
@@ -822,7 +829,7 @@ function TimeSeparator({ at }: { at: Date }) {
  * drawing those two bubbles as one uninterrupted turn would hide that it had.
  */
 function continues(
-  neighbour: ReturnType<typeof toVisibleChatItems>[number] | undefined,
+  neighbour: TranscriptItem | undefined,
   role: "user" | "assistant",
 ): boolean {
   return neighbour?.kind === "text" && neighbour.role === role;
@@ -858,7 +865,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from.
    */
-  const items = toVisibleChatItems(messages, messageTimes);
+  const items = withBrowsingTasks(toVisibleChatItems(messages, messageTimes));
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -894,6 +901,10 @@ export function ChatTranscript({
     busy && lastItem?.kind === "text" && lastItem.role === "user";
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
   const settledBefore = unsettledFrom(items, busy);
+  /** The task still being done, and the newest task — the one the live screen would show. */
+  const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
+  const newestTaskId =
+    items.findLast((item) => item.kind === "browse")?.id ?? null;
 
   /*
    * A REPLY THAT ARRIVED WAS NEVER ANNOUNCED.
@@ -1030,7 +1041,24 @@ export function ChatTranscript({
              * chart SVGs — and that is what is skipped.
              */}
             {items.map((item, index) =>
-              item.kind === "tool" ? (
+              item.kind === "browse" ? (
+                <MessageScrollerItem
+                  className="py-0.5 pt-3"
+                  key={item.id}
+                  messageId={item.id}
+                >
+                  <Arriving
+                    delay={delays.delayFor(item.id, index, items.length)}
+                  >
+                    <BrowsingCard
+                      channelId={channelId}
+                      isNewest={item.id === newestTaskId}
+                      isOpen={item.id === openTaskId}
+                      item={item}
+                    />
+                  </Arriving>
+                </MessageScrollerItem>
+              ) : item.kind === "tool" ? (
                 <MessageScrollerItem
                   className="py-0.5 pt-3"
                   key={item.id}

@@ -57,9 +57,14 @@ type Props = {
    * came, and it came in English. `screenProblemText` turns the code into the person's words.
    */
   onProblem?: (problem: string | null) => void;
+  /**
+   * Called with each frame's site: a host, null for a browser with no page, or undefined from a
+   * computer too old to say. The live view closes on null rather than draw a white box.
+   */
+  onSite?: (site: string | null | undefined) => void;
 };
 
-export function LiveScreen({ computerId, driving, onProblem }: Props) {
+export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   /**
    * WHERE THE KEYBOARD ACTUALLY GOES, AND WHY IT IS NOT THE CANVAS.
@@ -127,6 +132,8 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
           height?: number;
           /** The container's fact code. Its `error` sentence is for a log, never for this pane. */
           code?: string;
+          /** The page's host only; null when there is no page (`agent-computer/src/screencast.ts`). */
+          site?: string | null;
         };
         try {
           message = JSON.parse(String(event.data));
@@ -141,6 +148,16 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
 
         const canvas = canvasRef.current;
         if (!canvas || closed) return;
+
+        /*
+         * A BLANK PAGE IS SAID, NOT PAINTED. It is how a closed tab comes back — the computer opens a
+         * fresh one — and painting it first would flash the white box the viewer is about to close
+         * instead of showing.
+         */
+        if (message.site === null) {
+          onSite?.(null);
+          return;
+        }
 
         frameSize.current = {
           width: message.width ?? 1280,
@@ -158,6 +175,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         }
         paintFrame(canvas, bitmap);
         bitmap.close();
+        onSite?.(message.site);
       };
 
       // Only a stream that never started is a problem for the pane's own line; a stream that
@@ -185,7 +203,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       socketRef.current = null;
     };
     // The socket is per Bot; switching Bot must close this stream and open the next one.
-  }, [computerId, onProblem]);
+  }, [computerId, onProblem, onSite]);
 
   const send = useCallback(
     (message: Record<string, unknown>) => {
@@ -368,9 +386,15 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         {...(driving
           ? {
               onMouseDown: (event: React.MouseEvent<HTMLCanvasElement>) => {
-                // Clicking the picture must not take the keyboard away from the field that has the
-                // IME on it. The canvas is not focusable, so this only has to put focus back where a
-                // browser may have moved it.
+                /*
+                 * Clicking the picture must not take the keyboard away from the field that has the
+                 * IME on it. Focusing it here is not enough on its own: the browser moves focus
+                 * AFTER this handler, to the nearest focusable ancestor — in the live view that is
+                 * the page's `<main>`, and every key went there instead (measured 2026-09-24: the
+                 * click reached the page, the keys never left the tab). Cancelling the default
+                 * keeps focus where it is put; the press itself still goes to the page below.
+                 */
+                event.preventDefault();
                 keyboardRef.current?.focus();
                 onMouse("pressed")(event);
               },

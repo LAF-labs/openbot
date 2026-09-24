@@ -1,57 +1,64 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * HOW MUCH OF THE WINDOW THE BOT'S SCREEN IS ALLOWED, AND WHETHER IT IS FOLDED AWAY.
+ * WHETHER THE BOT'S LIVE SCREEN IS OPEN, AND HOW MUCH OF THE WINDOW IT MAY HAVE.
  *
- * The pane beside a conversation was a fixed 320px with no way to change it: glancing at what a Bot
- * was doing cost the same 320px whether the Bot was mid-way through a login or had been idle for an
- * hour, and the only control was 닫기 — which also stops the pane telling you anything at all.
+ * OPEN IS THE PERSON'S, AND ONLY THE PERSON'S. The screen used to open itself whenever the Bot used
+ * its browser and whenever it waited for somebody; closing it lasted until the next step. Now it
+ * opens when a person asks — the header's button, a task card, the banner, a request for help — and
+ * nothing else writes `isOpen: true`. The live view closes itself when there is no page to show
+ * (`live-view.tsx`); that writes `false`, and false stays until somebody asks again.
  *
- * So there are two settings, and they are different questions. SIZE is how much room the picture
- * deserves right now. FOLDED is whether the picture is wanted at all; folded, the pane keeps one
- * line saying where the Bot is (`screenLine`) and the conversation gets the rest.
+ * Kept per device as a convenience: a person who left it open finds it open after a reload. That is
+ * their own choice remembered, not the screen deciding to appear.
  *
  * ONE PERSON PER DEPLOYMENT (CLAUDE.md), so `localStorage` is the whole store — no row, no route,
  * no sync. Every read and every write is wrapped: a private window, blocked site data or a quota
- * that is full throws on the getter itself, and a pane that will not draw because it could not read
- * a preference is a worse failure than a pane at its default width. Both directions fall back to
- * `DEFAULT`, which is exactly what shipped before this module existed.
+ * that is full throws on the getter itself, and a screen that will not draw because it could not
+ * read a preference is a worse failure than one at its default width.
  */
 
 export type ScreenPanelSize = "small" | "medium" | "large";
 
 export type ScreenPanel = {
   size: ScreenPanelSize;
-  isFolded: boolean;
+  isOpen: boolean;
 };
 
 /**
  * The three widths, in pixels.
  *
- * `medium` is 320 — `DEFAULT_DETAIL_WIDTH`, what the pane has always been, so a person who never
- * touches the control sees no change. `small` is 240, the narrowest a 4:3 thumbnail stays readable
- * at inside the card's padding; `large` is 440, which is what the pane used to widen to for
- * watching before that was taken out for eating the conversation.
+ * Wider than the pane that opened itself (240 / 320 / 440). That pane sat beside every conversation
+ * whether or not anybody was looking, so every pixel it took was taken from the conversation all
+ * day. This one is open only because somebody asked to watch a page, and a 1280px page at 320px is
+ * text nobody can read.
  */
 export const SCREEN_PANEL_WIDTHS: Readonly<Record<ScreenPanelSize, number>> = {
-  small: 240,
-  medium: 320,
-  large: 440,
+  small: 360,
+  medium: 480,
+  large: 640,
 };
 
 /**
- * Folded: wide enough for the one line and the button that unfolds it, and no wider.
- *
- * Measured against the longest sentence this strip can hold — "봇이 보고 있던 페이지를 닫았습니다."
- * — which wraps to three lines at 200px inside the pane's padding. That is a strip, not a panel,
- * and it is 120px of conversation back at the medium size.
+ * What the rest of a wide window keeps beside the screen: the roster column and a conversation
+ * still wide enough to read. A size the window cannot honour is narrowed to leave this.
  */
-export const FOLDED_WIDTH = 200;
+const ROOM_FOR_THE_REST = 700;
 
 export const DEFAULT_SCREEN_PANEL: ScreenPanel = {
   size: "medium",
-  isFolded: false,
+  isOpen: false,
 };
+
+/**
+ * While a person drives the browser, the screen takes all the window can spare.
+ *
+ * Clicking into a 1280px page drawn a third of its size is clicking at a third of the size, and a
+ * login is exactly where a mis-click costs something. The conversation keeps `ROOM_FOR_THE_REST`,
+ * because the request for help with its "다 했어요" is in it; the screen takes the rest, up to what
+ * a page needs.
+ */
+export const DRIVING_MAX_WIDTH = 1_040;
 
 const STORAGE_KEY = "laf.screen-panel";
 
@@ -68,10 +75,12 @@ export function parseScreenPanel(raw: string | null): ScreenPanel {
     const stored = JSON.parse(raw) as Partial<ScreenPanel> | null;
     return {
       size: isSize(stored?.size) ? stored.size : DEFAULT_SCREEN_PANEL.size,
-      isFolded:
-        typeof stored?.isFolded === "boolean"
-          ? stored.isFolded
-          : DEFAULT_SCREEN_PANEL.isFolded,
+      // An older value carried `isFolded` instead. It is not read: folding went with the pane that
+      // opened itself, and "open" was never stored, so the screen starts closed as it always did.
+      isOpen:
+        typeof stored?.isOpen === "boolean"
+          ? stored.isOpen
+          : DEFAULT_SCREEN_PANEL.isOpen,
     };
   } catch {
     // Somebody else's key, a half-written value, an older shape: the default is always drawable.
@@ -121,10 +130,22 @@ export function setScreenPanel(next: ScreenPanel): void {
   for (const watcher of watchers) watcher();
 }
 
+/** Open the live screen, or close it. The size stays what it was. */
+export function setScreenOpen(isOpen: boolean): void {
+  const panel = snapshot();
+  if (panel.isOpen === isOpen) return;
+  setScreenPanel({ ...panel, isOpen });
+}
+
 /** Test seam: forget what this module is holding, so a case starts from storage as a tab does. */
 export function forgetScreenPanel(): void {
   current = null;
   for (const watcher of watchers) watcher();
+}
+
+/** What the screen is set to now, outside React. */
+export function readScreenPanel(): ScreenPanel {
+  return snapshot();
 }
 
 export function useScreenPanel(): ScreenPanel {
@@ -132,40 +153,34 @@ export function useScreenPanel(): ScreenPanel {
 }
 
 /**
- * THE WINDOW THE PANE IS BEING DRAWN IN, because below `lg` it is not a column at all.
+ * THE WINDOW THE SCREEN IS DRAWN IN, because below `lg` it is not a column at all.
  *
- * `DetailPanel` lays the pane OVER the conversation under 64rem rather than beside it. Two things
- * follow, and both are why the chosen size is not simply handed through at every width:
- *
- *  - A narrower overlay gives the conversation nothing: it is covered either way. The only setting
- *    that buys anything on a phone is folding, and that one buys more there, not less.
- *  - `large` is 440px, which is wider than a 390px phone. The pane is absolutely positioned and its
- *    parent clips, so the overflow is not a scrollbar — it is the whole conversation covered by a
- *    panel that cannot be seen past. Either way it is 440px of a 390px window.
- *
- * So below `lg` the size control is ignored and the pane takes `medium`, capped so a strip of the
- * conversation stays visible behind it — that strip is what says the conversation is still there.
+ * `DetailPanel` lays its pane OVER the conversation under 64rem rather than beside it. Covered is
+ * covered: a narrower overlay gives the conversation nothing back, and `large` is wider than a 390px
+ * phone. So below `lg` the screen is a sheet the width of the window — the whole of it, with its own
+ * close in the corner — and the size control is not drawn, since it would change nothing.
  */
 const WIDE_QUERY = "(min-width: 64rem)";
 
-/** The conversation left showing beside an overlaid pane, so it reads as covered and not gone. */
-const NARROW_GUTTER = 48;
-
 export function screenPanelWidth(
   panel: ScreenPanel,
-  { isWide, viewportWidth }: { isWide: boolean; viewportWidth: number },
+  {
+    isWide,
+    viewportWidth,
+    isDriving = false,
+  }: { isWide: boolean; viewportWidth: number; isDriving?: boolean },
 ): number {
-  const chosen = panel.isFolded
-    ? FOLDED_WIDTH
-    : SCREEN_PANEL_WIDTHS[isWide ? panel.size : "medium"];
-  if (isWide || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-    return chosen;
-  }
-  // Never below the folded strip: a pane too narrow to read is worse than one that covers more.
-  return Math.max(
-    FOLDED_WIDTH,
-    Math.min(chosen, viewportWidth - NARROW_GUTTER),
+  const hasWidth = Number.isFinite(viewportWidth) && viewportWidth > 0;
+  if (!isWide && hasWidth) return viewportWidth;
+  const chosen = SCREEN_PANEL_WIDTHS[panel.size];
+  if (!hasWidth) return chosen;
+  // Never below the smallest size: a screen too narrow to see is worse than a narrower conversation.
+  const spare = Math.max(
+    SCREEN_PANEL_WIDTHS.small,
+    viewportWidth - ROOM_FOR_THE_REST,
   );
+  if (!isDriving) return Math.min(chosen, spare);
+  return Math.max(Math.min(chosen, spare), Math.min(DRIVING_MAX_WIDTH, spare));
 }
 
 export type Viewport = { isWide: boolean; viewportWidth: number };
@@ -224,11 +239,10 @@ function subscribeToViewport(onChange: () => void): () => void {
 }
 
 /**
- * The window, as the pane has to care about it.
+ * The window, as the screen has to care about it.
  *
- * Read by the panel itself as well as by the width: below `lg` the size control changes nothing, so
- * the panel does not draw it. A control that saves and does nothing is worse than no control
- * (CLAUDE.md) — three buttons that a phone quietly ignores is exactly that.
+ * Read by the live view as well as by the width: below `lg` the size control changes nothing, so it
+ * is not drawn. A control that saves and does nothing is worse than no control (CLAUDE.md).
  */
 export function useScreenPanelViewport(): Viewport {
   return useSyncExternalStore(
@@ -238,7 +252,10 @@ export function useScreenPanelViewport(): Viewport {
   );
 }
 
-/** The pane's width in pixels: the person's choice, as far as this window can honour it. */
-export function useScreenPanelWidth(): number {
-  return screenPanelWidth(useScreenPanel(), useScreenPanelViewport());
+/** The screen's width in pixels: the person's choice, as far as this window can honour it. */
+export function useScreenPanelWidth(isDriving = false): number {
+  return screenPanelWidth(useScreenPanel(), {
+    ...useScreenPanelViewport(),
+    isDriving,
+  });
 }

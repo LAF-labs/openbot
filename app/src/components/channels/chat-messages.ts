@@ -1,4 +1,5 @@
 import type { Message, ToolCall } from "@ag-ui/core";
+import { BROWSING_TOOLS, type BrowsingStep } from "@/lib/computer/browsing";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -20,6 +21,71 @@ export type VisibleChatItem =
       /** The result, once there is one. Absent means the call is still in flight. */
       result?: string;
     };
+
+/**
+ * A browsing task: calls to the Bot's browser in a row, drawn as one card (`browsing-card.tsx`).
+ *
+ * `id` is the first call's, so the card keeps its identity — and its React key, and its place in the
+ * scroller — while the task grows under it.
+ */
+export type BrowsingItem = {
+  kind: "browse";
+  id: string;
+  steps: BrowsingStep[];
+};
+
+/** What the transcript draws, in order: said things, other tool calls, and browsing tasks. */
+export type TranscriptItem = VisibleChatItem | BrowsingItem;
+
+/**
+ * Browser calls in a row, folded into one task.
+ *
+ * A row is broken by anything else the transcript draws: a sentence from either side, a file saved,
+ * a request for a person. What the Bot said between two stretches of browsing is the seam between
+ * two things it did, and each gets its own card with its own last picture.
+ */
+export function withBrowsingTasks(
+  items: readonly VisibleChatItem[],
+): TranscriptItem[] {
+  const out: TranscriptItem[] = [];
+  for (const item of items) {
+    if (
+      item.kind === "tool" &&
+      BROWSING_TOOLS.has(item.toolCall.function.name)
+    ) {
+      const step: BrowsingStep = {
+        id: item.toolCall.id,
+        name: item.toolCall.function.name,
+        args: item.toolCall.function.arguments,
+        ...(item.result === undefined ? {} : { result: item.result }),
+      };
+      const last = out.at(-1);
+      if (last?.kind === "browse") {
+        last.steps.push(step);
+      } else {
+        out.push({ kind: "browse", id: step.id, steps: [step] });
+      }
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * The task still being done: the last thing in the transcript, while a turn is running.
+ *
+ * Anything drawn after it — a sentence, a request for help — means the Bot has moved on, and a turn
+ * that is over has no task open whatever it ended on.
+ */
+export function openBrowsingTask(
+  items: readonly TranscriptItem[],
+  busy: boolean,
+): BrowsingItem | null {
+  if (!busy) return null;
+  const last = items.at(-1);
+  return last?.kind === "browse" ? last : null;
+}
 
 /** A tool result, as it arrives, its own message, pointing back at the call it answers. */
 type ToolResultMessage = { role: "tool"; toolCallId: string; content?: string };
@@ -111,7 +177,7 @@ export function toVisibleChatItems(
  * bubbles and the first of them is no more finished than the last until the turn is over.
  */
 export function unsettledFrom(
-  items: readonly VisibleChatItem[],
+  items: readonly TranscriptItem[],
   busy: boolean,
 ): number {
   if (!busy) return items.length;

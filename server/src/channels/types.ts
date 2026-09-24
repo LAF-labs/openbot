@@ -75,4 +75,16 @@ export type ChannelStore = {
    * this existed, so absence degrades to exactly the old behaviour.
    */
   failuresFor?: (threadId: string) => Promise<TurnFailure[]>;
+  /**
+   * The last picture of a browsing task, kept on its last action's result (`frames.ts`).
+   *
+   * Optional for the same reason: a store without them answers every picture as absent, and a card
+   * with no picture is what the transcript draws for one anyway.
+   */
+  frameFor?: (threadId: string, toolCallId: string) => Promise<string | null>;
+  keepFrame?: (
+    threadId: string,
+    toolCallId: string,
+    frame: string,
+  ) => Promise<boolean>;
 };

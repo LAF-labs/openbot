@@ -119,21 +119,12 @@ describe("what the screen pane says", () => {
  * and `{problem}` in JSX printing it. A green render would not have said which of those came back.
  */
 describe("the panes read the table, not the wire", () => {
-  const view = readFileSync(
-    join(COMPONENTS, "computer/computer-view.tsx"),
-    "utf8",
-  );
+  const view = readFileSync(join(COMPONENTS, "computer/live-view.tsx"), "utf8");
   const live = readFileSync(
     join(COMPONENTS, "computer/live-screen.tsx"),
     "utf8",
   );
   const handoff = readFileSync(join(COMPONENTS, "sites/handoff.tsx"), "utf8");
-
-  test("the screenshot poll takes the code and never the server's sentence", () => {
-    expect(view).toContain("body?.code");
-    expect(view).not.toMatch(/body\??\.error/);
-    expect(view).toContain("SCREEN_UNAVAILABLE");
-  });
 
   test("the live socket takes the code and never the container's sentence", () => {
     expect(live).toContain("message.code");
@@ -145,21 +136,12 @@ describe("the panes read the table, not the wire", () => {
 
   test("wherever a problem is drawn, it is drawn through the table", () => {
     /*
-     * The card's words are decided in `screenView` since 2026-09-18 (`lib/computer/screen-state.ts`),
-     * so that is where the table has to be read — and the card has to draw what `screenView` says
-     * rather than a sentence of its own. Checked against the code, not a comment: until then this
-     * passed on the card because a comment in it quoted the call.
+     * The live view holds the code the socket handed up and draws the table's words for it; the
+     * sign-in handoff does the same. Checked against the code, not a comment: this once passed on a
+     * card because a comment in it quoted the call.
      */
-    const state = readFileSync(
-      join(COMPONENTS, "../lib/computer/screen-state.ts"),
-      "utf8",
-    );
-    for (const source of [state, handoff]) {
-      expect(source).toContain("screenProblemText(problem)");
-    }
-    expect(view).toContain("screenView({");
-    expect(view).not.toContain("screenProblemText");
     for (const source of [view, handoff]) {
+      expect(source).toContain("screenProblemText(problem)");
       expect(source).not.toMatch(/\{problem\}/);
     }
   });

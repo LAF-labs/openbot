@@ -4,7 +4,7 @@ import { computerTool } from "@shared/tools/computer";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
-import { ComputerView } from "@/components/computer/computer-view";
+import { HelpCard } from "@/components/computer/help-card";
 import {
   type ControlState,
   readControl,
@@ -17,10 +17,10 @@ import {
   pauseFrom,
   waitForApproval,
 } from "@/lib/approvals";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
+import { didNotWork, labelForCode, outcomeOf } from "@/lib/computer/browsing";
+import { takeSkip } from "@/lib/computer/help-skips";
 import { t } from "@/lib/i18n";
 import { activeConversationHeaders, useActiveBotHolder } from "./active-bot";
-import { reportComputerActivity } from "./computer-activity";
 
 /**
  * Frontend registrations for computer tools, including inline rendering and policy-refusal display.
@@ -57,13 +57,6 @@ function fromCatalogue<T extends Record<string, unknown>>(name: string) {
   };
 }
 
-/** The words for a line, from the code where there is one and from the server's text otherwise. */
-function labelForCode(code: unknown, fallback: unknown): string | undefined {
-  const known = typeof code === "string" ? OUTCOME_LABELS[code] : undefined;
-  if (known) return t(known);
-  return typeof fallback === "string" && fallback.trim() ? fallback : undefined;
-}
-
 /** One outcome, carrying the fact and the sentence the model reads for it. */
 function refusal(code: string, extra: Record<string, unknown> = {}) {
   return { ok: false as const, code, reason: toolResultText(code), ...extra };
@@ -91,13 +84,15 @@ const WAIT_POLL_MS = 1_000;
 async function waitForPerson(
   botId: string,
   done: (state: ControlState) => boolean,
-  signal: AbortSignal | undefined,
+  call: ToolCallContext,
   giveUpAfterMs = WAIT_FOR_PERSON_MS,
-): Promise<"answered" | "gave up" | "cancelled"> {
+): Promise<"answered" | "gave up" | "cancelled" | "skipped"> {
   const deadline = Date.now() + giveUpAfterMs;
   while (Date.now() < deadline) {
     // Stop must actually stop, including out of a wait. The SDK aborts this when a person presses it.
-    if (signal?.aborted) return "cancelled";
+    if (call.signal?.aborted) return "cancelled";
+    // Read before the computer: a skip also hands back, which the computer reports as done.
+    if (takeSkip(call.toolCall?.id)) return "skipped";
     const read = await readControl(botId).catch(() => null);
     if (read?.state && done(read.state)) return "answered";
     await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
@@ -193,8 +188,6 @@ async function sendToComputer(
   init?: RequestInit,
   signal?: AbortSignal,
 ): Promise<ToolOutcome> {
-  // Announce before the call so the screen can open while the action is running.
-  reportComputerActivity(botId);
   let response: Response;
   try {
     response = await fetch(`/api/computers/${botId}${path}`, {
@@ -280,53 +273,6 @@ async function sendToComputer(
   return { ok: true, ...(body ?? {}), ...(said ? { notes: said } : {}) };
 }
 
-/** What a computer tool's render can read back out of its own result. */
-type ComputerOutcome = {
-  ok?: boolean;
-  stopped?: boolean;
-  humanHasControl?: boolean;
-  entries?: unknown[];
-  refused?: boolean;
-  /** The fact, where there is one. The transcript line's words come from this, not from `reason`. */
-  code?: string;
-  reason?: string;
-  staleRefs?: boolean;
-  elements?: unknown[];
-  element?: { role?: string; name?: string };
-};
-
-/**
- * Parse the SDK-render result string so the transcript can distinguish success, refusal, and failure.
- */
-function outcomeOf(result: string | undefined): ComputerOutcome {
-  if (!result) return {};
-  try {
-    const parsed = JSON.parse(result) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as ComputerOutcome)
-      : {};
-  } catch {
-    // Runtime stringifies thrown handlers as "Error: <message>".
-    return result.startsWith("Error:")
-      ? { ok: false, reason: result.slice("Error:".length).trim() }
-      : {};
-  }
-}
-
-/**
- * The label of the element an action touched, as the gateway resolved it server-side.
- *
- * Not taken from the model's arguments: those carry only a ref. The server looked the element up in
- * the snapshot it took itself, which is the same value it wrote to the audit trail, so the transcript
- * and the audit row name the thing identically.
- */
-function labelOf(result: string | undefined): string | undefined {
-  const element = (outcomeOf(result) as { element?: { name?: unknown } })
-    .element;
-  const name = element?.name;
-  return typeof name === "string" && name.trim() ? name.trim() : undefined;
-}
-
 /**
  * A compact transcript line that distinguishes policy refusals from ordinary failures.
  *
@@ -372,14 +318,15 @@ function ActionLine({
   );
 }
 
-/** Whether a result is an ordinary failure rather than a refusal, so the two can render differently. */
-function didNotWork(outcome: ComputerOutcome): boolean {
-  return outcome.ok === false && outcome.refused !== true;
-}
-
 export function ComputerTools() {
   const bot = useActiveBotHolder();
 
+  /*
+   * THE BROWSER CALLS HAVE NO `render`. The transcript folds calls in a row into one browsing task
+   * and draws it as one card (`chat-messages.ts` → `browsing-card.tsx`), with each call's line and
+   * any question about it inside. A render here would never be asked for. The workspace's file calls
+   * and the two requests for a person still draw their own.
+   */
   useFrontendTool({
     ...fromCatalogue<{ url: string }>("computer_navigate"),
     handler: async ({ url }: { url: string }, call: ToolCallContext = {}) => {
@@ -403,23 +350,11 @@ export function ComputerTools() {
           }
         : result;
     },
-    render: ({ status, toolCallId }) => (
-      <div className="my-2">
-        {/*
-         * Above the screen rather than through ActionLine, because opening a page draws the live
-         * view instead of a line. A question about where the Bot is about to go still belongs
-         * beside it.
-         */}
-        <ApprovalRequest toolCallId={toolCallId} />
-        <ComputerView computerId={bot.current} active={status !== "complete"} />
-      </div>
-    ),
   });
 
   useFrontendTool({
     ...fromCatalogue<Record<string, never>>("computer_read"),
     handler: async () => callComputer(bot.current, "/read"),
-    render: () => null,
   });
 
   useFrontendTool({
@@ -427,21 +362,6 @@ export function ComputerTools() {
     handler: async () =>
       callComputer(bot.current, "/snapshot", { method: "POST" }),
     // Snapshot renders a count only; navigate owns the screen view.
-    render: ({ result, status }) => {
-      const outcome = outcomeOf(result);
-      const elements = Array.isArray(outcome.elements) ? outcome.elements : [];
-      return (
-        <ActionLine
-          running={status !== "complete"}
-          label={t("Read the page")}
-          detail={
-            elements.length
-              ? t("{count} things it can act on", { count: elements.length })
-              : undefined
-          }
-        />
-      );
-    },
   });
 
   useFrontendTool({
@@ -470,20 +390,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ args, result, status, toolCallId }) => (
-      <ActionLine
-        toolCallId={toolCallId}
-        running={status !== "complete"}
-        label={t("Filled in")}
-        detail={
-          // Never show typed values; identify only the target field.
-          labelOf(result) ??
-          (typeof args?.ref === "string" ? args.ref : undefined)
-        }
-        refused={outcomeOf(result).refused === true}
-        failed={didNotWork(outcomeOf(result))}
-      />
-    ),
   });
 
   useFrontendTool({
@@ -502,25 +408,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ args, result, status, toolCallId }) => {
-      const outcome = outcomeOf(result);
-      return (
-        <ActionLine
-          toolCallId={toolCallId}
-          running={status !== "complete"}
-          label={t("Clicked")}
-          detail={
-            // Show refusal reason instead of an internal element ref.
-            outcome.refused === true
-              ? labelForCode(outcome.code, outcome.reason)
-              : (labelOf(result) ??
-                (typeof args?.ref === "string" ? args.ref : undefined))
-          }
-          refused={outcome.refused === true}
-          failed={didNotWork(outcome)}
-        />
-      );
-    },
   });
 
   useFrontendTool({
@@ -545,16 +432,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ args, result, status, toolCallId }) => (
-      <ActionLine
-        toolCallId={toolCallId}
-        running={status !== "complete"}
-        label={t("Pressed")}
-        detail={typeof args?.key === "string" ? args.key : undefined}
-        refused={outcomeOf(result).refused === true}
-        failed={didNotWork(outcomeOf(result))}
-      />
-    ),
   });
 
   useFrontendTool({
@@ -582,18 +459,29 @@ export function ComputerTools() {
       const outcome = await waitForPerson(
         botId,
         (state) => state.secretWanted === undefined,
-        call.signal,
+        call,
       );
       const code =
         outcome === "answered"
           ? "laf:secret_entered"
-          : outcome === "cancelled"
-            ? "laf:request_cancelled"
-            : "laf:secret_not_entered";
+          : outcome === "skipped"
+            ? "laf:secret_skipped"
+            : outcome === "cancelled"
+              ? "laf:request_cancelled"
+              : "laf:secret_not_entered";
       return { ok: true, code, result: toolResultText(code) };
     },
-    // Rendered by ComputerView as a masked prompt.
-    render: () => null,
+    // A card in the conversation with the masked box, where the Bot asked — never a pop-up.
+    render: ({ args, result, status, toolCallId }) => (
+      <HelpCard
+        botId={bot.current}
+        kind="secret"
+        result={result}
+        said={typeof args?.label === "string" ? args.label : undefined}
+        status={status}
+        toolCallId={toolCallId}
+      />
+    ),
   });
 
   useFrontendTool({
@@ -616,18 +504,29 @@ export function ComputerTools() {
       const outcome = await waitForPerson(
         botId,
         (state) => state.holder === "bot" && !state.requested,
-        call.signal,
+        call,
       );
       const code =
         outcome === "answered"
           ? "laf:control_returned"
-          : outcome === "cancelled"
-            ? "laf:request_cancelled"
-            : "laf:nobody_took_control";
+          : outcome === "skipped"
+            ? "laf:help_skipped"
+            : outcome === "cancelled"
+              ? "laf:request_cancelled"
+              : "laf:nobody_took_control";
       return { ok: true, code, result: toolResultText(code) };
     },
-    // Rendered by ComputerView as the take-the-wheel prompt.
-    render: () => null,
+    // A card in the conversation: 직접 하기, 다 했어요, 건너뛰기 (`help-card.tsx`).
+    render: ({ args, result, status, toolCallId }) => (
+      <HelpCard
+        botId={bot.current}
+        kind="help"
+        result={result}
+        said={typeof args?.reason === "string" ? args.reason : undefined}
+        status={status}
+        toolCallId={toolCallId}
+      />
+    ),
   });
 
   useFrontendTool({
@@ -760,28 +659,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ result, status, toolCallId }) => {
-      const outcome = outcomeOf(result) as ComputerOutcome & {
-        tabs?: { title?: string; active?: boolean }[];
-      };
-      const active = outcome.tabs?.find((tab) => tab.active);
-      return (
-        <ActionLine
-          toolCallId={toolCallId}
-          running={status !== "complete"}
-          label={t("Switched tab")}
-          detail={
-            outcome.refused === true || didNotWork(outcome)
-              ? labelForCode(outcome.code, outcome.reason)
-              : // The tab's own title, which is what a person would call it. Never the url: it is
-                // long, and half of it is a session id.
-                (active?.title ?? undefined)
-          }
-          refused={outcome.refused === true}
-          failed={didNotWork(outcome)}
-        />
-      );
-    },
   });
 
   useFrontendTool({
@@ -802,26 +679,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ args, result, status, toolCallId }) => {
-      const outcome = outcomeOf(result);
-      return (
-        <ActionLine
-          toolCallId={toolCallId}
-          running={status !== "complete"}
-          label={t("Attached file")}
-          // The path, which is what was handed over. Never the contents.
-          detail={
-            outcome.refused === true || didNotWork(outcome)
-              ? labelForCode(outcome.code, outcome.reason)
-              : typeof args?.path === "string"
-                ? args.path
-                : undefined
-          }
-          refused={outcome.refused === true}
-          failed={didNotWork(outcome)}
-        />
-      );
-    },
   });
 
   useFrontendTool({
@@ -837,15 +694,6 @@ export function ComputerTools() {
         },
         call,
       ),
-    render: ({ result, status, toolCallId }) => (
-      <ActionLine
-        toolCallId={toolCallId}
-        running={status !== "complete"}
-        label={t("Scrolled")}
-        refused={outcomeOf(result).refused === true}
-        failed={didNotWork(outcomeOf(result))}
-      />
-    ),
   });
 
   return null;

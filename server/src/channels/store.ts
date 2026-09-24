@@ -5,12 +5,14 @@
  *   roster.ts         what a person can see, and where they stopped reading
  *   activity.ts       the last thing said, as the browser that saw it reports it
  *   turn-failures.ts  the questions that never got an answer
+ *   frames.ts         the last picture of each browsing task
  */
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { Database } from "../db/client";
 import { recordActivity } from "./activity";
 import { createConversation } from "./conversations";
 import type { AnnounceChannelActivity } from "./events";
+import { createFrameStore } from "./frames";
 import { listChannels, readChannel, setLastRead } from "./roster";
 import type { ThreadIdentity } from "./thread-identity";
 import { createTurnFailureReader } from "./turn-failures";
@@ -28,6 +30,7 @@ export function createChannelStore(
    */
   announce?: AnnounceChannelActivity,
 ): ChannelStore {
+  const frames = createFrameStore(database);
   return {
     create: (actor, agentIds) =>
       createConversation(
@@ -43,5 +46,7 @@ export function createChannelStore(
       recordActivity(database, announce, actor, channelId, activity),
     // Nothing is written for this; it joins the run ledger to the transcript. See `turn-failures`.
     failuresFor: createTurnFailureReader(database),
+    frameFor: frames.frameFor,
+    keepFrame: frames.keepFrame,
   };
 }

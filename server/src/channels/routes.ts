@@ -48,7 +48,9 @@ export type ChannelRefusal =
   | "laf:activity_agent_invalid"
   | "laf:activity_time_required"
   | "laf:activity_time_invalid"
-  | "laf:read_flag_invalid";
+  | "laf:read_flag_invalid"
+  | "laf:frame_invalid"
+  | "laf:frame_not_found";
 
 export function createChannelRoutes(
   store: ChannelStore,

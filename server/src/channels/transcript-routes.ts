@@ -11,6 +11,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
+import { isKeepableFrame } from "./frames";
 import { mapRefusal, refusal } from "./refusals";
 import type { ChannelStore, ReadMessageTimes } from "./types";
 
@@ -57,6 +58,75 @@ export function createTranscriptRoutes(
       },
     ),
   );
+
+  /**
+   * The last picture of a browsing task, as the image itself, so the card is an `<img>` and nothing
+   * more — no JSON to unwrap, and the browser's own cache keeps it.
+   *
+   * `no-store` on the miss: the picture is kept a moment after the card first asks, and a cached
+   * absence would hide it until the cache forgot.
+   */
+  routes.get("/:channelId/frames/:toolCallId", requireUser, async (context) => {
+    try {
+      const channel = await store.get(
+        context.var.actor,
+        context.req.param("channelId"),
+      );
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
+      const frame = store.frameFor
+        ? await store.frameFor(
+            channel.threadId,
+            context.req.param("toolCallId"),
+          )
+        : null;
+      if (!frame) {
+        context.header("cache-control", "no-store");
+        return context.json(refusal("laf:frame_not_found"), 404);
+      }
+      return context.body(Buffer.from(frame, "base64"), 200, {
+        "content-type": "image/jpeg",
+        // Written once, when its task ends. Private: it is a picture of somebody's screen.
+        "cache-control": "private, max-age=86400",
+      });
+    } catch (error) {
+      return mapRefusal(context, error);
+    }
+  });
+
+  /**
+   * Keep that picture. The surface makes it (`app/src/lib/computer/last-frame.ts`); this checks it
+   * is what the surface makes — a small JPEG — and puts it on the task's last result.
+   *
+   * 404 while the result has not reached the thread yet: it arrives with the next run's input, and
+   * the surface asks again.
+   */
+  routes.put("/:channelId/frames/:toolCallId", requireUser, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      jpeg?: unknown;
+    } | null;
+    const jpeg = body?.jpeg;
+    if (!isKeepableFrame(jpeg)) {
+      return context.json(refusal("laf:frame_invalid"), 400);
+    }
+    try {
+      const channel = await store.get(
+        context.var.actor,
+        context.req.param("channelId"),
+      );
+      if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
+      const kept = store.keepFrame
+        ? await store.keepFrame(
+            channel.threadId,
+            context.req.param("toolCallId"),
+            jpeg,
+          )
+        : false;
+      if (!kept) return context.json(refusal("laf:frame_not_found"), 404);
+      return context.body(null, 204);
+    } catch (error) {
+      return mapRefusal(context, error);
+    }
+  });
 
   return routes;
 }

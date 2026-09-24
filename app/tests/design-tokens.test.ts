@@ -80,7 +80,6 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "components/gallery/charts.tsx": 2,
   },
   type: {
-    "components/channels/bot-panel.tsx": 2,
     "components/gallery/cards.tsx": 1,
     "routes/_authed/_app/channel/new.tsx": 4,
     "routes/_authed/_app/index.tsx": 4,

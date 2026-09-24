@@ -25,6 +25,7 @@ import type { StandingFailure } from "@/lib/channels/retry";
 import { ensure } from "@/lib/ensure";
 
 export function ConversationView({
+  banner,
   channelId,
   messages,
   messageTimes,
@@ -43,6 +44,11 @@ export function ConversationView({
   onSubmit,
   onStop,
 }: {
+  /**
+   * A slim line between the header and the transcript: what the Bot is doing in its browser right
+   * now (`browsing-banner.tsx`). Above the scroller, so it stays put while the conversation scrolls.
+   */
+  banner?: ReactNode;
   /** The conversation, so a finished answer can be rated. Absent on the compose screen. */
   channelId?: string;
   messages: readonly Message[];
@@ -229,6 +235,7 @@ export function ConversationView({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      {banner}
       <div className="relative flex flex-1 min-h-0">
         {emptyState && messages.length === 0 && queued.length === 0 ? (
           /*

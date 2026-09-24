@@ -133,12 +133,12 @@ const strip = (name: string) =>
 
 describe("both views of one computer decode the same way", () => {
   test("neither builds a data URL of a screenshot any more", () => {
-    expect(strip("computer-view.tsx")).not.toContain("data:image/png;base64,");
+    expect(strip("browsing-banner.tsx")).not.toContain("data:image");
     expect(strip("live-screen.tsx")).not.toContain("data:image");
   });
 
   test("both go through this module", () => {
-    for (const file of ["computer-view.tsx", "live-screen.tsx"]) {
+    for (const file of ["browsing-banner.tsx", "live-screen.tsx"]) {
       expect(strip(file)).toContain("./frame-bitmap");
       expect(strip(file)).toContain("decodeFrame(");
       expect(strip(file)).toContain("paintFrame(");
@@ -152,12 +152,13 @@ describe("both views of one computer decode the same way", () => {
     expect(module).toContain("charCodeAt(i)");
   });
 
-  test("the inline card paints before it says there is a screenshot", () => {
-    // Otherwise the canvas is mounted empty for a whole poll interval where the picture is about
+  test("the banner paints before it says there is a picture", () => {
+    // Otherwise the canvas is revealed empty for a whole poll interval where the picture is about
     // to be — the same blank the old code used `preloadFrame` to avoid.
-    const view = strip("computer-view.tsx");
-    expect(view.indexOf("paintFrame(canvas, bitmap)")).toBeLessThan(
-      view.indexOf("setShot(next)"),
+    const banner = strip("browsing-banner.tsx");
+    expect(banner.indexOf("paintFrame(canvas, bitmap)")).toBeGreaterThan(0);
+    expect(banner.indexOf("paintFrame(canvas, bitmap)")).toBeLessThan(
+      banner.indexOf("setHasPicture(true)"),
     );
   });
 });

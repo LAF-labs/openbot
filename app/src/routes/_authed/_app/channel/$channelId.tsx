@@ -2,13 +2,13 @@ import { IconDeviceDesktop, IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { AgentAvatar } from "@/components/channels/avatar";
-import { BotPanel } from "@/components/channels/bot-panel";
 import { ChannelChat } from "@/components/channels/channel-chat";
-import { useNeedsYou } from "@/components/computer/needs-you";
+import { LiveView } from "@/components/computer/live-view";
+import { useControl } from "@/components/computer/use-control";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
@@ -18,16 +18,18 @@ import {
   channelKeys,
   channelQueryOptions,
 } from "@/lib/channels/queries";
-import { useScreenPanelWidth } from "@/lib/computer/screen-panel";
-import { onComputerActivity } from "@/lib/copilot/computer-activity";
+import { isInUse, useBrowsingNow } from "@/lib/computer/browsing-now";
+import {
+  setScreenOpen,
+  useScreenPanel,
+  useScreenPanelWidth,
+} from "@/lib/computer/screen-panel";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 
 const chatSearchSchema = z
   .object({
     settings: z.boolean().optional(),
-    /** Opens the Bot's screen in the shared detail pane. */
-    watch: z.boolean().optional(),
   })
   /* `.catch({})` so `?settings=yes` is ignored rather than throwing out of
    * validateSearch and taking the whole route down with it. */
@@ -39,14 +41,13 @@ const HEADING_ENTRANCE_SECONDS = 0.18;
 const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
 /*
- * THE WATCHING PANE'S WIDTH IS THE PERSON'S, NOT A CONSTANT — see `lib/computer/screen-panel.ts`.
+ * THE BOT'S SCREEN OPENS WHEN A PERSON ASKS, AND ONLY THEN.
  *
- * It was 320px here, fixed: the same as the pane's resting width, chosen because watching used to
- * widen it to 400 and take 80px off the conversation every time somebody glanced at the screen. The
- * measurement was right and the answer was one number for everybody, with no way to change it and
- * nothing to press but 닫기 — which also stops the pane saying anything at all. The three widths and
- * the fold are that number made a choice, kept in `localStorage`, and clamped to what the window
- * can actually honour.
+ * It used to open itself: once per "run" of browser calls — any two within ten seconds — and once
+ * per request for help. A model that thinks for longer than ten seconds between steps made every
+ * step a new run, so a screen somebody had closed was open again at the next one. Now the Bot's
+ * browsing is a banner and a card in the conversation, the header's button says when the browser is
+ * in use, and the screen opens from any of them, by hand (`lib/computer/screen-panel.ts`).
  */
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
@@ -94,12 +95,11 @@ function ChannelScreen() {
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
-  const { settings, watch } = Route.useSearch();
+  const { settings } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
-  const isWatching = watch === true;
   /**
    * Whose profile the settings pane edits, and — for a room with one Bot — whose name titles it.
    *
@@ -116,85 +116,58 @@ function RouteComponent() {
   const isRoom = (channel.data?.agentIds.length ?? 0) > 1;
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
+  const panel = useScreenPanel();
   /*
-   * POLLED WHETHER OR NOT THE PANE IS OPEN, which it was not before, and that was a trap: the poll
-   * ran only while the screen was closed, so closing the pane restarted it, it immediately found the
-   * Bot still waiting, and the pane opened itself again. While a Bot genuinely needed somebody, the
-   * screen could not be dismissed at all.
+   * Not for a room from before 2026-09-24: it has several Bots and no conversation to run, so there
+   * is no one browser for it to be the screen of.
    */
-  const needsYou = useNeedsYou(agentId, true);
-  /*
-   * Read here and not in `BotPanel`, because the width belongs to the pane and the pane is
-   * `DetailPanel`'s: the panel inside it is handed that width outright and lays itself out once.
-   * Read on every render of this screen whether or not it is watching — a hook cannot be
-   * conditional — and it costs a `localStorage` read once per tab (`screen-panel.ts`).
-   */
-  const screenWidth = useScreenPanelWidth();
+  const isWatching = panel.isOpen && agentId !== undefined && !isRoom;
+  // Only while the screen is open: that is the one place a person can be holding the wheel from.
+  const control = useControl(isWatching ? agentId : undefined, true);
+  const screenWidth = useScreenPanelWidth(control?.holder === "human");
+  const isComputerInUse = isInUse(useBrowsingNow(), agentId);
 
-  // Browser activity may auto-open the screen once per run unless this run was dismissed.
-  const dismissedEpoch = useRef<number | null>(null);
-  const runEpoch = useRef<number | null>(null);
-
-  // Settings and watch share one pane; opening either clears the other URL flag.
-  // Stable, because the needs-you effect below depends on it and must not re-run every render.
-  const show = useCallback(
-    (next: "settings" | "watch" | null) => {
-      // Dismissal applies only to the current browser-activity run.
-      if (next !== "watch" && isWatching)
-        dismissedEpoch.current = runEpoch.current;
-      return navigate({
-        search: (previous) => ({
-          ...previous,
-          settings: next === "settings" ? true : undefined,
-          watch: next === "watch" ? true : undefined,
-        }),
-      });
-    },
-    [isWatching, navigate],
-  );
-
-  /*
-   * Opened once per need, not once per render. This effect had no dependency array, so it navigated
-   * on every render for as long as the flag was set; and with nothing remembering that this need
-   * had already been answered, a person who closed the pane got it straight back.
-   */
-  const openedForNeed = useRef(false);
+  // Settings and the screen share one pane: asking for the screen puts the profile away.
   useEffect(() => {
-    if (!needsYou) {
-      // The need is over. A later one is a new one, and may open the screen again.
-      openedForNeed.current = false;
-      return;
+    if (isWatching && isSettingsOpen) {
+      void navigate({
+        search: (previous) => ({ ...previous, settings: undefined }),
+      });
     }
-    if (openedForNeed.current) return;
-    openedForNeed.current = true;
-    void show("watch");
-  }, [needsYou, show]);
+  }, [isWatching, isSettingsOpen, navigate]);
 
-  useEffect(() => {
-    if (!agentId) return;
-    return onComputerActivity((activity) => {
-      if (activity.botId !== agentId) return;
-      runEpoch.current = activity.epoch;
-      if (dismissedEpoch.current === activity.epoch) return;
-      navigate({
-        search: (previous) =>
-          previous.watch === true || previous.settings === true
-            ? previous
-            : { ...previous, settings: undefined, watch: true },
-      });
+  const showSettings = (open: boolean) => {
+    if (open) setScreenOpen(false);
+    return navigate({
+      search: (previous) => ({
+        ...previous,
+        settings: open ? true : undefined,
+      }),
     });
-  }, [agentId, navigate]);
+  };
 
   return (
     <DetailPanel
-      onClose={() => show(null)}
+      onClose={() => {
+        if (isWatching) setScreenOpen(false);
+        else void showSettings(false);
+      }}
       open={(isSettingsOpen || isWatching) && agentId !== undefined}
       detailWidth={isWatching ? screenWidth : undefined}
+      isSheetWhenNarrow={isWatching}
+      title={
+        isWatching ? (
+          // Named after the coworker, never the conversation.
+          <span className="truncate font-medium text-sm">
+            {headerAgent?.name
+              ? t("{name}'s screen", { name: headerAgent.name })
+              : t("The Bot's screen")}
+          </span>
+        ) : undefined
+      }
       detail={
         agentId === undefined ? null : isWatching ? (
-          // Manual watch remains active even when there is no current browser action. Named after
-          // the coworker, never the conversation.
-          <BotPanel agentId={agentId} name={headerAgent?.name} />
+          <LiveView botId={agentId} />
         ) : (
           <AgentProfile agentId={agentId} />
         )
@@ -279,28 +252,39 @@ function RouteComponent() {
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
+            {/*
+             * THE SCREEN'S BUTTON, WHICH SAYS WHEN THE BROWSER IS IN USE — and stays saying it for a
+             * moment after (`LINGER_MS`), so it does not blink between one step and the next. This
+             * is the one thing about the Bot's browser the header does unasked; opening is the
+             * person's.
+             */}
             <Button
               aria-label={
-                needsYou
-                  ? t("This Bot is waiting for you. Open its screen")
+                isComputerInUse
+                  ? t("The Bot is using its browser. View its screen")
                   : t("Watch this Bot's screen")
               }
               aria-pressed={isWatching}
-              className={`relative ${isWatching ? "bg-foreground/5" : ""}`}
-              disabled={agentId === undefined}
-              onClick={() => show(isWatching ? null : "watch")}
+              className={isWatching ? "bg-foreground/5" : undefined}
+              disabled={agentId === undefined || isRoom}
+              onClick={() => {
+                if (!isWatching) void showSettings(false);
+                setScreenOpen(!isWatching);
+              }}
+              size={isComputerInUse ? "sm" : "icon"}
               variant="ghost"
-              size="icon"
             >
               <IconDeviceDesktop className="size-4.5" />
-              {/*
-               * Only while the screen is closed: with it open the prompt itself is on screen, and a
-               * dot on the button that opens what you are already looking at is noise. `bg-primary`
-               * because the product has one accent colour and this is what it is for — the amber
-               * that was here belonged to no palette in the app.
-               */}
-              {needsYou && !isWatching ? (
-                <span className="absolute top-1 right-1 size-2 rounded-full bg-primary" />
+              {isComputerInUse ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 animate-pulse rounded-full bg-primary"
+                  />
+                  <span className="text-muted-foreground text-xs">
+                    {t("In use")}
+                  </span>
+                </>
               ) : null}
             </Button>
             <Button
@@ -308,7 +292,7 @@ function RouteComponent() {
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
-              onClick={() => show(isSettingsOpen ? null : "settings")}
+              onClick={() => void showSettings(!isSettingsOpen)}
               variant="ghost"
               size="icon"
             >

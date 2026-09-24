@@ -53,6 +53,16 @@ export const lafThreadMessages = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
     /** The run that wrote it, when a run did. Null for a delivery and for a person's own message. */
     runId: text("run_id"),
+    /**
+     * The last thing the Bot's browser showed when a browsing task ended, as a small base64 JPEG.
+     * Only ever on the result of the task's last browser action (`channels/frames.ts`).
+     *
+     * A COLUMN, NOT A KEY IN `message`. Every run hands the whole history back and a copy that
+     * differs is written over the row, so a key the client cannot send would be erased by the next
+     * turn; and every append reads the newest rows' `message`, so twenty kilobytes of picture in it
+     * would ride along on every one. Nothing selects this column but the route that serves it.
+     */
+    frame: text("frame"),
   },
   (table) => [
     primaryKey({ columns: [table.threadId, table.seq] }),

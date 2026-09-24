@@ -47,6 +47,7 @@ export function DetailPanel({
   title,
   detail,
   detailWidth = DEFAULT_DETAIL_WIDTH,
+  isSheetWhenNarrow = false,
   children,
 }: {
   open: boolean;
@@ -56,6 +57,13 @@ export function DetailPanel({
   detail?: ReactNode;
   /** Open width of the detail pane, in pixels. */
   detailWidth?: number;
+  /**
+   * Below `lg`, cover the whole window rather than the conversation's column.
+   *
+   * For the Bot's live screen, which is a sheet on a phone. Laid over the column alone, a sheet the
+   * width of the window ran under the navigation rail and lost its left edge (measured at 375px).
+   */
+  isSheetWhenNarrow?: boolean;
   children: ReactNode;
 }) {
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
@@ -93,7 +101,7 @@ export function DetailPanel({
          * column instead; the card inside it already carries its own background and a left
          * hairline, which is exactly how an overlay should read.
          */
-        className="absolute inset-y-0 right-0 z-20 shrink-0 overflow-hidden lg:static lg:z-auto"
+        className={`${isSheetWhenNarrow ? "fixed z-50" : "absolute z-20"} inset-y-0 right-0 shrink-0 overflow-hidden lg:static lg:z-auto`}
         // No entry animation on first paint: URL-opened panels should appear as initial state.
         initial={false}
         transition={{

@@ -25,8 +25,6 @@ export const ko: Record<string, string> = {
   "A reason, if you want to give one": "이유 (선택)",
   "A rule refused it": "규칙이 막았음",
   "A secret was not written down.": "비밀값이라 적지 않았습니다.",
-  "A routine is work this Bot repeats on a schedule.":
-    "루틴은 이 봇이 일정에 따라 반복하는 작업입니다.",
   "A routine ran": "루틴이 실행됨",
   "A routine's window was skipped": "루틴 실행 시각을 건너뜀",
   "Not run: its account can no longer use this place":
@@ -304,7 +302,6 @@ export const ko: Record<string, string> = {
   "Client ID": "클라이언트 ID",
   "Client secret": "클라이언트 시크릿",
   Close: "닫기",
-  "Close the Bot's screen": "봇의 화면 닫기",
   Cloud: "구름",
   Command: "명령",
   Components: "컴포넌트",
@@ -367,7 +364,6 @@ export const ko: Record<string, string> = {
   "Could not log out.": "로그아웃하지 못했습니다.",
   "Could not save the credential. Try again.":
     "자격증명을 저장하지 못했습니다. 다시 시도하세요.",
-  "Create a routine": "루틴 만들기",
   "Creating…": "만드는 중…",
   "Credential saved": "자격증명 저장됨",
   Credentials: "자격증명",
@@ -652,8 +648,6 @@ export const ko: Record<string, string> = {
   "That is too long to remember.": "기억해 두기에는 너무 깁니다.",
   "There was nothing to remember.": "기억할 내용이 없습니다.",
   "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
-  "The Bot may still be working. An administrator can check whether its computer is running.":
-    "봇은 계속 일하고 있을 수 있습니다. 관리자가 컴퓨터 실행 여부를 확인할 수 있습니다.",
   "The assistant's screen, live": "봇의 화면 — 실시간",
   "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
     "봇의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
@@ -750,8 +744,6 @@ export const ko: Record<string, string> = {
   "There is nothing here.": "여기에는 아무것도 없습니다.",
   "They share its logins, its files and its session, so a Bot can reach what another signed into. That is the design — one computer per account — and what keeps a Bot in bounds is the boundary in front of it, not a separate computer.":
     "로그인, 파일, 세션을 함께 씁니다. 그래서 한 봇이 다른 봇이 로그인해 둔 곳에 닿을 수 있습니다. 이것은 의도된 설계입니다 — 계정마다 컴퓨터 한 대. 봇을 선 안에 두는 것은 컴퓨터를 따로 주는 것이 아니라 그 앞에 놓인 경계입니다.",
-  "This Bot is waiting for you. Open its screen":
-    "봇이 당신을 기다립니다. 화면을 여세요",
   "This conversation has no Bot in it.": "이 대화에는 봇이 없습니다.",
   "This Bot has been deleted. The conversation stays readable, but it can no longer reply.":
     "이 봇은 삭제되었습니다. 대화는 계속 읽을 수 있지만 더 이상 답하지 않습니다.",
@@ -797,13 +789,6 @@ export const ko: Record<string, string> = {
   "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and every refusal is recorded with the rule that refused it.":
     "각 봇이 컴퓨터로 할 수 있는 일과 할 수 없는 일입니다. 규칙은 모든 행동 직전에 검사되며, 거부될 때마다 어떤 규칙이 막았는지 함께 기록됩니다.",
   "What should it do?": "무엇을 할까요?",
-  "Click and type on the page as you normally would.":
-    "평소처럼 페이지를 클릭하고 입력하세요.",
-  "The Bot's screen, updating live": "봇의 화면 — 실시간 갱신 중",
-  "Take control — the Bot asked for you":
-    "제어 잡기 — 봇이 도움을 요청했습니다",
-  "Click anywhere or press Escape to close":
-    "아무 곳이나 클릭하거나 Esc를 누르면 닫힙니다",
   "Webhook trigger — shown only once": "웹훅 트리거 — 지금 한 번만 표시됩니다",
   "Any system that POSTs this fires the routine (at most once per 30 seconds). The request body, if any, is handed to the Bot.":
     "이 주소로 POST하면 루틴이 실행됩니다(30초당 최대 1회). 요청 본문이 있으면 봇에게 전달됩니다.",
@@ -934,8 +919,6 @@ export const ko: Record<string, string> = {
   "One line": "한 줄",
   "One-liner": "한 줄 요약",
   Open: "열기",
-  "Open full size": "전체 크기로 열기",
-  "Open the Bot's screen full size": "봇의 화면을 전체 크기로 열기",
   "Otherwise it may": "그 외에는 허용",
   Overview: "개요",
   Playground: "플레이그라운드",
@@ -981,10 +964,6 @@ export const ko: Record<string, string> = {
   "Summarise what I did yesterday from the channel, then list what is left.":
     "대화에서 어제 한 일을 요약하고, 남은 일을 목록으로.",
   Summary: "요약",
-  "Take control": "제어 가져오기",
-  "The Bot has not opened a page yet.": "봇이 아직 페이지를 열지 않았습니다.",
-  "The Bot needs": "봇에게 필요합니다",
-  "The Bot needs you.": "봇이 당신을 기다립니다.",
   "The Bot's screen": "봇의 화면",
   "The audit trail could not be loaded.": "감사 기록을 불러오지 못했습니다.",
   "The list could not be loaded.": "목록을 불러오지 못했습니다.",
@@ -1002,14 +981,12 @@ export const ko: Record<string, string> = {
     "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
   "Vendor documentation": "공급자 문서",
-  "Waiting for the Bot's screen…": "봇의 화면을 기다리는 중…",
   "Waiting on you": "당신을 기다리는 중",
   What: "무엇을",
   "What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit.":
     "봇이 답에 쓸 수 있는 것들입니다. 게시된 컴포넌트는 모든 봇이 쓸 수 있고, 여기서 끄면 그 봇은 존재조차 모릅니다. 모든 변경과 거부는 감사 기록에 한 줄로 남습니다.",
   "What the Bot should do when this skill is used.":
     "이 스킬이 쓰일 때 봇이 해야 할 일.",
-  "What the Bot is looking at": "봇이 보고 있는 것",
   "What the model is told about it": "모델에게 전달되는 설명",
   "What this deployment can reach, and which Bots may reach it. Adding is account-wide; enabling is per Bot.":
     "이 배포가 닿을 수 있는 곳과, 어느 봇이 닿아도 되는지. 추가는 계정 단위, 부여는 봇 단위입니다.",
@@ -1026,11 +1003,8 @@ export const ko: Record<string, string> = {
     "관리자가 모두를 위해 작성했습니다. 어느 봇이 지니는지는 관리에서 정합니다.",
   "You already have a skill called /{slug}. Saving would replace it — open it from the list to edit it instead.":
     "이미 /{slug} 스킬이 있습니다. 저장하면 덮어씁니다 — 목록에서 열어 수정하세요.",
-  "You cannot see the screen right now": "지금은 화면을 볼 수 없습니다",
   "You do not own a Bot to put this on yet.":
     "이것을 붙일 내 봇이 아직 없습니다.",
-  "You have control of this browser.":
-    "이 브라우저는 당신이 제어하고 있습니다.",
   "You have control.": "제어 중입니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
@@ -1564,26 +1538,62 @@ export const ko: Record<string, string> = {
   "The version could not be read.": "버전을 확인하지 못했습니다.",
   "This server does not say which version it is.":
     "이 서버는 버전을 알려 주지 않습니다.",
-  "This account cannot see this Bot's screen.":
-    "이 계정으로는 이 봇의 화면을 볼 수 없습니다.",
-  "This place has no computer for its Bots, so there is no screen to show.":
-    "여기에는 봇이 쓰는 컴퓨터가 없어서, 보여 드릴 화면이 없습니다.",
-  "The picture is not updating. This is the last one that arrived.":
-    "화면이 새로 오지 않고 있습니다. 마지막으로 받은 화면입니다.",
 
   /*
-   * 빈 브라우저 세 가지는 서로 다른 말이어야 한다 — `lib/computer/screen-state.ts` 참고.
-   * 게이트웨이는 "닫았다"와 "아직 안 열었다"에 똑같은 흰 화면을 돌려준다(2026-09-21 측정).
+   * 봇의 브라우저 작업 — 대화 속 카드, 머리 아래 배너, 사람이 열 때만 열리는 실시간 화면
+   * (`components/computer/browsing-card.tsx`, `browsing-banner.tsx`, `live-view.tsx`).
+   * 배너 한 줄에 사이트 옆에 붙으므로 "하는 중" 꼴로 짧게 쓴다.
    */
-  "The Bot closed the page it was looking at.":
-    "봇이 보고 있던 페이지를 닫았습니다.",
-  "Nothing has gone wrong. It opens another when it needs one.":
-    "문제가 생긴 것은 아닙니다. 필요하면 봇이 다시 페이지를 엽니다.",
-  // 접힌 패널에 한 줄로 남는 말.
-  "The Bot is on {site}.": "봇이 {site} 페이지를 보고 있습니다.",
-  "The Bot is looking at a page.": "봇이 어떤 페이지를 보고 있습니다.",
-  "Collapse the screen": "화면 접기",
-  "Expand the screen": "화면 펴기",
+  Opened: "열었음",
+  "Working out the next step": "다음에 할 일을 고르는 중",
+  "Opening {site}": "{site} 여는 중",
+  "Opening a page": "페이지 여는 중",
+  "Reading the page": "페이지 읽는 중",
+  Clicking: "누르는 중",
+  "Filling in": "입력하는 중",
+  "Pressing a key": "키 누르는 중",
+  Scrolling: "화면 내리는 중",
+  "Switching tab": "탭 옮기는 중",
+  "Attaching a file": "파일 붙이는 중",
+  "Working in the browser": "브라우저에서 일하는 중",
+  "View the Bot's screen": "봇의 화면 보기",
+  "The Bot's browser": "봇의 브라우저",
+  "1 step": "1단계",
+  "{count} steps": "{count}단계",
+  "View screen": "화면 보기",
+  "No page is open now. The picture is the last one.":
+    "지금 열린 페이지가 없어요. 그림이 마지막 화면이에요.",
+  "What it did": "한 일",
+  "Working on it": "하는 중",
+  "Got stuck": "막힘",
+  "What the Bot's browser showed last": "봇의 브라우저에 마지막으로 보인 화면",
+  "Hide this for this task": "이번 작업에서는 숨기기",
+  "The Bot is using its browser. View its screen":
+    "봇이 지금 브라우저를 쓰는 중이에요. 화면 보기",
+  "In use": "사용 중",
+  "Not connected": "연결 안 됨",
+  "Connecting to the screen…": "화면에 연결하는 중…",
+  "Live · {site}": "실시간 · {site}",
+  Live: "실시간",
+  "You are using the browser. The Bot waits until you hand it back.":
+    "지금 직접 조작하고 있어요. 돌려줄 때까지 봇은 기다려요.",
+  "You can click and type on this page yourself.":
+    "이 페이지를 직접 누르고 입력할 수 있어요.",
+  "Take over": "직접 하기",
+  // 봇이 사람에게 넘기는 일 — 대화 속 카드, 팝업이 아니다(`components/computer/help-card.tsx`).
+  "The Bot needs your help": "봇이 도움을 청해요",
+  "The Bot needs a value it must not see": "봇이 보면 안 되는 값이 필요해요",
+  "Needs you": "도움 필요",
+  "Goes into {field} on {site}": "{site}의 '{field}' 칸에 들어가요",
+  "You have the browser. Press I'm done when you are finished.":
+    "지금 직접 조작하고 있어요. 끝나면 '다 했어요'를 눌러 주세요.",
+  "Do it myself": "직접 하기",
+  "I'm done": "다 했어요",
+  "The Bot carries on without this step": "이 단계 없이 봇이 계속해요",
+  Skip: "건너뛰기",
+  Entered: "넣었음",
+  "No answer": "응답 없음",
+  "Didn't work": "안 됨",
   "Screen size": "화면 크기",
   Small: "작게",
   Medium: "보통",
