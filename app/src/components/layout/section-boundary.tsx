@@ -17,6 +17,7 @@ import {
   Component,
   createContext,
   createRef,
+  type ErrorInfo,
   type ReactNode,
   useContext,
   useSyncExternalStore,
@@ -195,8 +196,8 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
     return { hasFailed: true };
   }
 
-  componentDidCatch(error: unknown) {
-    void reportScreenError(this.props.section, error);
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    void reportScreenError(this.props.section, error, info.componentStack);
   }
 
   componentDidUpdate(previous: BoundaryProps, previousState: BoundaryState) {

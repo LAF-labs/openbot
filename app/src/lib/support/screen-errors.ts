@@ -8,7 +8,9 @@
  *
  * WHAT IS READ FROM THE ERROR, AND WHAT IS NOT. Its constructor, for the kind. Its stack, for where
  * it was thrown: each frame's file name, line and column, and nothing else of the frame — then only
- * a digest of those goes, so even a frame the parser misread cannot put a word on the wire. Never
+ * a digest of those goes, so even a frame the parser misread cannot put a word on the wire. From
+ * React's component stack, when the failure was caught while drawing, the names of the components
+ * around it and not their addresses (`componentsOf`). Never
  * `message`: an error's message quotes whatever the failing code was handed, and a URL that would
  * not parse is quoted with its query, a password field's value with it. `screen-errors.test.ts`
  * throws a password and a Korean sentence and searches the body that would be posted for both.
@@ -24,8 +26,10 @@
 import {
   BUILD_REVISION,
   BUILD_VERSION,
+  COMPONENT_NAME,
   ERROR_KIND,
   isScreenRoute,
+  SCREEN_ERROR_MAX_COMPONENTS,
   type ScreenErrorReport,
   type ScreenSection,
   type ScreenSurface,
@@ -149,6 +153,30 @@ export function fingerprintOf(
   return `${fnv1a(text, 0x811c9dc5)}${fnv1a(text, 0x5bd1e995)}`.slice(0, 12);
 }
 
+/**
+ * The components a failure was drawn inside, innermost first, from React's component stack.
+ *
+ * NAMES ONLY. Each line of the stack is a name and where its function lives — an address, which in
+ * development carries Vite's `?t=` query — and only the name is kept, and only when it has the shape
+ * of a component's (`COMPONENT_NAME`). Host elements (`div`), a context's `Context.Provider`, and
+ * anything a misread line would make of an address are left out by that shape, not by a list.
+ */
+export function componentsOf(
+  componentStack: string | null | undefined,
+): string[] {
+  const names: string[] = [];
+  for (const line of (componentStack ?? "").split("\n")) {
+    // `at Name (address)` in Chromium, `Name@address` in WebKit and Firefox.
+    const name = line
+      .trim()
+      .replace(/^at\s+/, "")
+      .split(/[\s@(]/, 1)[0];
+    if (name && COMPONENT_NAME.test(name)) names.push(name);
+    if (names.length === SCREEN_ERROR_MAX_COMPONENTS) break;
+  }
+  return names;
+}
+
 /** What the page knows about itself at the moment of the report. */
 export type ScreenFacts = {
   /** The router's template for the route on screen, if it is on the list. */
@@ -169,16 +197,20 @@ export function screenErrorReport(
   section: ScreenSection,
   error: unknown,
   facts: ScreenFacts,
+  /** React's `componentStack`, where the failure was caught while drawing. */
+  componentStack?: string | null,
 ): ScreenErrorReport {
   const kind = errorKind(error);
   const version = facts.build?.version;
   const revision = facts.build?.revision;
   const hasBuild = typeof version === "string" && BUILD_VERSION.test(version);
+  const components = componentsOf(componentStack);
   return {
     section,
     ...(isScreenRoute(facts.route) ? { route: facts.route } : {}),
     kind,
     fingerprint: fingerprintOf(kind, stackLocations(error)),
+    ...(components.length > 0 ? { components } : {}),
     ...(hasBuild ? { build: version } : {}),
     ...(hasBuild &&
     typeof revision === "string" &&
@@ -242,6 +274,7 @@ export function configureScreenErrorReports(
 export async function reportScreenError(
   section: ScreenSection,
   error: unknown,
+  componentStack?: string | null,
 ): Promise<ScreenErrorReport | null> {
   const current = reporting;
   if (!current) return null;
@@ -255,7 +288,12 @@ export async function reportScreenError(
     if (reported.has(fingerprint)) return null;
     reported.add(fingerprint);
     const build = await current.build().catch(() => null);
-    const report = screenErrorReport(section, error, { route, build, surface });
+    const report = screenErrorReport(
+      section,
+      error,
+      { route, build, surface },
+      componentStack,
+    );
     await (current.send ?? sendScreenErrorReport)(report);
     return report;
   } catch {

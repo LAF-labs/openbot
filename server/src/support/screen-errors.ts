@@ -21,7 +21,7 @@
  *     process wrote (`log.ts`), and a page stuck in a loop reporting would push the person's real
  *     events out of it. Refused requests count too, the rule `middleware/security.ts` keeps.
  *   - A BODY of two kilobytes, refused on its declared length before it is read. A report is under
- *     four hundred bytes; the megabyte every other route may take is not this route's to offer.
+ *     a kilobyte even naming its eight components at their longest; the megabyte every other route may take is not this route's to offer.
  *   - THE SHAPE, fact by fact.
  *
  * The session is the one `middleware/security.ts` limits the message door by: better-auth's cookie,

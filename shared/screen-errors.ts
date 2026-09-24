@@ -12,8 +12,9 @@
  * CLOSED FACTS, AND ONLY THESE. Which part of the screen, from the list below. Which route, as its
  * template from the list below — `/channel/$channelId`, never the address with the id in it or its
  * query. What kind of error, as the name of its constructor. A fingerprint: a digest of where it was
- * thrown, so two reports of one failure can be told from two failures. The build the page knows it
- * is running, and whether it is running in the desktop app or a browser.
+ * thrown, so two reports of one failure can be told from two failures. The components it was
+ * drawn inside, by name, innermost first — which a fingerprint cannot say. The build the page knows
+ * it is running, and whether it is running in the desktop app or a browser.
  *
  * NEVER THE MESSAGE. An error's message is written by whatever threw, and it quotes what it was
  * handed: a URL that would not parse is quoted whole, query and all; JSON that would not parse is
@@ -30,7 +31,9 @@
  * Every part of the screen a report can name.
  *
  * The first eleven are the seams a section boundary sits on, and the diagnostics preview's
- * `sectionName` says each one in the person's words. The last three are not sections:
+ * `sectionName` says each one in the person's words. `tool_card` is one card in a conversation,
+ * which fails alone inside `ToolRenderBoundary` and until 2026-09-24 was the one failure on screen
+ * that was never reported. The last three are not sections:
  * `route_screen` is the router's own error screen, reached by whatever no section caught;
  * `window_error` is an error thrown outside React's drawing — an event handler, a timer;
  * `unhandled_rejection` is a promise nobody awaited.
@@ -47,6 +50,7 @@ export const SCREEN_SECTIONS = [
   "admin_page",
   "notices",
   "connection_check",
+  "tool_card",
   "route_screen",
   "window_error",
   "unhandled_rejection",
@@ -119,6 +123,23 @@ export const ERROR_KIND =
 export const FINGERPRINT = /^[0-9a-f]{12}$/;
 
 /**
+ * One component the failure was drawn inside, by the name React's component stack gives it.
+ *
+ * THE ONE FACT SHAPED LIKE A WORD, AND WHY THAT IS ALLOWED HERE. The kind above is narrower than an
+ * identifier because an error's constructor is the one place a report could meet a word somebody
+ * chose. A component's name is not: React reads it off the function in the app's own code, and
+ * nothing a person types, a site answers or a model writes becomes the name of a function. What
+ * the shape still keeps out is everything a message is made of — a space, a dot, a slash, a colon,
+ * a quote, a Hangul syllable — so a sentence, an address or a stack line sent in its place is
+ * refused with the report. A capital first, as JSX asks of a component: `div` and the other host
+ * elements say nothing about where it broke, and neither do a minifier's lower-case names.
+ */
+export const COMPONENT_NAME = /^[A-Z][A-Za-z0-9]{0,63}$/;
+
+/** How many components a report names: enough to place a failure, never a whole tree. */
+export const SCREEN_ERROR_MAX_COMPONENTS = 8;
+
+/**
  * A build, as `GET /api/version` names one: a release tag, or one of the three channel words.
  *
  * Closed rather than "a short token", because a short token is also a password. A deployment pulled
@@ -138,6 +159,8 @@ export type ScreenErrorReport = {
   route?: ScreenRoute;
   kind: string;
   fingerprint: string;
+  /** Innermost first. Absent where React had no component stack: outside drawing, or none fitted. */
+  components?: string[];
   build?: string;
   revision?: string;
   surface: ScreenSurface;
@@ -165,6 +188,14 @@ const FACTS: Record<
   route: { required: false, fits: isScreenRoute },
   kind: { required: true, fits: (value) => fits(ERROR_KIND, value) },
   fingerprint: { required: true, fits: (value) => fits(FINGERPRINT, value) },
+  components: {
+    required: false,
+    fits: (value) =>
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.length <= SCREEN_ERROR_MAX_COMPONENTS &&
+      value.every((name) => fits(COMPONENT_NAME, name)),
+  },
   build: { required: false, fits: (value) => fits(BUILD_VERSION, value) },
   revision: { required: false, fits: (value) => fits(BUILD_REVISION, value) },
   surface: {

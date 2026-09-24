@@ -2377,6 +2377,7 @@ export const ko: Record<string, string> = {
   "A Settings page": "설정 화면",
   "An admin page": "관리 화면",
   "The notices at the top": "위쪽 안내",
+  "A card in the conversation": "대화 속 카드",
   "The whole screen": "화면 전체",
   "Something the app was doing": "앱이 하던 작업",
   // 봇은 하나다 (2026-09-24). 첫 실행 한 화면, 봇 프로필, 봇 하나의 사이드바, 한 봇 규칙의 거절.

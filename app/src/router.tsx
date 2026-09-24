@@ -18,9 +18,12 @@ import { routeTree } from "./routeTree.gen";
  */
 function AppErrorScreen({
   error,
+  componentStack,
   reset,
 }: {
   error: unknown;
+  /** React's, when what failed was a render; a loader that threw has none. */
+  componentStack: string | undefined;
   reset: () => void;
 }) {
   /*
@@ -28,8 +31,8 @@ function AppErrorScreen({
    * of its own — and it replaced a whole route, so it is reported like any section that failed.
    */
   useEffect(() => {
-    void reportScreenError("route_screen", error);
-  }, [error]);
+    void reportScreenError("route_screen", error, componentStack);
+  }, [error, componentStack]);
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-8 text-center">
@@ -54,13 +57,21 @@ function AppErrorScreen({
  */
 function RouteErrorScreen({
   error,
+  componentStack,
   reset,
 }: {
   error: unknown;
+  componentStack: string | undefined;
   reset: () => void;
 }) {
   if (useIsInsideSection()) throw error;
-  return <AppErrorScreen error={error} reset={reset} />;
+  return (
+    <AppErrorScreen
+      componentStack={componentStack}
+      error={error}
+      reset={reset}
+    />
+  );
 }
 
 function NotFoundScreen() {
@@ -85,8 +96,12 @@ function NotFoundScreen() {
 export const router = createRouter({
   routeTree,
   context: {} as RouterContext,
-  defaultErrorComponent: ({ error, reset }) => (
-    <RouteErrorScreen error={error} reset={reset} />
+  defaultErrorComponent: ({ error, info, reset }) => (
+    <RouteErrorScreen
+      componentStack={info?.componentStack}
+      error={error}
+      reset={reset}
+    />
   ),
   defaultNotFoundComponent: NotFoundScreen,
   /*

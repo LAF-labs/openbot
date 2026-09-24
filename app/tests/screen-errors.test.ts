@@ -4,6 +4,7 @@ import {
   type ScreenErrorReport,
 } from "../../shared/screen-errors";
 import {
+  componentsOf,
   configureScreenErrorReports,
   errorKind,
   fingerprintOf,
@@ -45,6 +46,20 @@ function poisoned(): TypeError {
   Object.assign(error, { input: `${PASSWORD} ${KOREAN}` });
   return error;
 }
+
+/**
+ * React's component stack for the same failure, as Chromium and then WebKit print it: every line an
+ * address, in development with Vite's query on it — here the password — and a host element and a
+ * context between the components.
+ */
+const COMPONENT_STACK = [
+  "",
+  `    at ChatTranscript (http://localhost:3610/src/components/channels/chat-transcript.tsx?t=1726&pw=${PASSWORD}:88:3)`,
+  "    at div",
+  "    at Context.Provider",
+  "    at SectionBoundary (http://localhost:3610/src/components/layout/section-boundary.tsx:201:9)",
+  `ConversationView@http://localhost:3610/channel/${CHANNEL_ID}?settings=true:10:5`,
+].join("\n");
 
 const CANARIES = [
   PASSWORD,
@@ -102,17 +117,25 @@ describe("the body the app would post", () => {
       input: (error as unknown as { input: string }).input,
     });
     expect(CANARIES.filter((canary) => !carried.includes(canary))).toEqual([]);
+    expect(COMPONENT_STACK).toContain(PASSWORD);
 
-    const sent = await reportScreenError("transcript", error);
+    const sent = await reportScreenError("transcript", error, COMPONENT_STACK);
     expect(sent).not.toBeNull();
     expect(setup.bodies).toHaveLength(1);
     const body = setup.bodies[0] ?? "";
 
     expect(CANARIES.filter((canary) => body.includes(canary))).toEqual([]);
     const parsed = JSON.parse(body) as Record<string, unknown>;
+    // The names of the components around it, and not one address among them.
+    expect(parsed.components).toEqual([
+      "ChatTranscript",
+      "SectionBoundary",
+      "ConversationView",
+    ]);
     expect(Object.keys(parsed).sort()).toEqual(
       [
         "build",
+        "components",
         "fingerprint",
         "kind",
         "revision",
@@ -159,6 +182,35 @@ describe("the body the app would post", () => {
 });
 
 describe("what is read from an error", () => {
+  test("from React's component stack, the components' names, innermost first, eight at most", () => {
+    expect(componentsOf(COMPONENT_STACK)).toEqual([
+      "ChatTranscript",
+      "SectionBoundary",
+      "ConversationView",
+    ]);
+    // A production build's names are what the minifier left; the capital ones still place it.
+    expect(
+      componentsOf(
+        "\n    at Ke (https://laf.example/assets/index-9f.js:1:4)\n    at a (x)",
+      ),
+    ).toEqual(["Ke"]);
+    const deep = Array.from(
+      { length: 12 },
+      (_, index) => `    at Part${index} (http://h/a.js:1:1)`,
+    ).join("\n");
+    expect(componentsOf(deep)).toHaveLength(8);
+    expect(componentsOf(deep)[0]).toBe("Part0");
+    // Outside drawing there is no stack, and no fact.
+    expect(componentsOf(undefined)).toEqual([]);
+    expect(
+      screenErrorReport("window_error", new Error("x"), {
+        route: undefined,
+        build: null,
+        surface: "browser",
+      }),
+    ).not.toHaveProperty("components");
+  });
+
   test("its constructor's name, or the nearest one that is a name and not a word", () => {
     class FeedbackRefusedError extends Error {}
     // What a production build makes of an app's own error class.

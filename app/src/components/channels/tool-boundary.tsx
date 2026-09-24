@@ -1,6 +1,7 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { reportScreenError } from "@/lib/support/screen-errors";
 
 /**
  * A component that throws must not take the conversation with it.
@@ -19,13 +20,21 @@ export class ToolRenderBoundary extends Component<
     return { failed: true };
   }
 
-  componentDidCatch(error: unknown) {
+  componentDidCatch(error: unknown, info: ErrorInfo) {
     // Keep stack details out of the conversation while preserving them for component authors.
     console.error(
       "[gallery] a component failed to render",
       this.props.name,
       error,
     );
+    /*
+     * And to our own server, as every other part of the screen that fails is: a card here is drawn
+     * by the app's own code as often as by a gallery component — a help request, a browser call's
+     * line — and until 2026-09-24 its failure was the one that reached nobody but the console of
+     * the person looking at it. Not the tool's name: a gallery component is named by whoever wrote
+     * it, which is a word nobody vouches for (`shared/screen-errors.ts`).
+     */
+    void reportScreenError("tool_card", error, info.componentStack);
   }
 
   render() {

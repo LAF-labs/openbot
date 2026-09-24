@@ -60,10 +60,11 @@ const REPORT = {
   route: "/channel/$channelId",
   kind: "TypeError",
   fingerprint: "a41c09e2b7f3",
+  components: ["BotRow", "BotSidebar", "SectionBoundary"],
   build: "v0.5.1",
   revision: "eeea9853c2d1",
   surface: "shell",
-} as const;
+};
 
 function door(options: { now?: () => number } = {}) {
   const lines: Array<{ level: LogLevel; line: string }> = [];
@@ -203,6 +204,26 @@ describe("what the route refuses, and writes nothing for", () => {
     ["a build with a space", { ...REPORT, build: "v0.5.1 beta" }],
     ["a revision that is not hex", { ...REPORT, revision: "zzzzzzz" }],
     [
+      "a component that is a sentence",
+      { ...REPORT, components: ["BotRow", "Invalid URL: x"] },
+    ],
+    [
+      "a component that is an address",
+      { ...REPORT, components: ["https://shop.example/?pw=hunter2"] },
+    ],
+    [
+      "a component that is a stack line",
+      { ...REPORT, components: ["at BotRow (http://h/a.js:1:1)"] },
+    ],
+    ["a component in Korean", { ...REPORT, components: ["비밀번호"] }],
+    ["a component in lower case", { ...REPORT, components: ["hunter2"] }],
+    ["components that are one string", { ...REPORT, components: "BotRow" }],
+    ["no components in the list", { ...REPORT, components: [] }],
+    [
+      "more components than a report names",
+      { ...REPORT, components: Array.from({ length: 9 }, () => "BotRow") },
+    ],
+    [
       "a surface there is no such surface as",
       {
         ...REPORT,
@@ -309,6 +330,8 @@ describe("where the line goes", () => {
         level: "warn",
         svc: "server",
         ...REPORT,
+        // An event's facts are flat: the components travel as one line, innermost first.
+        components: "BotRow < BotSidebar < SectionBoundary",
       });
       // Who it was is how it was found, and is not carried: the bundle is theirs already.
       expect(screens.at(-1)).not.toHaveProperty("user");

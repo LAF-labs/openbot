@@ -20,6 +20,9 @@ import { mount, unmountAll } from "./support/mount";
  * seam with none of their own, so one card that threw on what a browser call came back with took
  * every message above and below it. Each card now fails alone, as the Bot's screen, and is
  * reported as that — and the card beside it goes on drawing.
+ *
+ * A tool call's card had a boundary of its own from the start, and until the same day its failure
+ * was the one on screen that reached nobody but the developer console.
  */
 
 const PASSWORD = "hunter2-canary";
@@ -140,5 +143,57 @@ describe("a browsing card", () => {
       kind: "TypeError",
     });
     expect(JSON.stringify(reports)).not.toContain(PASSWORD);
+    // Which card it was, by the components' names: the thrower first.
+    expect(reports[0]?.components?.[0]).toBe("TaskCard");
+  });
+});
+
+describe("a card drawn for a tool call", () => {
+  test("that throws says so in its place and is reported as a card, without the tool's name", async () => {
+    consoleError = spyOn(console, "error").mockImplementation(() => {});
+    const { ToolRenderBoundary } = await import(
+      "../src/components/channels/tool-boundary"
+    );
+    const { configureScreenErrorReports } = await import(
+      "../src/lib/support/screen-errors"
+    );
+    const reports: ScreenErrorReport[] = [];
+    configureScreenErrorReports({
+      route: () => "/channel/$channelId",
+      build: async () => null,
+      surface: () => "browser",
+      isSignedIn: () => true,
+      send: async (report) => {
+        reports.push(report);
+      },
+    });
+    const ReviewReply = (): never => {
+      throw new RangeError(`reply to ${PASSWORD}`);
+    };
+    /*
+     * Drawn by a component, as every card in the app is. React's development stack names a
+     * component by where its element was made, and one made in a test's own body has no name.
+     */
+    const ToolCard = () => <ReviewReply />;
+    const view = await drawn(
+      <div>
+        <p>earlier message</p>
+        <ToolRenderBoundary name="hunter2_tool">
+          <ToolCard />
+        </ToolRenderBoundary>
+      </div>,
+    );
+    await view.settle(30);
+
+    expect(view.host.textContent).toContain("earlier message");
+    expect(view.host.textContent).toContain("could not be drawn");
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      section: "tool_card",
+      kind: "RangeError",
+    });
+    expect(reports[0]?.components?.[0]).toBe("ReviewReply");
+    // The name a gallery component was given is a word nobody vouches for, and is not sent.
+    expect(JSON.stringify(reports)).not.toContain("hunter2");
   });
 });

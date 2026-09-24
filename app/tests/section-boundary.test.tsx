@@ -461,4 +461,55 @@ describe("on its own", () => {
     await view.settle(50);
     expect(view.host.textContent).toContain("fine");
   });
+
+  test("a part holding a password in its state and throwing it is reported by its components' names, and the password is nowhere in the report", async () => {
+    quietly();
+    const { SectionBoundary } = await import(
+      "../src/components/layout/section-boundary"
+    );
+    const { configureScreenErrorReports } = await import(
+      "../src/lib/support/screen-errors"
+    );
+    const { useState } = await import("react");
+    const reports: ScreenErrorReport[] = [];
+    configureScreenErrorReports({
+      route: () => "/settings/account",
+      build: async () => ({ version: "v0.5.1", revision: "eeea9853c2d1" }),
+      surface: () => "shell",
+      isSignedIn: () => true,
+      send: async (report) => {
+        reports.push(report);
+      },
+    });
+    // What was typed, held the way a form holds it — in state, and in the props of what draws it.
+    const PasswordEcho = ({ typed }: { typed: string }) => {
+      throw new SyntaxError(`Unexpected token in "${typed}" — ${KOREAN}`);
+    };
+    const SignInForm = () => {
+      const [typed] = useState(PASSWORD);
+      return <PasswordEcho typed={typed} />;
+    };
+    await drawn("/", () => (
+      <SectionBoundary section="settings_page">
+        <SignInForm />
+      </SectionBoundary>
+    ));
+
+    expect(reports).toHaveLength(1);
+    const record = JSON.stringify(reports[0]);
+    expect(record).not.toContain(PASSWORD);
+    expect(record).not.toContain("hunter2");
+    expect(record).not.toContain("사장님");
+    expect(record).not.toContain("Unexpected token");
+    expect(reports[0]).toMatchObject({
+      section: "settings_page",
+      kind: "SyntaxError",
+      build: "v0.5.1",
+    });
+    // Where it broke, by name, innermost first: what the fingerprint alone could not say.
+    expect(reports[0]?.components?.slice(0, 2)).toEqual([
+      "PasswordEcho",
+      "SignInForm",
+    ]);
+  });
 });

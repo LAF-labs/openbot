@@ -268,6 +268,11 @@ function screenEventFrom(
   }
   for (const [fact, value] of Object.entries(screenErrorFacts(fields))) {
     if (typeof value === "string") out[fact] = value;
+    /*
+     * The components, innermost first, as one line — an event's facts are flat. Joined only after
+     * every name has fitted its shape, so the separator is the one character here nobody sent.
+     */
+    if (Array.isArray(value)) out[fact] = value.join(" < ");
   }
   return out;
 }

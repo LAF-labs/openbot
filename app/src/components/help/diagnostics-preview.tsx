@@ -54,6 +54,8 @@ const sectionName = (section: string): string => {
       return t("The notices at the top");
     case "connection_check":
       return t("Connection check");
+    case "tool_card":
+      return t("A card in the conversation");
     case "route_screen":
       return t("The whole screen");
     case "window_error":
