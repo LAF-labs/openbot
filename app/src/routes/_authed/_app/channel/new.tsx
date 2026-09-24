@@ -160,11 +160,31 @@ function FirstConversation({ botId }: { botId: string }) {
         commands={skillCommands}
         emptyState={
           bot ? (
-            <div className="pointer-events-auto flex w-full flex-col items-center gap-4 px-6 text-center">
-              <BotAvatar seed={bot.avatarSeed} size={72} state="curious" />
-              <p className="text-[13px] text-muted-foreground">
-                {t("Tell {name} what you need.", { name: bot.name })}
-              </p>
+            /*
+             * A WELCOME, NOT A FORM. The face at its largest in the app, on a soft wash of its own
+             * colour, then its name and one line — and the first things to ask, to press. The wash
+             * is static: the face already moves, and a glow that pulsed beside it would be the
+             * screensaver the avatar engine was written to avoid.
+             */
+            <div className="pointer-events-auto flex w-full max-w-xl flex-col items-center gap-5 px-6 text-center">
+              <div className="relative flex items-center justify-center">
+                <span
+                  aria-hidden="true"
+                  className="absolute size-40 rounded-full bg-primary/10 blur-2xl"
+                />
+                <BotAvatar
+                  className="relative"
+                  seed={bot.avatarSeed}
+                  size={96}
+                  state="curious"
+                />
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <h2 className="font-semibold text-xl">{bot.name}</h2>
+                <p className="text-muted-foreground text-sm">
+                  {t("Tell {name} what you need.", { name: bot.name })}
+                </p>
+              </div>
               {/*
                * THE FIRST THING TO ASK, AS SOMETHING TO PRESS — for a Bot nobody has spoken to.
                * Keyed on the Bot: a routine made for one Bot must not show as made for the next.
